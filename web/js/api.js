@@ -160,7 +160,7 @@ window.Maity = window.Maity || {};
     const p = placementsOf(slug).find((x) => x.id === id && x.active);
     if (!p) fail(404, "not_found", "Not found", path);
     const runner = runnersFile().items.find((r) => r.id === p.runner.id);
-    const admin = me().member.kind === "human" && ["owner", "admin"].includes(roleIn(slug)) && runner && runner.owner_id === me().member.id;
+    const admin = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(slug)) && runner && runner.owner_id === me().member.id;
     const profile = (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === p.agent.id);
     if (!admin && !(profile && profile.owner_id === me().member.id)) fail(403, "forbidden", "members:admin and the runner, or the agent's owner", path);
     return p;
@@ -219,10 +219,13 @@ window.Maity = window.Maity || {};
 
   let taskSerial = 0;
   let consentSerial = 0;
-  // tasks:admin and tasks:review, by the human's role in a project (§2.3).
-  const roleIn = (slug) => (me().projects.find((p) => p.slug === slug) || {}).role;
-  const tasksAdmin = (slug) => ["owner", "admin"].includes(roleIn(slug));
-  const tasksReview = (slug) => ["owner", "admin", "reviewer"].includes(roleIn(slug));
+  // tasks:admin and tasks:review, by the human's trust and role in a project (§2.3).
+  const mineIn = (slug) => me().projects.find((p) => p.slug === slug) || {};
+  const trustIn = (slug) => mineIn(slug).trust;
+  // Trust owner or admin, never a proxy (§2.3, hub/scopes.py).
+  const governing = (x) => !!x && ["owner", "admin"].includes(x.trust) && x.role !== "proxy";
+  const tasksAdmin = (slug) => governing(mineIn(slug));
+  const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && mineIn(slug).role === "reviewer");
 
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
@@ -362,21 +365,25 @@ window.Maity = window.Maity || {};
   // members:admin in a project: a human owner or admin there (§2.3).
   const membersAdmin = (slug) => {
     const mine = me().projects.find((p) => p.slug === slug);
-    return !!mine && ["owner", "admin"].includes(mine.role);
+    return governing(mine);
   };
   // Who changes a membership: the signed-in human, or ?as= in fixture mode.
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);
-    return { member: x, admin: ["owner", "admin"].includes(x.role) };
+    return { member: x, admin: governing(x) };
   }
-  // §2.3 ᵃ: an admin agent changes only other agents' memberships whose role
-  // is member or reviewer; capabilities and proxy stay a human's.
+  // §2.3 ᵃ: an admin agent changes only other agents' memberships with trust
+  // member or guest, to those trusts and the work roles; capabilities, admin,
+  // owner, proxy and manager stay a human's.
+  const AGENT_TRUSTS = ["member", "guest"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops"];
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
-    if (target.kind !== "agent" || target.id === who.id || !["member", "reviewer"].includes(target.role)) human();
-    if (body && ("capabilities" in body || ("role" in body && !["member", "reviewer"].includes(body.role)))) human();
+    if (target.kind !== "agent" || target.id === who.id || !AGENT_TRUSTS.includes(target.trust) || target.role === "proxy") human();
+    if (body && ("capabilities" in body || ("trust" in body && !AGENT_TRUSTS.includes(body.trust))
+      || ("role" in body && !AGENT_ROLES.includes(body.role)))) human();
   }
   // Changing the role of or pausing a reviewer or the contract arbiter, and
   // any removal, by an agent waits for a human's go: 202 with the request.
@@ -384,7 +391,7 @@ window.Maity = window.Maity || {};
     if (who.kind !== "agent") return null;
     return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
   }
-  const guarded = (slug, target) => target.role === "reviewer"
+  const guarded = (slug, target) => ["reviewer", "tester"].includes(target.role)
     || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
   // A member's avatar as §6.10 keeps it: one per account or profile, so
   // every object that names the member carries the same avatar_url.
@@ -490,11 +497,11 @@ window.Maity = window.Maity || {};
   // hub stores and the event no longer shows once redacted; never served.
   function readable(slug, e) {
     const meId = me().member.id;
-    const role = roleIn(slug);
+    const mine = mineIn(slug);
     if (e.actor && e.actor.member_id === meId) return true;
-    const named = (e.audience || []).some((t) => t === "all" || t === "member:" + meId || t === "role:" + role);
+    const named = (e.audience || []).some((t) => t === "all" || t === "member:" + meId || t === "role:" + mine.role || t === "trust:" + mine.trust);
     if (e._conversation) return (e.audience || []).includes("member:" + meId);
-    return named || ["owner", "admin"].includes(role);
+    return named || ["owner", "admin"].includes(mine.trust);
   }
   const served = (e) => JSON.parse(JSON.stringify(e, (k, v) => (k.startsWith("_") ? undefined : v)));
   // §8.7 in fixture mode: fixtures/<slug>/attachments.json, made on first use.
@@ -564,6 +571,53 @@ window.Maity = window.Maity || {};
     const p = c.view.participants.find((x) => x.member_id === memberId);
     return c.items.filter((x) => x.seq > (p ? p.joined_seq : 0));
   }
+  // §9.3 for one project (m[1]: its fixture key), shared by the project's
+  // route and the list across projects.
+  function conversationList(m, path, query) {
+    const all = file(m[1], "conversations.json", path);
+    const members = file(m[1], "members.json", path).items;
+    const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
+      sent_at: last.sent_at, redacted: !!last.redacted };
+    // §9.2: an owner outside the project sees only the chats its agents are
+    // in, and only with observed=true; no direct chat, nothing else.
+    const outside = !me().projects.some((p) => p.slug === m[1]);
+    // Neither a member nor an agent there: the route does not say the project exists (§9.2).
+    if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
+      && (a.memberships || []).some((x) => x.project === fullOf(m[1])))) fail(404, "not_found", "Not found", path);
+    const direct = outside ? [] : Object.keys(all).map((agentId) => {
+      const items = all[agentId].items;
+      const last = items.length ? items[items.length - 1] : null;
+      const agent = members.find((x) => x.id === agentId);
+      return {
+        id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
+        participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+          { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
+        last_message_at: last ? last.sent_at : null,
+        unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
+        mentions_unread: 0,
+        // §9: the newest message as a preview, its body cut at 200 code points.
+        last_message: preview(last),
+      };
+    });
+    const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
+      .filter((g) => g.access === "participant" || query.get("observed") === "true")
+      .map((g) => {
+        const c = groupChats(m[1])[g.id];
+        const win = windowOf(c, me().member.id);
+        const last = win.length ? win[win.length - 1] : null;
+        const readTo = c.read[me().member.id] || 0;
+        const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
+        return Object.assign({}, g, {
+          participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+          last_message_at: last ? last.sent_at : null, last_message: preview(last),
+          unread: g.access === "observer" ? null : theirs.length,
+          mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
+        });
+      });
+    const at = (c) => c.last_message_at || c.created_at || "";
+    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+  }
+
   // The view as the caller may see it, or null when it may not.
   function groupItem(slug, c, path) {
     const meId = me().member.id;
@@ -582,7 +636,7 @@ window.Maity = window.Maity || {};
     if (!item) fail(404, "not_found", "Not found", path);
     if (item.access === "observer") fail(403, "forbidden", "an observer does not manage", path, { reason: "observer" });
     if (c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path);
-    if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(roleIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
+    if (c.view.created_by !== me().member.id && !["owner", "admin"].includes(trustIn(slug))) fail(403, "forbidden", "members:admin or the creator", path, { scope: "members:admin" });
     return c;
   }
   // §18.2 counts, overall and per project. Items from events carry seq,
@@ -706,7 +760,7 @@ window.Maity = window.Maity || {};
 
   const PRESETS = {
     hierarchical: {
-      claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "role:admin",
+      claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "trust:admin",
       tag_authority: "human", steward_writes: "cards_only", lease_seconds: 7200,
     },
     solo: {
@@ -741,20 +795,26 @@ window.Maity = window.Maity || {};
       const no = (data.refusals || {})[m[1]];
       if (no) fail(no.status, no.code, no.message, path, no.details || {});
       delete data.pages[m[1]];
-      return { id: me().member.id, kind: "human", handle: me().member.handle, display_name: me().member.display_name, role: view.role };
+      return { id: me().member.id, kind: "human", handle: me().member.handle, display_name: me().member.display_name, trust: view.trust, role: view.role };
     }],
     // §3.4: a project's invitations, for a human with members:admin.
     ["GET", /^\/projects\/([^/]+)\/invitations$/, (m, body, path) => {
-      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
       return { items: invitationsOf(m[1]).slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).map((x) => Object.assign({}, x, { url: undefined })), next_cursor: null };
     }],
     ["POST", /^\/projects\/([^/]+)\/invitations$/, (m, body, path) => {
-      const role = roleIn(m[1]);
-      if (!["owner", "admin"].includes(role)) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      const trust = trustIn(m[1]);
+      if (!["owner", "admin"].includes(trust)) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
       const fields = {};
-      const want = body.role || "member";
-      if (!["member", "reviewer", "proxy", "admin", "owner"].includes(want)) fields.role = "unknown";
-      else if (["admin", "owner"].includes(want) && role !== "owner") fail(403, "forbidden", "only an owner invites an owner or an admin", path, { scope: "owner" });
+      // §3.4: trust and role, proxy only with trust admin; owner, admin and proxy only from an owner.
+      const wantTrust = body.trust || "member";
+      const want = body.role || "coder";
+      if (!["owner", "admin", "member", "guest"].includes(wantTrust)) fields.trust = "unknown";
+      if (!["coder", "reviewer", "tester", "designer", "writer", "ops", "manager", "proxy"].includes(want)) fields.role = "unknown";
+      else if (want === "proxy" && wantTrust !== "admin") fields.role = "proxy_needs_admin";
+      if ((["admin", "owner"].includes(wantTrust) || want === "proxy") && trust !== "owner") {
+        fail(403, "forbidden", "only an owner invites an owner, an admin or a proxy", path, { reason: "owner_only" });
+      }
       const ttl = body.ttl_seconds === undefined ? 86400 : body.ttl_seconds;
       if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
       if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
@@ -763,14 +823,14 @@ window.Maity = window.Maity || {};
       const list = invitationsOf(m[1]);
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
-      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), role: want, address: body.address || null, note: body.note || null,
+      const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         used_at: null, used_by: null, revoked_at: null, voided_at: null };
       list.push(made);
       return Object.assign({}, made, { url: window.location.origin + window.location.pathname + "#/invite/" + token });
     }],
     ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
-      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
       const x = invitationsOf(m[1]).find((i) => i.id === m[2]);
       if (!x) fail(404, "not_found", "Not found", path);
       if (x.revoked_at) return x;
@@ -1012,6 +1072,13 @@ window.Maity = window.Maity || {};
       return { slug: entry.slug, full_name: entry.full_name, include: entry.include };
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
+    // §5.2 "Meat proxy": the human's own switch, a boolean; nobody sets it for another.
+    ["PATCH", /^\/me$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
+      if ("meat_proxy" in body && typeof body.meat_proxy !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { meat_proxy: "type" } });
+      if ("meat_proxy" in body) me().member.meat_proxy = body.meat_proxy;
+      return Object.assign({}, me().member);
+    }],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
@@ -1031,7 +1098,39 @@ window.Maity = window.Maity || {};
       });
       return set;
     }],
-    ["GET", /^\/agents$/, () => fixtures()["agents.json"]],
+    // A deleted profile (tombstone) is never listed (§6.3).
+    ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    // §6.3: the owner deletes a profile. In use (an active membership) only with
+    // ?cascade=true, which ends every membership as DELETE …/members/{id} does;
+    // then a tombstone with deleted_at, no avatar, no memberships. Again: 200 as it is.
+    ["DELETE", /^\/agents\/([^/]+)$/, (m, body, path, query) => {
+      const agent = (fixtures()["agents.json"] || { items: [] }).items.find((a) => a.id === m[1]);
+      if (!agent || agent.owner_id !== me().member.id || me().member.kind !== "human") fail(404, "not_found", "Not found", path);
+      if (agent.deleted_at) return agent;
+      const memberships = (agent.memberships || []).map((x) => {
+        const key = fixtureSlugs().find((k) => fullOf(k) === x.project);
+        return { key, project: x.project, member_id: agent.id, trust: x.trust, role: x.role };
+      });
+      if (memberships.length && !(query && query.get("cascade") === "true")) {
+        fail(409, "profile_in_use", "the profile is in use", path, { memberships: memberships.map(({ key, ...rest }) => rest), placements: [] });
+      }
+      const at = nowIso();
+      memberships.forEach(({ key }) => {
+        if (!key || !fixtures()[key + "/members.json"]) return;
+        const list = file(key, "members.json", path);
+        const target = list.items.find((x) => x.id === agent.id);
+        if (!target) return;
+        ((fixtures()[key + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
+          if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
+        });
+        (fixtures()[key + "/tasks.json"] || { items: [] }).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+        list.items = list.items.filter((x) => x !== target);
+        list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
+        list.removed = (list.removed || []).concat(Object.assign({}, target, { removed_at: at }));
+      });
+      Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
+      return agent;
+    }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
@@ -1115,7 +1214,7 @@ window.Maity = window.Maity || {};
         if (!name || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(name)) fail(400, "invalid", "a runner needs a name", path, { fields: { name: name ? "string_pattern_mismatch" : "missing" } });
         if (runnersFile().items.some((r) => !r.removed_at && r.name === name)) fail(400, "invalid", "you have a runner of that name", path, { fields: { name: "taken" } });
       }
-      const admin = me().projects.filter((p) => p.role === "owner" || p.role === "admin").map((p) => p.full_name);
+      const admin = me().projects.filter((p) => ["owner", "admin"].includes(p.trust)).map((p) => p.full_name);
       (body.attach || []).forEach((slug) => { if (!admin.includes(slug)) fail(403, "forbidden", "members:admin needed in " + slug, path, { scope: "members:admin" }); });
       const id = localId("renr");
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1290,14 +1389,14 @@ window.Maity = window.Maity || {};
       const empty = { items: [], next_cursor: null };
       data[body.slug + "/project.json"] = created;
       data[body.slug + "/members.json"] = { items: [Object.assign({}, owner, {
-        role: "owner", reports_to: null, areas: ["/"], capabilities: [], last_seen_at: nowIso(),
+        trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [], last_seen_at: nowIso(),
         presence: "online", paused: null, joined_at: nowIso(),
       })], next_cursor: null };
       ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
       data[body.slug + "/credentials.json"] = {};
       data[body.slug + "/conversations.json"] = {};
       if (url !== null) makeSetupCards(body.slug, setup, owner.id, url);
-      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", role: "owner", open_requests: 0 });
+      me().projects.push({ slug: body.slug, full_name: created.full_name, name: body.name, state: "build", trust: "owner", role: "coder", open_requests: 0 });
       return created;
     }],
     ["GET", /^\/projects\/([^/]+)$/, (m, body, path) => project(m[1], path)],
@@ -1331,7 +1430,7 @@ window.Maity = window.Maity || {};
       const p = project(m[1], path);
       // §6.25: a rename, by a human owner; the old full name an alias.
       if ("slug" in body && body.slug !== p.slug) {
-        if (me().member.kind !== "human" || roleIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
+        if (me().member.kind !== "human" || trustIn(m[1]) !== "owner") fail(403, "forbidden", "a project is renamed by a human owner", path, { reason: "humans_only" });
         const owner = p.full_name.split("/")[0];
         renameCheck(p, path, owner + "/" + body.slug);
         if (!SLUG.test(body.slug || "")) fail(400, "invalid", "not a slug", path, { fields: { slug: "string_pattern_mismatch" } });
@@ -1352,14 +1451,14 @@ window.Maity = window.Maity || {};
       }
       if ("absence" in body) p.absence = body.absence;
       if (body.settings && "language" in body.settings) {
-        if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+        if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
         if (!["en", "de"].includes(body.settings.language)) fail(400, "invalid", "unknown language", path);
         p.settings = Object.assign({}, p.settings, { language: body.settings.language });
       }
 
       // §6.1, §17.3: the ticker setting, sent whole, by a human with project:admin.
       if (body.settings && "ticker" in body.settings) {
-        if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+        if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
         const t = body.settings.ticker;
         if (t !== null && (typeof t !== "object" || (t.contract_files || []).length > 10 || Object.keys(t.contract_implementers || {}).length > 200
           || Object.values(t.contract_implementers || {}).some((v) => !Array.isArray(v) || v.length > 20))) {
@@ -1371,7 +1470,7 @@ window.Maity = window.Maity || {};
       }
 
       if (body.settings && "onboarding" in body.settings) {
-        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path);
         const value = body.settings.onboarding || { check_in_with: "coordinator" };
         if (value.briefing && [...value.briefing].length > BRIEFING_CHARS) fail(400, "invalid", "Briefing too long", path);
         const old = (p.settings || {}).onboarding || {};
@@ -1381,7 +1480,7 @@ window.Maity = window.Maity || {};
       }
 
       if ("repository" in body) {
-        if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
         if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
           fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
@@ -1586,6 +1685,8 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/forge/webhook/secret": { post: {}, delete: {} },
       "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
+      "/api/v1/me/conversations": { get: {} },
+      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },
@@ -1609,7 +1710,7 @@ window.Maity = window.Maity || {};
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
-      if (!["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "ticker:post needed", path, { scope: "ticker:post" });
+      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "ticker:post needed", path, { scope: "ticker:post" });
       const errors = {};
       const type = body.type;
       if (["merge", "decision"].includes(type)) errors.type = "not_for_type";
@@ -1623,7 +1724,7 @@ window.Maity = window.Maity || {};
       const to = body.to === undefined ? "computed" : body.to;
       const members = file(m[1], "members.json", path).items;
       if (!(to === "computed" || to === "all" || (Array.isArray(to) && to.length >= 1 && to.length <= 20
-        && to.every((x) => /^role:[a-z]+$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
+        && to.every((x) => /^(role|trust):[a-z]+$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
       if ("areas" in body && type !== "note") errors.areas = "not_for_type";
       if (type === "note" && to === "computed" && !(Array.isArray(body.areas) && body.areas.length)) errors.areas = "required";
       if ("release_task_id" in body && type !== "release") errors.release_task_id = "not_for_type";
@@ -1654,6 +1755,7 @@ window.Maity = window.Maity || {};
       // Resolved at write time to members (§17.6); the poster is never woken by its own post.
       const owners = (paths) => paths.map((x) => areaOwner(members, x)).filter(Boolean).map((mm) => mm.id);
       const resolve = (x) => (x.startsWith("member:") ? [x.slice(7)] : x.startsWith("role:") ? members.filter((mm) => mm.role === x.slice(5)).map((mm) => mm.id)
+        : x.startsWith("trust:") ? members.filter((mm) => mm.trust === x.slice(6)).map((mm) => mm.id)
         : owners([x.slice(5)]));
       const reached = [...new Set(to === "all" ? members.map((x) => x.id) : Array.isArray(to) ? to.flatMap(resolve)
         : type === "note" ? owners(body.areas) : type === "deploy" ? members.map((x) => x.id) : members.map((x) => x.id))].filter((id) => id !== meId);
@@ -1738,7 +1840,7 @@ window.Maity = window.Maity || {};
       const seq = nextLogSeq(log);
       const files = bindAttachments(m[1], body.attachments, seq, path);
       const event = { seq, kind: "message", at: nowIso(), actor: { kind: "member", member_id: me().member.id }, subject: body.task_id ? { type: "task", id: body.task_id } : null,
-        audience: [body.to === "all" ? "all" : body.to.startsWith("role:") ? body.to : "member:" + body.to], redacted: false,
+        audience: [body.to === "all" ? "all" : /^(role|trust):/.test(body.to) ? body.to : "member:" + body.to], redacted: false,
         payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
       // A chat lives in its conversation; a project message in the log.
       if (body.type !== "chat") log.push(event);
@@ -1784,9 +1886,9 @@ window.Maity = window.Maity || {};
         if (t.status in counts) counts[t.status] += 1;
       });
       const meId = me().member.id;
-      const role = roleIn(m[1]);
-      const answers = ["owner", "admin", "proxy"].includes(role);
-      const mine = (r) => r.to === meId || r.to === role;
+      const own = mineIn(m[1]);
+      const answers = ["owner", "admin"].includes(own.trust) || own.role === "proxy";
+      const mine = (r) => r.to === meId || r.to === "role:" + own.role || r.to === "trust:" + own.trust;
       const open = openFor(m[1]).filter((r) => answers || mine(r) || (r.asked_by && r.asked_by.member_id === meId));
       const byPriority = { urgent: 0, high: 0, normal: 0, low: 0 };
       open.forEach((r) => { if (r.priority in byPriority) byPriority[r.priority] += 1; });
@@ -2076,13 +2178,22 @@ window.Maity = window.Maity || {};
       const all = file(m[1], "members.json", path).items;
       const errors = {};
       if ("briefing" in body && body.briefing !== null && [...body.briefing].length > BRIEFING_CHARS) errors.briefing = "string_too_long";
-      if ("role" in body) {
-        if (!["owner", "admin", "member", "reviewer", "proxy"].includes(body.role)) errors.role = "unknown";
-        else if (body.role === "owner" && target.kind !== "human") errors.role = "owner_is_human";
-        else if (target.role === "owner" && body.role !== "owner" && all.filter((x) => x.role === "owner").length === 1) errors.role = "last_owner";
-        else if (body.role !== "owner" && (project(m[1], path).owner || {}).id === target.id) {
+      // Trust and role (§2.3, as hub/routes/members.py checks them).
+      const newTrust = "trust" in body ? body.trust : target.trust;
+      const newRole = "role" in body ? body.role : target.role;
+      if ("trust" in body) {
+        if (!["owner", "admin", "member", "guest"].includes(body.trust)) errors.trust = "unknown";
+        else if (body.trust === "owner" && target.kind !== "human") errors.trust = "humans_only";
+        else if (target.trust === "owner" && body.trust !== "owner" && all.filter((x) => x.trust === "owner").length === 1) errors.trust = "last_owner";
+        else if (body.trust !== "owner" && (project(m[1], path).owner || {}).id === target.id) {
           fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
         }
+      }
+      if ("role" in body && !["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager"].includes(body.role)) errors.role = "unknown";
+      if (!errors.trust && !errors.role && ("trust" in body || "role" in body) && newRole === "proxy" && newTrust !== "admin") errors.role = "proxy_needs_admin";
+      if (who.member.kind === "human" && trustIn(m[1]) !== "owner" && ("trust" in body || "role" in body)
+        && ((["owner", "admin"].includes(newTrust) && newTrust !== target.trust) || (newRole === "proxy" && target.role !== "proxy") || (target.trust === "owner" && newTrust !== "owner"))) {
+        fail(403, "forbidden", "only an owner grants trust owner or admin, or the role proxy", path, { reason: "owner_only" });
       }
       if ("reports_to" in body && body.reports_to !== null) {
         const boss = all.find((x) => x.id === body.reports_to);
@@ -2105,10 +2216,12 @@ window.Maity = window.Maity || {};
       }
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       if (guarded(m[1], target)) {
-        const consent = "role" in body && body.role !== target.role ? consentFor(who.member, "Change " + target.handle + " to " + body.role)
+        const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
+          ? consentFor(who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
           : body.paused ? consentFor(who.member, "Pause " + target.handle) : null;
         if (consent) return consent;
       }
+      if ("trust" in body) target.trust = body.trust;
       if ("role" in body) target.role = body.role;
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if ("areas" in body) target.areas = [...new Set(body.areas)];
@@ -2130,7 +2243,7 @@ window.Maity = window.Maity || {};
       const p = project(m[1], path);
       if (me().member.kind !== "human") fail(403, "forbidden", "a project is transferred by a human", path, { reason: "humans_only" });
       if (!p.owner || p.owner.id !== me().member.id) fail(403, "forbidden", "only the namespace owner transfers the project", path);
-      const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.role === "owner");
+      const to = file(m[1], "members.json", path).items.find((x) => x.id === body.to && x.kind === "human" && x.trust === "owner");
       if (body.to === me().member.id) fail(400, "invalid", "the project is here already", path, { fields: { to: "self" } });
       if (!to) fail(400, "invalid", "the receiver must be an owner", path, { fields: { to: "not_an_owner" } });
       renameCheck(p, path, to.handle + "/" + p.slug);
@@ -2157,7 +2270,10 @@ window.Maity = window.Maity || {};
       agentLimits(who.member, target, null, path);
       const consent = consentFor(who.member, "Remove " + target.handle);
       if (consent) return consent;
-      if (target.role === "owner" && list.items.filter((x) => x.role === "owner").length === 1) {
+      if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
+        fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
+      }
+      if (target.trust === "owner" && list.items.filter((x) => x.trust === "owner").length === 1) {
         fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
       }
       // Its credentials revoked, its claims released (§6.2).
@@ -2205,7 +2321,7 @@ window.Maity = window.Maity || {};
     // The join line is made up here and shown once, as the hub would.
     ["POST", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       // §3.1 "Bringing your own agent": a human with trust member, within the project's limits.
-      if (!["owner", "admin"].includes(roleIn(m[1]))) {
+      if (!["owner", "admin"].includes(trustIn(m[1]))) {
         const pol = project(m[1], path).policy || {};
         if (me().member.kind !== "human" || pol.member_agents === "off") fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
         const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
@@ -2261,7 +2377,7 @@ window.Maity = window.Maity || {};
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
       const url = "https://maity.example/j/FIXTURE-" + id;
       file(m[1], "joins.json", path).items.unshift({
-        id, agent_id: agentId, role: body.role || "member", created_by: me().member.id,
+        id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
       });
@@ -2317,7 +2433,7 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
       attachmentsOn(path);
-      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      const admin = ["owner", "admin"].includes(trustIn(m[1]));
       const pending = attachmentsOf(m[1]).filter((a) => a.message_seq === null && !a.deleted_at
         && (a.uploaded_by === me().member.id || admin) && (!query.get("uploaded_by") || a.uploaded_by === query.get("uploaded_by")));
       return { items: pending.map((a) => (a.uploaded_by === me().member.id ? Object.assign({}, a) : hiddenUpload(a))), next_cursor: null };
@@ -2327,7 +2443,7 @@ window.Maity = window.Maity || {};
       attachmentsOn(path);
       const a = attachmentOf(m[1], m[2], path);
       const meId = me().member.id;
-      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      const admin = ["owner", "admin"].includes(trustIn(m[1]));
       if (a.deleted_at) return Object.assign({}, a);
       if (a.message_seq === null) {
         if (a.uploaded_by !== meId && !admin) fail(404, "not_found", "Not found", path);
@@ -2363,68 +2479,37 @@ window.Maity = window.Maity || {};
     }],
     // §17.4: the forge webhook's state and its secret, a human with project:admin only; the secret answered once.
     ["GET", /^\/projects\/([^/]+)\/forge\/webhook$/, (m, body, path) => {
-      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
       const w = webhooks[m[1]] || {};
       return { configured: !!w.secret, url: hubOrigin() + "/api/v1/projects/" + projectPath(fullOf(m[1])) + "/forge/webhook", created_at: w.created_at || null,
         rotated_at: w.rotated_at || null, last_delivery_at: w.last_delivery_at || null, last_result: w.last_result || null };
     }],
     ["POST", /^\/projects\/([^/]+)\/forge\/webhook\/secret$/, (m, body, path) => {
-      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
       const w = webhooks[m[1]] || {};
       const secret = "whsec_" + Array.from({ length: 32 }, (_, i) => "abcdefghjkmnpqrstuvwxyz23456789"[(i * 7 + Date.now()) % 31]).join("");
       webhooks[m[1]] = Object.assign({}, w, { secret, created_at: w.created_at || nowIso(), rotated_at: w.secret ? nowIso() : null });
       return { secret, url: hubOrigin() + "/api/v1/projects/" + projectPath(fullOf(m[1])) + "/forge/webhook" };
     }],
     ["DELETE", /^\/projects\/([^/]+)\/forge\/webhook\/secret$/, (m, body, path) => {
-      if (me().member.kind !== "human" || !["owner", "admin"].includes(roleIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
+      if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
       webhooks[m[1]] = {};
       return null;
     }],
     // §9.3: the direct conversations and the group chats, newest first; with
     // observed=true also the group chats read along as an agent's owner.
-    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
-      const all = file(m[1], "conversations.json", path);
-      const members = file(m[1], "members.json", path).items;
-      const preview = (last) => last && { seq: last.seq, from: last.from, body: last.redacted ? null : [...last.body].slice(0, 200).join(""),
-        sent_at: last.sent_at, redacted: !!last.redacted };
-      // §9.2: an owner outside the project sees only the chats its agents are
-      // in, and only with observed=true; no direct chat, nothing else.
-      const outside = !me().projects.some((p) => p.slug === m[1]);
-      // Neither a member nor an agent there: the route does not say the project exists (§9.2).
-      if (outside && !(fixtures()["agents.json"] || { items: [] }).items.some((a) => a.owner_id === me().member.id
-        && (a.memberships || []).some((x) => x.project === fullOf(m[1])))) fail(404, "not_found", "Not found", path);
-      const direct = outside ? [] : Object.keys(all).map((agentId) => {
-        const items = all[agentId].items;
-        const last = items.length ? items[items.length - 1] : null;
-        const agent = members.find((x) => x.id === agentId);
-        return {
-          id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
-          participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
-            { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
-          last_message_at: last ? last.sent_at : null,
-          unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
-          mentions_unread: 0,
-          // §9: the newest message as a preview, its body cut at 200 code points.
-          last_message: preview(last),
-        };
-      });
-      const groups = Object.values(groupChats(m[1])).map((g) => groupItem(m[1], g, path)).filter(Boolean)
-        .filter((g) => g.access === "participant" || query.get("observed") === "true")
-        .map((g) => {
-          const c = groupChats(m[1])[g.id];
-          const win = windowOf(c, me().member.id);
-          const last = win.length ? win[win.length - 1] : null;
-          const readTo = c.read[me().member.id] || 0;
-          const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
-          return Object.assign({}, g, {
-            participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
-            last_message_at: last ? last.sent_at : null, last_message: preview(last),
-            unread: g.access === "observer" ? null : theirs.length,
-            mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
-          });
-        });
-      const at = (c) => c.last_message_at || c.created_at || "";
-      return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => conversationList(m, path, query)],
+    // §9.3 across projects: every project the human is a member of, one list,
+    // newest activity first, then the project's full name, then the id; with
+    // the project on each item and the unread totals over all of them.
+    ["GET", /^\/me\/conversations$/, (m, body, path, query) => {
+      const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
+      const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
+        project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
+      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
+        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      return { items, next_cursor: null,
+        totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
@@ -2536,7 +2621,7 @@ window.Maity = window.Maity || {};
       const seq = Number(m[2]);
       const chats = groupChats(m[1]);
       const meId = me().member.id;
-      const admin = ["owner", "admin"].includes(roleIn(m[1]));
+      const admin = ["owner", "admin"].includes(trustIn(m[1]));
       let msg = null;
       let chat = null;
       let direct = null;
@@ -2552,7 +2637,7 @@ window.Maity = window.Maity || {};
         Object.assign(logged, { redacted: true, payload: { redacted: true, reason: body.reason, by: meId, at: nowIso() } });
         const log = eventsOf(m[1]);
         log.push({ seq: nextLogSeq(log), kind: "event_redacted", at: nowIso(), actor: { kind: "member", member_id: meId }, subject: null,
-          audience: ["role:owner", "role:admin"], redacted: false, payload: { seq, reason: body.reason } });
+          audience: ["trust:owner", "trust:admin"], redacted: false, payload: { seq, reason: body.reason } });
         return served(logged);
       }
       // expect (#206): only a closed group chat's message, else nothing changes.

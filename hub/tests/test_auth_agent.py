@@ -92,7 +92,8 @@ def test_bearer_over_tls_answers_the_agents_me(
             "full_name": "maintainer/maity",
             "name": "Project maity",
             "state": "build",
-            "role": "member",
+            "trust": "member",
+            "role": "coder",
             "logo": {"available": False, "etag": None},
         }
     ]

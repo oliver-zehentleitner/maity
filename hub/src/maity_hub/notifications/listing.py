@@ -34,7 +34,7 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
     by_project: dict[str, dict[str, Any]] = {}
     for mine in where.memberships:
         entry = dict.fromkeys(COUNTED, 0)
-        entry["inbox"] = open_requests(conn, mine.id, mine.row.role)
+        entry["inbox"] = open_requests(conn, mine.id)
         entry["chat"] = _unread_chats(conn, mine)
         by_project[mine.project.id] = {"member": True, **entry}
     for request in _open_personal(conn, where.human_id):

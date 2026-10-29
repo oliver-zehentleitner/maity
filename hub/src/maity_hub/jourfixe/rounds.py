@@ -134,13 +134,14 @@ def presence(conn: Connection, project: Any, members: list[Any]) -> dict[int, di
 
 
 def admin_agents_only(conn: Connection, project_id: str, order: list[str]) -> bool:
-    """Whether every id names an active agent member with the role `admin`."""
+    """Whether every id names an active admin agent: trust `admin`, never a proxy."""
     agents = set(
         conn.execute(
             select(t.membership.c.agent_id).where(
                 t.membership.c.project_id == project_id,
                 t.membership.c.active.is_(True),
-                t.membership.c.role == "admin",
+                t.membership.c.trust == "admin",
+                t.membership.c.role != "proxy",
                 t.membership.c.agent_id.isnot(None),
             )
         ).scalars()
@@ -168,7 +169,8 @@ def moderator_order(conn: Connection, project: Any) -> list[Any]:
         select(t.membership).where(
             t.membership.c.project_id == project.id,
             t.membership.c.active.is_(True),
-            t.membership.c.role == "admin",
+            t.membership.c.trust == "admin",
+            t.membership.c.role != "proxy",
             t.membership.c.agent_id.isnot(None),
         )
     ).all()
@@ -414,7 +416,7 @@ def open_round(
         conn,
         project.id,
         "jour_fixe_opened",
-        [*_wake_tokens(prepared["invited"]), "role:owner"],
+        [*_wake_tokens(prepared["invited"]), "trust:owner"],
         {
             "round_id": round_id,
             "moderator": prepared["moderator"]["member_id"],
@@ -463,7 +465,7 @@ def record_skip(
         conn,
         project.id,
         "jour_fixe_skipped",
-        ["role:owner", "role:admin"],
+        ["trust:owner", "trust:admin"],
         {
             "round_id": round_id,
             "status": status,
@@ -546,7 +548,7 @@ def close_answers(conn: Connection, round_row: Any) -> None:
         conn,
         round_row.project_id,
         "jour_fixe_answers_closed",
-        [*wake_now(conn, round_row.project_id, round_row.moderator["member_id"]), "role:owner"],
+        [*wake_now(conn, round_row.project_id, round_row.moderator["member_id"]), "trust:owner"],
         {
             "round_id": round_row.id,
             "answers_received": round_row.answers_received,

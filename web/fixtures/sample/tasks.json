@@ -87,7 +87,7 @@
       "ktw_ref": null,
       "report": null,
       "contract": {
-        "arbiter": "role:admin",
+        "arbiter": "trust:admin",
         "state": "final",
         "watchers": [
           "agt-s1"

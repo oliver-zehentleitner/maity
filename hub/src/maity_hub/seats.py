@@ -29,7 +29,7 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
     if project.contract_arbiter == principal:
         new["contract_arbiter"] = _arbiter_fallback(conn, project_id, removed)
     if project.coordinator == principal:
-        new["coordinator"] = "role:admin"  # its default (§6.1)
+        new["coordinator"] = "trust:admin"  # its default (§6.1)
     if project.coordinator_substitute == principal:
         new["coordinator_substitute"] = None
     # One `policy_changed` carries every policy field the removal reset (§6.2).
@@ -50,14 +50,15 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
 
 
 def _deciders(conn: Connection, project_id: str) -> list[str]:
-    """`member:<id>` of every human holding `owner` or `admin`: they name the next
+    """`member:<id>` of every human with trust `owner` or `admin`: they name the next
     holder, so each reset is addressed to them, not only broadcast."""
     humans = conn.execute(
         select(t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
             t.membership.c.human_id.is_not(None),
-            t.membership.c.role.in_(("owner", "admin")),
+            t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.role != "proxy",  # a proxy holds no seat and names none (§2.3)
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)
@@ -66,35 +67,38 @@ def _deciders(conn: Connection, project_id: str) -> list[str]:
 
 
 def _owner(conn: Connection, project_id: str) -> str:
-    """The human holding `owner` (with several, the one who joined first)."""
-    owner: str = conn.execute(
+    """The human with trust `owner` (with several, the one who joined first). None is
+    left only in an archived project whose last owner deleted the account (§2.9): there
+    the seat falls to `trust:admin`, the policy's default (§6.1)."""
+    owner: str | None = conn.execute(
         select(t.membership.c.human_id)
         .where(
             t.membership.c.project_id == project_id,
-            t.membership.c.role == "owner",
+            t.membership.c.trust == "owner",
             t.membership.c.active.is_(True),
         )
         .order_by(t.membership.c.joined_at)
         .limit(1)
-    ).scalar_one()
-    return owner
+    ).scalar()
+    return owner if owner is not None else "trust:admin"
 
 
 def _arbiter_fallback(conn: Connection, project_id: str, removed: Any) -> str:
-    """An agent's seat goes to `role:admin` while an admin is left, a human's to the
+    """An agent's seat goes to `trust:admin` while an admin is left, a human's to the
     owner: a seat a human held never lands on an agent this way (§6.12)."""
     if removed.agent_id is not None:
         admin = conn.execute(
             select(t.membership.c.id)
             .where(
                 t.membership.c.project_id == project_id,
-                t.membership.c.role == "admin",
+                t.membership.c.trust == "admin",
+                t.membership.c.role != "proxy",
                 t.membership.c.active.is_(True),
             )
             .limit(1)
         ).first()
         if admin is not None:
-            return "role:admin"
+            return "trust:admin"
     return _owner(conn, project_id)
 
 
@@ -108,7 +112,7 @@ def _reset_card_arbiters(
     actor: Actor | None,
 ) -> None:
     """An open contract card's arbiter: the policy's after the reset for an agent, the
-    owner for a human — never `role:admin`. A closed card keeps it, as a record."""
+    owner for a human — never `trust:admin`. A closed card keeps it, as a record."""
     from maity_hub.routes.tasks import audience
 
     fallback = (

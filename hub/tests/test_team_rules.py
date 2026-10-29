@@ -224,6 +224,7 @@ def test_review_within_the_team(
 class _Reader:
     def __init__(self, membership: Any) -> None:
         self.id = membership.id
+        self.trust = membership.trust
         self.role = membership.role
         self.agent_id = membership.agent_id
 

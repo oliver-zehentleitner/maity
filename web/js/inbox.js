@@ -63,6 +63,7 @@ window.Maity = window.Maity || {};
     if (!to) return null;
     if (to === "owner") return "the project's owner";
     if (to.startsWith("role:")) return "role " + to.slice(5);
+    if (to.startsWith("trust:")) return "trust " + to.slice(6);
     if (to === ctx.me.id) return "you";
     if (to.startsWith("profile_owner:")) return "you, as the agent's owner";
     return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
@@ -122,7 +123,7 @@ window.Maity = window.Maity || {};
   }
 
   function who(ctx, req, person) {
-    return [ref(ctx, req, person), " · " + person.role + (person.session_id ? " · session " + person.session_id : "")];
+    return [ref(ctx, req, person), " · " + M.trust.words(person) + (person.session_id ? " · session " + person.session_id : "")];
   }
 
   // The project a request's text belongs to, for its ids as links

@@ -1,13 +1,14 @@
 """An admin agent's management of the agent memberships below it (docs/api.md §2.3 ᵃ).
 
-An agent with the `admin` role holds `members:admin` only here: `PATCH` and `DELETE` of
-an agent membership whose role is `member` or `reviewer` and that is not its own, and
-in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`, `availability_policy`
-(§6.12) and `role` between `member` and `reviewer`. Everything a human decides stays a
-human's: a human's membership, `capabilities`, the `proxy`, `admin` and `owner` roles,
-a pause a human set (`humans_only`). A removal, and a change of the role, the pause or
-the availability policy of a reviewer, of the contract arbiter or of the coordinator,
-waits for the owner's go: it is filed as a `member_change` proposal (`proposals`),
+An agent with trust `admin` (never a proxy) holds `members:admin` only here: `PATCH`
+and `DELETE` of an agent membership whose trust is `member` or `guest` and that is not
+its own, and in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`,
+`availability_policy` (§6.12), `trust` between `member` and `guest` and `role` among
+coder, reviewer, tester, designer and ops. Everything a human decides stays a human's:
+a human's membership, `capabilities`, trust `admin` and `owner`, the role `proxy`, a
+pause a human set (`humans_only`). A removal, and a change of the trust, the role, the
+pause or the availability policy of a reviewer or tester, of the contract arbiter or of
+the coordinator, waits for the owner's go: it is filed as a `member_change` proposal (`proposals`),
 which only a human with `members:admin` answers, and applied on `go` with the agent as
 actor and the human as approver, when the change is still allowed then. Every other use
 of `members:admin` stays human-only through the scope table.
@@ -25,17 +26,22 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit
+from maity_hub.scopes import WORK_ROLES, in_admin_team
 from maity_hub.views import principal_id
 
-AGENT_ROLES = ("member", "reviewer")
+# What an admin agent manages and sets (§2.3 ᵃ).
+AGENT_TRUSTS = ("member", "guest")
+AGENT_ROLES = (*WORK_ROLES, "ops")
+# A change of these members waits for the owner's go.
+SENSITIVE_ROLES = ("reviewer", "tester")
 
 
 def check_target(mine: Membership, target: Any) -> None:
     if target.agent_id is None:
         raise humans_only("an agent never changes a human's membership")
-    if target.id == mine.id or target.role not in AGENT_ROLES:
+    if target.id == mine.id or target.trust not in AGENT_TRUSTS:
         raise forbidden(
-            "members:admin", "an admin agent manages member and reviewer agents, never itself"
+            "members:admin", "an admin agent manages member and guest agents, never itself"
         )
 
 
@@ -58,8 +64,10 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
     check_target(mine, target)
     if "capabilities" in given:
         raise humans_only("capabilities are a human's to set")
+    if body.trust is not None and body.trust not in AGENT_TRUSTS:
+        raise humans_only("an admin agent moves trust between member and guest only")
     if body.role is not None and body.role not in AGENT_ROLES:
-        raise humans_only("an admin agent moves a role between member and reviewer only")
+        raise humans_only("the proxy is the owner's interface: a human's to give")
     if "paused" in given:
         _check_pause(target, mine.principal_id)
 
@@ -98,13 +106,15 @@ def needs_consent(
     values: dict[str, Any],
     pause: tuple[bool, str | None],
 ) -> bool:
-    """A role change or a pause of a reviewer or of the contract arbiter (§2.3 ᵃ), and a
-    change of the availability policy of a reviewer, the arbiter or the coordinator,
+    """A trust or role change or a pause of a reviewer, a tester or the contract arbiter
+    (§2.3 ᵃ), and a change of the availability policy of one of them or the coordinator,
     as for a role change (§6.12)."""
     del conn
     project = mine.project
-    sensitive = target.role == "reviewer" or _is_arbiter(project, target)
-    touches = ("role" in values and values["role"] != target.role) or pause[0]
+    sensitive = target.role in SENSITIVE_ROLES or _is_arbiter(project, target)
+    touches = (
+        any(f in values and values[f] != getattr(target, f) for f in ("trust", "role")) or pause[0]
+    )
     cover_seat = sensitive or _is_coordinator(project, target)
     return bool((sensitive and touches) or (cover_seat and "availability_policy" in values))
 
@@ -125,8 +135,10 @@ def propose(
     handle = _handle(conn, target)
     if change["action"] == "remove":
         title = f"Remove {handle}"
-    elif "role" in change.get("values", {}):
-        title = f"Change {handle} to {change['values']['role']}"
+    elif {"trust", "role"} & change.get("values", {}).keys():
+        values = change["values"]
+        trust, role = values.get("trust", target.trust), values.get("role", target.role)
+        title = f"Change {handle} to {trust} {role}"
     elif "availability_policy" in change.get("values", {}):
         title = f"Change cover for {handle}"
     else:
@@ -145,7 +157,7 @@ def announce(
     new: Any,
     request_id: str | None = None,
 ) -> None:
-    """`member_changed_by_agent` to `role:owner` (§8.2), so a role change or a removal
+    """`member_changed_by_agent` to `trust:owner` (§8.2), so a role change or a removal
     by an agent reaches the human and not only the log."""
     payload: dict[str, Any] = {
         "member_id": principal_id(conn, target.id),
@@ -160,7 +172,7 @@ def announce(
         conn,
         change.project.id,
         "member_changed_by_agent",
-        ["role:owner"],
+        ["trust:owner"],
         payload,
         actor=change.actor,
         subject=("member", payload["member_id"]),
@@ -175,12 +187,14 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     request stays open."""
     from maity_hub.routes import members
 
-    if proposer is None or proposer.active is not True or proposer.role != "admin":
+    if (
+        proposer is None
+        or proposer.active is not True
+        or not in_admin_team(proposer.trust, proposer.role)
+    ):
         raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")
-    if target.role not in AGENT_ROLES:
-        raise ApiError(
-            409, "target_role_changed", f"the member is {target.role} now, not member or reviewer"
-        )
+    if target.trust not in AGENT_TRUSTS:
+        raise ApiError(409, "target_role_changed", f"the member has trust {target.trust} now")
     if proposal["action"] != "patch":
         return
     if proposal["pause"][0]:
@@ -242,8 +256,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     old = members.apply_patch(
         conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
     )
-    if "role" in old:
-        announce(conn, change, target, "role", old["role"], values["role"], request.id)
+    for field in ("trust", "role"):
+        if field in old:
+            announce(conn, change, target, field, old[field], values[field], request.id)
 
 
 # The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).

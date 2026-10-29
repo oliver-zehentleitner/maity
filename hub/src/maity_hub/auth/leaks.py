@@ -65,7 +65,7 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             conn,
             row.project_id,
             "credential_revoked",
-            [f"member:{row.agent_id}", "role:owner"],
+            [f"member:{row.agent_id}", "trust:owner"],
             payload,
             subject=subject,
         )
@@ -73,7 +73,7 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
             conn,
             row.project_id,
             "credential_in_payload",
-            [f"member:{row.owner_id}", "role:owner", "role:admin"],
+            [f"member:{row.owner_id}", "trust:owner", "trust:admin"],
             {"credential_id": row.id},
             subject=subject,
         )
@@ -210,7 +210,7 @@ def revoke_runner_credential(
             conn,
             project_id,
             "runner_credential_revoked",
-            ["role:owner"],
+            ["trust:owner"],
             {
                 "runner_id": runner_id,
                 "credential_id": credential_id,

@@ -354,7 +354,7 @@ def test_an_admin_agent_never_deletes_what_it_did_not_send(
     agent, boss = flow.agent(stored, owner), flow.agent(stored, owner)
     with migrated.begin() as conn:
         conn.execute(
-            update(t.membership).where(t.membership.c.agent_id == boss.id).values(role="admin")
+            update(t.membership).where(t.membership.c.agent_id == boss.id).values(trust="admin")
         )
     shown = put(agent, "x.txt", b"x").json()
     path = f"/projects/maintainer/maity/attachments/{shown['id']}"

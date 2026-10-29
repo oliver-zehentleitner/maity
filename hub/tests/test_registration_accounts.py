@@ -227,10 +227,14 @@ def test_the_names_and_the_terms(
     row = requested(make_client, migrated, settings)
     taken = complete(migrated, settings, row.id, handle="maintainer", terms_seen="2026-10")
     assert (taken.kind, taken.fields) == ("invalid", {"handle": "taken", "terms": "required"})
-    bad = complete(migrated, settings, row.id, handle="A", display_name="")
+    bad = complete(migrated, settings, row.id, handle="A", display_name="", terms_seen="2026-10")
     assert bad.fields == {"handle": "invalid", "display_name": "invalid", "terms": "required"}
     changed = complete(migrated, settings, row.id, terms_seen="2026-09", terms_accepted=True)
     assert changed.kind == "terms_changed" and claims == {}
+    # Terms set while the page was open (it showed none): the version asks first, ahead of
+    # what the form got wrong.
+    newly = complete(migrated, settings, row.id, handle="A", terms_seen=None)
+    assert newly.kind == "terms_changed" and claims == {}
     done = complete(migrated, settings, row.id, terms_seen="2026-10", terms_accepted=True)
     made = human(migrated, done.human_id)
     assert made.terms_version == "2026-10" and made.terms_accepted_at is not None
@@ -471,7 +475,7 @@ def test_an_issuer_demoted_during_completion_ends_the_registration(
     def demote(conn: Any) -> None:
         events.lock_project(conn, project_id(migrated))  # as a member change takes it
         conn.execute(
-            update(t.membership).where(t.membership.c.human_id == issuer.id).values(role="member")
+            update(t.membership).where(t.membership.c.human_id == issuer.id).values(trust="member")
         )
 
     assert _held(migrated, demote, lambda: complete(migrated, closed, row.id).kind) == "closed"
@@ -550,6 +554,58 @@ def test_the_admin_lists_and_approves(
     late = admin.post(f"{ADMIN}/{first.human_id}/approve")
     assert late.status_code == 409 and late.json()["error"]["details"]["from"] == "active"
     assert [i["id"] for i in admin.get(ADMIN).json()["items"]] == [second.human_id]
+
+
+def test_a_really_completed_account_is_rejected_with_everything_it_made(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """No `claims` stand-in: the completion claims the address in `notification_settings`
+    as it does for real, the account's mail state exists, and the rejection removes all
+    of it and frees the address."""
+    from maity_hub.mail import outbox
+
+    done, _ = pending_account(make_client, migrated)
+    with migrated.begin() as conn:
+        held = conn.execute(
+            select(t.notification_settings.c.address_normalized).where(
+                t.notification_settings.c.human_id == done.human_id
+            )
+        ).scalar_one()
+        assert held == "ada@example.com"
+        conn.execute(
+            t.notification_mail_state.insert().values(
+                human_id=done.human_id, stamp="x", waiting=False
+            )
+        )
+        conn.execute(
+            t.mail_item_sent.insert().values(
+                human_id=done.human_id, item="e:1", mailed_at=clock.now()
+            )
+        )
+        outbox.enqueue(
+            conn, kind="security", to="ada@example.com", subject="s", body="b\n",
+            human_id=done.human_id,
+        )  # fmt: skip
+    rejected = admin.post(f"{ADMIN}/{done.human_id}/reject", {"reason": "No."})
+    assert rejected.status_code == 200, rejected.text
+    assert human(migrated, done.human_id) is None
+    with migrated.connect() as conn:
+        for table in (
+            t.notification_settings,
+            t.notification_mail_state,
+            t.mail_item_sent,
+            t.mail_outbox,
+            t.account_record,
+            t.human_session,
+        ):
+            left = conn.execute(select(table).where(table.c.human_id == done.human_id)).all()
+            assert left == [], table.name
+        decision = conn.execute(
+            select(t.account_registration.c.status).where(
+                t.account_registration.c.human_id == done.human_id
+            )
+        ).scalar_one()
+    assert decision == "rejected"
 
 
 def test_the_admin_rejects_with_a_reason(

@@ -113,8 +113,8 @@ def test_opened_to_the_admins_the_first_claim_wins(
     admin_agent = flow.agent(make_client, owner, role="admin")
     admin = admin_human(make_client, migrated, "admin")
     request = asked(agent)
-    opened = forward(owner, request, "role:admin")
-    assert opened.json()["holder"] == "role:admin"
+    opened = forward(owner, request, "trust:admin")
+    assert opened.json()["holder"] == "trust:admin"
     assert opened.json()["forwarding"][0]["action"] == "opened"
     assert request["id"] in mine(admin) and request["id"] in mine(admin_agent)
     [event] = _events(migrated, "request_forwarded")
@@ -145,7 +145,7 @@ def test_humans_only_holds_at_every_entry(
     assert request["humans_only"] is True
     to_agent = forward(owner, request, admin_agent.id)
     assert (to_agent.status_code, reason(to_agent)) == (403, "humans_only")
-    assert forward(owner, request, "role:admin").status_code == 200
+    assert forward(owner, request, "trust:admin").status_code == 200
     taken = claim(admin_agent, request)
     assert (taken.status_code, reason(taken)) == (403, "humans_only")
     assert claim(owner, request).status_code == 403  # the owner holds no admin role
@@ -160,22 +160,22 @@ def test_a_personal_request_is_never_forwarded(
 
     agent = flow.agent(make_client, owner)
     request = {"id": _file(migrated, agent.id)}
-    assert forward(owner, request, "role:admin").status_code == 404
+    assert forward(owner, request, "trust:admin").status_code == 404
     assert claim(owner, request).status_code == 404
 
 
 def test_a_request_filed_to_the_admins_is_claimed_from_the_start(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """The reviewer's first probe: `to: role:admin` is the open pool before any forward."""
+    """The reviewer's first probe: `to: trust:admin` is the open pool before any forward."""
     agent = flow.agent(make_client, owner)
     admin = admin_human(make_client, migrated, "admin")
-    request = asked(agent, to="role:admin")
-    assert request["holder"] == "role:admin"
+    request = asked(agent, to="trust:admin")
+    assert request["holder"] == "trust:admin"
     claimed = claim(admin, request)
     assert claimed.status_code == 200, claimed.text
     assert claimed.json()["holder"] == admin.id
-    assert claimed.json()["forwarding"][0]["from"] == "role:admin"
+    assert claimed.json()["forwarding"][0]["from"] == "trust:admin"
 
 
 def test_a_forward_back_to_the_owner_named_by_its_token(
@@ -200,12 +200,12 @@ def test_a_demotion_that_commits_first_ends_the_claim(
     """The reviewer's third probe: the admin is demoted right before the lock returns."""
     agent = flow.agent(make_client, owner)
     admin = admin_human(make_client, migrated, "admin")
-    request = asked(agent, to="role:admin")
+    request = asked(agent, to="trust:admin")
     real = events.lock_project
 
     def demoted_meanwhile(conn: Any, project: str) -> Any:
         conn.execute(
-            t.membership.update().where(t.membership.c.human_id == admin.id).values(role="member")
+            t.membership.update().where(t.membership.c.human_id == admin.id).values(trust="member")
         )
         return real(conn, project)
 

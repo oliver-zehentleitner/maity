@@ -6,12 +6,12 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import avatars, clock
+from maity_hub import account_deletion, avatars, clock
 from maity_hub import tables as t
 from maity_hub.auth import passwords, second_factor, sessions
 from maity_hub.auth.caller import (
@@ -60,7 +60,7 @@ class PasswordChange(Strict):
     new: str = Field(min_length=1, max_length=1024)
 
 
-def _set_cookies(response: JSONResponse, request: Request, session_id: str, csrf: str) -> None:
+def _set_cookies(response: Response, request: Request, session_id: str, csrf: str) -> None:
     # Secure follows the scheme the request actually arrived with (§2.5).
     secure = origin_of(request).tls
     max_age = int(SESSION_ABSOLUTE.total_seconds())
@@ -115,6 +115,8 @@ async def login(body: Login, request: Request) -> JSONResponse:
             stored = row.password_hash if row is not None else passwords.DUMMY_HASH
             if not passwords.verify_password(body.password, stored) or row is None:
                 raise unauthenticated("handle or password is wrong")
+            if row.deleted_at is not None:  # a deleted account never signs in (§2.9)
+                raise unauthenticated("handle or password is wrong")
             sessions.forget_expired_addresses(conn)
             end_presented(conn, presented)
             session_id, csrf, _, state = second_factor.begin(
@@ -163,7 +165,7 @@ def end_presented(conn: Connection, presented: str | None) -> None:
 
 
 def set_session_cookies(
-    response: JSONResponse, request: Request, session_id: str, csrf: str, device: str | None
+    response: Response, request: Request, session_id: str, csrf: str, device: str | None
 ) -> None:
     """The cookies of a completed sign-in: the session's, and the device cookie when this
     browser held no value of the human yet (§2.6.5)."""
@@ -221,6 +223,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             .where(t.human.c.id == row.id)
             .values(password_hash=passwords.hash_password(body.new))
         )
+        account_deletion.withdraw(conn, row.id, "password")  # §2.9
         sessions.end_where(
             conn,
             (t.human_session.c.human_id == row.id)

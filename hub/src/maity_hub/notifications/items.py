@@ -357,6 +357,20 @@ def _request_concerns(look: Lookup, request: Any, mine: Membership, row: Any) ->
 # --- account records -----------------------------------------------------------------
 
 
+def _two_factor_title(data: dict[str, Any]) -> str:
+    """The bell's line for a change of the second factor (§18.1); a change this hub does
+    not know says that the sign-in changed, never a guess."""
+    change, by = data.get("change"), data.get("by")
+    return {
+        "enrolled": "Two-factor sign-in turned on",
+        "disabled": "Two-factor sign-in turned off",
+        "recovery_codes": "New recovery codes",
+        "recovery_code_used": "Recovery code used",
+        "reset": f"Two-factor sign-in reset by {by}",
+        "instance_off": "Two-factor sign-in turned off for this instance",
+    }.get(str(change), "Two-factor sign-in changed")
+
+
 def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
     rows = conn.execute(
         select(t.account_record).where(
@@ -410,6 +424,36 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     session_id=data.get("session_id"),
                 )
             )
+        elif row.type == "second_factor_changed":
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(_two_factor_title(data)),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/#/account/security"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
+        elif row.type == "second_factor_failed":
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        "Wrong second-factor codes after a sign-in: "
+                        f"{data.get('browser') or 'a browser'} on "
+                        f"{data.get('os') or 'an unknown system'}, {data.get('ip') or '?'}"
+                    ),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/#/account/security"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
         elif row.type == "email_address_changed":
             items.append(
                 Item(
@@ -419,6 +463,24 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
                     title="Sign-in address changed",
                     target={"type": "settings", "id": "notifications"},
                     url=_url(where, "/#/account/notifications"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
+        elif row.type == "forge_access_changed":
+            if data.get("change") not in records.FORGE_ADDED:
+                continue  # a record, no notification (§18.1)
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        f"Forge access added: {data.get('login') or 'an account'}"
+                        f" ({data.get('source')})"
+                    ),
+                    target={"type": "settings", "id": "forge"},
+                    url=_url(where, "/#/settings/forge"),
                     read=row.read_at is not None,
                     record_type=row.type,
                 )

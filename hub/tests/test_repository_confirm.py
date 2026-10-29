@@ -11,6 +11,8 @@ from sqlalchemy import Engine, select
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_two_factor import Clock, code_now, enrol, signed_in
+from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
 URL = "https://github.com/acme/maity"
 OTHER = "https://github.com/acme/private-thing"
@@ -118,3 +120,19 @@ def test_a_transfer_takes_the_confirmation_back_and_names_the_repository(
     status, code, _ = error(owner.post("/projects/anna/maity/repository/confirm", {"url": URL}))
     assert (status, code) == (403, "forbidden")
     assert anna.post("/projects/anna/maity/repository/confirm", {"url": URL}).status_code == 200
+
+
+def test_confirming_needs_a_recent_factor(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The confirmation opens the owner's grants to the repository (§2.8.4, §11.4)."""
+    human = signed_in(make_client, migrated)
+    flow.project(human, "maity", repository={"url": URL})
+    secret, _ = enrol(human, moment)
+    moment.move(minutes=11)
+    status, code, details = error(human.post(CONFIRM, {"url": URL}))
+    assert (status, code, details["reason"]) == (403, "forbidden", "step_up_required")
+    assert confirmed(human) is False
+    assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
+    assert human.post(CONFIRM, {"url": URL}).status_code == 200
+    assert confirmed(human) is True
