@@ -788,18 +788,28 @@ def test_waiters_on_a_slow_family_do_not_starve_the_request_threadpool(
     contents reads + 8 rounds of 10 s state reads). Here: a 4 s upstream, 45 waiters,
     then an unrelated sync GET /projects/widget."""
     monkeypatch.setattr(outbound, "TIMEOUT", 10.0)
-    repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
-    web.routes["/d/s.json"] = doc()
+    path = "/d/starvation.json"  # a path of its own: a read another test left is not counted
+    repo.files[".keep-the-why"] = kfile(f"{BASE}/starvation.json", "r")
+    web.routes[path] = doc()
     flow.project(owner, "widget", repository={"url": REPO})
     web.delay = 4.0
     threads = [threading.Thread(target=lambda: get(owner)) for _ in range(45)]
     for t in threads:
         t.start()
-    time.sleep(0.5)
+    # Not a fixed sleep: wait until the slow upstream read has really begun.
+    deadline = time.monotonic() + 10.0
+    while path not in web.requests:
+        assert time.monotonic() < deadline, "the family read never reached the upstream"
+        time.sleep(0.01)
     start = time.monotonic()
     status = owner.get("/projects/maintainer/widget").status_code
     waited = time.monotonic() - start
+    # An order, not a wall-clock bound: the unrelated GET has its answer while the family
+    # read is still waiting on the upstream, so it did not queue behind the waiters. The
+    # 4 s upstream leaves a slow runner seconds for the GET, not a fraction of one.
+    reading = web.in_flight >= 1 and any(t.is_alive() for t in threads)
     for t in threads:
         t.join()
     print("STARVATION unrelated GET waited", round(waited, 2), "s, status", status)
-    assert waited < 1.0
+    assert status == 200
+    assert reading, f"the unrelated GET waited {waited:.2f} s, until the family read ended"
