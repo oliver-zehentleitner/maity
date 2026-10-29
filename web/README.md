@@ -246,8 +246,9 @@ too.
    an entry down the list in this tab only and sends nothing: the hub has
    no deferred state, the request stays open. A **personal request**
    (`docs/api.md` §7: to you as the owner of an agent profile, not to the
-   project) is only in everything waiting (`/all`): labelled
-   **Personal** with its project's name and no link into the project, it
+   project) is in everything waiting (`/all`) and, when it is about a
+   project, in that project's inbox too: labelled **Personal** with its
+   project's name and no link into the project, it
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
    personal ones come first. Without any membership, `/all` still lists
@@ -1506,28 +1507,18 @@ agent. The assigner's warning awaits card history; the creator is not
 assumed to be the assigner.
 
 
-**Waiting for you** combines open requests with unread activity, across
-projects and in each project inbox. Request-created notifications fold into
-an existing open request. Conversations occupy one row with their unread
-count and newest title; request updates (a pending registration and a
-disabled address among them), mentions and account alerts have separate
-groups, and nothing else is here. Message content
-is not shown. The project filter applies to every group.
-
-Unread items are fetched in pages of 50, at most four (the 200 rows the
-list shows), however large the backlog; when more are unread, or more than
-200 rows result, **More notifications** and the bell's **All
-notifications** link open a paginated list. The inbox is drawn first and
-does not wait for this list, which says "Reading what else is new…" until
-it has read; stream events within 0.4 s are one refresh. Links use the dashboard's existing target-to-route mapping.
-Opening a chat marks its newest notification read, moving its conversation
-read mark. Opening a security alert never confirms it; use **This was me**.
-
-The visible waiting page and browser pop-ups share one notifications
-long-poll. Waiting activity updates even when pop-ups are off and preserves
-request drafts. A hub without notifications quietly keeps requests alone;
-a failed read keeps the last activity and shows an error. Opaque position
-rejection obtains a fresh head without marking anything read.
+**The inbox is the requests alone** (the maintainer, 2026-10-29), across
+projects and in each project. A project's inbox also lists the open
+personal requests about that project (`GET /requests`, labelled
+Personal, linking into nothing), so it shows exactly what its tab counts
+(`docs/api.md` §18.2). The history of answered and closed requests is the
+**Show** filter. Unread activity is on the bell (its latest items, unread
+ones in bold with a dot, **Mark all read**), conversations on the **Chat**
+button, and every notification on **All notifications**
+(`/notifications`): paged by the hub's cursor, an unread one in bold with
+a dot and said to a screen reader, **Mark all read** marking up to the head
+of the first page (§18.3); a sign-in or address alert stays unread until
+confirmed with **This was me**.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other

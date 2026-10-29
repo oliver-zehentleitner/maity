@@ -1348,6 +1348,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }
 
+/* All notifications: unread in bold with a dot, as on the bell. */
+.waiting-items li.unread a { font-weight: 600; }
+.waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
+
 /* Your agents (js/agents-page.js). */
 .agent-cards, .agent-memberships { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .agent-memberships { gap: 4px; margin: 8px 0; }

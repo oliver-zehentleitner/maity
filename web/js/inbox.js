@@ -97,7 +97,7 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
+    ctx.scope === "all" || req.personal ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
     h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
     h("span", { class: "title" }, req.title),
@@ -149,15 +149,15 @@ window.Maity = window.Maity || {};
     const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all" && req.personal && req.org && !req.project
+      req.personal && req.org && !req.project
         ? [h("dt", null, "Organisation"), h("dd", null, "@" + req.org.handle + " — a personal request: for you, not for a project")]
         : null,
       // A transfer into an organisation: the project, and the organisation it would move into.
-      ctx.scope === "all" && req.personal && req.org && req.project
+      req.personal && req.org && req.project
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as an owner of @" + req.org.handle),
           h("dt", null, "Into"), h("dd", null, "@" + req.org.handle)]
         : null,
-      ctx.scope === "all" && req.personal && !req.org && names.project(req)
+      req.personal && !req.org && names.project(req)
         ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]
         : null,
       ctx.scope === "all" && !req.personal
@@ -303,9 +303,21 @@ window.Maity = window.Maity || {};
 
   async function load(ctx) {
     if (ctx.scope === "project") {
-      const requests = await M.api.getAll(ctx.base + "/requests?status=all");
+      // The project's own requests, and the open personal requests about it
+      // (§7: a project's list never holds them, the tab's count does, §18.2):
+      // the list shows what the tab counts.
+      // A failed read of them is said in the list's status line (load's
+      // personalError), never an empty list short of the tab.
+      let personalError = null;
+      const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=all"),
+        M.api.getAll("/requests").then((r) => r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug),
+          (err) => { personalError = err; return []; })]);
       requests.items.forEach((r) => { r.slug = ctx.slug; });
-      return requests.items;
+      personal.forEach((r) => { r.slug = ctx.slug; });
+      await Promise.all(personal.map(readInFull));
+      const all = requests.items.concat(personal);
+      all.personalError = personalError;
+      return all;
     }
     const requests = await M.api.getAll("/requests");
     // A personal request may have no project (an organisation's invitation, §6.26).
@@ -349,7 +361,7 @@ window.Maity = window.Maity || {};
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
-    let activity = null;
+    if (items.personalError) listStatus.fail("Your personal requests about this project could not be read: ", items.personalError);
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
@@ -370,7 +382,6 @@ window.Maity = window.Maity || {};
     }
 
     function draw() {
-      if (activity) activity.draw();
       const shown = ordered();
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
@@ -386,7 +397,8 @@ window.Maity = window.Maity || {};
       const entry = (req) => {
         const expanded = keyOf(req) === ui.current;
         return h("li", { class: "entry" + (expanded ? " current" : "") + (req.status !== "open" ? " done" : ""), "data-request": req.id },
-          ctx.scope === "all"
+          // A personal request carries its label in a project's inbox too (§18.2).
+          ctx.scope === "all" || req.personal
             ? h("div", { class: "entry-row" }, projectBadge(ctx, req, names), entrySummary(ctx, req, names, expanded, () => {
               ui.current = expanded ? null : keyOf(req);
               draw();
@@ -495,6 +507,5 @@ window.Maity = window.Maity || {};
         .map((li) => li.querySelector("button.entry-head"))[0];
       if (head) window.setTimeout(() => head.focus(), 0);
     }
-    activity = M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);
