@@ -22,7 +22,7 @@ case "$*" in
   *"logs"*)
     [ "$FAIL" = logs_unreadable ] && { echo "error: pod gone" >&2; exit 1; }
     [ "$FAIL" = dump_retry ] && echo "pg_dump: error: connection to server failed: Connection refused"
-    [ "$FAIL" = dump_nomark ] || echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    [ "$FAIL" = dump_nomark ] || echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709 attachments 10240"
     exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)

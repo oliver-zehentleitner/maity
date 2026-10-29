@@ -1,0 +1,8 @@
+# The volume for the hub's local attachment store (docs/api.md §8.7), mounted by the hub through the chart's
+# `attachments.existingClaim` and read by the backup Job (backup.yaml). Apply it before the hub and before backup.yaml:
+# a pod that names a claim that does not exist stays Pending. 10 GiB against the default quota of 1 GiB per project.
+# Like the backups, the volume is on the same disk as the database.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: maity-attachments, namespace: maity}
+spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 10Gi}}}

@@ -244,7 +244,7 @@ rm pg-password database-url
 
 ```sh
 kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
-  -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
 
@@ -279,12 +279,17 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
   the line `dump ok: /backups/maity-<UTC time>.dump <bytes>`: `kubectl -n maity logs job/<job>`.
+- **The attachment files are backed up with the database.** They are not in it (docs/api.md §8.7), so the same Job tars the volume
+  `maity-attachments` into `maity-<UTC time>.attachments.tar` next to `maity-<UTC time>.dump`, with the same time stamp and the same rotation, and the
+  `dump ok:` line carries both sizes. A restore of the database alone leaves messages whose files are missing.
 - **To restore:**
   1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
   2. Feed the dump to `pg_restore --clean --if-exists -d maity` inside
      the postgres pod
      (`kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump`).
-  3. Scale the hub back to 1.
+  3. Put the files of the same night back, replacing the volume's contents:
+     `sed 's/@TS@/<the time stamp of the dump>/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -`, wait for the Job, delete it.
+  4. Scale the hub back to 1.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)).
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new

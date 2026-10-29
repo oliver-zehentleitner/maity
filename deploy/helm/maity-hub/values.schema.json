@@ -367,6 +367,27 @@
           "minLength": 1
         }
       }
+    },
+    "attachments": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "existingClaim": {
+          "type": "string"
+        },
+        "mountPath": {
+          "type": "string",
+          "pattern": "^/.+"
+        },
+        "quotaBytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1024,
+          "maximum": 1125899906842624
+        }
+      }
     }
   },
   "definitions": {

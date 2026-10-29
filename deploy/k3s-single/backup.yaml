@@ -1,4 +1,4 @@
-# A daily pg_dump into its own volume, keeping the newest 14. The volume is on
+# A daily pg_dump into its own volume, keeping the newest 14, and a tar of the attachment volume with the same time stamp. The volume is on
 # the same disk as the database: copy the dumps off the instance as well
 # (docs/install/README.md, "Backups").
 apiVersion: v1
@@ -23,6 +23,27 @@ spec:
           restartPolicy: Never
           automountServiceAccountToken: false
           securityContext: {runAsUser: 999, runAsGroup: 999, fsGroup: 999, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+          # The attachment files belong to the hub's user (10001, directories 0700), which the dump's user (999) cannot read: a first
+          # container of that user tars them and hands the time stamp on, so that the dump and the tar of one night belong together.
+          initContainers:
+            - name: attachments
+              image: postgres:17.10
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  ts=$(date -u +%Y%m%dT%H%M%SZ)
+                  t=/backups/maity-$ts.attachments.tar
+                  trap 'rm -f "$t.part"' EXIT
+                  # tar exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile): that is no failure
+                  tar -cf "$t.part" -C /attachments . || [ "$?" = 1 ]
+                  test -s "$t.part"
+                  mv "$t.part" "$t"
+                  printf %s "$ts" > /ts/stamp
+              securityContext: {runAsUser: 10001, runAsGroup: 10001, allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+              volumeMounts:
+                - {name: b, mountPath: /backups}
+                - {name: a, mountPath: /attachments, readOnly: true}
+                - {name: ts, mountPath: /ts}
           containers:
             - name: dump
               image: postgres:17.10
@@ -32,7 +53,9 @@ spec:
               command: ["/bin/sh", "-ec"]
               args:
                 - |
-                  f=/backups/maity-$(date -u +%Y%m%dT%H%M%SZ).dump
+                  ts=$(cat /ts/stamp)
+                  f=/backups/maity-$ts.dump
+                  t=/backups/maity-$ts.attachments.tar
                   # One command per line: under `sh -e` a failure inside `a && b` does not stop the script, and
                   # the Job then reported success for a dump that never happened (an empty .part and "Complete").
                   trap 'rm -f "$f.part"' EXIT
@@ -45,10 +68,18 @@ spec:
                   done
                   test -s "$f.part"
                   mv "$f.part" "$f"
-                  find /backups -name 'maity-*.dump.part' -mmin +60 -delete
+                  test -s "$t"
+                  find /backups -name 'maity-*.part' -mmin +60 -delete
                   ls -1t /backups/maity-*.dump | tail -n +15 | xargs -r rm --
+                  # a tar goes with its dump
+                  for x in /backups/maity-*.attachments.tar; do [ -e "${x%.attachments.tar}.dump" ] || rm -f -- "$x"; done
                   ls -l /backups
-                  echo "dump ok: $f $(stat -c %s "$f")"
+                  echo "dump ok: $f $(stat -c %s "$f") attachments $(stat -c %s "$t")"
               securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-              volumeMounts: [{name: b, mountPath: /backups}]
-          volumes: [{name: b, persistentVolumeClaim: {claimName: maity-backups}}]
+              volumeMounts:
+                - {name: b, mountPath: /backups}
+                - {name: ts, mountPath: /ts, readOnly: true}
+          volumes:
+            - {name: b, persistentVolumeClaim: {claimName: maity-backups}}
+            - {name: a, persistentVolumeClaim: {claimName: maity-attachments, readOnly: true}}
+            - {name: ts, emptyDir: {sizeLimit: 1Mi}}

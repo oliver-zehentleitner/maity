@@ -285,3 +285,38 @@ that of the mail settings and cannot be repaired by setting the variable again.
 - Making it a required value: an install without webhooks or stored passwords does not need it, and the features that do refuse
   loudly (`secret_key_missing`).
 
+
+## Attachments on the k3s setup: a volume the chart mounts, and a tar in the same backup run
+
+**Id:** 9111cb2f-89b0-4088-8c92-2fa5c1348ec7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request to switch attachments on in production, as passed on by the coordinating agent (2026-10-29), docs/api.md §8.7 and hub/README.md (`MAITY_ATTACHMENT_DIR`), the store's code (`attachment_store.py`: project directories 0700, files written whole)
+**See:** kubernetes.md#mail-the-signing-key-and-the-smtp-password-come-from-secrets-by-reference-the-rest-are-plain-values — f1c9c8ad-96ad-408d-b536-fdf027c5fe35 — as of 2026-10-29
+**Revisit when:** the store moves to an object store (`s3`), or the volume outgrows the node's disk
+
+`deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath` and
+an optional `quotaBytes`), mounts it into the hub **and** the migrate Job and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
+start and the migrate Job reads the same configuration. The quota stays at the hub's default of 1 GiB per project.
+
+The files are not in the database, so the nightly backup takes them along: an init container of the backup Job, running as the hub's user (10001), tars
+the volume into `maity-<time stamp>.attachments.tar` and hands the time stamp to the dump container, which writes `maity-<time stamp>.dump`, rotates
+both together and ends with `dump ok: <dump> <bytes> attachments <bytes>`. `helm-upgrade.sh` still asks for the `dump ok:` line, so a missing or empty
+tar stops an upgrade like a missing dump. `restore-attachments.yaml` puts one night's files back and replaces the volume's contents.
+
+**Reason:** the hub creates the project directories with mode 0700 under its own user, which the dump's user (999) cannot enter; a second container of the
+hub's user is the way to read them without changing the hub or the ownership of the dumps. One run, one time stamp and one marker mean that a dump and
+the files of the same night belong together and that "the dump is ok" cannot be true with the files missing, which a restore without them would hide
+(messages that name files that are not there). `tar` exits 1 when a file changed or vanished while it was read (an upload that finished meanwhile);
+that is tolerated, any other exit fails the Job. The volume is on the node's disk like the database and the backups: copying the backups off the host
+stays necessary.
+
+**Rejected alternatives:**
+- `extraVolumes`, `extraVolumeMounts` and `extraEnv` in the values file: it works, and it is how a release forgets the volume at the next upgrade
+  with other values; the files would then be orphaned and every attachment call would answer `attachments_not_configured`.
+- A second CronJob for the files: two time stamps, and no single marker for "the backup is complete".
+- Running the whole backup as the hub's user: it would change who owns the dumps and run `pg_dump` as a user the database setup does not know.
+- Opening up the hub's file modes for the group (a change in the hub for the backup's sake): the 0700 directories are deliberate.
+- Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
+

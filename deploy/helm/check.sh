@@ -51,6 +51,7 @@ grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false s
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
+grep -q "MAITY_ATTACHMENT\|name: attachments" <<<"$out" && bad "minimal: attachment settings without a claim" || ok "minimal: no attachment settings"
 grep -q "MAITY_SECRET_KEY" <<<"$out" && bad "minimal: an instance key without a Secret" || ok "minimal: no instance key"
 grep -q "MAITY_SMTP\|MAITY_MAIL_SIGNING_KEY" <<<"$out" && bad "minimal: mail env without mail values" || ok "minimal: no mail env"
 grep -q "MAITY_TRUSTED_PROXIES" <<<"$out" && bad "minimal: trusted proxies unset but rendered" || ok "minimal: no trusted proxies"
@@ -63,6 +64,9 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"'
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
+expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \
+    "name: MAITY_ATTACHMENT_DIR" 'value: "/data/attachments"' 'value: "5368709120"' 'claimName: "maity-attachments"' \
+    'mountPath: "/data/attachments"'
 expect "ingress: the instance key from a Secret by reference" "$out" "name: MAITY_SECRET_KEY" "key: secret-key"
 expect "ingress: mail from Secrets by reference and plain values" "$out" \
     "name: MAITY_MAIL_SIGNING_KEY" "name: MAITY_SMTP_PASSWORD" "key: smtp-pass" 'value: "smtp.example.org"' \
@@ -75,6 +79,14 @@ out_mig="$(render -f "$minimal" --set mail.host=smtp.example.org --set mail.pass
 out_sk="$(render -f "$minimal" --set secretKey.existingSecret=s)"
 [ "$(grep -c 'name: MAITY_SECRET_KEY' <<<"$out_sk")" = 2 ] && ok "the instance key reaches the hub and the migrate Job, once each" \
     || bad "the instance key is not in both the hub and the migrate Job"
+out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
+[ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 2 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 2 ] \
+    && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 2 ] \
+    && ok "the attachment volume reaches the hub and the migrate Job, once each, at the default path" \
+    || bad "the attachment volume is not in both the hub and the migrate Job"
+grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "no quota set but MAITY_ATTACHMENT_QUOTA rendered" || ok "no quota unless set"
+render -f "$minimal" --set attachments.mountPath=relative >/dev/null 2>&1 && bad "a relative attachments.mountPath is accepted" || ok "a relative attachments.mountPath is refused by the schema"
+render -f "$minimal" --set attachments.quotaBytes=10 >/dev/null 2>&1 && bad "a quota below 1024 bytes is accepted" || ok "a quota below 1024 bytes is refused by the schema"
 out_nopw="$(render -f "$ingress" --set mail.passwordSecret.existingSecret=)"
 grep -q "MAITY_SMTP_PASSWORD" <<<"$out_nopw" && bad "ingress: a password without a Secret" || ok "ingress: no password env without a Secret"
 out_nohost="$(render -f "$ingress" --set mail.host=)"

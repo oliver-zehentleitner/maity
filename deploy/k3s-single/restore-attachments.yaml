@@ -1,0 +1,34 @@
+# Puts the attachment files of one night back (docs/install/README.md, "Backups on this setup"). NOT applied as it stands: @TS@ is the
+# time stamp of the dump you restored (the part of maity-<time stamp>.dump), and the hub is scaled to 0 first. It REPLACES everything in the
+# attachment volume with the contents of that night's tar, so that the files match the restored database:
+#   sed 's/@TS@/20261029T135427Z/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -
+#   kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=600s && kubectl -n maity delete job restore-attachments
+# With the placeholder left in, the Job fails at the first line and changes nothing.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: restore-attachments, namespace: maity}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: restore
+          image: postgres:17.10
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              t=/backups/maity-@TS@.attachments.tar
+              test -s "$t"
+              find /attachments -mindepth 1 -delete
+              tar -xf "$t" -C /attachments
+              echo "restored: $t into /attachments"
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: b, mountPath: /backups, readOnly: true}
+            - {name: a, mountPath: /attachments}
+      volumes:
+        - {name: b, persistentVolumeClaim: {claimName: maity-backups}}
+        - {name: a, persistentVolumeClaim: {claimName: maity-attachments}}
