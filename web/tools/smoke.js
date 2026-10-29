@@ -3395,7 +3395,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ydBox() && btn(ydBox(), "Export my data") && text(ydBox()).includes("Delete my account"), "your data: the account has the export and the deletion");
   btn(ydBox(), "Export my data").click(); for (let k = 0; k < 4; k++) await tick();
   const ydForm = () => ydBox().querySelector("form.step-up");
-  expect(ydForm() && text(ydForm()).includes("second factor") && !ydSaved.length, "your data: the export asks for a code where the hub wants the step-up");
+  expect(ydForm() && text(ydForm()).includes("Exporting your data needs your second factor") && !ydSaved.length,
+    "your data: the export asks for a code where the hub wants the step-up, naming the action");
   byId("step-up-step_up_required").value = "000000"; ydForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(ydForm() && text(ydForm()).includes("That code is not valid.") && !ydSaved.length, "your data: a wrong code is said, nothing exported");
   byId("step-up-step_up_required").value = "123456"; ydForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
@@ -3450,6 +3451,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // A hub whose machine form lists neither route (§2.9 not deployed yet): said quietly, nothing offered.
+  const ydHas = win.Maity.api.hubHas;
+  win.Maity.api.hubHas = (m, p) => (p === "/me/export" || p === "/me/deletion" ? Promise.resolve(false) : ydHas(m, p));
+  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  expect(ydBox() && !btn(ydBox(), "Export my data") && !btn(ydBox(), "Delete my account") && text(ydBox()).includes("This hub cannot export your data yet.")
+    && text(ydBox()).includes("This hub cannot delete an account yet."), "your data: a hub without the routes offers neither, said quietly");
+  win.Maity.api.hubHas = () => Promise.reject(new Error("unreadable"));
+  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
+  expect(btn(ydBox(), "Export my data") && btn(ydBox(), "Delete my account"), "your data: a machine form that cannot be read keeps both");
+  win.Maity.api.hubHas = ydHas;
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];

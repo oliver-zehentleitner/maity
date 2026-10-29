@@ -1682,6 +1682,8 @@ window.Maity = window.Maity || {};
       "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
       "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
       "/api/v1/me/conversations": { get: {} },
+      "/api/v1/me/export": { get: {} },
+      "/api/v1/me/deletion": { post: {}, delete: {} },
       "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },

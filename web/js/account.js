@@ -227,7 +227,7 @@ window.Maity = window.Maity || {};
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     // Your data (§2.9): the export and the deletion of the account.
-    const yourData = M.yourData ? M.yourData.section(ctx) : null;
+    const yourData = M.yourData ? await M.yourData.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
     // The theme (js/theme.js): signed in, it is chosen here, not in the
     // header (the maintainer's instruction). Per browser, as before: what

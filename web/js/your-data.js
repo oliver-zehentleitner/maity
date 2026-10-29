@@ -39,7 +39,7 @@ window.Maity = window.Maity || {};
       go.disabled = true;
       status.busy("Preparing your export…");
       try {
-        const doc = await M.stepUp.run(() => M.api.get("/me/export"), ask);
+        const doc = await M.stepUp.run(() => M.api.get("/me/export"), ask, "Exporting your data");
         const day = String(doc.exported_at || new Date().toISOString()).slice(0, 10);
         M.yourData.save("maity-export-" + ctx.me.handle + "-" + day + ".json", JSON.stringify(doc, null, 2));
         status.done();
@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
         settle();
         status.busy("Asking…");
         try {
-          const answer = await M.stepUp.run(() => M.api.post("/me/deletion", { confirm: ctx.me.handle }), ask);
+          const answer = await M.stepUp.run(() => M.api.post("/me/deletion", { confirm: ctx.me.handle }), ask, "Deleting your account");
           ctx.me.deletion = (answer && answer.deletion) || null;
           redraw("We sent a mail to your verified address. Your account is deleted only when you follow its link.");
         } catch (err) {
@@ -123,16 +123,22 @@ window.Maity = window.Maity || {};
       form);
   }
 
-  // The section for a human; null for an agent.
-  function section(ctx) {
+  // The section for a human; null for an agent. Each part only where the
+  // hub's machine form lists its route; a hub without it is said quietly, and
+  // a machine form that cannot be read keeps the parts (views.md).
+  async function section(ctx) {
     if (ctx.me.kind !== "human") return null;
+    const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
+    const [exports, deletes] = await Promise.all([has("GET", "/me/export"), has("POST", "/me/deletion")]);
     const heading = h("h3", { id: "your-data-heading", tabindex: "-1" }, "Your data");
     const ask = h("div", { class: "step-up-slot" });
     ask.hidden = true;
     const note = h("div");
     const body = h("div");
     const draw = (words) => {
-      append(clear(body), exportPart(ctx, ask), deletionPart(ctx, ask, draw));
+      append(clear(body),
+        exports ? exportPart(ctx, ask) : M.dom.notOnHub("This hub cannot export your data yet."),
+        deletes ? deletionPart(ctx, ask, draw) : M.dom.notOnHub("This hub cannot delete an account yet."));
       clear(note);
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
     };

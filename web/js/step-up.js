@@ -18,7 +18,7 @@ window.Maity = window.Maity || {};
   const ASK = {
     reauthentication_required: {
       title: "Confirm with your password",
-      hint: "This change needs your password again on this browser (it counts for 10 minutes).",
+      hint: (what) => what + " needs your password again on this browser (it counts for 10 minutes).",
       label: "Password", type: "password", autocomplete: "current-password",
       prove: (value) => M.api.post("/auth/reauthenticate", { password: value }),
       wrong: (err) => (err.code === "invalid" && err.details && err.details.fields && err.details.fields.password
@@ -26,7 +26,7 @@ window.Maity = window.Maity || {};
     },
     step_up_required: {
       title: "Confirm with your second factor",
-      hint: "Enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
+      hint: (what) => what + " needs your second factor: enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
       label: "Code", type: "text", autocomplete: "one-time-code",
       // A code may be typed with spaces ("482 913"): six digits without them are a code (§2.8.1).
       prove: (value) => {
@@ -41,7 +41,7 @@ window.Maity = window.Maity || {};
   // question still open in the slot (another call's) is cancelled first, so
   // that call does not wait for an answer that can no longer come.
   const open = new WeakMap();
-  function ask(slot, reason) {
+  function ask(slot, reason, what) {
     const a = ASK[reason];
     if (open.has(slot)) open.get(slot)();
     return new Promise((resolve, reject) => {
@@ -73,7 +73,7 @@ window.Maity = window.Maity || {};
         },
       },
       h("h4", { class: "step-up-title" }, a.title),
-      h("p", { class: "hint" }, a.hint),
+      h("p", { class: "hint" }, a.hint(what || "This")),
       h("label", { for: id }, a.label), input, submit,
       h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); } }, "Cancel"),
       error);
@@ -83,14 +83,15 @@ window.Maity = window.Maity || {};
     });
   }
 
-  async function run(call, slot) {
+  // what: the action in words, as the question names it ("Exporting your data").
+  async function run(call, slot, what) {
     for (let i = 1; ; i++) {
       try {
         return await call();
       } catch (err) {
         const reason = err && err.code === "forbidden" && err.details && err.details.reason;
         if (!ASK[reason] || i >= TRIES) throw err;
-        await ask(slot, reason);
+        await ask(slot, reason, what);
       }
     }
   }
