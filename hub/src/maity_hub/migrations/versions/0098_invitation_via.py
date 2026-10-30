@@ -5,7 +5,7 @@ the server default fills the invitations that exist when this runs, which were a
 on the public URL.
 
 Revision ID: 0098
-Revises: 0088
+Revises: 0089
 Create Date: 2026-10-30
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0098"
-down_revision: str | None = "0088"
+down_revision: str | None = "0089"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
