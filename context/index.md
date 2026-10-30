@@ -23,7 +23,7 @@ Why Maity is built the way it is.
 ## 9
 
 ## A
-- [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere; presence is a side effect of the calls, no heartbeat endpoint or events
+- [architecture.md](architecture.md) — production moves to OVHcloud Frankfurt while Vultr becomes the test system; database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere; presence is a side effect of the calls, no heartbeat endpoint or events
 - [attachments.md](attachments.md) — files on messages: stored by the hub, images re-encoded and shown inline, every other file an inert download; read by exactly who reads the message; untrusted input for agents; fetched by the CLI into `./maity-files/`, never the working directory; pending uploads capped per member; while attachments are off delete is refused too, the upload keeps its own checks first
 
 ## B

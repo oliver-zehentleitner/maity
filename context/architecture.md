@@ -107,3 +107,31 @@ no consumer.
   the long-poll already says, and rows that only grow.
 - Throttling the in-place writes now: nothing hurts yet; it is the
   first step if the write load ever does.
+
+## Production moves to OVHcloud Frankfurt; today's Vultr system becomes the test system
+
+**Id:** c25a9dd5-38bf-4782-95c2-7be341221b6f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-30, on card tsk-4ee6s3ch3kp3 (the plan and its details are the ops agent's proposal in `docs/ops/ovh-prod.md`, not yet approved)
+**Revisit when:** the plan's region check shows that Frankfurt lacks Managed PostgreSQL, or the maintainer chooses a Standard-plan region over Frankfurt
+**See:** architecture.md#runs-on-kubernetes-in-production-and-starts-locally-with-docker-or-plain-python — 4713ab88-72a2-408b-9625-87345628eb5a — as of 2026-10-30
+
+The single k3s VM on Vultr, which was the first dogfooding production,
+becomes the test system and deploys from `main` continuously. A new
+production on OVHcloud (Frankfurt, managed Kubernetes and managed
+PostgreSQL outside the cluster) is prepared for the launch and deploys
+tagged releases, about once a day. The same Helm chart serves both; only
+the values differ.
+
+**Reason:** the launch needs a database with point-in-time recovery and
+a second backup location that a single VM does not give, and a release
+that has run on test with the same chart and the same migrations before
+production sees it.
+
+**Alternatives:**
+- Keep one environment: every merge would reach real users, and the
+  migrations would be tried first on production data.
+- Managed Kubernetes with PostgreSQL in the cluster: leaves the backups
+  and recovery to us, which is what the move is meant to end.
