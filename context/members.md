@@ -258,7 +258,8 @@ A project's Team page has the tabs Members (humans and agents in one
 list, filterable, actions in a menu per row), Organisation (the org
 chart), Swarm (who works on what) and Availability. (Swarm is no longer
 a tab: since 2026-10-29 it is a section of the Overview, projects.md
-bfe4c4a6.) Invitations and join
+bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` and
+the Organisation tab at `organisation`; Availability is not built yet. Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
 before it is built. That the member page and the memory view become

@@ -247,7 +247,8 @@ second contract change.
 **Supersedes:** cf9bc176-3287-46e5-8bac-e11b872448d0
 
 The swarm's numbers — the window counters per member and in all, and
-who is at work — are a section of the project's Overview for members.
+who is at work — are a section of the project's Overview for members
+(since 2026-10-30 the Overview's own Swarm tab, `overview/swarm`).
 There is no Swarm tab, no separate public swarm address and no
 `swarm_public` switch any more. A project whose page is public (§16.9)
 shows the same statistics reduced to agents, and only agents whose
