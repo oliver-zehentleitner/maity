@@ -77,6 +77,41 @@ or factored out, and every later route added to the main app would have to
 be kept off the join host deliberately; with the rewrite, nothing but the
 two token paths can be reached there by construction.
 
+## An invitation's link on the join host is answered by the join router with no lookup; its host is stored on the invitation
+
+**Id:** 63ff4653-7a66-4c81-a178-1d5f8ce6bda0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of card tsk-nq3fjd1x6qb1 against `docs/api.md` §1.1, §3.4 (#675), 2026-10-30; the contract entry is `context/join.md` cb26f4f4
+**See:** https://github.com/oliver-zehentleitner/maity — cb26f4f4-ac8a-4a65-889d-a45896810a0e — as of 2026-10-30
+**Revisit when:** a second path is added to the join host, or an invitation is to be shown on the join host itself
+
+`join_host.route` answers `GET /i/{token}` (`INVITE_PATH`, 22 characters of `[A-Za-z0-9_-]`) with
+a `302` to the public `/invite/{token}` before anything else, in the same place that answers
+every other join-host path, so the route is never reached and no statement is sent to the
+database: a live, a used and an unknown token get the same answer by construction. The
+request log masks the segment after `/i/` on the join host only (`_JOIN_INVITE` in
+`middleware._logged_path`), ahead of the first-segment mask, which would otherwise print
+`/…/{token}`. The invitation stores which host its link was built on (`invitation.via`,
+migration 0098, `join` or `public`, default `public` for the rows that exist), because the
+`GET` list is to tell the inviter which link went out and the `url` itself is not kept.
+
+**Reason:** the contract says the join host looks nothing up and the page on the public host
+keeps its one `not_found`; answering from the router that already decides what the join
+host serves keeps that in one place and makes "no lookup" a property of the code, not of a
+route that has to stay careful. The column is the same as `join_link.via`, for the same
+reason.
+
+**Rejected alternatives:**
+- Rewriting `/i/{token}` to the public invitation page, as the agent join is rewritten: the
+  page would then run on the join host, which has no session and is to set no cookie.
+- Masking `/i/` with the other token patterns (`_TOKEN_PATHS`, every host): on the public
+  host `/i/…` has no token to hide, and the join host's own patterns are the ones that
+  apply only there.
+- Deriving `via` from nothing and not listing it: the inviter could not see which link
+  went out, which §3.4 asks for.
+
 ## The join host is matched on the hostname alone, failing closed
 
 **Id:** 0db8ec23-5525-4884-9df4-369fcd3973c2
