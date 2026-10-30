@@ -504,8 +504,9 @@ too.
    the cards it holds, **Chat** where one may (as on the list) and **Actions ▾**, which
    only leads to where each action is done: **Manage on Members** for an admin
    (`?manage=<id>`), **Manage on Agents** for the agent's owner; no menu where neither
-   applies — then tabs: **Activity** (what it did among the project's latest 200 events,
-   newest first), **Cards** (held, then assigned, each to the board), **Briefing** (read),
+   applies — then tabs: **Activity** (its newest 50 events in the project, newest first,
+   read within the hub's latest 5000 events, all projects counted, and
+   saying so when that window cut something), **Cards** (held, then assigned, each to the board), **Briefing** (read),
    **Sessions & credentials** (the instances; the credentials for an admin or the owner,
    without Revoke). An id that is no member here is said. On a phone the header stacks
    and its buttons take the full width.
@@ -797,8 +798,9 @@ too.
       events: there a removed chat message cannot be told from a removed
       project message.
     - The hub has no message listing yet (§8.8 is in the contract): the
-      view reads the project's latest 5000 events with `wait=0`, page by
-      page, and keeps the messages; when the log is longer it says older
+      view reads the project's events within the hub's latest 5000 (the
+      `seq` counts all projects) with `wait=0`, page by page, and keeps
+      the messages; when the log is longer it says older
       ones are not read. A cursor that does not move stops the read with
       an error. New messages, removals and deleted files arrive with the
       project's feed and change the list in place.

@@ -2421,7 +2421,9 @@ latest events counted in that project. The member page's Activity
 therefore pages through the project's feed from the hub's latest 5000
 `seq` forward, as the Messages view always did (one shared scan,
 `M.recentEvents`), keeps the member's own events that are not redacted,
-and shows the newest 50. Where the window cut something, both views say
+and shows the newest 50; each opening of the page reads up to 26 pages
+of 200, a cost bounded by the window, not by history. Where the window
+cut something, both views say
 it counts the hub's latest 5000 events, all projects counted, so a quiet
 member in a busy hub reads as cut, not as idle.
 
