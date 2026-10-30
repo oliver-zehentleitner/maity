@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -17,6 +18,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     clock,
+    cover,
     events,
     idempotency,
     inbox,
@@ -30,8 +32,9 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
@@ -228,6 +231,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
+        "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -495,8 +499,6 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    from dataclasses import replace
-
     return replace(mine, project=lock_project(conn, mine.project.id))
 
 
@@ -622,7 +624,15 @@ def _filtered(
             return list(rows)
         return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
     target = _parse_to(conn, mine, to)
-    return [r for r in rows if inbox.addressee_of(r) == target and inbox.may_read(conn, r, mine)]
+    # A member id alone also names the instance addresses of its team: the team reads them.
+    whole_team = target.kind == "member" and target.instance is None
+    return [
+        r
+        for r in rows
+        if (replace(inbox.addressee_of(r), instance=None) if whole_team else inbox.addressee_of(r))
+        == target
+        and inbox.may_read(conn, r, mine)
+    ]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
@@ -941,6 +951,17 @@ def _refuse_unless_open(row: Any) -> None:
         )
 
 
+def _step_up_for_a_transfer(
+    conn: Connection, request: Request, caller: Caller, row: Any, body: Any
+) -> None:
+    """The `go` that moves a project is as sensitive as the transfer that asked for it
+    (§2.8.4); a `no` changes nothing and is not asked."""
+    from maity_hub import project_names
+
+    if body.reply_id == "go" and (row.proposal or {}).get("kind") == project_names.KIND:
+        second_factor.require_step_up(conn, settings_of(request), caller)
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/answer")
 def answer(
     slug: str, request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
@@ -974,6 +995,7 @@ def answer(
         if inbox.is_asker(row, mine):
             raise _self_answer()
         _check_answer(row, body)
+        _step_up_for_a_transfer(conn, request, caller, row, body)
         conversation_id = None
         if body.talk:
             conversation_id = _talk_allowed(conn, row, caller)
@@ -982,6 +1004,8 @@ def answer(
         on_behalf = None
         if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
             on_behalf = addressee.text(conn)
+        elif not in_own_right and inbox.covers(row, mine):
+            on_behalf = row.cover["for"]  # the covered addressee (§6.12)
         elif not in_own_right and addressee.kind != "role":
             on_behalf = (
                 inbox.owner_membership(conn, mine.project.id).human_id
@@ -1842,6 +1866,7 @@ def answer_personal(
         _refuse_unless_open(row)
         proposals.require_known(row)
         _check_answer(row, body)
+        _step_up_for_a_transfer(conn, request, caller, row, body)
         if (row.proposal or {}).get("kind") == "preferences":
             row = _preference_edit(conn, row, body)
         conversation_id = _talk_allowed(conn, row, caller) if body.talk else None

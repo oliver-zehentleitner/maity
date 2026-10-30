@@ -56,7 +56,10 @@ window.Maity = window.Maity || {};
       if (close < 0) continue;
       out.push(...spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
-      out.push(...inlineCode(inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner));
+      const code = inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner;
+      const linked = at && M.ids.only(code, at);
+      if (linked) out.push(linked);
+      else out.push(...inlineCode(code));
       from = runs[close].index + runs[close][0].length;
       k = close;
     }
@@ -132,6 +135,41 @@ window.Maity = window.Maity || {};
   // Quotes nest at most this deep; deeper is shown as written.
   const MAX_DEPTH = 8;
 
+  // A list item: its indent, its marker, its text.
+  const ITEM = /^([ \t]*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+  const indentOf = (s) => s.replace(/\t/g, "    ").length;
+
+  // A list from line `i`, and the line after it. An item indented further
+  // than the list's first opens a list inside the item before it, of
+  // either kind; one indented no further than the list around this one
+  // ends it, as does an item of the other kind not indented further. In
+  // between it is one more item here, as in CommonMark. Lists nest at most
+  // MAX_DEPTH deep; deeper items stay in the deepest list.
+  function list(all, i, at, level, outer) {
+    const head = ITEM.exec(all[i]);
+    const base = indentOf(head[1]);
+    const ordered = /\d/.test(head[2]);
+    const items = [];
+    while (i < all.length) {
+      const m = ITEM.exec(all[i]);
+      if (!m) break;
+      const indent = indentOf(m[1]);
+      if (indent <= outer) break;
+      if (indent > base && items.length && level + 1 < MAX_DEPTH) {
+        const [inner, next] = list(all, i, at, level + 1, base);
+        items[items.length - 1].push(inner);
+        i = next;
+        continue;
+      }
+      if (indent <= base && /\d/.test(m[2]) !== ordered) break;
+      items.push(inline(m[3], at));
+      i += 1;
+    }
+    // A numbered list starts where its first item does.
+    const first = ordered ? parseInt(head[2], 10) : 1;
+    return [h(ordered ? "ol" : "ul", ordered && first !== 1 ? { start: String(first) } : null, items.map((x) => h("li", null, x))), i];
+  }
+
   // Blocks, line by line. `at`: the project the text belongs to
   // ({slug, repository}, M.ids.where), for its ids as links; none, none.
   M.markdown = function (source, at, depth) {
@@ -175,20 +213,11 @@ window.Maity = window.Maity || {};
           : h("p", { class: "md-deep" }, lines(quoted, at)));
         continue;
       }
-      const item = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line);
-      if (item) {
+      if (ITEM.test(line)) {
         flush();
-        const ordered = /\d/.test(item[2]);
-        const items = [];
-        while (i < all.length) {
-          const m = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(all[i]);
-          if (!m || /\d/.test(m[2]) !== ordered) break;
-          items.push(h("li", null, inline(m[3], at)));
-          i += 1;
-        }
-        // A numbered list starts where its first item does.
-        const first = ordered ? parseInt(item[2], 10) : 1;
-        out.push(h(ordered ? "ol" : "ul", ordered && first !== 1 ? { start: String(first) } : null, items));
+        const [node, next] = list(all, i, at, 0, -1);
+        out.push(node);
+        i = next;
         continue;
       }
       if (!line.trim()) { flush(); i += 1; continue; }

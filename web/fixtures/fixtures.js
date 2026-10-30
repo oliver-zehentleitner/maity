@@ -2612,7 +2612,6 @@ window.MAITY_FIXTURES = {
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",
-      "swarm_public": "on",
       "tag_authority": "human"
     },
     "released_at": null,
@@ -4501,7 +4500,11 @@ window.MAITY_FIXTURES = {
         "mention",
         "security"
       ],
-      "mail_available": false
+      "mail_available": false,
+      "not_listening": {
+        "minutes": 60,
+        "mode": "inbox"
+      }
     }
   },
   "orgs.json": {

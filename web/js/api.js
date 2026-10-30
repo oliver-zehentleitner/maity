@@ -111,7 +111,16 @@ window.Maity = window.Maity || {};
     return (view && view.full_name) || (FIXTURE_OWNERS[slug] || me().member.handle) + "/" + slug;
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
-  // The fixture directory a full name (or one of its aliases) names, or null.
+  // A member's own settings per project (§6.2), kept for the page's life.
+  const projectSettings = {};
+  function mySettings(slug, path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    file(slug, "members.json", path);
+    const own = projectSettings[slug] || { not_listening: { minutes: null } };
+    const personal = fixtures()["notifications.json"].settings.not_listening || { minutes: 60 };
+    return { not_listening: { minutes: own.not_listening.minutes },
+      effective: { not_listening: { minutes: own.not_listening.minutes === null ? personal.minutes : own.not_listening.minutes } } };
+  }
   // §16.4: the fixture hub's registration settings and the accounts that wait.
   const registration = {
     values: {
@@ -138,6 +147,7 @@ window.Maity = window.Maity || {};
     return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
       registered_last_hour: 1, requests_dropped_last_hour: 0 });
   }
+  // The fixture directory a full name (or one of its aliases) names, or null.
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -1385,6 +1395,14 @@ window.Maity = window.Maity || {};
         if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
       }
+      // §18.4: not_listening's mode and its minutes, each checked at its path.
+      if (body.not_listening) {
+        const nl = body.not_listening, fields = {};
+        if ("mode" in nl && !["inbox", "bell", "off"].includes(nl.mode)) fields["not_listening.mode"] = "invalid";
+        if ("minutes" in nl && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) fields["not_listening.minutes"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        set.not_listening = Object.assign({}, set.not_listening, nl);
+      }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
       if ("enabled" in b) set.browser.enabled = b.enabled;
@@ -2088,9 +2106,7 @@ window.Maity = window.Maity || {};
       Object.entries(v.pages).forEach(([k, x]) => { if (x) pages[k] = { version: x.version, languages: Object.keys(x.languages) }; });
       return { default_language: v.default_language, pages };
     }],
-    // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
-    // reduction where policy.swarm_public is on: agents only, no ids, no
-    // pictures, no card titles, no live_at, as_of to the minute.
+    // §6.22: the members' swarm statistics (fixtures/<slug>/swarm.json).
     ["GET", /^\/projects\/([^/]+)\/swarm$/, (m, body, path, query) => {
       project(m[1], path);
       const n = Number(query.get("days") || 30);
@@ -2100,24 +2116,6 @@ window.Maity = window.Maity || {};
       return Object.assign({}, s, { window_days: n, live_at: nowIso(),
         // Oldest first, as swarm.py sends them: the window is the last n days.
         totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
-    }],
-    // §6.22, §6.25: /swarm/{owner}/{slug}.
-    ["GET", /^\/swarm\/([^/]+)\/([^/]+)$/, (m, body, path, query) => {
-      const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
-      const p = slug && fixtures()[slug + "/project.json"];
-      const s = slug && fixtures()[slug + "/swarm.json"];
-      if (!p || !s || (p.policy || {}).swarm_public !== "on" || p.state === "archived") fail(404, "not_found", "Not found", path);
-      const agents = (list) => list.filter((x) => x.kind === "agent");
-      const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
-      const rows = agents(s.members).map((r) => ({ handle: r.handle, name: r.name, cards_done: r.cards_done, reviews_given: r.reviews_given,
-        prs_merged: r.prs_merged, handovers: r.handovers, claim_to_done_median_seconds: r.claim_to_done_median_seconds, review_to_done_median_seconds: r.review_to_done_median_seconds }));
-      return { as_of: s.as_of.slice(0, 16) + ":00Z", window_days: Number(query.get("days") || 30),
-        live: agents(s.live).map((x) => ({ handle: x.handle, name: x.name, display_name: x.display_name, online: x.online, instances_online: x.instances_online, holding_count: (x.holding || []).length })),
-        members: rows,
-        totals: { cards_done: sum(rows, "cards_done"), reviews_given: sum(rows, "reviews_given"), prs_merged: sum(rows, "prs_merged"), handovers: sum(rows, "handovers"),
-          claim_to_done_median_seconds: s.totals.claim_to_done_median_seconds, review_to_done_median_seconds: s.totals.review_to_done_median_seconds,
-          cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-Number(query.get("days") || 30)) },
-        coverage: s.coverage };
     }],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
@@ -2284,6 +2282,20 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.2 a member's own settings in a project: an override or null (the
+    // personal default of §18.4), and what applies; humans only.
+    ["GET", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => mySettings(m[1], path)],
+    ["PATCH", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => {
+      mySettings(m[1], path);
+      const nl = body.not_listening || {};
+      if ("minutes" in nl) {
+        if (nl.minutes !== null && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "not_listening.minutes": "invalid" } });
+        }
+        projectSettings[m[1]] = { not_listening: { minutes: nl.minutes } };
+      }
+      return mySettings(m[1], path);
     }],
     // §6.11 the overview: counts per column (closed ones after closed_after),
     // open requests as this caller would list them, the latest reports.
@@ -3184,7 +3196,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       path = namespaced(path, fullPath);
@@ -3313,7 +3325,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {

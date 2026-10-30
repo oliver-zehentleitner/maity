@@ -55,7 +55,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import ROLES, has_scope
+from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter(route_class=ProjectRoute)
@@ -65,7 +65,6 @@ TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
 # What a member's own agent may hold (§3.1 "Bringing your own agent"): below governance.
 MEMBER_RULE_TRUSTS = ("member", "guest")
-MEMBER_RULE_ROLES = ("coder", "reviewer", "tester", "designer", "writer", "manager")
 EXCHANGE_BY_ADDRESS = Limiter(10, 60)
 _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
