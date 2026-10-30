@@ -200,12 +200,26 @@ def test_the_confirmation_ends_when_the_confirming_owner_stops_being_one(
     demoted = owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "admin"})
     assert demoted.status_code == 200, demoted.text
     assert confirmed_by(owner, name) is None
-    assert (
-        confirmed(owner) is False
-        or owner.get(f"/projects/{name}").json()["repository"]["owner_confirmed"] is False
-    )
+    assert owner.get(f"/projects/{name}").json()["repository"]["owner_confirmed"] is False
     # another owner's confirmation is not touched by the end of someone else's
     assert owner.post(url, {"url": URL}).status_code == 200
     removed = owner.delete(f"/orgs/oz-team/members/{second.id}")
     assert removed.status_code == 204, removed.text
     assert confirmed_by(owner, name) == {"id": owner.id, "handle": "maintainer"}
+
+
+def test_the_confirmation_ends_when_the_confirming_owner_leaves(
+    org_project: tuple[flow.Human, flow.Human, flow.Human], migrated: Engine
+) -> None:
+    from maity_hub.forge_access import ForgeAccess
+
+    owner, second, _ = org_project
+    name = "oz-team/maity"
+    assert second.post(f"/projects/{name}/repository/confirm", {"url": URL}).status_code == 200
+    left = second.delete(f"/orgs/oz-team/members/{second.id}")
+    assert left.status_code == 204, left.text
+    assert confirmed_by(owner, name) is None
+    assert owner.get(f"/projects/{name}").json()["repository"]["owner_confirmed"] is False
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    assert ForgeAccess(migrated, None, None)._facts(project_id).owner_id == ""  # nobody's grants

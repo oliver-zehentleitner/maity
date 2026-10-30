@@ -158,7 +158,7 @@ def forget_confirmation(conn: Connection, project: Any, human_id: str) -> None:
     lock_project(conn, project.id)
     conn.execute(
         update(t.project)
-        .where(t.project.c.id == project.id)
+        .where(t.project.c.id == project.id, t.project.c.repository_confirmed_by == human_id)
         .values(repository_owner_confirmed=False, repository_confirmed_by=None)
     )
 

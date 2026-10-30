@@ -313,6 +313,36 @@ def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
     assert [tuple(r) for r in rows] == [("withdrawn", "initiator_deleted")] * len(rows) != []
 
 
+def test_the_confirmation_of_a_deleted_account_ends_with_its_grants(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The deletion of an account removes its seats directly, not through `release_in_all`:
+    the repository it confirmed for an organisation's project is not confirmed afterwards
+    (§11.4), and the forge access reads nobody's grants."""
+    from maity_hub.forge_access import ForgeAccess
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    add_member(migrated, org["id"], other, "owner")
+    url = "https://github.com/acme/shop"
+    made = pat.post(
+        "/projects",
+        {"slug": "shop", "name": "Shop", "owner": "pat-team", "repository": {"url": url}},
+    )
+    assert made.status_code in (200, 201), made.text
+    confirmed = pat.post("/projects/pat-team/shop/repository/confirm", {"url": url})
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["repository"]["confirmed_by"] == {"id": pat.id, "handle": "pat"}
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+    assert (project.repository_owner_confirmed, project.repository_confirmed_by) == (False, None)
+    assert ForgeAccess(migrated, None, None)._facts(project.id).owner_id == ""
+
+
 def test_the_last_instance_admin_is_refused_both_times(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
