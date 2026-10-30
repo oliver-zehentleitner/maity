@@ -4816,23 +4816,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let atForeign = null;
   try { win.Maity.dom.h("a", { href: "/api/v1/projects/maintainer/maity/attachments/../../me" }); } catch (err) { atForeign = err; }
   expect(atForeign && win.Maity.dom.h("img", { src: "/api/v1/projects/maintainer/maity/attachments/att-1/content" }), "attachments: only the attachment path itself is allowed");
-  // A hub without attachments is asked for the waiting uploads once per page load.
+  // A hub with attachments off (409) is asked for the waiting uploads once per page load.
   const atAll2 = win.Maity.api.getAll;
   let atAsked = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
-    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : atAll2(p));
+    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 409, p, "attachments_not_configured", {}))) : atAll2(p));
   await go("#/maintainer/maity/chat/agt-b"); await go("#/maintainer/maity/message"); await go("#/maintainer/maity/chat/agt-b");
-  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub without them is asked once, nothing offered");
+  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub with them off is asked once, nothing offered");
   // Project settings then asks no more either.
   let atAskedAll = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
   await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
-  expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
+  expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("Attachments are not set up on this instance."), "attachments: settings ask a hub with them off no more");
   await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
   await go("#/maintainer/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
+  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 409, the composer offers no Attach files");
   await go("#/maintainer/maity/inbox");
 
   // Attachments off (§8.7, #477): 409 attachments_not_configured hides upload and delete, files stay as links.

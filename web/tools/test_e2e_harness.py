@@ -1,7 +1,7 @@
 """The e2e harness's own judgement of answers, without a browser or a hub.
 
 e2e.py imports Playwright at the top; this reads only the parts it tests out of
-the file's syntax tree (no_problems, BEFORE_CHAT_LIST, the trace) and runs them
+the file's syntax tree (no_problems, the trace) and runs them
 on stand-in answers. Python standard library only: python3 web/tools/test_e2e_harness.py
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).with_name("e2e.py")
 WANTED = {
-    "no_problems", "BEFORE_CHAT_LIST",
+    "no_problems",
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
 }
@@ -131,12 +131,11 @@ def trace_cases(ns: dict) -> int:
 
 def main() -> int:
     ns = load()
-    chats = "GET /api/v1/me/conversations?observed=true&limit=200"
     cases = [
-        ("a hub without the chat list across projects is no problem", [chats + " answered 404"], 0),
-        ("the same with its code is no problem", [chats + " answered 404 (not_found)"], 0),
-        ("another status of the chat list is a problem", [chats + " answered 500"], 1),
-        ("a 404 of another route is a problem", ["GET /api/v1/me/notifications?limit=0 answered 404"], 1),
+        ("no answer is no problem", [], 0),
+        ("every answer of 400 or more stays a problem, the chat list's 404 too",
+         ["GET /api/v1/me/conversations?observed=true&limit=200 answered 404",
+          "GET /api/v1/me/notifications?limit=0 answered 404"], 2),
     ]
     failed = 0
     for name, said, want in cases:
