@@ -2409,6 +2409,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && tr("test.files", { count: 0, where: "x" }) === "0 files in x" && tr("chat.instance.team", { unused: 1 }) === "The whole team",
     "i18n: plural forms by count, a number in a placeholder formatted for the locale " + tr("test.files", { count: 1200, where: "x" }));
   delete i18nEn["test.files"];
+  // M.tn: the same sentence as pieces, a node placed where its placeholder stands.
+  i18nEn["test.around"] = "Ask {who} about {count} cards";
+  const tnLink = document.createElement("a"); tnLink.textContent = "@agent-b";
+  const tnParts = win.Maity.tn("test.around", { who: tnLink, count: 3 });
+  expect(tnParts.length === 5 && tnParts[0] === "Ask " && tnParts[1] === tnLink && tnParts[2] === " about " && tnParts[3] === "3" && tnParts[4] === " cards"
+    && JSON.stringify(win.Maity.tn("no.such.key")) === JSON.stringify(["no.such.key"]),
+    "i18n: M.tn places a node where its placeholder stands; a missing key reads as itself");
+  delete i18nEn["test.around"];
   win.Maity.i18n.locale = "de-DE";
   expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
     "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
@@ -5247,6 +5255,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }) : tkGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(tkItems().length === 1 && text(tkSeq(9980)).includes("you are an owner, you are an admin"), "ticker: one item once; role reasons with their article");
+  {
+    const tk = win.Maity.ticker;
+    expect(tk.whyWords("role:ops") === "you work in ops" && tk.whyWords("trust:steward") === "you have steward trust"
+      && tk.whyWords("follow:type:contract") === "you follow contract changes" && tk.whyWords("follow:type:later") === "you follow later"
+      && tk.said({ code: "ticker_duplicate", details: { seq: 12345 } }).message === "this was posted already (item 12345)"
+      && tk.said({ code: "invalid", details: { fields: { text: "required", odd: "odd_reason" } } }).message === "The text is missing; The field odd was refused (odd_reason)",
+    "ticker: reasons and refusals from the catalog; a value the hub adds later still reads, an item number is never grouped");
+  }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();

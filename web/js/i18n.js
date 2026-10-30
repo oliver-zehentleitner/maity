@@ -7,6 +7,8 @@
 // from pieces. `{name}` in the text takes values.name, a number formatted
 // for the reader's locale. A text that depends on a number is an object of
 // plural forms ({one, other, …}, Intl.PluralRules), chosen by values.count.
+// M.tn(key, values): the same sentence as pieces, where a value may be a
+// node (a link, a member) placed where the language puts it.
 // M.fmt: dates and numbers through Intl, in the reader's locale.
 "use strict";
 
@@ -33,14 +35,38 @@ window.Maity = window.Maity || {};
     });
   }
 
-  function t(key, values) {
+  // The text of a key for these values: its plural form chosen by count.
+  function template(key, values) {
     const entry = text(key);
-    // A key the catalog does not hold reads as itself: visible, never empty.
-    if (entry === undefined) return key;
-    if (typeof entry === "string") return fill(entry, values);
+    if (entry === undefined || typeof entry === "string") return entry;
     const count = values && typeof values.count === "number" ? values.count : 0;
     const form = new Intl.PluralRules(i18n.locale).select(count);
-    return fill(entry[form] !== undefined ? entry[form] : entry.other, values);
+    return entry[form] !== undefined ? entry[form] : entry.other;
+  }
+
+  function t(key, values) {
+    const said = template(key, values);
+    // A key the catalog does not hold reads as itself: visible, never empty.
+    return said === undefined ? key : fill(said, values);
+  }
+
+  // The same sentence as pieces for M.dom.h: a placeholder whose value is a
+  // node (a link, a member) is that node, in the sentence where the
+  // language puts it; strings and numbers fill in as with M.t.
+  function tn(key, values) {
+    const said = template(key, values);
+    if (said === undefined) return [key];
+    const out = [];
+    let last = 0;
+    said.replace(/\{([a-z][a-z0-9_]*)\}/g, (whole, name, at) => {
+      if (at > last) out.push(said.slice(last, at));
+      const v = values && Object.hasOwn(values, name) ? values[name] : undefined;
+      out.push(v === undefined ? whole : typeof v === "number" ? number(v) : v);
+      last = at + whole.length;
+      return whole;
+    });
+    if (last < said.length) out.push(said.slice(last));
+    return out;
   }
 
   function number(n, options) {
@@ -56,6 +82,7 @@ window.Maity = window.Maity || {};
   }
 
   M.t = t;
+  M.tn = tn;
   M.fmt = {
     number,
     dateTime: (value) => when(value, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
