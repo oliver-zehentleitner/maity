@@ -11,13 +11,17 @@ but the root, and the root answers `noindex` (the app shell says so itself, §16
 from __future__ import annotations
 
 from typing import Any
+from xml.sax.saxutils import escape
 
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
+from sqlalchemy import Connection, select
 
-from maity_hub import landing, legal
+from maity_hub import landing, legal, paths
+from maity_hub import tables as t
 from maity_hub.deps import engine_of, settings_of
 from maity_hub.errors import not_found
+from maity_hub.views import ts
 
 router = APIRouter()
 
@@ -33,33 +37,104 @@ def _set_pages(pages: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
-def robots(public_url: str, enabled: bool, pages: dict[str, Any]) -> str:
+MAX_URLS = 50_000  # a sitemap file holds at most 50,000 URLs and 50 MB (§16.9)
+MAX_BYTES = 50 * 1024 * 1024
+NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
+
+
+def robots(
+    public_url: str, enabled: bool, pages: dict[str, Any], public_pages: bool = False
+) -> str:
+    sitemap_line = f"Sitemap: {public_url.rstrip('/')}/sitemap.xml\n"
+    if public_pages:
+        # Every path but the hub's own first segments (§16.9, §16.11); the legal pages stay open.
+        hub = sorted(paths.HUB_FIRST - set(legal.ADDRESS.values()))
+        return (
+            "User-agent: *\n"
+            + "".join(f"Disallow: /{first}/\n" for first in hub)
+            + f"\n{sitemap_line}"
+        )
     if not enabled:
         return "User-agent: *\nAllow: /$\nDisallow: /\n"
     allowed = "Allow: /$\n" + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
-    return f"User-agent: *\n{allowed}Disallow: /\n\nSitemap: {public_url.rstrip('/')}/sitemap.xml\n"
+    return f"User-agent: *\n{allowed}Disallow: /\n\n{sitemap_line}"
 
 
-def sitemap(
-    public_url: str, root_updated_at: str | None, enabled: bool, pages: dict[str, Any]
-) -> str | None:
+def _url(base: str, address: str, lastmod: str | None) -> str:
+    stamp = f"\n    <lastmod>{escape(lastmod)}</lastmod>" if lastmod else ""
+    return f"  <url>\n    <loc>{escape(base + address)}</loc>{stamp}\n  </url>\n"
+
+
+def urls(
+    conn: Connection,
+    public_url: str,
+    root_updated_at: str | None,
+    enabled: bool,
+    pages: dict[str, Any],
+    public_pages: bool,
+) -> list[str]:
+    """Every entry of the sitemap: the root and the legal pages as before, then every public
+    page at its canonical address with the `lastmod` of its inputs (§16.9)."""
     base = public_url.rstrip("/")
-    urls = []
-    if enabled:
-        lastmod = f"\n    <lastmod>{root_updated_at}</lastmod>" if root_updated_at else ""
-        urls.append(f"  <url>\n    <loc>{base}/</loc>{lastmod}\n  </url>\n")
-    for address, version in _set_pages(pages):
-        urls.append(
-            f"  <url>\n    <loc>{base}{address}</loc>\n    <lastmod>{version}</lastmod>\n  </url>\n"
-        )
-    if not urls:
-        return None
+    found = [_url(base, "/", root_updated_at)] if enabled else []
+    found += [_url(base, address, version) for address, version in _set_pages(pages)]
+    if public_pages:
+        for row in conn.execute(
+            select(t.public_page.c.path, t.public_page.c.lastmod).order_by(t.public_page.c.path)
+        ):
+            found.append(_url(base, row.path, ts(row.lastmod)))
+    return found
+
+
+def chunks(entries: list[str]) -> list[list[str]]:
+    """The entries in files of at most `MAX_URLS` and `MAX_BYTES`."""
+    files: list[list[str]] = [[]]
+    size = 0
+    for entry in entries:
+        weight = len(entry.encode())
+        if files[-1] and (len(files[-1]) >= MAX_URLS or size + weight > MAX_BYTES):
+            files.append([])
+            size = 0
+        files[-1].append(entry)
+        size += weight
+    return files if entries else []
+
+
+def urlset(entries: list[str]) -> str:
     return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        + "".join(urls)
+        f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="{NAMESPACE}">\n'
+        + "".join(entries)
         + "</urlset>\n"
     )
+
+
+def index(public_url: str, count: int) -> str:
+    base = public_url.rstrip("/")
+    parts = "".join(
+        f"  <sitemap>\n    <loc>{base}/sitemap-{n}.xml</loc>\n  </sitemap>\n"
+        for n in range(1, count + 1)
+    )
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="{NAMESPACE}">\n'
+        + parts
+        + "</sitemapindex>\n"
+    )
+
+
+def _entries(request: Request) -> tuple[list[list[str]], str]:
+    hub = settings_of(request)
+    with engine_of(request).begin() as conn:
+        value = landing.stored(conn)
+        pages = legal.stored(conn)["pages"]
+        entries = urls(
+            conn,
+            hub.public_url,
+            value["updated_at"],
+            bool(value["enabled"]),
+            pages,
+            hub.public_pages,
+        )
+    return chunks(entries), hub.public_url
 
 
 @router.get("/robots.txt", include_in_schema=False)
@@ -67,18 +142,26 @@ def get_robots(request: Request) -> Response:
     with engine_of(request).begin() as conn:
         enabled = bool(landing.stored(conn)["enabled"])
         pages = legal.stored(conn)["pages"]
-    text = robots(settings_of(request).public_url, enabled, pages)
+    hub = settings_of(request)
+    text = robots(hub.public_url, enabled, pages, hub.public_pages)
     return Response(text, media_type="text/plain; charset=utf-8", headers=CACHE)
 
 
 @router.get("/sitemap.xml", include_in_schema=False)
 def get_sitemap(request: Request) -> Response:
-    with engine_of(request).begin() as conn:
-        value = landing.stored(conn)
-        pages = legal.stored(conn)["pages"]
-    text = sitemap(
-        settings_of(request).public_url, value["updated_at"], bool(value["enabled"]), pages
-    )
-    if text is None:
+    files, public_url = _entries(request)
+    if not files:
         raise not_found()
+    text = urlset(files[0]) if len(files) == 1 else index(public_url, len(files))
     return Response(text, media_type="application/xml; charset=utf-8", headers=CACHE)
+
+
+@router.get("/sitemap-{part}.xml", include_in_schema=False)
+def get_sitemap_part(part: int, request: Request) -> Response:
+    """One part of a sitemap that is an index (§16.9); a hub whose sitemap is one file has none."""
+    files, _ = _entries(request)
+    if len(files) < 2 or not 1 <= part <= len(files):
+        raise not_found()
+    return Response(
+        urlset(files[part - 1]), media_type="application/xml; charset=utf-8", headers=CACHE
+    )

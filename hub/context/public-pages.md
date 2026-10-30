@@ -37,3 +37,38 @@ place where "page or shell" can be decided without a second catch-all.
   interval, so the cost of a crawler stays one read.
 - Sharing the badge's budget: the contract gives the pages the badge's size, and one visitor's pages
   and badges would then spend the same budget.
+
+## A page is rendered again in the transaction that changed its input, by a registry of kinds
+
+**Id:** b7a13a49-7c56-49d6-bc18-4622b21d0077
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("How the pages are made", "Removing something is never left to the interval"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** a page kind needs inputs no write path can name, or the renders of one transaction become too slow to run inside it
+
+Each kind of page (a person, a project and its views, an agent, an organisation) registers how to render the
+pages of one target and which targets exist (`public_pages.Kind`). The write paths that change an input call
+`public_pages.touch(conn, kind, target_id)` in their own transaction. `touch` renders the target again at once
+when the change takes anything off a page (`removal`, the default) under either mode, and under `on_change`
+every change does; under `interval` a new entry or a count (`removal=False`) waits for the next run. A
+render that finds the inputs' digest unchanged leaves the row alone, so the ETag and the sitemap's `lastmod`
+move with the inputs and not with the safety net. A render that fails takes the target's pages off (in a
+savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub clears
+every page and renders all again before it serves any; a worker repeats `render_all` every
+`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
+(`public_pages.configure`), because the write paths do not carry them. The sitemap lists the stored rows
+with their `lastmod` and becomes an index with `/sitemap-<n>.xml` parts above 50,000 URLs or 50 MB;
+`robots.txt` disallows only the hub's own first segments while pages are on.
+
+**Reason:** the contract wants the removal in the transaction that changed the input, which only the writer
+can give; a registry keeps each kind's rendering next to its inputs and gives the writers one call to make.
+
+**Rejected alternatives:**
+- Rendering only by the interval worker: a page that has to go would outlive its input for hours.
+- Rendering on request and caching: the contract stores the page, and the first crawler after a change
+  would pay for the render.
+- Each write path rendering its own pages: the same decision about `on_change`, `interval` and failure in
+  twenty places.
+- Touching with the settings passed through every call: the writers (a profile, a card, a membership) have
+  no reason to know the hub's settings.
