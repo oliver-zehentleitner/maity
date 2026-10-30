@@ -365,16 +365,24 @@ def _state(data: dict[str, Any]) -> tuple[Any, ...]:
 def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None:
     """Store whether the forge reports the repository of a project with a public page public,
     whatever grant reads it (§16.9): the repository URL is on the page only while it is. A
-    page that loses it is rendered again at once; one that gains it waits for its renders."""
+    page that loses it is rendered again at once; one that gains it waits for its renders.
+    The answer is stored only for the repository that was asked: a repository changed while
+    the forge answered (`PATCH`, which clears the value) is looked at in the next round."""
     project = _project(engine, project_id)
-    if project.public_page != "on" or project.repository_url is None:
+    if project is None or project.public_page != "on" or project.repository_url is None:
         return
     public = fg.for_project(project_id).repository_public(
         forge.repository_of(project.repository_url)
     )
-    if public == project.repository_public:
-        return
-    with engine.begin() as conn:
+    with transaction(engine) as conn:
+        lock_project(conn, project_id)
+        current = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        if (
+            current.public_page != "on"
+            or current.repository_url != project.repository_url
+            or public == current.repository_public
+        ):
+            return
         conn.execute(
             update(t.project).where(t.project.c.id == project_id).values(repository_public=public)
         )
@@ -399,6 +407,17 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
                 (t.card.c.closed_at.is_(None)) | (t.card.c.closed_at > since),
             )
         ).all()
+    with engine.connect() as conn:
+        visible = list(
+            conn.execute(
+                select(t.project.c.id, t.project.c.repository_url)
+                .where(t.project.c.public_page == "on", t.project.c.repository_url.is_not(None))
+                .order_by(t.project.c.id)
+            ).all()
+        )
+    visible = _rotated(
+        [p.id for p in visible if forge.kind_of(p.repository_url) == "github"], "visibility"
+    )
     observable = {p.id for p in projects if fg.for_project(p.id).configured_for(p.repository_url)}
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
         (observe_report, (engine, fg, card.id, MAX_AGE))
@@ -411,9 +430,10 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
     work += [(observe_links, (engine, fg, project_id)) for project_id in order]
     # A repository that turned private comes off a public page whatever else the forge refuses
-    # this round (§16.9): the visibility reads go first and never end the round, since a read
-    # the forge does not answer is stored as private.
-    for project_id in order:
+    # this round (§16.9): the visibility reads go first, for every project with a public page
+    # (also one the hub can no longer read: that is private), and never end the round, since a
+    # read the forge does not answer is stored as private.
+    for project_id in visible:
         if stop is not None and stop.is_set():
             return
         _guarded(observe_visibility, engine, fg, project_id)

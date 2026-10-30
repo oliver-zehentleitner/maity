@@ -246,10 +246,15 @@ accounts and organisations exist (§6.26).
 **Revisit when:** the forge reports visibility on an event the hub already receives (a webhook), or another forge than GitHub is read
 
 `project.repository_public` is null until the hub looked, true when the forge's last answer said
-`private: false`, false for anything else. The probe's sweep asks for every project that has a public page and a
-repository (`probe.observe_visibility`, `Forge.repository_public`), through whatever grant reads the project
-(the instance's token, an installation or the owner's token), and stores the answer; a change calls `touch`,
-at once when the repository turned private. An answer the forge does not give (a 404, no `private` field, a
+`private: false`, false for anything else. The probe's sweep asks first, before every other read and for
+every project that has a public page and a GitHub repository, also one the hub can no longer read
+(`probe.observe_visibility`, `Forge.repository_public`), through whatever grant reads the project (the
+instance's token, an installation or the owner's token), and a read the forge does not answer never ends the
+round. The hub's own token asks the forge itself, not the ten-minute cache of the visibility check that guards
+its other reads, and an answer that is not public drops that cache entry. The answer is stored under the
+project's lock and only while the page is on and the repository is the one that was asked: a `PATCH` of the
+repository while the forge answered clears the value and is not overwritten. A change calls `touch`, at
+once when the repository turned private. An answer the forge does not give (a 404, no `private` field, a
 refusal, a spent budget) is stored as private: the contract says a repository the hub could not read counts as
 private, so a short outage takes the URL off the page until the next round. A new repository URL clears the
 value. The page prints the URL as a `nofollow ugc` link only while the value is true.
@@ -264,3 +269,5 @@ repository's URL is a leak that cannot be taken back from a crawler.
   the forge (§11.4).
 - Keeping the last known answer through an outage: the contract names the unreadable case private, and an
   outage on the instance's side would otherwise leave a URL on the page that turned private meanwhile.
+- The visibility read last in the sweep, like the other reads: the sweep ends at the first read the forge does
+  not answer, so a repository that turned private could stay on the page for as long as any other read failed.

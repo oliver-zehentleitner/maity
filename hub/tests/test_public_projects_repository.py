@@ -164,3 +164,69 @@ def test_the_forge_reads_the_repository_public_only_on_private_false(
     assert reader.repository_public("acme/maity") is False
     github.answers["/repos/acme/maity"] = forge.NotCoveredError("private_without_grant")
     assert reader.repository_public("acme/maity") is False
+
+
+def test_a_project_the_hub_can_no_longer_read_is_still_looked_at_and_turns_private(
+    make_client: ClientFactory,
+    migrated: Engine,
+    public: flow.Human,
+    github: FakeGitHub,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    github.answers["/repos/acme/maity"] = {"private": False}
+    probe.sweep(migrated, READER)
+    assert URL in page(make_client)
+    # the hub has no source for the repository any more: the other reads skip it, this one does not
+    monkeypatch.setattr(forge.Forge, "configured_for", lambda self, url: False)
+    github.answers["/repos/acme/maity"] = forge.NotCoveredError("no_grant")
+    probe.sweep(migrated, READER)
+    assert stored(migrated) is False
+    assert URL not in page(make_client)
+
+
+def test_an_answer_for_a_repository_that_changed_meanwhile_is_dropped(
+    make_client: ClientFactory,
+    migrated: Engine,
+    public: flow.Human,
+    github: FakeGitHub,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    github.answers["/repos/acme/maity"] = {"private": False}
+    original = forge.Forge.repository_public
+
+    def patched_meanwhile(self: forge.Forge, repository: str) -> bool:
+        found = original(self, repository)
+        moved = public.patch(
+            "/projects/maintainer/maity",
+            {"repository": {"url": "https://github.com/acme/other", "default_branch": "main"}},
+        )
+        assert moved.status_code == 200, moved.text
+        return found
+
+    monkeypatch.setattr(forge.Forge, "repository_public", patched_meanwhile)
+    look(migrated)
+    assert stored(migrated) is None  # the answer was for the old repository
+    assert "acme/other" not in page(make_client)
+
+
+def test_the_hub_s_own_token_asks_once_and_a_private_answer_drops_the_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[str] = []
+    answer: dict[str, Any] = {"private": False}
+
+    def send(self: forge.Forge, path: str, query: Any = None) -> Any:
+        asked.append(path)
+        return answer
+
+    monkeypatch.setattr(forge.Forge, "_send", send)
+    reader = forge.Forge("t-cache")
+    assert reader.repository_public("acme/maity") is True
+    assert asked == ["/repos/acme/maity"]  # one request, not the check and the read
+    reader._call("/repos/acme/maity")  # a read of the other kind fills the visibility cache
+    key = next(k for k in forge._public if k[1] == "acme/maity")
+    answer["private"] = True
+    assert reader.repository_public("acme/maity") is False
+    assert key not in forge._public  # the stale "public" is gone
+    answer["private"] = False
+    assert reader.repository_public("acme/maity") is True  # fresh, not the ten-minute cache
