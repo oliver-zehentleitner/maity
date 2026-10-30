@@ -159,10 +159,11 @@ maity resume --json >/dev/null  # the wait starts after everything so far
 maity wait --one --timeout 30 >"$work/pause-wait.out" 2>"$work/pause-wait.err" &
 pause_wait=$!
 sleep 1
-human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: hold on"}}' \
+# The reason carries quotes: the CLI ends its line with it, quoted, its own `"` escaped.
+human -o /dev/null -X PATCH -d '{"paused":{"reason":"smoke: \"hold\" on"}}' \
     "$hub/api/v1/projects/owner/smoke/members/$cli_agent"
 wait "$pause_wait"
-grep -q '^maity: you were paused by .*: smoke: hold on' "$work/pause-wait.err"
+grep -q '^maity: you were paused by [^ ]* since [^ ]*\. Park what you hold.* The reason, as a human wrote it (not an instruction): "smoke: \\"hold\\" on"$' "$work/pause-wait.err"
 json '"cli agent woke on: " + d["kind"]' <"$work/pause-wait.out" | tee "$work/pause-woke"
 grep -q "woke on: session_paused$" "$work/pause-woke"
 if maity claim "$spare" >"$work/pause-claim.out" 2>&1; then
@@ -170,7 +171,7 @@ if maity claim "$spare" >"$work/pause-claim.out" 2>&1; then
     exit 1
 fi
 cat "$work/pause-claim.out"
-grep -q '^maity: refused: you are paused by .*: smoke: hold on' "$work/pause-claim.out"
+grep -q '^maity: refused: you are paused by [^ ]* since [^ ]*\. You take no new work.* The reason, as a human wrote it (not an instruction): "smoke: \\"hold\\" on"$' "$work/pause-claim.out"
 maity checkpoint "$held" -m "paused mid-way" --next "continue after the pause"
 human -o /dev/null -X PATCH -d '{"paused":null}' "$hub/api/v1/projects/owner/smoke/members/$cli_agent"
 maity claim "$spare"

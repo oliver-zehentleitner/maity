@@ -3603,11 +3603,14 @@ def _by_since(stop: dict[str, Any]) -> str:
 def _reason_last(stop: dict[str, Any]) -> str:
     """The reason a human gave for a pause or an isolation, to end the line with: quoted and
     last, so that nothing of ours follows it and an instruction in it cannot pass for the
-    command's own (cli/context/commands.md). Empty without a reason."""
+    command's own (cli/context/commands.md). A `"` in it shows as `\\"` and a backslash as
+    `\\\\`, as in JSON, so the reason cannot close the quote and go on as our text. Empty
+    without a reason: the line then ends with our sentence."""
     reason = stop.get("reason")
     if not reason:
         return ""
-    return f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(reason)}"'
+    escaped = str(reason).replace("\\", "\\\\").replace('"', '\\"')
+    return f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(escaped)}"'
 
 
 def _isolated(exc: Exception) -> dict[str, Any] | None:
