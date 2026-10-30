@@ -147,3 +147,50 @@ and makes "nothing else opens" a property of the shape of the body.
   (§6.2); the contract keeps it out.
 - Widening the ordinary path (`members:admin` OR owns the agent): the same call would then carry role,
   trust and areas too, and "nothing else opens" would depend on every field's check.
+
+## A cross-owner `reports_to` is a pair of personal consent requests that set the edge at the last go
+
+**Id:** 5d9be0ad-ef77-487e-b95a-1cf9ea2674d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.2 ("Across owners"), §3.1, §2.3 and the contract change that adapted them (#769); the maintainer's go and the coordinator's decisions on card tsk-3jdqtppzmtdb, 2026-10-30 (the personal request instead of a project route for a human outside the project; the owner's own path included; existing edges stay)
+**See:** manager.md#an-agents-owner-moves-its-reports_to-on-a-path-of-their-own-only-to-nobody-or-to-a-member-they-own — 4a7342a5-50d1-4d38-bc6b-daa38413efd1 — as of 2026-10-30
+**Revisit when:** an organisation's agents get their own owner rules (§6.26), or the consent flow gains a third party, or a manager's consented change (`line_change`) and a placement's new profile (§15.6) are made to ask as the others do
+
+`cross_owner.owners` decides: the subordinate is an agent and the boss's side (an agent's owner, or a human)
+is not its owner. `cross_owner.file` then files one `consent` request per owner still to consent, as a
+**personal request** to that human in person (`to: human:<id>`, a proposal of kind `cross_owner_reports_to`),
+the boss's side first, titles and summary as §6.2 gives them; the caller who is one of the two owners
+counts as consenting and asks only the other. The requests of one edge name each other
+(`proposal.requests`), and `reports_to` stays as it is while they are open. `settle` does the rest: a `go`
+that leaves none open validates the edge as it is then (guest, cycle, depth) and applies it with the
+asker as actor and the answering human as approver, `line_consent` set when the boss held the role
+`manager` at filing and still does; a `no` or a withdrawal withdraws the other (`refused`, or the hub's
+own reason it was withdrawn for); a failed check leaves the request open for a `no`.
+
+The paths that start it: a `PATCH` with `members:admin` (202, the other fields at once, the boss side's
+request the answer); the owner of the subordinate without `members:admin`, member or not (`_owner_sets_reports_to`,
+for a foreign boss, `asked_by_human` when they are no member: they read and withdraw it under
+`/requests/{id}`, never answer it); an admin agent's patch after its owner's go (§2.3 ᵃ), which asks both;
+and a join, which starts the membership with `reports_to: null` and asks the boss's side at the exchange
+with the join's creator as asker. A further `PATCH` of the member's `reports_to` withdraws the open
+requests (`superseded`), an agent that did not ask is refused (`pending_consent`), the removal of either
+member withdraws them (`member_removed`).
+
+**Reason:** an agent reports across owners only with a human's consent, and a human who owns one side
+need not be a member of the project. A personal request already reaches such a human, is answered where
+every personal request is, and opens no call into the project.
+
+**Rejected alternatives:**
+- A normal project request that a human outside the project reads and answers by the project route (the
+  first reading of §6.2): a new access path into a project for non-members, next to the personal
+  requests the hub already has; the contract was changed to the personal route instead.
+- One request for the pair with two answers: each owner answers their own request (`addressee_only`), and
+  a `no` on either must be visible as a refusal by that owner.
+- A column naming the pair: the proposal carries its sibling ids, and nothing queries by them but the
+  hub's own withdrawals.
+
+**Not covered, and why:** a manager's consented change (`line_change`) and a placement's new profile
+(§15.6) still set a cross-owner `reports_to` directly; the contract names the join, the `PATCH` and the
+owner. Existing cross-owner edges stay as they are (alpha, no migration of data).

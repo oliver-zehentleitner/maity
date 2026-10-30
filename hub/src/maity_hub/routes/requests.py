@@ -19,6 +19,7 @@ from maity_hub import (
     avatars,
     clock,
     cover,
+    cross_owner,
     events,
     idempotency,
     inbox,
@@ -1318,9 +1319,22 @@ def withdraw(
         # Only its human, or the hub, withdraws a personal request (§7); the one who started a
         # transfer into an organisation withdraws the requests that carry it (§6.26).
         org_transfer = row.personal and row.org_id is not None and inbox.is_asker(row, mine)
-        if row.personal and not org_transfer:
+        # A cross-owner `reports_to` pair has its own withdrawal rule (§6.2).
+        pair = row.personal and (row.proposal or {}).get("kind") == cross_owner.KIND
+        if pair:
+            allowed = cross_owner.may_withdraw(row, mine)
+            if allowed is None:
+                raise not_found()
+            if not allowed:
+                raise ApiError(
+                    403,
+                    "forbidden",
+                    "an agent that did not ask for the edge does not end the owners' decision",
+                    {"reason": "pending_consent"},
+                )
+        elif row.personal and not org_transfer:
             raise not_found()
-        if not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
+        if not pair and not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
         _refuse_unless_open(row)
         proposals.require_known(row)
@@ -1345,7 +1359,7 @@ def withdraw(
             mine.project.id,
             "request_withdrawn",
             _asker_audience(conn, row),
-            {**view, "reason": body.reason},
+            _payload(row, view, reason=body.reason),
             actor=caller.actor(mine.id),
             subject=("request", row.id),
         )
@@ -1669,6 +1683,57 @@ def file_to_human(
     )
 
 
+def file_to_human_outside(
+    conn: Connection,
+    project_id: str,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    proposal: dict[str, Any],
+) -> str:
+    """A consent request to a human in person, asked by a human who is no member of the
+    project (`asked_by_human`): an agent's owner setting its boss across owners (§6.2). It
+    carries the project, and no event reaches the asker or anyone else outside it."""
+    proposals.check_kind(proposal)
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": project_id,
+                "class": "consent",
+                "title": title_text,
+                "summary": summary,
+                "options": [],
+                "priority": "normal",
+                "to_kind": "human",
+                "to_human": human_id,
+                "personal": True,
+                "proposal": proposal,
+                "asked_by": None,
+                "asked_by_human": caller.human_id,
+                "while_open": "wait",
+                "status": "open",
+                "changed_via": caller.via,
+                "created_at": clock.now(),
+            }
+        )
+    )
+    row = _row(conn, request_id)
+    records.personal_request(conn, row)
+    emit(
+        conn,
+        project_id,
+        "request_created",
+        [],
+        _payload(row, request_view(conn, row)),
+        actor=Actor(membership_id=None, human_id=caller.human_id, via=caller.via),
+        subject=("request", request_id),
+    )
+    return request_id
+
+
 def file_org_consent(
     conn: Connection,
     mine: Membership,
@@ -1784,10 +1849,12 @@ def _human(caller: Caller) -> None:
         raise humans_only("a personal request is its human's alone")
 
 
-def _locked_personal(conn: Connection, caller: Caller, request_id: str) -> Any:
+def _locked_personal(
+    conn: Connection, caller: Caller, request_id: str, *, asker: bool = False
+) -> Any:
     """`_personal` under its project's lock, read again after locking, as the project
     routes do: an answer and a withdrawal at once cannot both change it."""
-    row = _personal(conn, caller, request_id)
+    row = _personal(conn, caller, request_id, asker=asker)
     # An organisation's row before any project's, in the order of their ids (§6.26): the
     # request's own organisation, and the one that owns the project, which a transfer out of
     # it frees.
@@ -1796,19 +1863,27 @@ def _locked_personal(conn: Connection, caller: Caller, request_id: str) -> Any:
         orgs.lock(conn, org_id)
     if row.project_id is not None:
         lock_project(conn, row.project_id)
-    return _personal(conn, caller, request_id)
+    return _personal(conn, caller, request_id, asker=asker)
 
 
-def _personal(conn: Connection, caller: Caller, request_id: str) -> Any:
-    """A personal request addressed to the calling human; any other id is `not_found`."""
+def _personal(conn: Connection, caller: Caller, request_id: str, *, asker: bool = False) -> Any:
+    """A personal request addressed to the calling human; any other id is `not_found`. With
+    `asker`, also the cross-owner `reports_to` request that a human who is no member of its
+    project asked for, their own agent's boss (§6.2): they read and withdraw it, never
+    answer it."""
     row = conn.execute(
         select(t.request).where(
             t.request.c.id == request_id,
             t.request.c.personal.is_(True),
-            t.request.c.to_human == caller.human_id,
+            (t.request.c.to_human == caller.human_id)
+            | (
+                t.request.c.asked_by_human == caller.human_id if asker else t.request.c.id.is_(None)
+            ),
         )
     ).first()
     if row is None:
+        raise not_found()
+    if row.to_human != caller.human_id and (row.proposal or {}).get("kind") != cross_owner.KIND:
         raise not_found()
     return row
 
@@ -1842,7 +1917,7 @@ def _project_inline(conn: Connection, project_id: str) -> dict[str, Any]:
 def get_personal(request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     _human(caller)
     with engine_of(request).begin() as conn:
-        row = _personal(conn, caller, request_id)
+        row = _personal(conn, caller, request_id, asker=True)
         # The reading human reviews what a proposal would apply (§19.4), against their
         # current text, which only they see here.
         view = request_view(conn, row, with_proposal=True)
@@ -1941,7 +2016,7 @@ def withdraw_personal(
     _human(caller)
 
     def action(conn: Connection) -> idempotency.Outcome:
-        row = _locked_personal(conn, caller, request_id)
+        row = _locked_personal(conn, caller, request_id, asker=True)
         _refuse_unless_open(row)
         member = _member_of(conn, row.project_id, caller.human_id)
         done = conn.execute(
