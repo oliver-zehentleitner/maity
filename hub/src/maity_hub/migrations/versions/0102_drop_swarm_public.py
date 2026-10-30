@@ -4,7 +4,7 @@ The swarm is a statistic in the project's Overview now; whether the world sees t
 numbers is the project's one choice to have a public page. A downgrade brings the column
 back as `off` for every project: what was `on` before is not kept.
 
-Revision ID: 0100
+Revision ID: 0102
 Revises: 0099
 Create Date: 2026-10-30
 """
@@ -14,7 +14,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0100"
+revision: str = "0102"
 down_revision: str | None = "0099"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
