@@ -64,7 +64,7 @@ window.Maity = window.Maity || {};
         h("a", { href: orgLink(o.handle) }, o.display_name),
         h("span", { class: "muted" }, " @" + o.handle + " · " + o.my_role))))
       : h("p", { class: "muted" }, "You are in no organisation yet."));
-    if (await M.api.hubHas("POST", "/orgs").catch(() => true)) append(root, createForm());
+    append(root, createForm());
   }
 
   function createForm() {
@@ -344,10 +344,6 @@ window.Maity = window.Maity || {};
   M.views.orgs = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
       append(root, h("p", null, "Organisations are for humans only."));
-      return;
-    }
-    if (!(await M.api.hubHas("GET", "/orgs").catch(() => true))) {
-      append(root, h("h2", null, "Organisations"), M.dom.notOnHub("This hub has no organisations yet."));
       return;
     }
     if (args && args[0]) await orgPage(ctx, root, handleOf(args[0]));

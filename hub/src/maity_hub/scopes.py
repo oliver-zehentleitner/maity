@@ -139,8 +139,7 @@ def in_admin_team(trust: str, role: str) -> bool:
 
 
 def token_known(token: str) -> bool:
-    """`trust:owner`, `trust:admin` or `role:<role>` in the new sense; an old token such
-    as `role:admin` is unknown after the migration (§2.3)."""
+    """`trust:owner`, `trust:admin` or `role:<role>`; any other token is unknown (§2.3)."""
     if token.startswith("trust:"):
         return token.removeprefix("trust:") in TOKEN_TRUSTS
     if token.startswith("role:"):

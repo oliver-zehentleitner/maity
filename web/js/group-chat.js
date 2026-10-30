@@ -519,10 +519,5 @@ window.Maity = window.Maity || {};
     }
   }
 
-  // Whether this hub has group chats (§9.2): it serves their creation. A
-  // machine form that cannot be read counts as yes: the controls stay, and
-  // a failure says itself where it happens.
-  const served = () => M.api.hubHas("POST", "/projects/{owner}/{slug}/conversations").catch(() => true);
-
-  M.groupChat = { create, open, served };
+  M.groupChat = { create, open };
 })(window.Maity);
