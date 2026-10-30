@@ -6,7 +6,7 @@ of the human's agents at once: personal, filed by the hub, with no asker at all.
 changes; a downgrade deletes the digest requests, which the old constraint refuses.
 
 Revision ID: 0108
-Revises: 0083
+Revises: 0107
 Create Date: 2026-10-30
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0108"
-down_revision: str | None = "0083"
+down_revision: str | None = "0107"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
