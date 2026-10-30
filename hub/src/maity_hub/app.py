@@ -28,6 +28,7 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
+    not_listening_digest,
     org_invitations,
     probe,
     registration_accounts,
@@ -102,6 +103,9 @@ from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
 from maity_hub.routes import legal as legal_routes
+from maity_hub.routes import (
+    limits as limits_routes,
+)
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import probe as probe_routes
@@ -181,6 +185,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # A session that stopped reading is noticed without anybody asking (§5.3).
         not_listening_worker = not_listening.Worker(engine)
         not_listening_worker.start()
+        # The owners' digest of instances that are away, on the hour (§5.3).
+        digest_worker = not_listening_digest.Worker(engine)
+        digest_worker.start()
         commitment_worker = commitment.Worker(engine)
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
@@ -226,6 +233,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.stop()
         availability_worker.stop()
         not_listening_worker.stop()
+        digest_worker.stop()
         image_worker.stop()
         if worker is not None:
             worker.stop()
@@ -270,6 +278,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
+    app.include_router(limits_routes.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)

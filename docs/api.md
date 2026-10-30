@@ -3058,10 +3058,13 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
-`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy")
-and `meat_proxy_note`, the note's text, always, whatever the switch: the
-dashboard shows it under the switch from here and keeps no copy of its
-own. The dashboard re-reads `/me` for its counts after an
+`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy"),
+its two parts `meat_proxy_lead` and `meat_proxy_hands` (`true` or
+`false`, both `false` for a new account), and `meat_proxy_note`,
+always, whatever the switch: the note for the parts as set while the mode
+is on, and the note with both parts while it is off — the text that
+switching it on would send. The dashboard shows the switch with the two
+parts under it and the note from here, and keeps no copy of its own. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3362,23 +3365,38 @@ Response `200`, bounded and deterministic:
 - **Meat proxy.** `me.owner.meat_proxy` and, on every human in `peers`,
   `meat_proxy` are `true` or `false`: whether that human has switched on
   "I am a meat proxy" in their profile (`PATCH /me`, §5.3 table; default
-  `false`). While it is `true` the same object carries
-  `meat_proxy_note`, always the same text, `"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."`: the
-  person's own words for both sides of it — they would rather be led
-  than asked to explain, and they offer themselves first when an agent
-  needs a human's hands. Beyond that the hub interprets nothing, and the
-  dashboard shows the same text next to the switch, so the person reads
-  exactly what the agents read. It reaches the agents
-  that deal with that human: their own agents (`me.owner`) and the
-  agents of every project they are an active member of (`peers`). It is
-  context about a person, never a permission and never a rule (the rank
-  of §19.4 applies), read live on every resume, in no event and in no
-  other member view. Only the human sets it, for themselves: `PATCH /me`
-  with `meat_proxy` from an agent is `forbidden` (`humans_only`), and no
-  admin sets it for another. *Hub implementation:* a column of the
-  human, the two fields and the note; until the follow-up card lands,
-  the hub still sends the earlier note, `"This person says: I am a meat
-  proxy."`, and `GET /me` does not carry the note yet.
+  `false`). The switch has two parts, each `true` or `false`, the two
+  things the person says about themselves:
+  - `meat_proxy_lead` — *"Lead me step by step rather than expecting me
+    to explain."* They would rather be led than asked to explain.
+  - `meat_proxy_hands` — *"When you need a human's hands, come to me
+    first."* They offer themselves first when an agent needs something
+    done by a person (a click on a real machine, a browser, a place).
+
+  The hub stores the two parts (both `false` for a new account);
+  `meat_proxy` is derived: `true` while at least one part is. A
+  `PATCH /me` is applied in this order: `meat_proxy: true` sets both
+  parts to `true`; `meat_proxy: false` sets both to `false`; then each
+  part the same body gives is set as given — so `{"meat_proxy": true,
+  "meat_proxy_hands": false}` leads without offering hands,
+  `{"meat_proxy_lead": true}` alone switches the mode on with that part
+  only, and a body whose result has both parts `false` switches the mode
+  off. `meat_proxy: false` together with a part set to `true` is
+  `invalid` (`details.fields.meat_proxy: "conflicts_with_parts"`).
+  Nothing is kept from an earlier time the mode was on. While
+  `meat_proxy` is `true` the same object carries both parts and
+  `meat_proxy_note`: `"This person says: I am a meat proxy."` followed by
+  the sentence of each part that is `true`, in the order above, so an
+  agent reads exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
+  the same note under the switch, so the person reads exactly what the
+  agents read. It reaches the agents that deal with that human: their
+  own agents (`me.owner`) and the agents of every project they are an
+  active member of (`peers`). It is context about a person, never a
+  permission and never a rule (the rank of §19.4 applies), read live on
+  every resume, in no event and in no other member view. Only the human
+  sets it, for themselves: `PATCH /me` with `meat_proxy` or a part from
+  an agent is `forbidden` (`humans_only`), and no admin sets it for
+  another.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -3551,7 +3569,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy` (`true` or `false`, §5.2, "Meat proxy"; a human's `member` in `GET /me` carries it); `meat_proxy` from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
