@@ -203,7 +203,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         digest_worker.start()
         commitment_worker = commitment.Worker(engine)
         commitment_worker.start()
-        registrations_worker = registration_accounts.Worker(engine)
+        registrations_worker = registration_accounts.Worker(engine, settings.public_url)
         registrations_worker.start()
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)

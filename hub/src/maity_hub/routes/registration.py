@@ -304,7 +304,7 @@ def list_registrations(
     """The accounts that wait for approval, oldest first (§16.4)."""
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        registration_accounts.expire(conn)
+        registration_accounts.expire(conn, settings_of(request).public_url)
         c = t.account_registration.c
         query = select(t.account_registration).where(c.status == "pending")
         if cursor is not None:
@@ -323,10 +323,10 @@ def list_registrations(
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
-def _decidable(conn: Connection, human_id: str) -> Any:
+def _decidable(conn: Connection, human_id: str, public_url: str) -> Any:
     """The pending account, locked; `not_found` for none, `invalid_transition` for one
     another instance admin decided meanwhile (§16.4)."""
-    registration_accounts.expire(conn)
+    registration_accounts.expire(conn, public_url)
     row = registration_accounts.locked(conn, human_id)
     if row is None:
         raise not_found()
@@ -344,8 +344,10 @@ def _decidable(conn: Connection, human_id: str) -> Any:
 def approve_registration(human_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        row = _decidable(conn, human_id)
-        registration_accounts.approve(conn, row, caller.principal_id)
+        row = _decidable(conn, human_id, settings_of(request).public_url)
+        registration_accounts.approve(
+            conn, row, caller.principal_id, settings_of(request).public_url
+        )
         return JSONResponse({**registration_accounts.item(conn, row), "account_status": "active"})
 
 
@@ -357,6 +359,8 @@ def reject_registration(
         raise invalid({"reason": "invalid"})
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        row = _decidable(conn, human_id)
-        registration_accounts.remove(conn, row, "rejected", caller.principal_id, body.reason)
+        row = _decidable(conn, human_id, settings_of(request).public_url)
+        registration_accounts.remove(
+            conn, row, "rejected", caller.principal_id, body.reason, settings_of(request).public_url
+        )
         return JSONResponse({"id": human_id, "status": "rejected"})

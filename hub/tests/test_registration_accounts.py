@@ -668,7 +668,7 @@ def test_an_undecided_account_goes_after_thirty_days(
         conn.execute(
             update(t.account_registration).values(expires_at=clock.now() - timedelta(seconds=1))
         )
-    worker = registration_accounts.Worker(migrated, interval=0.05)
+    worker = registration_accounts.Worker(migrated, "https://hub.example", interval=0.05)
     worker.start()
     try:
         for _ in range(100):
@@ -704,3 +704,66 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
     decided = admin.get("/me/notifications").json()
     assert decided["counts"]["inbox"] == 0
     assert [i["read"] for i in decided["items"] if i["id"] == item["id"]] == [True]
+
+
+# --- the mails of a decision (§2.7.5, §16.2) --------------------------------------------------
+
+
+def _mailed(engine: Engine, address: str) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(
+                select(t.mail_outbox)
+                .where(t.mail_outbox.c.recipient == address)
+                .order_by(t.mail_outbox.c.id)
+            ).all()
+        )
+
+
+def test_an_approval_mails_the_login_link_and_writes_the_record(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    done, _ = pending_account(make_client, migrated)
+    before = len(_mailed(migrated, "ada@example.com"))
+    assert admin.post(f"{ADMIN}/{done.human_id}/approve").status_code == 200
+    [mail] = _mailed(migrated, "ada@example.com")[before:]
+    assert (mail.kind, mail.human_id) == ("security", done.human_id)
+    assert mail.subject == "[Maity] Your Maity account is approved"
+    assert "https://hub.example/login" in mail.body
+    with migrated.connect() as conn:
+        [record] = conn.execute(
+            select(t.account_record).where(
+                t.account_record.c.human_id == done.human_id,
+                t.account_record.c.type == "registration_approved",
+            )
+        ).all()
+    assert record.data == {"human": done.human_id, "by": admin.id}
+
+
+def test_a_rejection_mails_the_reason_to_an_account_that_is_gone(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    done, _ = pending_account(make_client, migrated)
+    before = len(_mailed(migrated, "ada@example.com"))
+    rejected = admin.post(f"{ADMIN}/{done.human_id}/reject", {"reason": "Not a team member."})
+    assert rejected.status_code == 200, rejected.text
+    [mail] = _mailed(migrated, "ada@example.com")[before:]
+    assert (mail.kind, mail.human_id) == ("security", None)  # the account is deleted
+    assert mail.subject == "[Maity] Your Maity account was not approved"
+    assert "Not a team member." in mail.body and "30 days" in mail.body
+    assert "https://hub.example" in mail.body
+
+
+def test_an_expiry_mails_that_it_was_not_approved_in_time(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    done, _ = pending_account(make_client, migrated)
+    before = len(_mailed(migrated, "ada@example.com"))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.account_registration).values(expires_at=clock.now() - timedelta(seconds=1))
+        )
+        assert registration_accounts.expire(conn, "https://hub.example") == 1
+    [mail] = _mailed(migrated, "ada@example.com")[before:]
+    assert mail.subject == "[Maity] Your Maity account was not approved in time"
+    assert "not approved in time" in mail.body and "reason" not in mail.body
