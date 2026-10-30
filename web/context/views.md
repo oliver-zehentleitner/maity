@@ -2849,3 +2849,40 @@ and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
 
+## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
+
+**Id:** e9c14296-f8da-4f83-871b-056a0d3ab6ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2 `GET /me`, §5.2 "Meat proxy" and the `PATCH /me` row after the contract #702 (two stored parts, the switch derived, the order in which a body applies); the coordinator's card tsk-j9mgn2z3e7pf (two sub-points, both ticked on switching on, each cleared alone, the note under them from `GET /me`), 2026-10-30; the page's shape is the implementer's, 2026-10-30; the review of #720 (the answer's shape), 2026-10-30
+**See:** views.md#the-meat-proxy-hint-quotes-the-hubs-note-as-me-carries-it-and-no-text-of-its-own — 8eb486bb-357a-477c-aaf5-2a4d51024cc4 — as of 2026-10-30
+**Revisit when:** the hub adds a third part, or the note gets text per human or a translation
+
+Under **I am a meat proxy** the account shows the two parts, *Lead me
+step by step rather than expecting me to explain.* and *When you need a
+human's hands, come to me first.*, as checkboxes of their own. The
+switch sends `meat_proxy` alone (on ticks both, off clears both); a part
+sends only that part, so ticking one while the mode is off turns it on
+with that part, and clearing the last turns it off. After every answer
+the switch, both parts and the note are drawn from what the hub sent
+back, never from what was clicked. The answer of `PATCH /me` is `/me`
+itself (§5.1), so the page reads `answer.member`, as it reads `GET /me`;
+the fixture hub answers in that same shape. The note stands under the parts;
+while the mode is off it is the text switching on would send.
+
+**Reason:** the hub stores the parts and derives the switch, so drawing
+from its answer keeps the page and the agents' text the same, whatever
+order the person clicks in. Sending the one field that changed lets the
+hub's order rule decide, as §5.2 spells it out.
+
+**Rejected alternative:** sending the whole state (switch and both parts)
+on every change: `meat_proxy: false` with a part set to `true` is
+`invalid`, and the page would have to repeat the hub's rule. Disabling
+the parts while the switch is off: the contract lets one part alone turn
+the mode on, which a disabled box would hide. Labels of the page's own
+wording for the parts: they are the person's own sentences in §5.2, the
+same words the note puts together. Reading the fields at the top of the
+answer with the clicked value as fallback (the earlier code): against the
+hub it never read the answer at all, and the fixture's flat answer hid it.
+
