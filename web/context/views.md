@@ -2726,8 +2726,8 @@ named.
 
 In a project the header shows, after the state, the absence and the
 released mark, a link to the repository (`repository.url`, labelled by
-`repository.forge`: GitHub, GitLab or Gitea with their mark, else
-"Repository" with a branch mark) and **Why**, the dashboard of the Keep
+`repository.forge`: GitHub and GitLab with their marks, Gitea by its
+name with a branch mark, any other as "Repository" with a branch mark) and **Why**, the dashboard of the Keep
 the Why family's root member. Either is left out where the project has
 none or its address is not plain `https`; both open in a tab of their
 own and are named for a screen reader with where they go.

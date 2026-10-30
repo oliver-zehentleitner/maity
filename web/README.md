@@ -42,8 +42,8 @@ requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. Beside them, where the project has them,
-two links in tabs of their own: its repository, with the forge's mark and
-name (GitHub, GitLab, Gitea; a branch mark otherwise), and **Why**, the
+two links in tabs of their own: its repository, with the forge's name and
+mark (GitHub and GitLab their own; Gitea and any other a branch mark), and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
