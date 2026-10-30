@@ -101,7 +101,7 @@ names a person was once known by, for anyone to take.
 **Evidence:** inferred
 **Source:** the merge of the alias card onto main's `handle_register` (organisations, §6.26), 2026-10-30; `docs/api.md` §6.24 ("a human's and an organisation's handle share the scope")
 **See:** handles.md#a-handle-given-up-becomes-a-row-in-one-alias-table-scoped-by-where-handles-are-unique — dd5b64e5-289d-4c8c-877e-8d246149bda7 — as of 2026-10-30
-**Revisit when:** an organisation can be renamed (`PATCH /orgs/{org}` with `handle`, §6.24), or aliases move into the register
+**Revisit when:** an organisation can be renamed (`PATCH /orgs/{org}` with `handle`, §6.24; card `tsk-xbwj3ht47jsq`), or aliases move into the register
 
 `handles.holder` for the humans' scope asks the register first (current handles of
 humans and organisations, deleted ones included), then `handle_alias`. A human's
