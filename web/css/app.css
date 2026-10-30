@@ -1157,6 +1157,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .swarm-per-day { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
 .swarm-per-day .sparkline { color: var(--accent); }
 .swarm-per-day .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* A section of the Overview (a grid item) never grows past its column:
+   the table scrolls sideways in its own box on a phone. */
+.swarm-body { min-width: 0; }
+.swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }

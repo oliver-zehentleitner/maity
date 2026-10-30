@@ -60,7 +60,8 @@ window.Maity = window.Maity || {};
   function table(rows, totals, label) {
     const cells = (r) => [...COUNTS.map(([k]) => h("td", null, String(r[k] == null ? "–" : r[k]))),
       ...MEDIANS.map(([k]) => h("td", null, duration(r[k])))];
-    return h("div", { class: "table-scroll" }, h("table", { class: "swarm-table" },
+    // A box that scrolls sideways is reachable by keyboard, and named.
+    return h("div", { class: "table-scroll", tabindex: "0", role: "region", "aria-label": "Counts per member" }, h("table", { class: "swarm-table" },
       h("thead", null, h("tr", null, h("th", { scope: "col" }, "Member"),
         COUNTS.concat(MEDIANS).map(([, l]) => h("th", { scope: "col" }, l)))),
       h("tbody", null, rows.map((r) => h("tr", { "data-member": r.member_id || r.handle }, h("th", { scope: "row" }, label(r)), cells(r)))),
