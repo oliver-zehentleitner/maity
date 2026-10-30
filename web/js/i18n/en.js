@@ -90,8 +90,14 @@ window.MAITY_I18N["en"] = {
   "device.expires": "Expires in {time}.",
   "device.mail.address": "Your address",
   "device.mail.check": "Check your mail",
-  "device.mail.code": "The {count}-digit code",
-  "device.mail.digits": "the code in the mail has {count} digits",
+  "device.mail.code": {
+    "one": "The {count}-digit code",
+    "other": "The {count}-digit code"
+  },
+  "device.mail.digits": {
+    "one": "the code in the mail has {count} digit",
+    "other": "the code in the mail has {count} digits"
+  },
   "device.mail.no_match": "that code does not match",
   "device.mail.send": "Email me a sign-in link",
   "device.mail.sent": "If this address belongs to an account, a link is on its way. Open it here, or enter the code from the mail.",
@@ -844,9 +850,8 @@ window.MAITY_I18N["en"] = {
   "prefs.review.reread_failed": "Your current preferences could not be read again: {reason}",
   "prefs.review.stale": "Your preferences changed since this was proposed: it was written against version {base}, yours is now version {version}. Accepting it as it is would drop the newer text, so merge it by hand or decline it.",
   "prefs.review.title": "A change to your preferences",
-  "prefs.review.why": "{label}{reason}",
+  "prefs.review.why": "Why: {reason}",
   "prefs.review.why_declining": "Reason for declining",
-  "prefs.review.why_label": "Why: ",
   "prefs.review.why_placeholder": "Why not (optional; the agent reads it)",
   "prefs.review.yours": "Yours now",
   "prefs.save": "Save",

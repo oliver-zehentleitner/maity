@@ -350,7 +350,7 @@ window.Maity = window.Maity || {};
 
       append(clear(box),
         h("h3", { class: "sub" }, M.t("prefs.review.title")),
-        p.reason ? h("p", null, M.tn("prefs.review.why", { reason: p.reason, label: h("strong", null, M.t("prefs.review.why_label")) })) : null,
+        p.reason ? h("p", { class: "pref-why" }, M.t("prefs.review.why", { reason: p.reason })) : null,
         stale ? h("p", { class: "flag", role: "note" },
           M.t("prefs.review.stale", { base: String(p.base_version), version: String(current.version) })) : null,
         h("h4", { class: "sub" }, M.t("prefs.review.diff", { version: String(current.version) })),
