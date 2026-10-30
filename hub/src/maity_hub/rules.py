@@ -125,6 +125,21 @@ SUPERVISED = (
 )
 
 
+def _role_lines(project: Any, role: str) -> list[str]:
+    """A built-in role's text is the hub's; a project role's is a project admin's words,
+    quoted and headed with who set it (§2.3 "Project roles")."""
+    from maity_hub import project_roles
+
+    found = next((r for r in project_roles.of(project) if r["name"] == role), None)
+    if found is None:
+        return [_ROLE.get(role, f"Your role is {role}.")]
+    lines = [f"Your role is {role}, a project role with the scopes of a {found['base']}."]
+    if found["guide"]:
+        lines += ["", f"Set by {found['guide_by']}:", ""]
+        lines += [f"> {line}" if line else ">" for line in found["guide"].splitlines()]
+    return lines
+
+
 DUTY_SELF = (
     "Finished work does not end your session. Keep `maity wait` running in a loop, each call "
     "with a timeout below your harness's limit (`hints.wait_timeout` in the resume packet), "
@@ -162,7 +177,7 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
         "## Your role",
         "",
         _TRUST.get(trust, f"Your trust is {trust}."),
-        _ROLE.get(role, f"Your role is {role}."),
+        *_role_lines(project, role),
         "",
         "## Group chats",
         "",
@@ -181,8 +196,8 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
 
 def text_digest() -> str:
     """The digest of the text the hub generates (§6.9): every text constant of this module
-    and two rendered sample documents, so that a sentence written inside `generate` changes
-    it as well. The same on every start of the same code."""
+    and four rendered sample documents, so that a sentence written inside `generate` changes
+    it as well, the lines of a project role included. The same on every start of the same code."""
     constants = {
         name: value
         for name, value in sorted(globals().items())
@@ -194,9 +209,11 @@ def text_digest() -> str:
         released_at=datetime(2026, 1, 1, tzinfo=UTC), policy_preset="sample",
         claim_policy="sample", done_authority="sample", tag_authority="sample",
         steward_writes="sample", lease_seconds=60, keep_the_why=True, rules_markdown="owner",
+        roles=[{"name": "sample", "base": "coder", "guide": "guide", "guide_by": "the owner"}],
     )  # fmt: skip
     rendered = [
-        generate(sample, "member", "coder", "the owner", supervised=supervised)
+        generate(sample, "member", role, "the owner", supervised=supervised)
+        for role in ("coder", "sample")
         for supervised in (False, True)
     ]
     text = json.dumps([constants, rendered], sort_keys=True, ensure_ascii=False, default=str)

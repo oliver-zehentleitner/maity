@@ -1492,18 +1492,23 @@ def cmd_messages(args: argparse.Namespace) -> int:
         member_id, sep, instance = member.partition("#")
         return show(handles.get(member_id, member_id) + sep + instance)
 
+    def sender(m: dict[str, Any]) -> str:
+        # An agent's message names its instance (§8.8), shown as `<handle>#<id>`.
+        inst = m.get("from_instance")
+        return who(f"{m.get('from')}#{inst}" if isinstance(inst, str) and inst else m.get("from"))
+
     if not items:
         print("no messages")
     for m in items:
         if m.get("redacted"):
             by = who(_obj(m.get("redaction")).get("by"))
-            print(f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {who(m.get('from'))}  "
+            print(f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {sender(m)}  "
                   f"removed by {by}")  # fmt: skip
             continue
         card = f"  {show(m.get('task_id'))}" if m.get("task_id") else ""
         print(
             f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {show(m.get('type'))}  "
-            f"{who(m.get('from'))} -> {who(m.get('to'))}{card}"
+            f"{sender(m)} -> {who(m.get('to'))}{card}"
         )
         for line in onboarding.quote(m.get("body") or ""):
             print(line)

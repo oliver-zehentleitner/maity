@@ -27,6 +27,7 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    project_roles,
     reviews,
 )
 from maity_hub import tables as t
@@ -342,7 +343,7 @@ def post_message(
         elif to.startswith(("role:", "trust:")):
             from maity_hub.scopes import token_known
 
-            if not token_known(to):
+            if not token_known(to, project_roles.names(mine.project)):
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
@@ -505,13 +506,14 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
             t.membership.c.human_id,
             t.membership.c.trust,
             t.membership.c.role,
+            t.membership.c.role_base,
         ).where(
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),
             t.membership.c.agent_id.in_(principals) | t.membership.c.human_id.in_(principals),
         )
     ).all()
-    return {(r.agent_id or r.human_id): tokens_of(r.trust, r.role) for r in rows}
+    return {(r.agent_id or r.human_id): tokens_of(r.trust, r.role, r.role_base) for r in rows}
 
 
 def writer(

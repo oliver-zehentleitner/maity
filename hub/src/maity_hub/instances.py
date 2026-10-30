@@ -494,7 +494,10 @@ def team_wakes(
             )
         )
         if m.id != actor_membership
-        and (f"member:{m.agent_id}" in audience or bool(tokens_of(m.trust, m.role) & set(audience)))
+        and (
+            f"member:{m.agent_id}" in audience
+            or bool(tokens_of(m.trust, m.role, m.role_base) & set(audience))
+        )
     ]
     if not teams:
         return None

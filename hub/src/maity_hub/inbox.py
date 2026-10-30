@@ -82,7 +82,7 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
-        return "trust:admin" in tokens_of(mine.trust, mine.role)
+        return "trust:admin" in tokens_of(mine.trust, mine.role, mine.role_base)
     return originally_addressed(conn, request, mine)
 
 
@@ -100,7 +100,7 @@ def _in_own_right(request: Any, mine: Membership) -> bool:
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
         return mine.trust == "owner"
-    return request.to_role in tokens_of(mine.trust, mine.role)
+    return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
 
 
 def is_asker(request: Any, mine: Membership) -> bool:
@@ -184,12 +184,15 @@ def consent_target_ok(conn: Connection, project_id: str, to: Addressee) -> bool:
         return to.role in CONSENT_TOKENS
     row = conn.execute(select(t.membership).where(t.membership.c.id == to.member)).one()
     kind = "agent" if row.agent_id else "human"
-    return has_scope(row.trust, row.role, kind, "requests:answer")
+    return has_scope(row.trust, row.role_base, kind, "requests:answer")
 
 
-def valid_token(token: str) -> bool:
-    """`trust:owner`, `trust:admin` or `role:<role>`; an old token is not (§2.3)."""
-    return token_known(token)
+def valid_token(token: str, project: Any) -> bool:
+    """`trust:owner`, `trust:admin` or `role:<role>`, the project's own roles included;
+    an old token is not (§2.3)."""
+    from maity_hub import project_roles
+
+    return token_known(token, project_roles.names(project))
 
 
 def humans_only(request: Any) -> bool:

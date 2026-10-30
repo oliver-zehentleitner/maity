@@ -250,7 +250,7 @@ window.Maity = window.Maity || {};
       : M.t("board.report.not_observed");
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: r.verification })),
-      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
+      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx), ctx)),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
       whyLine(ctx, r));

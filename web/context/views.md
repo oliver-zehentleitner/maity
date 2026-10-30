@@ -1614,6 +1614,67 @@ Team and pushes the reports, the second thing a reader looks for,
 further down. Keeping the three rows and only shortening the report
 list: the wish was about the order, not the length.
 
+## Abuse reports are a section of /admin: the snapshot as text, each action said before it is sent, a suspension asked first
+
+**Id:** f4e5de2b-d329-444e-b98f-1ea8888b147a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub has the routes, the dashboard had no screen), 2026-10-30; docs/api.md §16.8 (the snapshot is the one content an instance admin reads; text untrusted; the four actions; a suspension lifted only by the operator)
+**Revisit when:** reports get a target of their own for organisations, or an admin may lift a suspension from the dashboard
+
+The instance admin's **Reports** section (`js/admin-reports.js`) lists
+the reports as the hub orders them (open first, newest first), filtered
+by status and type. One opened shows the reporter's text and the
+snapshot, every field as plain text in `pre` or a definition list,
+never as markup or a link. The action is chosen from the four with the
+effect of each said under the choice. **Suspend** asks for a
+confirmation naming the target. A resolved report can be resolved
+again to replace its action, and **Dismiss** then lifts its hold.
+
+**Reason:** the snapshot is untrusted content that someone chose to
+report, often because it is hostile (prompt injection, spam); shown as
+text, nothing in it acts. A suspension ends every session and
+credential of an account at once and only the operator lifts it, so it
+is the one action asked twice.
+
+**Rejected alternative:** opening the reported target in its project:
+§16.8 gives the admin no read of the project, only the copy. Confirming
+every action: dismiss and hide are undone by resolving again, and a
+dialog for each would teach clicking through.
+
+The fixture hub (`js/api.js`) mirrors `/admin/reports`; the e2e step
+`reports_admin_step` checks the shapes against the real hub, because
+the fixture's default status, its `closed_at` on a second resolve and
+the snapshot missing from its `resolve` answer had drifted once (review
+of #778).
+
+## The limits per person are chosen as a number, no limit or the default, the environment's shown locked
+
+**Id:** 28adb478-d5fa-450b-9bbd-e985d93405c4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation
+**Revisit when:** plans set the limits per plan (§2.7, part two), or the hub adds a limit
+
+The **Limits** section (`js/admin-limits.js`) shows each value with a
+choice of how it is set — a number, no limit, or the default — the
+number field only for the first, the value's source in words and the
+people at or over it. A value from the environment is shown, its
+controls disabled. Only changed values are sent: a number, `unlimited`,
+or `null` for the default; the call goes through `M.stepUp.run`, so a
+missing second factor or password is asked where it stands.
+
+**Reason:** the contract gives three different meanings — a number,
+"no limit" stored by the admin, and the default restored by `null` —
+and one number field cannot say the last two apart; an empty field read
+as the default would be guessing.
+
+**Rejected alternative:** a single number field with "0 means no
+limit": the hub refuses 0 (`invalid`), and the default would still need
+a gesture of its own.
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
@@ -2965,3 +3026,33 @@ read on every Overview visit, and the page still long. The organisation
 as a fourth Overview tab: the maintainer placed it with the team. A
 `members/organisation` address: `members/<id>` is a member's page, and
 a word there would have to be told apart from an id.
+
+## Members filters to one's own agents with Only my agents, kept per viewer in the browser
+
+**Id:** 7b08511c-7f7e-4af2-bd7e-df6f01476e0b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (a filter 'Only my agents' on the members list, the member's `owner` being the signed-in human, remembered per viewer); where it is kept is the implementer's
+**Revisit when:** the hub keeps per-viewer view settings, or the GUI round asks for the filter on other lists too
+
+A human viewer of Members gets the checkbox **Only my agents**. On, the
+list is the agents whose `owner_id` is the viewer, and the humans'
+table is not drawn; with none, it says so. The choice is kept in the
+browser's `localStorage` under one key per viewer
+(`maity.members.mine.<member id>`), for every project, and a browser
+that keeps nothing still filters for the visit. Agents never see the
+box: they own no agent. What an owner may change on their own agent's
+row without `members:admin` is unchanged (Manage with reports to,
+preferences and team, §2.3).
+
+**Reason:** the maintainer wants their own agents at a glance on a list
+that holds everyone's. A per-viewer key keeps one person's choice from
+another's on a shared browser, and the hub has no field for view
+settings.
+
+**Rejected alternative:** one key for every viewer: a second person
+signing in on the same browser would inherit the filter. A key per
+project: the maintainer asked for it per viewer, and switching projects
+would lose it. A setting on the hub: there is no such field, and a
+contract change for a list filter is out of proportion.

@@ -1,17 +1,81 @@
-"""The invitation's mail (docs/api.md §3.4, §18.5): the link to an address-bound
-invitation, sent when mail is enabled.
+"""The invitation's mail (docs/api.md §3.4, §18.5): the link to an address-bound invitation, sent
+when mail is enabled.
 
-The mail outbox comes with the notification settings (#280); until then this sends
-nothing and the inviter passes the `url` on, as the contract says for a hub without
-mail. Tests replace `send` to see what would go out.
+It goes through the mail outbox in the caller's transaction, so it leaves only if the invitation
+commits, on the security budget (§16.2): over it the mail waits for the next hour, never dropped.
+Without mail (not complete or not enabled) nothing is queued and the inviter passes the `url` on,
+as the contract says. Plain text, in English, with the inviter's display name, the project's name,
+the trust and role, the `note` and the link; the address may belong to nobody on the hub yet, so
+the mail names no account, and it is tied to an account only where one holds the address. Tests
+replace `send` to see what would go out.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import Connection
+from typing import Any
+
+from sqlalchemy import Connection, select
+
+from maity_hub import clock, namespace, registration
+from maity_hub import tables as t
+from maity_hub.mail import outbox
 
 
-def send(conn: Connection, *, invitation_id: str, to: str, url: str) -> None:
-    # TODO(#280): enqueue the §18.5 mail (inviter, project, role, note, link) in the
-    # outbox, under the recipient's security-mail budget.
-    del conn, invitation_id, to, url
+def send(conn: Connection, *, invitation_id: str, to: str, url: str, hub: Any) -> None:
+    if not registration.mail_ready(conn, hub):
+        return
+    invitation = conn.execute(select(t.invitation).where(t.invitation.c.id == invitation_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == invitation.project_id)).one()
+    inviter = conn.execute(
+        select(t.human.c.display_name).where(t.human.c.id == invitation.created_by)
+    ).scalar()
+    subject, body = text(
+        inviter=inviter or "Someone",
+        project_name=project.name,
+        full_name=namespace.name_of(conn, project.id),
+        public_url=hub.public_url,
+        trust=invitation.trust,
+        role=invitation.role,
+        note=invitation.note,
+        url=url,
+        expires_at=invitation.expires_at,
+    )
+    # An account that holds this address as verified: the mail is tied to it, so a disabled
+    # address stops it as any of that account's mail (§18.7). Most often there is none yet.
+    holder = conn.execute(
+        select(t.notification_settings.c.human_id).where(
+            t.notification_settings.c.address_normalized == registration.normalized(to),
+            t.notification_settings.c.address_status.in_(("verified", "disabled")),
+        )
+    ).scalar()
+    outbox.enqueue(conn, kind="security", to=to, human_id=holder, subject=subject, body=body)
+
+
+def text(
+    *,
+    inviter: str,
+    project_name: str,
+    full_name: str,
+    public_url: str,
+    trust: str,
+    role: str,
+    note: str | None,
+    url: str,
+    expires_at: Any,
+) -> tuple[str, str]:
+    """Subject and body of the invitation's mail. What the hub did not write (the inviter's
+    name, the project's name, the `note`) is defanged, so that no mail client makes a link of
+    it: the only links are the hub's own (§18.5)."""
+    from maity_hub.notifications.mailer import defang, quoted
+
+    inviter, project_name = defang(inviter), defang(project_name)
+    said = f"{inviter} wrote: {quoted(note)}\n\n" if note else ""
+    return (
+        f"[Maity] {inviter} invites you to {project_name}",
+        f"{inviter} invites you to the Maity project {project_name} ({full_name}) on "
+        f"{public_url}, with trust {trust} and the role {role}.\n\n"
+        f"{said}"
+        f"Accept the invitation: {url}\n\n"
+        f"The link works until {clock.rfc3339(expires_at)} (UTC), once, and only for an "
+        "account with this address. If you do not know the sender, ignore this mail.\n",
+    )

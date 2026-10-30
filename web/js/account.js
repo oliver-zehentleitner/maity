@@ -305,6 +305,7 @@ window.Maity = window.Maity || {};
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
         h("dt", null, "Handle"), h("dd", null, "@" + ctx.me.handle)),
+      M.handles.editor(ctx.me, "/me", M.t("handles.what_own"), changed),
       pictureHeading,
       h("p", { class: "muted" }, "Shown next to your name in every project, to everyone who shares one with you."),
       note,

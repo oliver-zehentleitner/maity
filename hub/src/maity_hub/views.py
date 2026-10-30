@@ -590,6 +590,7 @@ def member_views(
             "aliases": aliased[row.agent_id or row.human_id],
             "trust": row.trust,
             "role": row.role,
+            "role_base": row.role_base,  # the role itself for a built-in one (§2.3)
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             # The edge's owners differ (§6.2 "The marker"); `owner_id` says whose it is.
             "cross_owner": row.reports_to is not None

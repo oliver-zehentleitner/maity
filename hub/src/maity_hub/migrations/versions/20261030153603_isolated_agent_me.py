@@ -6,7 +6,7 @@ agent is free, and all set while it is isolated.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261030153603_isolated_agent_me
-Revises: 0106
+Revises: 0112
 Create Date: 2026-10-30
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261030153603_isolated_agent_me"
-down_revision: str | None = "0106"
+down_revision: str | None = "0112"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

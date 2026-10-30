@@ -44,10 +44,13 @@ def policy_errors(
     """What is wrong with a policy for `target` as the project is now, keyed
     `availability_policy.<field>`: on a PATCH, and again when an admin agent's proposal
     gets its go, since a substitute may have left in the meantime."""
+    from maity_hub import project_roles
     from maity_hub.access import member_row
     from maity_hub.errors import ApiError
     from maity_hub.scopes import token_known
 
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    custom = project_roles.names(project)
     errors: dict[str, str] = {}
     if policy["on_unavailable"] not in ON_UNAVAILABLE:
         errors["availability_policy.on_unavailable"] = "unknown"
@@ -55,7 +58,7 @@ def policy_errors(
         errors["availability_policy.grace_minutes"] = "out_of_range"
     for entry in policy["substitutes"]:
         if entry.startswith(("role:", "trust:")):
-            if not token_known(entry):
+            if not token_known(entry, custom):
                 errors["availability_policy.substitutes"] = "unknown_role"
             continue
         if entry == (target.agent_id or target.human_id):

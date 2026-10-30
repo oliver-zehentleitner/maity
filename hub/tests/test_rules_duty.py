@@ -34,7 +34,7 @@ def test_a_supervised_session_gets_the_supervised_line_and_not_the_self_one() ->
             "name": "p", "rules_version": 1, "state": "build", "state_note": None,
             "released_at": None, "policy_preset": "x", "claim_policy": "x", "done_authority": "x",
             "tag_authority": "x", "steward_writes": "x", "lease_seconds": 60,
-            "keep_the_why": False, "rules_markdown": None,
+            "keep_the_why": False, "rules_markdown": None, "roles": None,
         },
     )()  # fmt: skip
     text = rules.generate(project, "member", "coder", "the owner", supervised=True)

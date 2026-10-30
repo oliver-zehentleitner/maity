@@ -1889,7 +1889,10 @@ transport, `Sec-Fetch-Site` and `next`.
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
-   `POST` says exactly which version the person saw (§2.7.2).
+   `POST` says exactly which version the person saw (§2.7.2). Under the
+   form the page links the legal pages the instance serves (§16.7.1:
+   imprint, privacy notice, terms of use), as the dashboard's
+   registration form does.
 6. **Completion** (`POST` of that page). In this order: the admission is
    checked again, atomically with the completion (the mode changed, the
    address no longer listed, or the admitting invitation no longer
@@ -4360,10 +4363,10 @@ its credentials into the project answers `403` `forbidden` with
 `details.reason: "isolated"` and `details.isolated`, except `GET /me`
 and the resume packet, which carry `membership.isolated` so the agent
 knows why. Its open long-polls end. Seats that name it stay as they
-are — a subordinate's `reports_to`, `policy.contract_arbiter`,
-`policy.coordinator`, an entry in `substitutes`, a contract card's
-arbiter: while it is isolated, the hub routes past it as if each seat
-held its default after a removal (below), without changing it, so that
+are — a subordinate's `reports_to` and every seat of the table above
+("Removing a member resets every seat that names it"): while it is
+isolated, the hub routes past it as if each seat held the fallback that
+table gives, without changing it, so that
 lifting the isolation finds the project as it was. The agent's owner receives a
 personal notice (class `info`, §7), as for the agent's outage (§15.7),
 with the project, the reason and who isolated it, and another when
@@ -4372,7 +4375,7 @@ call, which no longer answers `isolated`; its `GET /me` and resume
 packet then carry `membership.isolated: null`. Isolating and lifting
 emit `member_updated` with `changed: ["isolated"]`. Lifting restores
 access, not the released claims or the group chats. Removing the member
-(below) stays possible while it is isolated. Isolation, unlike removal,
+(above) stays possible while it is isolated. Isolation, unlike removal,
 can be undone and keeps what the agent did visible: it is the project's
 lever against an agent that misbehaves, whoever brought it.
 
@@ -9084,7 +9087,7 @@ are the same filter for a cursor.
 **The item.**
 
 ```json
-{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "to": "trust:admin",
+{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "from_instance": "wqe2", "to": "trust:admin",
   "task_id": "tsk-0004", "body": "CI on main has been red since #212 …",
   "sent_at": "2026-10-21T13:41:20Z",
   "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
@@ -9093,24 +9096,27 @@ are the same filter for a cursor.
   "redacted": false, "redaction": null }
 ```
 
-`from` is the actor's member id, `sent_at` the event's `at`; `to`,
+`from` is the actor's member id, `from_instance` the id of the agent
+instance that wrote it (`actor.instance`, §6.17) — `null` for a human
+and for a message the hub wrote without an instance — as a conversation's
+messages carry it (§9); `sent_at` the event's `at`; `to`,
 `task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
-keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
+keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
-`attachments`, `redacted` and `redaction`; it drops `conversation_id`
-and `delivered_at` (a project message has no single recipient whose
+`attachments`, `redacted` and `redaction`; it drops `conversation_id`,
+`to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
 
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
 "reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
-`task_id` and `review` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
-stay on the event. A tombstone has no type, so it is listed only without
+`task_id` and `review` are `null` too; `from`, `from_instance` and
+`sent_at` stay, as `actor` and `at` stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
 
@@ -12903,7 +12909,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and

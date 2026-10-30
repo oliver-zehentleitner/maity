@@ -72,6 +72,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str) -> None:
                 human_id=human_id,
                 trust="owner",
                 role="coder",
+                role_base="coder",
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
