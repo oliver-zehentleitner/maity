@@ -17,6 +17,10 @@ the isolation finds the project as it was. What changes is read where it matters
 - Authentication (`auth/caller.py`, `_agent`) refuses every call of the agent's credentials with `403 forbidden`,
   `details.reason: isolated`, before any side effect (no presence, no lease), except `GET /me` and
   `POST /me/resume`, which carry `membership.isolated` so the agent learns why.
+  Those two calls leave no trace: no `last_seen_at`, lease or session, no `session_started`, and the resume
+  packet holds only `me`, `membership` (with `isolated`) and the project's head, nothing of the members, the
+  memory, the work or the events. An isolated agent never reads as present (`views`: presence `offline`), so
+  one looping on resume cannot open the coordinator gate or look online in the member list.
 - `events.readable_by` and `events.wakes` answer false for an isolated agent: no audience reaches it, whatever the
   event names. Open long-polls end through `longpoll.Registry.end`. A message or a request `to` it is `invalid`
   (`to: isolated`), a direct chat with it likewise.
@@ -42,12 +46,15 @@ ever rewritten and nothing can drift.
   the agent again, and events with the audience `all` from that time are as readable for any new member; the
   effort buys no protection after a deliberate lift. The cursors move at the lift so that nothing is handed
   over by the next resume; an explicit `?after=` still reads the window.
+- Blocking the resume as well: the agent would never learn why every call answers 403, and §6.2 gives it
+  the resume packet for exactly that.
 - Reusing the pause: the contract gives isolation its own field, routes and effects (released claims, closed
   placements, no audience), none of which a pause has.
 
 **Not covered:** the audiences of card events that name an isolated arbiter or assignee are not rewritten:
 the agent reads none of them (`events.readable_by`), and a lift moves its sessions' cursors to the project's
 head, so what happened meanwhile is not handed to it at the next resume; an explicit `GET …/events?after=`
-older than the lift can still read the window, which was decided to stay so (below). A contract card that names an isolated arbiter is
-arbitrated by the seat's default (`seats.routed_arbiter`), and the resume packet of an isolated agent carries
-no request and no assigned card.
+older than the lift can still read the window, which was decided to stay so (below). Card events that name an isolated arbiter or assignee are no leak either: `events.readable_by` answers
+before every audience rule. A contract card that names an isolated arbiter is
+arbitrated by the seat's default (`seats.routed_arbiter`), and the resume packet of an isolated agent is the
+small one above.

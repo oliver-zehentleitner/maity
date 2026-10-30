@@ -203,6 +203,8 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is not None:
+            return _isolated_packet(conn, mine, caller)  # no session, no event, no presence
         # Serialise with other writes to the project: two resumes of one
         # credential must not both open its live session.
         events.lock_project(conn, mine.project.id)
@@ -321,6 +323,36 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             commitment.reconcile(conn, mine.project, now, caller.credential_id)
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
+
+
+def _isolated_packet(conn: Connection, mine: Membership, caller: Caller) -> dict[str, Any]:
+    """What an isolated agent gets of a resume: who it is, why every other call is refused,
+    and the project's head; nothing of the project's members, memory, work or events (§6.2)."""
+    agent = conn.execute(
+        select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
+    ).one()
+    owner = conn.execute(select(t.human).where(t.human.c.id == agent.owner_id)).one()
+    project = mine.project
+    return {
+        "server_time": clock.rfc3339(clock.now()),
+        "api_version": API_VERSION,
+        "hub_version": __version__,
+        "me": {
+            "member_id": agent.id,
+            "handle": agent.handle,
+            "name": mentions.global_name(owner.handle, agent.handle),
+            "display_name": agent.display_name,
+            "instance": caller.instance,
+        },
+        "membership": {"trust": mine.trust, "role": mine.role, "isolated": isolated(mine.row)},
+        "project": {
+            "id": project.id,
+            "full_name": namespace.full_name(conn, project),
+            "slug": project.slug,
+            "name": project.name,
+            "state": project.state,
+        },
+    }
 
 
 def _packet(

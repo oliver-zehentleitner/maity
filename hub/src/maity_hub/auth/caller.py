@@ -380,6 +380,18 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
         from maity_hub import isolation
 
         raise isolation.refusal(row)
+    if row.isolated_since is not None:
+        # The two calls it may make leave no trace: no presence, no lease, no session (§6.2).
+        return Caller(
+            kind="agent",
+            via=via,
+            agent_id=row.agent_id,
+            owner_id=row.owner_id,
+            credential_id=row.id,
+            instance=row.instance,
+            membership_id=row.membership_id,
+            project_id=row.project_id,
+        )
     now = clock.now()
     credential_id: str = row.id
     membership_id: int = row.membership_id

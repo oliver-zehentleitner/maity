@@ -630,6 +630,8 @@ def member_views(
         stopped = paused(row) or suspended.get(row.id)
         if stopped is not None:  # a suspended account's membership acts as paused (§16.8)
             shown_presence = "paused"
+        if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
+            shown_presence = "offline"
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
@@ -656,7 +658,7 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and stopped is None:
+            if view["instances"] and stopped is None and row.isolated_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index

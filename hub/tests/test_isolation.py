@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 
 from maity_hub import availability, clock, events, longpoll, views
 from maity_hub import tables as t
@@ -304,29 +304,64 @@ def test_a_seat_that_names_an_isolated_agent_is_routed_past_and_stays(
 # --- the resume packet and the lift ----------------------------------------------------------
 
 
-def test_the_resume_packet_of_an_isolated_agent_carries_no_request_and_no_card(
+def test_the_resume_packet_of_an_isolated_agent_carries_only_who_why_and_the_project(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     agent = flow.agent(make_client, owner, role="admin")
     agent.resume()
-    card = task(owner)
-    owner.post(f"{PROJECT}/tasks/{card['id']}/assign", {"assigned_to": agent.id})
-    asked = owner.post(
-        f"{PROJECT}/requests",
-        {"class": "decision", "title": "ship it", "summary": "s", "to": "trust:admin"},
-    )
-    assert asked.status_code == 201, asked.text
+    owner.post(f"{PROJECT}/requests", {"class": "decision", "title": "ship it", "summary": "s"})
     before = agent.resume().json()
-    assert before["requests"]["to_answer"]  # what the admin gets
+    assert "requests" in before and "memory" in before  # what a free agent gets
     isolate(owner, agent.id)
     packet = agent.resume().json()
-    assert packet["requests"] == {
-        "mine_open": [],
-        "answered_since_cursor": [],
-        "to_answer": [],
-        "truncated": False,
+    assert set(packet) == {
+        "server_time",
+        "api_version",
+        "hub_version",
+        "me",
+        "membership",
+        "project",
     }
-    assert packet["assigned"] == [] and packet["claims"] == []
+    assert packet["membership"]["isolated"]["by"] == owner.id
+    assert set(packet["project"]) == {"id", "full_name", "slug", "name", "state"}
+
+
+def test_the_two_calls_an_isolated_agent_may_make_leave_no_presence_and_no_event(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    isolate(owner, agent.id)
+    with migrated.connect() as conn:
+        seen = conn.execute(
+            select(t.membership.c.last_seen_at).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+        sessions = conn.execute(select(func.count()).select_from(t.agent_session)).scalar_one()
+        started = conn.execute(
+            select(func.count()).select_from(t.event).where(t.event.c.kind == "session_started")
+        ).scalar_one()
+    for _ in range(2):
+        assert agent.get("/me").status_code == 200
+        assert agent.resume().status_code == 200
+    with migrated.connect() as conn:
+        assert (
+            conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.agent_id == agent.id)
+            ).scalar_one()
+            == seen
+        )
+        assert conn.execute(select(func.count()).select_from(t.agent_session)).scalar_one() == (
+            sessions
+        )
+        assert (
+            conn.execute(
+                select(func.count()).select_from(t.event).where(t.event.c.kind == "session_started")
+            ).scalar_one()
+            == started
+        )
+    # And the member list does not show it as online.
+    shown = owner.get(f"{PROJECT}/members/{agent.id}").json()
+    assert shown["presence"] != "online"
 
 
 def test_a_lift_moves_the_cursor_past_what_happened_meanwhile(
