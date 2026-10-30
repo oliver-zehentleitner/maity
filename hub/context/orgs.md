@@ -284,3 +284,45 @@ organisation after the project) would break the organisation-then-project rule.
 forge grants of a project of an organisation, the project's public page and its About still need the
 namespace owner as a human, so for a project of an organisation they fail closed; the owners' own
 confirmation with `confirmed_by` (§11.4) comes with the instance's forge work.
+
+## An organisation's suspension is a hold on the organisation, in the table of holds
+
+**Id:** b0e24313-9d64-473d-bcd3-d8a73b1524ce
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.8 (`suspend` on a project of an organisation), §6.26 "Suspended"; the coordinator's ruling of 2026-10-30 on the card tsk-whe4wv1jpsae
+**Revisit when:** an organisation becomes a report target of its own (§16.8 "Follow-up"), or the hold table gets a second meaning of `suspend`
+
+`moderation.apply` reads the organisation behind a project report (`moderation.org_of`, from the owner
+the report's copy recorded) before it reads an account: for `suspend` it marks the organisation, not a
+person (`suspend_org`). The mark is a row of `moderation_hold` with `target_type = 'org'` and
+`action = 'suspend'`, the same place `hide` and `remove` leave theirs, so the `moderation` field of the
+organisation's view, the lifting by `dismiss` and the replacement by a second resolution are the code
+that already exists. `suspend_org` takes the organisation's row first, turns `public_page` off,
+withdraws every open transfer into it (`project_names.withdraw_into`) and archives each of its projects
+that is not archived, as `remove` does; every owner gets the `moderation_applied` record, and so does
+an action of `hide` or `remove` on a project of an organisation. While the hold stands, a new project
+with the organisation as `owner`, a new invitation and `public_page: on` are `forbidden`
+(`moderation_hold`); settings, members and roles, avatar removal and deletion are not touched.
+The organisation's hold is read beside a hold of the project's own (`hide` from another report), not
+instead of it, so a hidden project of a suspended organisation stays archived too.
+
+`withdraw_into` finds the open transfers into the organisation by a text match on the stored
+proposal (`cast(proposal, String).contains(org_id)`) and checks the exact `to` in Python: the hub runs
+on three databases and has no JSON operator they share, and the match only narrows the rows.
+
+Every owner is told of a `hide` or `remove` on a project of the organisation, not only of a
+suspension, because the organisation is the project's owner and the owners are the ones the action
+binds; telling only the namespace owner (a single handle with several owners behind it) or nobody
+would leave the people who can act on it without the record.
+
+**Reason:** the table of holds already says what a hold is, who lifts it and what it shows, and a
+suspension of an organisation is a hold in the contract's own words; a second mark would be a second
+place that has to be kept in step. No migration is needed.
+
+**Rejected alternatives:**
+- A column on `org` (`suspended_at`, `suspended_report`): it would repeat the hold, and lifting by
+  `dismiss` would have to learn a second place.
+- Suspending the project's namespace owner when it is an organisation: the contract applies `suspend`
+  to a person only, and an organisation is not one.

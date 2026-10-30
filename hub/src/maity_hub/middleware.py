@@ -212,6 +212,8 @@ _TOKEN_PATHS = (
 
 
 _FIRST_SEGMENT = re.compile(r"^(/)[^/]+")
+# An invitation's link on the join host, `/i/{token}` (§1.1): the second segment is the token.
+_JOIN_INVITE = re.compile(r"^(/i/)[^/]+")
 
 
 def _access(scope: Scope, status: int) -> None:
@@ -233,13 +235,16 @@ def _access(scope: Scope, status: int) -> None:
 def _logged_path(scope: Scope) -> str:
     """The path for the log: never a query string, join and pairing tokens as `…` (§1.1).
     On the join host any path not rewritten to the join may still carry its token
-    (`HEAD /{token}`, `/{token}/`): its first segment is masked as well."""
+    (`HEAD /{token}`, `/{token}/`): its first segment is masked as well, and the segment
+    after `/i/`, an invitation's."""
     path = str(scope.get("path", ""))
     masked = path
     for pattern in _TOKEN_PATHS:
         masked = pattern.sub(r"\1…", masked)
     if masked == path and scope.get("state", {}).get("on_join_host"):
-        masked = _FIRST_SEGMENT.sub(r"\1…", path)
+        masked = _JOIN_INVITE.sub(r"\1…", path)
+        if masked == path:
+            masked = _FIRST_SEGMENT.sub(r"\1…", path)
     return masked
 
 

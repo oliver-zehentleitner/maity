@@ -1,10 +1,12 @@
 """The optional join host (docs/api.md §1.1): the same hub under a second hostname,
-answering the agent join and nothing else.
+answering the agent join, the redirect of a person's invitation and nothing else.
 
 `GET /{token}` is the join page and `POST /{token}` the exchange; both are routed to
 the public routes by rewriting the path, never by a redirect, so the CLI and the
-curl recipe work without following one. A token-shaped path is always the join. Any
-other `GET` is a `302` to the public start page, any other method `not_found`. The
+curl recipe work without following one. A token-shaped path is always the join. An
+invitation's link, `GET /i/{token}`, is a `302` to the public `/invite/{token}` without a
+lookup: the invitation is accepted signed in, and this host has no session. Any other
+`GET` is a `302` to the public start page, any other method `not_found`. The
 host carries no session: cookies and an `Authorization` header are dropped before a
 route sees them.
 """
@@ -22,6 +24,8 @@ from maity_hub.errors import error_response
 
 # One segment in the join token's alphabet and length (`secrets.token_urlsafe(16)`, §3.1).
 TOKEN_PATH = re.compile(r"^/([A-Za-z0-9_-]{22})\Z")
+# The same shape after `/i/`: a person's invitation (§3.4), whose token looks like a join's.
+INVITE_PATH = re.compile(r"^/i/([A-Za-z0-9_-]{22})\Z")
 _DROPPED = {b"cookie", b"authorization"}
 
 
@@ -68,6 +72,9 @@ def route(scope: Scope, settings: Settings) -> Response | None:
         state: dict[str, Any] = scope.setdefault("state", {})
         state["join_host"] = True
         return None
+    invited = INVITE_PATH.match(scope.get("path", ""))
+    if invited and method == "GET":
+        return RedirectResponse(f"{settings.public_url}/invite/{invited.group(1)}", status_code=302)
     if method == "GET" and scope.get("path") in SEO_FILES:
         return error_response(404, "not_found", "no such resource")  # §16.7
     if method == "GET":
