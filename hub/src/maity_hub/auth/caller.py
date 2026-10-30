@@ -24,7 +24,7 @@ from sqlalchemy import Connection, and_, select, update
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, nonces
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
@@ -246,12 +246,11 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "signature_invalid", "the signature headers are malformed")
     now = clock.now()
     stamp = int(timestamp)
-    # Nonces are remembered in this process only: a request signed before the
-    # process started could be replayed now, so it is refused as skew (§2.2).
-    if (
-        abs(stamp - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS
-        or stamp < PROCESS_STARTED
-    ):
+    # A request signed before the nonces were known could be replayed now, so it is refused as
+    # skew (§2.2): before the database's nonce epoch where they are shared, before the process
+    # started where the process keeps them.
+    known_since = int(nonces.epoch(conn).timestamp()) if nonces.shared(conn) else PROCESS_STARTED
+    if abs(stamp - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS or stamp < known_since:
         raise ApiError(
             401,
             "timestamp_skew",
@@ -266,7 +265,12 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
-    if not NONCES.first_use(credential_id, nonce):
+    spent_first = (
+        nonces.first_use(conn, credential_id, nonce)
+        if nonces.shared(conn)
+        else NONCES.first_use(credential_id, nonce)
+    )
+    if not spent_first:
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
     if is_runner_credential(row.id):
         return _runner(conn, row)

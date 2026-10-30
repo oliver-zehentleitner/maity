@@ -108,8 +108,9 @@ def signature_matches(verifier_hex: str, canonical: str, signature: str) -> bool
 
 
 class NonceWindow:
-    """Nonces seen per credential within the window. In-process: V1 runs one
-    replica (docs/api.md §8.3); this moves to the database before a second."""
+    """Nonces seen per credential within the window, in the process: the window of SQLite
+    and MariaDB, where the hub runs one replica (docs/api.md §8.3). PostgreSQL keeps them in
+    the database, shared by every replica (`auth.nonces`)."""
 
     def __init__(self, seconds: int = NONCE_WINDOW_SECONDS) -> None:
         self._seconds = seconds
