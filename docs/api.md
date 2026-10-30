@@ -7648,7 +7648,9 @@ image's address only where the caller may read it (a shared project,
 the organisation's own members and its projects' members, the caller's
 own); otherwise `null`, and the dashboard draws a neutral placeholder
 (not §6.10's generated avatar, which needs the account id this answer
-does not give). A public page grants no image (§16.9).
+does not give). A public page grants no image (§16.9). The same holds
+for each `avatar_url` in `members`: an organisation's membership lets
+its members read the organisation's image, not each other's.
 
 - **`page_served`** (a boolean, not the organisation's `public_page`
   switch of §6.26) is `true` exactly when the hub serves the public page
@@ -11924,7 +11926,7 @@ fixed and not sections. The types and their fields:
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
 | `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
-| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the last line, and the steps are shown at once |
+| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
 | `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
@@ -12024,8 +12026,10 @@ all languages.
   public, max-age=31536000, immutable`. The hero's rings and other
   pictures of the design are inline SVG in the template. The page is
   complete without the script: all text is in the HTML, every section
-  shows its end state, and the FAQ opens without it. The script only
-  adds motion (ring rotation, the demo's typing, counters), the
+  shows its end state, and the FAQ opens without it. The stylesheet
+  animates the hero's rings and the band's loader by itself, script or
+  not. The script only adds the demo's typing, the counters, the
+  `scales` section as tabs (the columns stay readable without it), the
   theme switch (`data-theme` on the root, remembered in the visitor's
   browser, never sent to the hub; the switch is in the HTML with its
   label in the page's language and `hidden` until the script shows it,

@@ -338,6 +338,12 @@ all. One read keeps the rule in one place.
   colleague may see.
 - Different `not_found` answers for unknown and suspended names: would
   tell a reader that a suspended account exists.
+- Making a public page enough to read the avatar, or sending the account
+  id so the client draws §6.10's generated image: §6.10 grants the image
+  only through a shared project (and an organisation's own and project
+  members), a page carries no image (§16.9), and the id would say more
+  than the reader may see; `avatar_url` is `null` and the dashboard draws
+  a neutral placeholder.
 - Answering every live human by handle with name and avatar, and
   `not_found` only for unknown, suspended, pending and deleted names:
   would tell any signed-in human who has an account and hand out an
