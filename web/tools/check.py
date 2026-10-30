@@ -505,9 +505,9 @@ def check_i18n(write):
         code, error = strip_js(src, literals)
         if error:
             continue
-        # M.t or Maity.t, found in the code without comments (strip_js keeps
+        # M.t, M.tn or Maity.t(n), found in the code without comments (strip_js keeps
         # every position), its key read from the source at that place.
-        for m in re.finditer(r"\b(?:M|Maity)\.t\(\s*", code):
+        for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
             lineno = code.count("\n", 0, m.start()) + 1
             quote = src[m.end()] if m.end() < len(src) else ""
             close = src.find(quote, m.end() + 1) if quote in ("\"", "'") else -1
