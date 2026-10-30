@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
@@ -29,6 +29,8 @@ from maity_hub import (
     placements,
     policy,
     project_names,
+    public_pages,
+    public_projects,
     releases,
     rules,
     setup_cards,
@@ -180,6 +182,9 @@ class ProjectPatch(Strict):
     absence: AbsenceIn | None = None
     settings: SettingsIn | None = None
     rules_markdown: str | None = markdown(default=None)
+    # The project's public page and its text (§16.9): the namespace owner's, not the policy's.
+    public_page: Literal["off", "on"] | None = None
+    public_about: str | None = None
     reason: str | None = Field(default=None, max_length=16384)
 
 
@@ -231,6 +236,7 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
         actor=actor,
     )
     placements.project_archived(conn, project_id, actor, None)
+    public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
 def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
@@ -623,6 +629,8 @@ def patch_project(
             raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
+        if given & PUBLIC_FIELDS:
+            _namespace_owner_only(conn, mine)
         project = mine.project
         actor = caller.actor(mine.id)
         # A rename first, so that every event below names the project by its new full name.
@@ -637,6 +645,19 @@ def patch_project(
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
+        if "public_page" in given:
+            if body.public_page is None:
+                raise invalid({"public_page": "required"})
+            if body.public_page != project.public_page:
+                if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
+                    moderation.refuse_held(conn, "project", project.id)
+                values["public_page"] = body.public_page
+                settings_changed["public_page"] = body.public_page
+        if "public_about" in given:
+            about = public_projects.check_about(body.public_about)
+            if about != project.public_about:
+                values["public_about"] = about
+                settings_changed["public_about"] = about is not None  # the text is not an event
         if "repository" in given:
             columns = _repository_columns(body.repository)
             values.update(columns)
@@ -875,6 +896,9 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
+        if given & {"public_page", "public_about", "name", "slug", "state"}:
+            # What the page shows, or whether it exists, changed: at once (§16.9).
+            public_pages.touch(conn, public_projects.KIND, project.id)
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )
@@ -1018,6 +1042,23 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")
+
+
+PUBLIC_FIELDS = {"public_page", "public_about"}
+
+
+def _namespace_owner_only(conn: Connection, mine: Membership) -> None:
+    """The page is published under the namespace owner's name, so its existence and its words
+    are theirs: the human who is the namespace owner, any owner of the organisation that is
+    (§16.9, §6.26)."""
+    project = mine.project
+    if mine.kind != "human":
+        raise humans_only("the public page is set by the namespace owner, a human")
+    if project.owner_org_id is not None:
+        if orgs.role_of(conn, project.owner_org_id, mine.row.human_id) != "owner":
+            raise orgs.org_role()
+    elif mine.row.human_id != project.owner_id:
+        raise forbidden(message="only the project's namespace owner sets its public page")
 
 
 def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> None:

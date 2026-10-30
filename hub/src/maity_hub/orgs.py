@@ -424,7 +424,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
     with them, its open invitations are withdrawn, the row stays with `deleted_at` and its
     handle stays taken for good (§6.26). Only while it owns no project that is not archived:
     `namespace_owner`, naming them; an archived one stays archived under its name."""
-    from maity_hub import org_invitations, org_projects, project_names
+    from maity_hub import org_invitations, org_projects, project_names, public_projects
 
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
@@ -445,3 +445,4 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
         org_projects.release_in_all(conn, org.id, human_id)
     avatars.remove_upload(conn, org.id)  # the avatar goes with the organisation (§6.26)
     conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=clock.now()))
+    public_projects.touch_of_org(conn, org.id)  # a deleted organisation's projects have no page

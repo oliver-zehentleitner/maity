@@ -131,6 +131,38 @@ passing them through twenty calls was the alternative that cost more than one li
 - A silent no-op without configuration, as before: a removal that does not happen is the one failure this
   engine must not have.
 
+## A project's page is the namespace owner's, and a transfer turns it off
+
+**Id:** 4e888b31-6cfd-4bde-b3dc-dd78f210a556
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("A project's page"), §6.25, §16.8; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** step 4c shows members and agents on the page, or the page's text may be written by someone other than the namespace owner
+
+`project.public_page` (`off`/`on`) and `public_about` (Markdown, at most 4 KiB as bytes, under the landing page's
+rules) are columns of the project, not of its policy, and `PATCH /projects/{owner}/{slug}` sets them only
+for the namespace owner, a human; for a project of an organisation any owner of it (`_namespace_owner_only`,
+the rule of the repository confirmation). Another admin of the project has `project:admin` for everything
+else and is `forbidden` here. The event `project_updated` names `public_page` with its value and
+`public_about` as `true`/`false`, never the text. The kind `project` renders `GET /{owner}/{slug}` (name,
+full name, state, the text with `rel="nofollow ugc"` links) while the page is on, the project is not
+archived, no hold of moderation stands on it, and its namespace owner is served: an active, not suspended,
+not deleted human, or an organisation that is not deleted and carries no hold. Turning the page on is
+refused with `moderation_hold` while a hold stands (§16.8). A rename, a state change, the owner's account
+being suspended or lifted, an organisation's suspension or deletion and a moderation hold or its lifting
+call `touch` in their own transactions. A transfer sets `public_page` to `off` and its consent request says
+so: the receiver decides whether the project is public under their name.
+
+**Reason:** a public page speaks under the namespace owner's name, so its existence and its words are
+theirs, and what moves with a transfer must not publish under a name the sender never chose.
+
+**Rejected alternatives:**
+- Letting every `project:admin` set it: a co-admin could publish text under the owner's name.
+- Putting the choice in `policy`: policy is for what the team agrees; the contract keeps the page out of it
+  so that a preset change never publishes a project.
+- Keeping the page on after a transfer: the receiver would be public without having said so.
+
 ## A person's links are names the hub builds into links, and each reader gets only what the value admits
 
 **Id:** 05d38e67-97ac-4fee-b0ac-e0f75c03862f
@@ -174,15 +206,15 @@ and the reader-dependent visibility cannot go into an event that goes to all.
 **Source:** `docs/api.md` §6.27 (contract #738), §6.10 ("Who may read an image"), §6.26; implementation of `GET /people/{handle}` (tsk-4ar8vw61fvj0), 2026-10-30
 **See:** public-pages.md — 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f — as of 2026-10-30
 **See:** public-pages.md — 05d38e67-97ac-4fee-b0ac-e0f75c03862f — as of 2026-10-30
-**Revisit when:** the organisation's and the project's page kinds are rendered, the member views take a hold on the profile into account for links as well, or handle aliases resolve (§6.24)
+**Revisit when:** the organisation's page kind is rendered, the member views take a hold on the profile into account for links as well, or handle aliases resolve (§6.24)
 
 `routes/people.py` answers `GET /people/{handle}` for a signed-in human. `page_served` is `true`
 when public pages are on and the store holds the page (a `public_page` row of the kind and target);
 for a person `public_people.served` must hold as well, so a hold or a suspension counts at once. A
 project with a served page is one with a `project` row in the store. Reading the store, not the
-switches, is what "the hub serves the page now" means: today no organisation or project page kind
-is rendered, so neither is served whatever its switch says, and the answer never offers a page the
-visitor would not get. An unknown name, an agent's handle (they never resolve as an owner), a
+switches, is what "the hub serves the page now" means: a project's page kind is rendered since
+step 4a (§16.9) and an organisation's is not yet, so an organisation is not served whatever its switch
+says, and the answer never offers a page the visitor would not get. An unknown name, an agent's handle (they never resolve as an owner), a
 deleted, suspended or pending account, a deleted organisation, and a person or an organisation
 that shows the caller nothing are the same `not_found`. `avatar_url` comes only where
 `avatars.may_read` lets the caller read the image; the organisation's picture got its rule there
