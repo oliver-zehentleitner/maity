@@ -784,6 +784,16 @@ class Forge:
             "is_pull_request": "pull_request" in found,
         }
 
+    def repository_public(self, repository: str) -> bool:
+        """Whether the forge reports the repository public, whatever grant reads it (§16.9).
+        A repository it has not looked at, or whose answer it could not read, counts as
+        private: anything but an answer that says `private: false` is False."""
+        try:
+            found = self._get(f"/repos/{repository}")
+        except ForgeUnavailableError:  # a refusal, a private repository, a spent budget
+            return False
+        return isinstance(found, dict) and found.get("private") is False
+
     def items(
         self, repository: str, numbers: list[int]
     ) -> tuple[dict[int, dict[str, Any] | None], bool]:

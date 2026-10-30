@@ -162,3 +162,32 @@ theirs, and what moves with a transfer must not publish under a name the sender 
 - Putting the choice in `policy`: policy is for what the team agrees; the contract keeps the page out of it
   so that a preset change never publishes a project.
 - Keeping the page on after a transfer: the receiver would be public without having said so.
+
+## The repository is on a public page only while the forge's last answer said it is public
+
+**Id:** 915033f2-a416-41e1-b75a-2eb6dec9d9ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("Repository visibility"), §11.4; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** the forge reports visibility on an event the hub already receives (a webhook), or another forge than GitHub is read
+
+`project.repository_public` is null until the hub looked, true when the forge's last answer said
+`private: false`, false for anything else. The probe's sweep asks for every project that has a public page and a
+repository (`probe.observe_visibility`, `Forge.repository_public`), through whatever grant reads the project
+(the instance's token, an installation or the owner's token), and stores the answer; a change calls `touch`,
+at once when the repository turned private. An answer the forge does not give (a 404, no `private` field, a
+refusal, a spent budget) is stored as private: the contract says a repository the hub could not read counts as
+private, so a short outage takes the URL off the page until the next round. A new repository URL clears the
+value. The page prints the URL as a `nofollow ugc` link only while the value is true.
+
+**Reason:** the page is public, the repository may be private, and only the forge knows; showing a private
+repository's URL is a leak that cannot be taken back from a crawler.
+
+**Rejected alternatives:**
+- Deriving it from the grant that reads the repository: a private repository read through an owner's grant would
+  look public to the page.
+- Asking the forge on every render: the renders run in the writers' transactions, which hold no connection to
+  the forge (§11.4).
+- Keeping the last known answer through an outage: the contract names the unreadable case private, and an
+  outage on the instance's side would otherwise leave a URL on the page that turned private meanwhile.
