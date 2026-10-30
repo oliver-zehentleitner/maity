@@ -12,6 +12,7 @@ import contextlib
 import functools
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 from urllib.parse import unquote_to_bytes
@@ -22,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net
+from maity_hub import clock, events, forge_webhook, join_host, net, request_stats
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -76,6 +77,7 @@ class HubMiddleware:
             return
         origin = net.resolve(scope, self.settings.trusted_proxies)
         scope.setdefault("state", {})["origin"] = origin
+        scope["state"]["began"] = time.monotonic()
         # Decided before anything is logged: the log masks every path there (§1.1).
         on_join_host = join_host.is_join_host(scope, self.settings)
         scope["state"]["on_join_host"] = on_join_host
@@ -100,7 +102,7 @@ class HubMiddleware:
                 log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
                 await error_response(500, "internal", "an unexpected failure")(scope, receive, send)
             finally:
-                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+                _access(scope, status)
             return
 
         if not on_join_host and _unrouted(scope):
@@ -142,7 +144,7 @@ class HubMiddleware:
                 "the request contains a string in the hub's credential format",
             )
             await response(scope, receive, send)
-            access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
+            _access(scope, 400)
             return
 
         scope["state"]["body"] = body
@@ -175,7 +177,7 @@ class HubMiddleware:
             answer = join_host.route(scope, self.settings)
             if answer is not None:  # not the join: nothing else is served there (§1.1)
                 await answer(scope, replay, tracking)
-                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+                _access(scope, status)
                 return
         try:
             await self.app(scope, replay, tracking)
@@ -188,7 +190,7 @@ class HubMiddleware:
             response = error_response(500, "internal", "an unexpected failure")
             await response(scope, receive, send)
         finally:
-            access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+            _access(scope, status)
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:
@@ -210,6 +212,22 @@ _TOKEN_PATHS = (
 
 
 _FIRST_SEGMENT = re.compile(r"^(/)[^/]+")
+
+
+def _access(scope: Scope, status: int) -> None:
+    """The request log (§1.1): method, path and status, and how long the hub took (`ms=`,
+    from the middleware's first line to here) and the route's pattern (`route=`)."""
+    began = scope.get("state", {}).get("began")
+    ms = round((time.monotonic() - began) * 1000) if began is not None else 0
+    request_stats.WINDOW.record(status, ms)
+    access.info(
+        "%s %s %s ms=%d route=%s",
+        scope.get("method"),
+        _logged_path(scope),
+        status,
+        ms,
+        request_stats.route_of(scope),
+    )
 
 
 def _logged_path(scope: Scope) -> str:
@@ -259,7 +277,7 @@ def _unrouted(scope: Scope) -> bool:
 async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
     response = error_response(404, "not_found", "no such resource")
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 404)
+    _access(scope, 404)
 
 
 def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Awaitable[None]]]:
@@ -280,7 +298,7 @@ async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY
     size = f"{cap // 1024 // 1024} MiB" if cap >= 1024 * 1024 else f"{cap // 1024} KiB"
     response = error_response(413, "payload_too_large", f"the body is over {size}")
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
+    _access(scope, 413)
 
 
 async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
@@ -288,7 +306,7 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
         400, "invalid", "the image is over 1 MiB", {"fields": {"body": "too_large"}}
     )
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
+    _access(scope, 400)
 
 
 def _with_headers(send: Send, *, public: bytes | None = None) -> Send:

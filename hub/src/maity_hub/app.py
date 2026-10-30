@@ -28,9 +28,11 @@ from maity_hub import (
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
+    org_invitations,
     probe,
     registration_accounts,
     reports,
+    request_stats,
     takeovers,
     write_guard,
 )
@@ -101,6 +103,7 @@ from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
 from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import me as me_routes
+from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
@@ -185,6 +188,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
         reports_worker.start()
+        # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
+        invitations_worker = org_invitations.Worker(engine)
+        invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -204,7 +210,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             engine, settings.mail, settings.secret_key, settings.public_url
         )
         notify_worker.start()
+        stats_reporter = request_stats.Reporter(engine)
+        stats_reporter.start()
         yield
+        stats_reporter.stop()
         notify_worker.stop()
         if sweeper is not None:
             sweeper.stop()
@@ -212,6 +221,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         takeover_worker.stop()
         jour_fixe_clock.stop()
         reports_worker.stop()
+        invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
@@ -254,6 +264,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)
+    app.include_router(orgs_routes.router, prefix=prefix)
     app.include_router(legal_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)

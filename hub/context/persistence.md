@@ -625,6 +625,14 @@ fix, the read access to the view is the operator's. MariaDB and SQLite set none.
 alternative:** the pod name in the name now: the hub runs one pod until after the launch, and the
 name is one constant to extend when a second pod exists.
 
+An `application_name` the operator puts in `MAITY_DATABASE_URL` (`?application_name=...`) does not
+survive: SQLAlchemy lays `connect_args` over the URL's query, so the hub's own name wins on every
+connection (decided by the lead, 2026-10-29, on the review of #669). Only so does
+`pg_stat_activity` tell the serving hub, the probe and the commands apart. **Rejected
+alternative:** keeping the operator's name: all three would then show one name, and the view could
+no longer say which of them holds a connection. No workaround is needed: the role is always in
+the name.
+
 The probe test used to compare engines with `is`, which held on SQLite (one engine) and failed on
 MariaDB, where the probe has an engine of its own. It now takes a real pool of one connection,
 holds it, and expects `/health` to answer anyway; it is skipped on SQLite, which has nothing to

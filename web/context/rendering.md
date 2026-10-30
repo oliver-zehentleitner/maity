@@ -336,7 +336,8 @@ already turns every piece into a text node.
 
 **Id:** b70e4ab6-5c55-47ba-96d7-d1b941157f63
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 528af98b-4c9b-44a5-98c8-ababb59e7ab9
 **Evidence:** inferred
 **Source:** docs/api.md §16.7 (the landing page can never stand between a person and sign-in; the card-body renderer extended by the dashboard-route link alone; title and cta label as text), the card tsk-gqcq7kwkxpgx; the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub serves images to visitors, or the designer reworks the page
@@ -358,6 +359,58 @@ the one place the contract allows it.
 **Rejected alternative:** a separate renderer for the landing page: two
 renderers would drift from the list the hub validates. Showing an error
 on a failed landing read: it would stand between the person and sign-in.
+
+## The landing page and the legal pages are edited in the admin area and rendered by the hub alone
+
+**Id:** 528af98b-4c9b-44a5-98c8-ababb59e7ab9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29
+**Revisit when:** an instance wants the landing page drawn by the dashboard again, or a draft needs a preview without a tab of its own
+
+The dashboard draws neither page for a visitor: without a session the
+root is the hub's static page or, with the page off, the login page, and
+the dashboard never asks `GET /landing`. The login and registration
+pages link to the legal pages that are set, from `GET /legal`. In the
+admin area **Landing page** edits the setting per language: the page's
+title and description, its sections of the contract's types in their
+order (add, move, show or hide, remove; items within a section the same
+way; `activity` and `collab` kept as they are, never offered), and the
+footer for all languages. A save sends the whole draft in one `PATCH`;
+the hub's refusal names fields by their path
+(`pages.de.sections.2.items.0.title`), and each is said at the field of
+that path, a path without a field in the status line. **Legal pages**
+edits each page per language and saves one page per call, which the hub
+keeps as a new version; a page is taken down with `null`. **View as a
+visitor** opens the saved landing page at `/?as=public` in a tab of its
+own, offered only while the page is on. **Preview the draft** posts the
+draft (`POST …/landing/preview`, `…/legal/preview?page=`), which the hub
+checks as a save and keeps for 10 minutes, and opens the `url` it answers
+in a new tab, opened at the click so no pop-up blocker stops it; the
+address is taken only when it is the hub's own preview path.
+The renderer's mode for path links (`M.markdown.withRoutes`) went with
+the dashboard's landing page.
+
+**Reason:** one renderer for visitors, the hub's, so what the editor
+saves is what a crawler and a person see, without a script; the field
+paths let the editor say a refusal where it belongs, however deep in a
+section.
+
+**Rejected alternative:** a preview drawn by the dashboard's own
+renderer: it would look like the hub's page and drift from it. The
+hub's HTML fetched and shown in a frame (`srcdoc`) or from a blob URL:
+it would run under the dashboard's policy, not the page's, the reason
+pictures are never previewed either (3ec853f0). Saving a
+section or a language at a time: the contract replaces the fields it
+names, and one draft keeps the order and the default language
+consistent across a save. Keeping the Markdown editor beside the
+sections: two forms of the same page (the alpha rule).
+
+The editor depends on the hub's sections shape and legal pages (#631)
+and on the preview routes and the root's `?as=public` (#628's contract
+and its hub change); until those are on main, its saves are refused
+and its preview has no address, so it is merged after them.
 
 ## A hub whose attachment store is off is treated like a hub without attachments
 

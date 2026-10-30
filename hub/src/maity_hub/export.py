@@ -63,7 +63,9 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
             "recovery_codes_left": second_factor.recovery_codes_left(conn, human_id),
         },
         "forge_links": _forge_links(conn, human_id),
+        "organisations": _organisations(conn, human_id),
         "abuse_reports": _abuse_reports(conn, human_id),
+        "organisation_invitations": _org_invitations(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
         "memberships": [_membership_view(row, names, member_ids) for row in mine],
@@ -274,6 +276,17 @@ def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _organisations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The organisations the caller belongs to: handle, role, when they joined (§2.9, §6.26)."""
+    rows = conn.execute(
+        select(t.org.c.handle, t.org_member.c.role, t.org_member.c.joined_at)
+        .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
+        .where(t.org_member.c.human_id == human_id, t.org.c.deleted_at.is_(None))
+        .order_by(t.org_member.c.joined_at, t.org.c.id)
+    ).all()
+    return [{"handle": r.handle, "role": r.role, "joined": ts(r.joined_at)} for r in rows]
+
+
 def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     """The abuse reports the account filed, its agents' included (§16.8): what was reported,
     why, the caller's own text, status and action; never the copy of the target, which is
@@ -284,6 +297,38 @@ def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .order_by(t.abuse_report.c.created_at, t.abuse_report.c.id)
     ).all()
     return [{**reports.own_view(conn, row), "text": row.text} for row in rows]
+
+
+def _org_invitations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The invitations to organisations the caller sent: the organisation, the handle as they
+    typed it, the role, how it stands and when; nothing of the request behind it (§2.9)."""
+    rows = conn.execute(
+        select(
+            t.org.c.handle.label("org"),
+            t.org_invitation.c.handle,
+            t.org_invitation.c.role,
+            t.org_invitation.c.live,
+            t.org_invitation.c.closed_by,
+            t.org_invitation.c.created_at,
+            t.org_invitation.c.expires_at,
+            t.org_invitation.c.closed_at,
+        )
+        .join(t.org, t.org.c.id == t.org_invitation.c.org_id)
+        .where(t.org_invitation.c.invited_by == human_id)
+        .order_by(t.org_invitation.c.created_at, t.org_invitation.c.id)
+    ).all()
+    return [
+        {
+            "organisation": r.org,
+            "handle": r.handle,
+            "role": r.role,
+            "status": "open" if r.live else (r.closed_by or "closed"),
+            "created": ts(r.created_at),
+            "expires": ts(r.expires_at),
+            "closed": ts(r.closed_at),
+        }
+        for r in rows
+    ]
 
 
 def _forge_links(conn: Connection, human_id: str) -> list[dict[str, Any]]:

@@ -161,7 +161,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `/new` | create a project; also **+ New project** in the switcher. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>` |
 | `/<owner>/<slug>/swarm` | without a session, and for anyone not a member, a project's public swarm page, where its owner switched it on; a member gets the Swarm tab there, and `?as=public` shows anyone the public page (`docs/api.md` §6.22) |
-| `/login` | the login page, always; signed in, the dashboard's start (the root without a session shows the instance's landing page where it has one). `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
+| `/login` | the login page, always; signed in, the dashboard's start (the root without a session is the hub's own landing page where one is on, §16.7), with links to the legal pages that are set. `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
 | `/invite/<token>` | an invitation (`js/invite.js`, §3.4), with or without a session, as one centred card like sign-in and register: the project's logo or monogram, who invites to which project as what, the note, until when, whether it is for one address; signed out **Sign in to accept** and, where the hub registers or the invitation admits, **Create one**, both returning here; signed in **Join <project> as <you>** (`POST …/accept`), then the way into the project; a refusal (address mismatch, already a member, void, project closed, account pending) said in the hub's words with its reason; an unknown, used, expired or revoked link one answer |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; where the hub has terms (`terms` in `GET /auth/methods`), the form names them with their version, linked when the address is plain `https`, since they are accepted on the link's page; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `/agents`, `/agents/<id>` | **Your agents**, from the gear menu: every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
@@ -1606,23 +1606,23 @@ revision/head, including a schema-outdated response. Sign-in method settings
 are deferred until their backend route lands on main; this change offers no
 controls for that unimplemented route.
 
-**Landing page** (`js/landing.js`, `docs/api.md` §16.7). At the root, a
-visitor without a session gets the instance's landing page when the hub's
-`GET /landing` (asked only where its machine form lists the route) says it is on: the large lockup (light or dark with the
-theme, at most 240 px wide), the page's one logo and its h1, the title
-(also the tab's), the button (`cta`), above the fold on a phone, then the
-operator's Markdown drawn by the chat's renderer with one addition for
-this page alone — links to dashboard paths (`/…`, `docs/api.md` §16.11) stay in the page,
-`https` links open apart, anything else and raw HTML stay text. The
-header holds only the theme menu and **Sign in**, at its right edge. Off, absent or failing, the root is the login page as
-before, and `/login` is the login page always (in fixture mode the page
-is off, as on a fresh instance; `?landing=on` shows it and `?landing=fail`
-makes its read fail): the landing page never
-stands between a person and sign-in; no other route asks for it. In the
-admin area, **Landing page** edits it (`PATCH /admin/settings/landing`):
-on or off, title, the Markdown (its rules said under the field, at most
-64 KiB of UTF-8), the button's label and link, with a preview drawn as
-the visitor will see it and who changed it last. On without text, and a
-button link that is neither a route nor `https`, are refused before
-sending; a line the hub refuses is named and quoted at the text, and
-selected in it.
+**Landing page** and **Legal pages** (`js/landing.js`, `docs/api.md`
+§16.7, §16.7.1). The hub renders both itself as static HTML for visitors;
+the dashboard never draws them and never asks `GET /landing`: without a
+session the root is the hub's page or, with it off, the login page. The
+login and registration pages link to the legal pages that are set
+(`GET /legal`). In the admin area **Landing page** edits the setting per
+language: the page's title and description, its sections of the
+contract's types in their order (add, move up or down, show or hide,
+remove; the items of steps, scales and questions the same way; the
+counters ticked), and the footer for every language (the operator line,
+up to eight social links). **Save the landing page** sends the whole
+draft in one `PATCH`, and each refusal of the hub is said at the field its
+path names (`pages.de.sections.2.items.0.title`). **Preview the draft**
+opens the unsaved draft as the hub renders it, in a new tab (the hub keeps
+it 10 minutes); **View as a visitor**, while the page is on, opens the
+saved page at `/?as=public`. **Legal pages**
+edits the imprint, the privacy notice and the terms per language; each
+save is one page and a new version, the earlier ones linked, and each
+draft can be previewed the same way; **Take the page down** sends it as
+`null`.

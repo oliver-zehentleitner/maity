@@ -13,7 +13,7 @@ from maity_hub import clock, conversation_list
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_conversation_list import count_statements
+from tests.statements import count_statements
 
 ME = "/me/conversations"
 

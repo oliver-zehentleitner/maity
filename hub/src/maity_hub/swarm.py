@@ -16,13 +16,14 @@ from __future__ import annotations
 import re
 import statistics
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import clock
+from maity_hub import bounded, clock
 from maity_hub import tables as t
 
 CACHE_SECONDS = 3600  # the window part, per project (§6.22)
@@ -299,12 +300,15 @@ def _any(members: set[int], include: Any) -> bool:
 # --- the cache -------------------------------------------------------------------------------
 
 
+PROJECTS_KEPT = 1024  # the windows kept; an older one is gathered anew on its next view
+
+
 class _Cache:
     """The window part, one per project, for at most `CACHE_SECONDS` and never past the
     end of its UTC day, so that a new day has its row from its first minute."""
 
     def __init__(self) -> None:
-        self._kept: dict[str, Window] = {}
+        self._kept: OrderedDict[str, Window] = OrderedDict()
         self._lock = threading.Lock()
 
     def get(self, conn: Connection, project_id: str) -> Window:
@@ -319,7 +323,7 @@ class _Cache:
             return kept
         fresh = window(conn, project_id)
         with self._lock:
-            self._kept[project_id] = fresh
+            bounded.put(self._kept, project_id, fresh, PROJECTS_KEPT)
         return fresh
 
     def clear(self) -> None:

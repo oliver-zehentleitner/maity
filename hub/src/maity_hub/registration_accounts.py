@@ -23,7 +23,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, invitations, paths, registration
+from maity_hub import clock, handle_register, invitations, paths, registration
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -105,8 +105,11 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
         errors["handle"] = "invalid"
     elif handle in paths.RESERVED_FIRST:  # a first segment of the hub or the dashboard (§16.11)
         errors["handle"] = "reserved"
-    elif conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
-        errors["handle"] = "taken"
+    elif (
+        handle_register.taken(conn, handle)
+        or conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first()
+    ):
+        errors["handle"] = "taken"  # a human's or an organisation's (§6.26)
     if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or any(
         ord(c) < 32 or ord(c) == 127 for c in display_name
     ):
@@ -212,6 +215,9 @@ def complete(
         )
     except IntegrityError:  # the handle taken meanwhile, after the check above
         made.rollback()
+        return Completion("invalid", fields={"handle": "taken"})
+    if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+        made.rollback()  # an organisation took it meanwhile
         return Completion("invalid", fields={"handle": "taken"})
     if not claim_address(conn, normalized, human_id, secret_key=secret_key):
         made.rollback()

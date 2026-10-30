@@ -1,186 +1,414 @@
-// The instance's landing page (docs/api.md §16.7): what a visitor without
-// a session sees at the root when the operator has written one — the
-// lockup, the title, the operator's Markdown, the button and a way to sign
-// in. Disabled, or when the call fails, the login page as before: the
-// landing page never stands between a person and sign-in. And the admin
-// area's editor for it, with a preview drawn by the same renderer.
+// The instance's web presence in the admin area (docs/api.md §16.7,
+// §16.7.1): the landing page, per language an ordered list of sections of
+// the contract's types, with its footer; and the legal pages (imprint,
+// privacy, terms) per language. The hub renders both itself as static HTML
+// for visitors; the dashboard only edits them. A save sends the whole
+// draft, and the hub's refusal names each field by its path
+// (pages.de.sections.2.items.0.title), which is said at that field.
 "use strict";
 
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append, clear, formatTime, safeUrl } = M.dom;
-  const SETTINGS = "/admin/settings/landing";
-  const ROUTE = M.markdown.ROUTE;
-  const TITLE_MAX = 120, LABEL_MAX = 40;
-  const MARKDOWN_MAX = 64 * 1024; // bytes of UTF-8, as the hub counts
-  const utf8Length = (s) => [...s].reduce((n, ch) => { const c = ch.codePointAt(0); return n + (c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4); }, 0);
+  const { h, append, clear, formatTime } = M.dom;
+  const LANDING = "/admin/settings/landing";
+  const LEGAL = "/admin/settings/legal";
+  const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 
-  // The page as the hub serves it, or null: disabled, absent or failed.
-  // Asked only where the hub's machine form lists it: an older hub would
-  // answer 404 on every visit to the root.
-  async function read() {
+  // A field of a section or of an item: its key, its label, its kind and
+  // its limit. Kinds: text (one line), long (several lines), md (Markdown),
+  // cta ({label, href}), lines (one entry per line: the points, handles,
+  // projects), stats (counters to tick), count (a number).
+  const f = (key, label, kind, max, extra) => Object.assign({ key, label, kind, max }, extra || {});
+  const STATS = [["people", "People"], ["agents", "Agents"], ["public_projects", "Public projects"], ["cards_done_week", "Cards done this week"],
+    ["people_online", "People online"], ["agents_online", "Agents online"]];
+  // The types the hub renders in this version (§16.7); activity and collab
+  // are kept as they are, never offered.
+  const TYPES = {
+    hero: { label: "Hero", fields: [f("eyebrow", "Eyebrow", "text", 40), f("title", "Title", "text", 120), f("subline", "Subline", "long", 300),
+      f("cta_primary", "Main button", "cta"), f("cta_secondary", "Second button (optional)", "cta", null, { optional: true }), f("note", "Note (Markdown)", "md", 500)] },
+    stats: { label: "Counters", fields: [f("items", "Counters", "stats")] },
+    steps: { label: "Steps", fields: [f("title", "Title", "text", 120)],
+      items: { min: 1, max: 6, label: "Step", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300), f("code", "Code (optional)", "long", 300, { optional: true })] } },
+    scales: { label: "Scales", fields: [f("title", "Title", "text", 120)],
+      items: { min: 1, max: 4, label: "Scale", fields: [f("tag", "Tag", "text", 40), f("title", "Title", "text", 80), f("text", "Text", "long", 300),
+        f("points", "Points, one per line", "lines", 5)] } },
+    faq: { label: "Questions", fields: [f("title", "Title", "text", 120)],
+      items: { min: 1, max: 20, label: "Question", fields: [f("q", "Question", "text", 200), f("a", "Answer (Markdown)", "md", 2000)] } },
+    cta_band: { label: "Call to action", fields: [f("title", "Title", "text", 120), f("text", "Text", "long", 300), f("cta", "Button", "cta")] },
+    text: { label: "Text", fields: [f("title", "Title (optional)", "text", 120, { optional: true }), f("markdown", "Text (Markdown)", "md", 16384)] },
+    profiles: { label: "Profiles", note: "Shown only while public pages are on; a handle without a public profile is left out.",
+      fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown)", "md", 2000), f("handles", "Handles, one per line", "lines", 2)] },
+    explore: { label: "Explore", note: "Shown only while public pages are on; empty for the hub's own choice.",
+      fields: [f("title", "Title", "text", 120), f("projects", "Projects (owner/slug), one per line", "lines", 3)] },
+  };
+  const KEPT = { activity: "Activity", collab: "Collaboration" };
+
+  // A new section of a type, as the hub would take it.
+  function fresh(type) {
+    const s = { type, enabled: true };
+    (TYPES[type].fields || []).forEach((x) => {
+      if (x.kind === "cta") { if (!x.optional) s[x.key] = { label: "", href: "" }; } else if (x.kind === "stats" || x.kind === "lines") s[x.key] = [];
+      else if (!x.optional) s[x.key] = "";
+    });
+    if (TYPES[type].items) s.items = [freshItem(type)];
+    return s;
+  }
+  function freshItem(type) {
+    const item = {};
+    TYPES[type].items.fields.forEach((x) => { if (x.kind === "lines") item[x.key] = []; else if (!x.optional) item[x.key] = ""; });
+    return item;
+  }
+
+  // The hub's reasons, in words; any other reason is shown as it comes.
+  const REASONS = {
+    required: "required", too_long: "too long", control_character: "holds a control character", html: "holds HTML outside fenced code",
+    invalid_href: "not an https URL or a path on this host", unknown_type: "not a section this hub knows", extra_forbidden: "not a field of this section",
+    too_many: "too many", too_few: "at least one is needed", invalid: "not valid here", default_language_missing: "the default language has no page",
+    rate_limited: "changed too often today",
+    // §16.7: the stored setting is at most 256 KiB of UTF-8.
+    too_large: "the page is too large: at most 256 KiB stored, all languages together",
+  };
+  const reasonText = (r) => REASONS[r] || String(r).replace(/_/g, " ");
+
+  // One field's control, bound to the draft object `obj[key]`; `path` is
+  // the hub's path of it, for its error.
+  function control(x, obj, path, errors, redraw) {
+    const id = "lp-" + path.replace(/[^A-Za-z0-9]+/g, "-");
+    const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+    errors[path] = error;
+    const described = { "aria-describedby": id + "-error", "data-path": path };
+    let input;
+    if (x.kind === "cta") {
+      if (!obj[x.key] && x.optional) {
+        const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
+        add.addEventListener("click", () => { obj[x.key] = { label: "", href: "" }; redraw(); });
+        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+      }
+      const cta = obj[x.key];
+      const label = h("input", Object.assign({ id: id + "-label", maxlength: "40" }, described));
+      label.value = cta.label || "";
+      label.addEventListener("input", () => { cta.label = label.value; });
+      const href = h("input", { id: id + "-href", placeholder: "/register or https://…", "aria-describedby": id + "-href-error", "data-path": path + ".href" });
+      href.value = cta.href || "";
+      href.addEventListener("input", () => { cta.href = href.value.trim(); });
+      const hrefError = h("p", { class: "field-error", id: id + "-href-error", role: "alert" });
+      errors[path + ".href"] = hrefError;
+      errors[path + ".label"] = error;
+      const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
+      if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
+      return h("fieldset", { class: "lp-field lp-cta" }, h("legend", null, x.label),
+        h("label", { for: id + "-label" }, "Label"), label, error,
+        h("label", { for: id + "-href" }, "Link"), href, hrefError, remove);
+    }
+    if (x.kind === "stats") {
+      const chosen = obj[x.key] = obj[x.key] || [];
+      return h("fieldset", { class: "lp-field lp-stats" }, h("legend", null, x.label),
+        STATS.map(([k, l]) => {
+          const box = h("input", { type: "checkbox", id: id + "-" + k });
+          box.checked = chosen.includes(k);
+          box.addEventListener("change", () => {
+            const at = chosen.indexOf(k);
+            if (box.checked && at < 0) chosen.push(k);
+            if (!box.checked && at >= 0) chosen.splice(at, 1);
+          });
+          return h("label", { class: "check", for: id + "-" + k }, box, " " + l);
+        }),
+        h("p", { class: "hint" }, "An online count below 5 is shown as “< 5”."), error);
+    }
+    if (x.kind === "lines") {
+      input = h("textarea", Object.assign({ id, rows: String(Math.max(2, x.max)) }, described));
+      input.value = (obj[x.key] || []).join("\n");
+      input.addEventListener("input", () => { obj[x.key] = input.value.split("\n").map((s) => s.trim()).filter(Boolean); });
+      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label + " (at most " + x.max + ")"), input, error);
+    }
+    input = x.kind === "text"
+      ? h("input", Object.assign({ id, maxlength: String(x.max) }, described))
+      : h("textarea", Object.assign({ id, rows: x.kind === "md" ? "6" : "3" }, described));
+    input.value = obj[x.key] || "";
+    input.addEventListener("input", () => {
+      if (x.optional && !input.value) delete obj[x.key];
+      else obj[x.key] = input.value;
+    });
+    return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input,
+      x.kind === "md" ? h("p", { class: "hint" }, "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a path like /register); no images, no HTML.") : null,
+      error);
+  }
+
+  // Moves, removals and additions change the draft's shape: the editor is
+  // drawn again from the draft, keeping what was typed.
+  const move = (list, i, by) => { const j = i + by; if (j < 0 || j >= list.length) return; [list[i], list[j]] = [list[j], list[i]]; };
+  const small = (label, fn, disabled, redraw) => {
+    const b = h("button", { type: "button", class: "small" }, label);
+    b.disabled = !!disabled;
+    b.addEventListener("click", () => { fn(); redraw(); });
+    return b;
+  };
+
+  function sectionBox(lang, sections, i, errors, redraw) {
+    const s = sections[i];
+    const path = "pages." + lang + ".sections." + i;
+    const type = TYPES[s.type];
+    const on = h("input", { type: "checkbox", id: "lp-" + lang + "-" + i + "-enabled" });
+    on.checked = s.enabled !== false;
+    on.addEventListener("change", () => { s.enabled = on.checked; });
+    const error = h("p", { class: "field-error", role: "alert" });
+    errors[path] = error;
+    errors[path + ".type"] = error;
+    const head = h("div", { class: "lp-section-head" },
+      h("h5", { class: "lp-section-title" }, (i + 1) + ". " + (type ? type.label : KEPT[s.type] || s.type)),
+      h("label", { class: "check", for: "lp-" + lang + "-" + i + "-enabled" }, on, " Shown"),
+      small("Up", () => move(sections, i, -1), i === 0, redraw), small("Down", () => move(sections, i, 1), i === sections.length - 1, redraw),
+      small("Remove", () => sections.splice(i, 1), false, redraw));
+    if (!type) {
+      return h("li", { class: "lp-section kept" }, head,
+        h("p", { class: "muted" }, "Kept as it is: this hub shows this section in a later version, not yet."), error);
+    }
+    const items = type.items ? (s.items = s.items || []) : null;
+    return h("li", { class: "lp-section" }, head, type.note ? h("p", { class: "hint" }, type.note) : null,
+      type.fields.map((x) => control(x, s, path + "." + x.key, errors, redraw)),
+      items ? h("ol", { class: "lp-items" }, items.map((item, k) => h("li", { class: "lp-item" },
+        h("div", { class: "lp-section-head" }, h("span", { class: "lp-item-title" }, type.items.label + " " + (k + 1)),
+          small("Up", () => move(items, k, -1), k === 0, redraw), small("Down", () => move(items, k, 1), k === items.length - 1, redraw),
+          small("Remove", () => items.splice(k, 1), items.length <= type.items.min, redraw)),
+        type.items.fields.map((x) => control(x, item, path + ".items." + k + "." + x.key, errors, redraw))))) : null,
+      items ? small("Add " + type.items.label.toLowerCase(), () => items.push(freshItem(s.type)), items.length >= type.items.max, redraw) : null,
+      error);
+  }
+
+  function pageEditor(draft, lang, errors, redraw) {
+    const p = draft.pages[lang];
+    p.sections = p.sections || [];
+    const title = control(f("title", "Page title", "text", 120), p, "pages." + lang + ".title", errors, redraw);
+    const description = control(f("description", "Description (for search engines)", "long", 300), p, "pages." + lang + ".description", errors, redraw);
+    const kind = h("select", { id: "lp-add-type-" + lang }, Object.entries(TYPES).map(([k, t]) => h("option", { value: k }, t.label)));
+    const add = small("Add the section", () => p.sections.push(fresh(kind.value)), p.sections.length >= 20, redraw);
+    return h("div", { class: "lp-page" }, title, description,
+      h("h4", null, "Sections"),
+      p.sections.length ? h("ol", { class: "lp-sections" }, p.sections.map((s, i) => sectionBox(lang, p.sections, i, errors, redraw)))
+        : h("p", { class: "muted" }, "No section yet: the page would show only its header and footer."),
+      h("div", { class: "inline-form lp-add" }, h("label", { for: "lp-add-type-" + lang }, "New section"), kind, add,
+        h("span", { class: "hint" }, "At most 20 sections.")));
+  }
+
+  // The hub's refusal said at each field it names; a path without a field
+  // on screen is listed in the status line.
+  function showErrors(errors, err, status) {
+    Object.values(errors).forEach((e) => { e.textContent = ""; });
+    const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    // A request over the hub's cap (§16.7: 512 KiB for these two calls) never reaches the checks.
+    if (err && err.code === "payload_too_large") { status.fail("Not saved: ", { message: "the draft is larger than the hub takes in one request (512 KiB)" }); return; }
+    if (!fields) { status.fail("Not saved: ", err); return; }
+    const rest = [];
+    let first = null;
+    Object.entries(fields).forEach(([path, reason]) => {
+      const at = errors[path];
+      if (at) { at.textContent = reasonText(reason); if (!first) first = at; } else rest.push(path + ": " + reasonText(reason));
+    });
+    status.fail("Not saved: ", { message: rest.length ? rest.join("; ") : "see the fields marked below" });
+    const input = first && first.parentNode && first.parentNode.querySelector ? first.parentNode.querySelector("input, textarea") : null;
+    if (input && input.focus) input.focus();
+  }
+
+  // A draft opened as the hub would serve it (§16.7, §16.7.1; a legal page's
+  // draft is its languages alone, the page named in ?page=): stored by a
+  // POST with the CSRF token, then opened by its url in a tab of its own, a
+  // top-level page under the page's own policy. The tab is opened at the
+  // click, before the hub answers, so no pop-up blocker stops it.
+  const PREVIEW = /^(\/api\/v1)?\/admin\/settings\/(landing|legal)\/preview\/[A-Za-z0-9_-]+$/;
+  async function preview(path, body, lang, status, errors) {
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
+    status.busy("Preparing the preview…");
     try {
-      if (!await M.api.hubHas("GET", "/landing")) return null;
-      const page = await M.api.get("/landing");
-      return page && page.enabled && page.markdown ? page : null;
+      const answer = await M.api.post(path, body);
+      const at = new URL(String((answer && answer.url) || ""), window.location.href);
+      if (at.origin !== window.location.origin || !PREVIEW.test(at.pathname)) throw new Error("the hub answered no preview address of its own");
+      if (lang && !at.searchParams.has("lang")) at.searchParams.set("lang", lang);
+      if (tab) tab.location.href = at.href; else window.open(at.href, "_blank", "noopener");
+      status.done();
+      append(status.el, h("span", { class: "ok" }, "The preview opened in a new tab; it is kept for 10 minutes."));
     } catch (err) {
-      return null;
+      if (tab) tab.close();
+      showErrors(errors, err, status);
     }
   }
-
-  // A cta's target as a link: a dashboard route stays in the page, an
-  // https URL opens apart; anything else is no button.
-  function ctaLink(cta, cls) {
-    if (!cta || !cta.label) return null;
-    if (ROUTE.test(cta.href || "") && M.route.isRoute(cta.href)) return h("a", { class: cls, href: cta.href }, cta.label);
-    const url = safeUrl(cta.href);
-    return url ? h("a", { class: cls, href: url, rel: "noopener noreferrer", target: "_blank" }, cta.label) : null;
-  }
-
-  // The page itself, for the visitor and as the editor's preview (the
-  // designer's pass part 1): the large lockup is the page's one logo and
-  // its h1; the title; the action, above the fold on a phone; the text.
-  function page(p) {
-    return h("article", { class: "landing" },
-      h("h1", { class: "landing-lockup" },
-        h("img", { class: "brand-light", src: "brand/maity-lockup-large.svg", alt: "Maity", width: "320", height: "96" }),
-        h("img", { class: "brand-dark", src: "brand/maity-lockup-large-dark.svg", alt: "Maity", width: "320", height: "96" })),
-      p.title ? h("h2", { class: "landing-title" }, p.title) : null,
-      ctaLink(p.cta, "button primary landing-cta") ? h("p", { class: "landing-actions" }, ctaLink(p.cta, "button primary landing-cta")) : null,
-      h("div", { class: "md landing-body" }, M.markdown.withRoutes(p.markdown || "")));
-  }
-
-  // The header holds the theme menu and Sign in, at its right edge; no
-  // small lockup over the large one.
-  function show(main, p, header) {
-    if (p.title) document.title = p.title;
-    const signIn = p.cta && p.cta.href === "/login" ? null : h("a", { class: "button landing-sign-in", href: "/login" }, "Sign in");
-    append(clear(header), h("div", { class: "bar landing-bar" }, M.themeMenu ? M.themeMenu() : null, signIn));
-    append(clear(main), page(p));
-  }
-
-  // ---- the admin area's editor ----------------------------------------------
-
-  const REASONS = {
-    required: "required while the page is on",
-    invalid: "not allowed here",
-    extra_forbidden: "not supported by this hub",
-  };
-  const MARKDOWN_RULE = "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a dashboard path like /login); "
-    + "no images and no HTML outside fenced code.";
 
   async function section(ctx, root) {
     const status = M.statusLine();
-    const enabled = h("input", { id: "landing-enabled", type: "checkbox" });
-    const title = h("input", { id: "landing-title", maxlength: String(TITLE_MAX), autocomplete: "off" });
-    const markdown = h("textarea", { id: "landing-markdown", rows: "14", spellcheck: "true", "aria-describedby": "landing-markdown-rule landing-markdown-error" });
-    const label = h("input", { id: "landing-cta-label", maxlength: String(LABEL_MAX), autocomplete: "off", placeholder: "Sign in" });
-    const href = h("input", { id: "landing-cta-href", autocomplete: "off", spellcheck: "false", placeholder: "/login or https://…" });
-    const errors = {
-      title: h("p", { class: "field-error", id: "landing-title-error", role: "alert" }),
-      markdown: h("p", { class: "field-error", id: "landing-markdown-error", role: "alert" }),
-      cta: h("p", { class: "field-error", id: "landing-cta-error", role: "alert" }),
-      enabled: h("p", { class: "field-error", id: "landing-enabled-error", role: "alert" }),
-    };
-    const preview = h("div", { class: "landing-preview", "aria-label": "Preview" });
-    const changed = h("p", { class: "muted landing-changed" });
-    let current = null;
-
-    const value = () => ({
-      enabled: enabled.checked,
-      title: title.value.trim() || null,
-      markdown: markdown.value.trim() ? markdown.value : null,
-      cta: label.value.trim() || href.value.trim() ? { label: label.value.trim(), href: href.value.trim() } : null,
-    });
-    // The preview's links are text: a click would leave the editor and
-    // its unsaved text.
-    const inert = (node) => {
-      Array.from(node.querySelectorAll("a")).forEach((a) => {
-        a.parentNode.insertBefore(h("span", { class: "inert-link " + (a.className || "") }, a.textContent), a);
-        a.remove();
+    const box = h("div", { class: "lp-editor" });
+    append(root, h("h3", null, "Landing page"),
+      h("p", { class: "hint" }, "What a visitor without a session sees at the root of this instance, per language. The hub renders it itself, "
+        + "without a script; sign-in and registration stay one click away."), status.el, box);
+    let saved = await M.api.get(LANDING);
+    let draft = JSON.parse(JSON.stringify(saved));
+    draft.pages = draft.pages || {};
+    draft.footer = draft.footer || { operator: "", social: [] };
+    let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
+    const draw = () => {
+      const errors = {};
+      const langs = Object.keys(draft.pages);
+      if (!langs.includes(lang)) lang = langs[0] || null;
+      const enabled = h("input", { type: "checkbox", id: "lp-enabled" });
+      enabled.checked = !!draft.enabled;
+      enabled.addEventListener("change", () => { draft.enabled = enabled.checked; });
+      const def = h("select", { id: "lp-default-language", "data-path": "default_language" }, langs.map((l) => h("option", { value: l }, l)));
+      def.value = draft.default_language;
+      def.addEventListener("change", () => { draft.default_language = def.value; });
+      errors.default_language = h("p", { class: "field-error", role: "alert" });
+      errors.enabled = h("p", { class: "field-error", role: "alert" });
+      const newLang = h("input", { id: "lp-new-language", placeholder: "de", maxlength: "20", autocomplete: "off", spellcheck: "false" });
+      const addLang = h("button", { type: "button", class: "small" }, "Add the language");
+      addLang.addEventListener("click", () => {
+        const tag = newLang.value.trim();
+        if (!LANG.test(tag) || draft.pages[tag]) { newLang.focus(); return; }
+        draft.pages[tag] = { title: "", description: "", sections: [] };
+        if (!draft.default_language || !draft.pages[draft.default_language]) draft.default_language = tag;
+        lang = tag;
+        draw();
       });
-      return node;
-    };
-    const drawPreview = () => {
-      const v = value();
-      append(clear(preview), v.markdown ? inert(page(v)) : h("p", { class: "muted" }, "Write the page's text to see it here."));
-    };
-    [title, markdown, label, href].forEach((el) => el.addEventListener("input", drawPreview));
-
-    function fill(v) {
-      current = v;
-      enabled.checked = !!v.enabled;
-      title.value = v.title || "";
-      markdown.value = v.markdown || "";
-      label.value = v.cta ? v.cta.label : "";
-      href.value = v.cta ? v.cta.href : "";
-      changed.textContent = v.updated_at
-        ? "Last changed " + formatTime(v.updated_at) + " by " + (v.updated_by === ctx.me.id ? "you" : (ctx.nameOf ? ctx.nameOf(v.updated_by) : v.updated_by)) + "."
-        : "Never changed: visitors see the login page.";
-      drawPreview();
-    }
-
-    // The hub's refusal at its field; a Markdown line it names is selected.
-    function refused(fields) {
-      Object.values(errors).forEach((e) => { e.textContent = ""; });
-      Object.entries(fields).forEach(([key, reason]) => {
-        const at = key.startsWith("cta") ? "cta" : key;
-        const line = /^line (\d+)$/.exec(reason);
-        if (key === "markdown" && line) {
-          const n = Number(line[1]);
-          const lines = markdown.value.replace(/\r\n?/g, "\n").split("\n");
-          const text = lines[n - 1] || "";
-          errors.markdown.textContent = "Line " + n + " breaks the rules: “" + text.trim().slice(0, 80) + "”. " + MARKDOWN_RULE;
-          const start = lines.slice(0, n - 1).reduce((a, l) => a + l.length + 1, 0);
-          markdown.focus();
-          if (markdown.setSelectionRange) markdown.setSelectionRange(start, start + text.length);
-          return;
-        }
-        if (errors[at]) errors[at].textContent = (key === "cta.href" ? "The link: " : "") + (REASONS[reason] || reason);
-      });
-    }
-
-    const form = h("form", {
-      class: "inline-form landing-form",
-      novalidate: true,
-      onsubmit: async (e) => {
-        e.preventDefault();
-        const v = value();
-        const local = {};
-        if (v.markdown && utf8Length(v.markdown) > MARKDOWN_MAX) local.markdown = "longer than 64 KiB";
-        if (v.enabled && !v.markdown) local.markdown = "required";
-        if (v.cta && !v.cta.label) local.cta = "a button needs a label as well as a link";
-        else if (v.cta && !((ROUTE.test(v.cta.href) && M.route.isRoute(v.cta.href)) || safeUrl(v.cta.href))) local["cta.href"] = "invalid";
-        if (Object.keys(local).length) { refused(local); status.done(); return; }
-        refused({});
-        status.busy("Saving…");
-        try {
-          fill(await M.api.patch(SETTINGS, v));
-          status.done();
-          append(status.el, h("span", { class: "ok" }, v.enabled ? "Saved. Visitors see it within a minute." : "Saved. Visitors see the login page."));
-        } catch (err) {
-          const fields = err.code === "invalid" && err.details && err.details.fields;
-          // The hub's body cap can be met before the Markdown's own limit.
-          if (err.status === 413) { refused({ markdown: "larger than the hub accepts in one save; shorten the text" }); status.done(); }
-          else if (fields) { refused(fields); status.done(); } else status.fail("Not saved: ", err);
-        }
+      const tabs = h("div", { class: "lp-tabs", role: "group", "aria-label": "Languages" }, langs.map((l) => {
+        const b = h("button", { type: "button", "aria-pressed": String(l === lang) }, l);
+        b.addEventListener("click", () => { lang = l; draw(); });
+        return b;
+      }));
+      const footer = draft.footer;
+      footer.social = footer.social || [];
+      const social = h("ol", { class: "lp-items" }, footer.social.map((x, k) => h("li", { class: "lp-item" },
+        control(f("link", "Link " + (k + 1), "cta"), { link: x }, "footer.social." + k, errors, draw),
+        small("Remove", () => footer.social.splice(k, 1), false, draw))));
+      const form = h("form", {
+        class: "lp-form project-form",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          status.busy("Saving…");
+          const body = { enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer };
+          try {
+            saved = await M.api.patch(LANDING, body);
+            draft = JSON.parse(JSON.stringify(saved));
+            draft.pages = draft.pages || {};
+            draft.footer = draft.footer || { operator: "", social: [] };
+            draw();
+            status.done();
+            append(status.el, h("span", { class: "ok" }, "Saved. Visitors see it within a minute."));
+          } catch (err) {
+            showErrors(errors, err, status);
+          }
+        },
       },
-    },
-    h("label", { class: "check", for: "landing-enabled" }, enabled, " Show the landing page to visitors who are not signed in"), errors.enabled,
-    h("label", { for: "landing-title" }, "Title"), title, errors.title,
-    h("label", { for: "landing-markdown" }, "Text (Markdown)"), markdown,
-    h("p", { class: "hint", id: "landing-markdown-rule" }, MARKDOWN_RULE + " At most 64 KiB."), errors.markdown,
-    h("label", { for: "landing-cta-label" }, "Button label"), label,
-    h("label", { for: "landing-cta-href" }, "Button link"), href, errors.cta,
-    h("button", { type: "submit" }, "Save landing page"),
-    status.el);
-
-    append(root, h("h2", null, "Landing page"),
-      h("p", { class: "hint" }, "What visitors who are not signed in see at the root. Off, they see the login page; a sign-in link is always on the page."),
-      changed, form, h("h3", null, "Preview"), preview);
-    fill(await M.api.get(SETTINGS));
+      h("p", { class: "check" }, enabled, h("label", { for: "lp-enabled" }, " Show the landing page to visitors without a session")), errors.enabled,
+      h("div", { class: "inline-form" }, h("label", { for: "lp-new-language" }, "Languages"), tabs, newLang, addLang),
+      langs.length ? [h("label", { for: "lp-default-language" }, "Default language"), def, errors.default_language,
+        lang ? [small("Remove this language", () => { delete draft.pages[lang]; if (draft.default_language === lang) draft.default_language = Object.keys(draft.pages)[0] || "en"; }, false, draw),
+          pageEditor(draft, lang, errors, draw)] : null]
+        : h("p", { class: "muted" }, "No language yet: add one to write its page."),
+      h("h4", null, "Footer, for every language"),
+      control(f("operator", "Operator line (name, country)", "text", 120), footer, "footer.operator", errors, draw),
+      social, small("Add a social link", () => footer.social.push({ label: "", href: "" }), footer.social.length >= 8, draw),
+      h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
+      h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
+        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
+          "Preview the draft"),
+        // The saved page as a visitor sees it (§16.7, ?as=public), only while it is on.
+        saved.enabled ? h("a", { href: "/?as=public" + (lang ? "&lang=" + encodeURIComponent(lang) : ""), target: "_blank", rel: "noopener" }, "View as a visitor") : null),
+      saved.updated_at ? h("p", { class: "muted" }, "Last saved " + formatTime(saved.updated_at) + ".") : null);
+      append(clear(box), form);
+    };
+    draw();
   }
 
-  M.landing = { read, show, section, page };
+  // ---- the legal pages (§16.7.1) ------------------------------------------
+
+  const PAGES = [["imprint", "Imprint", "/impressum"], ["privacy", "Privacy", "/privacy"], ["terms", "Terms of use", "/terms"]];
+
+  function legalPage(key, label, served, current, defaultLanguage, done) {
+    const status = M.statusLine();
+    const errors = {};
+    const draft = JSON.parse(JSON.stringify((current && current.languages) || {}));
+    // It opens on the setting's default language where the page has it.
+    let lang = draft[defaultLanguage] ? defaultLanguage : Object.keys(draft)[0] || null;
+    const body = h("div");
+    const draw = () => {
+      Object.keys(errors).forEach((k) => delete errors[k]);
+      const langs = Object.keys(draft);
+      if (!langs.includes(lang)) lang = langs[0] || null;
+      const newLang = h("input", { id: "lg-" + key + "-new-language", placeholder: "de", maxlength: "20", autocomplete: "off", spellcheck: "false" });
+      const addLang = h("button", { type: "button", class: "small" }, "Add the language");
+      addLang.addEventListener("click", () => {
+        const tag = newLang.value.trim();
+        if (!LANG.test(tag) || draft[tag] || langs.length >= 8) { newLang.focus(); return; }
+        draft[tag] = { title: label, markdown: "" };
+        lang = tag;
+        draw();
+      });
+      const tabs = h("div", { class: "lp-tabs", role: "group", "aria-label": label + ": languages" }, langs.map((l) => {
+        const b = h("button", { type: "button", "aria-pressed": String(l === lang) }, l);
+        b.addEventListener("click", () => { lang = l; draw(); });
+        return b;
+      }));
+      const save = h("button", { type: "submit", class: "primary" }, "Save the " + label.toLowerCase());
+      const unset = current ? h("button", { type: "button", class: "danger" }, "Take the page down") : null;
+      if (unset) {
+        unset.addEventListener("click", async () => {
+          if (!window.confirm("Take the " + label.toLowerCase() + " down? Its earlier versions stay readable at their addresses.")) return;
+          status.busy("Taking it down…");
+          try { done(await M.api.patch(LEGAL, { [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { showErrors(errors, err, status); }
+        });
+      }
+      const form = h("form", {
+        class: "lg-form project-form",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          status.busy("Saving…");
+          try { done(await M.api.patch(LEGAL, { [key]: draft }), "Saved as a new version of the " + label.toLowerCase() + "."); } catch (err) { showErrors(errors, err, status); }
+        },
+      },
+      h("div", { class: "inline-form" }, h("label", { for: "lg-" + key + "-new-language" }, "Languages"), tabs, newLang, addLang),
+      lang ? [control(f("title", "Title", "text", 120), draft[lang], key + "." + lang + ".title", errors, draw),
+        control(f("markdown", "Text (Markdown)", "md", 65536), draft[lang], key + "." + lang + ".markdown", errors, draw),
+        small("Remove this language", () => { delete draft[lang]; }, false, draw)] : h("p", { class: "muted" }, "No language yet: add one to write the page."),
+      h("div", { class: "actions" }, save,
+        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors) }, "Preview the draft") : null,
+        unset), status.el);
+      append(clear(body), form);
+    };
+    draw();
+    const versions = (current && current.versions) || [];
+    return h("section", { class: "lg-page", "aria-label": label },
+      h("h4", null, label),
+      current
+        ? h("p", { class: "muted" }, "Served at ", h("a", { href: served, target: "_blank", rel: "noopener" }, served), ", as of " + formatTime(current.version) + ".",
+          versions.length ? [" Earlier: ", versions.map((v, i) => [i ? ", " : null, h("a", { href: served + "/" + v, target: "_blank", rel: "noopener" }, formatTime(v))])] : null)
+        : h("p", { class: "muted" }, "Not set: " + served + " answers not found, and nothing links to it."),
+      body);
+  }
+
+  async function legalSection(ctx, root) {
+    const note = h("div");
+    const box = h("div");
+    append(root, h("h3", null, "Legal pages"),
+      h("p", { class: "hint" }, "The imprint, the privacy notice and the terms, served by the hub as static pages and linked from the landing page, "
+        + "the login and the registration. Each save is a new version; the earlier ones stay readable, since a person may have accepted one."),
+      note, box);
+    const draw = (value, words) => {
+      clear(note);
+      if (words) append(note, h("p", { class: "ok", role: "status" }, words));
+      append(clear(box), PAGES.map(([key, label, served]) => legalPage(key, label, served, (value.pages || {})[key] || null, value.default_language, (now, said) => draw(now, said))));
+    };
+    draw(await M.api.get(LEGAL));
+  }
+
+  // The legal pages that are set, as links (§16.7.1: the login and the
+  // registration page link to them): an element filled once GET /legal answers.
+  function links() {
+    const p = h("p", { class: "legal-links muted" });
+    M.api.hubHas("GET", "/legal").then((has) => (has ? M.api.get("/legal") : null)).then((v) => {
+      const set = v && v.pages ? PAGES.filter(([key]) => v.pages[key]) : [];
+      set.forEach(([, label, served], i) => append(p, i ? " · " : null, h("a", { href: served }, label)));
+    }, () => {});
+    return p;
+  }
+
+  M.landing = { section, TYPES };
+  M.legal = { section: legalSection, links };
 })(window.Maity);

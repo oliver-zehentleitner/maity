@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, export
+from maity_hub import account_deletion, avatars, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -49,6 +49,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("credential", "revoked_by"): True,
     ("email_sign_in", "address_epoch"): False,  # a counter
     ("event", "actor_human_id"): True,
+    ("handle_register", "owner_id"): True,  # a human's or an organisation's id
     ("human_session", "approved_by"): False,  # the approving session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
@@ -64,6 +65,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("notification_settings", "address_change"): True,
     ("notification_settings", "address_normalized"): True,
     ("notification_settings", "address_status"): False,  # `verified`, `pending`, …
+    ("org_invitation", "closed_by"): False,  # why: `accepted`, `revoked`, `expired`, …
     ("pending_registration", "address"): True,
     ("pending_registration", "address_normalized"): True,
     ("placement", "updated_by"): True,
@@ -84,6 +86,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
     "membership": members,  # apply_remove
+    "org_invitation": org_invitations,  # withdraw_by_inviter_everywhere, withdraw_for_human
     "runner": runners,  # remove
 }
 
@@ -97,6 +100,7 @@ DELETION_KEEPS = {
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
+    "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
     "instance_landing": f"who edited the landing page: {_RECORD}",
     "instance_legal": f"who edited the legal pages: {_RECORD}",
@@ -142,6 +146,7 @@ EXPORT_LEAVES_OUT = {
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
     "forge_link_state": _SECRET,
+    "handle_register": f"the handle is in the account; {_UNLISTED}",
     "human_device": _SECRET,
     "idempotency_key": _BOOKKEEPING,
     "instance_landing": _INSTANCE,

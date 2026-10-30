@@ -53,6 +53,68 @@ each member's last good export.
   forge token, and a public repository's families are readable without
   one.
 
+## The in-process caches per project keep the newest written, up to a bound
+
+**Id:** 07614661-8f1e-4f78-8cf6-d0906ed98461
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
+**Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows a bound too small (projects read anew too often) or too large; or projects can be deleted for good, so that their entries could go at once
+
+The hub keeps several caches per project in the process. Each gained a
+key for every project it served, and nothing removed one while it ran.
+With open registration that grows with the instance. Each is now written
+through `bounded.put`, which writes a key as the newest and drops the
+oldest written beyond a bound:
+
+| Cache | Bound |
+|---|---|
+| the Keep the Why answers (`ktw.CACHE`), largest at 10 to 100 KB a project; a dropped project takes its last good reads and its idle lock with it | 256 projects |
+| the swarm page windows (`swarm.CACHE`) | 1024 |
+| the reader chosen per project (`ForgeAccess._chosen`) | 1024 |
+| the source last found (`forge_access._last_via`) | 4096 |
+| the image read state per project and kind (`images`) | 4096 per map |
+
+What a dropped key held is read or computed again on its next use. For
+`_last_via` that means the default source shows until the next choice.
+
+- **In use is never dropped.** A Keep the Why project and an image gate
+  count their requests from asking for the lock until leaving
+  (`ktw.Cache.users`, `images._flying`). While one is counted, neither
+  its answer nor its last good reads nor its lock are dropped.
+- **Written in place.** The maps are `OrderedDict`s. A key written again
+  keeps its slot and moves to the end (`move_to_end`), so a reader
+  without the lock never sees it missing in between.
+- **Locks.** The maps that were written without a lock (`ktw.last_good`,
+  the image maps, `_last_via`) are now written under their module's
+  lock, because dropping walks the map while other threads write it.
+- **A changed repository is not a matter of room.** `ktw.Cache.forget`
+  (the repository URL changed) drops the project's answers and last good
+  reads always, even while a request uses the project: the old
+  repository's reads must not stand in for the new one's members of the
+  same path. A last good read is also keyed by its repository, so one
+  that a read still running writes after `forget` is never used for
+  another repository. Only the project's lock stays while it is in use.
+  Dropping for room spares a project in use entirely.
+- **Lock order.** In `ktw`, a project's lock first, then `guard`, never
+  the other way round: under `guard` no project lock is taken, only
+  looked up. In `images`, the gate first, then `_guard`; the gate is
+  taken outside `_guard`. The other locks (`forge_access`, `_via_lock`,
+  `swarm`) are leaves, and `stays` only reads a dict.
+
+**Rejected alternatives:**
+- Forgetting a project when it is deleted, as first planned: the
+  hub deletes no project for good (an archived one is still viewed), so
+  nothing would ever call it.
+- An age limit alone: it bounds how old an entry is, not how many
+  there are, so many projects viewed within the hour still grow the map.
+- Keeping only a lock that is held right now (`lock.locked()`), the
+  first version of #672: a request that has its lock but not yet taken
+  it, or a Keep the Why read that is still running, could lose the
+  lock or the last good reads. A second request would then get a new
+  lock and read the forge again.
+
 ## The Keep the Why policy stores only what a human set; the provider keeps its boolean column
 
 **Id:** a0966b9e-2263-44c1-9098-3c1f5d709911

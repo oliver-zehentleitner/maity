@@ -117,6 +117,76 @@ human = Table(
     **MYSQL_TABLE,
 )
 
+# The one namespace of current handles: a human's and an organisation's (docs/api.md §6.24,
+# §6.26). The primary key is what makes two principals with one handle impossible, on every
+# engine and under any race; `owner_id` is a `hum-…` or an `org-…` id, so it has no foreign
+# key. A row is never deleted: a deleted account's or organisation's handle stays taken.
+handle_register = Table(
+    "handle_register",
+    metadata,
+    Column("handle", String(HANDLE), primary_key=True),
+    Column("kind", String(8), nullable=False),  # human, org
+    Column("owner_id", String(ID), nullable=False),
+    UniqueConstraint("owner_id", name="uq_handle_register_owner"),
+    CheckConstraint("kind IN ('human', 'org')", name="kind_known"),
+    **MYSQL_TABLE,
+)
+
+# An organisation, the second kind of namespace owner (docs/api.md §6.26). The row stays
+# after a deletion, with `deleted_at`, so every stored id keeps resolving.
+org = Table(
+    "org",
+    metadata,
+    _id(primary_key=True),
+    Column("handle", String(HANDLE), nullable=False, unique=True),
+    Column("display_name", String(TITLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    # Whether a plain member creates projects in it (owners and admins always do).
+    Column("members_create_projects", Boolean, nullable=False, server_default=false()),
+    Column("public_page", String(8), nullable=False, server_default="off"),  # off, on (§16.9)
+    Column("deleted_at", UtcDateTime),
+    CheckConstraint("public_page IN ('off', 'on')", name="public_page_known"),
+    **MYSQL_TABLE,
+)
+
+# A human's role in an organisation: one row per member.
+org_member = Table(
+    "org_member",
+    metadata,
+    _ref("org_id", "org.id", nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("role", String(8), nullable=False),  # owner, admin, member
+    Column("joined_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("org_id", "human_id", name="pk_org_member"),
+    Index("ix_org_member_human", "human_id"),
+    CheckConstraint("role IN ('owner', 'admin', 'member')", name="role_known"),
+    **MYSQL_TABLE,
+)
+
+# An offer to become a member, answered by the invited human's own word (§6.26). `handle`
+# is the value the inviter typed, never resolved; `live` is true while it is open and NULL
+# once closed, so that one value is open at most once per organisation, on every engine.
+org_invitation = Table(
+    "org_invitation",
+    metadata,
+    _id(primary_key=True),
+    _ref("org_id", "org.id", nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("role", String(8), nullable=False),
+    _ref("invited_by", "human.id", nullable=False),
+    _ref("request_id", "request.id"),  # null when the handle named nobody who can be invited
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Column("closed_by", String(16)),  # accepted, declined, revoked, expired, superseded, ...
+    Column("live", Boolean),
+    UniqueConstraint("org_id", "handle", "live", name="uq_org_invitation_open"),
+    Index("ix_org_invitation_org", "org_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    CheckConstraint("role IN ('owner', 'admin', 'member')", name="role_known"),
+    **MYSQL_TABLE,
+)
+
 # A request to delete the account, waiting for its confirmation by mail (docs/api.md
 # §2.9). `id` is the sha256 of the mailed link's nonce; `live` is true while it may be
 # confirmed and NULL once withdrawn (`withdrawn_by` says what withdrew it), replaced or
@@ -1169,7 +1239,11 @@ request = Table(
     "request",
     metadata,
     _id(primary_key=True),
-    _ref("project_id", "project.id", nullable=False),
+    # Null only for a personal request that concerns an organisation and no project: an
+    # invitation (§7, §6.26); then `org_id` is set and `asked_by` is null, the inviter being
+    # `asked_by_human`.
+    _ref("project_id", "project.id"),
+    _ref("org_id", "org.id"),
     Column("class", String(16), nullable=False),
     Column("title", String(TITLE), nullable=False),
     Column("summary", MARKDOWN_TEXT),
@@ -1191,7 +1265,8 @@ request = Table(
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
-    _membership_ref("asked_by", nullable=False),
+    _membership_ref("asked_by"),  # null with `project_id`: the human is `asked_by_human`
+    _ref("asked_by_human", "human.id"),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
     _ref("task_id", "card.id"),
@@ -1238,6 +1313,11 @@ request = Table(
         "(personal AND to_kind IN ('profile_owner', 'human'))"
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
+    ),
+    # No project: only a personal request that concerns an organisation (§7, §6.26).
+    CheckConstraint(
+        "project_id IS NOT NULL OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)",
+        name="scope_known",
     ),
     Index("ix_request_project_status", "project_id", "status"),
     Index("ix_request_to_member_status", "to_member", "status"),

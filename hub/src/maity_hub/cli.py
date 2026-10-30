@@ -15,7 +15,7 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, longpoll, moderation, namespace, paths
+from maity_hub import __version__, clock, handle_register, longpoll, moderation, namespace, paths
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
 from maity_hub.auth import second_factor_reset
@@ -146,16 +146,28 @@ def _owner_create(
                         "or run quickstart again",
                         EXIT_FAILURE,
                     )
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
             else:
                 if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
                     return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
+                if handle_register.taken(conn, handle):
+                    return _fail(f"an organisation has the handle {handle!r}", EXIT_FAILURE)
                 conn.execute(insert(t.human).values(**values))
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
+    except _HandleTaken:
+        return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
     print(f"maity-hub: created {handle} ({human_id})")
     return 0
+
+
+class _HandleTaken(Exception):
+    """The register refused the new account's handle after the checks: roll it back."""
 
 
 def _second_factor_reset(settings: Settings, handle: str) -> int:

@@ -310,6 +310,12 @@ def reserved_holders(conn: Connection) -> list[str]:
             for handle in conn.execute(select(t.human.c.handle)).scalars()
             if handle in paths.RESERVED_FIRST
         ]
+    if "org" in present:  # an organisation's handle is held to the same words (§6.26)
+        found += [
+            f"organisation handle {handle!r}"
+            for handle in conn.execute(select(t.org.c.handle)).scalars()
+            if handle in paths.RESERVED_FIRST
+        ]
     slugs = ROUTE_WORDS | paths.PROJECT_VIEWS
     for table, label in ((t.project, "slug"), (t.project_alias, "project alias")):
         if table.name in present:
