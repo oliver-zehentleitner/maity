@@ -32,6 +32,7 @@ class Addressee:
     role: str | None = None  # role: the whole token, `trust:admin` or `role:designer`
     profile: str | None = None  # profile_owner: the agent profile whose owner is meant
     human: str | None = None  # human: the human asked in person (§19.4)
+    instance: str | None = None  # member: the one instance addressed, as written (§7)
 
     def text(self, conn: Connection) -> str:
         if self.kind == "owner":
@@ -46,11 +47,13 @@ class Addressee:
 
         member = principal_id(conn, self.member)
         assert member is not None
-        return member
+        return f"{member}#{self.instance}" if self.instance else member
 
 
 def addressee_of(row: Any) -> Addressee:
-    return Addressee(row.to_kind, row.to_member, row.to_role, row.to_profile, row.to_human)
+    return Addressee(
+        row.to_kind, row.to_member, row.to_role, row.to_profile, row.to_human, row.to_instance
+    )
 
 
 def owner_membership(conn: Connection, project_id: str) -> Any:

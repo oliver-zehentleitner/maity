@@ -428,7 +428,12 @@ bounded in SQL (`seq` past the position per project, records past its record num
 `unread` page whose first chunk held read items took one more chunk with the larger history,
 and every chunk repeats the item lookups, so the events (outside the chats) and the records
 start with a whole chunk (`CHUNK`): one statement covers a page whatever the history. All
-four load tests pass at `MAITY_LOAD_UNIT=1000`.
+four load tests pass at `MAITY_LOAD_UNIT=1000`. The price is wanted: a page reads up to
+`CHUNK` event rows per project of the human, so it stays flat in the history and grows with
+the memberships, which are few beside the history. Rejected: a first chunk of `count`, the
+page's size, which reads less for a quiet bell but takes more chunks, each with its lookups,
+the more read items lie in front, so it grows with the history the load test guards. The load
+test measures one project; a human in many projects is not measured yet.
 
 ## The counts of the bell classify only their candidates; the mentions stay exact
 
@@ -728,3 +733,46 @@ and a removed member's choices for a project are not carried into a later member
 preferences, which would need no migration. It would keep overrides for projects the
 human has left, with no row that ends them, and the per-project settings would be read
 apart from the membership that the route already loads.
+
+## The `agents_not_listening` record is written only when it flips; the bell reads whether it is open and its count live
+
+**Id:** 5e46712b-271b-4b43-ba30-8017f745184e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the bell mode of the not-listening digest (tsk-32g2cjbm52ft, contract #627), with the coordinator's choice that the item is derived on read, 2026-10-29
+**Revisit when:** the account records may be changed after they are written, or the digest request (mode `inbox`) needs the same state and wants it stored
+
+Under `not_listening.mode: bell` the hourly worker (`not_listening_digest`) writes the
+record `agents_not_listening` only when an owner's state flips: `{instances: n}` when the
+first instance becomes away, `{instances: 0}` when none is away any more, and also at the
+`PATCH` that leaves `bell`. The bell lists only the newest such record, and only while
+the owner is under `bell` and an instance is away when the bell is read; the count in its
+title is read then too. A later away phase writes a new record, so it is a new, unread item.
+Only an owner under `inbox` still gets a request per episode until the digest request
+comes; under `bell` the bell item is the only notice and under `off` there is none, so
+the modes never add up. Reading the count live costs the bell a fixed few queries (the
+owner's episodes, notification settings and project overrides), and only while that
+newest record is open; it does not grow with the number of items.
+
+A mode that leaves `inbox` mid-episode would keep that episode's request open beside the
+bell item, because a request is filed only when an episode starts. So every digest hour
+withdraws the per-episode requests still open for an owner whose mode is not `inbox`
+(`withdraw_episode_requests`, §5.3 "at the first digest hour"); the episode itself goes
+on. Not at the `PATCH`: a withdrawal emits an event to wake the asker, and the `PATCH` of
+the notification settings is no events transaction, so the overlap lasts until the next
+hour at most. Rejected: leaving the request to the episode's end, since an episode can
+last days and the owner would hear of it twice. The other way round, `bell` → `inbox`
+mid-episode files no request for the running episode; until the digest request (mode
+`inbox`) comes, that episode stays without a request.
+
+**Reason:** `account_record` is append-only; read marks are its only change after the
+write. Deriving the open state and the count on read keeps that, lists the item exactly
+while an instance is away rather than until the next hour, and leaves the worker no
+state of its own to lose.
+
+**Rejected alternatives:**
+- Change the record's `data` in place (the count, a closed mark): the only record type
+  that would be rewritten after it was written.
+- Keep "is an item open" in the worker's memory: lost at a restart, and the bell would
+  need the worker to answer.

@@ -401,7 +401,13 @@ def patch(
                     merged[key] = value
             stored[side] = merged
     if not_listening:
+        old_mode = _merged(stored)["not_listening"]["mode"]
         stored["not_listening"] = {**(stored.get("not_listening") or {}), **not_listening}
+        new_mode = _merged(stored)["not_listening"]["mode"]
+        if new_mode != old_mode:  # takes effect at the PATCH (§5.3)
+            from maity_hub import not_listening_digest
+
+            not_listening_digest.mode_changed(conn, human.id, old_mode, new_mode)
     conn.execute(
         update(t.notification_settings)
         .where(t.notification_settings.c.human_id == human.id)

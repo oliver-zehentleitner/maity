@@ -330,9 +330,7 @@ agent_profile = Table(
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
     Column("deleted_at", UtcDateTime),
-    Column(
-        "live", Boolean, server_default=true()
-    ),  # the database fills it: inserts on older schemas name no `live`
+    Column("live", Boolean, server_default=true()),  # true until deleted; an insert names none
     UniqueConstraint("owner_id", "handle", "live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
@@ -550,9 +548,9 @@ project = Table(
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
-    # How long a holder has to answer a takeover (§6.1, §6.19); older rows read the default.
+    # How long a holder has to answer a takeover (§6.1, §6.19).
     Column("takeover_window_minutes", Integer, nullable=False, server_default="60"),
-    # optional or required (§2.2); the default fills projects made before 0004.
+    # optional or required (§2.2).
     Column("signing", String(16), nullable=False, server_default="optional"),
     # What an agent's placement proposal does, and how many placements may be active
     # (§6.1, §15.6); the defaults fill projects made before 0008.
@@ -1287,6 +1285,7 @@ request = Table(
     # owns an agent profile, member of the project or not: a personal request (§7).
     Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
+    Column("to_instance", String(INSTANCE)),  # the address as written: `<member>#<id>` (§7)
     Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
