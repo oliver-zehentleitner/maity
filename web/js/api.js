@@ -494,10 +494,11 @@ window.Maity = window.Maity || {};
     collab: ["title", "text", "items", "footnote"],
     demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
-  // A list of a section with its bounds, as the hub's landing._list: none
-  // is required, one outside them invalid at its path, its entries unchecked.
-  function landingList(list, path, min, max, errors, each) {
-    if (list === undefined || list === null) { errors[path] = "required"; return; }
+  // A list of a section with its bounds, as the hub's landing._list: a
+  // missing one is required unless optional (`required` false), one outside
+  // them invalid at its path, its entries unchecked.
+  function landingList(list, path, min, max, errors, each, required) {
+    if (list === undefined || list === null) { if (required !== false) errors[path] = "required"; return; }
     if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
     list.forEach((x, k) => each(x || {}, path + "." + k));
   }
@@ -585,7 +586,7 @@ window.Maity = window.Maity || {};
       } else if (s.type === "opensource") {
         landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
         landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
-        landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors));
+        landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
     });
   }
