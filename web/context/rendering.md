@@ -621,7 +621,9 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has.
+or "an" in code, which only English has. Still put together from
+pieces: a status line's prefix and its reason ("Not saved: " + the
+hub's words, `status.fail`), for a later part of stage 2.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
