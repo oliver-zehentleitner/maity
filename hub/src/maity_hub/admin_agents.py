@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import cross_owner, line, proposals
+from maity_hub import cross_owner, foreign_agent, line, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -278,23 +278,43 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if cross_owner.owners(conn, target, boss_row) is not None:
             cross_boss = boss_row
             del values["reports_to"]
-    old = members.apply_patch(
-        conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
-    )
-    for field in ("trust", "role"):
-        if field in old:
-            announce(conn, change, target, field, old[field], values[field], request.id)
-    if cross_boss is not None and proposer is not None:
-        caller = Caller(
+    instance = proposal.get("instance")
+    caller = (
+        Caller(
             kind="agent",
             via="bearer",
             agent_id=agent,
             membership_id=proposer.id,
             project_id=project.id,
         )
-        cross_owner.file(
-            conn, project, Membership(project, proposer, "agent"), caller, target, cross_boss
+        if proposer is not None
+        else None
+    )
+    consent_id = None
+    if (
+        proposer is not None
+        and caller is not None
+        and foreign_agent.is_foreign(conn, proposer, target)
+    ):
+        # Another owner's agent: after ᵃ, its owner's consent for the fields that wait for it
+        # (§6.2, "Another owner's agent"); the rest applies now.
+        mine = Membership(project, proposer, "agent")
+        foreign_agent.withdraw_open(conn, target.id, change.actor, "superseded")
+        consent_id = foreign_agent.file(
+            conn, project, mine, caller, target, values, (bool(given), reason), instance
         )
+        if consent_id is not None:
+            values = {k: v for k, v in values.items() if k not in foreign_agent.FIELDS}
+            given, reason, instance = False, None, None
+    old = members.apply_patch(
+        conn, change, target, values, (bool(given), reason), instance=instance
+    )
+    for field in ("trust", "role"):
+        if field in old:
+            announce(conn, change, target, field, old[field], values[field], request.id)
+    if cross_boss is not None and proposer is not None and caller is not None:
+        mine = Membership(project, proposer, "agent")
+        cross_owner.file(conn, project, mine, caller, target, cross_boss)
 
 
 # The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).

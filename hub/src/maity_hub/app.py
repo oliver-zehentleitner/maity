@@ -23,6 +23,7 @@ from maity_hub import (
     commitment,
     cross_owner,  # noqa: F401  (registers the cross-owner consent proposal)
     errors,
+    foreign_agent,  # noqa: F401  (registers the consent for another owner's agent)
     forge,
     forge_access,
     images,

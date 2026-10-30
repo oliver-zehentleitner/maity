@@ -21,6 +21,7 @@ from maity_hub import (
     cover,
     cross_owner,
     events,
+    foreign_agent,
     idempotency,
     inbox,
     instances,
@@ -1332,7 +1333,7 @@ def withdraw(
                     "an agent that did not ask for the edge does not end the owners' decision",
                     {"reason": "pending_consent"},
                 )
-        elif row.personal and not org_transfer:
+        elif row.personal and not org_transfer and not _foreign_asker(row, mine):
             raise not_found()
         if not pair and not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
@@ -2187,6 +2188,12 @@ def withdraw_hub_notice(conn: Connection, request_id: str | None, reason: str) -
         _payload(row, request_view(conn, closed)),
         subject=("request", request_id),
     )
+
+
+def _foreign_asker(row: Any, mine: Membership) -> bool:
+    """The caller asked for a change of another owner's agent: they withdraw it, the owner
+    answers it (§6.2, "Another owner's agent")."""
+    return (row.proposal or {}).get("kind") == foreign_agent.KIND and inbox.is_asker(row, mine)
 
 
 def _is_cross_owner(row: Any) -> bool:

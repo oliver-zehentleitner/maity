@@ -201,15 +201,20 @@ def test_removing_either_member_withdraws_the_requests(
         assert request.status == "withdrawn" and request.withdraw_reason == "member_removed"
 
 
-def test_the_other_fields_of_the_patch_apply_at_once(
+def test_the_fields_of_the_patch_wait_for_their_own_consent_beside_the_edge(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
+    """Another owner's agent: the fields wait for its owner (`foreign_agent`), the edge for the
+    pair; nothing applies on the call, and the answer is the fields' request."""
     friend = flow.human(make_client, migrated, "friend")
     lent = _lent(migrated, friend)
     asked = put(owner, lent, reports_to=owner.id, role="reviewer", areas=["web/"])
     assert asked.status_code == 202, asked.text
     row = _row(migrated, lent)
-    assert (row.role, row.areas, row.reports_to) == ("reviewer", ["web/"], None)
+    assert (row.role, row.areas, row.reports_to) == ("coder", ["/"], None)
+    kinds = sorted(r.proposal["kind"] for r in _requests(migrated))
+    assert kinds == ["cross_owner_reports_to", "foreign_agent_change"]
+    assert asked.json()["title"].startswith("Change ")
 
 
 def test_an_edge_within_one_owner_is_set_at_once(
@@ -514,8 +519,12 @@ def test_an_admin_agents_patch_waits_for_its_owner_and_then_asks_both_owners(
     assert _requests(migrated)[0].proposal["kind"] == "member_change"
     go = owner.post(f"{PROJECT}/requests/{first_request}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
-    assert _row(migrated, lent).role == "coder"  # the other fields applied at once
-    assert _boss_of(migrated, lent) is None  # the boss waits for both owners
+    # The agent is another owner's: its fields wait for that owner, the boss for both owners.
+    assert _row(migrated, lent).role == "reviewer"
+    assert _boss_of(migrated, lent) is None
+    [fields] = [r for r in _requests(migrated) if r.proposal["kind"] == "foreign_agent_change"]
+    assert fields.to_human == friend.id and answer(friend, fields.id, "go").status_code == 200
+    assert _row(migrated, lent).role == "coder"
     asked = [r for r in _requests(migrated) if r.proposal["kind"] == "cross_owner_reports_to"]
     assert sorted(r.to_human for r in asked) == sorted([owner.id, friend.id])
     for request in asked:

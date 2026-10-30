@@ -42,6 +42,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 
 ## F
+- [foreign-agent.md](foreign-agent.md) — a change of another owner's agent is one personal consent request, filed on the call and applied whole at go
 
 ## G
 
