@@ -27,6 +27,7 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    reviews,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -62,6 +63,7 @@ class MessageIn(Written):
     task_id: str | None = None
     conversation_id: str | None = None
     to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
+    review: Any = None  # a `review_result`'s object (§8.4), checked in `post_message`
 
     @field_validator("body")
     @classmethod
@@ -274,6 +276,13 @@ def post_message(
         raise invalid({"type": "unknown"})
     me = mine.principal_id
     group: Any = None
+    review: dict[str, Any] | None = None
+    if body.type == "review_result":
+        review, problems = reviews.check(body.review)
+        if problems:
+            raise invalid(problems)
+    elif body.review is not None:
+        raise invalid({"review": "not_allowed"})
     if body.to_instance is not None and (
         body.type != "chat"
         or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
@@ -406,6 +415,8 @@ def post_message(
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
     if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
         payload["to_instance"] = body.to_instance
+    if review is not None:  # what a review result judged and read (§8.4)
+        payload["review"] = review
     seq = events.emit(
         conn,
         mine.project.id,

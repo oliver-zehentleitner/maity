@@ -1,0 +1,5 @@
+{
+  "chat.instance.hint": "The whole team reads every message; this only chooses which instance is woken.",
+  "chat.instance.label": "Send to",
+  "chat.instance.team": "The whole team"
+}

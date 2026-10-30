@@ -71,7 +71,7 @@ oldest written beyond a bound:
 | Cache | Bound |
 |---|---|
 | the Keep the Why answers (`ktw.CACHE`), largest at 10 to 100 KB a project; a dropped project takes its last good reads and its idle lock with it | 256 projects |
-| the swarm page windows (`swarm.CACHE`) | 1024 |
+| the swarm statistics windows (`swarm.CACHE`) | 1024 |
 | the reader chosen per project (`ForgeAccess._chosen`) | 1024 |
 | the source last found (`forge_access._last_via`) | 4096 |
 | the image read state per project and kind (`images`) | 4096 per map |
@@ -328,7 +328,7 @@ mirrors its guide the same way, so one instance setting is enough.
 **Source:** implementation session of the setup-cards pull request of the memory-provider card, 2026-10-28; `docs/api.md` §6.21
 **Revisit when:** a project may change its setup options after creation, or setup cards need to be told apart by option
 
-`project.setup` is a JSON column holding the three booleans and `cards`: `null`
+`project.setup` is a JSON column holding the options and `cards`: `null`
 before the cards exist, the list of ids after (`[]` when no option was on),
 and the whole column `NULL` for a project that predates it. The cards carry
 `kind: setup`, which only the hub creates (`POST …/tasks` answers `kind: hub_only`).
@@ -351,3 +351,36 @@ and the board is the cards.
   cards yet, so the choice would have to live somewhere else anyway.
 - Keep the options in `settings`: that object is merged and shown to clients
   as editable, and `setup` is read-only after creation.
+
+## An older `setup` is written with the new options as not chosen; `dashboard_path` is checked even when dropped
+
+**Id:** 2ec0da9d-e3e2-4074-a17b-9a44133536d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card for the hub side of #715 (tsk-2tp7mbejh98v); `docs/api.md` §6.21 and §6.1 (`setup`); the alpha rule of 2026-10-29 (no compatibility layers) and the coordinator's note on the card (the migration writes it, no read-time fallback)
+**Revisit when:** a project may change its setup options after creation, or a further option is added
+
+`keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` join
+`project.setup` (56fcd342). A project created before they were offered
+had nothing chosen for them: migration 0107 writes `false`, `false` and
+`null` into every non-null `setup`, so the view reads one shape and the
+code keeps no branch for the old one; a `setup` that is `NULL` stays
+`NULL`. `dashboard_path` is checked for its shape whenever it is sent,
+also with the dashboard option `false`, and only then dropped: the value
+read back is `null` while the option is off, as under `none`. A `..`
+anywhere in the value is refused, not only as a whole segment, which
+the segment pattern already rules out.
+
+**Reason:** the contract says the old projects read the three as
+`false`, `false` and `null`; writing that once in the migration keeps
+the read path free of a second shape. A path that is out of shape is a
+mistake of the caller whether or not it is used, and refusing it keeps
+one rule for the field instead of one per option value.
+
+**Rejected alternatives:**
+- Filling the three keys in on read (`view`) for an old `setup`: a
+  fallback for a shape that only exists before the migration.
+- Accepting any value for `dashboard_path` while the dashboard option is
+  `false`, since it is dropped anyway: a client's bad path would pass
+  unseen until the option is turned on in a later form.

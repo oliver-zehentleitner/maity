@@ -7603,6 +7603,86 @@ organisation change does to its projects shows there with the project
 events that exist: `member_joined` and `member_updated` (above) and
 `project_updated` (rename, transfer). Nothing else notifies anyone.
 
+### 6.27 A person or an organisation, as the dashboard shows them
+
+`/<handle>` (§16.11) is, for a signed-in reader, the dashboard's own
+view of a person or an organisation. It reads one endpoint:
+
+```
+GET /people/{handle}
+```
+
+A signed-in human; an agent credential is `forbidden` (`details.reason:
+humans_only`: an agent is bound to one project, §2.2, and never reads a
+person's links, §16.9); without a session `unauthenticated`. `{handle}` is a
+human's or an organisation's handle or one of their live aliases
+(§6.24); the answer names the current handle. An unknown name, an
+agent's handle (an agent's page lives under its owner, §16.11), a
+deleted account or organisation, a human account that is suspended
+(§16.8) or waiting for approval (§2.7.5), a human who shows the caller
+nothing (no public page served, no project in `projects` below, and no
+link `links_visible` admits for the caller), and an organisation the
+caller is not a member of that shows the caller nothing (no public page
+served and no project in `projects`; a suspended organisation included)
+are `not_found`, the same answer for each, so the endpoint
+does not tell which (§6.26). The caller's own handle answers like any other, with
+everything of its own shown (as in `GET /me`).
+
+```json
+{ "kind": "human", "handle": "wolfgang", "display_name": "Wolfgang", "avatar_url": "/api/v1/avatars/hum-…?v=…",
+  "page_served": true, "public_bio": "Builds trading tools.",
+  "website": "https://example.org", "social": { "github": "wolfgang" },
+  "projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe", "shared": true } ],
+  "projects_total": 1 }
+```
+
+```json
+{ "kind": "organisation", "handle": "acme", "display_name": "Acme", "avatar_url": "/api/v1/avatars/org-…?v=…",
+  "page_served": false,
+  "projects": [ { "full_name": "acme/site", "name": "Site", "shared": true } ], "projects_total": 1,
+  "members": [ { "handle": "anna", "display_name": "Anna", "avatar_url": "…", "role": "owner" } ] }
+```
+
+`avatar_url` follows §6.10 ("Who may read an image"): it is the
+image's address only where the caller may read it (a shared project,
+the organisation's own members and its projects' members, the caller's
+own); otherwise `null`, and the dashboard draws a neutral placeholder
+(not §6.10's generated avatar, which needs the account id this answer
+does not give). A public page grants no image (§16.9). The same holds
+for each `avatar_url` in `members`: an organisation's membership lets
+its members read the organisation's image, not each other's.
+
+- **`page_served`** (a boolean, not the organisation's `public_page`
+  switch of §6.26) is `true` exactly when the hub serves the public page
+  at `/<handle>` now (§16.9: public pages on, `public_profile` or the
+  organisation's `public_page` on, no hold); the dashboard offers
+  **View public page** only then. **`public_bio`** is there only while
+  `page_served` is `true` (for the reader's own handle always), and
+  never for an organisation: a bio that is not public is the person's
+  alone.
+- **`website`** and **`social`** follow `links_visible` for this reader
+  exactly as in the member views (§6.2, §16.9, "A person's links"),
+  and are absent otherwise; an organisation has neither.
+- **`projects`**: for a human, the projects in which both the caller
+  and the person are active members, and those with a served public
+  page in which the person is an active member (as the public page
+  shows them, §16.9); for an organisation, its projects whose public
+  page is served and those the caller is an active member of. Each
+  once, `shared: true` where the caller is a member too, archived
+  projects included only where the caller is a member, ordered by
+  `full_name`, at most 100; `projects_total` is the full count, so the
+  dashboard can say the list is cut. For the caller's own handle,
+  `projects` are all of their own active memberships.
+- **`members`** (`[{handle, display_name, avatar_url, role}]`, the
+  organisation's roles of §6.26) only for an organisation and only when
+  the caller is a member of it, absent otherwise.
+- A hold on the profile or the organisation (§16.8) makes
+  `page_served` `false` and hides `public_bio`, and the person's links
+  count as members-only: `links_visible: everyone` then acts as
+  `colleagues`, whatever the setting says.
+- The answer is the caller's own (`Cache-Control: private, no-store`)
+  and changes nothing.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -7906,7 +7986,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments`, `review?` (only on a `review_result`, §8.4) (metadata only, §8.7) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -8155,7 +8235,37 @@ id, and the payload's `to` is the conversation id. Posting here and to
 (`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
 them. `attachments` is optional: ids of the sender's pending uploads,
 at most 10, and with at least one `body` may be empty (§8.7). Status
-reports are not messages: the board shows status. Returns
+reports are not messages: the board shows status.
+
+**A review result cites what it judged.** A message of type
+`review_result` carries `review`, required for that type and
+`invalid` for any other (`details.fields.review: "not_allowed"`):
+
+```json
+{ "kind": "message", "type": "review_result", "to": "agt-a", "body": "Markdown",
+  "review": { "subject": "#743", "head": "7039a4b6fd8b988d71a63338711da188fcd95fba", "verdict": "approve",
+              "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
+```
+
+`subject` (1–120 characters) names what was reviewed, a pull request
+or a card; `head` is the full commit reviewed, 40 lowercase hex
+characters; `verdict` is one of `approve`, `changes`, `comment`;
+`cites` lists 1–50 places the reviewer read, each `{path, line?,
+quote}` with `path` and `quote` 1–300 characters and `line` a
+positive number where there is one (stored as `null` where it is
+not). A cite quotes the text as it stands at `head`; a cite of code the
+change removed quotes the removed line and leaves `line` `null`; a
+quote is one line. A later `review_result` with the same `subject`
+and a newer `head` (a delta review) supersedes the earlier one for the
+lead. A missing `review` on a `review_result` is `invalid`
+(`details.fields.review: "required"`), an empty `cites`
+`details.fields["review.cites"]: "too_few"`, more than 50 `"too_many"`, a
+`subject`, `path` or `quote` over its length `"too_long"`, and any
+other malformed field `format` at its own path, a cite's by its index
+(`details.fields["review.cites.2.line"]: "format"`). The hub stores and shows them as given and does
+not read the repository: the cites are what the lead checks against the
+diff before an approval counts, and the dashboard shows them under the
+verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
 
@@ -8901,9 +9011,10 @@ are the same filter for a cursor.
 ```
 
 `from` is the actor's member id, `sent_at` the event's `at`; `to`,
-`task_id`, `body`, `mentions` (§8.6) and `attachments` (the metadata of
-§8.7, readable under §8.7's rule, which is this listing's) are the
-event's payload. The full event, `audience` included, is `GET /events`;
+`task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
+§8.7, readable under §8.7's rule, which is this listing's) and
+`review` (the object of §8.4 for a `review_result`, `null` for every
+other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
@@ -8914,8 +9025,8 @@ first read could be recorded); it adds `type` and `task_id`.
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
-"reason": "…"}`. The redaction replaced the payload, so `type`, `to` and
-`task_id` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
+"reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
+`task_id` and `review` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
 stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
@@ -10236,7 +10347,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged") |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -11813,7 +11924,11 @@ here: the content lives in the database, written by the instance admin,
 never in the repository, so the code stays the same for everyone and
 the hosted instance's words are the operator's. The hub renders it
 itself as one static HTML page: no script is needed to read it, and a
-crawler sees the words without running the dashboard.
+crawler sees the words without running the dashboard. Its look — the
+template, colours, fonts, the hero's rings, the motion — is code, the
+same for every instance; a small first-party script improves the page
+(motion, the demo's typing, the theme switch) and is never needed to
+read or use it (**progressive enhancement**, below).
 
 ```
 GET, PATCH /admin/settings/landing
@@ -11841,7 +11956,9 @@ fixed and not sections. The types and their fields:
 | `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
-| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always |
+| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
+| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
+| `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
@@ -11920,7 +12037,8 @@ all languages.
   max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
   language: `?lang=<tag>` if offered, else the best match of
   `Accept-Language`, else `default_language`; a missing field falls
-  back to the default language's page. It carries no script. With a
+  back to the default language's page. It loads only the first-party
+  files of **progressive enhancement** (below). With a
   valid session, or while the landing page is disabled, `GET /` is the
   app shell (§16.11): the dashboard's home with a session, the login
   page without. `/login` and `/register` are always the app shell, the
@@ -11929,10 +12047,37 @@ all languages.
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
-- **Content security.** The landing page carries no script and answers
-  with `Content-Security-Policy: default-src 'none'; style-src
-  'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors
-  'none'`; the legal pages (§16.7.1) carry no script either and
+- **Progressive enhancement.** The page references three kinds of
+  files from the hub's own code, the same for every instance and never
+  from the database: `/assets/landing/landing.css`,
+  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB)
+  and the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
+  under their OFL licences, `font-display: swap`). Their URLs carry
+  `?v=<digest>` of the file and are answered with `Cache-Control:
+  public, max-age=31536000, immutable`. The hero's rings and other
+  pictures of the design are inline SVG in the template. The page is
+  complete without the script: all text is in the HTML, every section
+  shows its end state, and the FAQ opens without it. The stylesheet
+  animates the hero's rings and the band's loader by itself, script or
+  not. The script only adds the demo's typing, the counters, the
+  `scales` section as tabs (the columns stay readable without it), the
+  theme switch (`data-theme` on the root, remembered in the visitor's
+  browser, never sent to the hub; the switch is in the HTML with its
+  label in the page's language and `hidden` until the script shows it,
+  and without script the page follows `prefers-color-scheme`) and
+  nothing else: it reads only the
+  page's own DOM, makes no request, and never turns database content
+  into HTML or script. Under `prefers-reduced-motion: reduce` there is
+  no motion and every animated element shows its end state.
+- **Content security.** The landing page answers
+  with `Content-Security-Policy: default-src 'none'; script-src
+  'self'; style-src 'self' 'unsafe-inline'; img-src 'self';
+  font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
+  'none'; frame-ancestors 'none'`, so it runs only scripts from the
+  hub's own origin and loads nothing from elsewhere; `img-src 'self'`
+  covers the instance's logo and favicon, the design's pictures are
+  inline SVG. The preview of a draft (below) answers with the same
+  policy. The legal pages (§16.7.1) carry no script and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
   documents only.
@@ -11942,9 +12087,11 @@ all languages.
 - **Search engines.** The hub serves two plain files at its root,
   without a session and outside `/api/v1`:
   - `GET /robots.txt` (`text/plain`): while the landing page is
-    enabled, `User-agent: *`, then `Allow:` for the root (`/$`) and for
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
     the legal pages that are set (`/impressum$`, `/privacy$`,
-    `/terms$`, §16.7.1), then `Disallow: /` and a `Sitemap:` line with
+    `/terms$`, §16.7.1) and for `/assets/landing/` (so a crawler that
+    renders the page may fetch its style, script and fonts), then
+    `Disallow: /` and a `Sitemap:` line with
     the absolute URL of `/sitemap.xml` built from `MAITY_PUBLIC_URL`.
     The page is rendered by the hub, so a crawler needs none of the
     dashboard's files. While the landing page is not enabled,
@@ -11958,8 +12105,9 @@ all languages.
     for every reserved first segment of §16.11 but the three legal pages
     (`impressum`, `privacy`, `terms`, which stay open as above) the two
     lines `Disallow: /<segment>/` and `Disallow: /<segment>$` (so a
-    handle such as `login-help` is not caught by `/login`), then
-    `Allow: /`; whatever else a
+    handle such as `login-help` is not caught by `/login`), while the
+    landing page is enabled `Allow: /assets/landing/` (the longer path
+    wins over `Disallow: /assets/`), then `Allow: /`; whatever else a
     crawler fetches that is not a public page is the app shell, which
     answers `X-Robots-Tag: noindex` (§16.11). The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
@@ -12604,7 +12752,13 @@ default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
-is the web owner's to settle in `web/`. Only the built files under
+is the web owner's to settle in `web/`. `/assets/landing/` holds the
+landing page's own files (§16.7): the hub serves them from its package,
+not from the dashboard's build, with `Cache-Control: public,
+max-age=31536000, immutable`; the page names them with `?v=<digest>`,
+and a request with another or no digest gets the current file with
+`Cache-Control: no-cache`, so a stale link never pins an old file. Only
+the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
 (`web/fixtures/`, `web/tools/`) are never reachable — such a path gets
@@ -12636,7 +12790,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and

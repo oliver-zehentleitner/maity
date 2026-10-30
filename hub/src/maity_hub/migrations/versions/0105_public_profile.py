@@ -6,7 +6,7 @@ text of at most 280 characters on it.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 0105
-Revises: 0104
+Revises: 0103
 Create Date: 2026-10-30
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0105"
-down_revision: str | None = "0104"
+down_revision: str | None = "0103"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

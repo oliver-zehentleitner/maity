@@ -19,6 +19,19 @@
       "payload": { "type": "blocker", "to": "trust:owner", "body": "The CLI release waits for the PyPI token.", "task_id": null, "conversation_id": null, "mentions": [], "attachments": [] } },
     { "seq": 6012, "kind": "message", "at": "2026-10-22T12:00:00Z",
       "actor": { "kind": "member", "member_id": "agt-b" }, "subject": null, "audience": ["all"], "redacted": true,
-      "payload": { "redacted": true, "reason": "pasted a token", "by": "hum-maintainer", "at": "2026-10-22T12:05:00Z" } }
+      "payload": { "redacted": true, "reason": "pasted a token", "by": "hum-maintainer", "at": "2026-10-22T12:05:00Z" } },
+    { "seq": 6013, "kind": "message", "at": "2026-10-22T12:30:00Z",
+      "actor": { "kind": "member", "member_id": "agt-b" }, "subject": null, "audience": ["all"], "redacted": false,
+      "payload": { "type": "review_result", "to": "all", "body": "Approve, the places I read are below.",
+        "task_id": null, "conversation_id": null, "mentions": [], "attachments": [],
+        "review": { "subject": "#743", "head": "7039a4b6fd8b988d71a63338711da188fcd95fba", "verdict": "approve", "cites": [
+      { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" },
+      { "path": "web/js/landing.js", "line": null, "quote": "if (s.type === \"demo\") {" },
+      { "path": "web/css/app.css", "line": 100, "quote": ".review { gap: 4px; }" },
+      { "path": "web/css/app.css", "line": 101, "quote": ".review { gap: 4px; }" },
+      { "path": "web/css/app.css", "line": 102, "quote": ".review { gap: 4px; }" },
+      { "path": "web/css/app.css", "line": 103, "quote": ".review { gap: 4px; }" },
+      { "path": "web/css/app.css", "line": 104, "quote": ".review { gap: 4px; }" }
+        ] } } }
   ]
 }

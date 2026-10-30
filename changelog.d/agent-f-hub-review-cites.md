@@ -1,0 +1,3 @@
+### Added
+
+- hub: a `review_result` message carries `review` (docs/api.md §8.4): `subject` (1–120), `head` (40 lowercase hex), `verdict` (`approve`, `changes` or `comment`) and `cites` (1–50 × `{path, line?, quote}`, a quote one line). `POST /events` checks it and answers every problem at its own path with `required`, `too_few`, `too_many`, `too_long` or `format` (a cite's by its index, e.g. `review.cites.2.line`); a `review_result` without `review` is `invalid`, and any other type with one is `invalid` (`review: not_allowed`). The event payload and the message listing (§8.8) carry `review` as posted (a cite's absent `line` as `null`), `null` for other types and for a redacted message. There is no path for a review result without `review`.

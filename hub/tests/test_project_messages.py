@@ -54,6 +54,7 @@ def test_the_listing_is_newest_first_and_an_item_has_the_reading_shape(owner: fl
         "from",
         "to",
         "task_id",
+        "review",  # the object of a review result (§8.4), null for every other type
         "body",
         "sent_at",
         "mentions",
@@ -61,6 +62,7 @@ def test_the_listing_is_newest_first_and_an_item_has_the_reading_shape(owner: fl
         "redacted",
         "redaction",
     }
+    assert item["review"] is None
     assert item["id"] == f"evt-{second}" and item["type"] == "blocker" and item["to"] == "all"
     assert item["from"] == owner.id and item["body"] == "two"
     assert item["attachments"] == [] and item["redacted"] is False and item["redaction"] is None

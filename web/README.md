@@ -41,7 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. At the top right are two menus, each a
+narrow screen they go under it. Beside them, where the project has them,
+two links in tabs of their own: its repository, with the forge's name and
+mark (GitHub and GitLab their own; Gitea and any other a branch mark), and **Why**, the
+Keep the Why dashboard of the family's root (`keep_the_why_export`'s
+member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
@@ -166,13 +170,12 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/admin` | instance administration: statistics, users, mail settings, registration and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default a project's My settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
+| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default the Mine tab of a project's Settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
 | `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
 | `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
 | `/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
 | `/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
-| `/<owner>/<slug>/my-settings` | **My settings**, a tab of every human member (`js/notify-settings.js`, §6.2): one's own settings for this project, each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project; for now how many minutes one of one's agent instances here may stop listening before one hears of it (10–1440, checked before sending); "Applies now" says the value the hub uses and whether it is the default; a failed read is shown as an error |
-| `/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` | the project's **Settings**, its last tab (after Runners and Why), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
 
@@ -535,7 +538,13 @@ too.
    it and re-reads itself on chat events and every 30 s (presence). An
    unsent message is kept per chat while switching in this tab and shown
    in the list as a draft (not in the open chat's own row); drafts end
-   with signing out. The open chat fills the screen below the header
+   with signing out. Beside **Chat with <agent>**, an agent with more than one
+   live instance offers **Send to**: **The whole team** (the default; the
+   agent's `wake` rule picks the instance) or one instance as
+   `<handle>#<id> · <presence>`, sent as `to_instance` (§9.1); the whole
+   team still reads every message. The choice is kept per chat in this
+   tab, a message sent to one instance says "to <handle>#<id>", and an
+   agent with one instance gets no choice. The open chat fills the screen below the header
    (the visual viewport, so a phone's keyboard counts): its history
    scrolls, the composer stays at the bottom, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
@@ -809,6 +818,13 @@ too.
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
+    - A review result (§8.4) shows its verdict (Approve, Changes requested,
+      Comment), what was reviewed, and the commit at its short head, linked
+      on GitHub or GitLab, then the places the reviewer read: `path:line`
+      (or `path removed`) with the quoted line in a code face, the first
+      five shown and the rest folded. **Message the project** offers no
+      review result: one carries cites against the diff, which agents send
+      with `maity say --type review_result --review-file`.
     - An owner or admin removes a message with a reason (§8.5); it leaves
       the list. No removed message is shown while the view reads the
       events: there a removed chat message cannot be told from a removed
@@ -1022,12 +1038,15 @@ session of this human was signed out while this one stays signed in.
 **Create a project** (`/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
 its rule said under the field and checked before sending), an optional repository URL, the project
-memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
-setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
-badge — the last one also offered with `none`), and
+memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the five prefilled
+setup options of §6.21 — set up Keep the Why in the repository, add its badge, run its linter in
+CI, publish its dashboard with a **Path** under it (`keep-the-why-dashboard`, checked as the hub
+checks it, its refusal said at the field), add the Maity badge — the last one also offered with
+`none`), and
 the policy preset (`hierarchical` or `solo`). The memory goes as
 `memory: {provider}` and every option as `true` or `false` in `setup`
-(under `none` the Keep the Why ones are `false`); the hint says that an
+(under `none` the Keep the Why ones are `false`), `dashboard_path` only
+while the dashboard is ticked; the hint says that an
 agent sets the memory up in the repository through setup cards, made
 once the project has a repository, and that the Maity badge also
 switches the project's public badge on. The creator becomes the
@@ -1233,6 +1252,22 @@ one page. Because a page loaded from `file://` cannot `fetch()` a local
 file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
+
+## Words: the text catalog
+
+The dashboard's sentences come from a catalog per language,
+`i18n/<lang>.json` (English only so far), read with `Maity.t(key,
+values)` (`js/i18n.js`): one key per sentence, `{name}` placeholders,
+and plural forms (`{"one": …, "other": …}`, chosen by `values.count`
+through `Intl.PluralRules`); never a sentence put together from pieces.
+Dates and numbers go through `Intl` (`Maity.fmt.number`, `.date`,
+`.time`, `.dateTime`) in the reader's locale. As with the fixtures, the
+page loads `js/i18n/<lang>.js`, which `make fixtures` builds from the JSON.
+`make check` fails on a key that is malformed, missing, unused, or not
+a string literal at `M.t`, and on any view whose prose string literals
+grow past `tools/strings-baseline.json`: new text goes into the catalog,
+old text moves over view by view (`make fixtures` then lowers the
+baseline; nothing raises it but an edit to the file).
 
 ## Refresh
 
@@ -1539,9 +1574,14 @@ Personal, linking into nothing), so it shows exactly what its tab counts
 ones in bold with a dot, **Mark all read**), conversations on the **Chat**
 button, and every notification on **All notifications**
 (`/notifications`): paged by the hub's cursor, an unread one in bold with
-a dot and said to a screen reader, **Mark all read** marking up to the head
-of the first page (§18.3); a sign-in or address alert stays unread until
-confirmed with **This was me**.
+a dot and said to a screen reader, **Mark read** beside each unread item
+that may be marked from here, the row marked in place (not one of the
+four open matters of §18.3 — a registration, a disabled address, an open
+report, agents not listening; a sign-in or address alert only where this
+session may confirm it, §2.6.5), and **Mark all
+read**, always there and off while nothing it marks is unread, marking up
+to the head of the first page (§18.3); the page says that a sign-in or
+address alert stays unread until confirmed with **This was me**.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other
@@ -1615,7 +1655,9 @@ login and registration pages link to the legal pages that are set
 language: the page's title and description, its sections of the
 contract's types in their order (add, move up or down, show or hide,
 remove; the items of steps, scales and questions the same way; the
-counters ticked), and the footer for every language (the operator line,
+counters ticked; the **Demo**'s terminal lines, each a command, its output
+or a comment, its optional inbox item and its exactly three steps; the
+**Open source** section's tiles and links), and the footer for every language (the operator line,
 up to eight social links). **Save the landing page** sends the whole
 draft in one `PATCH`, and each refusal of the hub is said at the field its
 path names (`pages.de.sections.2.items.0.title`). **Preview the draft**

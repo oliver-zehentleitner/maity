@@ -27,14 +27,25 @@ window.Maity = window.Maity || {};
   ];
 
   // §6.21: the providers, Keep the Why preselected, and the setup options
-  // with their cards' titles verbatim; the Keep the Why ones only under
-  // Keep the Why. All three come ticked; each is sent as true or false.
+  // with their cards' titles verbatim, in the cards' order; the Keep the Why
+  // ones only under Keep the Why. All five come ticked; each is sent as true
+  // or false.
   const PROVIDERS = [["keep-the-why", "Keep the Why"], ["none", "None"]];
   const OPTIONS = [
     ["keep_the_why_init", "Set up Keep the Why in the repository", true],
     ["keep_the_why_badge", "Add the Keep the Why badge to the README", true],
+    ["keep_the_why_ci", "Run the Keep the Why linter in CI", true],
+    ["keep_the_why_dashboard", "Publish the Keep the Why dashboard", true],
     ["maity_badge", "Add the Maity badge to the README", false],
   ];
+  // §6.21 `dashboard_path`: as the hub checks it, one to five segments of
+  // [a-z0-9][a-z0-9._-]{0,62} joined by "/", no leading or trailing slash, and
+  // ".." nowhere in the value (a segment alone never is "..", so the rule means a..b too).
+  const DASHBOARD_PATH_DEFAULT = "keep-the-why-dashboard";
+  const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
+  const dashboardPathOk = (v) => DASHBOARD_PATH.test(v) && !v.includes("..");
+  const DASHBOARD_PATH_RULE = "One to five parts joined by /, each starting with a lowercase letter or a digit, "
+    + "then lowercase letters, digits, dots, hyphens or underscores; no / at either end, no .. anywhere";
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
@@ -50,6 +61,7 @@ window.Maity = window.Maity || {};
     owner_unknown: "Not an organisation you are in.",
     unknown_provider: "Not a memory provider this hub knows.",
     not_a_boolean: "Must be ticked or not.",
+    format: DASHBOARD_PATH_RULE,
   };
 
   // A slug proposed from the name until the slug field is typed in.
@@ -59,7 +71,7 @@ window.Maity = window.Maity || {};
   }
 
   // Project settings name them the same way (js/app.js).
-  M.projectSetup = { PROVIDERS, OPTIONS };
+  M.projectSetup = { PROVIDERS, OPTIONS, DASHBOARD_PATH_DEFAULT };
 
   M.views.newProject = async function (ctx, root) {
     const field = (id, label, input, hint) => {
@@ -103,6 +115,20 @@ window.Maity = window.Maity || {};
       const check = h("label", { class: "check", for: "setup-" + key }, box, " " + label);
       return { key, ktwOnly, box, row: note ? h("div", { class: "check-row" }, check, note) : check };
     });
+    // The dashboard's path, under its option, while it is ticked (§6.21).
+    const dashboard = options.find((o) => o.key === "keep_the_why_dashboard");
+    const pathInput = h("input", { id: "setup-dashboard-path", value: DASHBOARD_PATH_DEFAULT, autocomplete: "off", spellcheck: "false",
+      "aria-describedby": "setup-dashboard-path-hint setup-dashboard-path-error" });
+    pathInput.value = DASHBOARD_PATH_DEFAULT;
+    const pathError = h("p", { class: "field-error", id: "setup-dashboard-path-error", role: "alert" });
+    const pathField = h("div", { class: "setup-path" },
+      h("label", { for: "setup-dashboard-path" }, "Path"), pathInput,
+      h("p", { class: "hint", id: "setup-dashboard-path-hint" }, "Where the dashboard is published, below the root of the repository's "
+        + "documentation site. " + DASHBOARD_PATH_RULE + "."),
+      pathError);
+    dashboard.row = h("div", { class: "check-row" }, dashboard.row, pathField);
+    const showPath = () => { pathField.hidden = !dashboard.box.checked; };
+    dashboard.box.addEventListener("change", showPath);
     const setupError = h("p", { class: "field-error", id: "project-setup-error", role: "alert" });
     const setupBox = h("fieldset", { class: "project-setup", "aria-describedby": "project-setup-hint project-setup-error" },
       h("legend", null, "Setup cards"),
@@ -138,10 +164,17 @@ window.Maity = window.Maity || {};
     const showErrors = (fields) => {
       all.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
       setupError.textContent = "";
+      pathError.textContent = "";
+      pathInput.removeAttribute("aria-invalid");
       const rest = [];
       Object.keys(fields).forEach((key) => {
         const reason = String(fields[key]);
         const text = (key === "owner" && REASONS["owner_" + reason]) || REASONS[reason] || reason;
+        if (key === "setup.dashboard_path") {
+          pathError.textContent = text;
+          pathInput.setAttribute("aria-invalid", "true");
+          return;
+        }
         const option = options.find((o) => key === "setup." + o.key);
         if (option || key === "setup") {
           setupError.textContent += (setupError.textContent ? " " : "") + (option ? OPTIONS.find(([k]) => k === option.key)[1] + ": " : "") + text;
@@ -154,6 +187,7 @@ window.Maity = window.Maity || {};
       });
       const first = all.find((f) => f.input.getAttribute("aria-invalid") === "true");
       if (first) first.input.focus();
+      else if (pathInput.getAttribute("aria-invalid") === "true") pathInput.focus();
       return rest;
     };
 
@@ -167,6 +201,8 @@ window.Maity = window.Maity || {};
         const local = {};
         if (!body.name) local.name = "string_too_short";
         if (!SLUG.test(body.slug)) local.slug = body.slug ? "string_pattern_mismatch" : "string_too_short";
+        const sendsPath = memory.input.value === "keep-the-why" && dashboard.box.checked;
+        if (sendsPath && !dashboardPathOk(pathInput.value.trim())) local["setup.dashboard_path"] = "format";
         if (Object.keys(local).length) { showErrors(local); status.done(); return; }
         showErrors({});
         const url = repository.input.value.trim();
@@ -175,6 +211,8 @@ window.Maity = window.Maity || {};
         // §6.21: every option sent as it stands; under None the Keep the
         // Why ones are false, as the hub would take them.
         body.setup = Object.fromEntries(options.map((o) => [o.key, o.box.checked && !(o.ktwOnly && body.memory.provider !== "keep-the-why")]));
+        // The path only with the dashboard chosen; otherwise left out, not sent as null.
+        if (sendsPath) body.setup.dashboard_path = pathInput.value.trim();
         body.policy = { preset: preset.input.value };
         status.busy("Creating…");
         submit.disabled = true;

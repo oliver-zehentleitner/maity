@@ -8,9 +8,13 @@ by an event, whose `seq` the project keeps as `rules_changed_seq`.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, update
+from sqlalchemy import Connection, or_, select, update
 
 from maity_hub import namespace
 from maity_hub import tables as t
@@ -121,9 +125,19 @@ SUPERVISED = (
 )
 
 
+DUTY_SELF = (
+    "Finished work does not end your session. Keep `maity wait` running in a loop, each call "
+    "with a timeout below your harness's limit (`hints.wait_timeout` in the resume packet), "
+    "and handle each event as it arrives. If you run on a schedule (a routine or a cron run), "
+    "keep waiting until shortly before your next run, then end cleanly and leave no "
+    "background process behind."
+)
+
+
 def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
-    runner supervises (§15.11)."""
+    runner supervises (§15.11). Its duty line follows `hints.duty` (§5.2, §6.9): the
+    supervised one, else the one for a session that waits for itself."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
@@ -156,11 +170,60 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
     ]
     if supervised:
         lines += ["", "## Supervised", "", SUPERVISED]
+    else:
+        lines += ["", "## On duty", "", DUTY_SELF]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]
     return "\n".join(lines) + "\n"
+
+
+def text_digest() -> str:
+    """The digest of the text the hub generates (§6.9): every text constant of this module
+    and two rendered sample documents, so that a sentence written inside `generate` changes
+    it as well. The same on every start of the same code."""
+    constants = {
+        name: value
+        for name, value in sorted(globals().items())
+        if (name.isupper() or (name.startswith("_") and name[1:].isupper()))
+        and (isinstance(value, str) or (isinstance(value, dict) and value))
+    }
+    sample = SimpleNamespace(
+        name="sample", rules_version=1, state="build", state_note="note",
+        released_at=datetime(2026, 1, 1, tzinfo=UTC), policy_preset="sample",
+        claim_policy="sample", done_authority="sample", tag_authority="sample",
+        steward_writes="sample", lease_seconds=60, keep_the_why=True, rules_markdown="owner",
+    )  # fmt: skip
+    rendered = [
+        generate(sample, "member", "coder", "the owner", supervised=supervised)
+        for supervised in (False, True)
+    ]
+    text = json.dumps([constants, rendered], sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def sync_text(conn: Connection) -> int:
+    """Count the hub's generated text as a rules input (§6.9): a project whose digest is not
+    the current one gets one `rules_version` bump with `rules_changed`, and the digest.
+    The claim is made under the project lock, so two hubs starting together bump once.
+    Returns how many projects were bumped."""
+    current = text_digest()
+    stale = or_(t.project.c.rules_text_digest.is_(None), t.project.c.rules_text_digest != current)
+    bumped = 0
+    # In id order, so that two hubs starting together lock the projects in the same order.
+    stale_ids = conn.execute(select(t.project.c.id).where(stale).order_by(t.project.c.id))
+    for project_id in stale_ids.scalars().all():
+        project = lock_project(conn, project_id)
+        claimed = conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id, stale)
+            .values(rules_text_digest=current)
+        )
+        if claimed.rowcount:
+            bump(conn, project, "rules_changed", ["all"], {"reason": "generated text"}, actor=None)
+            bumped += 1
+    return bumped
 
 
 def bump(

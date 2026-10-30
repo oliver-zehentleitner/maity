@@ -130,4 +130,3 @@ passing them through twenty calls was the alternative that cost more than one li
   with other settings than the app would disagree with it.
 - A silent no-op without configuration, as before: a removal that does not happen is the one failure this
   engine must not have.
-

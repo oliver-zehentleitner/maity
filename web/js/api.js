@@ -466,12 +466,57 @@ window.Maity = window.Maity || {};
     };
   }
   // §16.7's checks of a landing page and its footer, each at its path.
+  // §8.4 "A review result cites what it judged": a copy by hand of
+  // hub/src/maity_hub/reviews.py, each refusal at its own path, the first
+  // reason per path kept; where they differ, the hub is right.
+  const REVIEW_LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+  function reviewErrors(r, errors) {
+    const add = (at, why) => { if (!(at in errors)) errors[at] = why; };
+    if (r === undefined || r === null) { add("review", "required"); return; }
+    if (typeof r !== "object" || Array.isArray(r)) { add("review", "format"); return; }
+    const text = (v, max, at) => {
+      if (v === undefined || v === null) add(at, "required");
+      else if (typeof v !== "string" || !v.length) add(at, "format");
+      else if ([...v].length > max) add(at, "too_long");
+      else return v;
+      return null;
+    };
+    Object.keys(r).forEach((k) => { if (!["subject", "head", "verdict", "cites"].includes(k)) add("review." + k, "format"); });
+    text(r.subject, 120, "review.subject");
+    if (r.head === undefined || r.head === null) add("review.head", "required");
+    else if (typeof r.head !== "string" || !/^[0-9a-f]{40}$/.test(r.head)) add("review.head", "format");
+    if (r.verdict === undefined || r.verdict === null) add("review.verdict", "required");
+    else if (!["approve", "changes", "comment"].includes(r.verdict)) add("review.verdict", "format");
+    const cites = r.cites;
+    if (cites === undefined || cites === null) { add("review.cites", "required"); return; }
+    if (!Array.isArray(cites)) { add("review.cites", "format"); return; }
+    if (!cites.length) { add("review.cites", "too_few"); return; }
+    if (cites.length > 50) { add("review.cites", "too_many"); return; }
+    cites.forEach((c, k) => {
+      const at = "review.cites." + k;
+      if (!c || typeof c !== "object" || Array.isArray(c)) { add(at, "format"); return; }
+      Object.keys(c).forEach((n) => { if (!["path", "line", "quote"].includes(n)) add(at + "." + n, "format"); });
+      text(c.path, 300, at + ".path");
+      const quote = text(c.quote, 300, at + ".quote");
+      if (quote !== null && REVIEW_LINE_BREAK.test(quote)) add(at + ".quote", "format");
+      if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
+    });
+  }
   const LANDING_TYPES = {
     hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
     activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
     collab: ["title", "text", "items", "footnote"],
+    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
+  // A list of a section with its bounds, as the hub's landing._list: a
+  // missing one is required unless optional (`required` false), one outside
+  // them invalid at its path, its entries unchecked.
+  function landingList(list, path, min, max, errors, each, required) {
+    if (list === undefined || list === null) { if (required !== false) errors[path] = "required"; return; }
+    if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
+    list.forEach((x, k) => each(x || {}, path + "." + k));
+  }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
@@ -541,6 +586,22 @@ window.Maity = window.Maity || {};
       } else if (s.type === "explore") {
         landingText(s.title, sp + ".title", 120, true, errors);
         if ((s.projects || []).length > 3) errors[sp + ".projects"] = "too_many";
+      } else if (s.type === "demo") {
+        // §16.7 (#737): the terminal's lines, the agent's question, exactly three steps.
+        landingText(s.title, sp + ".title", 120, true, errors); landingText(s.subline, sp + ".subline", 300, false, errors);
+        landingList(s.terminal_lines, sp + ".terminal_lines", 1, 8, errors, (x, ip) => {
+          if (!["cmd", "out", "note"].includes(x.kind)) errors[ip + ".kind"] = "invalid";
+          landingText(x.text, ip + ".text", 200, true, errors);
+        });
+        if (s.inbox !== undefined && s.inbox !== null) {
+          landingText(s.inbox.from, sp + ".inbox.from", 80, true, errors); landingText(s.inbox.question, sp + ".inbox.question", 300, true, errors);
+          landingText(s.inbox.context, sp + ".inbox.context", 300, false, errors);
+        }
+        landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+      } else if (s.type === "opensource") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
     });
   }
@@ -912,8 +973,13 @@ window.Maity = window.Maity || {};
   const SETUP_CARDS = [
     ["keep_the_why_init", "Set up Keep the Why in the repository"],
     ["keep_the_why_badge", "Add the Keep the Why badge to the README"],
+    ["keep_the_why_ci", "Run the Keep the Why linter in CI"],
+    ["keep_the_why_dashboard", "Publish the Keep the Why dashboard"],
     ["maity_badge", "Add the Maity badge to the README"],
   ];
+  // §6.21 `dashboard_path`: one to five segments joined by "/", ".." nowhere in it.
+  const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
+  const dashboardPathOk = (v) => typeof v === "string" && DASHBOARD_PATH.test(v) && !v.includes("..");
   // One open setup card per chosen option, made when the project has a
   // repository (routes/projects.py, project_setup.make_cards).
   function makeSetupCards(slug, setup, by, url) {
@@ -921,7 +987,8 @@ window.Maity = window.Maity || {};
     setup.cards = SETUP_CARDS.filter(([key]) => setup[key]).map(([key, title]) => {
       const id = localId("tsk");
       list.items.push({
-        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase() + ", as a pull request against its default branch.",
+        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase()
+          + (key === "keep_the_why_dashboard" ? " under " + setup.dashboard_path : "") + ", as a pull request against its default branch.",
         label: "chore", status: "open", area: "/", created_by: by, assigned_to: null, claim: null, checkpoint: null,
         depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
         created_at: nowIso(), updated_at: nowIso(), closed_at: null,
@@ -1217,6 +1284,8 @@ window.Maity = window.Maity || {};
           x.read = true;
           return;
         }
+        // An open matter is never marked by a caller (§18.3).
+        if (x.kind === "inbox" && x.open_matter) return;
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
             && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;
@@ -1779,12 +1848,18 @@ window.Maity = window.Maity || {};
       if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
       const given = body.setup || {};
       Object.keys(given).forEach((k) => {
-        if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
+        if (k === "dashboard_path") { if (!dashboardPathOk(given[k])) fields["setup.dashboard_path"] = "format"; }
+        else if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
         else if (typeof given[k] !== "boolean") fields["setup." + k] = "not_a_boolean";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const ktw = provider === "keep-the-why";
-      const setup = { keep_the_why_init: ktw && given.keep_the_why_init !== false, keep_the_why_badge: ktw && given.keep_the_why_badge !== false,
+      // The four Keep the Why options true unless unticked, under Keep the Why only;
+      // the path kept only while the dashboard is chosen.
+      const opt = (k) => ktw && given[k] !== false;
+      const setup = { keep_the_why_init: opt("keep_the_why_init"), keep_the_why_badge: opt("keep_the_why_badge"),
+        keep_the_why_ci: opt("keep_the_why_ci"), keep_the_why_dashboard: opt("keep_the_why_dashboard"),
+        dashboard_path: opt("keep_the_why_dashboard") ? given.dashboard_path || "keep-the-why-dashboard" : null,
         maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
@@ -2223,6 +2298,9 @@ window.Maity = window.Maity || {};
         || members.some((x) => x.id === to))) errors.to = "not_a_member";
       // A chat names its conversation and goes to its two parties only (§8.4).
       if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
+      // §8.4: a review result cites what it judged; no other type carries a review.
+      if (body.type === "review_result") reviewErrors(body.review, errors);
+      else if (body.review !== undefined && body.review !== null) errors.review = "not_allowed";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];
@@ -2253,7 +2331,8 @@ window.Maity = window.Maity || {};
       const files = bindAttachments(m[1], body.attachments, seq, path);
       const event = { seq, kind: "message", at: nowIso(), actor: { kind: "member", member_id: me().member.id }, subject: body.task_id ? { type: "task", id: body.task_id } : null,
         audience: [body.to === "all" ? "all" : /^(role|trust):/.test(body.to) ? body.to : "member:" + body.to], redacted: false,
-        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
+        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files,
+          review: body.type === "review_result" ? body.review : null } };
       // A chat lives in its conversation; a project message in the log.
       if (body.type !== "chat") log.push(event);
       return event;
@@ -3177,9 +3256,23 @@ window.Maity = window.Maity || {};
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
+      // §9.1: to_instance wakes that one instance (a replaced one reaches its
+      // successor, which the hub does, not this fixture); an id the agent
+      // never had is invalid. The message carries to_instance as written,
+      // null for the team. The hub also refuses it from an agent and outside
+      // a direct chat; this fixture does not check, since only the direct
+      // chat's composer, a human's, sends it.
+      let toInstance = null;
+      if (body.to_instance !== undefined && body.to_instance !== null) {
+        const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
+        if (!((listed && listed.instances) || []).some((i) => i.id === body.to_instance)) {
+          fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
+        }
+        toInstance = body.to_instance;
+      }
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],
-        from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), delivered_at: null,
+        from: me().member.id, to: m[2], to_instance: toInstance, body: body.body || "", sent_at: nowIso(), delivered_at: null,
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));

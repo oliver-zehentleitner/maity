@@ -276,5 +276,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.sessions = { section, banner, said };
+  M.sessions = { section, banner, said, mayConfirm };
 })(window.Maity);
