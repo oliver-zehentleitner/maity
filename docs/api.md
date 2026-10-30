@@ -92,7 +92,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
-- The hub writes its own request log: method, path and status, never a
+- The hub writes its own request log: method, path and status, then `ms=`
+  (how long the hub took) and `route=` (the pattern the answering route was
+  declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
+  for a request no route answered), never a
   query string or a header value, and the token segment of `/join/{token}`,
   `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and

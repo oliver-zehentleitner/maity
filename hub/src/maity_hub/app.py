@@ -31,6 +31,7 @@ from maity_hub import (
     probe,
     registration_accounts,
     reports,
+    request_stats,
     takeovers,
     write_guard,
 )
@@ -205,7 +206,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             engine, settings.mail, settings.secret_key, settings.public_url
         )
         notify_worker.start()
+        stats_reporter = request_stats.Reporter(engine)
+        stats_reporter.start()
         yield
+        stats_reporter.stop()
         notify_worker.stop()
         if sweeper is not None:
             sweeper.stop()
