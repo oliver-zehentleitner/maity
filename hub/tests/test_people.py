@@ -113,7 +113,7 @@ def test_the_callers_own_handle_shows_everything_of_its_own(
         {"full_name": "maintainer/second", "name": "Second", "shared": True},
     ]
     assert body["projects_total"] == 2
-    assert "members" not in body and "website" not in body and "social" not in body
+    assert "members" not in body and "website" not in body and "social" not in body  # none set
 
 
 # --- one answer for everything the caller may not see ----------------------------------------
@@ -221,6 +221,52 @@ def test_the_list_is_cut_at_its_limit_and_says_how_many(
     body = owner.get(f"{P}/maintainer").json()
     assert [p["full_name"] for p in body["projects"]] == ["maintainer/b-one", "maintainer/c-one"]
     assert body["projects_total"] == 3
+
+
+def _links(who: flow.Human, visible: str) -> None:
+    done = who.patch(
+        "/me",
+        {"website": "https://example.org", "social": {"github": "oz"}, "links_visible": visible},
+    )
+    assert done.status_code == 200, done.text
+
+
+def test_links_show_exactly_where_links_visible_admits_the_caller(
+    owner: flow.Human, stranger: flow.Human, migrated: Engine
+) -> None:
+    _links(owner, "colleagues")
+    mine = owner.get(f"{P}/maintainer").json()  # one's own, always
+    assert mine["website"] == "https://example.org" and mine["social"]["github"]
+    _not_found(stranger.get(f"{P}/maintainer"))  # a link not admitted shows nothing
+    _links(owner, "everyone")
+    body = stranger.get(f"{P}/maintainer").json()  # a link admitted is enough to be seen
+    assert (body["website"], body["projects_total"], body["page_served"]) == (
+        "https://example.org",
+        0,
+        False,
+    )
+    _links(owner, "colleagues")
+    factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=stranger.id)
+    assert stranger.get(f"{P}/maintainer").json()["website"] == "https://example.org"
+    _links(owner, "private")
+    assert "website" not in stranger.get(f"{P}/maintainer").json()
+
+
+def test_a_hold_makes_everyone_count_as_colleagues(
+    owner: flow.Human, stranger: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _links(owner, "everyone")
+    assert stranger.get(f"{P}/maintainer").status_code == 200
+    held = SimpleNamespace(action="hide", at=clock.now(), report_id="rep-1")
+    real = moderation.hold
+    monkeypatch.setattr(
+        moderation,
+        "hold",
+        lambda conn, kind, target: held if target == owner.id else real(conn, kind, target),
+    )
+    _not_found(stranger.get(f"{P}/maintainer"))  # a stranger is no colleague
+    factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=stranger.id)
+    assert stranger.get(f"{P}/maintainer").json()["website"] == "https://example.org"
 
 
 # --- an organisation ---------------------------------------------------------------------------

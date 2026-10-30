@@ -14,7 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, and_, false, or_, select
 
-from maity_hub import avatars, moderation, namespace, orgs, public_people
+from maity_hub import avatars, moderation, namespace, orgs, person_links, public_people
 from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, not_found
@@ -107,7 +107,8 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
     page_served = public_people.served(conn, human) and _served(
         conn, request, public_people.KIND, human.id
     )
-    if not own and not page_served and not listed["projects_total"]:
+    links = _links(conn, human, me)
+    if not own and not page_served and not listed["projects_total"] and not links:
         raise not_found()  # shows the caller nothing
     answer: dict[str, Any] = {
         "kind": "human",
@@ -118,7 +119,20 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
     }
     if own or page_served:
         answer["public_bio"] = human.public_bio
-    return {**answer, **listed}
+    return {**answer, **links, **listed}
+
+
+def _links(conn: Connection, human: Any, me: str) -> dict[str, Any]:
+    """`website` and `social` where `links_visible` admits the caller (§16.9), as the member
+    views show them; nothing when the person has no link. A hold on the profile (§16.8) makes
+    `everyone` count as `colleagues`."""
+    if not human.website and not human.social:
+        return {}
+    visible = human.links_visible
+    if visible == "everyone" and moderation.hold(conn, "profile", human.id) is not None:
+        visible = "colleagues"
+    seen = person_links.admitted(conn, {human.id: visible}, person_links.Reader(me))
+    return person_links.shown(human) if human.id in seen else {}
 
 
 def _organisation(conn: Connection, request: Request, caller: Any, org: Any) -> dict[str, Any]:
