@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field, field_validator
+from pydantic import Field, StringConstraints, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select, update
 
@@ -962,7 +962,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
 
 
 class IsolateIn(Strict):
-    reason: str = Field(min_length=1, max_length=500)
+    # Trimmed first: a reason of blanks is none (§6.2, 1–500 characters).
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 
 
 def _isolation_target(conn: Connection, mine: Membership, caller: Caller, member_id: str) -> Any:
