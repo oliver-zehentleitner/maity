@@ -82,7 +82,7 @@ def reach(conn: Connection, manager: Any) -> dict[int, str]:
     its part, `a` or `b`; empty for a membership that does not hold the scope (a guest
     manager holds nothing of the role)."""
     kind = "agent" if manager.agent_id is not None else "human"
-    if manager.active is not True or not leads(manager.trust, manager.role, kind):
+    if manager.active is not True or not leads(manager.trust, manager.role_base, kind):
         return {}
     rows = _members(conn, manager.project_id)
     by_id = {r.id: r for r in rows}
@@ -242,7 +242,7 @@ def needs_consent(project: Any, target: Any, values: dict[str, Any], pause: Any)
         project.contract_arbiter,
         project.coordinator,
     )
-    if not (target.role in SENSITIVE_ROLES or seat):
+    if not (target.role_base in SENSITIVE_ROLES or seat):
         return False
     pauses = bool(pause[0] and pause[1] is not None)
     moves = "reports_to" in values and values["reports_to"] != target.reports_to

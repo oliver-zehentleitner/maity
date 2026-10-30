@@ -468,7 +468,10 @@ def test_an_entry_that_became_a_guest_or_a_proxy_does_not_cover(
         grace_minutes=0,
     )
     with migrated.begin() as conn:
-        for agent, values in ((guest, {"trust": "guest"}), (proxy, {"role": "proxy"})):
+        for agent, values in (
+            (guest, {"trust": "guest"}),
+            (proxy, {"role": "proxy", "role_base": "proxy"}),
+        ):
             conn.execute(
                 update(t.membership).where(t.membership.c.agent_id == agent.id).values(**values)
             )
@@ -632,7 +635,7 @@ def test_trust_admin_expands_at_its_place_in_the_cover_order_by_handle(
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.agent_id == agent.id)
-                .values(trust="admin", role="coder")
+                .values(trust="admin", role="coder", role_base="coder")
             )
         project = conn.execute(select(t.project).where(t.project.c.slug == "maity")).one()
         row = conn.execute(select(t.membership).where(t.membership.c.agent_id == covered.id)).one()
@@ -694,7 +697,9 @@ def test_a_security_team_covers_for_the_role_it_is_built_on(
     with migrated.begin() as conn:
         for agent, role in ((reviewer, "reviewer"), (purple, "purple-team"), (coder, "coder")):
             conn.execute(
-                update(t.membership).where(t.membership.c.agent_id == agent.id).values(role=role)
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent.id)
+                .values(role=role, role_base=role)
             )
     for substitutes, expected in (
         (["role:reviewer"], {reviewer.id, purple.id}),

@@ -273,9 +273,9 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     elif is_instance_admin(conn, me):
         return True
     my_projects = {
-        row.project_id: (row.trust, row.role)
+        row.project_id: (row.trust, row.role_base)
         for row in conn.execute(
-            select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role).where(
+            select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role_base).where(
                 t.membership.c.human_id == me, t.membership.c.active.is_(True)
             )
         )

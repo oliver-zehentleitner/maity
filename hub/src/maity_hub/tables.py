@@ -593,6 +593,9 @@ project = Table(
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
+    # 12; null for none.
+    Column("roles", JSON_VALUE),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
@@ -678,6 +681,10 @@ membership = Table(
     _ref("agent_id", "agent_profile.id"),
     # A built-in role, or a project role of up to 24 characters (#506).
     Column("role", String(24), nullable=False),
+    # The built-in role whose scopes `role` has: `role` itself for a built-in one, the base
+    # for a project role (§2.3); written with every `role`, and by a `PUT …/roles` that
+    # moves a role to another base, so no reader looks the project's roles up.
+    Column("role_base", String(24), nullable=False),
     Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     # A membership the hub keeps for an owner of the organisation that owns the project
     # (§6.26): `created` (the hub made it: it ends with the ownership) or `raised` (it held

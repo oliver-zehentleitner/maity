@@ -324,7 +324,7 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
     if to == "owner":
         return inbox.Addressee("owner")
     if to.startswith(("role:", "trust:")):
-        if not inbox.valid_token(to):
+        if not inbox.valid_token(to, mine.project):
             raise invalid({"to": "unknown_role"})
         return inbox.Addressee("role", role=to)
     principal, instance = instances.split_address(to)
@@ -1150,7 +1150,10 @@ def _originally_for(row: Any, member: Any) -> bool:
         return bool(row.to_member == member.id)
     if row.to_kind == "owner":
         return bool(member.trust == "owner")
-    return bool(row.to_kind == "role" and row.to_role in tokens_of(member.trust, member.role))
+    return bool(
+        row.to_kind == "role"
+        and row.to_role in tokens_of(member.trust, member.role, member.role_base)
+    )
 
 
 def _pool_open() -> Any:
@@ -1203,7 +1206,10 @@ def forward(
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
             original = _originally_for(row, target)
-            if "trust:admin" not in tokens_of(target.trust, target.role) and not original:
+            if (
+                "trust:admin" not in tokens_of(target.trust, target.role, target.role_base)
+                and not original
+            ):
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
@@ -1244,7 +1250,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked_member(conn, caller, slug)
         row = _open_decision(conn, mine, request_id)
-        if "trust:admin" not in tokens_of(mine.trust, mine.role):
+        if "trust:admin" not in tokens_of(mine.trust, mine.role, mine.role_base):
             raise ApiError(
                 403, "forbidden", "only an admin claims from the pool", {"reason": "not_admin"}
             )

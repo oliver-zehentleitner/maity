@@ -323,7 +323,7 @@ def readable_by(
     return (
         "all" in audience
         or _names_team(audience, principal)
-        or bool(tokens_of(membership.trust, membership.role) & set(audience))
+        or bool(tokens_of(membership.trust, membership.role, membership.role_base) & set(audience))
     )
 
 
@@ -512,7 +512,7 @@ def wakes(
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (
-        tokens_of(membership.trust, membership.role) & set(audience)
+        tokens_of(membership.trust, membership.role, membership.role_base) & set(audience)
     ):
         return False
     chosen = (row.wakes or {}).get(principal)
@@ -543,9 +543,9 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
     elif authority == "admin":
         allowed = in_admin_team(membership.trust, membership.role)
     else:  # a guest holds none of its role's scopes (§2.3); a security team counts as its base
-        allowed = membership.trust != "guest" and counts_as(membership.role) in _DONE_ROLES.get(
-            str(authority), ()
-        )
+        allowed = membership.trust != "guest" and counts_as(
+            membership.role_base
+        ) in _DONE_ROLES.get(str(authority), ())
     if not allowed:
         return False
     chosen = (row.wakes or {}).get(principal)

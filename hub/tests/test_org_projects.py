@@ -125,6 +125,7 @@ def test_an_owner_made_later_joins_every_project_archived_ones_included(
                 human_id=admin.id,
                 trust="member",
                 role="coder",
+                role_base="coder",
                 areas=["/"],
                 capabilities=[],
                 joined_at=joined,

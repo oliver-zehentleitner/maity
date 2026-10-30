@@ -79,6 +79,7 @@ def _membership(conn: Connection, project_id: str, **principal: Any) -> int:
             project_id=project_id,
             trust="owner",
             role="coder",
+            role_base="coder",
             areas=["/"],
             capabilities=[],
             joined_at=NOW,

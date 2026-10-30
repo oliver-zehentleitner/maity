@@ -94,6 +94,7 @@ from maity_hub.routes import (
     projects,
     register_page,
     requests,
+    roles,
     runner,
     runners,
     seo,
@@ -300,6 +301,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
+    app.include_router(roles.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
     app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)

@@ -550,12 +550,17 @@ def list_runners(request: Request, caller: HumanCaller) -> JSONResponse:
         administered = [
             r.project_id
             for r in conn.execute(
-                select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role).where(
+                select(
+                    t.membership.c.project_id,
+                    t.membership.c.trust,
+                    t.membership.c.role,
+                    t.membership.c.role_base,
+                ).where(
                     t.membership.c.human_id == caller.principal_id,
                     t.membership.c.active.is_(True),
                 )
             )
-            if has_scope(r.trust, r.role, "human", "members:admin")
+            if has_scope(r.trust, r.role_base, "human", "members:admin")
         ]
         attached_there = select(t.runner_attachment.c.runner_id).where(
             t.runner_attachment.c.project_id.in_(administered),

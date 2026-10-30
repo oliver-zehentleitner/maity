@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock, namespace, policy
+from maity_hub import clock, namespace, policy, project_roles
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.mentions import global_name
@@ -81,7 +81,9 @@ def target(conn: Connection, project: Any) -> Any | None:
     ordered = sorted(rows, key=lambda row: (row.handle, principal(row)))
     if token != "coordinator":
         if token.startswith(("role:", "trust:")):
-            matches = [row for row in ordered if token in tokens_of(row.trust, row.role)]
+            matches = [
+                row for row in ordered if token in tokens_of(row.trust, row.role, row.role_base)
+            ]
         else:
             matches = [row for row in ordered if principal(row) == token]
         if matches:
@@ -108,7 +110,7 @@ def validate(conn: Connection, project: Any, body: OnboardingIn) -> None:
         return
     field = "settings.onboarding.check_in_with"
     if token.startswith(("role:", "trust:")):
-        if not token_known(token):
+        if not token_known(token, project_roles.names(project)):
             raise invalid({field: "unknown_role"})
     else:
         found = [row for row in members(conn, project.id) if principal(row) == token]
@@ -214,7 +216,10 @@ def observe(
             return
         to = payload.get("to")
         # Direct chat payloads carry the real other party; group chats do not use a member to.
-        reaches = to in {principal(resolved), *tokens_of(resolved.trust, resolved.role)}
+        reaches = to in {
+            principal(resolved),
+            *tokens_of(resolved.trust, resolved.role, resolved.role_base),
+        }
         if isinstance(to, str) and to.startswith(principal(resolved) + "#"):
             reaches = True
         if not reaches:

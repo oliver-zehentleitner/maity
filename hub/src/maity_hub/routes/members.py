@@ -27,6 +27,7 @@ from maity_hub import (
     namespace,
     person_links,
     placements,
+    project_roles,
     rules,
     seats,
     takeovers,
@@ -161,9 +162,18 @@ def validate_assignment(
             errors["trust"] = "humans_only"
         values["trust"] = trust
     if role is not None:
-        if role not in ROLES:
+        # A project role is read under the project's lock, which `PUT …/roles` holds while it
+        # checks what still names a role it removes: no assignment slips past that check.
+        project = (
+            conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+            if role in ROLES
+            else lock_project(conn, project_id)
+        )
+        base = project_roles.base_of(project, role)  # a project role too (§2.3)
+        if base is None:
             errors["role"] = "unknown"
         values["role"] = role
+        values["role_base"] = base
     # The proxy holds trust `admin`, the only trust it may hold (§2.3).
     if "role" not in errors and "trust" not in errors:
         new_trust, new_role = values.get("trust", current[0]), values.get("role", current[1])

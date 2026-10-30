@@ -436,7 +436,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.trust, mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -535,7 +535,7 @@ def _packet(
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(
-            project, mine.trust, mine.role, namespace.full_name(conn, project)
+            project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
     }
 
