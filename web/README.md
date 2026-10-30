@@ -41,7 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. At the top right are two menus, each a
+narrow screen they go under it. Beside them, where the project has them,
+two links in tabs of their own: its repository, with the forge's mark and
+name (GitHub, GitLab, Gitea; a branch mark otherwise), and **Why**, the
+Keep the Why dashboard of the family's root (`keep_the_why_export`'s
+member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with

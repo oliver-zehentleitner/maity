@@ -1689,6 +1689,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
   expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The project's repository and Keep the Why dashboard beside its state (tsk-n161gf6h8feb): each where the project has it,
+  // https only, in a tab of its own, named for a screen reader; the forge's mark, else a branch.
+  const hlLinks = () => header.querySelectorAll(".project-state a.header-link");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
+    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|GitHub,"
+    + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
+    && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
+    "header: the repository on its forge and the Keep the Why dashboard, beside the state, in tabs of their own");
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "GitHub", "header: a project without a Keep the Why dashboard shows the repository alone");
+  const hlGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
+    { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }),
+      keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Gitea" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+    "header: another forge by its name; a dashboard that is not plain https gets no link");
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : hlGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!hlLinks().length, "header: neither where the project has neither");
+  win.Maity.api.get = hlGet;
+  await go("#/maintainer/sample/board"); for (let k = 0; k < 4; k++) await tick();
   // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
   const relMark = () => header.querySelector(".project-state .released");
   expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
