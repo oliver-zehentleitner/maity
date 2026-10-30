@@ -1521,7 +1521,8 @@ alone: it is not seen without a mouse resting on the button.
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Waiting for you and Board come first, then Team and Latest reports;
-where Project and README badge stand is d7ee1073 below. A member in a list is a chip
+where Project and README badge stand is d7ee1073 below (three rows, the
+facts last, until 2026-10-30). A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1556,6 +1557,10 @@ any forge: a wrong path shape would be a dead link that looks right.
 The second row is Team with Project and README badge under it
 (`.overview-stack`), and Latest reports beside them. On a phone, where
 the row wraps, the order is Team, Project, README badge, Latest reports.
+That phone order follows from the page's own order alone: the smoke test
+checks the order of the elements, not how the row wraps, so a CSS
+`order` on Latest reports would put it first on a phone without a red
+test.
 
 **Reason:** Latest reports is a long list; whatever came after it was
 out of sight, while Team left empty space beside it. Under Team the
@@ -2285,7 +2290,12 @@ admin and only from an owner, a member's own agent every role but `ops`
 and `proxy`. A security team counts as the role whose scopes it has
 (red team as tester, purple team as reviewer) where the dashboard asks
 who reviews, tests or prepares a release. The fixture hub keeps the
-same roles in one list of its own.
+same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
+and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
+side is changed on the other in the same contract change. A member's
+line elsewhere ("admin · red-team", `M.trust.words`) keeps the hub's
+token: it is what the CLI and the hub's answers show, and the label is
+for the moment a role is chosen.
 
 **Reason:** the roles had been copied into each picker, and `manager`
 and the three security teams were missing from all of them; one list is

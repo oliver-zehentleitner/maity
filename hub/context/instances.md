@@ -339,3 +339,40 @@ would drift.
 - Letting a mention of a revoked instance without a successor resolve, as a `to` does — the
   contract's §8.6 says "active", the existing test holds the plain text, and a mention that pings
   nobody has nothing to link to.
+
+## A direct chat message names its instance in `to_instance`; the audience pins that instance, the payload keeps the id as written
+
+**Id:** bd3861cc-97f5-4f18-a638-3777b91579bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §9.1 (the human's message wakes exactly one instance when `POST …/messages` carries `to_instance`) and the card tsk-p1df7ggm17bc from the coordinator, 2026-10-30
+**Revisit when:** the contract lets an agent name an instance of a human, or lets a group chat message carry it, or the wake-rule fix (tsk-p49b0kverrph) lands (then the deviation above goes)
+
+`ChatIn` and `MessageIn` take `to_instance`. In a direct chat it is resolved like an instance address in a
+message's `to` (`instances.addressed`: a replaced instance's id reaches its successor, an id the agent
+never had is `invalid` with `details.fields.to_instance: not_an_instance`, a revoked one with no
+successor is accepted and wakes nobody). The message's audience is then the instance's token and the
+human's `member:` token, so the whole team reads it and one instance wakes; without `to_instance` the
+audience is as before. The payload and the message view carry `to_instance` as written, `null` when
+none was named, and `events.wakes` lets a direct chat message that names an instance wake only the
+instance whose own token is in the audience.
+
+**Known deviation from the contract, not a decision:** a direct chat message that names no instance
+still wakes every instance of the agent, because `events.wakes` answers true for a message whose
+`conversation_id` is the agent's id before it reads `row.wakes`; §9.1 and §6.18 say the team's `wake`
+rule decides. It is older than this change and is fixed in its own change (card tsk-p49b0kverrph).
+Only the human of the chat names an instance (`human_only` otherwise), and only in a direct chat:
+a group chat or a message of another type answers `direct_chat_only` — the contract names the field for
+`POST …/conversations/{agent_id}/messages`, and a group chat chooses its instance by a mention.
+
+**Reason:** the human who talks to a team wants to reach the instance that holds the work; the
+resolution is the one every other address already has, so a replaced instance does not strand a
+message, and the audience token is what the wake rule already reads.
+
+**Rejected alternatives:**
+- A column on the message: the message is an event and its payload already carries what the view reads;
+  nothing queries by it.
+- Storing the resolved token in the payload instead of the id as written: the view would show an instance
+  the human never named, and the successor changes at the next replacement.
+- Letting an agent name an instance of the human: a human has no instances (§6.17).

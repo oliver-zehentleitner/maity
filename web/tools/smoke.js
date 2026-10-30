@@ -3827,6 +3827,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
+  const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
+  expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
   expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
@@ -4548,6 +4551,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(/#header > \.bar:only-child \{ padding-bottom: 10px; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
     "header: the bar alone has room below it, as much as above");
   await go("#/maintainer/maity/inbox");
+  expect(header.querySelector(".bar") && header.childNodes.filter((x) => x.tagName).length > 1,
+    "header: a project's header is more than the bar, so the rule leaves it as it is");
 
   // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
   const oiGetAll = win.Maity.api.getAll;

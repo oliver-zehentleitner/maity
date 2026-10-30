@@ -661,3 +661,41 @@ owner.
   member how they want to be told about their own agents.
 - Only a personal value: a member cannot treat a busy project
   differently from a quiet one.
+
+## A change of the hub's own rules text bumps every project's rules version once
+
+**Id:** bea10667-bbe1-4cf3-a93b-7eeabe50eb1c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's decision of 2026-10-30 on a hub agent's question while building the duty line (card tsk-n6b8q0tz9yt2); contract `docs/api.md` §6.9 (#731)
+**Revisit when:** agents receive the rules by push instead of reading them at resume, or the generated text moves out of the hub's code
+
+The generated rules contain text that lives in the hub's code: the duty
+line, the briefs per trust and role, the attachment rule. That text
+counts as an input of the rules. Each project stores a digest of the
+generated text it was last bumped for; a hub that starts with a
+different digest bumps that project's `rules_version` once, with
+`rules_changed`, under the project lock. A new project starts with the
+current digest. A session switching duty bumps nothing, since the duty
+line differs per caller.
+
+**Reason:** agents read `rules.markdown` only when the rules version
+moved since their cursor. Without a bump, a running agent keeps the old
+duty line until some unrelated project input changes, which can be
+days; the point of the duty line was that nobody has to tell each agent
+by hand.
+
+**Rejected alternatives:**
+- Bump on every hub version: wakes every agent of every project on each
+  deploy for text that usually did not change.
+- No bump; the new text arrives with the next project input or a resume
+  without cursor: leaves running agents on old instructions for an
+  unknown time.
+- Compare per agent at resume: the packet would need the text's digest
+  per session, and an agent that never resumes again would never see it;
+  a project-level bump reaches it through the event it already waits on.
+- One digest for the whole instance instead of per project: a project
+  created or bumped in between would be bumped again for nothing, and
+  the once-only guarantee would need a lock of its own; the project lock
+  already serialises the bump.

@@ -1,0 +1,3 @@
+### Added
+
+- hub: `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` takes `to_instance` (docs/api.md §9.1): the human's message then wakes exactly that instance of the agent and its team reads it. The id is resolved as an instance address in a message's `to` is (a replaced instance reaches its successor; an id the agent never had is `invalid`, `details.fields.to_instance: "not_an_instance"`), only the human of the chat may name one (`human_only`), and only in a direct chat (`direct_chat_only`). A chat message and its `message` event carry `to_instance` (the id as written, `null` when none).
