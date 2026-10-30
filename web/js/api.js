@@ -912,8 +912,13 @@ window.Maity = window.Maity || {};
   const SETUP_CARDS = [
     ["keep_the_why_init", "Set up Keep the Why in the repository"],
     ["keep_the_why_badge", "Add the Keep the Why badge to the README"],
+    ["keep_the_why_ci", "Run the Keep the Why linter in CI"],
+    ["keep_the_why_dashboard", "Publish the Keep the Why dashboard"],
     ["maity_badge", "Add the Maity badge to the README"],
   ];
+  // §6.21 `dashboard_path`: one to five segments joined by "/", ".." nowhere in it.
+  const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
+  const dashboardPathOk = (v) => typeof v === "string" && DASHBOARD_PATH.test(v) && !v.includes("..");
   // One open setup card per chosen option, made when the project has a
   // repository (routes/projects.py, project_setup.make_cards).
   function makeSetupCards(slug, setup, by, url) {
@@ -921,7 +926,8 @@ window.Maity = window.Maity || {};
     setup.cards = SETUP_CARDS.filter(([key]) => setup[key]).map(([key, title]) => {
       const id = localId("tsk");
       list.items.push({
-        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase() + ", as a pull request against its default branch.",
+        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase()
+          + (key === "keep_the_why_dashboard" ? " under " + setup.dashboard_path : "") + ", as a pull request against its default branch.",
         label: "chore", status: "open", area: "/", created_by: by, assigned_to: null, claim: null, checkpoint: null,
         depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
         created_at: nowIso(), updated_at: nowIso(), closed_at: null,
@@ -1802,12 +1808,18 @@ window.Maity = window.Maity || {};
       if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
       const given = body.setup || {};
       Object.keys(given).forEach((k) => {
-        if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
+        if (k === "dashboard_path") { if (!dashboardPathOk(given[k])) fields["setup.dashboard_path"] = "format"; }
+        else if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
         else if (typeof given[k] !== "boolean") fields["setup." + k] = "not_a_boolean";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const ktw = provider === "keep-the-why";
-      const setup = { keep_the_why_init: ktw && given.keep_the_why_init !== false, keep_the_why_badge: ktw && given.keep_the_why_badge !== false,
+      // The four Keep the Why options true unless unticked, under Keep the Why only;
+      // the path kept only while the dashboard is chosen.
+      const opt = (k) => ktw && given[k] !== false;
+      const setup = { keep_the_why_init: opt("keep_the_why_init"), keep_the_why_badge: opt("keep_the_why_badge"),
+        keep_the_why_ci: opt("keep_the_why_ci"), keep_the_why_dashboard: opt("keep_the_why_dashboard"),
+        dashboard_path: opt("keep_the_why_dashboard") ? given.dashboard_path || "keep-the-why-dashboard" : null,
         maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
