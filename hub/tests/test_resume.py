@@ -70,6 +70,7 @@ def test_the_packet_has_every_part_of_the_contract(
         "capabilities": [],
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
+        "isolated": None,  # §6.2
         "briefing": None,
         "briefing_source": None,
         "team": {

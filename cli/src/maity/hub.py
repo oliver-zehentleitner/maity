@@ -292,7 +292,7 @@ def get_text(url: str, timeout: float = 30.0) -> str:
         raise _error_from(exc, safe_url(url)) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
-        raise HubError(f"cannot reach {url}: {reason}") from exc
+        raise HubError(f"cannot reach {safe_url(url)}: {reason}") from exc
 
 
 @dataclass(frozen=True)

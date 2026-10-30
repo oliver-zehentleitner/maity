@@ -956,6 +956,7 @@ def scenario(run: Run, page: Page) -> None:
 
     users_step(run, page)
     registration_admin_step(run, page)
+    reports_admin_step(run, page, alpha)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2118,6 +2119,42 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
+    """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
+    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("reports: an agent reports a card; the admin reads it as text and hides it with a note")
+    card = run.api(alpha, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "e2e: a card to report", "body": "<b>not markup</b>"})
+    filed = run.api(
+        alpha,
+        "POST",
+        "/reports",
+        {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
+    )
+    assert filed.get("id"), filed
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Reports", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Reports']")
+    row = section.locator(f"li.report-item[data-report='{filed['id']}']")
+    expect(row).to_be_visible()
+    row.get_by_role("button").click()
+    opened = section.locator("section.report-open")
+    expect(opened).to_contain_text("e2e: a card to report")
+    # The reporter's text and the snapshot are text, never markup.
+    expect(opened.locator("pre.report-body").first).to_have_text("<i>e2e</i> report")
+    expect(opened.locator("i, b")).to_have_count(0)
+    page.locator("#report-action").select_option("hide")
+    page.locator("#report-note").fill("e2e: hidden on purpose")
+    opened.get_by_role("button", name="Resolve", exact=True).click()
+    expect(section).to_contain_text("Resolved: Hide.")
+    expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    run.shot(page, "reports-admin")
+    run.a11y(page, "reports admin")
+    no_problems(run, "reports admin")
+
+
 def join_expiry_step(run: Run, page: Page) -> None:
     """A join that expires while Agents is open leaves the seats for the record, without Revoke."""
     run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
@@ -2290,6 +2327,20 @@ def members_step(run: Run, page: Page) -> None:
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
+    run.step("members: Only my agents shows the owner's agents alone, and is kept on the next visit")
+    mine = page.get_by_role("checkbox", name="Only my agents", exact=True)
+    expect(mine).not_to_be_checked()
+    mine.check()
+    expect(page.locator("table.members")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_contain_text("E2E Agent")
+    expect(mine).to_be_focused()
+    run.a11y(page, "members, only my agents")
+    page.reload()
+    expect(page.get_by_role("checkbox", name="Only my agents", exact=True)).to_be_checked()
+    expect(page.locator("table.members")).to_have_count(1)
+    page.get_by_role("checkbox", name="Only my agents", exact=True).uncheck()
+    expect(page.locator("table.members")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))

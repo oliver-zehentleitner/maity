@@ -71,24 +71,24 @@ def _ts(value: datetime | None) -> str | None:
     return clock.rfc3339(value) if value is not None else None
 
 
-def may_issue(trust: str, role: str, issuer_trust: str, issuer_role: str) -> bool:
+def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> bool:
     """Trust `owner` or `admin`, and the role `proxy`, need the issuer to hold trust
-    `owner`; the others `members:admin`."""
+    `owner`; the others `members:admin`. `issuer_base` is the issuer's `role_base`."""
     if trust in OWNER_TRUSTS or role == "proxy":
         return issuer_trust == "owner"
-    return has_scope(issuer_trust, issuer_role, "human", "members:admin")
+    return has_scope(issuer_trust, issuer_base, "human", "members:admin")
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
     """Whether the issuer is still an active human member with the authority it needs."""
     issuer = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role).where(
+        select(t.membership.c.trust, t.membership.c.role_base).where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
         )
     ).first()
-    return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role)
+    return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role_base)
 
 
 def admits(conn: Connection, row: Any, project: Any, now: datetime | None = None) -> bool:

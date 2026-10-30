@@ -280,7 +280,9 @@ def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
 
     from maity_hub import events
 
-    boss = SimpleNamespace(id=7, agent_id="agt-boss", role="member", lead_instance="lead")
+    boss = SimpleNamespace(
+        id=7, agent_id="agt-boss", role="member", lead_instance="lead", isolated_since=None
+    )
     start = SimpleNamespace(
         kind="member_not_listening",
         payload={"ended": False},
@@ -294,7 +296,9 @@ def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
     assert not events.wakes(start, boss, "agt-boss", instance="other")
     end = SimpleNamespace(**{**vars(start), "payload": {"ended": True}})
     assert not events.wakes(end, boss, "agt-boss", instance="lead")
-    admin = SimpleNamespace(id=8, agent_id="agt-admin", role="admin", lead_instance=None)
+    admin = SimpleNamespace(
+        id=8, agent_id="agt-admin", role="admin", lead_instance=None, isolated_since=None
+    )
     assert not events.wakes(start, admin, "agt-admin", instance="x")  # trust:admin only reads
 
 

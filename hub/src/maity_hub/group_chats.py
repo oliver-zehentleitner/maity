@@ -520,8 +520,15 @@ def rename(conn: Connection, conversation: Any, title: str | None, actor: Actor 
     )
 
 
-def membership_removed(conn: Connection, target: Any, actor: Actor | None, by: str) -> None:
-    """A member removed from the project leaves every chat (§6.2)."""
+def membership_removed(
+    conn: Connection,
+    target: Any,
+    actor: Actor | None,
+    by: str,
+    reason: str = "membership_removed",
+) -> None:
+    """A member removed from the project leaves every chat (§6.2); an isolated agent too,
+    with `reason: membership_isolated`."""
     chats = conn.execute(
         select(t.conversation)
         .join(
@@ -535,7 +542,7 @@ def membership_removed(conn: Connection, target: Any, actor: Actor | None, by: s
         .order_by(t.conversation.c.id)
     ).all()
     for chat in chats:
-        remove(conn, chat, target.id, by, "membership_removed", actor)
+        remove(conn, chat, target.id, by, reason, actor)
 
 
 def _announce(

@@ -625,6 +625,28 @@ window.Maity = window.Maity || {};
     if (social.length > 8) errors["footer.social"] = "too_many";
     social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));
   }
+  // §6.24 in fixture mode: the check and the effects of the signed-in human's rename. The
+  // renames of the last 24 hours are counted, three at most; the handles of the orgs, of the
+  // fixture people and the reserved first segments are taken.
+  const selfRenames = [];
+  function renameSelf(mm, wanted, path) {
+    if (typeof wanted !== "string" || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(wanted)) fail(400, "invalid", "handle", path, { fields: { handle: "format" } });
+    if (wanted === mm.handle) return;
+    if (ORG_RESERVED.indexOf(wanted) >= 0) fail(400, "invalid", "handle", path, { fields: { handle: "reserved" } });
+    const people = (fixtures()["people.json"] || { items: [] }).items;
+    const held = orgsData().items.some((o) => o.handle === wanted || (o.aliases || []).includes(wanted))
+      || people.some((x) => x.handle === wanted || (x.aliases || []).includes(wanted));
+    if (held) fail(400, "invalid", "handle", path, { fields: { handle: "taken" } });
+    const aliases = mm.aliases || [];
+    const back = aliases.indexOf(wanted) >= 0;
+    if (!back && aliases.length >= 8) fail(409, "alias_limit", "alias limit", path, { limit: 8, aliases: aliases.slice() });
+    const now = Date.now();
+    while (selfRenames.length && now - selfRenames[0] >= 86400000) selfRenames.shift();
+    if (selfRenames.length >= 3) fail(429, "rate_limited", "too many renames", path);
+    selfRenames.push(now);
+    mm.aliases = aliases.filter((a) => a !== wanted).concat([mm.handle]);
+    mm.handle = wanted;
+  }
   // A profile's handle and git identity as §6.3 and §6.24 check them.
   function agentFields(body, agent, list) {
     const fields = {};
@@ -1367,6 +1389,11 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/me$/, (m, body, path) => {
       const mm = me().member;
       if (mm.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
+      // §6.24: a rename gives the handle up as an alias; a handle alone is a whole request.
+      if ("handle" in body) {
+        renameSelf(mm, body.handle, path);
+        if (Object.keys(body).length === 1) return meView();
+      }
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
       if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";
@@ -1602,6 +1629,37 @@ window.Maity = window.Maity || {};
       });
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
       return agent;
+    }],
+    // §16.8 Abuse reports for the instance admin: open ones first, each newest
+    // first; one with its snapshot; resolved (again) with an action and a note.
+    ["GET", /^\/admin\/reports$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const status = query.get("status") || "all";
+      const type = query.get("type");
+      if (!["open", "resolved", "all"].includes(status)) fail(400, "invalid", "the request does not validate", path, { fields: { status: "unknown" } });
+      if (type && !["profile", "project", "message", "card"].includes(type)) fail(400, "invalid", "the request does not validate", path, { fields: { type: "unknown" } });
+      const all = (fixtures()["admin-reports.json"] || { items: [] }).items;
+      const items = all.filter((r) => (status === "all" || (status === "open" ? r.status === "open" : r.status !== "open")) && (!type || r.target.type === type))
+        .sort((a, b) => ((a.status === "open") === (b.status === "open") ? (a.created_at < b.created_at ? 1 : -1) : a.status === "open" ? -1 : 1))
+        .map((r) => { const v = Object.assign({}, r); delete v.snapshot; return v; });
+      return { items, next_cursor: null };
+    }],
+    ["GET", /^\/admin\/reports\/([^/]+)$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const r = ((fixtures()["admin-reports.json"] || { items: [] }).items).find((x) => x.id === m[1]);
+      if (!r) fail(404, "not_found", "Not found", path);
+      return Object.assign({}, r);
+    }],
+    ["POST", /^\/admin\/reports\/([^/]+)\/resolve$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const r = ((fixtures()["admin-reports.json"] || { items: [] }).items).find((x) => x.id === m[1]);
+      if (!r) fail(404, "not_found", "Not found", path);
+      if (!["dismiss", "hide", "remove", "suspend"].includes(body.action)) fail(400, "invalid", "the request does not validate", path, { fields: { action: "unknown" } });
+      if ("note" in body && typeof body.note !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { note: "not_text" } });
+      if (r.status === "expired") fail(409, "invalid_transition", "the report expired", path, { from: "expired", to: "resolved" });
+      // Resolved again, the report keeps when it first closed (§16.8); the answer carries the snapshot, as the hub's.
+      Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: r.closed_at || nowIso() });
+      return Object.assign({}, r);
     }],
     // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
     // null restores the default, "unlimited" is no limit, an integer 1–10000.

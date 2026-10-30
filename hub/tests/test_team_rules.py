@@ -226,6 +226,7 @@ class _Reader:
         self.id = membership.id
         self.trust = membership.trust
         self.role = membership.role
+        self.role_base = membership.role_base
         self.agent_id = membership.agent_id
 
 

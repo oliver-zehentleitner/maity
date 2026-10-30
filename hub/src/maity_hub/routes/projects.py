@@ -541,6 +541,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 human_id=caller.human_id,
                 trust="owner",
                 role="coder",
+                role_base="coder",
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,

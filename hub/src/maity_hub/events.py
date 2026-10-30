@@ -282,11 +282,22 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+def _isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
+    outside the project, is none."""
+    return (
+        getattr(membership, "agent_id", None) is not None
+        and getattr(membership, "isolated_since", None) is not None
+    )
+
+
 def readable_by(
     row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project."""
+    if _isolated(membership):
+        return False  # an isolated agent is left out of every audience (§6.2)
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -323,7 +334,7 @@ def readable_by(
     return (
         "all" in audience
         or _names_team(audience, principal)
-        or bool(tokens_of(membership.trust, membership.role) & set(audience))
+        or bool(tokens_of(membership.trust, membership.role, membership.role_base) & set(audience))
     )
 
 
@@ -449,7 +460,7 @@ def wakes(
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
     sender's own) is still `all`."""
-    if row.kind in NON_WAKING:
+    if row.kind in NON_WAKING or _isolated(membership):
         return False
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
@@ -512,7 +523,7 @@ def wakes(
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (
-        tokens_of(membership.trust, membership.role) & set(audience)
+        tokens_of(membership.trust, membership.role, membership.role_base) & set(audience)
     ):
         return False
     chosen = (row.wakes or {}).get(principal)
@@ -543,9 +554,9 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
     elif authority == "admin":
         allowed = in_admin_team(membership.trust, membership.role)
     else:  # a guest holds none of its role's scopes (§2.3); a security team counts as its base
-        allowed = membership.trust != "guest" and counts_as(membership.role) in _DONE_ROLES.get(
-            str(authority), ()
-        )
+        allowed = membership.trust != "guest" and counts_as(
+            membership.role_base
+        ) in _DONE_ROLES.get(str(authority), ())
     if not allowed:
         return False
     chosen = (row.wakes or {}).get(principal)

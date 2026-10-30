@@ -45,10 +45,10 @@ def _handle(conn: Connection, row: Any) -> str:
 
 def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     """The policy's `substitutes`, expanded: `role:<role>` is that role's agent members by
-    handle, a security team counted as the role it is built on, `trust:admin` the admin
-    agents (§2.3), a human only when named; never the member itself, each once. Every
-    entry is checked again as it stands now: one that has become a guest or a proxy since
-    the policy was set does not cover (§6.12)."""
+    handle, a security team and a project role counted as the role they are built on,
+    `trust:admin` the admin agents (§2.3), a human only when named; never the member
+    itself, each once. Every entry is checked again as it stands now: one that has become
+    a guest or a proxy since the policy was set does not cover (§6.12)."""
     from maity_hub import availability
 
     members = conn.execute(
@@ -61,7 +61,7 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     for entry in availability.policy_of(row)["substitutes"]:
         if entry.startswith("role:"):
             role = entry.removeprefix("role:")
-            agents = [m for m in members if m.agent_id and role in (m.role, counts_as(m.role))]
+            agents = [m for m in members if m.agent_id and role in (m.role, counts_as(m.role_base))]
             order += sorted(agents, key=lambda m: _handle(conn, m))
         elif entry == "trust:admin":
             agents = [m for m in members if m.agent_id and in_admin_team(m.trust, m.role)]
@@ -71,7 +71,7 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     seen: set[int] = set()
     shown = []
     for member in order:
-        if member.trust == "guest" or member.role == "proxy":
+        if member.trust == "guest" or member.role == "proxy" or member.isolated_since is not None:
             continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
@@ -121,7 +121,7 @@ def may_take_card(conn: Connection, project: Any, card: Any, sub: Any) -> bool:
     if card.status != "review":
         return True
     held = DONE_SCOPES.get(project.done_authority, ())
-    return not any(has_scope(sub.trust, sub.role, _kind(sub), scope) for scope in held)
+    return not any(has_scope(sub.trust, sub.role_base, _kind(sub), scope) for scope in held)
 
 
 def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool:
@@ -146,7 +146,7 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
     rule = proposals.answerer(request)
     scope = rule.scope if rule is not None else "requests:answer"
     if (klass == "consent" or rule is not None) and not has_scope(
-        sub.trust, sub.role, _kind(sub), scope
+        sub.trust, sub.role_base, _kind(sub), scope
     ):
         return False
     if rule is not None and rule.humans_only and sub.agent_id:
@@ -340,10 +340,10 @@ def _announce_card(conn: Connection, project: Any, card_id: str, actor: Actor | 
 
 
 def _audience(conn: Connection, covered: Any, sub: Any) -> list[str]:
-    from maity_hub.views import principal_id
+    from maity_hub.views import routing_boss
 
     audience = [f"member:{_principal(covered)}", f"member:{_principal(sub)}"]
-    boss = principal_id(conn, covered.reports_to)
+    boss = routing_boss(conn, covered.reports_to)
     if boss is not None:
         audience.append(f"member:{boss}")
     audience.append("trust:admin")

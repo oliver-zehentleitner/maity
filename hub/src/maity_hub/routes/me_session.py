@@ -60,6 +60,7 @@ from maity_hub.views import (
     confirmed_by_of,
     event_views,
     git_identity,
+    isolated,
     meat_proxy_view,
     member_views,
     memory_of,
@@ -202,6 +203,8 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is not None:
+            return _isolated_packet(conn, mine, caller)  # no session, no event, no presence
         # Serialise with other writes to the project: two resumes of one
         # credential must not both open its live session.
         events.lock_project(conn, mine.project.id)
@@ -322,6 +325,36 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     return packet
 
 
+def _isolated_packet(conn: Connection, mine: Membership, caller: Caller) -> dict[str, Any]:
+    """What an isolated agent gets of a resume: who it is, why every other call is refused,
+    and the project's head; nothing of the project's members, memory, work or events (§6.2)."""
+    agent = conn.execute(
+        select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
+    ).one()
+    owner = conn.execute(select(t.human).where(t.human.c.id == agent.owner_id)).one()
+    project = mine.project
+    return {
+        "server_time": clock.rfc3339(clock.now()),
+        "api_version": API_VERSION,
+        "hub_version": __version__,
+        "me": {
+            "member_id": agent.id,
+            "handle": agent.handle,
+            "name": mentions.global_name(owner.handle, agent.handle),
+            "display_name": agent.display_name,
+            "instance": caller.instance,
+        },
+        "membership": {"trust": mine.trust, "role": mine.role, "isolated": isolated(mine.row)},
+        "project": {
+            "id": project.id,
+            "full_name": namespace.full_name(conn, project),
+            "slug": project.slug,
+            "name": project.name,
+            "state": project.state,
+        },
+    }
+
+
 def _packet(
     conn: Connection,
     mine: Membership,
@@ -428,6 +461,8 @@ def _packet(
         )
     ).all()
     assigned = sorted(assigned, key=ranks.column_key)  # the card order, its priority (§6.4)
+    if mine.row.isolated_since is not None:
+        assigned = []  # nothing is handed to an isolated agent (§6.2)
     siblings = [
         {
             key: view[key]
@@ -436,7 +471,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.trust, mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -482,6 +517,7 @@ def _packet(
             "scopes": scopes,
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
+            "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
@@ -535,7 +571,7 @@ def _packet(
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(
-            project, mine.trust, mine.role, namespace.full_name(conn, project)
+            project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
     }
 
@@ -582,6 +618,8 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     from maity_hub import inbox
     from maity_hub.routes.requests import request_view
 
+    if mine.row.isolated_since is not None:  # no request reaches an isolated agent (§6.2)
+        return {"mine_open": [], "answered_since_cursor": [], "to_answer": [], "truncated": False}
     rows = conn.execute(
         select(t.request)
         .where(t.request.c.project_id == mine.project.id)

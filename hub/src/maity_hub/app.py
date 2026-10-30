@@ -95,6 +95,7 @@ from maity_hub.routes import (
     projects,
     register_page,
     requests,
+    roles,
     runner,
     runners,
     seo,
@@ -205,7 +206,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         digest_worker.start()
         commitment_worker = commitment.Worker(engine)
         commitment_worker.start()
-        registrations_worker = registration_accounts.Worker(engine)
+        registrations_worker = registration_accounts.Worker(engine, settings)
         registrations_worker.start()
         # An open report expires and a closed one's content goes on time (§16.8).
         reports_worker = reports.Worker(engine)
@@ -301,6 +302,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
+    app.include_router(roles.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
     app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)

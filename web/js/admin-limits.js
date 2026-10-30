@@ -100,11 +100,13 @@ window.Maity = window.Maity || {};
             save.disabled = false;
             if (err.code === "cancelled") { formStatus.done(); return; }
             const fields = err.code === "invalid" && err.details && err.details.fields;
-            if (fields) {
+            // Said at its field; a refusal naming no field shown here is said in the status line.
+            const atField = fields ? parts.filter((p) => fields[p.f.key]) : [];
+            if (atField.length) {
               formStatus.done();
-              parts.forEach((p) => {
+              atField.forEach((p) => {
                 const why = fields[p.f.key];
-                if (why) p.error.textContent = Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
+                p.error.textContent = Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
               });
               return;
             }

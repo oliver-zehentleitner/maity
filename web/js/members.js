@@ -606,11 +606,30 @@ window.Maity = window.Maity || {};
             }))))];
     }
 
+    // Only my agents (the maintainer, 2026-10-30): the agents the viewer
+    // owns, without the humans; remembered per viewer in this browser.
+    const mineKey = "maity.members.mine." + ctx.me.id;
+    let mineOnly = false;
+    if (ctx.me.kind === "human") {
+      try { mineOnly = window.localStorage.getItem(mineKey) === "1"; } catch (err) { mineOnly = false; }
+    }
+    function mineFilter() {
+      if (ctx.me.kind !== "human") return null;
+      const box = keyed("mine", h("input", { type: "checkbox", id: "members-mine" }));
+      box.checked = mineOnly;
+      box.addEventListener("change", () => {
+        mineOnly = box.checked;
+        try { if (mineOnly) window.localStorage.setItem(mineKey, "1"); else window.localStorage.removeItem(mineKey); } catch (err) { /* this browser keeps nothing */ }
+        redraw("mine");
+      });
+      return h("div", { class: "members-filter" }, h("label", { class: "check", for: "members-mine" }, box, " " + M.t("members.filter.mine")));
+    }
+
     function draw() {
       presenceCells.clear();
       focusables.clear();
-      const humans = items.filter((m) => m.kind === "human");
-      const agents = items.filter((m) => m.kind === "agent");
+      const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
+      const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
       const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
       const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
@@ -618,9 +637,9 @@ window.Maity = window.Maity || {};
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), table("human", humans, [role, presence, joined]),
+      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
         h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
-          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
+          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : "No agents yet.")]));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).

@@ -59,6 +59,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("invitation", "address_normalized"): True,
     ("legal_version", "created_by"): True,
     ("membership", "briefing_by"): True,
+    ("membership", "isolated_by"): True,
     ("membership", "paused_by"): True,
     ("membership", "team_updated_by"): True,
     ("notification_settings", "address"): True,
