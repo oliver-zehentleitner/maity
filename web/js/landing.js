@@ -17,8 +17,9 @@ window.Maity = window.Maity || {};
 
   // A field of a section or of an item: its key, its label, its kind and
   // its limit. Kinds: text (one line), long (several lines), md (Markdown),
-  // cta ({label, href}), lines (one entry per line: the points, handles,
-  // projects), stats (counters to tick), count (a number).
+  // cta ({label, href}), href (a link's target), lines (one entry per line:
+  // the points, handles, projects), stats (counters to tick), count (a
+  // number), choice (one of `choices`), group (an object of `fields`).
   const f = (key, label, kind, max, extra) => Object.assign({ key, label, kind, max }, extra || {});
   const STATS = [["people", "People"], ["agents", "Agents"], ["public_projects", "Public projects"], ["cards_done_week", "Cards done this week"],
     ["people_online", "People online"], ["agents_online", "Agents online"]];
@@ -41,23 +42,44 @@ window.Maity = window.Maity || {};
       fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown)", "md", 2000), f("handles", "Handles, one per line", "lines", 2)] },
     explore: { label: "Explore", note: "Shown only while public pages are on; empty for the hub's own choice.",
       fields: [f("title", "Title", "text", 120), f("projects", "Projects (owner/slug), one per line", "lines", 3)] },
+    // §16.7 (#737): a terminal typed line by line, the question an agent asks
+    // its human, and exactly three steps; the page shows them all without script.
+    demo: { label: "Demo", fields: [f("title", "Title", "text", 120), f("subline", "Subline (optional)", "long", 300, { optional: true }),
+      f("inbox", "Inbox item (optional)", "group", null, { optional: true, fields: [f("from", "From", "text", 80), f("question", "Question", "long", 300),
+        f("context", "Context (optional)", "long", 300, { optional: true })] })],
+      lists: [
+        { key: "terminal_lines", min: 1, max: 8, label: "Terminal line", fields: [f("kind", "Kind", "choice", null, { choices: [["cmd", "Command typed"], ["out", "Its output"], ["note", "Comment"]] }),
+          f("text", "Text", "text", 200)] },
+        { key: "steps", min: 3, max: 3, label: "Step", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300)] },
+      ] },
+    opensource: { label: "Open source", fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown, optional)", "md", 600, { optional: true })],
+      lists: [
+        { key: "tiles", min: 1, max: 3, label: "Tile", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300)] },
+        { key: "links", min: 0, max: 4, label: "Link", fields: [f("label", "Label", "text", 40), f("href", "Link", "href")] },
+      ] },
   };
+  // A type's lists of entries: its items, and the named lists of the newer types.
+  const listsOf = (type) => (type.items ? [Object.assign({ key: "items" }, type.items)] : []).concat(type.lists || []);
   const KEPT = { activity: "Activity", collab: "Collaboration" };
 
-  // A new section of a type, as the hub would take it.
-  function fresh(type) {
-    const s = { type, enabled: true };
-    (TYPES[type].fields || []).forEach((x) => {
-      if (x.kind === "cta") { if (!x.optional) s[x.key] = { label: "", href: "" }; } else if (x.kind === "stats" || x.kind === "lines") s[x.key] = [];
-      else if (!x.optional) s[x.key] = "";
+  // A new object of `fields`, as the hub would take it.
+  function freshOf(fields) {
+    const o = {};
+    fields.forEach((x) => {
+      if (x.optional) return;
+      if (x.kind === "cta") o[x.key] = { label: "", href: "" };
+      else if (x.kind === "stats" || x.kind === "lines") o[x.key] = [];
+      else if (x.kind === "choice") o[x.key] = x.choices[0][0];
+      else if (x.kind === "group") o[x.key] = freshOf(x.fields);
+      else o[x.key] = "";
     });
-    if (TYPES[type].items) s.items = [freshItem(type)];
-    return s;
+    return o;
   }
-  function freshItem(type) {
-    const item = {};
-    TYPES[type].items.fields.forEach((x) => { if (x.kind === "lines") item[x.key] = []; else if (!x.optional) item[x.key] = ""; });
-    return item;
+  // A new section of a type: each list with its least entries, one at least.
+  function fresh(type) {
+    const s = Object.assign({ type, enabled: true }, freshOf(TYPES[type].fields || []));
+    listsOf(TYPES[type]).forEach((l) => { s[l.key] = Array.from({ length: Math.max(l.min, 1) }, () => freshOf(l.fields)); });
+    return s;
   }
 
   // The hub's reasons, in words; any other reason is shown as it comes.
@@ -121,6 +143,29 @@ window.Maity = window.Maity || {};
         }),
         h("p", { class: "hint" }, "An online count below 5 is shown as “< 5”."), error);
     }
+    if (x.kind === "choice") {
+      input = h("select", Object.assign({ id }, described), x.choices.map(([v, l]) => h("option", { value: v }, l)));
+      input.value = obj[x.key] || x.choices[0][0];
+      input.addEventListener("change", () => { obj[x.key] = input.value; });
+      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+    }
+    if (x.kind === "group") {
+      if (!obj[x.key]) {
+        const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
+        add.addEventListener("click", () => { obj[x.key] = freshOf(x.fields); redraw(); });
+        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+      }
+      const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
+      if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
+      return h("fieldset", { class: "lp-field lp-group" }, h("legend", null, x.label),
+        x.fields.map((y) => control(y, obj[x.key], path + "." + y.key, errors, redraw)), remove, error);
+    }
+    if (x.kind === "href") {
+      input = h("input", Object.assign({ id, placeholder: "/register or https://…" }, described));
+      input.value = obj[x.key] || "";
+      input.addEventListener("input", () => { obj[x.key] = input.value.trim(); });
+      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+    }
     if (x.kind === "lines") {
       input = h("textarea", Object.assign({ id, rows: String(Math.max(2, x.max)) }, described));
       input.value = (obj[x.key] || []).join("\n");
@@ -171,16 +216,22 @@ window.Maity = window.Maity || {};
       return h("li", { class: "lp-section kept" }, head,
         h("p", { class: "muted" }, "Kept as it is: this hub shows this section in a later version, not yet."), error);
     }
-    const items = type.items ? (s.items = s.items || []) : null;
+    // Each list of entries: moved, removed down to its least, added up to its most.
+    const lists = listsOf(type).map((l) => {
+      const items = s[l.key] = s[l.key] || [];
+      const listError = h("p", { class: "field-error", role: "alert" });
+      errors[path + "." + l.key] = listError;
+      return [l.min === l.max ? h("p", { class: "hint" }, "Exactly " + l.min + ".") : null,
+        h("ol", { class: "lp-items", "data-list": l.key }, items.map((item, k) => h("li", { class: "lp-item" },
+          h("div", { class: "lp-section-head" }, h("span", { class: "lp-item-title" }, l.label + " " + (k + 1)),
+            small("Up", () => move(items, k, -1), k === 0, redraw), small("Down", () => move(items, k, 1), k === items.length - 1, redraw),
+            small("Remove", () => items.splice(k, 1), items.length <= l.min, redraw)),
+          l.fields.map((x) => control(x, item, path + "." + l.key + "." + k + "." + x.key, errors, redraw))))),
+        l.min === l.max ? null : small("Add " + l.label.toLowerCase(), () => items.push(freshOf(l.fields)), items.length >= l.max, redraw),
+        listError];
+    });
     return h("li", { class: "lp-section" }, head, type.note ? h("p", { class: "hint" }, type.note) : null,
-      type.fields.map((x) => control(x, s, path + "." + x.key, errors, redraw)),
-      items ? h("ol", { class: "lp-items" }, items.map((item, k) => h("li", { class: "lp-item" },
-        h("div", { class: "lp-section-head" }, h("span", { class: "lp-item-title" }, type.items.label + " " + (k + 1)),
-          small("Up", () => move(items, k, -1), k === 0, redraw), small("Down", () => move(items, k, 1), k === items.length - 1, redraw),
-          small("Remove", () => items.splice(k, 1), items.length <= type.items.min, redraw)),
-        type.items.fields.map((x) => control(x, item, path + ".items." + k + "." + x.key, errors, redraw))))) : null,
-      items ? small("Add " + type.items.label.toLowerCase(), () => items.push(freshItem(s.type)), items.length >= type.items.max, redraw) : null,
-      error);
+      type.fields.map((x) => control(x, s, path + "." + x.key, errors, redraw)), lists, error);
   }
 
   function pageEditor(draft, lang, errors, redraw) {

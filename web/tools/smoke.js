@@ -6906,6 +6906,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "landing editor: the hub's invalid at a landing field names the field's limit (the hub sends invalid, never too_long, §16.7)");
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
+  // Landing V3 (§16.7, #737): the demo (terminal lines of a kind, an optional inbox item, exactly three steps) and the open
+  // source section (tiles, links), each list at its own path.
+  byId("lp-add-type-en").value = "demo"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  byId("lp-add-type-en").value = "opensource"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  const leDemo = () => leSections()[4], leOss = () => leSections()[5];
+  const leList = (sec, key) => sec.querySelectorAll("ol.lp-items").find((ol) => ol.attrs["data-list"] === key);
+  expect(text(leDemo()).includes("5. Demo") && leList(leDemo(), "terminal_lines").childNodes.length === 1 && leList(leDemo(), "steps").childNodes.length === 3
+    && text(leDemo()).includes("Exactly 3.") && !btn(leDemo(), "Add step") && btn(leDemo(), "Add inbox item")
+    && byId("lp-pages-en-sections-4-terminal-lines-0-kind").querySelectorAll("option").map((o) => o.attrs.value).join() === "cmd,out,note"
+    && text(leOss()).includes("6. Open source") && leList(leOss(), "tiles").childNodes.length === 1 && leList(leOss(), "links").childNodes.length === 1,
+    "landing editor: a demo with one terminal line of a kind and exactly three steps, an open source section with a tile and a link");
+  btn(leDemo(), "Add terminal line").click(); await tick();
+  byId("lp-pages-en-sections-4-terminal-lines-1-kind").value = "out"; byId("lp-pages-en-sections-4-terminal-lines-1-kind").dispatch("change");
+  btn(leDemo(), "Add inbox item").click(); await tick();
+  btn(leList(leOss(), "links").childNodes[0], "Remove").click(); await tick();
+  await leSave();
+  const leV3 = lePatches[lePatches.length - 1][1].pages.en.sections;
+  expect(leV3[4].terminal_lines.map((x) => x.kind).join() === "cmd,out" && leV3[4].steps.length === 3 && leV3[4].inbox && leV3[4].inbox.question === ""
+    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5])
+    && text(byId("lp-pages-en-sections-4-terminal-lines-0-text-error")) && text(byId("lp-pages-en-sections-4-inbox-question-error"))
+    && text(byId("lp-pages-en-sections-5-tiles-0-title-error")),
+    "landing editor: the lists and the inbox item sent in the draft's shape; the hub's refusals said at each field's path");
+  const leFill = (id, v) => { byId(id).value = v; byId(id).dispatch("input"); };
+  leFill("lp-pages-en-sections-4-title", "See it work"); leFill("lp-pages-en-sections-4-terminal-lines-0-text", "maity join");
+  leFill("lp-pages-en-sections-4-terminal-lines-1-text", "joined");
+  leFill("lp-pages-en-sections-4-inbox-from", "agent-a"); leFill("lp-pages-en-sections-4-inbox-question", "Merge #12?");
+  [0, 1, 2].forEach((k) => { leFill("lp-pages-en-sections-4-steps-" + k + "-title", "Step " + k); leFill("lp-pages-en-sections-4-steps-" + k + "-text", "Does " + k); });
+  leFill("lp-pages-en-sections-5-title", "Open source"); leFill("lp-pages-en-sections-5-tiles-0-title", "MIT"); leFill("lp-pages-en-sections-5-tiles-0-text", "Yours.");
+  btn(leOss(), "Add link").click(); await tick();
+  leFill("lp-pages-en-sections-5-links-0-label", "Code"); leFill("lp-pages-en-sections-5-links-0-href", "javascript:alert(1)");
+  await leSave();
+  expect(text(byId("lp-pages-en-sections-5-links-0-href-error")) && !text(byId("lp-pages-en-sections-4-inbox-question-error")),
+    "landing editor: a link that is neither https nor a path is refused at its href");
+  leFill("lp-pages-en-sections-5-links-0-href", "https://github.com/oliver-zehentleitner/maity");
+  await leSave();
+  expect(text(main).includes("Saved."), "landing editor: a demo and an open source section saved");
+  btn(leOss(), "Remove").click(); await tick(); btn(leDemo(), "Remove").click(); await tick();
   // A second language, made the default, and the page shown to visitors.
   byId("lp-new-language").value = "de"; btn(leBox(), "Add the language").click(); await tick();
   expect(leBox().querySelectorAll(".lp-tabs button").map((b) => b.textContent + ":" + b.attrs["aria-pressed"]).join() === "en:false,de:true"
