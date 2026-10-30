@@ -39,6 +39,35 @@ def token(member_id: str, instance: str | None) -> str:
     return f"instance:{member_id}#{instance}" if instance else f"member:{member_id}"
 
 
+def addressed(
+    conn: Connection, membership_id: int, principal: str, instance: str, field: str
+) -> str:
+    """The audience token an instance address in a `to` comes down to (§8.2): the instance
+    named; when it was replaced, the instance that replaced it, along the chain; a revoked
+    one without a successor keeps its own token, so the write is accepted and wakes nobody.
+    An id the member never had is `invalid` (`not_an_instance`)."""
+    row = conn.execute(
+        select(t.credential.c.instance, t.credential.c.revoked_at).where(
+            t.credential.c.membership_id == membership_id, t.credential.c.instance == instance
+        )
+    ).first()
+    if row is None:
+        raise invalid({field: "not_an_instance"})
+    seen = {instance}
+    while row.revoked_at is not None:
+        successor = conn.execute(
+            select(t.credential.c.instance, t.credential.c.revoked_at).where(
+                t.credential.c.membership_id == membership_id,
+                t.credential.c.replaces == row.instance,
+            )
+        ).first()
+        if successor is None or successor.instance in seen:
+            break
+        seen.add(successor.instance)
+        row = successor
+    return token(principal, row.instance)
+
+
 def human_paused(member: Any, credential: Any) -> bool:
     """Whether someone other than the agent itself paused this instance (§5.3)."""
     return credential.paused_since is not None and credential.paused_by != member.agent_id
