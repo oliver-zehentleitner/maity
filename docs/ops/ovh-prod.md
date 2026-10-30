@@ -9,7 +9,7 @@ disagreed or said nothing, this plan says so and names how to settle it before o
 
 ## 1. Decision and what changes
 
-| | Test (today's Vultr k3s) | Prod (new, OVH Frankfurt) |
+| | Test (today's Vultr k3s) | Prod (new, OVH Paris) |
 |---|---|---|
 | Deploys | continuously from `main` | tagged releases, about once a day |
 | Address | a new test domain (the maintainer picks) | `maity.team`, `www`, `join.maity.team` |
@@ -22,27 +22,33 @@ before every prod release.
 
 ## 2. OVH region and services: what the documentation says
 
-- **Frankfurt (`DE1`) offers Managed Kubernetes on the Free plan only, in one availability zone.** The datacenter table
-  has `DE1` with Free ticked, Standard not, `1-AZ`. Free means a **99.5 % SLO** (no SLA), a shared etcd capped at
-  **400 MB**, up to 100 nodes. Standard (99.9 % SLA in a 1-AZ region, 99.99 % in a 3-AZ region, dedicated etcd up to
-  8 GB) is not offered in `DE1`.
-- Worker flavors `B3`, `C3`, `R3` and `D2` are listed for `DE1`; block storage classes `csi-cinder-high-speed(-gen2)`
-  and `csi-cinder-classic`, with LUKS-encrypted variants in `DE1`.
-- **Managed PostgreSQL** is "available in all Public Cloud 1-AZ and 3-AZ regions"; the backup page names `DE` with
-  `GRA` as its default off-site region. Versions 15 to 18 (we run 17). Plans: Essential 1 node, **Business 2 nodes**,
-  Enterprise 3 nodes. Daily backups with retention 2 / 14 / 30 days, and **point-in-time recovery** from continuous
-  capture to object storage ("recovery point of a few minutes"). Access by an IP allow-list or the private network
-  (vRack), TLS on the connection, about 100 connections per 4 GB of RAM.
-- One open point: pages in other languages list different regions for the database product. **Before ordering, open
-  the order form for `DE1` and confirm that PostgreSQL is offered there.** If it is not, the nearest region with both
-  is to be named here, and the points below apply unchanged except the latency.
+The maintainer chose **Paris (`EU-WEST-PAR`) with the Standard plan of Managed Kubernetes** (decision 2026-10-30,
+instead of Frankfurt on the Free plan, which has no SLA and one zone). Managed PostgreSQL in the Business plan is
+checked by him in the order form.
 
-**Consequence the maintainer should weigh:** in Frankfurt the control plane has no SLA and the cluster sits in one
-zone. For a launch that is a risk to accept knowingly, not a technical blocker: the data is in a two-node managed
-database with its own PITR, and the hub is one replica anyway. The alternative is a region with Standard plan; I could
-not confirm from the documentation which EU regions offer Standard together with managed PostgreSQL (a search summary
-said other European regions also list Free only; unverified). Decision for the maintainer: Frankfurt on Free, or
-look at the order form's region list for a Standard region.
+- **Paris is a 3-AZ region** (zones `eu-west-par-a`, `-b`, `-c`, each in its own data center). The datacenter table has it
+  with the Standard plan only: control plane across the zones, **99.99 % SLA**, dedicated etcd up to 8 GB, up to 500
+  nodes. (Frankfurt `DE1` is Free only, 99.5 % SLO, one zone, shared etcd of 400 MB.)
+- **Worker flavors:** the table lists `D2-4` and `D2-8` and the `B2`, `C2`, `R2` families for every region; `B3`, `C3`
+  and `R3` are listed for `DE1`, `GRA11`, `UK1` and `WAW1`, **not for Paris**. So the nodes are `D2` or `B2`/`C2`
+  (exact flavor and price from the order form). Block storage classes `csi-cinder-high-speed(-gen2)` and
+  `csi-cinder-classic`, with LUKS-encrypted variants in France.
+- **Managed PostgreSQL** is "available in all Public Cloud 1-AZ and 3-AZ regions"; versions 15 to 18 (we run 17).
+  Plans: Essential 1 node, **Business 2 nodes**, Enterprise 3 nodes. Daily backups with retention 2 / 14 / 30 days, and
+  **point-in-time recovery** from continuous capture to object storage ("recovery point of a few minutes"), with an
+  off-site copy in a second region (the backup page lists the default pairs; Paris is not in the part of the table I
+  could read, so the second region is chosen explicitly with `backups.regions`). Access by an IP allow-list or the
+  private network (vRack), TLS, about 100 connections per 4 GB of RAM. How the nodes of a Business or Enterprise service
+  are spread over the three zones is not stated in the pages I read; the maintainer asks it in the order form.
+- Pages in other languages list different regions for the database product: **confirm in the order form that
+  Paris offers Business-plan PostgreSQL**, and what the plan costs.
+
+**What the 3-AZ region changes for us.** Block volumes live in one zone, so the hub pod with the `ReadWriteOnce`
+attachment volume can only run on a node in that volume's zone; a zone failure then takes the hub down until it is
+restored elsewhere from the tar. That is acceptable for one pod and is another reason the attachment store moves to
+shared storage with the multi-pod work (section 12). OVH's navigation lists a multi-attach block storage for 3-AZ
+regions; I did not read it, so it is a candidate, not a plan. Worker nodes are set per node pool; the Terraform example
+pins one pool per zone, and a pool across zones is to be confirmed on the cluster.
 
 ## 3. Cluster and sizing
 
@@ -51,7 +57,7 @@ between about 120 and 200 MiB over days; a fresh pod starts near 120 MiB. The ch
 and limits memory to `2Gi`. PostgreSQL moves out of the cluster, so the cluster runs the hub, Traefik, cert-manager
 and the monitoring below.
 
-Proposal: **two worker nodes of the smallest `B3` flavor with at least 4 GB** (two, so a node update or failure does
+Proposal: **two worker nodes of a `D2` or `B2` flavor with at least 4 GB, in different zones** (two, so a node update or failure does
 not take the hub down while it is rescheduled), the hub as one replica with the `Recreate` strategy it has today. The
 exact flavor name and the price are read off the order form; I did not take either from a search result. The
 attachment store is a `ReadWriteOnce` volume on `csi-cinder-high-speed-gen2`, 10 Gi as now, which is why the hub
@@ -64,15 +70,28 @@ stays at one replica.
 - **OVH Public Cloud Load Balancer** (Octavia): a Service of type `LoadBalancer` in front of Traefik. No API gateway.
   On clusters above Kubernetes 1.30 this is the default; flavor `small` is the default and `medium`, `large`, `xl`
   exist. The comparison table gives up to 4 Gbit/s and 20 000 connections for it, more than the hub needs.
-- **The client address.** OVH's guide uses `externalTrafficPolicy: Local` and the annotations
-  `service.beta.kubernetes.io/ovh-loadbalancer-proxy-protocol: "v2"` and `loadbalancer.openstack.org/proxy-protocol: "v2"`,
-  with the controller trusting the load balancer's egress IPs (listed in the Service annotation
-  `lb.k8s.ovh.net/egress-ips`). The guide shows it for NGINX and says a Traefik section is planned, so the Traefik
-  side (`proxyProtocol.trustedIPs`) is mine to prove on the cluster. This matters for the hub: the login and join rate
-  limits count the address the hub sees (`docs/install/README.md`, "The same-host proxy trap"), and
-  `MAITY_TRUSTED_PROXIES` must name the pods that connect to it. **Acceptance test before any DNS change:** two
-  requests from two different outside addresses show two different addresses in the access log, and a cookie carries
-  `Secure`.
+- **The client address.** The path is: client, OVH load balancer, **PROXY protocol v2**, Traefik, hub. OVH's guide sets
+  `externalTrafficPolicy: Local` and the annotations `service.beta.kubernetes.io/ovh-loadbalancer-proxy-protocol: "v2"` and
+  `loadbalancer.openstack.org/proxy-protocol: "v2"` on the controller's Service; the controller must accept the PROXY
+  protocol only from the load balancer's egress addresses (the Service annotation `lb.k8s.ovh.net/egress-ips`; with the
+  private network, the subnet). The guide shows it for NGINX and says a Traefik section is planned; for Traefik that is
+  the entry point's `proxyProtocol.trustedIPs`, which I have to prove on the cluster. Traefik then sets
+  `X-Forwarded-For` and `X-Forwarded-Proto`, and **the hub trusts only Traefik**.
+  How the hub decides today (`hub/src/maity_hub/net.py`, `docs/api.md` §2.5): forwarded headers count only when the
+  socket peer is in `MAITY_TRUSTED_PROXIES` (the chart's `config.trustedProxies`, which is required with the Ingress
+  and is the ingress controller's pod network, `10.42.0.0/16` on Vultr's k3s); the hub reads every
+  `X-Forwarded-For` value from the right and takes the first one that is not a trusted proxy as the client, and the
+  scheme at the same position. So on OVH `config.trustedProxies` is the **Traefik pods' network** (the cluster's pod
+  CIDR, read from the cluster), never the load balancer's addresses (the load balancer does not connect to the hub) and
+  never wider than needed; a client's own `X-Forwarded-For` ends up left of the real address and is ignored. The chart's
+  NetworkPolicy already lets only Traefik reach the hub.
+  This matters because the login and join rate limits and the bearer-over-TLS rule use that decision
+  (`docs/install/README.md`, "The same-host proxy trap"): nothing fails loudly when it is wrong. **Acceptance test
+  before any DNS change, in this order:** (1) a request from outside shows the real outside address in the hub's
+  access log, not the load balancer's or a pod's; (2) two requests from two different outside addresses show two
+  different addresses; (3) a request with a forged `X-Forwarded-For: 1.2.3.4` still shows the real address; (4) a
+  forged `X-Forwarded-Proto: http` does not turn off `Secure` on a cookie, and a login over plain HTTP is refused
+  with `insecure_transport`; (5) the same four on the join host.
 - **Long requests.** The hub has no event stream; the longest request is the events long-poll, which the hub ends
   after **55 seconds** (`docs/api.md` §8, "`wait` ... 55 seconds"), and the device-login long-polls. OVH's migration
   guide lists the old load balancer's defaults as `timeout-client-data` and `timeout-member-data` of 180 000 ms and
@@ -89,11 +108,11 @@ stays at one replica.
 
 ## 5. Database
 
-- Managed PostgreSQL 17, **Business plan** (two nodes), in `DE1`, access by the allow-list of the cluster nodes'
+- Managed PostgreSQL 17, **Business plan** (two nodes), in Paris, access by the allow-list of the cluster nodes'
   addresses first; the private network (vRack) is the stronger setting and is worth the setup if the order form allows
-  it for Free-plan Kubernetes (to settle at order time). The connection string stays in the Secret `maity-hub-db`.
+  it for the cluster (to settle at order time). The connection string stays in the Secret `maity-hub-db`.
 - **Backups, two layers.** (a) The provider's daily backup and PITR, with the off-site copy in a second region
-  (`DE` replicates to `GRA` by default; set `backups.regions` to two entries as the page recommends). (b) Our own
+  (set `backups.regions` to two entries, Paris and a second region, as the page recommends). (b) Our own
   nightly `pg_dump` and attachment tar, as now, but uploaded to **object storage in a second location** (an S3 bucket
   at another provider or another OVH region), with credentials that can write and not delete. (b) is the copy that
   does not depend on the provider's account, and the only copy of the attachments outside the volume. The dump
@@ -174,8 +193,8 @@ Then Vultr becomes test: new domain and certificate, the mail sink, a values fil
 
 ## 11. Open points and risks
 
-- PostgreSQL in `DE1` (section 2) and the Free plan's missing SLA.
-- The Traefik side of the client address behind the load balancer (section 4), the one thing here I have not seen work.
+- Business-plan PostgreSQL in Paris and how its nodes are spread over the zones (section 2).
+- The Traefik side of the client address behind the load balancer (section 4), the one thing here I have not seen work; the five-step acceptance test decides.
 - The Octavia timeout defaults are not stated; the plan sets them.
 - The in-cluster `NetworkPolicy` of the chart (it admits only Traefik) needs the cluster's CNI to enforce it; checked on
   the staging step.
@@ -192,7 +211,7 @@ I cannot derive a capacity from the user count; the load test below produces the
 not to autoscale monthly-billed pools and suggests the pattern used here: a **fixed base pool** (two nodes, monthly
 billing allowed) for Traefik, cert-manager, monitoring and the first hub pods, and an **autoscaled hourly-billed pool**
 (minimum 0 or 1, maximum set from the load test and the budget) for the hub pods that the HorizontalPodAutoscaler adds.
-Free-plan clusters allow 100 nodes, far more than needed.
+The Standard plan allows up to 500 nodes, far more than needed. Pools are per zone or across zones as the cluster allows (section 2).
 
 **Hub pods.** HorizontalPodAutoscaler on CPU, a PodDisruptionBudget, topology spread across nodes, resource requests
 that make the autoscaler's decisions meaningful. Needed from the hub side (B's card, listed so none is forgotten):
