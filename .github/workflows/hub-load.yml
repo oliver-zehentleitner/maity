@@ -1,0 +1,50 @@
+name: hub-load
+
+# Does the notifications' cost grow with the history behind a human or with the dashboards they
+# hold open? hub/tests/test_load.py seeds a bell with thousands of unread requests over the
+# 30-day window and fails when a call sends more statements, or takes much longer, with four
+# times the history. PostgreSQL only, one process (a timing is measured on a quiet machine).
+# Not part of ci-ok and not on pull requests: it costs minutes, and the pull requests' CI
+# duration is the bottleneck. It runs on every push to main and once a night; a pull request
+# that touches the load starts it by hand (workflow_dispatch, on its branch).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: hub
+
+jobs:
+  hub-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
+        env:
+          POSTGRES_USER: maity
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: maity
+        ports: ["127.0.0.1:5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maity" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+    env:
+      MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
+      MAITY_LOAD_UNIT: "1000"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make install
+      - run: python -m pytest -n 0 -m load -v

@@ -276,6 +276,12 @@ test user) when the test user may not. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
 
+`pytest -m load -n 0` runs the load tests (`tests/test_load.py`), which the ordinary
+run leaves out: they seed a bell with `MAITY_LOAD_UNIT` unread requests (default 1000, as in CI's
+`hub-load` job) and fail when the statements or the time of a call grow with four
+times the history or with more open tabs. Use PostgreSQL for numbers that mean something.
+`hub-load` runs on every push to main, nightly and by hand; it is not part of `ci-ok`.
+
 `scripts/measure_board.py` seeds a project (200 cards, 10 members, 2000
 events by default) and reports, per dashboard list request, the SQL
 statements it runs and its time, on SQLite or any `--database-url` it may
