@@ -1323,9 +1323,11 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
     run.shot(page, "review-absence")
     run.a11y(page, "header in review with absence")
-    view_tab(page, "Overview").click()
-    expect(page.locator("main section.view-overview .org-tree")).to_be_visible()
-    run.a11y(page, "overview with the organisation")
+    view_tab(page, "Members").click()
+    page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/organisation$"))
+    expect(page.locator("main .org-tree")).to_be_visible()
+    run.a11y(page, "team page, organisation tab")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
     assert project["state"] == "review" and project["state_note"] == "e2e review: fixes only", (
@@ -1699,6 +1701,21 @@ def overview_step(run: Run, page: Page) -> None:
     expect(counts).to_have_count(7)
     expect(main.locator('.overview-counts li[data-status="cancelled"]')).not_to_have_text(re.compile(r"^0 "))
     run.shot(page, "overview")
+    run.step("overview: the tabs Swarm and Project, each at its own address")
+    tabs = main.locator("nav.overview-tabs")
+    tabs.get_by_role("link", name="Swarm", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview/swarm$"))
+    expect(main.locator("section.overview-swarm")).to_be_visible()
+    expect(main.locator(".overview-counts")).to_have_count(0)
+    run.a11y(page, "overview, swarm tab")
+    tabs.get_by_role("link", name="Project", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview/project$"))
+    expect(main.locator('section.overview-part[aria-labelledby="overview-links"]')).to_be_visible()
+    expect(main.locator('section.overview-part[aria-labelledby="overview-badge"]')).to_be_visible()
+    run.a11y(page, "overview, project tab")
+    run.shot(page, "overview-project")
+    tabs.get_by_role("link", name="Summary", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview$"))
     main.locator('.overview-counts li[data-status="open"] a').click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/board$"))
     no_problems(run, "overview")
@@ -2114,14 +2131,20 @@ def join_expiry_step(run: Run, page: Page) -> None:
     # the join read as open again: the step failed or passed by which came first.
     # So this tab sees the hub's clock moved by the same amount as its own.
     moved = {"by": timedelta(0)}
+    # Set before the tab's context goes: a poll held then fails with "Request
+    # context disposed" or "closed", the same end of the step, not a problem.
+    ending = {"now": False}
+
+    def quiet(err: PlaywrightError) -> bool:
+        return ending["now"] or "closed" in str(err)
 
     def hub_clock(route: object) -> None:
-        # Only a tab closed while an answer was held is quiet; any other error
+        # Only a tab ending while an answer was held is quiet; any other error
         # is said where it happens and the request ends, not as a later timeout.
         try:
             answer = route.fetch()
         except PlaywrightError as err:
-            if "closed" not in str(err):
+            if not quiet(err):
                 run.problems.append(f"join expiry: the hub's answer could not be held: {err}")
                 try:
                     route.abort()
@@ -2136,7 +2159,7 @@ def join_expiry_step(run: Run, page: Page) -> None:
         try:
             route.fulfill(response=answer, headers=headers)
         except PlaywrightError as err:
-            if "closed" not in str(err):
+            if not quiet(err):
                 run.problems.append(f"join expiry: the moved answer could not be given: {err}")
 
     second.route(re.compile(r"/api/v1/"), hub_clock)
@@ -2162,6 +2185,8 @@ def join_expiry_step(run: Run, page: Page) -> None:
     expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
     expect(second.locator(f'article.seat[data-join="{join_id}"]')).to_have_count(0)
     run.shot(second, "join-expired")
+    ending["now"] = True
+    second.unroute_all(behavior="ignoreErrors")
     other.close()
     no_problems(run, "joins")
 
@@ -2293,7 +2318,7 @@ def members_step(run: Run, page: Page) -> None:
     manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
-    view_tab(page, "Overview").click()
+    page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
     view_tab(page, "Members").click()

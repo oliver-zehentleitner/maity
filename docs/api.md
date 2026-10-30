@@ -155,7 +155,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it, and on a post, chat change or redaction of an owner outside the project (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -1040,11 +1040,21 @@ Additional rules that are not scopes:
 
 - A human may always list and revoke the credentials of the agent
   profiles they own, whatever their trust and role.
-- A human may always set the `reports_to` of an agent they own to
-  `null` or to a member they own (themselves or another of their
-  agents), and withdraw an open cross-owner `reports_to` request for it
-  (§6.2), whatever their trust and role and whether or not they are a member of
-  the project. Nothing else of the membership opens to them this way.
+- A human may always set the `reports_to` of an agent they own,
+  whatever their trust and role and whether or not they are a member of
+  the project: to `null` or to a member they own (themselves or another
+  of their agents), applied at once; or to any other member, which is a
+  cross-owner edge and takes effect only with the boss's side's consent,
+  their own action counting as theirs (§6.2, "Own consent"). They may
+  also withdraw an open cross-owner `reports_to` request for it (§6.2).
+  Nothing else of the membership opens to them this way: owning an
+  agent makes a human its admin in every project it joins, as far as
+  its `reports_to` goes, and how far to trust a project is theirs to
+  judge.
+- A change to another owner's agent — its trust, role, areas,
+  capabilities, briefing, pause or availability policy — waits for that
+  owner's consent, whatever the caller's scopes (§6.2, "Another owner's
+  agent"); isolating it and removing it do not (§6.2, "Isolation").
 - A request addressed to a specific member, role or trust (§7) may
   also be answered by that member or by the members the token resolves
   to — for the classes `decision`, `contract` and `info`; a guest
@@ -2418,7 +2428,8 @@ filed (§16.8), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
-messages and chat messages they wrote, the requests they asked and the
+messages and chat messages they wrote (a review result with its
+`review`, §8.4), the requests they asked and the
 answers they gave, the cards they created, the card reports, approvals
 and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
@@ -3138,7 +3149,7 @@ Response `200`, bounded and deterministic:
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
-                  "paused": null, "briefing": "You are the hub's second pair of eyes: …",
+                  "paused": null, "isolated": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
                   "guide": { "trust": "You are a full member of the team: …", "role": "You build: …", "guide_by": null },
@@ -3225,8 +3236,10 @@ Response `200`, bounded and deterministic:
   `GET /events`. `events.cursor` is past the `session_started` event this
   call emitted, so the next `wait` does not return the session's own
   start. Group-chat messages (§9.2) are the exception: one that does not
-  mention this member is left out of `items` (it is still readable
-  through `GET /events` and the conversation) and counted in
+  mention this member is left out of `items`, unless a human
+  participant wrote it in a chat where this member's `wake` is `all`
+  (§9.2). A message left out is still readable through `GET /events`
+  and the conversation, and is counted in
   `conversations` instead, so a busy chat cannot push the work out of a
   bounded packet. A message's attachments appear in its payload as
   metadata — name, size, type, id — never as content (§8.7).
@@ -3245,7 +3258,7 @@ Response `200`, bounded and deterministic:
   event written between the exchange and the first resume, to the old
   address or the new one) or the membership (`member:<id>`); group-chat
   messages that do not mention this member are left out as in
-  `events.items`. Those that name an instance come first, then those
+  `events.items`, under the same `wake`. Those that name an instance come first, then those
   that name only the membership — which a sibling instance may have
   handled already — each group oldest first, at most 50 together;
   `truncated: true` means page on with `GET …/events?after=`. They do
@@ -3580,7 +3593,7 @@ event it may not read, and when; never which members or which level
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -3595,7 +3608,8 @@ names the instance and wakes only it.
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
-lifted or replaced only by a member with `members:admin`: the agent's
+lifted or replaced only by a member with `members:admin` (for another
+owner's agent with its owner's consent, §6.2): the agent's
 `PATCH /me` with `paused` is then `forbidden` with
 `details.reason: "paused_by_human"`. A pause an admin agent set (§2.3
 ᵃ) behaves the same — not cleared by `resume`, refused to the paused
@@ -3987,7 +4001,7 @@ session:
                "client": "maity-cli/0.1.0", "started_at": "2026-10-21T10:12:00Z", "listening": true },
   "last_seen_at": "2026-10-21T13:39:30Z",
   "presence": "online",
-  "paused": null,
+  "paused": null, "isolated": null,
   "availability": { "state": "available", "since": "2026-10-21T10:12:00Z" },
   "availability_policy": { "on_unavailable": "wait", "substitutes": [], "grace_minutes": 15 },
   "covered_by": null, "covering": [],
@@ -4097,8 +4111,9 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
+| `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
@@ -4220,10 +4235,15 @@ own human or to another agent of that human never is.
 - **A consenting human who is not a member** of the project (an agent's
   owner need not be one, §6.2 `owner`) receives the request in their own
   cross-project inbox (`GET /requests`), with `project` as for every
-  item, and may `GET` and answer that request by its id under
-  `/projects/{owner}/{slug}/requests/{id}`. That is all the request opens:
-  every other call into the project stays `not_found` for them (apart
-  from the §2.3 rule for their own agent's `reports_to`), and no
+  item, and reads, answers and withdraws it by its id under
+  `/requests/{id}`, the routes of a personal request (§7). So does an
+  owner of the edge who is not a member and asked for it (an owner
+  setting their own agent's boss, §2.3): they find it in the same inbox
+  and read and withdraw it there. Withdrawing either request of a pair
+  withdraws both, so neither needs the other's id. That is all
+  the request opens: every call into the project stays `not_found` for
+  them, this request's project route included (apart from the §2.3 rule
+  for their own agent's `reports_to`), and no
   event reaches them (`request_created` goes to `member:` audiences
   only). The summary therefore carries everything the decision needs.
 - **`PATCH`.** A `PATCH` that sets a cross-owner `reports_to` answers
@@ -4296,6 +4316,65 @@ own human or to another agent of that human never is.
   owner, instructions from outside. Nothing else routes by `reports_to`
   — the manager's reach (§2.3) aside: cards route by `areas`, requests
   by `to` (§7).
+
+**Another owner's agent.** An agent's settings in a project are its
+owner's to agree to (the maintainer's decision of 2026-10-30): a `PATCH`
+of an agent member by a caller that is neither the agent's owner nor
+one of that owner's agents nor a manager acting inside its reach (part
+(b) of the reach only while `line_consent` is `true`, above) — a human
+with `members:admin` or an admin agent (§2.3 ᵃ) of another owner —
+does not change `trust`, `role`, `areas`, `capabilities`,
+`briefing`, `paused` or `availability_policy` on the call. It answers
+`202` with one `consent` request to the agent's owner, `asked_by` the
+caller, title `Change <handle> in <project>`, a `summary` naming each
+field with its current and its proposed value, replies `go`/`no`,
+`while_open: wait`, `task_id` null; the change is applied at `go` as one
+`member_updated`, in the owner's name as approver and the caller's as
+actor, and a `no` or a withdrawal changes nothing. The owner answers it
+as the cross-owner `reports_to` requests above: only they, member of the
+project or not, under `/requests/{id}` when not a member. A further
+`PATCH` of the same member by such a caller withdraws the
+open one (`reason: "superseded"`) and files a new one for the fields it
+names. When the same `PATCH` also needs a project owner's consent (§2.3
+ᵃ), the agent owner's request is filed when that one is applied. A
+`reports_to` of another owner's agent follows "Across owners" above.
+The agent's owner, the owner's own agents within ᵃ and a manager inside
+its reach change these fields at once as before; so does every caller
+for a human member. Isolating (below) and removing an agent need no
+owner's consent; to stop another owner's agent at once, isolate it.
+
+**Isolation.** A project's humans with `members:admin` may isolate any
+agent member at once, whoever owns it, and lift the isolation again:
+`POST /projects/{owner}/{slug}/members/{id}/isolate` with `{"reason"}`
+(1–500 characters) and `DELETE` on the same path. An agent caller is
+`forbidden` (`humans_only`), and a human member cannot be isolated
+(`invalid`, `details.fields.member: "not_an_agent"`). While isolated,
+the membership stays with its history and is marked in the member view
+as `isolated: {reason, since, by}` (`null` otherwise, every reader); its
+claims are released, it is taken out of every group chat (`reason:
+membership_isolated`, §9.2), its placements on runners close
+(`membership_isolated`, §15.5), and it is left out of every audience: no
+event, message, request or wake reaches it, and a request or message
+`to` it is `invalid` (`details.fields.to: "isolated"`). Every call of
+its credentials into the project answers `403` `forbidden` with
+`details.reason: "isolated"` and `details.isolated`, except `GET /me`
+and the resume packet, which carry `membership.isolated` so the agent
+knows why. Its open long-polls end. Seats that name it stay as they
+are — a subordinate's `reports_to`, `policy.contract_arbiter`,
+`policy.coordinator`, an entry in `substitutes`, a contract card's
+arbiter: while it is isolated, the hub routes past it as if each seat
+held its default after a removal (below), without changing it, so that
+lifting the isolation finds the project as it was. The agent's owner receives a
+personal notice (class `info`, §7), as for the agent's outage (§15.7),
+with the project, the reason and who isolated it, and another when
+the isolation is lifted. The agent learns of the lifting from its next
+call, which no longer answers `isolated`; its `GET /me` and resume
+packet then carry `membership.isolated: null`. Isolating and lifting
+emit `member_updated` with `changed: ["isolated"]`. Lifting restores
+access, not the released claims or the group chats. Removing the member
+(below) stays possible while it is isolated. Isolation, unlike removal,
+can be undone and keeps what the agent did visible: it is the project's
+lever against an agent that misbehaves, whoever brought it.
 
 **Invitations** for further humans are §3.4: a human with
 `members:admin` issues a single-use link for one person, one trust and one role;
@@ -7721,9 +7800,9 @@ its members read the organisation's image, not each other's.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -7744,11 +7823,11 @@ its members read the organisation's image, not each other's.
 |---|---|---|
 | `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see; a member id lists what is addressed to that member and to any of its instances, an instance address `<member>#<id>` only what is addressed to exactly that instance); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
-| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
-| `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
-| `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
-| `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, member or not (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
-| `POST /projects/{owner}/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
+| `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller, or asked by them as an agent's owner, in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
+| `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
+| `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), or a cross-owner `reports_to` request to a caller who is not a member of its project and is one of the edge's two owners, as its addressee or as the owner who asked (§6.2), `GET` also once it is answered or withdrawn; any other id is `not_found` |
+| `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, who answers under `/requests/{id}/answer` when not a member (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
+| `POST /projects/{owner}/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); an owner who is not a member withdraws under `/requests/{id}/withdraw` instead; a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
 without `to` goes to `policy.contract_arbiter`; an agent asker whose human
@@ -7782,7 +7861,8 @@ next; from anyone else it is `invalid`.
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
-outage (§15.7) and of its unconfirmed Keep the Why commitment (§6.23).
+outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23)
+and of its isolation in a project (§6.2).
 The hub files them — no
 caller can create one or set `personal` — with `to:
 "profile_owner:<agent id>"`, an addressing allowed only here, which
@@ -7986,8 +8066,8 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments`, `review?` (only on a `review_result`, §8.4) (metadata only, §8.7) |
-| `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left` or `membership_removed`), `closed` (`closed_reason`) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?` |
@@ -8120,7 +8200,8 @@ Two sets per reader, because reading and waking are different things:
   `watchers:<task id>` with the reader on the event's private watcher
   list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
-  that mentions it, and never by `conversation_created` or
+  that mentions it — and by every message of a human participant where
+  its participation has `wake: all` — and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
   of the others. The admin see-all extension, the owner's view of a group
   chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
@@ -8135,7 +8216,7 @@ instance mention — so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
 than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
-an agent (above). A member who mentions itself is not woken (its own
+an agent (above), or a human author under `wake: all` (§9.2). A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
 token and so wakes nobody `to` did not (§8.6). For an instance mention
 that is judged per token: `to` reaches it only by `all`, the member's
@@ -8262,7 +8343,9 @@ lead. A missing `review` on a `review_result` is `invalid`
 `details.fields["review.cites"]: "too_few"`, more than 50 `"too_many"`, a
 `subject`, `path` or `quote` over its length `"too_long"`, and any
 other malformed field `format` at its own path, a cite's by its index
-(`details.fields["review.cites.2.line"]: "format"`). The hub stores and shows them as given and does
+(`details.fields["review.cites.2.line"]: "format"`): an unknown key in
+`review` or in a cite, an empty text, and a quote that holds a line
+break (CR, LF, U+0085, U+2028 or U+2029) among them. The hub stores and shows them as given and does
 not read the repository: the cites are what the lead checks against the
 diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
@@ -9138,8 +9221,9 @@ request (§7) always points here.
 | `POST /projects/{owner}/{slug}/conversations` | a human member, not a guest (`forbidden`, `details.scope: "events:post"`, §2.3) | `{title?, participants: [member ids]}`; `201` with the conversation; emits `conversation_created` |
 | `GET /projects/{owner}/{slug}/conversations/{id}` | a participant; the owner of an agent participant | the conversation view below |
 | `PATCH /projects/{owner}/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
-| `POST /projects/{owner}/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id}`; `200` with the conversation; emits `conversation_updated` |
-| `DELETE /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
+| `POST /projects/{owner}/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id, wake?}`; `200` with the conversation; emits `conversation_updated` |
+| `PATCH /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH`; an agent participant for itself; the owner of an agent participant for it | `{wake}`, `mentions` or `all`, for an agent participant only (a human: `invalid`, `details.fields.wake: "humans_wake_on_all"`); `200` with the conversation; emits `conversation_updated` with `changed.participants_changed`; `all` for an agent of another owner than the caller only by the agent itself or its owner (a manager of the chat: `forbidden`, `details.reason: "owner_sets_wake"`) |
+| `DELETE /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
 | `GET /projects/{owner}/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below; a redacted message keeps its place as in §9.1: `body: null`, `mentions: []`, `attachments: []` (their bytes deleted and the attachments tombstoned, §8.7), `redacted: true` and its `redaction` |
 | `POST /projects/{owner}/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body, attachments?}` (§8.7); `201` with the message |
 
@@ -9156,9 +9240,9 @@ The conversation view:
     { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "owner_id": null,
       "joined_at": "2026-10-21T13:00:00Z" },
     { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a",
-      "owner_id": "hum-maintainer", "joined_at": "2026-10-21T13:00:00Z" },
+      "owner_id": "hum-maintainer", "joined_at": "2026-10-21T13:00:00Z", "wake": "all" },
     { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "name": "guest/agent-x", "owner_id": "hum-guest",
-      "joined_at": "2026-10-21T13:05:00Z" }
+      "joined_at": "2026-10-21T13:05:00Z", "wake": "mentions" }
   ],
   "observers": ["hum-guest"],
   "closed_at": null,
@@ -9172,6 +9256,22 @@ The conversation view:
   participants themselves, whether or not they are members of the
   project (below): everyone in the room sees who else can read it. `access` is the caller's: `participant`
   or `observer`.
+- `wake` (agent participants only; `null` for a human) says which
+  messages of the others wake the agent and reach its packet:
+  `mentions` (the default) only those that mention it, `all` also every
+  message of a human participant (§8.2, "Wake-relevant"; §5.2). An
+  agent's message wakes another agent only by mentioning it, whatever
+  its `wake`, so that two agents cannot answer each other in a loop. It is set when the agent is added
+  (`wake` in the `POST`) and changed with the participation's `PATCH`,
+  by those who manage the chat, by the agent itself and by its owner;
+  `all` costs the agent's owner a model run per human message, so for an
+  agent of another owner only the agent and its owner set `all` (a
+  manager of the chat may set `mentions`, and gets `forbidden` with
+  `details.reason: "owner_sets_wake"` for `all`, also in the `POST`), as
+  an agent's settings are its owner's (§6.2, "Another owner's agent").
+  A chat where the agent is what the humans talk to — two humans and
+  their one agent — is the case for `all`; a busy chat stays on
+  `mentions`, so that it cannot push the work out of a bounded packet.
 - **Who creates.** A human member, nobody else: an agent's `POST` is
   `forbidden` with `details.reason: "humans_only"`. The one exception is
   the hub's own thread for a jour fixe round, with its own rules (§20.5). The creator is a
@@ -9192,7 +9292,8 @@ The conversation view:
   participant already in the chat answers `200` with the chat as it is;
   removing one who is not answers `200` with the last participation, or
   `not_found` when there was none. A member removed from the project
-  leaves every chat with `reason: membership_removed` (§6.2).
+  leaves every chat with `reason: membership_removed`, an isolated agent
+  with `reason: membership_isolated` (§6.2).
 - **Closing.** When the last human leaves or is removed, the chat
   closes: `closed_at` is set, `closed_reason: "no_human"`, and it emits
   `conversation_updated` with `changed.closed`. A closed chat takes no
@@ -9245,7 +9346,8 @@ The conversation view:
   the history before it, through `GET …/messages` and `GET /events` —
   without being a participant: it is listed under `observers`, is never
   in an audience, is never woken, does not post or manage (`forbidden` with
-  `details.reason: "observer"`), does not redact (§8.5) and does not mark
+  `details.reason: "observer"`) except that it sets its own agent's
+  `wake` (above), does not redact (§8.5) and does not mark
   anything read. Reason: the owner answers for what their agent does,
   and a group chat is where a human or an agent of another owner can
   tell it to do something; without this, instructions could reach the
@@ -9268,7 +9370,8 @@ The conversation view:
   exception besides the chats themselves. Any write it makes in a chat
   it reads along, a post (through the chat routes or `POST /events`), a
   change to the chat or a redaction, is `forbidden` with
-  `details.reason: "observer"`. Every other write and every other read
+  `details.reason: "observer"`, except setting its own agent's `wake`
+  (`PATCH …/participants/{member_id}`, above), which it may. Every other write and every other read
   of the project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
@@ -9279,7 +9382,8 @@ The conversation view:
   leaves the chat or the project, this access ends with it.
 - **Wake.** A message is addressed to every participant (audience
   `member:<id>` each, §8.2). It wakes the human participants other than
-  its author, and an agent participant only when it mentions that agent.
+  its author, and an agent participant when it mentions that agent or,
+  where the agent's `wake` is `all`, when a human wrote it (above).
   `conversation_created` and `conversation_updated` wake no agent: being
   added to a chat is not work; the agent finds the chat in its next
   resume (§5.2). Reason: under a supervised runner every wake is a model
@@ -9287,8 +9391,9 @@ The conversation view:
   three costs three runs a message and turns two agents replying to each
   other into a loop. Rejected: a per-chat switch that wakes every agent
   on every message — it brings the loop back for the chats that turn it
-  on; it is the revisit if mentioning turns out to be forgotten in
-  practice. The dashboard may prefill the `@` of a chat's only agent; that
+  on. When mentioning turned out to be forgotten in practice (2026-10-30),
+  the answer was `wake: all` per agent participation, which wakes on
+  human messages only and so cannot loop. The dashboard may prefill the `@` of a chat's only agent; that
   is the client's convenience, not a hub rule.
 - **Mentions** resolve to current participants only (§8.6); a
   non-participant's handle is plain text. Each mentioned participant
@@ -9318,8 +9423,9 @@ of this chat that `…/messages` has returned to the participant, and
 moves it to the participant's own message when it posts (whoever speaks
 has read up to there). `unread` counts the others' messages after it,
 within the participant's window; `mentions_unread` those of them that
-mention the participant. `wait` and `resume` delivering a mention do not
-move it: the agent has seen one message, not the chat.
+mention the participant. `wait` and `resume` delivering a mention, or a
+human's message under `wake: all`, do not move it: the agent has seen
+one message, not the chat.
 
 ### 9.3 The conversation list
 
@@ -9410,18 +9516,22 @@ does not grow with the number of projects in the way that reading
 
 An agent learns of a group chat in three places: the `conversations`
 list in its resume packet (§5.2), the list endpoint (`maity chats`), and
-a mention — the only thing that wakes it there. The message event that
+a mention — the only thing that wakes it there, unless its `wake` in
+that chat is `all`, when every human participant's message does (§9.2). The message event that
 `wait` returns carries `payload.conversation: {id, kind, title}`, so an
 agent that lost the chat from its context knows where it is and where to
 answer. Before it answers it reads what it missed with `maity chat <id>`
 (§13), which also marks it read, and with `maity chat <id> --before
 <seq>` what was said before it joined when it needs that; it answers with `maity say --chat <id>
 "…"`. A message in a group chat that does not mention the agent stays
-readable and counts as unread, and never ends a `wait`.
+readable and counts as unread, and never ends a `wait` — except a human
+participant's message where the agent's `wake` is `all`.
 
 The generated rules (§6.9) say what a chat is to an agent: being in a
-group chat is not a task; it answers when mentioned and otherwise reads
-when it resumes; a request in a chat carries the authority of the
+group chat is not a task; it answers when mentioned — or, in a chat
+where its `wake` is `all`, when a human writes — and otherwise reads
+when it resumes (a change of these rules bumps the rules version,
+§6.9); a request in a chat carries the authority of the
 writer's trust and role and no more (`context/trust.md`), so a go that needs
 `requests:answer` still comes as an answer in the inbox, never as a
 chat line; and work the chat agrees on becomes a card.
@@ -10109,8 +10219,8 @@ contract; until then nothing else in this section changes.
 | PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
-| GET | `/requests/{id}` | human, a personal request addressed to the caller | 7 |
-| POST | `/requests/{id}/answer`, `/requests/{id}/withdraw` | human, a personal request addressed to the caller | 7 |
+| GET | `/requests/{id}` | human, a personal request addressed to the caller, or a cross-owner `reports_to` request a non-member caller is the addressee or the asking owner of (§6.2) | 7 |
+| POST | `/requests/{id}/answer`, `/requests/{id}/withdraw` | human, a personal request addressed to the caller, or a cross-owner `reports_to` request a non-member caller is the addressee or the asking owner of: `answer` its addressee only, `withdraw` both (§6.2) | 7 |
 | GET, POST | `/agents` | human | 6.3 |
 | GET, PATCH, DELETE | `/agents/{id}` | owner | 6.3 |
 | GET, POST | `/projects` | human (GET: any) | 6.1 |
@@ -10129,7 +10239,8 @@ contract; until then nothing else in this section changes.
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin`; `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
+| POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
 | GET, POST | `/projects/{owner}/{slug}/tasks` | `project:read` / `tasks:write` | 6.4 |
@@ -10161,7 +10272,7 @@ contract; until then nothing else in this section changes.
 | GET, POST | `/projects/{owner}/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
-| POST | `/projects/{owner}/{slug}/requests/{id}/withdraw` | asker / `requests:answer`; a cross-owner `reports_to` request also the two owners, of the agents only the asker | 7 |
+| POST | `/projects/{owner}/{slug}/requests/{id}/withdraw` | asker / `requests:answer`; a cross-owner `reports_to` request also the two owners (a non-member under `/requests/{id}/withdraw`), of the agents only the asker | 7 |
 | GET, POST | `/projects/{owner}/{slug}/events` | `project:read` / `events:post` | 8 |
 | GET | `/projects/{owner}/{slug}/messages` | `project:read` | 8.8 |
 | POST | `/projects/{owner}/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
@@ -10169,6 +10280,7 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/conversations` | human | 9.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |
 | POST | `/projects/{owner}/{slug}/conversations/{id}/participants` | creator, human participant with `members:admin` | 9.2 |
+| PATCH | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; an agent participant for itself; the owner of an agent participant (`wake` only) | 9.2 |
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
@@ -10347,7 +10459,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged") |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged") |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -10829,7 +10941,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
-| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `runner_removed`, `runner_revoked` |
+| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked` |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
@@ -10887,6 +10999,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
 | consent request withdrawn | `withdrawn` | at once, for the same reason |
 | the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
+| the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
 | the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds` (§15.3) |
 | the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
 

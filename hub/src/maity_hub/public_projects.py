@@ -1,0 +1,130 @@
+"""A project's public page (docs/api.md §16.9): `GET /{owner}/{slug}` while the project's
+`public_page` is `on`.
+
+It shows the project's `name` and `full_name`, its state and the `public_about` text; the
+members, the agents, the repository and the statistics follow in the next steps. A page is not
+served for an archived project, for one a moderation hold stands on, or while its namespace
+owner is suspended, waiting for approval or deleted, or an organisation that is suspended or
+deleted. Whatever changes one of these calls `public_pages.touch` in its transaction.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from html import escape
+from typing import Any
+
+from sqlalchemy import Connection, select
+
+from maity_hub import clock, landing, moderation, namespace, public_pages, render
+from maity_hub import tables as t
+from maity_hub.config import Settings
+from maity_hub.errors import invalid
+
+KIND = "project"
+ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
+
+
+def about_problem(value: str) -> str | None:
+    """Why a `public_about` may not be stored: `too_long`, `control_character`, or the `line N`
+    of the first line the landing page's Markdown rules (§16.7) refuse; None when it is fine."""
+    if len(value.encode()) > ABOUT_MAX_BYTES:
+        return "too_long"
+    if landing.CONTROL.search(value):
+        return "control_character"
+    return landing.markdown_problem(value)
+
+
+def check_about(value: str | None) -> str | None:
+    """The text to store, or `invalid` (`details.fields.public_about`); empty is none."""
+    if not value:
+        return None
+    problem = about_problem(value)
+    if problem is not None:
+        raise invalid({"public_about": problem})
+    return value
+
+
+def _owner_served(conn: Connection, project: Any) -> bool:
+    if project.owner_org_id is not None:
+        org = conn.execute(select(t.org).where(t.org.c.id == project.owner_org_id)).first()
+        return (
+            org is not None
+            and org.deleted_at is None
+            and moderation.hold(conn, "org", org.id) is None
+        )
+    human = conn.execute(select(t.human).where(t.human.c.id == project.owner_human_id)).first()
+    return bool(
+        human is not None
+        and human.account_status == "active"
+        and human.deleted_at is None
+        and human.suspended_at is None
+    )
+
+
+def served(conn: Connection, project: Any) -> bool:
+    """Whether the project has a page now."""
+    return bool(
+        project.public_page == "on"
+        and project.state != "archived"
+        and moderation.hold(conn, "project", project.id) is None
+        and _owner_served(conn, project)
+    )
+
+
+def render_project(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).first()
+    if project is None or not served(conn, project):
+        return []
+    full = namespace.full_name(conn, project)
+    about = (
+        f'<div class="about">{render.markdown(project.public_about, ugc=True)}</div>'
+        if project.public_about
+        else ""
+    )
+    content = (
+        f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
+        f'<p class="tag">{escape(project.state)}</p>{about}'
+    )
+    path = f"/{full}"
+    body = render.page_document(
+        lang="en",
+        title=f"{project.name} ({full})",
+        canonical=f"{hub.public_url.rstrip('/')}{path}",
+        content=content,
+    )
+    digest = hashlib.sha256(
+        "\x00".join((full, project.name, project.state, project.public_about or "")).encode()
+    )
+    return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
+
+
+def targets(conn: Connection) -> list[str]:
+    return list(
+        conn.execute(
+            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+        ).scalars()
+    )
+
+
+def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> None:
+    """The pages of every project whose namespace owner is the human: their account changed."""
+    for project_id in conn.execute(
+        select(t.project.c.id).where(
+            t.project.c.owner_human_id == human_id, t.project.c.public_page == "on"
+        )
+    ).scalars():
+        public_pages.touch(conn, KIND, project_id, removal=removal)
+
+
+def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
+    """The pages of every project the organisation owns: it was suspended or deleted."""
+    for project_id in conn.execute(
+        select(t.project.c.id).where(
+            t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"
+        )
+    ).scalars():
+        public_pages.touch(conn, KIND, project_id, removal=removal)
+
+
+public_pages.register(public_pages.Kind(KIND, render_project, targets))

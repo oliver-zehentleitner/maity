@@ -396,6 +396,33 @@ def test_quickstart_never_adds_a_second_first_account(
     engine.dispose()
 
 
+def test_owner_create_refuses_a_handle_another_human_kept_as_an_alias(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    from sqlalchemy import create_engine, insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
+    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    engine = create_engine("sqlite:///maity-hub.db")
+    with engine.begin() as conn:
+        human_id = conn.execute(select(t.human.c.id)).scalar_one()
+        conn.execute(
+            insert(t.handle_alias).values(
+                human_id=human_id, scope="human", handle="old-maint", created_at=clock.now()
+            )
+        )
+    engine.dispose()
+    monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
+    assert main(["owner", "create", "--handle", "old-maint", "--display-name", "X"]) == 1
+    assert "alias" in capsys.readouterr().err
+
+
 def test_quickstart_refuses_a_reserved_handle_for_the_first_account(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

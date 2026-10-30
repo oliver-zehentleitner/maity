@@ -921,6 +921,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .overview-row { display: grid; gap: 16px; min-width: 0; }
 .overview-row-1 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.overview-row-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; }
 .overview-stack { flex: 2 1 480px; display: grid; gap: 16px; min-width: 0; }
 .overview-latest { flex: 1 1 300px; }
 .overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
@@ -1426,6 +1427,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+.view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
+.view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
 /* Phone: avatar, text, then the buttons at full width (the handover). */
@@ -1456,3 +1461,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+
+/* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
+.person-head { display: flex; align-items: center; gap: 14px; }
+.person-head h2 { margin: 0; }
+.person-head p { margin: 2px 0 0; }
+/* No picture the reader may see: a neutral placeholder, not a generated avatar. */
+.person-picture-none { display: inline-block; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); vertical-align: middle; }
+.person-picture-none.size-64 { width: 64px; height: 64px; }
+.person-picture-none.size-20 { width: 20px; height: 20px; }
+.person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }

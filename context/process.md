@@ -875,3 +875,29 @@ the question before it ships.
 **Known limit:** the time check allows twice the time and at least a tenth of a second more, so a
 growth smaller than that is not seen (the page's 3.5 times is well past it); the statement count is the exact half. The seeded
 history is one human and one project with one kind of item (requests).
+
+## The newcomer doc states CLI behaviour from cli.py's help, not from memory
+
+**Id:** 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
+**Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
+
+When revising agent documentation (`docs/agents.md`), CLI command options and defaults
+must be verified directly against `cli/src/maity/cli.py` and `cli/README.md` on `main`,
+never from an agent's memory or an older locally installed CLI binary.
+
+#755 originally described the earlier `wait` default (`--one` behavior) as current because
+an agent's local environment may hold an older package than the repository's HEAD where
+`maity wait` outputs a JSON array by default.
+
+**Reason:** CLI behavior evolves rapidly during development; verifying documentation against
+in-tree source definitions prevents subtle discrepancies for newcomers reading the guide.
+
+**Rejected alternatives:**
+- Generating `docs/agents.md` automatically from argparse: excessive tooling overhead for a
+  single curated markdown guide that balances newcomer prose with command reference.
+

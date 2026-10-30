@@ -580,7 +580,7 @@ dashboard's files, would have no script.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's card tsk-k9j3nxcw9htw, 2026-10-29 (multilingual support comes last, but what saves rework later is done now: a catalog function reading a static file per language, never the database; Intl for dates and numbers; no assembled sentences; a check that flags new strings in views if it can be done without noise; old strings move over view by view); the coordinator's instruction to land the mechanism and the check first, the views in small PRs after, 2026-10-30
-**Revisit when:** a second language is added, the account gets a language and locale of its own, or the hub's WORDS move to per-language files
+**Revisit when:** a second language is added, the account gets a language and locale of its own, the hub's WORDS move to per-language files, or the hub adds a role or trust (its sentence gets a key; the neutral one stays only the fallback)
 
 `js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
 which `js/i18n/<lang>.js` sets; `tools/check.py --write` builds that file
@@ -617,8 +617,17 @@ between languages. A Node tool that runs `dom.js` in a `vm`
 first, in the order of `index.html`, and hands the context `Intl`:
 `dom.js` calls `M.t` while it loads. Rejected: a fallback in `dom.js` for
 a missing `M.t`, which would let the page and the tool drift apart.
-Still hand-built: the time in an agent's silence
-(`silent since`, `en-GB`), for a later part of stage 2.
+A value from a set the hub defines (the ticker's types, a reason's role
+or trust) is one key per value, the sentence whole with the language's
+article ("you are an owner"); a value the hub adds later reads as a
+neutral sentence ("you have the role {role}"). Rejected: choosing "a"
+or "an" in code, which only English has. A key per value also lets a
+value read in its own words ("you work in ops", not "you are an ops").
+Not in the catalog: the runner's starter configuration
+(`runners.js`), a file the runner reads and `tools/starter_configs.py`
+checks as written, with commands and product names. Still put together from
+pieces: a status line's prefix and its reason ("Not saved: " + the
+hub's words, `status.fail`), for a later part of stage 2.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code

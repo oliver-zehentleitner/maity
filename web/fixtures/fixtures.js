@@ -4652,6 +4652,56 @@ window.MAITY_FIXTURES = {
       ]
     }
   },
+  "people.json": {
+    "items": [
+      {
+        "aliases": [
+          "wolf"
+        ],
+        "avatar_url": null,
+        "display_name": "Wolfgang",
+        "handle": "wolfgang",
+        "kind": "human",
+        "page_served": true,
+        "projects": [
+          {
+            "full_name": "maintainer/maity",
+            "name": "Maity",
+            "shared": true
+          },
+          {
+            "full_name": "wolfgang/traderjoe",
+            "name": "TraderJoe",
+            "shared": false
+          }
+        ],
+        "projects_total": 3,
+        "public_bio": "Builds trading tools.",
+        "social": {
+          "discord": "wolfgang_01",
+          "github": "https://github.com/wolfgang",
+          "mastodon": "https://mastodon.social/@wolfgang"
+        },
+        "website": "https://example.org"
+      },
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "display_name": "Anna",
+        "handle": "anna",
+        "kind": "human",
+        "page_served": false,
+        "projects": [
+          {
+            "full_name": "maintainer/sample",
+            "name": "Sample shop",
+            "shared": true
+          }
+        ],
+        "projects_total": 1
+      }
+    ]
+  },
   "personal-requests.json": {
     "items": [
       {

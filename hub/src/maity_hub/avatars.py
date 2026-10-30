@@ -246,7 +246,8 @@ def announce(conn: Connection, owner_id: str, before: dict[str, str | None], cal
 def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     """§6.10, who may read an image: the member itself, the agent's owner, a caller
     sharing a project with it, a `members:admin` of a project where an agent the human
-    owns is a member, and the instance admin for a human's picture."""
+    owns is a member, and the instance admin for a human's picture; an organisation's
+    picture its members and the members of its projects, nobody else."""
     from maity_hub.admin import is_instance_admin
 
     if caller.kind == "agent":
@@ -261,6 +262,8 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
     me = caller.human_id
     if me == owner_id:
         return True
+    if owner_id.startswith("org-"):
+        return _reads_org(conn, me, owner_id)
     if owner_id.startswith("agt-"):
         owner = conn.execute(
             select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == owner_id)
@@ -295,6 +298,33 @@ def may_read(conn: Connection, caller: Any, owner_id: str) -> bool:
         )
         return bool(admin_of & agents_in)
     return False
+
+
+def _reads_org(conn: Connection, human_id: str, org_id: str) -> bool:
+    """A member of the organisation, or of a project it owns (§6.10)."""
+    if (
+        conn.execute(
+            select(t.org_member.c.human_id).where(
+                t.org_member.c.org_id == org_id, t.org_member.c.human_id == human_id
+            )
+        ).first()
+        is not None
+    ):
+        return True
+    m = t.membership.c
+    return (
+        conn.execute(
+            select(m.id)
+            .join(t.project, t.project.c.id == m.project_id)
+            .where(
+                t.project.c.owner_org_id == org_id,
+                m.human_id == human_id,
+                m.active.is_(True),
+            )
+            .limit(1)
+        ).first()
+        is not None
+    )
 
 
 def _projects_of(conn: Connection, member_id: str) -> set[str]:

@@ -63,6 +63,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     assert body["member"] == {
         "id": owner,
         "kind": "human",
+        "aliases": [],
         "handle": "maintainer",
         "display_name": "Human maintainer",
         "avatar_url": None,

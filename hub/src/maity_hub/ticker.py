@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
+FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories

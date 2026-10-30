@@ -21,6 +21,7 @@ from maity_hub import (
     policy,
     ticker_read,
 )
+from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
@@ -273,6 +274,8 @@ def project_view(
         "state": project.state,
         "released_at": ts(project.released_at),
         "state_note": project.state_note,
+        "public_page": project.public_page,
+        "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
         "logo": shown.get("logo", NO_IMAGE),
@@ -506,6 +509,7 @@ def member_views(
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
+    aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -564,6 +568,7 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "aliases": aliased[row.agent_id or row.human_id],
             "trust": row.trust,
             "role": row.role,
             "role_base": row.role_base,  # the role itself for a built-in one (§2.3)
@@ -813,6 +818,10 @@ def agent_view(
     shown = {
         "id": row.id,
         "handle": row.handle,
+        # §6.24; a tombstone keeps its aliases for the record, though they are free to take
+        "aliases": handle_book.aliases(conn, [row.id], include_retired=row.deleted_at is not None)[
+            row.id
+        ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this
