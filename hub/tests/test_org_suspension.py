@@ -201,7 +201,7 @@ def test_while_suspended_its_archived_projects_cannot_be_reopened_or_made_public
     assert resolve(world, id_, "suspend").status_code == 200
     reopen = boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"})
     held(reopen)
-    held(boss.patch(f"/projects/{PROJECT}", {"policy": {"swarm_public": "on"}, "reason": "show"}))
+    held(boss.patch(f"/projects/{PROJECT}", {"policy": {"badge": "members"}, "reason": "show"}))
     assert boss.get(f"/projects/{PROJECT}").json()["state"] == "archived"
     # lifted, the owners change what they want: nothing was restored by the lifting
     assert resolve(world, id_, "dismiss").status_code == 200

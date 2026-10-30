@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, instances, proposals
+from maity_hub import availability, clock, instances, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -162,6 +162,7 @@ def open_takeover(
     already transferred when the lease has run out or a human admin takes it."""
     if card.claim_holder is None:
         raise ApiError(409, "not_claimed", "nobody holds this card: claim or assign it instead")
+    availability.refuse_coordinator_out(conn, mine, "new takeovers")
     holder = _row(conn, card.claim_holder)
     refuse_human_holder(conn, card)
     current = open_on(conn, card.id)

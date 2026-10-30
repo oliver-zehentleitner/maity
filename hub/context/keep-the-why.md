@@ -71,7 +71,7 @@ oldest written beyond a bound:
 | Cache | Bound |
 |---|---|
 | the Keep the Why answers (`ktw.CACHE`), largest at 10 to 100 KB a project; a dropped project takes its last good reads and its idle lock with it | 256 projects |
-| the swarm page windows (`swarm.CACHE`) | 1024 |
+| the swarm statistics windows (`swarm.CACHE`) | 1024 |
 | the reader chosen per project (`ForgeAccess._chosen`) | 1024 |
 | the source last found (`forge_access._last_via`) | 4096 |
 | the image read state per project and kind (`images`) | 4096 per map |

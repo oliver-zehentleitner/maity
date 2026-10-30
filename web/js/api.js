@@ -111,7 +111,16 @@ window.Maity = window.Maity || {};
     return (view && view.full_name) || (FIXTURE_OWNERS[slug] || me().member.handle) + "/" + slug;
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
-  // The fixture directory a full name (or one of its aliases) names, or null.
+  // A member's own settings per project (§6.2), kept for the page's life.
+  const projectSettings = {};
+  function mySettings(slug, path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    file(slug, "members.json", path);
+    const own = projectSettings[slug] || { not_listening: { minutes: null } };
+    const personal = fixtures()["notifications.json"].settings.not_listening || { minutes: 60 };
+    return { not_listening: { minutes: own.not_listening.minutes },
+      effective: { not_listening: { minutes: own.not_listening.minutes === null ? personal.minutes : own.not_listening.minutes } } };
+  }
   // §16.4: the fixture hub's registration settings and the accounts that wait.
   const registration = {
     values: {
@@ -138,6 +147,7 @@ window.Maity = window.Maity || {};
     return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
       registered_last_hour: 1, requests_dropped_last_hour: 0 });
   }
+  // The fixture directory a full name (or one of its aliases) names, or null.
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -251,7 +261,8 @@ window.Maity = window.Maity || {};
   // Trust owner or admin, never a proxy (§2.3, hub/scopes.py).
   const governing = (x) => !!x && ["owner", "admin"].includes(x.trust) && x.role !== "proxy";
   const tasksAdmin = (slug) => governing(mineIn(slug));
-  const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && mineIn(slug).role === "reviewer");
+  // tasks:review: a reviewer or the purple team (§2.3), or the governance scopes.
+  const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["reviewer", "purple-team"].includes(mineIn(slug).role));
 
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
@@ -403,7 +414,11 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
+  // Every built-in role (§2.3), as the hub's one list; and what a member may
+  // give an agent of their own (§3.1: not ops, not proxy).
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team"];
+  const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
@@ -417,7 +432,8 @@ window.Maity = window.Maity || {};
     if (who.kind !== "agent") return null;
     return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
   }
-  const guarded = (slug, target) => ["reviewer", "tester"].includes(target.role)
+  // A security team counts as its base here (§2.3): purple team as reviewer, red team as tester.
+  const guarded = (slug, target) => ["reviewer", "tester", "purple-team", "red-team"].includes(target.role)
     || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
   // A member's avatar as §6.10 keeps it: one per account or profile, so
   // every object that names the member carries the same avatar_url.
@@ -966,7 +982,7 @@ window.Maity = window.Maity || {};
       const wantTrust = body.trust || "member";
       const want = body.role || "coder";
       if (!["owner", "admin", "member", "guest"].includes(wantTrust)) fields.trust = "unknown";
-      if (!["coder", "reviewer", "tester", "designer", "writer", "ops", "manager", "proxy"].includes(want)) fields.role = "unknown";
+      if (!HUB_ROLES.includes(want)) fields.role = "unknown";
       else if (want === "proxy" && wantTrust !== "admin") fields.role = "proxy_needs_admin";
       if ((["admin", "owner"].includes(wantTrust) || want === "proxy") && trust !== "owner") {
         fail(403, "forbidden", "only an owner invites an owner, an admin or a proxy", path, { reason: "owner_only" });
@@ -1378,6 +1394,14 @@ window.Maity = window.Maity || {};
       if (body.email && "language" in body.email) {
         if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
+      }
+      // §18.4: not_listening's mode and its minutes, each checked at its path.
+      if (body.not_listening) {
+        const nl = body.not_listening, fields = {};
+        if ("mode" in nl && !["inbox", "bell", "off"].includes(nl.mode)) fields["not_listening.mode"] = "invalid";
+        if ("minutes" in nl && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) fields["not_listening.minutes"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        set.not_listening = Object.assign({}, set.not_listening, nl);
       }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
@@ -2110,7 +2134,7 @@ window.Maity = window.Maity || {};
       const to = body.to === undefined ? "computed" : body.to;
       const members = file(m[1], "members.json", path).items;
       if (!(to === "computed" || to === "all" || (Array.isArray(to) && to.length >= 1 && to.length <= 20
-        && to.every((x) => /^(role|trust):[a-z]+$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
+        && to.every((x) => /^(role|trust):[a-z]+(-[a-z]+)*$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
       if ("areas" in body && type !== "note") errors.areas = "not_for_type";
       if (type === "note" && to === "computed" && !(Array.isArray(body.areas) && body.areas.length)) errors.areas = "required";
       if ("release_task_id" in body && type !== "release") errors.release_task_id = "not_for_type";
@@ -2193,8 +2217,10 @@ window.Maity = window.Maity || {};
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) errors.body = "missing";
       if ("mentions" in body) errors.mentions = "read_only";
       const members = file(m[1], "members.json", path).items;
-      const roles = ["owner", "admin", "reviewer", "member", "proxy"];
-      if (!(body.to === "all" || (/^role:/.test(body.to || "") && roles.includes(body.to.slice(5))) || members.some((x) => x.id === body.to))) errors.to = "not_a_member";
+      // §8.4: everyone, trust:owner or trust:admin, a role (§2.3) or a member.
+      const to = body.to || "";
+      if (!(to === "all" || ["trust:owner", "trust:admin"].includes(to) || (to.startsWith("role:") && HUB_ROLES.includes(to.slice(5)))
+        || members.some((x) => x.id === to))) errors.to = "not_a_member";
       // A chat names its conversation and goes to its two parties only (§8.4).
       if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
@@ -2256,6 +2282,20 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.2 a member's own settings in a project: an override or null (the
+    // personal default of §18.4), and what applies; humans only.
+    ["GET", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => mySettings(m[1], path)],
+    ["PATCH", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => {
+      mySettings(m[1], path);
+      const nl = body.not_listening || {};
+      if ("minutes" in nl) {
+        if (nl.minutes !== null && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "not_listening.minutes": "invalid" } });
+        }
+        projectSettings[m[1]] = { not_listening: { minutes: nl.minutes } };
+      }
+      return mySettings(m[1], path);
     }],
     // §6.11 the overview: counts per column (closed ones after closed_after),
     // open requests as this caller would list them, the latest reports.
@@ -2575,7 +2615,7 @@ window.Maity = window.Maity || {};
           fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
         }
       }
-      if ("role" in body && !["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager"].includes(body.role)) errors.role = "unknown";
+      if ("role" in body && !HUB_ROLES.includes(body.role)) errors.role = "unknown";
       if (!errors.trust && !errors.role && ("trust" in body || "role" in body) && newRole === "proxy" && newTrust !== "admin") errors.role = "proxy_needs_admin";
       if (who.member.kind === "human" && trustIn(m[1]) !== "owner" && ("trust" in body || "role" in body)
         && ((["owner", "admin"].includes(newTrust) && newTrust !== target.trust) || (newRole === "proxy" && target.role !== "proxy") || (target.trust === "owner" && newTrust !== "owner"))) {
@@ -2764,7 +2804,7 @@ window.Maity = window.Maity || {};
         const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
         if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
         if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
-        if (body.role && !["coder", "reviewer", "tester", "designer"].includes(body.role)) limit("role");
+        if (body.role && !MEMBER_ROLES.includes(body.role)) limit("role");
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
@@ -3137,9 +3177,23 @@ window.Maity = window.Maity || {};
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
+      // §9.1: to_instance wakes that one instance (a replaced one reaches its
+      // successor, which the hub does, not this fixture); an id the agent
+      // never had is invalid. The message carries to_instance as written,
+      // null for the team. The hub also refuses it from an agent and outside
+      // a direct chat; this fixture does not check, since only the direct
+      // chat's composer, a human's, sends it.
+      let toInstance = null;
+      if (body.to_instance !== undefined && body.to_instance !== null) {
+        const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
+        if (!((listed && listed.instances) || []).some((i) => i.id === body.to_instance)) {
+          fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
+        }
+        toInstance = body.to_instance;
+      }
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],
-        from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), delivered_at: null,
+        from: me().member.id, to: m[2], to_instance: toInstance, body: body.body || "", sent_at: nowIso(), delivered_at: null,
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));

@@ -1521,7 +1521,8 @@ alone: it is not seen without a mouse resting on the button.
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Waiting for you and Board come first, then Team and Latest reports;
-where Project and README badge stand is d7ee1073 below. A member in a list is a chip
+where Project and README badge stand is d7ee1073 below (three rows, the
+facts last, until 2026-10-30). A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1556,6 +1557,10 @@ any forge: a wrong path shape would be a dead link that looks right.
 The second row is Team with Project and README badge under it
 (`.overview-stack`), and Latest reports beside them. On a phone, where
 the row wraps, the order is Team, Project, README badge, Latest reports.
+That phone order follows from the page's own order alone: the smoke test
+checks the order of the elements, not how the row wraps, so a CSS
+`order` on Latest reports would put it first on a phone without a red
+test.
 
 **Reason:** Latest reports is a long list; whatever came after it was
 out of sight, while Team left empty space beside it. Under Team the
@@ -1901,7 +1906,7 @@ is read by the hub's member list.
 A human member without `members:admin` sees **+ Add my agent** at the
 head of Agents (the agents' table on Members before 54a49af9) when the project's `member_agents`
 is not `off`. The panel offers only what §3.1 lets a member
-set (trust member or guest; role coder, reviewer, tester or designer;
+set (trust member or guest; every role of §2.3 but ops and proxy;
 no reports to, no areas) and lists only the member's own joins. A line
 says how many agents of theirs the project allows. The count is the
 member's distinct agents that are active members or have an open join,
@@ -2057,6 +2062,71 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## A member's own settings in a project are a tab of their own, My settings, at `my-settings`
+
+**Id:** df54f284-212c-4eab-995d-778dce37f7fb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29; the coordinator's ruling in the review of #649 (no fallback), 2026-10-30
+**Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
+
+**My settings** (`/<owner>/<slug>/my-settings`, a project view in
+§16.11) shows every human member their own settings for the project:
+each either **Use my default**, the value from the account sent as
+`null`, or a value for this project, with what applies now. The first
+is how long one of one's agent instances here may stop listening
+before one hears of it. The account's notification settings hold the
+default and its mode (inbox, bell or off). A failed read of a
+member's settings is shown as an error; there is no quiet note for a
+hub without the route (e1699490 removes that mechanism everywhere).
+
+**Reason:** the project's Settings are kept by its owner and admins;
+one member's own choices are not the project's and must not sit under
+them. A tab of its own makes them reachable from inside the project,
+where one thinks of that project's agents.
+
+**Rejected alternative:** `settings/me`, under the project's Settings:
+no new word for the slugs to avoid, but its tab would be marked as the
+one shown and mix the owner's page with a member's own. One list of
+per-project overrides on the account: far from the project it is about. A quiet "this hub has
+no settings of your own per project yet" (`M.dom.notOnHub`) where the
+route is missing: the hub and the dashboard ship together, and such a
+note would hide a broken deploy behind words that sound normal.
+
+## A request the hub files itself is Maity's; the not-listening digest leads to one's agents
+
+**Id:** 967ed0c0-9e46-42cc-bd45-4fbc4ceae370
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.3 (`agents_not_listening`, target `agents`, linking to `/agents`; read only once its matter is closed — the coordinator's rulings of 2026-10-29); the coordinator's decision of 2026-10-29 on the target `agents` and "Maity" as the requester; the card tsk-32g2cjbm52ft; the review of #649
+**Revisit when:** the hub files requests of its own that are about one project and should lead into it, or the dashboard gets a personal inbox
+
+A request with `asked_by: null` and `filed_by: "hub"` names its asker
+**Maity** (in the list) and **Maity, on its own** (in its facts), and
+says nothing about an agent waiting, since none does. The hourly digest
+of agent instances that are not listening — personal, about no project
+and no organisation — adds a link to one's agents (`/agents`); its
+summary lists the instances. The bell's `agents_not_listening` item
+(target `agents`) leads to `/agents` too, and is not marked read when
+opened: like `registration_pending` and `mail_disabled` it asks for an
+action (resume or end the instances) and is read once the matter is
+closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
+names its target `agents`.
+
+**Reason:** "—" as an asker reads as a missing name, not as the hub;
+and "the agent waits for the answer" would be false. The instances
+named in the digest can be resumed or ended only from one's agents.
+
+**Rejected alternatives:**
+- The item's `url` as the link: the dashboard builds every bell link
+  from the target (the entries above), so one item built otherwise would
+  be the exception.
+- Reading the bell's item on open, like a request's item: the bell would
+  go quiet while the instances are still away, and the next hour's
+  record would bring it back.
+
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
 **Id:** dda6f237-ffeb-4b68-ba0a-844c77f269dd
@@ -2198,6 +2268,46 @@ only deletion that can succeed there.
 confirmation on `profile_in_use`: two dialogs for what the page can say
 at once. A browser `confirm()`: it names neither the projects nor the
 handle, and is clicked away too easily.
+
+## Every role of §2.3 is offered from one list, by its label, with what the role does under the picker
+
+**Id:** 43c080d3-e47c-45a3-9add-3da834cdf588
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
+**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
+
+`js/trust.js` holds the one list of built-in roles, in the order of the
+§2.3 table, each with a label ("Red team") and a few words of what the
+member does, taken from that table. Every role picker (a member's form,
+an invitation, a join, a member's own agent) fills its options from it
+by label, with the role's words as the option's tooltip and, under the
+picker, as a hint line the select is described by, following the chosen
+role. What a picker offers stays its own rule: proxy only with trust
+admin and only from an owner, a member's own agent every role but `ops`
+and `proxy`. A security team counts as the role whose scopes it has
+(red team as tester, purple team as reviewer) where the dashboard asks
+who reviews, tests or prepares a release. The fixture hub keeps the
+same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
+and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
+side is changed on the other in the same contract change. A member's
+line elsewhere ("admin · red-team", `M.trust.words`) keeps the hub's
+token: it is what the CLI and the hub's answers show, and the label is
+for the moment a role is chosen.
+
+**Reason:** the roles had been copied into each picker, and `manager`
+and the three security teams were missing from all of them; one list is
+one place to add the next. A token like `purple-team` does not say what
+the member will do, and a choice of role is made by someone deciding
+what an agent is for.
+
+**Rejected alternative:** the tokens as the options' text, as before:
+correct for the hub, unclear for the person choosing. The help as the
+options' tooltip only: a tooltip is not read on a phone or by every
+screen reader. A table of every role beside each form: longer than the
+form it explains.
 
 ## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
 
@@ -2531,3 +2641,36 @@ and the address was never shared outside the dashboard. Drawing the
 section anew with the Overview's counts: a swarm read per card event,
 and the window lost. Keeping the public page until public projects get
 their pages: the contract removed its route and its switch.
+
+## A chat with an agent sends to the whole team unless one instance is chosen beside its heading
+
+**Id:** 4236b804-8b55-4a94-a166-5fb4c010f127
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request relayed on the card tsk-f0ctq47mw0f6 (a selector of the agent's live instances beside the heading, the whole team by default, the choice kept per chat for the session, shown on the sent message, hidden with one instance), 2026-10-30; docs/api.md §9.1 (`to_instance` on a direct message wakes exactly one instance) and the coordinator's ruling that the message carries `to_instance` back (id or `null`), 2026-10-30; the hub side is the card tsk-p1df7ggm17bc
+**Revisit when:** group chats get a choice of instance, or the hub tells which instance the wake rule chose for a message to the team
+
+An agent with more than one instance that is not revoked gets **Send
+to** beside **Chat with <agent>**: **The whole team** first and chosen,
+then each live instance as `<handle>#<id> · <presence>`. A chosen
+instance goes as `to_instance` on `POST …/conversations/{agent}/messages`;
+the team is no field at all. The choice is kept per conversation in this
+tab, like a draft, and ends with signing out; one whose instance is gone
+falls back to the team. One's own message sent to an instance says "to
+<handle>#<id>" from the message's own `to_instance`, never from the
+selector. An offline instance is offered too, marked so.
+
+**Reason:** the team by default keeps the agent's own wake rule in
+charge; picking one instance is for the times the human knows which
+session holds the work. The label is read from the answer, which carries
+`to_instance` as written (a replaced instance's message reaches its
+successor, but the message still names the instance the human chose), so
+it says what was sent, whatever the selector shows by then.
+
+**Rejected alternative:** a mention `@handle#id` in the text: a direct
+chat never resolves mentions (§8.6), so it would wake nobody. Offering
+only online instances: an offline one still gets the message at its next
+resume, and its being offline is said in the option. Keeping the choice
+in browser storage: a stale instance id would outlive the session it
+named.

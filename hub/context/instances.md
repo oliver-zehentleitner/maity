@@ -295,3 +295,84 @@ reading the event's own column): exact for a session-less ask, but a
 migration and a reserved number for a case the CLI does not produce,
 since it resumes before it asks. Adding `from_instance` to the preview:
 beyond the contract.
+
+## An instance address resolves in one function, in a message, a request and a mention
+
+**Id:** f1486a50-2c5b-4f56-b19a-e57e2ce6ce4e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.17, §8.2, §8.6; the coordinator's card tsk-q7p3sz8df62q (2026-10-30), found while building the request addresses
+**Revisit when:** the contract lets a mention name an instance that was revoked without a replacement, or credentials are deleted
+
+`instances.addressed` turns an instance address into the audience token it wakes: the instance
+named; when it was replaced, the instance that replaced it, along the chain; a revoked one
+without a successor keeps its own token (the write is accepted, nobody wakes); an id the member
+never had is `invalid` (`not_an_instance`). A message's `to`, a request's `to` and the
+tokens of a mention (`mentions.instance_token`) all use it, and the address is kept as written.
+
+A mention is judged one step earlier: `mentions.resolve` accepts `@handle#id` for an active
+instance and for a replaced one, and leaves the whole text plain for an unknown id or a
+revoked instance nobody replaced, as before.
+
+A chain that ends in an instance revoked without a successor (`old` replaced by `middle`, then
+`middle` revoked) leaves `@handle#old` and `to: <member>#old` at the dead token: accepted, and
+nobody wakes (§8.2). In a group chat the wake comes from that token too: the write puts the
+resolved token of an instance mention in the message's audience, and `events.wakes` reads it
+next to the written id, which it still honours for events written before.
+
+The token of a mention is looked up on the member's active membership row, the one `resolve`
+matched: a member who was removed and joined again has two rows (§6.2), and the first version
+of this change took the only row by `project_id` and `agent_id`, which failed with a 500 on
+the second.
+
+Until this card a message to a replaced instance's address was refused (`require_active` on a
+revoked credential) and a mention of one stayed text, which §6.17 and §8.2 do not say.
+
+**Reason:** a replaced instance's address is still in people's hands (a card, a note, a message
+from yesterday); the contract says it reaches the successor, and three copies of the rule
+would drift.
+
+**Rejected alternatives:**
+- Resolving mentions to the successor when they are written and storing that — the mention would
+  show an instance the writer never named (§8.6 keeps what was written).
+- Letting a mention of a revoked instance without a successor resolve, as a `to` does — the
+  contract's §8.6 says "active", the existing test holds the plain text, and a mention that pings
+  nobody has nothing to link to.
+
+## A direct chat message names its instance in `to_instance`; the audience pins that instance, the payload keeps the id as written
+
+**Id:** bd3861cc-97f5-4f18-a638-3777b91579bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §9.1 (the human's message wakes exactly one instance when `POST …/messages` carries `to_instance`) and the card tsk-p1df7ggm17bc from the coordinator, 2026-10-30
+**Revisit when:** the contract lets an agent name an instance of a human, or lets a group chat message carry it, or the wake-rule fix (tsk-p49b0kverrph) lands (then the deviation above goes)
+
+`ChatIn` and `MessageIn` take `to_instance`. In a direct chat it is resolved like an instance address in a
+message's `to` (`instances.addressed`: a replaced instance's id reaches its successor, an id the agent
+never had is `invalid` with `details.fields.to_instance: not_an_instance`, a revoked one with no
+successor is accepted and wakes nobody). The message's audience is then the instance's token and the
+human's `member:` token, so the whole team reads it and one instance wakes; without `to_instance` the
+audience is as before. The payload and the message view carry `to_instance` as written, `null` when
+none was named, and `events.wakes` lets a direct chat message that names an instance wake only the
+instance whose own token is in the audience.
+
+**Known deviation from the contract, not a decision:** a direct chat message that names no instance
+still wakes every instance of the agent, because `events.wakes` answers true for a message whose
+`conversation_id` is the agent's id before it reads `row.wakes`; §9.1 and §6.18 say the team's `wake`
+rule decides. It is older than this change and is fixed in its own change (card tsk-p49b0kverrph).
+Only the human of the chat names an instance (`human_only` otherwise), and only in a direct chat:
+a group chat or a message of another type answers `direct_chat_only` — the contract names the field for
+`POST …/conversations/{agent_id}/messages`, and a group chat chooses its instance by a mention.
+
+**Reason:** the human who talks to a team wants to reach the instance that holds the work; the
+resolution is the one every other address already has, so a replaced instance does not strand a
+message, and the audience token is what the wake rule already reads.
+
+**Rejected alternatives:**
+- A column on the message: the message is an event and its payload already carries what the view reads;
+  nothing queries by it.
+- Storing the resolved token in the payload instead of the id as written: the view would show an instance
+  the human never named, and the successor changes at the next replacement.
+- Letting an agent name an instance of the human: a human has no instances (§6.17).

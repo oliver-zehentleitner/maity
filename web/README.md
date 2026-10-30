@@ -99,7 +99,8 @@ unchanged) and leaves those alerts; it is not offered when they are all
 that is unread. The panel says they stay unread until **This was me**
 under Sessions. A sign-in or an address change leads to the account's
 sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
-personal inbox, `/requests/<id>`, is not in the page yet). Escape closes
+personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening"
+(`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
 
 **Browser notifications** are opt-in on the account
@@ -165,11 +166,12 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/admin` | instance administration: statistics, users, mail settings, registration and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration** |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
-| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
+| `/account` | the signed-in human's account: name, handle, their picture (`/account/picture` starts there; their agents' are on `/agents`), the switch **I am a meat proxy** (`PATCH /me`, §5.2: agents that deal with them read the hub's fixed note, and the page shows that same note under the switch as its explanation, as `/me` carries it (`meat_proxy_note`); where the hub names the field), their preferences (`/account/preferences` starts there), browser notifications (`/account/notifications` starts there; the bell links to it) and, above them, **Agents that stop listening** (§5.3, §18.4: how one hears of one's agent instances that stopped reading their events — a request in the inbox once an hour, an item on the bell, or not at all — and after how many minutes, 10–1440, checked before sending; the personal default a project's My settings may override), the theme (`/account/theme` starts there), the sessions (`/account/sessions` starts there; a sign-in alert links to it), **Your data** (`/account/data` starts there, §2.9: **Export my data** saves the hub's JSON export; **Delete my account**, confirmed by the handle, asks for the deletion, which the mail's link then confirms, and a pending one can be withdrawn; both ask for the password or a second-factor code where the hub requires it, `js/step-up.js`), **Change password**; from the profile menu |
 | `/account/orgs` | the human's organisations (`docs/api.md` §6.26), each with their role, and **New organisation** (handle and name; the creator is its first owner); from the profile menu. Under the account, not `/orgs`: `web/context/views.md` |
 | `/account/orgs/<handle>` | one organisation (its handle or an alias): **Members** with their roles, changed, removed or left as the caller's role allows; for an owner or admin **Invitations** (invite by handle with a role, withdraw; the invited person answers a request in their inbox); for an owner **Settings** (name, handle, members may create projects, public page), **Picture** and **Delete the organisation**, confirmed by the handle, with the password or a code where the hub asks. Not one's own: said as not found |
 | `/<owner>/<slug>/<view>` | a view inside one project, addressed by its full name, owner's handle and slug (`docs/api.md` §6.25); `/<owner>/<slug>/inbox` is the landing page with exactly one. An earlier full name of a project of one's own (an alias after a rename or a transfer) leads to the current one, as the hub answers it |
 | `/<owner>/<slug>/chat/<agent-id>` | the chat with one agent |
+| `/<owner>/<slug>/my-settings` | **My settings**, a tab of every human member (`js/notify-settings.js`, §6.2): one's own settings for this project, each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project; for now how many minutes one of one's agent instances here may stop listening before one hears of it (10–1440, checked before sending); "Applies now" says the value the hub uses and whether it is the default; a failed read is shown as an error |
 | `/<owner>/<slug>/settings` | the project's **Settings**, its last tab (after Runners and Why), for every member: what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so |
 
 ## Views
@@ -184,6 +186,13 @@ agent cards, the organisation), the name is a link to that member's row
 in Members, with the full name as tooltip (`M.dom.memberRef`). A member
 the project does not list, a personal request's people and anyone in a
 read-along view are plain text.
+
+Every role picker (a member's form, an invitation, a join, a member's own
+agent) offers the roles of `docs/api.md` §2.3 from one list (`js/trust.js`):
+coder, reviewer, tester, designer, writer, ops, proxy, manager, red team,
+blue team and purple team, each by its label, with what the role does as
+a hint under the picker; each picker keeps its own rule of what it may
+offer.
 
 The dashboard and the hub ship together: the page never asks the hub's
 machine form whether it serves a route, and a 404 or 405 from a route it
@@ -245,7 +254,12 @@ too.
    is answered on `/requests/{id}/answer` and offers **Withdraw**
    (`/requests/{id}/withdraw`, the free text as its reason); grouped, the
    personal ones come first. Without any membership, `/all` still lists
-   them, before the way to create a project. A list shows no proposal, so
+   them, before the way to create a project. One the hub files itself
+   (`asked_by: null`, `filed_by: "hub"`) is asked by **Maity, on its own**,
+   with no "Meanwhile" line, since no agent waits on it; the hourly digest
+   of agent instances that are not listening (§5.3: personal, about no
+   project and no organisation) lists them in its summary and links to
+   one's agents (`/agents`). A list shows no proposal, so
    every open personal request is read on its own (`GET /requests/{id}`);
    one that cannot be read is offered no reply, only **Try again**, since a
    plain Go could apply a proposal unseen. A
@@ -521,7 +535,13 @@ too.
    it and re-reads itself on chat events and every 30 s (presence). An
    unsent message is kept per chat while switching in this tab and shown
    in the list as a draft (not in the open chat's own row); drafts end
-   with signing out. The open chat fills the screen below the header
+   with signing out. Beside **Chat with <agent>**, an agent with more than one
+   live instance offers **Send to**: **The whole team** (the default; the
+   agent's `wake` rule picks the instance) or one instance as
+   `<handle>#<id> · <presence>`, sent as `to_instance` (§9.1); the whole
+   team still reads every message. The choice is kept per chat in this
+   tab, a message sent to one instance says "to <handle>#<id>", and an
+   agent with one instance gets no choice. The open chat fills the screen below the header
    (the visual viewport, so a phone's keyboard counts): its history
    scrolls, the composer stays at the bottom, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
@@ -650,7 +670,7 @@ too.
 7. **Add an agent**, inside **Agents** (owner and admin; and, as **Add
    my agent**, a human member while the project's `member_agents` is on,
    docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
-   member or guest, the roles coder, reviewer, tester and designer, and a
+   member or guest, every role but ops and proxy, and a
    briefing, the agent reporting to its owner; the member's own open joins
    only, with Revoke; "n of max agents of yours" beside the button, which
    is off at the limit; the hub's `member_join_limit` and
