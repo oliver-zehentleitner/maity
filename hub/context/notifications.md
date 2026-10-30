@@ -401,6 +401,12 @@ timestamp, and for `after` chains, the bounded pages equal the pages cut from `d
 **Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
 still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
 
+**Known limit, found 2026-10-30:** "few" did not hold for requests. The load test
+(`hub/tests/test_load.py`, process.md bb9d58df) seeded unread requests, which are not chat
+items and so are all derived: a page takes 0.12 s at 1000 unread and 0.42 s at 4000 on
+PostgreSQL, the same 52 statements at both, so the cost is the derivation in Python and is
+linear in the unread requests of the window. Card `tsk-r8f0jm3xs9y6` takes it on.
+
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
 **Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
