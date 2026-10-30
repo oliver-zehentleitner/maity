@@ -56,6 +56,7 @@ import zlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect, sync_playwright
 
 WEB = Path(__file__).resolve().parent.parent
@@ -2115,16 +2116,28 @@ def join_expiry_step(run: Run, page: Page) -> None:
     moved = {"by": timedelta(0)}
 
     def hub_clock(route: object) -> None:
+        # Only a tab closed while an answer was held is quiet; any other error
+        # is said where it happens and the request ends, not as a later timeout.
         try:
             answer = route.fetch()
-            headers = dict(answer.headers)
-            served = headers.get("maity-server-time")
-            if served and moved["by"]:
-                at = datetime.fromisoformat(served.replace("Z", "+00:00")) + moved["by"]
-                headers["maity-server-time"] = at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        except PlaywrightError as err:
+            if "closed" not in str(err):
+                run.problems.append(f"join expiry: the hub's answer could not be held: {err}")
+                try:
+                    route.abort()
+                except PlaywrightError:
+                    pass
+            return
+        headers = dict(answer.headers)
+        served = headers.get("maity-server-time")
+        if served and moved["by"]:
+            at = datetime.fromisoformat(served.replace("Z", "+00:00")) + moved["by"]
+            headers["maity-server-time"] = at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        try:
             route.fulfill(response=answer, headers=headers)
-        except Exception:  # the tab closed while an answer was held: nothing to move
-            pass
+        except PlaywrightError as err:
+            if "closed" not in str(err):
+                run.problems.append(f"join expiry: the moved answer could not be given: {err}")
 
     second.route(re.compile(r"/api/v1/"), hub_clock)
     second.clock.install()

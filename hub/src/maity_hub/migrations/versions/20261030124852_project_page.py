@@ -6,7 +6,7 @@ Markdown text on it (at most 4 KiB, checked by the API).
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261030124852_project_page
-Revises: 0105
+Revises: 20261030125107_person_links
 Create Date: 2026-10-30
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261030124852_project_page"
-down_revision: str | None = "0105"
+down_revision: str | None = "20261030125107_person_links"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
