@@ -188,5 +188,5 @@ def test_ack_with_json_prints_the_hubs_answer(
 def test_ack_on_a_hub_without_the_route_fails_loud(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert cli.main(["ack", "keep-the-why"]) == cli.EXIT_ERROR  # openapi.json lists no route
-    assert "this hub does not have" in capsys.readouterr().err
+    assert cli.main(["ack", "keep-the-why"]) == cli.EXIT_ERROR
+    assert "not_found" in capsys.readouterr().err
