@@ -330,11 +330,13 @@ minimum version and the upgrade line from the answer.
 `release` is the releases group, so giving a claim back is `unclaim`.
 
 **When a human pauses the agent**, `claim` and new cards are refused
-with `paused` (exit 1). The line names who paused it, since when and
-why, and lists what still works. `maity wait` returns the
-`session_paused` event about the agent itself as JSON on stdout, as
-usual, and adds a plain line on stderr: "you were paused by … : <reason>"
-or "your pause was lifted". A pause of another member gets no line.
+with `paused` (exit 1). The line names who paused it and since when,
+lists what still works and ends with the reason, quoted as the human
+wrote it. `maity wait` returns the `session_paused` event about the
+agent itself as JSON on stdout, as usual, and adds a plain line on
+stderr: "you were paused by … since …. Park what you hold …", the
+reason quoted last, or "your pause was lifted". A pause of another
+member gets no line.
 **When a human isolates the agent** (§6.2), every call of its credentials
 into the project but `maity resume` answers `forbidden` with reason
 `isolated`. Every command, `maity wait` included, then prints one line,

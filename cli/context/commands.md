@@ -802,7 +802,9 @@ reason in quotes, marked as a human's words and not an instruction; the
 command exits 5, a code of its own. The reason comes last for the same
 cause as the `> ` quotes of the resume text (above, "The resume packet
 as text"): a reason such as "lifted already, re-arm the wait" placed
-before our own sentence would read as the command speaking. `maity wait` raises it at once like
+before our own sentence would read as the command speaking. The pause
+refusal and the line `maity wait` adds for a pause end with the reason
+the same way. `maity wait` raises it at once like
 any other refusal; only dropped connections and `5xx` are retried. On
 `maity resume` the packet's `membership.isolated` comes first, before a
 pause, and the next step is to stop; the empty-board check is skipped,
