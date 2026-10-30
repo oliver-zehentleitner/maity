@@ -152,7 +152,9 @@ def create_invitation(
         invitations.announce(conn, "invitation_created", row, caller.actor(mine.id))
         url = _url(request, via, token)
         if given is not None:
-            invitation_mail.send(conn, invitation_id=invitation_id, to=given, url=url)
+            invitation_mail.send(
+                conn, invitation_id=invitation_id, to=given, url=url, hub=settings_of(request)
+            )
         return idempotency.Outcome(
             201,
             "invitation",
