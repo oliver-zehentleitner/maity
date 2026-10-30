@@ -629,30 +629,6 @@ def test_a_supervisor_that_is_no_runner_is_refused(
     assert "secret-ish" not in err and "(11900 characters)" in err
 
 
-def test_a_hub_without_supervised_sessions_resumes_without(
-    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:  # fmt: skip
-    monkeypatch.setenv("MAITY_SUPERVISOR", "maity-runner/0.1.0")
-    packet = {"session": {"id": "ses-b-0004"}, "events": {"after": 0, "items": [], "cursor": 1},
-              "me": {"member_id": "agt-b"}}  # fmt: skip
-
-    def resume(seen: fakehub.Seen) -> tuple[Any, ...]:
-        if "supervisor" in seen.json():
-            return 400, {
-                "error": {
-                    "code": "invalid",
-                    "message": "x",
-                    "details": {"fields": {"supervisor": "extra_forbidden"}},
-                }
-            }
-        return 200, packet
-
-    fake.routes[("POST", "/api/v1/me/resume")] = resume
-    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
-    assert "does not take the session's supervisor yet" in capsys.readouterr().err
-
-
 @pytest.mark.parametrize("write_pointer", [False, True])
 @pytest.mark.parametrize("no_resume", [False, True])
 def test_join_names_maity_as_the_work_channel_after_the_pointer(
@@ -766,7 +742,7 @@ def test_another_instance_outside_a_clone_gets_a_directory_of_its_own(
     assert "resume" not in out.split("export MAITY_STATE_DIR")[0]  # never the first's resume
 
 
-def test_another_instance_without_an_instance_id_keeps_its_credential(
+def test_another_instance_without_a_valid_instance_id_keeps_its_credential(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:  # fmt: skip
@@ -774,10 +750,10 @@ def test_another_instance_without_an_instance_id_keeps_its_credential(
     assert cli.main(line) == cli.EXIT_OK
     monkeypatch.delenv("MAITY_STATE_DIR")
     capsys.readouterr()
-    fake.join_used, fake.join_instance = False, None
+    fake.join_used, fake.join_instance = False, None  # a broken hub: no Maity-Instance
     assert cli.main(line) == cli.EXIT_OK
     out = output(capsys)
-    assert "the hub named no instance" in out and "kept it in" in out
+    assert "the hub named no valid instance" in out and "kept it in" in out
     assert fakehub.SECRET not in out
 
 

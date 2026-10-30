@@ -185,7 +185,8 @@ shared suffix name a sibling's parent.
 
 **Id:** f208d20c-976a-4045-9709-d36aa62f2211
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8c5f8d73-4fdd-4bec-885f-e8086ac97b9e
 **Evidence:** confirmed
 **Source:** `docs/api.md` §5.2 and §5.3 (#132), the hub side in #198 and its review, the coordinator's card for the CLI side, 2026-10-22
 **Revisit when:** the contract names the exact string the HMAC is taken over, or the hub starts to refuse a resume without `environment`
@@ -217,3 +218,40 @@ usable across a rollout instead of forcing hub and CLI to ship together.
   right.
 - Sending the field only to hubs that announce support: there is no
   version field to read it from before the resume itself.
+
+## The environment ids are keyed to the stored hub URL and left out when no secret can be had
+
+**Id:** 8c5f8d73-4fdd-4bec-885f-e8086ac97b9e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §5.2 and §5.3 (#132), the hub side in #198 and its review, the coordinator's card for the CLI side, 2026-10-22; the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
+**Revisit when:** the contract names the exact string the HMAC is taken over, or the hub starts to refuse a resume without `environment`
+
+`maity resume` sends `environment: {home, workspace}`. Each id is `h-`
+or `w-` plus the first 12 hex characters of HMAC-SHA256 over the hub's
+base URL as the CLI stores it (`hub_base`: scheme, host and port, no
+path, no trailing slash). The key is a random secret kept 0600 in
+`~/.local/state/maity/` and in the clone's state directory, made once and
+by exactly one of two racing processes. A secret that cannot be made or
+read, or one that others can reach, leaves both ids out with a note on
+stderr. A hub that refuses the field fails the resume; it is not sent
+again without it.
+
+**Reason:** the contract says "the hub's public URL" without fixing its
+spelling, and two clients in one home must hash the same string to give
+the same id; the normalised base the CLI already stores for every call is
+that string. The field is a declaration the hub cannot verify and only
+uses to warn, so a session that cannot declare it is "environment
+unknown", which is better than a member that cannot resume. Every hub
+takes the field, so a refusal is a fault to see, not an older hub
+(commands.md aba45d60).
+
+**Rejected alternatives:**
+- Hashing the URL as the user typed it: `https://maity.team/` and
+  `https://maity.team` would give two ids for one place.
+- Failing the resume when a secret is loose: a stricter rule than the
+  credential's own (refused only for use), for a field that changes no
+  right.
+- Resending the resume without the field when a hub refuses it
+  (f208d20c): it served hubs from before §5.3, which no longer exist.
