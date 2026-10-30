@@ -621,7 +621,9 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. A key per value also lets a
+or "an" in code, which only English has. A count said with a word ("3 in
+progress" in the board bar's name, "2 urgent") is one key per word with
+`{count}`, not the label lowercased after a number. A key per value also lets a
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
