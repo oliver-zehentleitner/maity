@@ -92,3 +92,28 @@ aliases is the reading that breaks neither. Not asked of the coordinator.
 
 **Rejected alternative:** deleting the aliases with the account — it would free
 names a person was once known by, for anyone to take.
+
+## The humans' scope is the handle register plus the alias table; a rename moves the register row
+
+**Id:** e25fcf0f-ce5a-40f7-a963-c78eb1d465a5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the merge of the alias card onto main's `handle_register` (organisations, §6.26), 2026-10-30; `docs/api.md` §6.24 ("a human's and an organisation's handle share the scope")
+**See:** handles.md#a-handle-given-up-becomes-a-row-in-one-alias-table-scoped-by-where-handles-are-unique — dd5b64e5-289d-4c8c-877e-8d246149bda7 — as of 2026-10-30
+**Revisit when:** an organisation can be renamed (`PATCH /orgs/{org}` with `handle`, §6.24), or aliases move into the register
+
+`handles.holder` for the humans' scope asks the register first (current handles of
+humans and organisations, deleted ones included), then `handle_alias`. A human's
+rename updates their register row to the new handle in the same transaction that
+files the old one as an alias, so the handle is never free in between. Organisation
+creation and every human creation path also ask `handles.holder`, because the
+register does not know aliases. The per-handle lock stays for both scopes; for humans
+the register's primary key is the second line of defence, not the first.
+
+**Reason:** the register was built as the one place where two principals cannot share
+a handle, on every engine; aliases had to join it without a second source of truth for
+current handles. Organisation renames are not built here, so no org alias exists yet.
+
+**Rejected alternative:** moving aliases into `handle_register` — its unique owner
+column allows one row per principal, and an alias is a second handle of one owner.
