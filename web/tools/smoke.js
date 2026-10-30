@@ -5263,6 +5263,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && tk.said({ code: "invalid", details: { fields: { text: "required", odd: "odd_reason" } } }).message === "The text is missing; The field odd was refused (odd_reason)",
     "ticker: reasons and refusals from the catalog; a value the hub adds later still reads, an item number is never grouped");
   }
+  {
+    const rw = win.Maity.runnerWords;
+    const tl = (t) => text(rw.capabilities({ name: "box", capabilities: { backend: "ssh", targets: [t], harnesses: [], projects: [], repositories: [] } }).querySelector("ul.runner-targets li"));
+    expect(rw.presenceText({ credential_state: "active", presence: "offline" }) === "offline, never connected"
+      && tl({ name: "h1", running: 1, max_agents: 1, reachable: false }) === "host h1: 1 of 1 agent running · unreachable"
+      && tl({ name: "h2", running: 0, max_agents: 3 }) === "host h2: 0 of 3 agents running"
+      && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [{ id: "stub", available: false, reason: "odd" }], projects: [], repositories: [] } }))
+        .includes("a test tool is not available (odd)")
+      && text(rw.capabilities({ name: "box", capabilities: { backend: "local", targets: [], harnesses: [], projects: ["a/b"], repositories: [], require_local_approval: true } }))
+        .includes("allows the projects a/b and the repositories none; every new agent waits for approval on that machine."),
+    "runners: presence, targets with one or more agents, an unknown reason and what the configuration allows, from the catalog");
+  }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
