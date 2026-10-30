@@ -270,10 +270,12 @@ A branch pushed with `git push -u https://x-access-token:<token>@github.com/…`
 as its remote, and git and gh repeat a remote's URL as configured in their own errors. Every
 place that shows a remote, an upstream or a line of git's or gh's error output passes it
 through one helper, `redact.without_userinfo`, which takes `user:password@` out of each URL
-and keeps the rest. `gitfacts.collect` stores the remote already without it, since the facts
+and keeps the rest. It cuts at the last `@` before the path, as git and `urlsplit` read a URL,
+so an `@` in a user or a password does not leave the rest of it behind. `gitfacts.collect` stores the remote already without it, since the facts
 go into the refusal messages and, as `upstream`, into the report the hub keeps; `ls-remote`
 is run before that with the remote as configured, so the token still does its work. The
-runner's `workspace claim` shows a clone's origin the same way, and `hub.get_text` names an
+runner's `workspace claim` shows a clone's origin the same way, `runner gc` a `.git/config`
+section named by a URL (`[http "https://…"]`), and `hub.get_text` names an
 unreachable URL through `safe_url` like the other hub errors.
 
 **Rejected alternatives:**

@@ -28,6 +28,17 @@ TOKEN_URL = f"https://x-access-token:{SECRET}@github.com/acme/widget.git"
             f"fatal: unable to access '{TOKEN_URL}/': 403",
             "fatal: unable to access 'https://github.com/acme/widget.git/': 403",
         ),
+        # An `@` in the user or the password: up to the last `@` before the path (#789).
+        ("https://user@example.com:secret@github.com/a.git", "https://github.com/a.git"),
+        ("https://user:p@ss@github.com/o/r", "https://github.com/o/r"),
+        ("https://u:p#@h/r", "https://h/r"),
+        ("https://u:p?x@h/r", "https://h/r"),
+        ("https://u%40x:p%23@h/r", "https://h/r"),
+        ("https://tok@[::1]:8080/r", "https://[::1]:8080/r"),
+        ("https://user@h/a@b", "https://h/a@b"),  # an `@` in the path stays
+        ("git+https://tok@github.com/o/r", "git+https://github.com/o/r"),
+        ("HTTPS://TOK@H/r", "HTTPS://H/r"),
+        ("'https://a:b@h/x' and 'https://c:d@g/y'", "'https://h/x' and 'https://g/y'"),
         ("git@github.com:acme/widget.git", "git@github.com:acme/widget.git"),
         ("https://github.com/a/b", "https://github.com/a/b"),
         ("origin", "origin"),
@@ -122,3 +133,26 @@ def test_an_unreachable_url_is_named_without_its_userinfo() -> None:
         hub.get_text(f"http://user:{SECRET}@127.0.0.1:9/skill", timeout=2)  # port 9: discard
     assert "cannot reach http://127.0.0.1:9/skill" in str(raised.value)
     assert SECRET not in str(raised.value)
+
+
+def test_a_url_remote_on_github_is_asked_about_its_pull_request(clone: Path, bin_dir: Path) -> None:
+    """A branch pushed with `-u <url>`: its host is read from the URL itself."""
+    _upstream_is_the_token_url(clone)
+    head = git(clone, "rev-parse", "HEAD")
+    fake_gh(bin_dir, json.dumps([{"number": 3, "headRefOid": head, "state": "OPEN", "url": "u"}]))
+    facts = gitfacts.collect(clone)
+    assert facts.pr_unknown_reason is None and facts.pr is not None and facts.pr.number == 3
+
+
+def test_runner_gc_names_a_config_section_without_its_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from test_operate import revoked_clone
+
+    path, place = revoked_clone(tmp_path, monkeypatch)
+    with (place.path / ".git" / "config").open("a") as fh:
+        fh.write(f'[http "{TOKEN_URL}"]\n\textraHeader = x\n')
+    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "not inspected" in out and "http.https://github.com/acme/widget.git" in out
+    assert SECRET not in out

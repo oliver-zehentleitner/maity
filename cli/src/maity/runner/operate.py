@@ -269,7 +269,9 @@ def not_inspectable(path: Path, as_user: AsUser = RUNNER) -> str | None:
             continue
         key = line.split("=", 1)[0].strip().lower()
         if not GIT_ALLOWED.match(f"{section}.{key}"):
-            return f"its .git/config sets {onboarding.inline(section)}.{onboarding.inline(key)}"
+            # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
+            shown = onboarding.inline(without_userinfo(section))
+            return f"its .git/config sets {shown}.{onboarding.inline(key)}"
     return None
 
 

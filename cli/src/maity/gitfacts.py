@@ -120,7 +120,8 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
         return "gh is not installed"
     if remote is None:
         return None
-    url = _git(cwd, "config", "--get", f"remote.{remote}.url") or ""  # as written, before insteadOf
+    # As written, before insteadOf; a branch pushed with `-u <url>` has the URL as its remote.
+    url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
     known = {"github.com", os.environ.get("GH_HOST", "github.com")}
     if host not in known:
