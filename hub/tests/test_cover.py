@@ -679,3 +679,35 @@ def test_every_substitute_of_a_run_lists_whom_it_covers(
     covered.resume()  # back: the run ends, nobody covers anyone
     for sub in (reviewer, member):
         assert owner.get(f"/projects/maintainer/maity/members/{sub.id}").json()["covering"] == []
+
+
+def test_a_security_team_covers_for_the_role_it_is_built_on(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Picking a substitute counts a security team as its role (§2.3): `role:reviewer`
+    takes the purple team as well, and `role:purple-team` still names it."""
+    from maity_hub import cover
+
+    covered, reviewer, purple, coder = (flow.agent(make_client, owner) for _ in range(4))
+    for agent in (covered, reviewer, purple, coder):
+        agent.resume()
+    with migrated.begin() as conn:
+        for agent, role in ((reviewer, "reviewer"), (purple, "purple-team"), (coder, "coder")):
+            conn.execute(
+                update(t.membership).where(t.membership.c.agent_id == agent.id).values(role=role)
+            )
+    for substitutes, expected in (
+        (["role:reviewer"], {reviewer.id, purple.id}),
+        (["role:purple-team"], {purple.id}),
+    ):
+        policy(owner, covered.id, on_unavailable="substitute", substitutes=substitutes)
+        with migrated.begin() as conn:
+            project = conn.execute(select(t.project).where(t.project.c.slug == "maity")).one()
+            row = conn.execute(
+                select(t.membership).where(t.membership.c.agent_id == covered.id)
+            ).one()
+            handles = dict(
+                conn.execute(select(t.agent_profile.c.id, t.agent_profile.c.handle)).all()
+            )
+            order = [m.agent_id for m in cover.cover_order(conn, project, row)]
+        assert order == sorted(expected, key=lambda agent_id: handles[agent_id])
