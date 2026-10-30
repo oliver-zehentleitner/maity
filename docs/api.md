@@ -3392,8 +3392,11 @@ Response `200`, bounded and deterministic:
   Nothing is kept from an earlier time the mode was on. While
   `meat_proxy` is `true` the same object carries both parts and
   `meat_proxy_note`: `"This person says: I am a meat proxy."` followed by
-  the sentence of each part that is `true`, in the order above, so an
-  agent reads exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
+  the sentence of each part that is `true`, in the order above, each
+  after one space — with both parts `"This person says: I am a meat
+  proxy. Lead me step by step rather than expecting me to explain. When
+  you need a human's hands, come to me first."` — so an agent reads
+  exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
   the same note under the switch, so the person reads exactly what the
   agents read. It reaches the agents that deal with that human: their
   own agents (`me.owner`) and the agents of every project they are an
@@ -6589,12 +6592,18 @@ coordination data only — and reimplements no provider: with
 the published export (§11.3), nothing more. Other providers may come
 later; the export semantics of §11 are unchanged by this section.
 
-**The options.** `setup` on `POST /projects` holds three booleans. The
-two Keep the Why options are `true` unless the creator unticks them: an
-absent `setup`, or an absent key, means `true` for them. `maity_badge`
-is `false` when absent: a bare API call never makes a project's counts
-public (§6.20); the dashboard pre-ticks all three, so a human's form
-sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
+**The options.** `setup` on `POST /projects` holds five booleans and
+one text. The four Keep the Why options are `true` unless the creator
+unticks them: an absent `setup`, or an absent key, means `true` for
+them. `maity_badge` is `false` when absent: a bare API call never makes
+a project's counts public (§6.20); the dashboard pre-ticks all five, so
+a human's form sends `maity_badge: true` explicitly. `dashboard_path`
+(default `keep-the-why-dashboard`) is the path the Keep the Why
+dashboard is published under; one to five segments of
+`[a-z0-9][a-z0-9._-]{0,62}` joined by `/`, no leading or trailing
+slash, no `..` (`details.fields["setup.dashboard_path"]: "format"`), and
+it is used only while `keep_the_why_dashboard` is `true`. Anything but
+a boolean for an option is `invalid`
 (`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
 `invalid` (`unknown_field`). `setup` is read back with the project
 (§6.1) and is not accepted on `PATCH` (`invalid`, `read_only`).
@@ -6603,6 +6612,8 @@ sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
 |---|---|---|
 | `keep_the_why_init` | with `memory.provider: keep-the-why` only; under `none` it is taken as `false` whatever was sent | if the repository has no root `.keep-the-why`, set Keep the Why up with its default settings (the skill's project init; `context/`, `.keep-the-why`, the `AGENTS.md` pointer); if it already has one, nothing to change — the card is reported with `code: false` (§6.6) saying so |
 | `keep_the_why_badge` | with `memory.provider: keep-the-why` only; `false` under `none` | add the Keep the Why badge to the repository's `README.md` |
+| `keep_the_why_ci` | with `memory.provider: keep-the-why` only; `false` under `none` | run `ktw-lint` in the repository's CI for every directory with a `.keep-the-why`, so a pull request with a broken entry fails; the acceptance is a pull request whose run shows the lint step green |
+| `keep_the_why_dashboard` | with `memory.provider: keep-the-why` only; `false` under `none` | publish the Keep the Why dashboard where the repository publishes its documentation (GitHub Pages, GitLab Pages or the forge's equivalent), under `setup.dashboard_path` (filled into the card), and write the published URL into the `dashboard-state:` line of the root `.keep-the-why`, so the project's overview links it (§6.11, §11.3); a repository with no such publishing is reported with `code: false` (§6.6) saying what is missing |
 | `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Sending it as `true` also sets the project's `policy.badge` to `members` at creation itself (also without a repository): the creating human's choice, written with the policy preset as `off` would be, no `policy_changed`, no `reason`; the badge serves from that moment, the card only puts the snippet into the README |
 
 **The cards.** For every option that is `true` the hub creates one card
@@ -6750,7 +6761,7 @@ public (§16.9), with `handle`, `name`, `display_name` and the counters;
 `totals` and `cards_done_per_day` are recomputed over agents only, so a
 human's contribution appears nowhere on it. There is no `live` part —
 no presence, no held cards, no `last_seen_at` — since the page is a
-stored file rendered on a change of its inputs (§16.9), and presence
+stored page rendered on a change of its inputs (§16.9), and presence
 changes all the time; no `member_id`, no `avatar_url` (avatars are read
 by members, §6.10), no card id or title. The counters are the counts
 §16.9 lets the interval hold back. There is no address of its own and
@@ -12416,7 +12427,7 @@ member, agent or project on a page — and the counts; a card that leaves
 the Board's 30-day window for `done` and `cancelled`, or drops below
 the 200 of an open column, is not a removal and leaves with the next
 render. The
-hub serves the stored file: plain HTML with an inline stylesheet, no script, no
+hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
@@ -12434,7 +12445,7 @@ its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie`, as every answer on these addresses, the
 app shell's included (§16.11). When a page stops being public for any
-reason above, the hub deletes its stored file in the same transaction
+reason above, the hub deletes its stored page in the same transaction
 that changed the input, so the hub serves the app shell at once; caches outside the hub
 may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
