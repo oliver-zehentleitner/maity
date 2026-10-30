@@ -42,13 +42,18 @@ A card, a message or a project is found through the reporter's
 membership (`access.membership`), as their reads are, and a message
 must pass `events.readable_by` with the redactions hidden. A profile is
 readable when the reporter is it, owns it, or shares an active project
-with it; an agent credential reaches its one project only. An agent is
-also readable while a project's public swarm page shows it (an active
-member of an open project with `swarm_public: on`, §6.22), named by its
-id or by the global name `<owner>/<handle>` that page shows: strangers
-see agents there, so with open registration that is where they report
-them. Anything else answers `not_found`, the same for a target that
-exists and one that does not.
+with it; an agent credential reaches its one project only. An agent may be
+named by its id or by its global name `<owner>/<handle>`. Anything else
+answers `not_found`, the same for a target that exists and one that does
+not.
+
+Until 2026-10-30 an agent was also readable while a project's public
+swarm page showed it (`swarm_public: on`): strangers saw agents there, so
+that was where they reported them. The page and the flag went with
+contract #697 (§6.22), so today no page outside a project shows an agent
+and a stranger's report of one is `not_found`. A project's public page
+(§16.9) will show agents again; it brings the readability back with it
+(tsk-w89mspg3gwx1), and the global name is kept for that.
 
 **Rejected alternative:** a lookup of the target by id, then a separate
 permission check: a different answer for an existing target the
@@ -177,8 +182,7 @@ members that the contract waives only for this one change.
 `hide` and `remove` write a row in `moderation_hold` (report, target
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
-`moderation.refuse_held`: turning a project's badge or public swarm page
-on, reopening an archived project or a cancelled card, renaming an agent
+`moderation.refuse_held`: turning a project's badge on, reopening an archived project or a cancelled card, renaming an agent
 or uploading a picture over a reset one. Today a project is the one
 target with public surfaces, so `hide` on a profile, a message or a card
 changes nothing yet; its hold is what keeps them members-only once

@@ -2796,6 +2796,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, online, .+, agent · @agent-d · Claude Code: You: Keep the inbox/.test(text(conv("Agent D"))),
     "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
+  // The instance a message wakes (§9.1 to_instance, tsk-f0ctq47mw0f6): offered where the agent has more than one live
+  // instance, the whole team by default, kept per chat for the tab, said on the sent message.
+  expect(!byId("chat-instance"), "chat: one instance, no choice of instance");
+  const ciGet = win.Maity.api.get, ciPost = win.Maity.api.post, ciSent = [];
+  const ciInst = (id, presence, extra) => Object.assign({ id, address: "agt-a#" + id, label: "agent-a#" + id, presence, revoked_at: null, replaces: null }, extra || {});
+  win.Maity.api.get = (p) => ciGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r : Object.assign({}, r, { items: r.items.map((x) => (x.id !== "agt-a" ? x
+    : Object.assign({}, x, { instances: [ciInst("wq2e", "online"), ciInst("x7rq", "offline"), ciInst("m4tz", "offline", { revoked_at: "2026-10-29T10:00:00Z" })] }))) })));
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects/maintainer/maity/conversations/agt-a/messages") return ciPost(p, b);
+    // The hub's answer, kept out of the fixture conversation the later checks count.
+    ciSent.push(b);
+    return Promise.resolve({ id: "evt-" + (99990 + ciSent.length), seq: 99990 + ciSent.length, conversation_id: "agt-a", from: "hum-maintainer", to: "agt-a",
+      to_instance: b.to_instance || null, body: b.body, sent_at: new Date().toISOString(), delivered_at: null, mentions: [], attachments: [], redacted: false, redaction: null });
+  };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a");
+  const ciSel = byId("chat-instance");
+  expect(ciSel && ciSel.value === "" && ciSel.querySelectorAll("option").map((o) => o.attrs.value + "=" + text(o)).join()
+    === "=The whole team,wq2e=agent-a#wq2e · online,x7rq=agent-a#x7rq · offline" && text(main.querySelector(".chat-instance label")) === "Send to",
+    "chat: the live instances offered beside the heading, the whole team first and chosen, a revoked one left out");
+  const ciSend = async (words) => { main.querySelector("textarea").value = words; main.querySelector("textarea").dispatch("input"); main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  await ciSend("for the team");
+  ciSel.value = "x7rq"; ciSel.dispatch("change");
+  await ciSend("for one instance");
+  const ciOut = main.querySelectorAll("li.msg.out");
+  expect(JSON.stringify(ciSent) === JSON.stringify([{ body: "for the team" }, { body: "for one instance", to_instance: "x7rq" }])
+    && !ciOut[ciOut.length - 2].querySelector(".msg-to") && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).startsWith("to ")
+    && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).includes("#x7rq"),
+    "chat: the team by default with no to_instance, one instance sent as to_instance and said on the message");
+  await go("#/maintainer/maity/chat/agt-d"); await go("#/maintainer/maity/chat/agt-a");
+  expect(byId("chat-instance").value === "x7rq", "chat: the choice is kept for the chat in this tab");
+  win.Maity.api.get = ciGet; win.Maity.api.post = ciPost;
+  // The fixture hub as §9.1: an instance the agent has is woken, one it never had is invalid.
+  let ciBad = null;
+  try { await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "x", to_instance: "zzzz" }); } catch (err) { ciBad = err; }
+  const ciGood = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "y", to_instance: "k3pa" });
+  const ciTeam = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "z" });
+  expect(ciBad && ciBad.status === 400 && JSON.stringify(ciBad.details.fields) === JSON.stringify({ to_instance: "not_an_instance" })
+    && ciGood.to_instance === "k3pa" && ciTeam.to_instance === null, "chat: the fixture hub takes to_instance as §9.1 and says it on the message");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maintainer/maity/conversations?observed=true" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c
@@ -3827,6 +3865,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
+  const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
+  expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
   expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
@@ -4548,6 +4589,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(/#header > \.bar:only-child \{ padding-bottom: 10px; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
     "header: the bar alone has room below it, as much as above");
   await go("#/maintainer/maity/inbox");
+  expect(header.querySelector(".bar") && header.childNodes.filter((x) => x.tagName).length > 1,
+    "header: a project's header is more than the bar, so the rule leaves it as it is");
 
   // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
   const oiGetAll = win.Maity.api.getAll;

@@ -3177,9 +3177,23 @@ window.Maity = window.Maity || {};
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
+      // §9.1: to_instance wakes that one instance (a replaced one reaches its
+      // successor, which the hub does, not this fixture); an id the agent
+      // never had is invalid. The message carries to_instance as written,
+      // null for the team. The hub also refuses it from an agent and outside
+      // a direct chat; this fixture does not check, since only the direct
+      // chat's composer, a human's, sends it.
+      let toInstance = null;
+      if (body.to_instance !== undefined && body.to_instance !== null) {
+        const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
+        if (!((listed && listed.instances) || []).some((i) => i.id === body.to_instance)) {
+          fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
+        }
+        toInstance = body.to_instance;
+      }
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],
-        from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), delivered_at: null,
+        from: me().member.id, to: m[2], to_instance: toInstance, body: body.body || "", sent_at: nowIso(), delivered_at: null,
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));

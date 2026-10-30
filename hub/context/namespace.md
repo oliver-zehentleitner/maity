@@ -49,7 +49,8 @@ Until 2026-10-29 the middleware answered a project path from before the namespac
 was read, before authentication and without a lookup: `client_outdated`
 (426) to a `maity-cli/…` User-Agent, `project_path_outdated` (410) to
 everyone else; the forge webhook kept a pre-migration project's old address and the old badge
-and public swarm addresses answered `301` (all through `legacy_slug`). That answer, those
+and public swarm addresses answered `301` (all through `legacy_slug`; the public swarm
+page itself is gone since 2026-10-30, §6.22). That answer, those
 addresses and the column itself (migration 0086) are removed: the maintainer's alpha rule is to
 keep no compatibility layer, so an old path is `not_found` like any path, see
 261f1ce2-819b-4aac-ae4a-387bb83d0907.

@@ -1427,3 +1427,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
   .member-head-actions { flex-direction: column; align-items: stretch; }
   .member-head-actions > * { width: 100%; }
 }
+
+/* The instance a chat message wakes (js/chat.js, §9.1), beside the heading. */
+.chat-instance { display: inline-flex; align-items: center; gap: 6px; }
+.chat-instance select { min-height: 28px; }
+.msg-to { white-space: nowrap; }

@@ -14,9 +14,8 @@ from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 
 router = APIRouter()
-# One budget per source address for the badge and the public swarm page together, and one
-# shared budget for every slug not served, so that varying the slug, the page or `days`
-# multiplies nothing (§6.20, §6.22).
+# One budget per source address for the badge, and one shared budget for every slug not
+# served, so that varying the slug multiplies nothing (§6.20).
 BY_ADDRESS = Limiter(60, 60)
 NOT_SERVED = Limiter(60, 60)
 CACHE = "public, max-age=60"

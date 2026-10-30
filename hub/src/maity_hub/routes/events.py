@@ -61,6 +61,7 @@ class MessageIn(Written):
     body: str = markdown()
     task_id: str | None = None
     conversation_id: str | None = None
+    to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
 
     @field_validator("body")
     @classmethod
@@ -273,6 +274,11 @@ def post_message(
         raise invalid({"type": "unknown"})
     me = mine.principal_id
     group: Any = None
+    if body.to_instance is not None and (
+        body.type != "chat"
+        or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
+    ):
+        raise invalid({"to_instance": "direct_chat_only"}, "an instance is named in a direct chat")
     if body.type == "chat":
         if body.conversation_id is None:
             raise invalid({"conversation_id": "required_for_chat"})
@@ -297,6 +303,17 @@ def post_message(
             raise forbidden(message="only the two parties write in a conversation")
         to = parties[1] if me == parties[0] else parties[0]
         audience = [f"member:{p}" for p in parties]
+        if body.to_instance is not None:
+            # The human's message wakes exactly one instance of the agent, resolved as an
+            # address in a message's `to` is; the whole team still reads it (§9.1, §8.2).
+            if me != parties[1]:
+                raise invalid({"to_instance": "human_only"}, "only the human names an instance")
+            if not instances.INSTANCE_PATTERN.fullmatch(body.to_instance):
+                raise invalid({"to_instance": "not_an_instance"})
+            target = instances.addressed(
+                conn, agent.id, parties[0], body.to_instance, "to_instance"
+            )
+            audience = [target, f"member:{parties[1]}"]
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
@@ -387,6 +404,8 @@ def post_message(
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
+    if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
+        payload["to_instance"] = body.to_instance
     seq = events.emit(
         conn,
         mine.project.id,
