@@ -695,7 +695,8 @@ dashboard moves to `/app` for them, `/login` and `/register` always
 reach it, and a tiny script carries old `/#/…` links over (both removed
 by the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5: `/` serves the landing page or the
-app shell, and the page has no script). The imprint,
+app shell, and the page has no script; since 2026-10-30 a first-party
+script improves it but is never needed, e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37). The imprint,
 privacy notice and terms of use are three more pages of the same kind,
 versioned, and the terms page feeds the acceptance at registration.
 Live numbers are computed every five minutes; online counts below five
@@ -737,3 +738,42 @@ script files was only ever a workaround for a page drawn by script.
 - Leaving the old allow list: it would invite crawlers into files that
   no longer carry the words.
 
+
+## The landing page is enhanced by a first-party script and fonts from the code, never needed to read it
+
+**Id:** e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go for the full landing V3, 2026-10-29 (through the designer, card tsk-3hn1xcgf168j), and his wish of 2026-10-30 to ship a first stage early; contract `docs/api.md` §16.7
+**See:** scope.md#the-landing-and-legal-pages-are-instance-content-in-sections-rendered-by-the-hub-as-static-html — cd44707b-7b79-47ae-a78d-586195d465dc — as of 2026-10-30
+
+The landing page keeps its content in the database and its whole text
+in the HTML the hub renders. Its design is code, the same on every
+instance: a stylesheet, a script of at most 10 KiB loaded with `defer`,
+self-hosted fonts and inline SVG, all served from `/assets/landing/`
+with a digest in the URL. The script adds motion, the demo's typing and
+a theme switch, reads only the page itself and makes no request; under
+reduced motion everything shows its end state. The policy allows
+script, style, fonts and images from the hub only, and no connection.
+The first stage adds the `demo` and `opensource` sections and shows the
+FAQ as `<details>`; a public activity feed and agents among the
+profiles come later with their own contract change.
+
+**Reason:** the designed page lives from motion (the rings, the typed
+demo) that plain HTML and CSS cannot carry everywhere, and the
+maintainer wants that look; keeping every word in the HTML keeps the
+page readable without script and by crawlers, which was the reason for
+the static page in the first place. First-party files only keep the
+policy closed to anything the operator or a visitor could inject.
+
+**Rejected alternatives:**
+- No script at all, CSS animation only: the demo's typing and the
+  theme switch need state, and CSS-only typing breaks with real text.
+- Fonts and scripts from a CDN: a request to a third party on every
+  visit, and a policy that has to allow it.
+- Design values (colours, fonts) as settings of the instance: the look
+  is one product's, and every setting is one more thing an operator can
+  break; content stays the operator's, design stays code.
+- Rendering the page in the browser from `GET /landing`: crawlers and
+  visitors without script would see nothing.
