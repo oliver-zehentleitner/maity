@@ -1801,6 +1801,48 @@ paste it, and 200 sections fit.
 members, roles and trusts: many controls for a short list, and it could
 not hold a token that names nobody yet, which the hub accepts.
 
+## An agent's owner sets whom it reports to, on Members and on Agents, without members:admin
+
+**Id:** c848b045-9411-43b3-8763-2fd998270a1d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
+**Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
+
+Without `members:admin`, one's own agent's row on Members has
+**Manage**, holding only what its owner sets: **Reports to**, the
+owner's preferences switch and the rulebook. **Reports to** offers
+nobody, oneself (where a member here) and one's other agents in the
+project, without those that would close a circle, and sends only
+`reports_to`. The project's Agents shows the same form beside the
+rulebook. A boss of another owner is never offered; one set already
+stays chosen, marked, so that saving keeps it.
+
+There is no **Withdraw** for an open cross-owner request about the
+agent: §6.2 says nothing in the member view shows a pending edge, and a
+request names no member, so the page could find it only by its title,
+which a wording change would break. It comes with the contract's answer
+on cross-owner edges (a field such as `reports_to_pending` for the two
+owners).
+
+The page and the fixture hub went ahead of the hub: until its owner
+path for §2.3 (tsk-fw3x5c13vq9g, #759) is merged, the hub answers this
+`PATCH` from an owner without `members:admin` with 403, so the two are
+merged together. Showing the form only with `members:admin` until then
+was rejected: the owner would still have no lever, and the page would
+have to change again.
+
+**Reason:** §2.3 gives the owner this lever whatever their trust; a
+field only an admin sees left the owner none. A cross-owner boss files
+consent requests (§6.2) whose start by the owner the contract has not
+settled, so it is not offered until it has.
+
+**Rejected alternative:** the whole membership form for the owner: it
+would offer trust, role and areas the hub refuses them. Finding the
+pending request by its title: fragile and invisible to the reader when
+it breaks.
+
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
 **Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb

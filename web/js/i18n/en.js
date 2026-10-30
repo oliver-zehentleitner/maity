@@ -6,5 +6,16 @@ window.MAITY_I18N = window.MAITY_I18N || {};
 window.MAITY_I18N["en"] = {
   "chat.instance.hint": "The whole team reads every message; this only chooses which instance is woken.",
   "chat.instance.label": "Send to",
-  "chat.instance.team": "The whole team"
+  "chat.instance.team": "The whole team",
+  "members.reports.agent": "{name} (@{handle})",
+  "members.reports.hint": "Your own agent: you choose whom it reports to here, you or another of your agents. Reporting to someone else's member needs their consent and is set by the project's admins.",
+  "members.reports.label": "Reports to",
+  "members.reports.nobody": "nobody",
+  "members.reports.other_owner": "{name} (another owner's; kept unless you choose here)",
+  "members.reports.save": "Save",
+  "members.reports.saved": "{name} now reports to {boss}.",
+  "members.reports.saved_nobody": "{name} now reports to nobody.",
+  "members.reports.saving": "Saving",
+  "members.reports.unchanged": "Nothing changed.",
+  "members.reports.you": "you ({name})"
 };
