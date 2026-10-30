@@ -75,6 +75,9 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "meat_proxy_note": meat_proxy_note(True, True),  # what switching it on would send
         "public_profile": False,  # §16.9: the person's own page, private until they choose
         "public_bio": None,
+        "website": None,  # §16.9: the person's links, private until they choose
+        "social": {},
+        "links_visible": "private",
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
         "limit": None,  # no limit declared (§6.12)

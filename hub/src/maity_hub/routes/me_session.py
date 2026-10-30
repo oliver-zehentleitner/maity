@@ -29,6 +29,7 @@ from maity_hub import (
     moderation,
     namespace,
     onboarding,
+    person_links,
     preferences,
     public_pages,
     public_people,
@@ -168,14 +169,21 @@ class MePatch(Strict):
     meat_proxy_hands: StrictBool | None = None
     public_profile: StrictBool | None = None
     public_bio: str | None = None
+    website: str | None = None
+    social: Any = None  # an object, checked with the other fields: `social: "format"`
+    links_visible: str | None = None
 
 
+LINKS = ("website", "social", "links_visible")
 HUMAN_FIELDS = (
     "meat_proxy",
     "meat_proxy_lead",
     "meat_proxy_hands",
     "public_profile",
     "public_bio",
+    "website",
+    "social",
+    "links_visible",
 )
 
 
@@ -698,10 +706,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             raise invalid({"paused": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
         public = {"public_profile", "public_bio"} & given
+        links = {"website", "social", "links_visible"} & given
         if (
             body.meat_proxy is None
             and all(v is None for v in parts.values())
-            and not public
+            and not (public or links)
             and body.handle is None
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
@@ -737,9 +746,37 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if problem is not None:
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
+        links_given = {"website", "social", "links_visible"} & given
+        changed = False
+        if links_given:
+            current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            # `social: null` clears every network; `links_visible: null` is no value (`unknown`).
+            social_in = (
+                {network: None for network in person_links.NETWORKS}
+                if "social" in given and body.social is None
+                else body.social
+            )
+            visible_in = body.links_visible if body.links_visible is not None else ""
+            website, social, visible = person_links.checked(
+                body.website if "website" in given else None,
+                social_in if "social" in given else None,
+                visible_in if "links_visible" in given else None,
+                current.social,
+            )
+            if "website" in given:
+                values["website"] = website
+            if "social" in given:
+                values["social"] = social or None
+            if "links_visible" in given:
+                values["links_visible"] = visible
+            changed = any(
+                getattr(current, name) != values[name] for name in values if name in LINKS
+            )
         if values:
             conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
-        if public:
+        if changed:  # an edit that stores what was there is no news to the projects
+            person_links.announce(conn, caller.human_id)
+        if public or links_given:
             # Turning the page off or editing its text takes something off it: at once (§16.9).
             public_pages.touch(conn, public_people.KIND, caller.human_id)
         return idempotency.Outcome(

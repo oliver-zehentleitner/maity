@@ -190,3 +190,21 @@ def test_a_replayed_key_answers_as_the_first_call_did(
     again = friend.client.patch(path, json={"reports_to": other}, headers=key)
     assert (first.status_code, again.status_code) == (204, 204)
     assert again.headers["Idempotent-Replayed"] == "true"
+
+
+def test_a_chain_that_would_pass_eight_is_too_deep_by_this_path_as_by_the_admins(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = flow.human(make_client, migrated, "friend")
+    chain = _agents(migrated, friend.id, 9)
+    ids = [_row(migrated, a).id for a in chain]
+    with migrated.begin() as conn:
+        for below, above in zip(ids[1:8], ids[:7], strict=True):
+            conn.execute(
+                update(t.membership).where(t.membership.c.id == below).values(reports_to=above)
+            )
+    # chain[0] … chain[7] is a chain of eight; the ninth would sit at nine (§2.3 "Depth").
+    assert fields(move(friend, chain[8], reports_to=chain[7])) == {"reports_to": "too_deep"}
+    assert _boss_of(migrated, chain[8]) is None
+    assert move(friend, chain[8], reports_to=chain[6]).status_code == 204
+    assert _boss_of(migrated, chain[8]) == chain[6]
