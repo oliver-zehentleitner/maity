@@ -11,7 +11,7 @@ no section), as a new one gets it from the input.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 0101
-Revises: 0099
+Revises: 0100
 Create Date: 2026-10-30
 """
 
@@ -24,7 +24,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0101"
-down_revision: str | None = "0099"
+down_revision: str | None = "0100"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

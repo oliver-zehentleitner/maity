@@ -704,7 +704,7 @@ def test_cards_are_written_in_the_one_shape_the_code_reads(engine: Engine) -> No
     old_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=bare)
     placed = {**bare, "path": "docs/other.md", "section": "2.1"}
     new_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=placed)
-    downgrade(engine, "0099")
+    downgrade(engine, "0100")
     with engine.begin() as conn:
         conn.execute(
             update(t.card).where(t.card.c.id == old_report).values(reported_instances=None)

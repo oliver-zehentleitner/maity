@@ -95,10 +95,6 @@ each other.
 - Reading the role before the lock and only counting owners under it: an admin demoted
   meanwhile would still change roles on a stale decision.
 
-**Known limit:** `max_orgs_per_human` is read from the environment (`MAITY_MAX_ORGS_PER_HUMAN`);
-the admin's value of §16.5 (`GET`/`PATCH /admin/settings/limits`) is not built, and neither is
-the limit for agent profiles that shares it.
-
 ## An organisation's invitation is a personal consent request with no project, on the request row
 
 **Id:** fa2cf0ea-591f-478b-a162-952ac0e138df
@@ -336,6 +332,38 @@ place that has to be kept in step. No migration is needed.
   themselves, to another owner with their `go`, to another organisation) would have been the one call
   that undoes a suspension. Instead the transfer out is refused (`moderation_hold`) at the filing and
   at the `go`, as the transfer in is; the contract says "no transfer in or out".
+
+## The caps on organisations and agent profiles are one admin section, and the agent cap is gated in `create_profile`
+
+**Id:** 9cbe5347-9e39-45ca-8749-74353a852ca9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.5, §16.2; the coordinator's order of part 4, step 3, on the card tsk-whe4wv1jpsae
+**Revisit when:** plans (§2.7, part two) set the caps per plan, or a third cap joins the section
+
+`limits.py` holds `max_agents_per_human` (default 100) and `max_orgs_per_human` (default 5) as
+`limits.*` instance settings, so the environment wins, then the admin's value, then the default, as
+everywhere in §16.2; `GET`/`PATCH /admin/settings/limits` is the section. The environment's value is
+`None` when the variable is unset (it was the default before, which would have hidden `source:
+default` and made an admin value impossible), a number or `unlimited` otherwise. `POST /orgs` reads
+the effective value in its transaction. The agent cap, which the contract gives the same section and
+which no code had yet, is checked in `routes.agents.create_profile` under the owner's row lock: the
+one place both `POST /agents` and a join that names a new handle create a profile, so the count and
+the insert are one step per owner across both. The exchange of a link already issued creates its
+profile without the cap (§16.5: an exchange is not gated); the profile counts from then on.
+
+**Reason:** the contract names both caps in one section and the response shows both counters, so a
+section with one of them would have been a second change of the same endpoint; the gate sits where
+the insert is, so no creation path can forget it.
+
+**Rejected alternatives:**
+- Only `max_orgs_per_human` now, the agent cap later: the answer's shape and the `PATCH`'s names are
+  the contract's, and an agent cap with no effect would be a setting that lies.
+- Keeping the default in `Settings` and treating the environment as always set: `source` could never
+  be `default` or `admin`, and the admin's value would have nowhere to win.
+- Counting at the endpoints instead of in `create_profile`: two paths, two places to keep in step,
+  and the lock per owner would have to be taken in both.
 
 ## A project of an organisation is read with the grants of the owner who confirmed its repository
 
