@@ -121,6 +121,8 @@ window.Maity = window.Maity || {};
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
+    // /<handle>: a person or an organisation, the dashboard's own view of them (§6.27, §16.11).
+    if (!OWN_WORDS.includes(parts[0])) return { scope: "person", handle: parts[0] };
     return { scope: "unknown" };
   }
 
@@ -1066,7 +1068,7 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats", person: "People" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1446,10 +1448,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
+    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1488,6 +1490,8 @@ window.Maity = window.Maity || {};
         await M.views.runners(ctx, root);
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
+      } else if (where.scope === "person") {
+        await M.views.person(ctx, root, where.handle);
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
@@ -1511,6 +1515,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
     else if (where.scope === "agents") label = "Your agents";
+    else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;

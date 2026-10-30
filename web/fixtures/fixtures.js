@@ -4585,6 +4585,42 @@ window.MAITY_FIXTURES = {
       ]
     }
   },
+  "people.json": {
+    "items": [
+      {
+        "aliases": [
+          "wolf"
+        ],
+        "avatar_url": null,
+        "display_name": "Wolfgang",
+        "handle": "wolfgang",
+        "kind": "human",
+        "public_bio": "Builds trading tools.",
+        "public_page": true,
+        "shared_projects": [
+          {
+            "full_name": "maintainer/maity",
+            "name": "Maity"
+          }
+        ],
+        "social": {
+          "discord": "wolfgang_01",
+          "github": "wolfgang",
+          "mastodon": "@wolfgang@mastodon.social"
+        },
+        "website": "https://example.org"
+      },
+      {
+        "aliases": [],
+        "avatar_url": null,
+        "display_name": "Anna",
+        "handle": "anna",
+        "kind": "human",
+        "public_page": false,
+        "shared_projects": []
+      }
+    ]
+  },
   "personal-requests.json": {
     "items": [
       {

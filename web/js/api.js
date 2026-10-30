@@ -949,6 +949,29 @@ window.Maity = window.Maity || {};
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
   const routes = [
+    // §6.27: a person or an organisation as this reader may see them; an
+    // alias answers with the current handle; anyone else not_found.
+    ["GET", /^\/people\/([^/?]+)$/, (m, body, path) => {
+      const name = decodeURIComponent(m[1]);
+      const self = me().member;
+      const view = (x) => { const v = Object.assign({}, x); delete v.aliases; return v; };
+      const person = ((fixtures()["people.json"] || { items: [] }).items).find((x) => x.handle === name || (x.aliases || []).includes(name));
+      if (person) return view(person);
+      if (self.kind === "human" && self.handle === name) {
+        return { kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
+          public_page: !!self.public_profile, public_bio: self.public_bio || null,
+          website: self.website || null, social: self.social || {}, shared_projects: [] };
+      }
+      const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
+      if (!org) fail(404, "not_found", "no such person or organisation", path);
+      const mine = me().projects.filter((x) => x.full_name.startsWith(org.handle + "/")).map((x) => ({ full_name: x.full_name, name: x.name }));
+      const out = { kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: org.avatar_url || null,
+        public_page: org.public_page === "on", projects: mine };
+      if (orgRole(org)) {
+        out.members = (orgsData().members[org.id] || []).map((x) => ({ handle: x.handle, display_name: x.display_name, avatar_url: x.avatar_url || null, role: x.role }));
+      }
+      return out;
+    }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
     ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],

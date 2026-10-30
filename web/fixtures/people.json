@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "kind": "human", "handle": "wolfgang", "aliases": ["wolf"], "display_name": "Wolfgang", "avatar_url": null,
+      "public_page": true, "public_bio": "Builds trading tools.",
+      "website": "https://example.org", "social": { "github": "wolfgang", "mastodon": "@wolfgang@mastodon.social", "discord": "wolfgang_01" },
+      "shared_projects": [ { "full_name": "maintainer/maity", "name": "Maity" } ]
+    },
+    {
+      "kind": "human", "handle": "anna", "aliases": [], "display_name": "Anna", "avatar_url": null,
+      "public_page": false,
+      "shared_projects": []
+    }
+  ]
+}

@@ -6539,6 +6539,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
   expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
+  // /<handle> (§6.27, §16.11): the dashboard's own view of a person or an organisation, from GET /people/{handle}.
+  const pvAsked = [];
+  const pvGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/people/")) pvAsked.push(p); return pvGet(p); };
+  await go("#/wolfgang"); for (let k = 0; k < 4; k++) await tick();
+  const pvView = () => main.querySelector("section.view-person");
+  const pvLinks = () => (pvView().querySelector("ul.person-links") || { querySelectorAll: () => [] }).querySelectorAll("a");
+  const pvPublic = () => pvView().querySelectorAll("a").find((a) => text(a) === "View public page");
+  expect(pvView() && pvAsked[0] === "/people/wolfgang" && text(pvView().querySelector("h2")) === "Wolfgang" && text(pvView()).includes("@wolfgang")
+    && text(pvView().querySelector(".person-bio")) === "Builds trading tools."
+    && pvPublic() && pvPublic().getAttribute("href") === "/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
+    "person: name, handle, bio and View public page where the hub serves one, opened at ?as=public");
+  expect(JSON.stringify(pvLinks().map((a) => a.getAttribute("href"))) === JSON.stringify(["https://example.org", "https://github.com/wolfgang", "https://mastodon.social/@wolfgang"])
+    && pvLinks().every((a) => a.getAttribute("rel") === "me nofollow noopener") && text(pvView().querySelector("ul.person-links")).includes("Discord: wolfgang_01")
+    && !pvView().querySelector("ul.person-links").querySelectorAll("a").some((a) => text(a) === "wolfgang_01"),
+    "person: the links built from the names as the hub's page builds them, rel me; Discord as text");
+  const pvShared = pvView().querySelector("ul.person-projects a");
+  expect(text(pvView()).includes("Projects you share") && pvShared && pvShared.getAttribute("href") === "#/maintainer/maity/overview",
+    "person: the projects both are in, each a link to its overview");
+  expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
+  await go("#/wolf"); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/wolfgang" && text(main.querySelector("section.view-person h2")) === "Wolfgang", "person: an alias goes to the current handle");
+  await go("#/anna"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(pvView().querySelector("h2")) === "Anna" && !pvPublic() && !pvView().querySelector(".person-bio") && !pvView().querySelector("ul.person-links")
+    && text(pvView()).includes("You are in no project together."),
+    "person: without a public page, a bio or links for this reader, none of them; no shared project said so");
+  await go("#/oz-team"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(pvView().querySelector("h2")) === "OZ Team" && text(pvView()).includes("@oz-team · organisation") && !pvPublic()
+    && pvView().querySelectorAll("ul.person-members li").length === 2 && text(pvView().querySelector("ul.person-members")).includes("@anna · admin"),
+    "organisation: its name, no public page while it is off, its members with their roles for a member");
+  await go("#/nobody-here"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("There is no person or organisation @nobody-here that you can see.") && !main.querySelector(".error"),
+    "person: not_found said as such, never an error box");
+  await go("#/maintainer"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(pvView()).includes("@maintainer · you") && !text(pvView()).includes("Projects you share"), "person: one's own handle is oneself, no shared projects listed");
+  win.Maity.api.get = pvGet;
+  await go("#/maintainer/maity/inbox");
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };
