@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, Insert
 
-from maity_hub.db import create_revision, current_revision, downgrade, head_revision, migrate
+from maity_hub.db import (
+    create_revision,
+    current_revision,
+    downgrade,
+    head_revision,
+    migrate,
+    revision_id,
+)
 
 
 @pytest.mark.wheel
@@ -58,19 +65,24 @@ def test_sqlite_keeps_the_event_seq_autoincrement_through_every_migration(engine
     assert "AUTOINCREMENT" in ddl()
 
 
-def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
+def test_create_revision_names_the_migration_by_time_and_slug(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A new revision's id cannot collide with a parallel branch's: the UTC second and the
+    slug, cut to the 32 characters of `alembic_version`; `tools/rechain.py` chains it."""
+    from datetime import UTC, datetime
+
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)
     head = head_revision(engine)
     assert head is not None
-    # The highest number plus one, not the head's: numbers are reserved ahead, so a
-    # revision chained later may carry a lower number than one merged before it.
-    numbers = [int(p.name[:4]) for p in (migrations / "versions").glob("[0-9]*.py")]
-    following = f"{max(numbers) + 1:04d}"
-    created = create_revision(engine, "add the task table", migrations)
-    assert created.name == f"{following}_add_the_task_table.py"
-    assert f'revision: str = "{following}"' in created.read_text()
+    now = datetime(2026, 10, 30, 10, 25, 12, tzinfo=UTC)
+    created = create_revision(engine, "Add the tasks!", migrations, now=now)
+    assert created.name == "20261030102512_add_the_tasks.py"
+    assert 'revision: str = "20261030102512_add_the_tasks"' in created.read_text()
     assert f'down_revision: str | None = "{head}"' in created.read_text()
+    assert revision_id("x" * 80, now) == "20261030102512_" + "x" * 17
+    assert len(revision_id("x" * 80, now)) == 32
 
 
 def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engine) -> None:
@@ -758,3 +770,35 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}
     assert found[none] is None
+
+
+def test_a_human_with_the_meat_proxy_switch_on_gets_both_parts_by_0103(engine: Engine) -> None:
+    """0103 (§5.2): `meat_proxy` true becomes both parts true, false both false; downgrading
+    makes the switch the or of the parts."""
+    from sqlalchemy import text
+
+    from tests import factory
+
+    migrate(engine, _before(engine, "0103"))
+    on, off = factory.human(engine, "on"), factory.human(engine, "off")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE human SET meat_proxy = :v WHERE id = :id"), {"v": True, "id": on})
+
+    def parts() -> dict[str, tuple[bool, bool]]:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT id, meat_proxy_lead, meat_proxy_hands FROM human")
+            ).all()
+        return {r[0]: (bool(r[1]), bool(r[2])) for r in rows}
+
+    migrate(engine)
+    assert parts()[on] == (True, True) and parts()[off] == (False, False)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE human SET meat_proxy_hands = :v WHERE id = :id"), {"v": False, "id": on}
+        )
+    downgrade(engine, _before(engine, "0103"))
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT id, meat_proxy FROM human")).all()
+    switch = {r[0]: bool(r[1]) for r in rows}
+    assert switch[on] is True and switch[off] is False

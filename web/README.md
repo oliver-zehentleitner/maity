@@ -478,7 +478,12 @@ too.
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. The
    credentials are not in the list: on Agents for one's own, in **Manage**
-   for an admin. With
+   for an admin. Without `members:admin`, one's own agent's row still has
+   **Manage**, holding what its owner sets (§2.3): **Reports to** (nobody,
+   oneself or another of one's agents here; a boss of another owner stays
+   chosen and marked, never offered), its preferences switch and its
+   rulebook; the project's Agents has **Reports to** beside the rulebook
+   too. With
    `members:admin` each row has **Manage** (one's own agents are managed
    on **Agents**, item 3): one form for what §6.2 lets an
    admin change — the trust (owner only for a human; granting owner or admin,

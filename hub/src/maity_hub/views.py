@@ -125,13 +125,41 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+MEAT_PROXY_INTRO = "This person says: I am a meat proxy."
+MEAT_PROXY_LEAD = "Lead me step by step rather than expecting me to explain."
+MEAT_PROXY_HANDS = "When you need a human's hands, come to me first."
 
 
-def meat_proxy_view(on: bool) -> dict[str, Any]:
-    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
-    the one fixed sentence and nothing that says what it means."""
-    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+def meat_proxy_note(lead: bool, hands: bool) -> str:
+    """The note for the parts that are on, in the person's own words: the sentence of each part,
+    the lead part first, after the intro (docs/api.md §5.2, "Meat proxy")."""
+    parts = [s for on, s in ((lead, MEAT_PROXY_LEAD), (hands, MEAT_PROXY_HANDS)) if on]
+    return " ".join([MEAT_PROXY_INTRO, *parts])
+
+
+def meat_proxy_member(lead: bool, hands: bool) -> dict[str, Any]:
+    """A human's own `GET /me`: the switch, both parts and the note, always. While the mode is
+    off the note is the one switching it on would send, with both parts."""
+    on = lead or hands
+    return {
+        "meat_proxy": on,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands) if on else meat_proxy_note(True, True),
+    }
+
+
+def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
+    """The resume packet's fields (docs/api.md §5.2, "Meat proxy"): the switch, and while it is on
+    both parts and the note, nothing that says what it means."""
+    if not (lead or hands):
+        return {"meat_proxy": False}
+    return {
+        "meat_proxy": True,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands),
+    }
 
 
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
