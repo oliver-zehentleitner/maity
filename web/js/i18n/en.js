@@ -148,6 +148,8 @@ window.MAITY_I18N["en"] = {
   "member.no_last_call": "No last hub call is available",
   "member.silent_since": "silent since {time}",
   "member.silent_unknown": "silent · last call unknown",
+  "members.filter.mine": "Only my agents",
+  "members.filter.mine_none": "You own no agent in this project.",
   "members.reports.agent": "{name} (@{handle})",
   "members.reports.hint": "Your own agent: you choose whom it reports to here, you or another of your agents. Reporting to someone else's member needs their consent and is set by the project's admins.",
   "members.reports.label": "Reports to",

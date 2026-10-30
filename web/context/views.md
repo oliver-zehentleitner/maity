@@ -3026,3 +3026,33 @@ read on every Overview visit, and the page still long. The organisation
 as a fourth Overview tab: the maintainer placed it with the team. A
 `members/organisation` address: `members/<id>` is a member's page, and
 a word there would have to be told apart from an id.
+
+## Members filters to one's own agents with Only my agents, kept per viewer in the browser
+
+**Id:** 7b08511c-7f7e-4af2-bd7e-df6f01476e0b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (a filter 'Only my agents' on the members list, the member's `owner` being the signed-in human, remembered per viewer); where it is kept is the implementer's
+**Revisit when:** the hub keeps per-viewer view settings, or the GUI round asks for the filter on other lists too
+
+A human viewer of Members gets the checkbox **Only my agents**. On, the
+list is the agents whose `owner_id` is the viewer, and the humans'
+table is not drawn; with none, it says so. The choice is kept in the
+browser's `localStorage` under one key per viewer
+(`maity.members.mine.<member id>`), for every project, and a browser
+that keeps nothing still filters for the visit. Agents never see the
+box: they own no agent. What an owner may change on their own agent's
+row without `members:admin` is unchanged (Manage with reports to,
+preferences and team, §2.3).
+
+**Reason:** the maintainer wants their own agents at a glance on a list
+that holds everyone's. A per-viewer key keeps one person's choice from
+another's on a shared browser, and the hub has no field for view
+settings.
+
+**Rejected alternative:** one key for every viewer: a second person
+signing in on the same browser would inherit the filter. A key per
+project: the maintainer asked for it per viewer, and switching projects
+would lose it. A setting on the hub: there is no such field, and a
+contract change for a list filter is out of proportion.
