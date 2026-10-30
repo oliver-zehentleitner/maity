@@ -108,6 +108,9 @@ def create(
     _allowed(actor_role, role)
     if not _HANDLE.fullmatch(handle):
         raise invalid({"handle": "invalid"})
+    from maity_hub import moderation
+
+    moderation.refuse_held(conn, "org", org.id, "suspend")  # no new invitation while suspended
     expire(conn, org.id)
     member_handles = {m["handle"] for m in orgs.members(conn, org.id)}
     if handle in member_handles:
