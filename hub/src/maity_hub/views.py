@@ -469,6 +469,7 @@ def member_views(
         else {}
     )
     names = namespace.full_names(conn, project_ids)
+    org_owners = _org_owners(conn, projects.values())
     from maity_hub import briefings  # briefings formats with this module's helpers
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
@@ -504,6 +505,8 @@ def member_views(
             "areas": row.areas,
             "capabilities": row.capabilities,
         }
+        if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
+            view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())
         session = None
         if row.agent_id is not None:
             session = live.get(row.id)
@@ -580,6 +583,26 @@ def member_views(
             view["moderation"] = held
         views.append(view)
     return views
+
+
+def _org_owners(conn: Connection, projects: Iterable[Any]) -> dict[str, set[str]]:
+    """Per project the human ids that own the organisation that owns it: empty for a project
+    of a human."""
+    by_org: dict[str, list[str]] = {}
+    for project in projects:
+        if project.owner_org_id is not None:
+            by_org.setdefault(project.owner_org_id, []).append(project.id)
+    if not by_org:
+        return {}
+    found: dict[str, set[str]] = {}
+    for org_id, human_id in conn.execute(
+        select(t.org_member.c.org_id, t.org_member.c.human_id).where(
+            t.org_member.c.org_id.in_(list(by_org)), t.org_member.c.role == "owner"
+        )
+    ):
+        for project_id in by_org[org_id]:
+            found.setdefault(project_id, set()).add(human_id)
+    return found
 
 
 NO_CREDENTIALS = {

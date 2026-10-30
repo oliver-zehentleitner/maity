@@ -5706,10 +5706,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   byId("invite-role").value = "reviewer"; byId("invite-address").value = "ben@example.org"; byId("invite-ttl").value = "604800"; byId("invite-note").value = "Welcome.";
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome." }])
-    && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
-    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open"),
-    "invite: created, the link shown once with Copy, the list grows");
+  expect(byId("invite-via-join") && byId("invite-via-join").checked && text(ivBox()).includes("Link via join.example.org"),
+    "invite: where the hub names a join host, Link via <join host> is offered, on by default (§3.4)");
+  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome.", via: "join" }])
+    && /^https:\/\/join\.example\.org\/i\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
+    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open") && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("via join.example.org"),
+    "invite: created via the join host, the link shown once with Copy, the list grows and says which link went out");
+  // Off: the link on this hub's own address.
+  byId("invite-via-join").checked = false;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ivPosts[1] && ivPosts[1][1].via === "public" && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value)
+    && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("on this hub's address"),
+    "invite: Link via unticked sends via public, and the link is on the hub's own address");
+  byId("invite-via-join").checked = true;
+  // A hub without a join host (join_url null): no choice, no via sent.
+  // The form takes the session the page read already (M.api.session), no new read of it.
+  const ivSessionGets = [], ivGetAll = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p === "/auth/session") ivSessionGets.push(p); return ivGetAll(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  // The app reads the session once per page drawn (two here); the form adds none.
+  expect(byId("invite-via-join") && ivSessionGets.length === 2, "invite: the form uses the session the page read, without reading it again (" + ivSessionGets.length + ")");
+  win.Maity.api.get = ivGetAll;
+  const ivSession = win.Maity.api.session;
+  win.Maity.api.session = () => Object.assign({}, ivSession(), { join_url: null });
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivNoHost = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
+    "invite: without a join host there is no choice and no via; the hub picks the link");
+  win.Maity.api.session = ivSession;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);
   const ivBefore = ivPosts.length;
@@ -6873,6 +6899,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 413, p, "payload_too_large")) : leSize(p, b));
   await leSave();
   expect(text(main).includes("the draft is larger than the hub takes in one request (512 KiB)"), "landing editor: a draft over the request cap is said in words");
+  // A field's own limit: in its hint, and with the hub's too_long at it.
+  const lmHint = byId("lp-pages-en-sections-3-markdown").parentNode.querySelector(".hint");
+  expect(lmHint && text(lmHint).endsWith("At most 16 KiB."), "landing editor: a Markdown field says its limit");
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "pages.en.sections.3.markdown": "too_long" } })) : leSize(p, b));
+  await leSave();
+  expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "too long: at most 16 KiB", "landing editor: too long names the field's limit");
   win.Maity.api.patch = leSize;
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
@@ -6915,6 +6947,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("lp-privacy-en-markdown").value = "We keep <b>nothing</b>."; byId("lp-privacy-en-markdown").dispatch("input");
   lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(byId("lp-privacy-en-markdown-error")) === "holds HTML outside fenced code", "legal: the hub's refusal at the page's field");
+  // The hub folds an empty or too long legal text into invalid: said with the field's limit (64 KiB).
+  const lgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/legal" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "privacy.en.markdown": "invalid" } })) : lgReal(p, b));
+  lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("lp-privacy-en-markdown-error")) === "empty, or longer than allowed (at most 64 KiB)", "legal: an invalid text names the page's limit");
+  win.Maity.api.patch = lgReal;
   byId("lp-privacy-en-markdown").value = "We keep what the service needs."; byId("lp-privacy-en-markdown").dispatch("input");
   lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   const lgLast = lePatches[lePatches.length - 1];

@@ -927,6 +927,7 @@ window.MAITY_FIXTURES = {
   "auth-session.json": {
     "csrf_token": "fixture-csrf-token",
     "expires_at": "2026-11-04T13:42:00Z",
+    "join_url": "https://join.example.org",
     "member": {
       "display_name": "Maintainer",
       "handle": "maintainer",

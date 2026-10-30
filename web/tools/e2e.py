@@ -2310,6 +2310,11 @@ def invitations_step(run: Run, page: Page) -> None:
     expect(box).to_be_visible()
     page.locator("#invite-role").select_option("reviewer")
     page.locator("#invite-note").fill("Welcome to the e2e project.")
+    # This hub has no join host (no MAITY_JOIN_URL): no "Link via" choice, and the
+    # link is on the hub's own address (§3.4 `via` defaults to public).
+    session = page.request.get(f"{run.base}/api/v1/auth/session").json()
+    if not session.get("join_url"):
+        expect(page.locator("#invite-via-join")).to_have_count(0)
     box.get_by_role("button", name="Create the invitation", exact=True).click()
     shown = page.locator("#invite-url")
     expect(shown).to_have_value(re.compile(r"/invite/[A-Za-z0-9_-]{22}$"))

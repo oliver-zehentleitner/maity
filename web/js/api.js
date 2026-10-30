@@ -975,15 +975,21 @@ window.Maity = window.Maity || {};
       if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
       if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
       if (body.note !== undefined && utf8Bytes(String(body.note)) > 1024) fields.note = "too_long";
+      // §3.4 `via`: the join host's link by default where one is configured, else the public one.
+      const joinUrl = fixtures()["auth-session.json"].join_url || null;
+      const via = body.via === undefined ? (joinUrl ? "join" : "public") : body.via;
+      if (!["join", "public"].includes(via)) fields.via = "invalid";
+      else if (via === "join" && !joinUrl) fields.via = "no_join_host";
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const list = invitationsOf(m[1]);
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
       const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-        used_at: null, used_by: null, revoked_at: null, voided_at: null };
+        used_at: null, used_by: null, revoked_at: null, voided_at: null, via };
       list.push(made);
-      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
+      return Object.assign({}, made, { url: via === "join" ? joinUrl.replace(/\/+$/, "") + "/i/" + token
+        : window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
     ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
       if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
@@ -3237,6 +3243,9 @@ window.Maity = window.Maity || {};
   // The CSRF token from GET /auth/session; the readable maity_csrf cookie
   // carries the same value and is preferred when present.
   let sessionCsrf = null;
+  // The session as GET /auth/session last answered it (§2.6, its join_url among it),
+  // kept for a view that needs it again; cleared when the session ends.
+  let lastSession = null;
 
   function csrfToken() {
     for (const part of document.cookie.split(";")) {
@@ -3320,6 +3329,7 @@ window.Maity = window.Maity || {};
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         sessionCsrf = s.csrf_token || null;
+        lastSession = s;
         sessionBlocked = false;
         return s;
       });
@@ -3425,9 +3435,12 @@ window.Maity = window.Maity || {};
   const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
 
   M.api = {
+    // The session read last (null before the first read or after the end).
+    session: () => lastSession,
     endSession: () => {
       sessionBlocked = true;
       sessionCsrf = null;
+      lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
     },
     // Whether a 401 on this path says nothing about a session (above).
