@@ -55,10 +55,10 @@ CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
 ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache", b"no-cache"})
-# The answers a visitor without a session may cache: the badge, the swarm page and the
-# instance's landing page (§16.7).
+# The answers a visitor without a session may cache: the badge and the instance's landing
+# page (§16.7).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing|/api/v1/legal"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
@@ -328,8 +328,8 @@ def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
             # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
-            # §6.10). Only a successful GET of the public badge, swarm page or landing page
-            # may choose public caching (§6.20, §6.22, §16.7).
+            # §6.10). Only a successful GET of the public badge or landing page may choose
+            # public caching (§6.20, §16.7).
             chosen = next((v for k, v in given if k.lower() == b"cache-control"), None)
             public_cache = (
                 public is not None and message["status"] in (200, 304) and chosen == public
