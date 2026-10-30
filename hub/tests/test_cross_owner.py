@@ -281,6 +281,27 @@ def test_an_agent_that_did_not_ask_does_not_end_the_decision(
     assert owner.post(f"{PROJECT}/requests/{request_id}/withdraw", {}).status_code == 200
 
 
+def test_an_owner_of_the_edge_who_is_a_member_without_scopes_withdraws_on_the_project_route(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = flow.human(make_client, migrated, "friend")
+    other = flow.human(make_client, migrated, "other")
+    for human in (friend, other):  # members with no scope that decides anything
+        factory.membership(migrated, _project(migrated), human_id=human.id, role="coder")
+    lent = _lent(migrated, friend)
+    boss = factory.agent(migrated, _project(migrated), other.id).agent_id
+    request_id = put(owner, lent, reports_to=boss).json()["id"]
+    stranger = flow.human(make_client, migrated, "stranger")
+    factory.membership(migrated, _project(migrated), human_id=stranger.id, role="coder")
+    # A member who owns neither side is told nothing of it.
+    assert stranger.post(f"{PROJECT}/requests/{request_id}/withdraw", {}).status_code == 404
+    # The boss side's owner, then (a fresh pair) the subordinate's owner.
+    assert other.post(f"{PROJECT}/requests/{request_id}/withdraw", {}).status_code == 200
+    assert all(r.status == "withdrawn" for r in _requests(migrated))
+    again = put(owner, lent, reports_to=boss).json()["id"]
+    assert friend.post(f"{PROJECT}/requests/{again}/withdraw", {}).status_code == 200
+
+
 def test_nobody_but_the_addressee_answers_it(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

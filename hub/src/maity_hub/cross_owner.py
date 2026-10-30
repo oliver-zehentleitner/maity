@@ -307,16 +307,23 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     members.apply_patch(conn, change, target, values, (False, None), line_consent=consent)
 
 
-def may_withdraw(row: Any, mine: Membership) -> bool | None:
-    """Who withdraws a pair's request on the project route (§6.2): the asker, and a human who
-    holds `requests:answer` or `members:admin`. An agent that is not the asker is refused
-    with `pending_consent`, whatever its scopes (`False`); a human with neither right is told
-    nothing of the request (`None`, `not_found`, as for every personal request)."""
+def may_withdraw(conn: Connection, row: Any, mine: Membership) -> bool | None:
+    """Who withdraws a pair's request on the project route (§6.2): the asker, the two owners
+    of the edge, and a human who holds `requests:answer` or `members:admin`. An agent that
+    is not the asker is refused with `pending_consent`, whatever its scopes (`False`); a
+    human with none of these rights is told nothing of the request (`None`, `not_found`, as
+    for every personal request)."""
     if row.asked_by == mine.id:
         return True
     if mine.kind == "agent":
         return False
-    return True if mine.may("requests:answer") or mine.may("members:admin") else None
+    if mine.may("requests:answer") or mine.may("members:admin"):
+        return True
+    proposal = row.proposal or {}
+    named = [proposal.get("target"), proposal["boss"]]
+    sides = conn.execute(select(t.membership).where(t.membership.c.id.in_(named))).all()
+    owners = {owner_of(conn, side) for side in sides}
+    return True if mine.principal_id in owners or mine.principal_id == row.to_human else None
 
 
 def _addressee_only(conn: Connection, request: Any, mine: Any) -> str | None:

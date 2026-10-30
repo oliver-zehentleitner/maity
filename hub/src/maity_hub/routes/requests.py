@@ -1322,7 +1322,7 @@ def withdraw(
         # A cross-owner `reports_to` pair has its own withdrawal rule (§6.2).
         pair = row.personal and (row.proposal or {}).get("kind") == cross_owner.KIND
         if pair:
-            allowed = cross_owner.may_withdraw(row, mine)
+            allowed = cross_owner.may_withdraw(conn, row, mine)
             if allowed is None:
                 raise not_found()
             if not allowed:

@@ -114,28 +114,31 @@ call on an old chain.
 join, which also runs the cycle check and changed the answer of an
 existing test (`cycle` before `differs_from_membership`).
 
-## An agent's owner moves its `reports_to` on a path of their own, only to nobody or to a member they own
+## An agent's owner moves its `reports_to` on a path of their own, to nobody, to a member they own, or by asking the other side
 
 **Id:** 4a7342a5-50d1-4d38-bc6b-daa38413efd1
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §2.3 ("A human may always set the `reports_to` of an agent they own to null or to a member they own … whether or not they are a member of the project. Nothing else of the membership opens to them this way"); spq4's finding on #754 (seq 16437); the card tsk-fw3x5c13vq9g from the coordinator, 2026-10-30
-**Revisit when:** the contract settles a cross-owner target or the withdrawal of an open cross-owner `reports_to` request (§6.2), or the cross-owner consent flow exists in the hub
+**Revisit when:** the owner's own path gains another field (§2.3 "Nothing else of the membership opens to them this way"), or the pair of consent requests changes who may start it
 **See:** manager.md#a-managers-pause-is-marked-by-a-column-not-by-paused_by — 8040236c-b8c0-41f2-b37c-47838835b447 — as of 2026-10-30
+**See:** manager.md#a-cross-owner-reports_to-is-a-pair-of-personal-consent-requests-that-set-the-edge-at-the-last-go — 5d9be0ad-ef77-487e-b95a-1cf9ea2674d4 — as of 2026-10-30
 
 `PATCH …/members/{id}` has the owner's path `_owner_sets_reports_to` before the ordinary rules, as
 `_owner_lifts_line_pause` has: the caller is a human who owns the agent profile of the target, the body
-is exactly `{reports_to}`, and the value is `null` or a member the caller owns (themselves, or another of
-their agents in the project). Anything else falls through to the ordinary rules, so another owner's member
+is exactly `{reports_to}`, and the value is `null`, a member the caller owns (themselves, or another of
+their agents in the project) or, since the pair of consent requests exists, a member of another owner: that
+one is not applied but asks the boss's side (202, see the entry on the pair). Anything else falls through
+to the ordinary rules, so another owner's member
 is `forbidden` (`members:admin`) for a member and `not_found` for someone outside the project, and a caller
 who holds `members:admin` is left to the admin's own path. What the path checks and does is an admin's:
 `not_a_member` (naming oneself while outside the project), `guest`, `cycle`, `too_deep`; the `line_consent`
 of the old edge ends; `member_updated`. A member of the project gets the member view, an owner outside it
 `204` and nothing of the project (§1.3).
 
-Withdrawing an open cross-owner request is not built: the hub has no such request yet (the
-consent flow of §6.2 is its own work; `line_consent` has no API), so there is nothing to withdraw.
+Withdrawing an open cross-owner request was not built when this path was (the hub had no such
+request); the pair of consent requests has its own withdrawal rule now.
 
 **Reason:** an owner should not need `members:admin` in a project to hang their own agent under
 themselves or another of theirs, and an owner outside the project has no membership to get it from;
@@ -143,8 +146,9 @@ the contract opens exactly this and nothing else. A path of its own keeps the ad
 and makes "nothing else opens" a property of the shape of the body.
 
 **Rejected alternatives:**
-- Letting any owner name any member: that is the cross-owner edge, which needs the other side's consent
-  (§6.2); the contract keeps it out.
+- Letting any owner name any member at once: that is the cross-owner edge, which needs the other side's
+  consent (§6.2); first the contract kept it out, then the pair of consent requests built the way it
+  happens with that consent.
 - Widening the ordinary path (`members:admin` OR owns the agent): the same call would then carry role,
   trust and areas too, and "nothing else opens" would depend on every field's check.
 
@@ -155,7 +159,7 @@ and makes "nothing else opens" a property of the shape of the body.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §6.2 ("Across owners"), §3.1, §2.3 and the contract change that adapted them (#769); the maintainer's go and the coordinator's decisions on card tsk-3jdqtppzmtdb, 2026-10-30 (the personal request instead of a project route for a human outside the project; the owner's own path included; existing edges stay)
-**See:** manager.md#an-agents-owner-moves-its-reports_to-on-a-path-of-their-own-only-to-nobody-or-to-a-member-they-own — 4a7342a5-50d1-4d38-bc6b-daa38413efd1 — as of 2026-10-30
+**See:** manager.md#an-agents-owner-moves-its-reports_to-on-a-path-of-their-own-to-nobody-to-a-member-they-own-or-by-asking-the-other-side — 4a7342a5-50d1-4d38-bc6b-daa38413efd1 — as of 2026-10-30
 **Revisit when:** an organisation's agents get their own owner rules (§6.26), or the consent flow gains a third party, or a manager's consented change (`line_change`) and a placement's new profile (§15.6) are made to ask as the others do
 
 `cross_owner.owners` decides: the subordinate is an agent and the boss's side (an agent's owner, or a human)
@@ -194,3 +198,26 @@ every personal request is, and opens no call into the project.
 **Not covered, and why:** a manager's consented change (`line_change`) and a placement's new profile
 (§15.6) still set a cross-owner `reports_to` directly; the contract names the join, the `PATCH` and the
 owner. Existing cross-owner edges stay as they are (alpha, no migration of data).
+
+## A join whose creator left the project asks nobody for the boss's side
+
+**Id:** 6cdf91ec-75d5-4b73-b095-8b439a8529af
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `routes/joins.py` `_ask_boss_side`; the contract (§3.1) says the creator's creating the profile is the subordinate owner's consent and is silent on a creator who is gone
+**Revisit when:** the contract says whom a join asks for the boss's side when its creator is no member any more
+**See:** manager.md#a-cross-owner-reports_to-is-a-pair-of-personal-consent-requests-that-set-the-edge-at-the-last-go — 5d9be0ad-ef77-487e-b95a-1cf9ea2674d4 — as of 2026-10-30
+
+A join with a cross-owner `reports_to` starts the membership without the boss and asks the boss's side at the
+exchange, with the join's creator as asker. When the creator is no active member by then, no request is
+filed and the member stays without a boss; an owner or admin can set it with a `PATCH` afterwards, which asks
+as for any cross-owner edge.
+
+**Reason:** the request needs an asker to read and withdraw it, and the asker is a membership of the
+project; a creator who left has none. That is what the code needs; no maintainer was asked whether a
+different rule was wanted, so the evidence is the code's own.
+
+**Rejected alternatives:**
+- Filing the request as the human creator would (`asked_by_human`, as for an owner outside the project):
+  possible for a human creator, not for an agent, and nothing asked for it; not built.
