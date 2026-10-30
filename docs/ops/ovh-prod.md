@@ -20,6 +20,29 @@ disagreed or said nothing, this plan says so and names how to settle it before o
 The hub's Helm chart is the same for both. What differs is the values file, so the same chart is exercised on test
 before every prod release.
 
+## 1a. The order, at a glance
+
+The maintainer confirmed (2026-10-30) that the database and the attachments move from Vultr to OVH production, step by
+step. Each step ends before the next begins; the sections named hold the details.
+
+1. **Go for this plan** (the maintainer). Nothing is ordered before it.
+2. **Account** at OVHcloud: project, payment, access for the ops agent's `kubectl` as a kubeconfig file (section 10).
+3. **Build-up**, with production untouched: region check and orders in the form (cluster, PostgreSQL Business, load
+   balancer, second backup location), Traefik, cert-manager, monitoring, Secrets, the hub on the staging address
+   (sections 3 to 7).
+4. **Acceptance tests** on the staging address, all passed and written down before any real data moves: the five
+   client-address tests, long-poll through the load balancer, restore rehearsal of the dump and of PITR, the timed
+   rehearsal of the data move on a copy of the newest dump, the load test (sections 4, 5, 9, 12).
+5. **Data move in a maintenance window**, with checks: Vultr hub stopped, final dump and attachment tar, restore on OVH,
+   hub started, `post-upgrade-checks.sh` and a login against OVH by address, row counts and the newest records compared
+   with the dump (section 9). If a check fails, nothing has changed for users yet.
+6. **DNS switch** to OVH, one record set at a time (`maity.team`, `www`, `join`), with the watch of section 9; the point
+   of no return is named in the chat before it.
+7. **Seven days of fallback**: the Vultr hub stays scaled to 0 with its data, the DNS can be pointed back until the
+   first write on OVH (section 9).
+8. **Only then Vultr becomes the test system**: new name `maity-test.team`, new certificate, **empty database**, mail
+   sink, deploys from `main` (section 13).
+
 ## 2. OVH region and services: what the documentation says
 
 The maintainer chose **Paris (`EU-WEST-PAR`) with the Standard plan of Managed Kubernetes** (decision 2026-10-30,
