@@ -561,10 +561,71 @@ def test_the_bell_costs_the_same_statements_for_more_personal_requests(
     def read() -> None:
         assert owner.get("/me/notifications", params={"limit": 50}).status_code == 200
 
-    file(4)
+    # Both sizes above a page (limit 50): the page is read only as far as it reaches, so
+    # a fuller window costs the same; under a page it costs less (fewer chunks).
+    file(20)
     read()  # the first read of a session does one-time work; it is not a cost per item
     few = _statements(migrated, read)
     file(20)
     many = _statements(migrated, read)
     assert many == few, (few, many)
-    assert bell(owner, limit=0)["counts"]["inbox"] == 3 * 24
+    assert bell(owner, limit=0)["counts"]["inbox"] == 3 * 40
+
+
+def _walk(who: flow.Human, **query: Any) -> list[str]:
+    """Every item id, page by page through `next_cursor`."""
+    ids: list[str] = []
+    cursor = None
+    while True:
+        params = {"limit": 3, **query, **({"cursor": cursor} if cursor else {})}
+        page = who.get("/me/notifications", params=params).json()
+        ids += [i["id"] for i in page["items"]]
+        cursor = page["next_cursor"]
+        if not cursor:
+            return ids
+
+
+@pytest.mark.parametrize("query", [{}, {"unread": "true"}, {"kind": "inbox"}])
+def test_paging_reads_as_far_as_the_page_and_lists_what_the_whole_window_holds(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, query: dict[str, Any]
+) -> None:
+    """The page is cut while the sources are read (tsk-r8f0jm3xs9y6); walked to its end it
+    lists exactly what deriving the whole window lists, in §18.2's order."""
+    from maity_hub.notifications import items, listing
+
+    agents = [flow.agent(make_client, owner) for _ in range(2)]
+    for n in range(7):
+        for agent in agents:
+            _file(migrated, agent.id)
+            agent.post(
+                "/projects/maintainer/maity/requests", {"class": "decision", "title": f"Which {n}?"}
+            )
+    owner.post("/me/notifications/read", {"ids": [_walk(owner)[2]]})  # one read item
+    with migrated.connect() as conn:
+        where = items.scope(conn, owner.id, "http://testserver")
+        unread = query.get("unread") == "true"
+        kinds = {query["kind"]} if "kind" in query else None
+        whole = listing.select_items(
+            items.derive(conn, where), kinds=kinds, projects=None, unread=unread
+        )
+        expected = [i.id for i in sorted(whole, key=lambda i: i.order, reverse=True)]
+    assert expected, "the fixture produced items"
+    assert _walk(owner, **query) == expected
+
+
+def test_a_page_derives_about_a_page_of_items_however_full_the_window(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.notifications import items
+
+    agent = flow.agent(make_client, owner)
+    for _ in range(120):
+        _file(migrated, agent.id)
+    with migrated.connect() as conn:
+        where = items.scope(conn, owner.id, "http://testserver")
+        page = items.derive_page(
+            conn, where, count=21, newest_first=True, wanted=lambda _item: True
+        )
+        whole = items.derive(conn, where)
+    assert len(whole) >= 120
+    assert len(page) <= 21 * 3  # per source at most a page: events, chats, records

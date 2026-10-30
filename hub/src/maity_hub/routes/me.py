@@ -199,7 +199,10 @@ def open_requests(conn: Connection, membership_id: int) -> int:
     mine = Membership(project, row, "agent" if row.agent_id else "human")
     open_rows = conn.execute(
         select(t.request).where(
-            t.request.c.project_id == row.project_id, t.request.c.status == "open"
+            t.request.c.project_id == row.project_id,
+            t.request.c.status == "open",
+            # A personal request is never addressed to a membership (§7): not read here.
+            t.request.c.personal.is_(False),
         )
     ).all()
     return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))
