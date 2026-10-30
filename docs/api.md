@@ -9087,7 +9087,7 @@ are the same filter for a cursor.
 **The item.**
 
 ```json
-{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "to": "trust:admin",
+{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "from_instance": "wqe2", "to": "trust:admin",
   "task_id": "tsk-0004", "body": "CI on main has been red since #212 …",
   "sent_at": "2026-10-21T13:41:20Z",
   "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
@@ -9096,24 +9096,27 @@ are the same filter for a cursor.
   "redacted": false, "redaction": null }
 ```
 
-`from` is the actor's member id, `sent_at` the event's `at`; `to`,
+`from` is the actor's member id, `from_instance` the id of the agent
+instance that wrote it (`actor.instance`, §6.17) — `null` for a human
+and for a message the hub wrote without an instance — as a conversation's
+messages carry it (§9); `sent_at` the event's `at`; `to`,
 `task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
-keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
+keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
-`attachments`, `redacted` and `redaction`; it drops `conversation_id`
-and `delivered_at` (a project message has no single recipient whose
+`attachments`, `redacted` and `redaction`; it drops `conversation_id`,
+`to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
 
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
 "reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
-`task_id` and `review` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
-stay on the event. A tombstone has no type, so it is listed only without
+`task_id` and `review` are `null` too; `from`, `from_instance` and
+`sent_at` stay, as `actor` and `at` stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
 
