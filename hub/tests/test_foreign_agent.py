@@ -254,3 +254,89 @@ def test_the_request_of_an_asker_who_left_the_project_is_withdrawn_with_them(
     assert row.status == "withdrawn"
     assert answer(friend, row.id, "go").status_code == 409
     assert _row(migrated, lent).role == "coder"
+
+
+def _put_roles(owner: flow.Human, custom: Any) -> Any:
+    return owner.client.put(
+        f"/api/v1{PROJECT}/roles", json={"custom": custom}, headers={"X-CSRF-Token": owner.csrf}
+    )
+
+
+def test_a_go_checks_the_calls_own_rules_against_todays_state(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An owner who asked for trust `admin` and was demoted meanwhile no longer grants it."""
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    partner = flow.human(make_client, migrated, "partner")
+    factory.membership(migrated, _project(migrated), "owner", human_id=partner.id)
+    asked = put(partner, lent, trust="admin")
+    assert asked.status_code == 202, asked.text
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == partner.id).values(trust="admin")
+        )
+    refused = answer(friend, asked.json()["id"], "go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "asker_not_allowed"
+    assert _row(migrated, lent).trust != "admin"
+
+
+def test_a_go_is_refused_for_an_admin_agent_that_was_isolated_or_lost_its_trust(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    admin = flow.agent(make_client, owner, role="admin")
+    first = put(admin, lent, areas=["web/"]).json()["id"]
+    isolated = owner.post(f"{PROJECT}/members/{admin.id}/isolate", {"reason": "loud"})
+    assert isolated.status_code == 200, isolated.text
+    refused = answer(friend, first, "go")
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "asker_not_allowed"
+    owner.delete(f"{PROJECT}/members/{admin.id}/isolate")
+    second = put(admin, lent, areas=["api/"]).json()["id"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == admin.id).values(trust="member")
+        )
+    again = answer(friend, second, "go")
+    assert again.status_code == 409 and again.json()["error"]["code"] == "asker_not_allowed"
+    assert _row(migrated, lent).areas != ["api/"]
+
+
+def test_a_project_role_is_read_again_at_the_go(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    legal = {"name": "legal", "base": "reviewer"}
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    assert _put_roles(owner, [legal]).status_code == 200
+    asked = put(owner, lent, role="legal")
+    assert asked.status_code == 202, asked.text
+    # The base moves while the request waits: the agent gets the base the role has now.
+    assert _put_roles(owner, [{**legal, "base": "coder"}]).status_code == 200
+    assert answer(friend, asked.json()["id"], "go").status_code == 200
+    row = _row(migrated, lent)
+    assert (row.role, row.role_base) == ("legal", "coder")
+    # And a role removed meanwhile refuses the go; the request stays open for a no. The agent
+    # leaves the role first, so that the removal is allowed (an open request does not count).
+    from sqlalchemy import update
+
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == lent)
+            .values(role="reviewer", role_base="reviewer")
+        )
+    asked_legal = put(owner, lent, role="legal")
+    assert asked_legal.status_code == 202, asked_legal.text
+    removed = _put_roles(owner, [])
+    assert removed.status_code == 200, removed.text
+    refused = answer(friend, asked_legal.json()["id"], "go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "role_unknown"
+    assert answer(friend, asked_legal.json()["id"], "no").status_code == 200

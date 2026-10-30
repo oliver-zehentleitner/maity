@@ -17,9 +17,10 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import cross_owner, namespace, proposals
+from maity_hub import cross_owner, namespace, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
+from maity_hub.admin_agents import AGENT_ROLES, AGENT_TRUSTS
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
@@ -143,25 +144,38 @@ def file(
     )
 
 
-def _still_allowed(asker: Any) -> None:
-    """The asker may still ask: still an active member, not isolated, and still holding
-    `members:admin` (a human) or still an admin agent, by the role's base (a project's own
-    role holds the scopes of its base). Otherwise the `go` is refused and the request stays
-    open, for a `no` or a withdrawal, as every other refusal at a `go` (§6.2)."""
-    allowed = (
-        asker is not None
-        and asker.active is True
-        and asker.isolated_since is None
-        and (
-            in_admin_team(asker.trust, asker.role_base)
-            if asker.agent_id is not None
-            else has_scope(asker.trust, asker.role_base, "human", "members:admin")
-        )
-    )
-    if not allowed:
-        raise ApiError(
-            409, "asker_not_allowed", "the one who asked may not change this member any more"
-        )
+def _refuse(why: str) -> ApiError:
+    return ApiError(409, "asker_not_allowed", why)
+
+
+def _still_allowed(asker: Any, project: Any, target: Any, values: dict[str, Any]) -> None:
+    """The asker may still make this change: still an active member, not isolated, still
+    holding `members:admin` (a human) or still an admin agent, by the role's base (a project's
+    own role holds the scopes of its base), and the call's own checks hold against today's
+    state: only an owner grants trust `owner` or `admin` or the role `proxy`, an admin agent
+    stays within §2.3 ᵃ. Otherwise the `go` is refused and the request stays open, for a `no`
+    or a withdrawal, as every other refusal at a `go` (§6.2)."""
+    from maity_hub.routes import members
+
+    if asker is None or asker.active is not True or asker.isolated_since is not None:
+        raise _refuse("the one who asked may not change this member any more")
+    agent = asker.agent_id is not None
+    if agent and not in_admin_team(asker.trust, asker.role_base):
+        raise _refuse("the one who asked is no admin agent any more")
+    if not agent and not has_scope(asker.trust, asker.role_base, "human", "members:admin"):
+        raise _refuse("the one who asked no longer holds members:admin")
+    mine = Membership(project, asker, "agent" if agent else "human")
+    try:
+        members._require_owner_for_change(mine, target, values)
+    except ApiError:
+        raise _refuse("the one who asked may not grant this any more") from None
+    if agent and (
+        values.get("trust", "member") not in AGENT_TRUSTS
+        or values.get("role_base", "coder") not in AGENT_ROLES
+        or "capabilities" in values
+        or (values.get("role", target.role) != target.role and target.role == "manager")
+    ):
+        raise _refuse("an admin agent does not make this change")
 
 
 def settle(conn: Connection, s: proposals.Settlement) -> None:
@@ -180,13 +194,20 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if target is None or target.active is None:  # removed meanwhile: nothing left to change
         return
     asker = conn.execute(select(t.membership).where(t.membership.c.id == request.asked_by)).first()
-    _still_allowed(asker)
+    given, reason = proposal["pause"]
+    values = dict(proposal["values"])
+    if "role" in values:
+        # The base of the role as the project has it now: a project role may have been rebased
+        # or removed while the request waited (§2.3 "Project roles").
+        base = project_roles.base_of(project, values["role"])
+        if base is None:
+            raise ApiError(409, "role_unknown", "the project has no such role any more")
+        values["role_base"] = base
+    _still_allowed(asker, project, target, values)
     assert asker is not None  # `_still_allowed` refuses a missing asker
     by = principal_id(conn, asker.id)
     assert by is not None
     change = members.Change(project, s.proposer, by, s.approver, None, None)
-    given, reason = proposal["pause"]
-    values = dict(proposal["values"])
     old = members.apply_patch(
         conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
     )

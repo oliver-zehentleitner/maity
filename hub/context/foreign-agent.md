@@ -35,13 +35,18 @@ and puts the rules where they already run, on the call.
   conflict with the project's state the way an edge can; a removed member is the only change that matters and
   withdraws the request.
 
-At `go`, `_still_allowed` checks the asker again: still an active member, not isolated, and still holding
-`members:admin` (a human) or still an admin agent. A `go` that fails it is refused (`409 asker_not_allowed`) and
-the request stays open for a `no` or a withdrawal, as every other refusal at a `go`; the owner then agrees to
-nothing that someone who may no longer ask could apply. Rejected: not checking, as `cross_owner.settle` does
-for the edge (its asker's rights do not decide what the owners agreed to; here the asker's change is what is
+At `go` the change is checked again as it stands now, not only the right to ask (`_still_allowed`): the
+asker is still an active member, not isolated, and still holds `members:admin` (a human) or is still an admin
+agent, by the role's base; the call's own rules hold against today's state (only an owner grants trust `owner`
+or `admin` or the role `proxy`, an admin agent stays within §2.3 ᵃ); and the role is read again from the
+project (`project_roles.base_of`), so a project role that was rebased while the request waited gives the agent
+its base as it is now. A `go` that fails the asker's checks is refused with `409 asker_not_allowed`, one for a
+role the project no longer has with `409 role_unknown`; either way the request stays open for a `no` or a
+withdrawal, as every other refusal at a `go`. Rejected: not checking, as `cross_owner.settle` does for the
+edge (there the asker's rights do not decide what the owners agreed to; here the asker's change is what is
 applied). Rejected: withdrawing the request in the same call: the answer is the owner's and cannot be undone
-from inside it.
+from inside it. Rejected: counting an open request as a use of a project role: removing a role is then
+refused by a request the owner may never answer; the `go` refuses instead.
 
 **Not covered, and decided so:**
 - The withdrawal of the request by anyone but the asker on the project route (the owner withdraws and
