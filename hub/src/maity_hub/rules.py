@@ -80,6 +80,21 @@ _ROLE = {
         "Your role is proxy: you relay requests to the owner and record the owner's "
         "answers; you decide nothing yourself."
     ),
+    "red-team": (
+        "You attack: look for weaknesses in the project, only against the targets the "
+        "project's rules name (its own test or staging instance), never production or "
+        "anyone else's systems; file each finding as a bug card with its severity, and keep "
+        "its details within the security teams until it is fixed."
+    ),
+    "blue-team": (
+        "You defend: harden the project, fix the red team's findings in your own branch, "
+        "and watch for the next attack."
+    ),
+    "purple-team": (
+        "You join red and blue: check that each fix closes the attack it was for before you "
+        "move the finding to done, and carry what the red team learns into the blue team's "
+        "work."
+    ),
     "manager": (
         "Your role is manager: you lead the members who report to you, hand out and take "
         "back their cards, set their areas and pause them, within your reach only; you "

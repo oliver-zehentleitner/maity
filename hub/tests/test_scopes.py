@@ -25,6 +25,10 @@ ROLE_TABLE = {
     "writer": CODER,
     "proxy": CODER,
     "manager": CODER | {"line:lead"},  # §2.3 "The manager"
+    # The security teams have the scopes of the role they are built on (§2.3).
+    "red-team": CODER | {"tasks:test"},
+    "blue-team": CODER,
+    "purple-team": CODER | {"tasks:review", "releases:write"},
 }
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
 

@@ -26,14 +26,12 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit
-from maity_hub.scopes import WORK_ROLES, in_admin_team
+from maity_hub.scopes import SENSITIVE_ROLES, WORK_ROLES, in_admin_team
 from maity_hub.views import principal_id
 
 # What an admin agent manages and sets (§2.3 ᵃ).
 AGENT_TRUSTS = ("member", "guest")
 AGENT_ROLES = (*WORK_ROLES, "ops")
-# A change of these members waits for the owner's go.
-SENSITIVE_ROLES = ("reviewer", "tester")
 
 
 def check_target(mine: Membership, target: Any) -> None:
