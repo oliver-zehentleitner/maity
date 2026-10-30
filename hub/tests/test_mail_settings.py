@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, select
 
-from maity_hub import clock, secretbox
+from maity_hub import secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.mail import address, headers, settings, smtp
@@ -605,22 +605,6 @@ def test_a_certificate_for_another_name_is_refused(
     outcome = owner.post(f"{PATH}/test", {"to": "a@example.org"}).json()
     assert (outcome["ok"], outcome["stage"]) == (False, "tls")
     assert "MAIL" not in server.record.commands
-
-
-def test_a_stored_name_without_a_registry_entry_is_ignored(
-    make_client: ClientFactory, migrated: Engine, caplog: pytest.LogCaptureFixture
-) -> None:
-    owner = admin(make_client, migrated, env_of())
-    with migrated.begin() as conn:
-        conn.execute(
-            insert(t.instance_setting).values(
-                name="mail.retired", value="x", updated_at=clock.now(), updated_by=None
-            )
-        )
-    with caplog.at_level("WARNING"):
-        got = owner.get(PATH)
-    assert got.status_code == 200 and "retired" not in got.text
-    assert any("mail.retired" in r.getMessage() for r in caplog.records)
 
 
 # --- addresses and header values ----------------------------------------------------

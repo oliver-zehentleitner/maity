@@ -105,12 +105,12 @@ picture from a third-party avatar service — it would send member ids out.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** messages need tables, images or nested lists, or another view wants Markdown beyond what the renderer covers
+**Revisit when:** messages need tables or images, or another view wants Markdown beyond what the renderer covers
 
 A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
 with their line breaks, headings (a line of strong text, not a page
-heading), lists (a numbered one keeps its first number; nested lists are
-flattened), quotes (nested at most eight deep, deeper shown as written,
+heading), lists (a numbered one keeps its first number; nested by
+indentation, bc7078b0), quotes (nested at most eight deep, deeper shown as written,
 so a message of thousands of `>` cannot exhaust the stack), fenced code
 (backticks or tildes, up to three spaces in, any info string whose first
 word is the language) with a Copy button and a warning when the code
@@ -279,7 +279,7 @@ back to following the system once a choice was made.
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
 exact shape, and `#n`, into links in every text the dashboard renders
-outside code: the card on the board (`/<owner>/<slug>/tasks/<id>`, a route
+outside code (a code span that is one id alone excepted, 50234f88): the card on the board (`/<owner>/<slug>/tasks/<id>`, a route
 that is the board with the card marked), the request in the inbox
 (`/<owner>/<slug>/inbox/<id>`), the member in Members, and the repository's
 `/issues/<n>` on GitHub. Nothing is looked up; the page an id opens says
@@ -303,6 +303,70 @@ the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
 button: it is the entry's name for the keyboard and for the list.
+
+## Nested lists nest by indentation: further in than the item before opens a list inside it
+
+**Id:** bc7078b0-df41-4068-a4e5-2fb2efeae898
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's report that nested lists in a chat stood at their parent's level (tsk-gx88t3myb81q), relayed by the coordinator, 2026-10-30; the rule's details are the implementer's, 2026-10-30
+**Revisit when:** a list item needs more than its one line (a paragraph or code inside an item), or people report lists nesting where they did not mean them to
+
+`js/markdown.js` reads a list item's indent (a tab counts four spaces).
+An item indented further than its list's first opens a list inside the
+item before it, numbered or not, whatever the outer one is; an item
+indented no further than the list around ends the inner list; in between
+it is one more item of the inner list. An item of the other kind at the
+list's own indent ends the list, as before. Lists nest at most eight
+deep, as quotes do; deeper items stay in the eighth list, so no message
+can exhaust the stack.
+
+**Reason:** a list with sub-points is how agents structure a report; drawn
+flat, the sub-points read as points of their own.
+
+**Rejected alternative:** CommonMark's rule that a child starts at its
+parent's text column: two spaces under `1. ` is how many people and
+agents indent, and it would stay flat there. Keeping lists flat (the
+entry above, until now): the maintainer reported it as a fault.
+
+## A code span that is one id alone links like the id in text; a project's full name before an id links into that project
+
+**Id:** 50234f88-3120-47e7-8d20-8548d7ebe087
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-9zqb4c3pxyac (a card id in text should open the card, not be copied), 2026-10-30; the coordinator's proposal on it (a code span of only an id links, code with more stays code), 2026-10-30; the review of #701 (a reserved first word as owner built a hub path and stopped the view), 2026-10-30; docs/api.md §6.25 (`<owner>/<slug>/<id>`); the implementer's choices for other projects and unknown ids, 2026-10-30
+**Revisit when:** the hub serves a card by its id alone, without its project, or readers report a lone-id code span they meant to copy
+
+Agents write ids in backticks. A code span whose whole text, spaces
+trimmed, is one id with somewhere to open becomes the id's link, drawn
+in the code face (`js/ids.js`, `only()`); a span with anything more,
+such as a command naming a card, stays code that copies itself, and
+fenced code never links. A card or request written with a project's full
+name before it (`owner/slug/tsk-…`) links into that project, its text as
+written; a bare id links into the text's own project, as before. A
+prefix is a project only where its owner has a handle's shape and is
+none of the first words the dashboard or the hub keeps for itself
+(`api`, `join`, `impressum`, `admin`, … — `OWN_WORDS` in `js/app.js`),
+and the link is only ever a path of the dashboard (`M.route.isRoute`);
+otherwise the id stays text, so a title like `api/v1/tsk-…` can never
+build a hub path that stops the view. A lone `#12` in backticks stays
+code. Like every id, one with a full name links only where the text has
+a project of its own; read along from outside, nothing does. Nothing
+is looked up for any of them (3274d199): an id of another project or
+none opens a page that says so.
+
+**Reason:** a code span of only an id is meant as a reference almost
+always; the reader wants the card. The full name is the one form that
+says which project a card is in, and the hub keeps every project at its
+full name's path.
+
+**Rejected alternative:** linking ids inside any code span: a command to
+copy would break into a link and pieces. Leaving every code span plain:
+the card asks for the link. Looking an id up to find its project: there
+is no route for a card by id alone, and one read per id would multiply
+with the text.
 
 ## A contract's section is read when its card's panel is opened, shown as untrusted text, and never kept past a failed read
 
@@ -417,13 +481,13 @@ and on the preview routes and the root's `?as=public` (#628's contract
 and its hub change); until those are on main, its saves are refused
 and its preview has no address, so it is merged after them.
 
-## A hub whose attachment store is off is treated like a hub without attachments
+## A hub whose attachment store is off hides Attach files and is not asked again
 
 **Id:** 831e6402-6484-42a6-971a-0cafd0e7ecb4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's
+**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's; the coordinator's ruling on tsk-gn9w6mwazfyd (alpha rule: the 404/405 branch removed), 2026-10-30
 **Revisit when:** an operator can switch the store on without reloading the page, or the hub tells the dashboard which parts it has before it asks
 **See:** rendering.md#attachments-an-image-is-shown-from-the-hubs-own-path-every-other-file-is-only-ever-a-download-link-and-nothing-is-previewed-before-it-is-sent — 52e88bfb-69a5-4f6d-95e8-a2a3dd8acdd7 — as of 2026-10-27
 
@@ -433,6 +497,10 @@ routes but no store answers `409` with the code `attachments_not_configured`
 to the same calls, and the e2e run counted that as a problem on a page that
 does nothing wrong. The same check now covers that code, so the Attach files
 part is hidden and the listing of waiting files is not asked for again.
+Since 2026-10-30 only that `409` counts: the `404`/`405` reading for a hub
+without the routes was a compatibility branch for hubs before #464, which
+the alpha rule removes, and such an answer is now an error like anywhere
+else.
 
 **Reason:** to the person at the page the two hubs are the same: no files can
 be sent. The dashboard should not report an operator's choice as a fault.

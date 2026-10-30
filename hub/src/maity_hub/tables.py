@@ -553,13 +553,13 @@ project = Table(
     # optional or required (§2.2).
     Column("signing", String(16), nullable=False, server_default="optional"),
     # What an agent's placement proposal does, and how many placements may be active
-    # (§6.1, §15.6); the defaults fill projects made before 0008.
+    # (§6.1, §15.6).
     Column("spawn_requests", String(16), nullable=False, server_default="consent"),
     Column("max_placements", Integer, nullable=False, server_default="8"),
-    # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
+    # Who answers a placement's consent request (§6.1, §15.6).
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
-    # alone (§6.1, §6.12); the defaults fill projects made before 0024.
+    # alone (§6.1, §6.12).
     Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
@@ -2086,5 +2086,23 @@ moderation_hold = Table(
     Column("action", String(16), nullable=False),  # hide, remove
     Column("at", UtcDateTime, nullable=False),
     Index("ix_moderation_hold_target", "target_type", "target_id"),
+    **MYSQL_TABLE,
+)
+
+# A public page as the hub rendered it (docs/api.md §16.9): one row per address, the HTML as it is
+# served, its ETag, a digest of the inputs it was made from and when they last changed (`lastmod`
+# of the sitemap). Taking a page off is deleting its row, in the transaction that changed the input.
+public_page = Table(
+    "public_page",
+    metadata,
+    Column("path", String(255), primary_key=True),
+    Column("kind", String(16), nullable=False),  # person, organisation, project, view, agent
+    Column("target_id", String(255), nullable=False),  # the id of what the page shows
+    Column("body", MARKDOWN_TEXT, nullable=False),
+    Column("etag", String(80), nullable=False),
+    Column("inputs", String(64), nullable=False),
+    Column("lastmod", UtcDateTime, nullable=False),
+    Column("rendered_at", UtcDateTime, nullable=False),
+    Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )

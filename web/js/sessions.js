@@ -20,9 +20,6 @@ window.Maity = window.Maity || {};
   const MAIL = ["email_link", "email_code"];
   // Unread security items are few (the mail limits); read at most this many pages.
   const ALERT_PAGES = 10;
-  // A hub without the session list is not asked again until the next
-  // navigation (M.api.absent, cleared by js/app.js).
-  const hubWithout = () => M.api.absent.has("GET", "/auth/sessions");
 
   // The hub's refusals, in words (§2.6.5, §2.6.3).
   function said(err) {
@@ -46,23 +43,10 @@ window.Maity = window.Maity || {};
     return items;
   }
 
-  // What the hub has: the sessions (ended ones too) and the unread security
-  // items; a hub without notifications has no items, not an error.
+  // What the hub has: the sessions (ended ones too) and the unread security items.
   async function load() {
-    if (hubWithout()) throw Object.assign(new M.api.ApiError("no sessions", 404, "/auth/sessions", "not_found"), { notOnHub: true });
-    let sessions;
-    try {
-      sessions = (await M.api.get("/auth/sessions?ended=true")).items;
-    } catch (err) {
-      if (await M.api.missingRoute(err, "GET", "/auth/sessions")) { M.api.absent.note("GET", "/auth/sessions"); err.notOnHub = true; }
-      throw err;
-    }
-    let alerts = [];
-    try {
-      alerts = M.api.absent.has("GET", "/me/notifications") ? [] : await unreadAlerts();
-    } catch (err) {
-      if (!(await M.api.missingRoute(err, "GET", "/me/notifications"))) throw err;
-    }
+    const sessions = (await M.api.get("/auth/sessions?ended=true")).items;
+    const alerts = await unreadAlerts();
     return { sessions, alerts, current: sessions.find((s) => s.current) || null };
   }
 
@@ -150,8 +134,7 @@ window.Maity = window.Maity || {};
       try {
         data = await load();
       } catch (err) {
-        append(clear(body), err.notOnHub ? M.dom.notOnHub("This hub lists no sessions yet.")
-          : h("p", { class: "send-status failed" }, "Could not read your sessions: " + err.message));
+        append(clear(body), h("p", { class: "send-status failed" }, "Could not read your sessions: " + err.message));
         return null;
       }
       const { sessions, alerts, current: cur } = data;
@@ -224,7 +207,7 @@ window.Maity = window.Maity || {};
   async function addressChange(ctx, cur, sessions, act) {
     let settings;
     try {
-      settings = M.notify && M.notify.state.available === false ? null : await M.api.get("/me/notification-settings");
+      settings = await M.api.get("/me/notification-settings");
     } catch (err) {
       return null;
     }

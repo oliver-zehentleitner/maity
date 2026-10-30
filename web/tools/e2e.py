@@ -92,11 +92,6 @@ class Run:
         self.problems: list[str] = []
         self.axe = ""
         self.a11y_findings: list[dict] = []
-        # Set when the hub answers the notifications read with 404 (§18).
-        self.no_notifications = False
-        # §8.7 "Attachments off": each 409 for the pending uploads as the page got
-        # it, judged one by one in no_problems() (a response handler reads no body).
-        self.off_answers: list = []
         # The page's latest API answers, read back when a step fails (report_failure()): what
         # the hub said is told apart from what the page drew of it.
         self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
@@ -375,32 +370,9 @@ def watch_page(run: Run, page: Page) -> None:
         path = resp.url.split(run.base, 1)[-1]
         if path.startswith("/api/v1/"):
             run.recent.append(resp)
-        # A hub without notifications (docs/api.md §18) answers their read with
-        # 404 on every page, and their settings (which the page then no longer
-        # asks for); the page goes on without them, and the notifications step
-        # checks that.
-        if resp.status == 404 and (path.startswith("/api/v1/me/notifications?") or path == "/api/v1/me/notification-settings"):
-            run.no_notifications = True
-            return
-        # A hub without the session list (docs/api.md §2.6.5) answers it 404,
-        # once per page load; the account page says so.
-        if resp.status == 404 and path == "/api/v1/auth/sessions?ended=true":
-            return
-        # A composer, and Project settings, ask once per page load for the
-        # uploads waiting to be sent (§8.7); a hub without attachments answers
-        # 404, and one with them off 409, which no_problems() accepts only with
-        # the code attachments_not_configured.
-        pending = PENDING_UPLOADS.match(path)
-        if resp.status == 409 and pending:
-            # The code from the Maity-Error header, read now: on paths a page.goto
-            # is a full load, after which the body of an earlier answer is gone.
-            run.off_answers.append((resp, resp.headers.get("maity-error")))
-            return
         # Signed out, the page asks /auth/session first and expects 401.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
-        ) and not (
-            resp.status == 404 and pending
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
@@ -411,18 +383,16 @@ def watch_page(run: Run, page: Page) -> None:
 
 
 def view_tab(page: Page, name: str):
-    """A project view's tab. With the hub's notifications its name carries a count
-    ("Inbox 1 open", "Chat 2 unread"); without them it is the view's name alone."""
+    """A project view's tab. Its name carries a count while anything is open or
+    unread ("Inbox 1 open", "Chat 2 unread"); otherwise it is the view's name alone."""
     pattern = re.compile(rf"^{re.escape(name)}( \d+ (open|unread))?$")
     return page.locator("nav.views").get_by_role("link", name=pattern)
 
 
 def expect_inbox_empty(page: Page) -> None:
-    """The empty inbox says "Nothing waits for you." while the hub has no
-    notifications route, and "No open requests." once it has one."""
-    # Not anchored: the empty entry also holds a hint, as the plain text match allowed.
-    empty = re.compile(r"Nothing waits for you\.|No open requests\.")
-    expect(page.get_by_text(empty)).to_be_visible()
+    """The empty inbox says "No open requests."."""
+    # Not anchored: the empty entry also holds a hint.
+    expect(page.get_by_text("No open requests.")).to_be_visible()
 
 
 def project_settings(page: Page) -> None:
@@ -430,22 +400,6 @@ def project_settings(page: Page) -> None:
     view_tab(page, "Settings").click()
     expect(page).to_have_url(re.compile(r"/[^/]+/[^/]+/settings$"))
     expect(page.locator("#project-panel")).to_be_visible()
-
-
-# The pending uploads a composer and Project settings ask for (§8.7).
-PENDING_UPLOADS = re.compile(r"/api/v1/projects/[^/]+/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$")
-
-
-def off_problem(method: str, path: str, status: int, body: object) -> str | None:
-    """None for exactly a hub with attachments off answering the pending list:
-    GET, that path, 409, code attachments_not_configured (§8.7). Anything else
-    is the problem it is, said with its code. Each answer on its own: no flag
-    carries one answer's verdict to another."""
-    error = body.get("error") if isinstance(body, dict) else None
-    code = error.get("code") if isinstance(error, dict) else None
-    if method == "GET" and PENDING_UPLOADS.match(path) and status == 409 and code == "attachments_not_configured":
-        return None
-    return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
 
 
 # What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
@@ -525,24 +479,7 @@ def report_failure(answers: list, base: str, artifacts: Path) -> str:
     return trace
 
 
-BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404( \(not_found\))?$")
-
-
 def no_problems(run: Run, where: str) -> None:
-    # Each 409 for the pending uploads, judged by its own body, read here
-    # outside the response handler.
-    answers, run.off_answers = run.off_answers, []
-    for resp, header_code in answers:
-        try:
-            body = resp.json()
-        except Exception:  # not JSON, or gone with a later page load: the header's code then
-            body = {"error": {"code": header_code}} if header_code else None
-        problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
-        if problem:
-            run.problems.append(problem)
-    # A hub before the chat list across projects (§9.3) answers it 404 wherever
-    # /chats is open; the page then reads each project's list, as before.
-    run.problems = [p for p in run.problems if not BEFORE_CHAT_LIST.match(p)]
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
 
@@ -1012,7 +949,6 @@ def scenario(run: Run, page: Page) -> None:
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
     assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
     run.shot(page, "phone-runners")
-    run.problems = [p for p in run.problems if p != "GET /api/v1/runners?limit=200 answered 404"]
     no_problems(run, "phone width")
 
     users_step(run, page)
@@ -1085,26 +1021,12 @@ def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     no_problems(run, "id links")
 
 
-def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:
-    """Whether the hub's openapi.json lists `method path`, as the dashboard decides it
-    (js/api.js hubHas): with or without the /api/v1 prefix, parameter names not compared."""
-    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
-
-    def key(p: str) -> str:
-        return re.sub(r"\{[^}]*\}", "{}", re.sub(r"^/api/v1(?=/)", "", p))
-
-    return any(key(p) == key(path) and method.lower() in ops for p, ops in paths.items())
-
-
 def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
     # start_hub gives the hub a local store (MAITY_ATTACHMENT_DIR), so the real upload is
-    # required: a hub that lists no uploads, has them off or refuses the file is a broken
-    # store wiring here, never a case to pass quietly. The off case is the smoke's
-    # (fixture mode, ?attachments=off).
-    if not hub_serves(run, page, "POST", "/projects/{owner}/{slug}/attachments"):
-        raise AssertionError("attachments: the hub runs with MAITY_ATTACHMENT_DIR but its openapi.json lists no uploads")
+    # required: a hub that has them off or refuses the file is a broken store wiring here,
+    # never a case to pass quietly. The off case is the smoke's (fixture mode, ?attachments=off).
     probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/attachments?status=pending&limit=200")
     if probe.status != 200:
         code = (probe.json().get("error") or {}).get("code") if probe.headers.get("content-type", "").startswith("application/json") else None
@@ -1147,15 +1069,6 @@ def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
 def group_chat_form_step(run: Run, page: Page) -> None:
     """Group chats (docs/api.md §9.2): the create form, and one's own agent alone pointed to the direct chat."""
     page.goto(f"{run.base}/owner/e2e-alpha/chat")
-    if not hub_serves(run, page, "POST", "/projects/{owner}/{slug}/conversations"):
-        # A hub without group chats: no link to create one, and the list says why it has none.
-        run.step("group chat: the hub's openapi.json has no group chats; the list says so and offers none")
-        pane = page.locator(".chat-list-pane")
-        expect(pane).to_contain_text("This hub has no group chats yet.")
-        expect(pane.get_by_role("link", name="New group chat", exact=True)).to_have_count(0)
-        run.a11y(page, "chat without group chats")
-        no_problems(run, "group chat form")
-        return
     run.step("group chat: the owner opens New group chat; their own agent alone is the direct chat, said before anything is sent")
     page.locator(".chat-list-pane").get_by_role("link", name="New group chat", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/chat/new$"))
@@ -1278,10 +1191,9 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("#chat-text").fill("Hello from the global chat.")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("ol.messages li.msg.out").last).to_contain_text("Hello from the global chat.")
-    if not run.no_notifications:
-        # No project feed here: the notifications stream brings the agent's answer in.
-        run.maity(alpha, "say", "human", "A reply seen in the global chat.")
-        expect(page.locator("ol.messages li.msg.in").last).to_contain_text("A reply seen in the global chat.", timeout=20000)
+    # No project feed here: the notifications stream brings the agent's answer in.
+    run.maity(alpha, "say", "human", "A reply seen in the global chat.")
+    expect(page.locator("ol.messages li.msg.in").last).to_contain_text("A reply seen in the global chat.", timeout=20000)
     run.a11y(page, "global chat")
     page.set_viewport_size({"width": 390, "height": 780})
     expect(page.locator(".chat-list-pane")).to_be_hidden()
@@ -1454,19 +1366,9 @@ def tiny_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
 
 
 def images_step(run: Run, page: Page, alpha: Path) -> None:
-    """The project's logo and banner (docs/api.md §11.2) where the hub has them."""
-    project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    """The project's logo and banner (docs/api.md §11.2)."""
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     chip = page.locator("nav.switcher a", has_text="E2E Alpha")
-    if "logo" not in project:
-        run.step("images: this hub has no logos yet, so the dashboard draws monograms")
-        expect(chip.locator(".project-mark.monogram")).to_have_text("EA")
-        expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
-        project_settings(page)
-        expect(page.locator("#state-select")).to_be_visible()
-        expect(page.locator("#upload-logo")).to_have_count(0)
-        project_settings(page)
-        return
     run.step("images: the owner uploads a logo and a banner, then removes the logo")
     expect(chip.locator(".project-mark.monogram")).to_have_text(
         "EA"
@@ -1602,13 +1504,7 @@ def runners_step(run: Run, page: Page) -> None:
     page.get_by_role("menuitem", name="Runners", exact=True).click()
     expect(page).to_have_url(re.compile(r"/runners$"))
     view = page.locator("main section.view-runners")
-    expect(view.or_(page.locator("main .error"))).to_be_visible()
-    # Only a hub without the endpoint is skipped; any other error fails below.
-    missing = "GET /api/v1/runners?limit=200 answered 404"
-    if page.locator("main .error").count() and missing in run.problems:
-        run.step("runners: this hub has no runners yet")
-        run.problems = [p for p in run.problems if p != missing]
-        return
+    expect(view).to_be_visible()
     expect(page.locator("main .error")).to_have_count(0)
     run.step(
         "runners: pair a runner from the dashboard, exchange the line, rename, re-pair, revoke, remove"
@@ -1618,17 +1514,6 @@ def runners_step(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
     steps = page.locator(".pair-steps")
     expect(steps).to_contain_text("maity runner pair")
-    # A hub before attachments (§15.4) refuses `attach` with 400; the page pairs
-    # without it and says so. That refusal is then expected, not a failure.
-    note_shown = bool(
-        page.locator(".pair-panel")
-        .get_by_text("cannot allow the runner in projects while pairing yet")
-        .count()
-    )
-    if note_shown:
-        run.problems = [
-            p for p in run.problems if p != "POST /api/v1/runners/enrollments answered 400"
-        ]
     config = page.locator(".runner-config").inner_text()
     assert f'url = "{run.base}"' in config and '"owner/e2e-alpha"' in config and '"owner/e2e-beta"' in config, (
         config
@@ -1654,7 +1539,7 @@ def runners_step(run: Run, page: Page) -> None:
     card.get_by_role("button", name="Rename", exact=True).click()
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     expect(card).to_be_visible()
-    project_runners_step(run, page, "e2e-renamed", attached=not note_shown)
+    project_runners_step(run, page, "e2e-renamed")
     page.goto(f"{run.base}/runners")
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     card.get_by_role("button", name="Re-pair", exact=True).click()
@@ -1750,13 +1635,7 @@ def board_order_step(run: Run, page: Page) -> None:
     lower_card = column.locator("article.card", has_text=lower)
     # The lower one goes up, with its Move up arrow.
     lower_card.locator(".card-order").get_by_role("button", name="Move up", exact=True).click()
-    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now (above|at the top)|does not order cards yet"))
-    if "does not order cards yet" in view.locator(".send-status").first.inner_text():
-        # Only a hub without the endpoint is skipped, and the board has to say so.
-        run.step("board order: this hub has no move endpoint yet, and the board says so")
-        run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/owner/e2e-alpha/tasks/[^/]+/move answered 404$", p)]
-        no_problems(run, "board order")
-        return
+    expect(view.locator(".send-status").first).to_contain_text(re.compile(r"is now (above|at the top)"))
     run.step("board order: the owner moves a card up with its arrow, then drags it back below")
     # The status line speaks before the board is read again: wait for the order itself.
     expect(titles).to_have_text([lower, upper])
@@ -1778,22 +1657,12 @@ def board_order_step(run: Run, page: Page) -> None:
 
 
 def ticker_step(run: Run, page: Page) -> None:
-    """The change ticker (docs/api.md §17): whether the hub has it comes from its machine form, not from a 404."""
-    has_ticker = hub_serves(run, page, "GET", "/projects/{owner}/{slug}/ticker")
+    """The change ticker (docs/api.md §17)."""
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     view_tab(page, "Ticker").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/ticker$"))
     main = page.locator("main section.view-ticker")
     expect(main.locator("h2")).to_have_text("Ticker")
-    if not has_ticker:
-        # Only a hub whose openapi.json lacks the path is skipped, the view says so, and its one read is the only 404.
-        run.step("ticker: the hub's openapi.json has no ticker; the view says so")
-        expect(main).to_contain_text("This hub has no ticker yet.")
-        listing = [p for p in run.problems if re.match(r"GET /api/v1/projects/owner/e2e-alpha/ticker\?\S* answered 404$", p)]
-        assert len(listing) == 1, listing
-        run.problems = [p for p in run.problems if p not in listing]
-        no_problems(run, "ticker")
-        return
     run.step("ticker: the owner posts a note, finds it under Everything, mutes notes and stops again")
     form = main.locator("form.ticker-post")
     form.locator("#ticker-post-text").fill("e2e: staging is down for an hour")
@@ -1822,13 +1691,6 @@ def overview_step(run: Run, page: Page) -> None:
     main = page.locator("main")
     expect(main.locator("section.overview-part").first).to_be_visible()
     run.a11y(page, "overview")
-    if main.locator(".overview-missing").count():
-        # Only a hub without the endpoint is skipped, and the page has to say so.
-        run.step("overview: this hub has no overview endpoint yet; links and members show, the counts are said missing, not as an error")
-        expect(main.locator(".send-status.failed")).to_have_count(0)
-        run.problems = [p for p in run.problems if not re.match(r"GET /api/v1/projects/owner/e2e-alpha/overview\?\S* answered 404$", p)]
-        no_problems(run, "overview")
-        return
     run.step("overview: the owner sees the project at a glance; a column count opens the board")
     counts = main.locator(".overview-counts li")
     expect(counts).to_have_count(7)
@@ -1883,7 +1745,7 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     no_problems(run, "message")
 
 
-def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> None:
+def project_runners_step(run: Run, page: Page, name: str) -> None:
     """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     view_tab(page, "Runners").click()
@@ -1900,9 +1762,9 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
         expect(card).to_have_count(0)
         assert asked == [f"Detach {name} from E2E Alpha? Nothing runs on it here."], asked
 
-    if attached:  # allowed while pairing
-        expect(card).to_contain_text("no agent running here")
-        detach()
+    # Allowed while pairing.
+    expect(card).to_contain_text("no agent running here")
+    detach()
     # An option is the runner's name alone (its presence changes, the form should not).
     option = page.locator("#allow-runner option", has_text=re.compile("^" + re.escape(name) + "$"))
     page.locator("#allow-runner").select_option(value=option.get_attribute("value"))
@@ -1921,15 +1783,6 @@ def notifications_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     bell = page.locator("header button.bell")
-    if run.no_notifications:
-        # Only a hub without the endpoint is skipped: no bell, and no error on the page.
-        run.step("notifications: this hub has no notifications yet; the bell a link to everything waiting, no counts")
-        expect(bell).to_have_count(0)
-        expect(page.locator('header a.bell[href="/all"]')).to_have_attribute("aria-label", "Notifications")
-        expect(page.locator("header a.chat-button")).to_have_attribute("aria-label", "Chats")
-        expect(page.locator("main")).not_to_contain_text("Could not read your notifications")
-        no_problems(run, "notifications")
-        return
     # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
     # the gear, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
@@ -1961,14 +1814,10 @@ def notifications_step(run: Run, page: Page) -> None:
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:
-    """The Keep the Why export (docs/api.md §11.3) where the hub has it."""
+    """The Keep the Why export (docs/api.md §11.3)."""
     project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     tab = view_tab(page, "Why")
-    if "keep_the_why_export" not in project:
-        run.step("why: this hub has no Keep the Why export, so there is no Why tab")
-        expect(tab).to_have_count(0)
-        return
     # The e2e project has no repository: the export is not configured.
     run.step("why: the project has no repository, so the Why view says what it needs")
     assert project["keep_the_why_export"] is None, project["keep_the_why_export"]
@@ -2155,17 +2004,7 @@ def bearer_get(run: Run, clone: Path, path: str) -> tuple[int, dict]:
 
 
 def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
-    """policy.signing (docs/api.md §2.2, §6.1) where the hub knows it."""
-    project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
-    if "signing" not in (project.get("policy") or {}):
-        run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
-        # Agents, not the inbox: the next step reaches the inbox through its tab.
-        page.goto(f"{run.base}/owner/e2e-alpha/members")
-        project_settings(page)
-        expect(page.locator("#state-select")).to_be_visible()
-        expect(page.locator("#signing-select")).to_have_count(0)
-        project_settings(page)
-        return
+    """policy.signing (docs/api.md §2.2, §6.1)."""
     run.step(
         "signing: an agent calls with a bearer token; the switch names it before requiring signing"
     )
@@ -2213,11 +2052,6 @@ def users_step(run: Run, page: Page) -> None:
     expect(page.locator("header .project")).to_have_text("Everything waiting for you")
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
     link = page.get_by_role("menuitem", name="Instance administration", exact=True)
-    if "instance_admin" not in me:
-        run.step("users: this hub names no instance admin yet, so there is no administration link")
-        expect(link).to_have_count(0)
-        page.keyboard.press("Escape")
-        return
     run.step("users: the instance admin lists the hub's humans")
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
@@ -2300,10 +2134,6 @@ def invitations_step(run: Run, page: Page) -> None:
     without a session opens the link, signs in with it as next and comes back; joining is refused
     in the hub's words (the only human there is a member already: without mail the e2e hub makes
     no second account); revoked, the link is one uniform answer."""
-    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
-    if "/api/v1/projects/{owner}/{slug}/invitations" not in paths:
-        run.step("invitations: this hub has none yet")
-        return
     run.step("invitations: the owner invites a person from Members; the link is shown once")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     box = page.locator("section.invitations")
@@ -2440,13 +2270,7 @@ def picture_step(run: Run, page: Page) -> None:
     page.locator("#avatar-file-" + page.evaluate("Maity.api.get('/me').then((m) => m.member.id)")).set_input_files(
         files=[{"name": "me.png", "mimeType": "image/png", "buffer": tiny_png(48, 48, (217, 102, 26))}]
     )
-    expect(page.locator("main")).to_contain_text(re.compile(r"Picture uploaded\.|Not uploaded"))
-    if "Not uploaded" in page.locator("main").inner_text():
-        # Only a hub without the endpoint is skipped, and the page has to say so.
-        run.step("picture: this hub has no avatar upload yet, and the page says so")
-        run.problems = [p for p in run.problems if p != "PUT /api/v1/me/avatar answered 404"]
-        no_problems(run, "picture")
-        return
+    expect(page.locator("main")).to_contain_text("Picture uploaded.")
     run.step("picture: the owner uploads a picture from the profile menu, it shows in the header, then removes it")
     face = page.locator("header .profile-menu img.avatar-img")
     expect(face).to_have_attribute("src", re.compile(r"^/api/v1/avatars/[A-Za-z0-9_-]+\?v="))
@@ -2475,9 +2299,9 @@ def change_password(run: Run, page: Page) -> None:
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Change password", exact=True).click()
     expect(page).to_have_url(re.compile(r"/account$"))
-    # The sessions (§2.6.5): the list where the hub has it, else said so.
+    # The sessions (§2.6.5): the list, this session in it.
     sessions = page.locator("section.sessions")
-    expect(sessions.locator("li.session.current").or_(sessions.get_by_text("This hub lists no sessions yet."))).to_be_visible()
+    expect(sessions.locator("li.session.current")).to_be_visible()
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
     page.locator("#password-repeat").fill(new_password)
@@ -2514,19 +2338,13 @@ def change_password(run: Run, page: Page) -> None:
 
 
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
-    """The briefing (docs/api.md §3, §6.2) where the hub knows it; otherwise nothing offered."""
-    members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/members")["items"]
-    own = next(m for m in members if m["id"] == agent_id)
+    """The briefing (docs/api.md §3, §6.2)."""
     # The briefing is in the agent's row on Members (tsk-7v2snhk002ak).
     agents = page.locator("main .members-agents")
     page.reload()
     expect(agents).to_contain_text("@e2e-agent")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(agents.locator("tr.member-manage")).to_be_visible()
-    if "briefing" not in own:
-        run.step("briefing: this hub has none yet, so the dashboard offers none")
-        expect(agents.locator(".briefing")).to_have_count(0)
-        return
     run.step("briefing: the owner writes it in the agent's row; the agent's resume carries it")
     agents.locator(".briefing").get_by_role("button", name=re.compile("briefing$")).click()
     page.locator(f"#briefing-{agent_id}").fill("You test the dashboard. First: the e2e card.")

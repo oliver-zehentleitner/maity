@@ -13,7 +13,7 @@ fenced code and links whose target passes `landing.safe_target`.
 from __future__ import annotations
 
 import re
-from html import escape
+from html import escape, unescape
 from typing import Any
 
 from maity_hub.landing import FENCE, safe_target
@@ -61,14 +61,15 @@ _BULLET = re.compile(r"^ {0,3}[-*+]\s+(.*)$")
 _NUMBER = re.compile(r"^ {0,3}\d{1,9}[.)]\s+(.*)$")
 
 
-def _link(text: str, target: str, *, me: bool = False) -> str:
+def _link(text: str, target: str, *, me: bool = False, ugc: bool = False) -> str:
     if not safe_target(target):  # the validator refused these; a stored page never has one
         return escape(text)
-    rel = "noopener me" if me else "noopener"
+    # A public page's words are its owner's, not the operator's: no endorsement (§16.9).
+    rel = "nofollow ugc" if ugc else "noopener me" if me else "noopener"
     return f'<a href="{escape(target, quote=True)}" rel="{rel}">{escape(text)}</a>'
 
 
-def inline(text: str) -> str:
+def inline(text: str, *, ugc: bool = False) -> str:
     out: list[str] = []
     last = 0
     for found in _INLINE.finditer(text):
@@ -77,14 +78,14 @@ def inline(text: str) -> str:
         if found["code"] is not None:
             out.append(f"<code>{escape(found['code'])}</code>")
         elif found["target"] is not None:
-            out.append(_link(found["text"] or found["target"], found["target"]))
+            out.append(_link(found["text"] or found["target"], found["target"], ugc=ugc))
         elif found["bare"] is not None:
             url = found["bare"]
             trailing = ""
             while url and url[-1] in ".,;:!?'\"":
                 trailing = url[-1] + trailing
                 url = url[:-1]
-            out.append(_link(url, url) + escape(trailing))
+            out.append(_link(url, url, ugc=ugc) + escape(trailing))
         elif found["strong"] is not None:
             out.append(f"<strong>{escape(found['strong'])}</strong>")
         else:
@@ -93,8 +94,9 @@ def inline(text: str) -> str:
     return "".join(out)
 
 
-def markdown(source: str) -> str:
-    """The HTML of a Markdown text; fenced code is text, a block is one element."""
+def markdown(source: str, *, ugc: bool = False) -> str:
+    """The HTML of a Markdown text; fenced code is text, a block is one element. With `ugc`
+    every link is `rel="nofollow ugc"`, as on the public pages (§16.9)."""
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     paragraph: list[str] = []
@@ -102,7 +104,7 @@ def markdown(source: str) -> str:
 
     def flush() -> None:
         if paragraph:
-            out.append("<p>" + inline("\n".join(paragraph)).replace("\n", "<br>") + "</p>")
+            out.append("<p>" + inline("\n".join(paragraph), ugc=ugc).replace("\n", "<br>") + "</p>")
             paragraph.clear()
 
     while index < len(lines):
@@ -128,7 +130,7 @@ def markdown(source: str) -> str:
         if heading:
             flush()
             level = len(heading.group(1))
-            out.append(f"<h{level}>{inline(heading.group(2))}</h{level}>")
+            out.append(f"<h{level}>{inline(heading.group(2), ugc=ugc)}</h{level}>")
             index += 1
             continue
         if _QUOTE.match(line):
@@ -137,14 +139,14 @@ def markdown(source: str) -> str:
             while index < len(lines) and (quote := _QUOTE.match(lines[index])):
                 quoted.append(quote.group(1))
                 index += 1
-            out.append("<blockquote>" + markdown("\n".join(quoted)) + "</blockquote>")
+            out.append("<blockquote>" + markdown("\n".join(quoted), ugc=ugc) + "</blockquote>")
             continue
         for pattern, tag in ((_BULLET, "ul"), (_NUMBER, "ol")):
             if pattern.match(line):
                 flush()
                 items: list[str] = []
                 while index < len(lines) and (item := pattern.match(lines[index])):
-                    items.append(f"<li>{inline(item.group(1))}</li>")
+                    items.append(f"<li>{inline(item.group(1), ugc=ugc)}</li>")
                     index += 1
                 out.append(f"<{tag}>" + "".join(items) + f"</{tag}>")
                 break
@@ -473,4 +475,30 @@ def legal_document(
         head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">',
         body=body,
         languages=languages,
+    )
+
+
+# --- a public page (§16.9) --------------------------------------------------------------------
+
+DESCRIPTION_MAX = 160
+_TAG = re.compile(r"<[^>]*>")
+
+
+def text_of(html: str) -> str:
+    """The text of rendered HTML, one space between its words."""
+    return " ".join(unescape(_TAG.sub(" ", html)).split())
+
+
+def page_document(*, lang: str, title: str, canonical: str, content: str) -> str:
+    """A public page: its own `<title>`, a `<meta name="description">` from the first 160
+    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9).
+    `content` is the HTML of the page's body, already made of escaped text and elements."""
+    description = text_of(content)[:DESCRIPTION_MAX]
+    return _document(
+        lang=lang,
+        title=title,
+        description=description,
+        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">',
+        body=f'<main class="wrap">{content}</main>',
+        languages=[],
     )
