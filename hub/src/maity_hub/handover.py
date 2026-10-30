@@ -85,21 +85,22 @@ def block(
     if credential.replaces is None:
         return None
     if credential.first_cursor is None:
+        # The first packet always carries it, whatever cursor the resume named.
         conn.execute(
             update(t.credential)
             .where(t.credential.c.id == credential_id)
             .values(first_after=after, first_cursor=cursor)
         )
-        first_after, first_cursor = after, cursor
+        first_after = after
     else:
-        first_after, first_cursor = credential.first_after, credential.first_cursor
-    own = _acknowledged(conn, credential_id)
-    if own is not None and own >= first_cursor:
-        return None
+        first_after = credential.first_after
+        own = _acknowledged(conn, credential_id)
+        if own is not None and own >= credential.first_cursor:
+            return None
     left = chain(conn, credential)
     if not left:
         return None
-    since = _since(conn, left)
+    since = _since(conn, mine.project.id, left)
     named = [f"instance:{principal}#{row.instance}" for row in left]
     named.append(f"instance:{principal}#{credential.instance}")
     team = f"member:{principal}"
@@ -108,19 +109,22 @@ def block(
     position, cut = since, False
     for _ in range(PAGES_MAX):
         rows, _examined, more = events.read(
-            conn, mine.project.id, mine.row, principal, position, PAGE, chat_windows=chat_windows
+            conn,
+            mine.project.id,
+            mine.row,
+            principal,
+            position,
+            PAGE,
+            chat_windows=chat_windows,
+            until=first_after,
         )
-        past = False
         for row in rows:
-            if row.seq > first_after:
-                past = True
-                break
             audience = row.audience or []
             if any(token in audience for token in named):
                 by_instance.append(row)
             elif team in audience:
                 by_team.append(row)
-        if past or not more:
+        if not more:
             break
         position = rows[-1].seq
     else:
@@ -134,11 +138,21 @@ def block(
     }
 
 
-def _since(conn: Connection, left: list[Any]) -> int:
+def _since(conn: Connection, project_id: str, left: list[Any]) -> int:
     """`after` of the handover: the position the newest instance of the chain that had a
-    session acknowledged, else the event of the exchange that created the oldest one."""
+    session acknowledged, else the event of the exchange that created the oldest one. An
+    instance made before `exchange_seq` existed has none: the project's newest event at the
+    time it was created stands in."""
     for row in left:
         acknowledged = _acknowledged(conn, row.id)
         if acknowledged is not None:
             return acknowledged
-    return int(left[-1].exchange_seq or 0)
+    oldest = left[-1]
+    if oldest.exchange_seq is not None:
+        return int(oldest.exchange_seq)
+    found = conn.execute(
+        select(func.max(t.event.c.seq)).where(
+            t.event.c.project_id == project_id, t.event.c.at <= oldest.created_at
+        )
+    ).scalar()
+    return int(found or 0)

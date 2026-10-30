@@ -99,3 +99,69 @@ def test_nothing_is_handed_over_to_an_instance_that_replaced_nothing(
     agent = flow.agent(make_client, owner)
     tell(owner, f"{agent.id}#{agent.instance}", "hello")
     assert "handover" not in agent.resume().json()
+
+
+def test_the_first_packet_carries_it_whatever_cursor_the_resume_named(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    old = flow.agent(make_client, owner)
+    old.resume()
+    left = tell(owner, f"{old.id}#{old.instance}", "undone")
+    new = replace(make_client, owner, old)
+    first = new.resume(cursor=10**6).json()  # a cursor at or above the head, from the start
+    assert seqs(first["handover"]) == [left]
+    assert "handover" not in new.resume(cursor=10**6).json()  # acknowledged
+
+
+def test_more_than_fifty_items_are_cut_and_say_so(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    old = flow.agent(make_client, owner)
+    old.resume()
+    sent = [tell(owner, f"{old.id}#{old.instance}", f"message {i}") for i in range(55)]
+    new = replace(make_client, owner, old)
+    handover = new.resume().json()["handover"]
+    assert len(seqs(handover)) == 50 and handover["truncated"] is True
+    assert seqs(handover) == sent[:50]  # oldest first; `GET …/events?after=` pages on
+
+
+def test_only_what_is_addressed_to_the_chain_and_readable_comes(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    old = flow.agent(make_client, owner)
+    stranger = flow.agent(make_client, owner)
+    old.resume()
+    mine = tell(owner, f"{old.id}#{old.instance}", "for the chain")
+    tell(owner, stranger.id, "for somebody else")
+    new = replace(make_client, owner, old)
+    to_new_address = tell(
+        owner, f"{new.id}#{new.instance}", "to the new address, before its first resume"
+    )
+    assert seqs(new.resume().json()["handover"]) == [mine, to_new_address]
+
+
+def test_an_instance_from_before_the_cursors_existed_falls_back_to_its_creation(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    first = flow.agent(make_client, owner)  # never resumes
+    left = tell(owner, f"{first.id}#{first.instance}", "undone")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == first.credential_id)
+            .values(exchange_seq=None)
+        )
+    second = replace(make_client, owner, first)
+    assert left in seqs(second.resume().json()["handover"])
