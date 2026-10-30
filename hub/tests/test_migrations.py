@@ -735,7 +735,7 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
     with_cards = factory.project(engine, "cards")
     without = factory.project(engine, "plain")
     none = factory.project(engine, "none")
-    downgrade(engine, "0101")
+    downgrade(engine, "0102")
     with engine.begin() as conn:
         conn.execute(
             update(t.project)
@@ -753,7 +753,7 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
     assert found[with_cards] == {**old, **added, "cards": ["tsk-1"]}
     assert found[without] == {**old, **added, "cards": None}
     assert found[none] is None
-    downgrade(engine, "0101")
+    downgrade(engine, "0102")
     with engine.connect() as conn:
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}

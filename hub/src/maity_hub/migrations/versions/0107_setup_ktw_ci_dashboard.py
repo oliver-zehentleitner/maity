@@ -6,7 +6,7 @@ written with `false`, `false` and `null` here; the code reads one shape and keep
 fallback for the old one. A project without `setup` keeps `null`.
 
 Revision ID: 0107
-Revises: 0101
+Revises: 0102
 Create Date: 2026-10-30
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0107"
-down_revision: str | None = "0101"
+down_revision: str | None = "0102"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
