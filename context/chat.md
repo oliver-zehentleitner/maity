@@ -19,7 +19,9 @@ written through the same message endpoints, listed together with the
 direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
-  every message of the others;
+  every message of the others (partly superseded, pending the
+  maintainer's confirmation: `wake: all` per agent participation wakes
+  on human messages, bbb35462);
 - someone added later starts fresh from their join (resume packet,
   unread counts and wake-ups count only from there) and reads the
   earlier history on demand by paging back through the chat;
@@ -60,7 +62,8 @@ these rules on 2026-10-22.
   owner's agents, and agent-only rooms are where wake loops start; agents
   coordinate through project messages and cards.
 - Waking every agent participant on every message, or a per-chat switch
-  for it: the cost and loop above, for the chats that turn it on.
+  for it: the cost and loop above, for the chats that turn it on (a
+  switch limited to human messages, which cannot loop, is bbb35462).
 - No history for someone added later (the contract owner's first
   draft): what was said stays with the audience it was said to, but a
   newcomer that needs the context has to ask for it to be repeated; the
@@ -287,7 +290,8 @@ has `wake`, `mentions` by default as before, or `all`: then every
 message of a human participant wakes the agent and is in its packet. An
 agent's message still wakes another agent only by a mention. Those who
 manage the chat, the agent itself and its owner set it, also when adding
-the agent.
+the agent; `all` for an agent of another owner only the agent and its
+owner.
 
 **Reason:** the costs c1af6c8f guards against stay bounded. A wake per
 human message is what the humans asked for in a chat they hold with
@@ -299,5 +303,8 @@ keeps busy chats from crowding the packet.
 - Wake on every message automatically when the member is the only agent
   in the chat — the behaviour would change silently when a second agent
   is added, and a chat with one agent can still be busy.
+- The chat's managers set `all` for any agent — `all` costs the agent's
+  owner a model run per human message, and an agent's settings are its
+  owner's (66d4076f); a manager may still set `mentions`.
 - `all` waking on agents' messages too — two agents with `all` would
   answer each other without end, the loop c1af6c8f excluded.
