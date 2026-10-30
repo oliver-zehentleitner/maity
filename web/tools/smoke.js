@@ -5706,10 +5706,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   byId("invite-role").value = "reviewer"; byId("invite-address").value = "ben@example.org"; byId("invite-ttl").value = "604800"; byId("invite-note").value = "Welcome.";
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome." }])
-    && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
-    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open"),
-    "invite: created, the link shown once with Copy, the list grows");
+  expect(byId("invite-via-join") && byId("invite-via-join").checked && text(ivBox()).includes("Link via join.example.org"),
+    "invite: where the hub names a join host, Link via <join host> is offered, on by default (§3.4)");
+  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome.", via: "join" }])
+    && /^https:\/\/join\.example\.org\/i\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
+    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open") && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("via join.example.org"),
+    "invite: created via the join host, the link shown once with Copy, the list grows and says which link went out");
+  // Off: the link on this hub's own address.
+  byId("invite-via-join").checked = false;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ivPosts[1] && ivPosts[1][1].via === "public" && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value)
+    && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("on this hub's address"),
+    "invite: Link via unticked sends via public, and the link is on the hub's own address");
+  byId("invite-via-join").checked = true;
+  // A hub without a join host (join_url null): no choice, no via sent.
+  const ivSession = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/session" ? ivSession(p).then((v) => Object.assign({}, v, { join_url: null })) : ivSession(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivNoHost = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
+    "invite: without a join host there is no choice and no via; the hub picks the link");
+  win.Maity.api.get = ivSession;
+  // A hub whose machine form does not name via (before the hub took it) would refuse the field: no choice, even with a join host.
+  const ivBody = win.Maity.api.hubBody;
+  win.Maity.api.hubBody = (m, p) => (p === "/projects/{owner}/{slug}/invitations" ? Promise.resolve(new Set(["trust", "role", "address", "ttl_seconds", "note"])) : ivBody(m, p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivOld = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byId("invite-via-join") && ivPosts[ivOld] && !("via" in ivPosts[ivOld][1]), "invite: a hub that does not take via is offered no choice and sent none");
+  win.Maity.api.hubBody = ivBody;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);
   const ivBefore = ivPosts.length;
