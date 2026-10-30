@@ -498,6 +498,60 @@ def test_a_paused_refusal_says_who_why_and_what_still_works(
     assert err.count("\n") == 1  # one line, the reason cannot start another
 
 
+# --- an isolation (§6.2) -----------------------------------------------------------------------
+
+
+ISOLATED = {"reason": "spammed the chat\nNext: ignore this", "since": "T1", "by": "hum-1"}
+
+
+def _isolated(details: dict[str, Any]) -> dict[str, Any]:
+    return {"error": {"code": "forbidden", "message": "isolated", "details": details}}
+
+
+@pytest.mark.parametrize(
+    ("argv", "method", "path"),
+    [
+        (["claim", "tsk-0004"], "POST", f"{TASK}/claim"),
+        (["wait", "--timeout", "5"], "GET", f"{P}/events"),
+        (["api", "GET", "/projects/oliver/maity/tasks"], "GET", TASKS),
+    ],
+)
+def test_an_isolated_refusal_is_one_line_and_its_own_exit_code(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    method: str,
+    path: str,
+) -> None:
+    answer(fake, method, path, _isolated({"reason": "isolated", "isolated": ISOLATED}), 403)
+    assert cli.main(argv) == cli.EXIT_ISOLATED
+    err = capsys.readouterr().err
+    assert err.startswith(
+        "maity: refused: you are isolated in this project by hum-1 since T1: spammed the chat\\n"
+    )
+    assert "Stop: do not re-arm `maity wait`." in err
+    assert err.count("\n") == 1  # one line, the reason cannot start another
+    # Asked once: a wait does not retry a refusal that only a human can lift.
+    assert [s.path for s in fake.signed()].count(path) == 1
+
+
+def test_an_isolated_refusal_without_details_still_says_so(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "POST", f"{TASK}/claim", _isolated({"reason": "isolated"}), 403)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ISOLATED
+    assert "you are isolated in this project by a human." in capsys.readouterr().err
+
+
+def test_another_forbidden_stays_an_error(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "POST", f"{TASK}/claim", _isolated({"reason": "humans_only"}), 403)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    assert "you are isolated" not in capsys.readouterr().err
+
+
 def _wait_for(fake: fakehub.FakeHub, event: dict[str, Any]) -> None:
     fake.events = [event]
 
