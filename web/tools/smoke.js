@@ -1689,6 +1689,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
   expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The project's repository and Keep the Why dashboard beside its state (tsk-n161gf6h8feb): each where the project has it,
+  // https only, in a tab of its own, named for a screen reader; the forge's mark, else a branch.
+  const hlLinks = () => header.querySelectorAll(".project-state a.header-link");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
+    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|GitHub,"
+    + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
+    && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
+    "header: the repository on its forge and the Keep the Why dashboard, beside the state, in tabs of their own");
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "GitHub", "header: a project without a Keep the Why dashboard shows the repository alone");
+  const hlGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
+    { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }),
+      keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Gitea" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+    "header: another forge by its name; a dashboard that is not plain https gets no link");
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : hlGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!hlLinks().length, "header: neither where the project has neither");
+  win.Maity.api.get = hlGet;
+  await go("#/maintainer/sample/board"); for (let k = 0; k < 4; k++) await tick();
   // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
   const relMark = () => header.querySelector(".project-state .released");
   expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
@@ -2373,7 +2396,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.localStorage = cfLs;
   await go("#/maintainer/maity/inbox");
 
-  // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   // The text catalog (js/i18n.js, i18n/en.json): one key per sentence, placeholders and plural forms, Intl for numbers and dates.
   const tr = win.Maity.t;
   const i18nEn = win.MAITY_I18N && win.MAITY_I18N.en;
@@ -2390,6 +2412,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
     "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
   win.Maity.i18n.locale = i18nLocale;
+  // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
   const mdP = MD("First line\nsecond line\n\nNext paragraph with `a <b>` code, **strong**, *em* and _em_.");
@@ -6749,6 +6772,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(waitWrites.length === 1 && "up_to" in waitWrites[0] && !("ids" in waitWrites[0])
     && !waitItems().some((li) => li.classList.contains("unread") && !/sign-in|address/i.test(text(li))),
     "notifications: Mark all read marks up to the first page's head; the list is read again " + JSON.stringify(waitWrites));
+  // Mark all read stays in place, off with nothing left to mark; sign-in alerts said to stay (tsk-bt2p3rem8tbj).
+  expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves sign-in and address alerts unread"),
+    "notifications: Mark all read stays, off while nothing it marks is unread; sign-in and address alerts said to stay unread");
+  // Mark read per item, without opening it (tsk-bt2p3rem8tbj): the chat item unread again here, and an open report
+  // (report_open, target report) added; a sign-in alert only where this session may confirm it (§2.6.5).
+  const waitReport = { id: "ntf-acr-90", record: "acr-90", kind: "inbox", at: "2026-10-22T13:19:30Z", project: null, actor: null,
+    title: "A report waits for you", target: { type: "report", id: "rep-0001" }, url: "https://maity.team/admin", read: false, redacted: false };
+  let waitCurrent = "hss-41c0";
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && waitWrites.length === 1
+    ? waitGet(p).then((r) => Object.assign({}, r, { items: [waitReport].concat(r.items.map((x) => (x.id === "ntf-4237" || x.id === "ntf-acr-7" ? Object.assign({}, x, { read: false }) : x))) }))
+    : p === "/auth/sessions?ended=true" ? waitGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, { current: x.id === waitCurrent })) }))
+    : waitGet(p));
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  const waitRow = (id) => waitItems().find((li) => li.getAttribute("data-notification") === id);
+  const waitMark = (id) => waitRow(id) && waitRow(id).querySelector("button.mark-read");
+  expect(waitMark("ntf-4237") && waitMark("ntf-4237").getAttribute("aria-label").startsWith("Mark read: ") && !btn(main, "Mark all read").disabled
+    && waitRow("ntf-acr-90") && !waitMark("ntf-acr-90") && !waitMark("ntf-acr-8"),
+    "notifications: Mark read on an unread item; none on an open matter (a report, a registration)");
+  // From an older, confirmed session the sign-in alert of a newer one may be confirmed here.
+  expect(waitMark("ntf-acr-7"), "notifications: Mark read on a sign-in alert where this session may confirm it (older, in good standing)");
+  waitMark("ntf-acr-7").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(waitWrites[1]) === JSON.stringify({ ids: ["ntf-acr-7"] }) && waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"),
+    "notifications: the sign-in alert's Mark read sends its id " + JSON.stringify(waitWrites));
+  // The chat item marked in place: the row stays, read, its button gone; the pages read so far stay.
+  const waitBefore = waitItems().length;
+  waitMark("ntf-4237").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(waitWrites[2]) === JSON.stringify({ ids: ["ntf-4237"] }) && waitRow("ntf-4237").classList.contains("read")
+    && !text(waitRow("ntf-4237")).includes("(unread)") && !waitMark("ntf-4237") && waitItems().length === waitBefore,
+    "notifications: Mark read marks the row in place, its button and its (unread) gone, the list kept " + JSON.stringify(waitWrites));
+  // From the reported session itself the alert is not offered.
+  waitCurrent = "hss-41d2"; waitWrites.length = 1;
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  expect(waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"), "notifications: no Mark read on a sign-in alert from the session it reports on");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // Languages: project writes are human-admin only; personal language is not mail-gated.
@@ -6969,6 +7025,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "landing editor: the hub's invalid at a landing field names the field's limit (the hub sends invalid, never too_long, §16.7)");
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
+  // Landing V3 (§16.7, #737): the demo (terminal lines of a kind, an optional inbox item, exactly three steps) and the open
+  // source section (tiles, links), each list at its own path.
+  byId("lp-add-type-en").value = "demo"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  byId("lp-add-type-en").value = "opensource"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  const leDemo = () => leSections()[4], leOss = () => leSections()[5];
+  const leList = (sec, key) => sec.querySelectorAll("ol.lp-items").find((ol) => ol.attrs["data-list"] === key);
+  expect(text(leDemo()).includes("5. Demo") && leList(leDemo(), "terminal_lines").childNodes.length === 1 && leList(leDemo(), "steps").childNodes.length === 3
+    && text(leDemo()).includes("Exactly 3.") && !btn(leDemo(), "Add step") && btn(leDemo(), "Add inbox item")
+    && byId("lp-pages-en-sections-4-terminal-lines-0-kind").querySelectorAll("option").map((o) => o.attrs.value).join() === "cmd,out,note"
+    && text(leOss()).includes("6. Open source") && leList(leOss(), "tiles").childNodes.length === 1 && leList(leOss(), "links").childNodes.length === 0,
+    "landing editor: a demo with one terminal line of a kind and exactly three steps, an open source section with a tile and no link yet");
+  btn(leDemo(), "Add terminal line").click(); await tick();
+  byId("lp-pages-en-sections-4-terminal-lines-1-kind").value = "out"; byId("lp-pages-en-sections-4-terminal-lines-1-kind").dispatch("change");
+  btn(leDemo(), "Add inbox item").click(); await tick();
+  await leSave();
+  const leV3 = lePatches[lePatches.length - 1][1].pages.en.sections;
+  expect(leV3[4].terminal_lines.map((x) => x.kind).join() === "cmd,out" && leV3[4].steps.length === 3 && leV3[4].inbox && leV3[4].inbox.question === ""
+    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5])
+    && text(byId("lp-pages-en-sections-4-terminal-lines-0-text-error")) && text(byId("lp-pages-en-sections-4-inbox-question-error"))
+    && text(byId("lp-pages-en-sections-5-tiles-0-title-error")),
+    "landing editor: the lists and the inbox item sent in the draft's shape; the hub's refusals said at each field's path");
+  const leFill = (id, v) => { byId(id).value = v; byId(id).dispatch("input"); };
+  leFill("lp-pages-en-sections-4-title", "See it work"); leFill("lp-pages-en-sections-4-terminal-lines-0-text", "maity join");
+  leFill("lp-pages-en-sections-4-terminal-lines-1-text", "joined");
+  leFill("lp-pages-en-sections-4-inbox-from", "agent-a"); leFill("lp-pages-en-sections-4-inbox-question", "Merge #12?");
+  [0, 1, 2].forEach((k) => { leFill("lp-pages-en-sections-4-steps-" + k + "-title", "Step " + k); leFill("lp-pages-en-sections-4-steps-" + k + "-text", "Does " + k); });
+  leFill("lp-pages-en-sections-5-title", "Open source"); leFill("lp-pages-en-sections-5-tiles-0-title", "MIT"); leFill("lp-pages-en-sections-5-tiles-0-text", "Yours.");
+  btn(leOss(), "Add link").click(); await tick();
+  leFill("lp-pages-en-sections-5-links-0-label", "Code"); leFill("lp-pages-en-sections-5-links-0-href", "javascript:alert(1)");
+  await leSave();
+  expect(text(byId("lp-pages-en-sections-5-links-0-href-error")) && !text(byId("lp-pages-en-sections-4-inbox-question-error")),
+    "landing editor: a link that is neither https nor a path is refused at its href");
+  leFill("lp-pages-en-sections-5-links-0-href", "https://github.com/oliver-zehentleitner/maity");
+  await leSave();
+  expect(text(main).includes("Saved."), "landing editor: a demo and an open source section saved");
+  btn(leOss(), "Remove").click(); await tick(); btn(leDemo(), "Remove").click(); await tick();
   // A second language, made the default, and the page shown to visitors.
   byId("lp-new-language").value = "de"; btn(leBox(), "Add the language").click(); await tick();
   expect(leBox().querySelectorAll(".lp-tabs button").map((b) => b.textContent + ":" + b.attrs["aria-pressed"]).join() === "en:false,de:true"

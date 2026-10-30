@@ -18,9 +18,11 @@ window.Maity = window.Maity || {};
   // the browser's own, the reader's locale until the account sets one.
   const i18n = { language: "en", locale: undefined };
 
+  // Own keys only: a key like "constructor" is no text of the catalog.
   const text = (key) => {
     const own = catalogs[i18n.language] || {};
-    return key in own ? own[key] : (catalogs.en || {})[key];
+    const en = catalogs.en || {};
+    return Object.hasOwn(own, key) ? own[key] : Object.hasOwn(en, key) ? en[key] : undefined;
   };
 
   function fill(template, values) {

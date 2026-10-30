@@ -41,7 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. At the top right are two menus, each a
+narrow screen they go under it. Beside them, where the project has them,
+two links in tabs of their own: its repository, with the forge's mark and
+name (GitHub, GitLab, Gitea; a branch mark otherwise), and **Why**, the
+Keep the Why dashboard of the family's root (`keep_the_why_export`'s
+member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
@@ -1564,9 +1568,14 @@ Personal, linking into nothing), so it shows exactly what its tab counts
 ones in bold with a dot, **Mark all read**), conversations on the **Chat**
 button, and every notification on **All notifications**
 (`/notifications`): paged by the hub's cursor, an unread one in bold with
-a dot and said to a screen reader, **Mark all read** marking up to the head
-of the first page (§18.3); a sign-in or address alert stays unread until
-confirmed with **This was me**.
+a dot and said to a screen reader, **Mark read** beside each unread item
+that may be marked from here, the row marked in place (not one of the
+four open matters of §18.3 — a registration, a disabled address, an open
+report, agents not listening; a sign-in or address alert only where this
+session may confirm it, §2.6.5), and **Mark all
+read**, always there and off while nothing it marks is unread, marking up
+to the head of the first page (§18.3); the page says that a sign-in or
+address alert stays unread until confirmed with **This was me**.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other
@@ -1640,7 +1649,9 @@ login and registration pages link to the legal pages that are set
 language: the page's title and description, its sections of the
 contract's types in their order (add, move up or down, show or hide,
 remove; the items of steps, scales and questions the same way; the
-counters ticked), and the footer for every language (the operator line,
+counters ticked; the **Demo**'s terminal lines, each a command, its output
+or a comment, its optional inbox item and its exactly three steps; the
+**Open source** section's tiles and links), and the footer for every language (the operator line,
 up to eight social links). **Save the landing page** sends the whole
 draft in one `PATCH`, and each refusal of the hub is said at the field its
 path names (`pages.de.sections.2.items.0.title`). **Preview the draft**

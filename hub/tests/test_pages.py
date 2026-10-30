@@ -91,12 +91,18 @@ def test_a_visitor_gets_the_page_with_its_headers_and_no_script(
     assert answer.headers["cache-control"] == "public, max-age=60"
     assert answer.headers["vary"] == "Cookie, Accept-Language"
     assert answer.headers["content-security-policy"] == (
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; "
-        "frame-ancestors 'none'"
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; "
+        "form-action 'none'; frame-ancestors 'none'"
     )
     assert "x-robots-tag" not in answer.headers and "set-cookie" not in answer.headers
     page = answer.text
-    assert "<script" not in page and "<img" not in page and "onclick" not in page
+    # No script of the operator's, no inline script, no handler: at most the hub's own file.
+    for tag in re.findall(r"<script[^>]*>", page):
+        assert re.fullmatch(
+            r'<script src="/assets/landing/landing\.js\?v=[0-9a-f]{16}" defer>', tag
+        )
+    assert "<img" not in page and "onclick" not in page
     assert "<title>Maity</title>" in page and 'content="A hub"' in page
     assert '<link rel="canonical" href="https://hub.example/">' in page
     assert "<h1>Bring your agents</h1>" in page and "Share one project." in page
@@ -199,7 +205,9 @@ def test_the_counters_of_the_page_and_of_the_public_read(
 ) -> None:
     publish(owner)
     page = make_client().get("/").text
-    assert re.search(r"<b>1</b><span>People</span>", page)  # the admin
+    assert re.search(
+        r'<b><span data-lp-count>1</span></b><span class="label">People</span>', page
+    )  # the admin
     assert "People online" in page and "&lt; 5" in page  # an online count under the floor
     assert "Agents</span>" in page
     body = make_client().get("/api/v1/landing").json()

@@ -670,6 +670,22 @@ read and unread look alike; the inbox is for what asks for an answer.
 apart: the activity would still sit under the requests and be read on
 every visit, while the bell already shows it.
 
+Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
+`/notifications` also has **Mark read** beside each unread item, sent
+with its id, without opening it, the row marked read in place (its
+button gone, the focus on its link, the pages read so far kept), and
+**Mark all read** stays in place,
+off while nothing it marks is unread, with a line that sign-in and
+address alerts stay unread. **Mark read** is not offered on one of the
+four open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`report_open`, `agents_not_listening`, told by their targets
+(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+— which read as read once the matter is closed, nor on a sign-in or
+address alert unless this session may confirm it (`M.sessions.mayConfirm`,
+§2.6.5): the hub skips such an id without saying so, and a button that
+does nothing would look broken. The sessions are read for that only
+when the page shows an unread security item.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
@@ -2698,3 +2714,31 @@ only online instances: an offline one still gets the message at its next
 resume, and its being offline is said in the option. Keeping the choice
 in browser storage: a stale instance id would outlive the session it
 named.
+
+## The project's repository and Keep the Why dashboard are links beside its state, from what the project view already holds
+
+**Id:** bdb4632c-1047-4a88-9249-f09f8c50d1e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on the card tsk-n161gf6h8feb (two buttons top right beside the state, the repository with its forge's icon, the Keep the Why dashboard, both in a new tab), 2026-10-29; the coordinator's note that the project view already carries `repository` and `keep_the_why_export.members[]` with the root at `path: ""` and its `dashboard_url`, so no contract change, 2026-10-30
+**Revisit when:** a project needs a dashboard address other than its export's, or the hub derives more forges
+
+In a project the header shows, after the state, the absence and the
+released mark, a link to the repository (`repository.url`, labelled by
+`repository.forge`: GitHub, GitLab or Gitea with their mark, else
+"Repository" with a branch mark) and **Why**, the dashboard of the Keep
+the Why family's root member. Either is left out where the project has
+none or its address is not plain `https`; both open in a tab of their
+own and are named for a screen reader with where they go.
+
+**Reason:** these are the two places one leaves the dashboard for most
+often; the data is in the project view already, so the links cost no
+request and no new setting.
+
+**Rejected alternative:** a new project field for the dashboard's
+address, as the card first proposed: the export already names it, and a
+second address could drift from the one the family publishes. Only the
+Overview's Project panel, where both links already are: one click
+further, on one view only.
+

@@ -471,7 +471,15 @@ window.Maity = window.Maity || {};
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
     activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
     collab: ["title", "text", "items", "footnote"],
+    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
+  // A list of a section with its bounds, as the hub's landing._list: none
+  // is required, one outside them invalid at its path, its entries unchecked.
+  function landingList(list, path, min, max, errors, each) {
+    if (list === undefined || list === null) { errors[path] = "required"; return; }
+    if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
+    list.forEach((x, k) => each(x || {}, path + "." + k));
+  }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
@@ -541,6 +549,22 @@ window.Maity = window.Maity || {};
       } else if (s.type === "explore") {
         landingText(s.title, sp + ".title", 120, true, errors);
         if ((s.projects || []).length > 3) errors[sp + ".projects"] = "too_many";
+      } else if (s.type === "demo") {
+        // §16.7 (#737): the terminal's lines, the agent's question, exactly three steps.
+        landingText(s.title, sp + ".title", 120, true, errors); landingText(s.subline, sp + ".subline", 300, false, errors);
+        landingList(s.terminal_lines, sp + ".terminal_lines", 1, 8, errors, (x, ip) => {
+          if (!["cmd", "out", "note"].includes(x.kind)) errors[ip + ".kind"] = "invalid";
+          landingText(x.text, ip + ".text", 200, true, errors);
+        });
+        if (s.inbox !== undefined && s.inbox !== null) {
+          landingText(s.inbox.from, sp + ".inbox.from", 80, true, errors); landingText(s.inbox.question, sp + ".inbox.question", 300, true, errors);
+          landingText(s.inbox.context, sp + ".inbox.context", 300, false, errors);
+        }
+        landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+      } else if (s.type === "opensource") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors));
       }
     });
   }
@@ -1223,6 +1247,8 @@ window.Maity = window.Maity || {};
           x.read = true;
           return;
         }
+        // An open matter is never marked by a caller (§18.3).
+        if (x.kind === "inbox" && x.open_matter) return;
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
             && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;

@@ -440,7 +440,10 @@ pages link to the legal pages that are set, from `GET /legal`. In the
 admin area **Landing page** edits the setting per language: the page's
 title and description, its sections of the contract's types in their
 order (add, move, show or hide, remove; items within a section the same
-way; `activity` and `collab` kept as they are, never offered), and the
+way, and so each named list of the newer types, `demo`'s
+`terminal_lines` and `steps` and `opensource`'s `tiles` and `links`, a
+list of an exact length offered without Add or Remove below it;
+`activity` and `collab` kept as they are, never offered), and the
 footer for all languages. A save sends the whole draft in one `PATCH`;
 the hub's refusal names fields by their path
 (`pages.de.sections.2.items.0.title`), and each is said at the field of
@@ -533,6 +536,43 @@ documented. A link colour of the bubble's own per scheme: another token
 to keep in step with both backgrounds, for what the text's colour
 already does with room to spare.
 
+## The landing page's one script only adds motion, the theme switch and tabs, by hooks the hub's template carries
+
+**Id:** 515a9304-a7fd-4d81-953a-3f5c253ab9a5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7 after the contract #737 (progressive enhancement: at most 10 KiB, `defer`, no request, only the page's own DOM, never database content as HTML, nothing under `prefers-reduced-motion`); the designer's handover for landing V3 stage 1 (`landing.js` sets `.demo-on` by IntersectionObserver, `data-theme` with its button and localStorage, `.scales-tabs`; rings and loader by CSS); the hooks agreed with the template's implementer on the card tsk-m6ew67r1w3hc, and the file in the hub's package so a hub without the dashboard serves it, 2026-10-30; the card tsk-xtyr12836zwa
+**Revisit when:** the landing page gets stage 2 (the public feed), or the template's hooks change
+
+`hub/src/maity_hub/landing_assets/landing.js` does four things and no
+other: shows the theme button (`[data-lp-theme]`, hidden in the HTML)
+and switches `data-theme` on the root, kept in `localStorage` only; adds
+`.demo-on` to a `.demo` section while it is on screen, so the CSS plays
+the demo's loop; turns `.scales` columns into tabs (`.scales-tabs`, the
+tab names taken from each column's first `h3` as text); and counts
+`[data-lp-count]` up to the number the page holds, putting the page's
+own text back at the end and leaving any text that is not a plain number
+alone. Under `prefers-reduced-motion` neither the demo loop nor the
+counting starts. A stored theme is set when the script runs, after the
+first paint (`defer`, and the page's policy allows no inline script), so
+a visitor whose choice differs from the system's sees the system's theme
+for a moment. `web/tools/check.py` checks the file with the
+dashboard's rules, its size and the absence of any request.
+
+**Reason:** the page is complete and readable without it (§16.7); every
+look stays in the CSS the designer wrote, so the script holds no
+styling to drift from it. Hooks named on both sides once keep the
+template and the script apart: neither builds the other's markup.
+
+**Rejected alternative:** typing the demo's lines from script (writing
+text node by node): the CSS loop already does it from the HTML, and the
+script would then hold the timing a second time. A class that switches
+all motion on (`.lp-motion`): the rings and the loader are pure CSS and
+stop under reduced motion by the stylesheet itself. The file under
+`web/landing/`: a hub serving only the landing page, without the
+dashboard's files, would have no script.
+
 ## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
 
 **Id:** adaebd69-6541-4f4c-81ce-8c38f1fb70aa
@@ -555,7 +595,9 @@ formatted for the locale; a key the catalog lacks reads as itself.
 browser's own until the account sets one. `make check` ratchets the
 views: a file may hold no more prose string literals than
 `tools/strings-baseline.json` allows, `--write` only lowers that count,
-and a new file starts at none. English is the only catalog; the first
+and a new file starts at none. A count is raised only by an edit of the file by hand,
+with the reason in the commit (as for #741 and #746, which added text
+before the ratchet landed). English is the only catalog; the first
 keys are the chat's instance choice.
 
 **Reason:** translating later is then filling a file, not finding and
