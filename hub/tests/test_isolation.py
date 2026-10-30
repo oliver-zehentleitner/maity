@@ -299,3 +299,64 @@ def test_a_seat_that_names_an_isolated_agent_is_routed_past_and_stays(
     with migrated.connect() as conn:
         project = conn.execute(select(t.project)).one()
         assert availability.coordinator_token(conn, project) == f"member:{coordinator.id}"
+
+
+# --- the resume packet and the lift ----------------------------------------------------------
+
+
+def test_the_resume_packet_of_an_isolated_agent_carries_no_request_and_no_card(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner, role="admin")
+    agent.resume()
+    card = task(owner)
+    owner.post(f"{PROJECT}/tasks/{card['id']}/assign", {"assigned_to": agent.id})
+    asked = owner.post(
+        f"{PROJECT}/requests",
+        {"class": "decision", "title": "ship it", "summary": "s", "to": "trust:admin"},
+    )
+    assert asked.status_code == 201, asked.text
+    before = agent.resume().json()
+    assert before["requests"]["to_answer"]  # what the admin gets
+    isolate(owner, agent.id)
+    packet = agent.resume().json()
+    assert packet["requests"] == {
+        "mine_open": [],
+        "answered_since_cursor": [],
+        "to_answer": [],
+        "truncated": False,
+    }
+    assert packet["assigned"] == [] and packet["claims"] == []
+
+
+def test_a_lift_moves_the_cursor_past_what_happened_meanwhile(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    isolate(owner, agent.id)
+    meanwhile = say(owner, "all", "while you were out").json()["seq"]
+    lift(owner, agent.id)
+    with migrated.connect() as conn:
+        cursors = list(conn.execute(select(t.agent_session.c.acknowledged_seq)).scalars())
+    assert cursors and all(c >= meanwhile for c in cursors)
+    packet = agent.resume().json()
+    assert all("while you were out" not in str(e) for e in packet["events"]["items"])
+
+
+def test_a_card_that_names_an_isolated_arbiter_is_arbitrated_by_the_default(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import seats
+
+    arbiter = flow.agent(make_client, owner, role="reviewer")
+    isolate(owner, arbiter.id)
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        # no admin agent is left, so the default after a removal is the owner (§6.2)
+        assert seats.routed_arbiter(conn, project, arbiter.id) == owner.id
+        assert seats.routed_arbiter(conn, project, "trust:admin") == "trust:admin"
+        assert seats.routed_arbiter(conn, project) == project.contract_arbiter
+    lift(owner, arbiter.id)
+    with migrated.connect() as conn:
+        assert seats.routed_arbiter(conn, project, arbiter.id) == arbiter.id

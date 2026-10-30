@@ -40,6 +40,9 @@ ever rewritten and nothing can drift.
 - Reusing the pause: the contract gives isolation its own field, routes and effects (released claims, closed
   placements, no audience), none of which a pause has.
 
-**Not covered:** a card's own contract `arbiter` and the audiences of events about cards that name an isolated
-arbiter or assignee are not rewritten; the agent cannot act on them (every call is refused) and the humans who
-decide read them as before.
+**Not covered:** the audiences of card events that name an isolated arbiter or assignee are not rewritten:
+the agent reads none of them (`events.readable_by`), and a lift moves its sessions' cursors to the project's
+head, so what happened meanwhile is not handed to it at the next resume; an explicit `GET …/events?after=`
+older than the lift can still read the window, which is open. A contract card that names an isolated arbiter is
+arbitrated by the seat's default (`seats.routed_arbiter`), and the resume packet of an isolated agent carries
+no request and no assigned card.

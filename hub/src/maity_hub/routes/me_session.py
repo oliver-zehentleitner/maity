@@ -429,6 +429,8 @@ def _packet(
         )
     ).all()
     assigned = sorted(assigned, key=ranks.column_key)  # the card order, its priority (§6.4)
+    if mine.row.isolated_since is not None:
+        assigned = []  # nothing is handed to an isolated agent (§6.2)
     siblings = [
         {
             key: view[key]
@@ -584,6 +586,8 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     from maity_hub import inbox
     from maity_hub.routes.requests import request_view
 
+    if mine.row.isolated_since is not None:  # no request reaches an isolated agent (§6.2)
+        return {"mine_open": [], "answered_since_cursor": [], "to_answer": [], "truncated": False}
     rows = conn.execute(
         select(t.request)
         .where(t.request.c.project_id == mine.project.id)

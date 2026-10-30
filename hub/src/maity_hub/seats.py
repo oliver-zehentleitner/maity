@@ -49,10 +49,11 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
     availability.drop_substitute(conn, project_id, principal, deciders, actor)
 
 
-def routed_arbiter(conn: Connection, project: Any) -> str:
-    """The contract arbiter as routing reads it: the policy's, but an isolated agent is
-    routed past as if the seat held its default after a removal (§6.2, "Isolation")."""
-    seat: str = project.contract_arbiter
+def routed_arbiter(conn: Connection, project: Any, seat: str | None = None) -> str:
+    """The contract arbiter as routing reads it, the policy's or the one a card names
+    (`seat`): an isolated agent is routed past as if the seat held its default after a
+    removal (§6.2, "Isolation")."""
+    seat = project.contract_arbiter if seat is None else seat
     if seat == "trust:admin":
         return seat
     isolated = conn.execute(

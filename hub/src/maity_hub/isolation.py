@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, case, select, update
+from sqlalchemy import Connection, case, func, select, update
 
 from maity_hub import clock, group_chats, longpoll, placements
 from maity_hub import tables as t
@@ -132,6 +132,20 @@ def lift(conn: Connection, project: Any, target: Any, human_id: str, actor: Acto
         .where(t.membership.c.id == target.id)
         .values(isolated_reason=None, isolated_since=None, isolated_by=None)
     )
+    # What happened while it was left out is not read afterwards: its sessions' cursors
+    # move to the project's head, where the next resume starts (§6.2).
+    head = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project.id)
+    ).scalar()
+    if head is not None:
+        conn.execute(
+            update(t.agent_session)
+            .where(
+                t.agent_session.c.membership_id == target.id,
+                t.agent_session.c.acknowledged_seq < head,
+            )
+            .values(acknowledged_seq=head)
+        )
     _announce(conn, project, target, actor)
     _tell_owner(
         conn,
