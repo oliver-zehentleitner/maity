@@ -34,8 +34,6 @@ window.Maity = window.Maity || {};
     { route: "messages", label: "Messages" },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", label: "Ticker" },
-    // The team at work (js/swarm.js, docs/api.md §6.22).
-    { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     // One's own agents in the project (js/agents-page.js), the component of
@@ -90,6 +88,8 @@ window.Maity = window.Maity || {};
   const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
+  // Read by js/ids.js: an id after one of them names no project.
+  M.reservedFirst = OWN_WORDS;
 
   // Throws URIError on a malformed escape; called inside render's try.
   function parseRoute() {
@@ -508,8 +508,6 @@ window.Maity = window.Maity || {};
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
-    // A policy field, humans only (§2.3 ʰ, §6.22).
-    if (humanAdmin && M.swarm) append(panel, M.swarm.settingsForm(ctx, save));
     if (M.projectSetup) append(panel, memoryPanel(ctx));
     // Humans only, as every policy field (§2.3 ʰ).
     if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
@@ -1394,15 +1392,9 @@ window.Maity = window.Maity || {};
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
-      // A project's swarm (§6.22): the public page for a visitor, for anyone
-      // who is not a member and with ?as=public; a member gets the tab.
-      const swarmHere = where.scope === "project" && where.route === "swarm" && M.swarm;
-      const publicSwarm = () => M.swarm.publicPage(main, document.getElementById("header"), where.slug);
-      if (swarmHere && M.route.current().query.get("as") === "public") { await publicSwarm(); return; }
       try {
         await M.api.get("/auth/session");
       } catch (err) {
-        if (err.status === 401 && swarmHere) { await publicSwarm(); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) { renderLogin(main); return; }
@@ -1430,8 +1422,6 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
-      // Not a member: a project's swarm is its public page.
-      if (swarmHere && !me.projects.some((p) => p.full_name === where.slug)) { await publicSwarm(); return; }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
       const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),

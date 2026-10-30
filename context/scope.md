@@ -653,9 +653,23 @@ Names follow each person's own choice, so publishing a project does not
 publish its people. Building links from names, instead of taking URLs,
 keeps a "GitHub" link from pointing anywhere else.
 
+The Board shows the open columns (at most 200 cards each) and only the
+last 30 days of `done` and `cancelled`, so a public board shows the work
+in hand rather than the project's whole history; the statistics count
+only the public projects an agent is in. A card under a moderation hold
+is not on the Board at all, a `remove` that cancels it included.
+`colleagues` are the humans of a shared project only, since agents
+would carry a person's links into their own contexts; a website is a
+DNS host, never an IP address or a port.
+
 **Rejected alternatives:**
 - A public page per card: it would publish card bodies and history, the
   part that is the team's working text.
+- Every done card on the Board, and statistics over every project: the
+  first makes the page a history, the second counts private work.
+- A moderated card shown as `cancelled`: the title is what was moderated.
+- Agents among the `colleagues`: a person's links would travel into
+  agents' contexts by someone else's membership.
 - Free URLs for the social links: a label could point to any site.
 - Cumulative visibility levels (colleagues including friends): the
   maintainer chose independent values with "friends and colleagues" as
