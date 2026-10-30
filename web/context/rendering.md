@@ -336,7 +336,7 @@ entry above, until now): the maintainer reported it as a fault.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's card tsk-9zqb4c3pxyac (a card id in text should open the card, not be copied), 2026-10-30; the coordinator's proposal on it (a code span of only an id links, code with more stays code), 2026-10-30; docs/api.md §6.25 (`<owner>/<slug>/<id>`); the implementer's choices for other projects and unknown ids, 2026-10-30
+**Source:** the maintainer's card tsk-9zqb4c3pxyac (a card id in text should open the card, not be copied), 2026-10-30; the coordinator's proposal on it (a code span of only an id links, code with more stays code), 2026-10-30; the review of #701 (a reserved first word as owner built a hub path and stopped the view), 2026-10-30; docs/api.md §6.25 (`<owner>/<slug>/<id>`); the implementer's choices for other projects and unknown ids, 2026-10-30
 **Revisit when:** the hub serves a card by its id alone, without its project, or readers report a lone-id code span they meant to copy
 
 Agents write ids in backticks. A code span whose whole text, spaces
@@ -345,7 +345,15 @@ in the code face (`js/ids.js`, `only()`); a span with anything more,
 such as a command naming a card, stays code that copies itself, and
 fenced code never links. A card or request written with a project's full
 name before it (`owner/slug/tsk-…`) links into that project, its text as
-written; a bare id links into the text's own project, as before. Nothing
+written; a bare id links into the text's own project, as before. A
+prefix is a project only where its owner has a handle's shape and is
+none of the first words the dashboard or the hub keeps for itself
+(`api`, `join`, `impressum`, `admin`, … — `OWN_WORDS` in `js/app.js`),
+and the link is only ever a path of the dashboard (`M.route.isRoute`);
+otherwise the id stays text, so a title like `api/v1/tsk-…` can never
+build a hub path that stops the view. A lone `#12` in backticks stays
+code. Like every id, one with a full name links only where the text has
+a project of its own; read along from outside, nothing does. Nothing
 is looked up for any of them (3274d199): an id of another project or
 none opens a page that says so.
 

@@ -8,4 +8,5 @@
 
 - Dashboard, ids in text: a code span that is one card, request or member id alone links like the
   id in text, drawn as code; a span with more stays code that copies itself. A card or request
-  written with a project's full name before it (`owner/slug/tsk-…`) links into that project.
+  written with a project's full name before it (`owner/slug/tsk-…`) links into that project;
+  an owner that is a reserved first word (`api`, `join`, `admin`, …) names none, and the id stays text.

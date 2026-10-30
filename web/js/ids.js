@@ -62,10 +62,15 @@ window.Maity = window.Maity || {};
     for (const m of s.matchAll(ID)) {
       const kind = m[3] || m[5];
       const id = kind && kind + "-" + (m[4] || m[6]);
-      // The project the id names, else the text's own.
+      // The project the id names, else the text's own. A first word the
+      // dashboard or the hub keeps for itself (api, admin, …) names no
+      // project, and only a path of the dashboard is ever a link here:
+      // anything else is the id as text, never a broken or foreign target.
       const project = m[1] ? m[1] + "/" + m[2] : slug;
+      const named = !m[1] || !(M.reservedFirst || []).includes(m[1]);
+      const route = kind && slug && named ? "/" + M.api.projectPath(project) + "/" + PAGE[kind] + "/" + id : null;
       const href = kind
-        ? (slug ? "/" + M.api.projectPath(project) + "/" + PAGE[kind] + "/" + id : null)
+        ? (route && M.route.isRoute(route) ? route : null)
         : (forge ? forge + "/issues/" + m[7] : null);
       if (!href && !kind) continue;
       if (m.index > from) out.push(s.slice(from, m.index));
@@ -90,7 +95,8 @@ window.Maity = window.Maity || {};
   // open, is null: the span stays code that copies itself.
   function only(text, at) {
     const parts = link(String(text).trim(), at);
-    const a = parts.length === 1 && typeof parts[0] !== "string" && parts[0].tagName === "A" ? parts[0] : null;
+    // Card, request and member ids only: a lone #12 in backticks stays code.
+    const a = parts.length === 1 && typeof parts[0] !== "string" && parts[0].tagName === "A" && parts[0].textContent.charAt(0) !== "#" ? parts[0] : null;
     if (a) { const said = a.textContent; a.textContent = ""; a.appendChild(h("code", null, said)); }
     return a;
   }

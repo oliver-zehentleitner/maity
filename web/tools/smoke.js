@@ -2499,6 +2499,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const idFull = idBox(IDS.link("see guest/shop/tsk-0123456789ab, maintainer/maity/req-abcdefghjkmn and https://x.org/guest/shop/tsk-0123456789ab", idAt));
   expect(idHrefs(idFull) === "guest/shop/tsk-0123456789ab=#/guest/shop/tasks/tsk-0123456789ab maintainer/maity/req-abcdefghjkmn=#/maintainer/maity/inbox/req-abcdefghjkmn",
     "ids: a card or request with a project's full name before it links into that project, as written; inside a URL nothing links " + idHrefs(idFull));
+  // A first word the hub or the dashboard keeps (api, join, impressum, admin) names no project: the id is text, never a
+  // broken link that would stop the view (review of #701).
+  const idReserved = "api/v1/tsk-0123456789ab, join/x/req-abcdefghjkmn, impressum/ab/tsk-0123456789ab, admin/users/tsk-0123456789ab";
+  let idReservedOut = null, idReservedErr = null;
+  try { idReservedOut = idBox(IDS.link(idReserved, idAt)); } catch (err) { idReservedErr = err; }
+  expect(!idReservedErr && idReservedOut && !idReservedOut.querySelector("a") && text(idReservedOut) === idReserved
+    && idReservedOut.querySelectorAll("span.id-ref").map((x) => text(x)).join() === "api/v1/tsk-0123456789ab,impressum/ab/tsk-0123456789ab,admin/users/tsk-0123456789ab",
+    "ids: an id after a reserved first word stays text, as an id with nowhere to open " + (idReservedErr && idReservedErr.message));
+  let mdReserved = null, mdReservedErr = null;
+  try { mdReserved = idBox(win.Maity.markdown("See " + idReserved + " and `api/v1/tsk-0123456789ab`, `join/x/req-abcdefghjkmn`, `impressum/ab/tsk-0123456789ab`", idAt)); }
+  catch (err) { mdReservedErr = err; }
+  expect(!mdReservedErr && mdReserved && !mdReserved.querySelector("a") && mdReserved.querySelectorAll("code.md-inline-copy").length === 3,
+    "ids: in Markdown text and in backticks the same: no link, the code spans stay code " + (mdReservedErr && mdReservedErr.message));
+  const mdHash = idBox(win.Maity.markdown("PR `#12` and #12", idAt));
+  expect(idHrefs(mdHash) === "#12=https://github.com/oliver-zehentleitner/maity/issues/12" && text(mdHash.querySelector("code.md-inline-copy")) === "#12",
+    "ids: a lone #12 in backticks stays code; card, request and member ids alone link");
   expect(!MD("tsk-0123456789ab").querySelector("a"), "ids: Markdown without the text's project links no id");
   const idOut = IDS.where({ slug: "maintainer/maity", outsider: true, project: { repository: { url: "https://github.com/o/r" } } });
   expect(idOut.slug === null && idOut.repository === null && !idBox(win.Maity.markdown("See tsk-0123456789ab and #4", idOut)).querySelector("a.id-ref"),

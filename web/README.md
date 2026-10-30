@@ -227,9 +227,11 @@ holds no such thing. The link's text is the id as written, and no mention
 is made; outside the id's project (the global chat, `/all`) a card's
 or request's reads `<owner>/<slug>/tsk-…` (`docs/api.md` §6.25, display
 only, `M.ids.ref` the one place that writes it). A card or request
-written that way, `<owner>/<slug>/tsk-…`, links into that project. In
-Markdown (messages, chats) a code span that is one id alone links, drawn
-as code; a code span with more, and fenced code, stay plain; the other texts are not Markdown, so backticks there are just
+written that way, `<owner>/<slug>/tsk-…`, links into that project where
+the text has a project of its own; an owner that is one of the reserved
+first words (`api`, `join`, `admin`, …) names no project, and the id
+stays text. In Markdown (messages, chats) a code span that is one card,
+request or member id alone links, drawn as code (a lone `#12` stays code); a code span with more, and fenced code, stay plain; the other texts are not Markdown, so backticks there are just
 characters and an id between them still links. A text read along from
 outside a project (`/observe`) links no id, as it links no member. In
 **All projects** `#123` stays text: `/me` gives no project's repository.
