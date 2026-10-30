@@ -473,13 +473,11 @@ window.Maity = window.Maity || {};
     collab: ["title", "text", "items", "footnote"],
     demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
-  // A list of a section with its bounds: too_few under min, too_many over max.
+  // A list of a section with its bounds, as the hub's landing._list: one
+  // outside them, or no list, is invalid at its path, its entries unchecked.
   function landingList(list, path, min, max, errors, each) {
-    const xs = Array.isArray(list) ? list : [];
-    if (list !== undefined && !Array.isArray(list)) errors[path] = "invalid";
-    else if (xs.length < min) errors[path] = "too_few";
-    else if (xs.length > max) errors[path] = "too_many";
-    xs.forEach((x, k) => each(x || {}, path + "." + k));
+    if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
+    list.forEach((x, k) => each(x || {}, path + "." + k));
   }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
   function landingText(x, path, max, required, errors) {

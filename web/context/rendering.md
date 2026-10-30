@@ -554,7 +554,10 @@ tab names taken from each column's first `h3` as text); and counts
 `[data-lp-count]` up to the number the page holds, putting the page's
 own text back at the end and leaving any text that is not a plain number
 alone. Under `prefers-reduced-motion` neither the demo loop nor the
-counting starts. `web/tools/check.py` checks the file with the
+counting starts. A stored theme is set when the script runs, after the
+first paint (`defer`, and the page's policy allows no inline script), so
+a visitor whose choice differs from the system's sees the system's theme
+for a moment. `web/tools/check.py` checks the file with the
 dashboard's rules, its size and the absence of any request.
 
 **Reason:** the page is complete and readable without it (§16.7); every
