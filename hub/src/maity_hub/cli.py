@@ -15,7 +15,16 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, handle_register, longpoll, moderation, namespace, paths
+from maity_hub import (
+    __version__,
+    clock,
+    handle_register,
+    longpoll,
+    moderation,
+    namespace,
+    paths,
+    public_pages,
+)
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
 from maity_hub.auth import second_factor_reset
@@ -208,6 +217,9 @@ def _unsuspend(settings: Settings, handle: str) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        public_pages.configure(
+            settings
+        )  # a process without the app renders the page it brings back
         with engine.begin() as conn:
             human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
             if human_id is None:

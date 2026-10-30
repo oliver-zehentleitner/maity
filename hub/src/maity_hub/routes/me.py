@@ -70,6 +70,9 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
             "meat_proxy": human.meat_proxy,
+            # The person's own page, whatever it shows to others (§16.9).
+            "public_profile": human.public_profile,
+            "public_bio": human.public_bio,
             "account_status": human.account_status,
             "terms": (
                 {

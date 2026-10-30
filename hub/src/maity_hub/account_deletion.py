@@ -28,7 +28,16 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import clock, github_app, invitations, namespace, orgs, placements, write_guard
+from maity_hub import (
+    clock,
+    github_app,
+    invitations,
+    namespace,
+    orgs,
+    placements,
+    public_pages,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
@@ -408,6 +417,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     _withdraw_personal(conn, human_id)
     _end_access(conn, hub, human_id)
     _remove_person(conn, human_id, hub.secret_key)
+    public_pages.touch(conn, "person", human_id)  # a deleted person has no page (§16.9)
 
 
 def _ids(conn: Connection, query: Any) -> list[str]:
