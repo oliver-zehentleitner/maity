@@ -5255,6 +5255,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }) : tkGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(tkItems().length === 1 && text(tkSeq(9980)).includes("you are an owner, you are an admin"), "ticker: one item once; role reasons with their article");
+  {
+    const tk = win.Maity.ticker;
+    expect(tk.whyWords("role:ops") === "you work in ops" && tk.whyWords("trust:steward") === "you have steward trust"
+      && tk.whyWords("follow:type:contract") === "you follow contract changes" && tk.whyWords("follow:type:later") === "you follow later"
+      && tk.said({ code: "ticker_duplicate", details: { seq: 12345 } }).message === "this was posted already (item 12345)"
+      && tk.said({ code: "invalid", details: { fields: { text: "required", odd: "odd_reason" } } }).message === "The text is missing; The field odd was refused (odd_reason)",
+    "ticker: reasons and refusals from the catalog; a value the hub adds later still reads, an item number is never grouped");
+  }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
@@ -6688,6 +6696,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
   expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
+  // /<handle> (§6.27, §16.11): the dashboard's own view of a person or an organisation, from GET /people/{handle}.
+  const pvAsked = [];
+  const pvGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.startsWith("/people/")) pvAsked.push(p); return pvGet(p); };
+  await go("#/wolfgang"); for (let k = 0; k < 4; k++) await tick();
+  const pvView = () => main.querySelector("section.view-person");
+  const pvName = () => text(pvView().querySelector(".person-name"));
+  const pvLinks = () => (pvView().querySelector("ul.person-links") || { querySelectorAll: () => [] }).querySelectorAll("a");
+  const pvPublic = () => pvView().querySelectorAll("a").find((a) => text(a) === "View public page");
+  const pvProjects = () => pvView().querySelectorAll("ul.person-projects li");
+  expect(pvView() && pvAsked[0] === "/people/wolfgang" && pvName() === "Wolfgang" && text(pvView()).includes("@wolfgang")
+    && text(pvView().querySelector(".person-bio")) === "Builds trading tools."
+    && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
+    "person: name, handle, bio and View public page where the hub serves one, opened at ?as=public");
+  expect(pvView().querySelector(".person-picture-none.size-64") && !pvView().querySelector(".person-head img"),
+    "person: without an avatar_url a neutral placeholder, never a generated avatar");
+  expect(JSON.stringify(pvLinks().map((a) => a.getAttribute("href"))) === JSON.stringify(["https://example.org", "https://github.com/wolfgang", "https://mastodon.social/@wolfgang"])
+    && pvLinks().every((a) => a.getAttribute("rel") === "me nofollow noopener") && text(pvView().querySelector("ul.person-links")).includes("Discord: wolfgang_01")
+    && !pvLinks().some((a) => text(a) === "wolfgang_01"),
+    "person: the links as the hub sends them, built from the names, rel me; Discord as text");
+  expect(pvProjects().length === 2 && pvProjects()[0].querySelector("a").getAttribute("href") === "#/maintainer/maity/overview" && text(pvProjects()[0]).includes("yours too")
+    && pvProjects()[1].querySelector("a").getAttribute("href") === "#/wolfgang/traderjoe?as=public" && text(pvProjects()[1]).includes("public page")
+    && text(pvView()).includes("2 of 3 shown."),
+    "person: a shared project to its overview, a public one to its page, a cut list said with its total");
+  expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
+  await go("#/wolf"); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/wolfgang" && pvName() === "Wolfgang", "person: an alias goes to the current handle");
+  await go("#/anna"); for (let k = 0; k < 4; k++) await tick();
+  expect(pvName() === "Anna" && !pvPublic() && !pvView().querySelector(".person-bio") && !pvView().querySelector("ul.person-links") && pvProjects().length === 1,
+    "person: without a served page or links for this reader, none of them; the shared project listed");
+  await go("#/oz-team"); for (let k = 0; k < 4; k++) await tick();
+  expect(pvName() === "OZ Team" && text(pvView()).includes("@oz-team · organisation") && !pvPublic()
+    && pvView().querySelectorAll("ul.person-members li").length === 2 && text(pvView().querySelector("ul.person-members")).includes("@anna · admin")
+    && pvView().querySelectorAll("ul.person-members .person-picture-none.size-20").length === 2,
+    "organisation: its name, no public page while it is off, its members with their roles for a member, their pictures as placeholders");
+  await go("#/nobody-here"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("There is no person or organisation @nobody-here that you can see.") && !main.querySelector(".error"),
+    "person: not_found said as such, never an error box");
+  await go("#/maintainer"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(pvView()).includes("@maintainer · you") && text(pvView()).includes("Your projects") && pvProjects().length >= 1,
+    "person: one's own handle is oneself, with one's projects");
+  win.Maity.api.get = pvGet;
   // An agent's owner sets whom it reports to without members:admin (§2.3, tsk-0s3gztb6jba7): Manage on Members, and on Agents.
   const orGet = win.Maity.api.get, orPatch = win.Maity.api.patch;
   const orPatches = [];

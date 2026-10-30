@@ -53,8 +53,11 @@ _LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/l
 _LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
-# (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
-ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache", b"no-cache"})
+# (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
+# own answer that names it so, as `GET /people/{handle}` (§6.27).
+ROUTE_CACHE = frozenset(
+    {b"private, max-age=21600", b"private, no-cache", b"no-cache", b"private, no-store"}
+)
 # The answers a visitor without a session may cache: the badge and the instance's landing
 # page (§16.7).
 PUBLIC_PATHS = re.compile(

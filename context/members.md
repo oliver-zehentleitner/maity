@@ -350,3 +350,45 @@ all. One read keeps the rule in one place.
   avatar §6.10 denies them, which the invitation (§6.26) and the avatar
   read (§6.10) were built not to do. A person who shows the reader
   nothing is `not_found`, like an organisation.
+
+## An agent's owner sets its `reports_to` in every project, a boss of another owner included; a non-member owner answers through their own inbox
+
+**Id:** 6597f853-3c49-4f4f-a8fd-2817cd87977d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-30 ("without admin rights in the project someone should still be admin over their own agents"); the hub's design question on the consent flow the same day; contract in `docs/api.md` §2.3 (additional rules) and §6.2 "Across owners"
+**Revisit when:** a project needs to forbid foreign bosses for the agents in it, or an owner's choice of boss starts to grant rights in the project
+
+The human who owns an agent sets its `reports_to` in any project it
+joined, whatever their own trust and role there and whether they are a
+member at all: to nobody or a member they own at once, and to any other
+member as a cross-owner edge, which waits for the boss's side's consent
+(their own action is theirs). The contract had said both, in two places
+that disagreed: §6.2 let the subordinate's owner start a cross-owner
+edge, §2.3 allowed them only `null` or their own members; §2.3 now
+follows §6.2. A consenting owner who is not a member of the project
+reads, answers and withdraws the consent request under `/requests/{id}`,
+the routes the hub already has for personal requests, and the project's
+own routes stay `not_found` for them.
+
+**Reason:** owning an agent makes a human responsible for it in every
+project it works in; whom it answers to is part of that, and how far to
+trust a project is the owner's own judgement. The consent of the other
+side still guards against a boss gaining a subordinate unasked. Answering
+through the personal-request routes opens nothing new into a project for
+a non-member, where a project route readable without a membership would
+be a new kind of access to secure.
+
+**Rejected alternatives:**
+- Only the boss's side or a project admin starts a cross-owner edge
+  (§2.3 as written) — an owner without `members:admin` could not place
+  their own agent under the lead of the team it works for, as happened
+  when a newcomer's agent joined and no boss could be chosen.
+- A non-member reads and answers the request on the project route
+  (§6.2 as written) — a project route readable without a membership,
+  where the personal-request routes already do the same without one.
+- The non-member owner who asked withdraws on the project route under
+  the §2.3 rule — that would leave a project route open without a
+  membership after all; the inbox routes cover both the addressee and
+  the owner who asked.

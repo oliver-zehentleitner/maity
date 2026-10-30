@@ -274,6 +274,8 @@ def project_view(
         "state": project.state,
         "released_at": ts(project.released_at),
         "state_note": project.state_note,
+        "public_page": project.public_page,
+        "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
         "logo": shown.get("logo", NO_IMAGE),
