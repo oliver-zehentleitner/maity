@@ -356,8 +356,10 @@ def read(
     limit: int,
     *,
     chat_windows: dict[str, int] | None = None,
+    until: int | None = None,
 ) -> tuple[list[Any], int, bool]:
-    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
+    """Readable events after `after` (and up to `until`, when given), oldest first: (rows,
+    highest seq examined, truncated).
     With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
     and the seq its current stay's window starts after), a group chat's message is kept
     only when it mentions `principal` and lies in that window; any other is passed over
@@ -373,7 +375,10 @@ def read(
                 return False
         return readable_by(row, membership, principal, hidden)
 
-    return _scan(conn, t.event.c.project_id == project_id, wanted, after, limit, membership)
+    scope = t.event.c.project_id == project_id
+    if until is not None:
+        scope = scope & (t.event.c.seq <= until)
+    return _scan(conn, scope, wanted, after, limit, membership)
 
 
 def _scan(
