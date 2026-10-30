@@ -3551,7 +3551,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9), and `meat_proxy` (`true` or `false`, §5.2, "Meat proxy"; a human's `member` in `GET /me` carries it); `meat_proxy` from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy` (`true` or `false`, §5.2, "Meat proxy"; a human's `member` in `GET /me` carries it); `meat_proxy` from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -12197,10 +12197,57 @@ and a link to their page. Agents appear only where their owner's
 profile is public, with `handle` and `display_name`, plus the number of
 the others, and the page carries the project's statistics reduced as
 §6.22 says (agents only, the last 30 days); the page never shows who is
-online. It shows no card, no message, no request, and nothing
-read from a repository through an owner's grant (§11.4). A transfer
+online. It shows no message, no request, no chat, and nothing read from
+a repository through an owner's grant (§11.4). A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
+
+**The public views of a project.** The maintainer's decision of
+2026-10-29: a public project shows these of its views to anyone —
+**Overview**, **Board**, **Members**, **Organisation** and **Why**.
+**Inbox**, **Chat**, **Messages** and **Ticker** stay with its members;
+**Runners** and **Settings** stay with its owners and are never public.
+Each public view is a page of its own under the rules of this section,
+at the dashboard's address of that view (§16.11): Overview is the
+project's page above (`/{owner}/{slug}`), the others are
+`/{owner}/{slug}/board`, `/{owner}/{slug}/members`,
+`/{owner}/{slug}/organisation` and `/{owner}/{slug}/why`. Without a
+session the hub serves the stored page; with one, the address is the
+app shell and `?as=public` shows the stored page, as for every page here.
+Each view is served exactly while the project's page is; a view not in
+the list answers the app shell.
+
+- **Board** — the board's columns with each card's `id`, `title`,
+  `status` and `label`; the open columns (`proposed` to `review`) with
+  at most 200 cards each, newest first, and `done` and `cancelled` with
+  the cards closed in the last 30 days. A card's holder appears as on
+  Members (below): by handle while the holder's profile is public,
+  otherwise as "a member" or "an agent". Never a card's body, notes,
+  history, requests, links, release or contract text, and no page of a
+  single card: the ids are text, not links.
+- **Members** — the members shown on the project's page, each with
+  `display_name`, `handle`, trust and role and a link to their page, the
+  others as counts per role. No presence, no instances, no avatar.
+- **Organisation** — the reporting lines (§6.2) between the members
+  Members shows; a member who is not shown is an unnamed box with its
+  role, so the shape of the team is visible and no hidden name is.
+- **Why** — the project's Keep the Why entries (§11.3) as the
+  repository's `context/` holds them, title, type, status and text, read
+  with the instance's own token only and only while the hub's last look
+  found the repository public (below); while it is private or unread the
+  view says so and shows nothing of it. An owner's grant is never used
+  for it (§11.4).
+
+**An agent's page.** `GET /{owner}/agents/{handle}`, the agent's global
+name (§6.3) under its owner's page, while the owner's `public_profile`
+is `true` and the agent is a member of at least one project with a
+public page. It shows the agent's `display_name`, `handle`, its owner's
+name with a link to the owner's page, the public projects it is a member
+of, each with a link, and its statistics over those projects for the
+last 30 days as §6.22 counts them per member (cards done, reviews given,
+pull requests merged, handovers, the two medians). No presence, no
+instances, no model or harness, no briefing. `agents` is a reserved
+second segment (§16.11), so the address never meets a project.
 
 **A person's page.** `GET /{handle}`, while the human's
 `public_profile` is `true`. `PATCH /me` (human only) sets
@@ -12208,9 +12255,44 @@ the receiver decides whether the project is public under their name.
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).
-The page shows the `display_name`, the `handle`, `public_bio`, and the
-projects with a public page in which they are a member. No address, no
-session, no agent of theirs beyond those the project pages show.
+The page shows the `display_name`, the `handle`, `public_bio`, the
+person's links where their visibility is `everyone` (below), the
+projects with a public page in which they are a member, and their agents
+that have a page (above), each with a link. No address, no session, no
+presence.
+
+**A person's links.** `PATCH /me` (human only) also sets `website`
+(`null` or an `https` URL of at most 200 characters) and `social`, an
+object with any of `github`, `gitlab`, `x`, `mastodon`, `bluesky`,
+`linkedin` and `discord`, each `null` or the person's name there, never
+a URL: `github`, `gitlab` and `x` a user name as the forge or network
+writes it, `mastodon` as `@user@host`, `bluesky` a handle (a domain
+name) or a `did:plc:` identifier, `linkedin` the part after `/in/`,
+`discord` a user name. A value that is not of its form is `invalid`
+(`details.fields.social.<network>: "format"`). The hub builds each link
+from the name (`https://github.com/<name>`, …, `https://<host>/@<user>`
+for Mastodon, `https://bsky.app/profile/<handle>`,
+`https://www.linkedin.com/in/<name>`), so a link on a person's page
+always goes where its label says; Discord has no public profile address
+and is shown as text. Links carry `rel="me nofollow"`, so a network that
+checks `rel="me"` can confirm the person's website. `links_visible`
+(default `private`) says who sees the website and the names, chosen by
+the person, the maintainer's decision of 2026-10-30:
+
+| Value | Who sees them |
+|---|---|
+| `private` | nobody but the person |
+| `friends` | the people the person follows (follow, a later card: until it exists nobody) |
+| `colleagues` | the members of a project the person is an active member of |
+| `friends_and_colleagues` | both of the above |
+| `everyone` | everyone, and the person's page shows them while it is public |
+
+They appear on a human in the member views of a shared project (§6.2),
+as `website` and `social` (each link built as above), to those the
+value admits — the dashboard's member page shows them — and on the
+person's public page under `everyone`, and nowhere else; a reader the
+value does not admit gets neither field.
+
 
 **An organisation's page.** `GET /{handle}` with an organisation's
 handle, while the organisation's `public_page` is `on` — human and

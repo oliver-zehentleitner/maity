@@ -621,6 +621,46 @@ must not publish its members by an update.
   only with their owner's public profile, the rest as a number (the
   separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
 
+## A public project shows Overview, Board, Members, Organisation and Why; agents get pages under their owner; a person's links are theirs to show
+
+**Id:** 3b57164a-c675-4646-a026-237f96e4df54
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, no single-card page) are the contract owner's; contract `docs/api.md` §16.9
+**Revisit when:** follow exists (the `friends` value starts to mean something), a public card page is wanted, or the Why view should show a private repository's entries by an owner's choice
+
+A public project shows five of its views to anyone, each a stored
+page at the view's own address: Overview, Board, Members, Organisation
+and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
+and Settings with the owners. The Board shows each card's id, title,
+status and label, never its body, notes or history, and has no page per
+card. People and agents appear by name only where the person (or the
+agent's owner) has a public profile, otherwise as "a member"/"an agent"
+or an unnamed box. Why is shown only while the repository is public,
+read with the instance's token. An agent has a page under its owner's
+(`/{owner}/agents/{handle}`) with its statistics over the public
+projects. A person sets a website and their names on seven networks;
+the hub builds the links from the names, and the person chooses who sees
+them: private, friends, colleagues, friends and colleagues, or everyone.
+
+**Reason:** the maintainer wants a public project to show how it is
+being built, not only that it exists; the board and the team are that.
+What a card says inside, and what people discuss, stays with the team.
+Names follow each person's own choice, so publishing a project does not
+publish its people. Building links from names, instead of taking URLs,
+keeps a "GitHub" link from pointing anywhere else.
+
+**Rejected alternatives:**
+- A public page per card: it would publish card bodies and history, the
+  part that is the team's working text.
+- Free URLs for the social links: a label could point to any site.
+- Cumulative visibility levels (colleagues including friends): the
+  maintainer chose independent values with "friends and colleagues" as
+  its own option.
+- Showing Why from a private repository through an owner's grant: the
+  grant reads for the team, not for the public (§11.4).
+
 ## The landing and legal pages are instance content in sections, rendered by the hub as static HTML
 
 **Id:** cd44707b-7b79-47ae-a78d-586195d465dc
