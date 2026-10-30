@@ -2149,66 +2149,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/message/" + encodeURIComponent("@agent-c"));
   expect(byId("message-body").value === "@agent-c ", "message: opened with an @name already written");
 
-  // The swarm (js/swarm.js, docs/api.md §6.22): the members' tab, the public page, the policy switch.
+  // The swarm statistics (js/swarm.js, docs/api.md §6.22, §6.11): a section of the Overview, no tab, no public page, no switch.
   const swGets = [];
-  const swGet = win.Maity.api.get, swPatch = win.Maity.api.patch;
+  const swGet = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p.includes("swarm")) swGets.push(p); return swGet(p); };
   win.Maity.api.forgetRoutes();
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
-  const swTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Swarm");
-  const swLive = () => (main.querySelector("ul.swarm-live") || { childNodes: [] }).childNodes;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+  const swBox = () => main.querySelector("section.overview-swarm");
+  const swLive = () => (swBox().querySelector("ul.swarm-live") || { childNodes: [] }).childNodes;
   const swLi = (id) => swLive().find((li) => li.attrs["data-member"] === id);
-  expect(swTab && swTab.getAttribute("aria-current") === "page" && swGets[0] === "/projects/maintainer/maity/swarm?days=30" && swLive().length === 4,
-    "swarm: a tab of the project, read for 30 days, everyone in the live strip");
+  expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent === "Swarm") && swBox() && main.querySelectorAll("section.overview-swarm").length === 1
+    && text(swBox().querySelector(".overview-head").childNodes[0]) === "Swarm" && swBox().parentNode.className === "overview-row overview-row-3"
+    && swGets[0] === "/projects/maintainer/maity/swarm?days=30" && swLive().length === 4,
+    "swarm: a section of the Overview after the facts, no tab; read for 30 days, everyone in the live strip");
   expect(text(swLi("agt-b")).includes("online, 2 instances") && swLi("agt-b").querySelector(".swarm-holding a").getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004"
     && text(swLi("agt-b")).includes("Hub: credential exchange and storage") && text(swLi("agt-c")).includes("last seen") && text(swLi("hum-maintainer")).includes(" online"),
     "swarm: online with its instances, what each holds as links to the cards, last seen for the offline");
-  const swRows = main.querySelectorAll("table.swarm-table tbody tr");
-  const swTotal = main.querySelector("table.swarm-table tfoot tr");
+  const swRows = swBox().querySelectorAll("table.swarm-table tbody tr");
+  const swTotal = swBox().querySelector("table.swarm-table tfoot tr");
   const swRowB = swRows.find((tr) => tr.attrs["data-member"] === "agt-b");
   expect(swRows.length === 4 && JSON.stringify(swRowB.childNodes.slice(1).map((c) => text(c))) === JSON.stringify(["19", "0", "12", "2", "2 h 30 min", "45 min"])
     && text(swRows.find((tr) => tr.attrs["data-member"] === "agt-c")).endsWith("––") && text(swTotal).startsWith("All36132331 h 42 min40 min"),
     "swarm: the window's table per member and in all, medians in words, – below three samples " + JSON.stringify([text(swRowB), text(swTotal)]));
-  expect(text(main).includes("36 cards done") && main.querySelector(".swarm-per-day").childNodes[1].tagName.toLowerCase() === "svg"
-    && text(main).includes("Reviews are counted from 2026-10-20.") && text(main).includes("fewer than three cards")
-    && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/swarm?as=public"), "swarm: cards done per day, the coverage and samples notes, the public page linked");
-  const swPoints = () => main.querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
+  expect(text(swBox()).includes("36 cards done") && swBox().querySelector(".swarm-per-day").childNodes[1].tagName.toLowerCase() === "svg"
+    && text(swBox()).includes("Reviews are counted from 2026-10-20.") && text(swBox()).includes("fewer than three cards")
+    && !swBox().querySelectorAll("a").some((a) => /as=public/.test(a.getAttribute("href") || "")), "swarm: cards done per day, the coverage and samples notes, no public page");
+  const swPoints = () => swBox().querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
   expect(swPoints().length === 30 && swPoints()[29] === "158.0,6.8", "swarm: the per-day line runs oldest to newest, the newest day at the right " + swPoints().slice(-1));
-  btn(main, "7 days").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(swGets[swGets.length - 1] === "/projects/maintainer/maity/swarm?days=7" && btn(main, "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
+  const swBefore = swBox();
+  let swFeed = [];
+  win.Maity.api.get = (p) => {
+    if (p.includes("/events?") && swFeed.length) { const items = swFeed; swFeed = []; return Promise.resolve({ items, cursor: items[items.length - 1].seq, superseded: false }); }
+    if (p.includes("swarm")) swGets.push(p);
+    return swGet(p);
+  };
+  btn(swBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(swGets[swGets.length - 1] === "/projects/maintainer/maity/swarm?days=7" && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
     "swarm: the switch reads 7 days and draws them");
-  // The public page (§6.22, §16.11): at /<owner>/<slug>/swarm?as=public for a member too; agents only,
-  // by their global names, no pictures, no card titles or links.
-  await go("#/maintainer/maity/swarm?as=public"); for (let k = 0; k < 4; k++) await tick();
-  const swPub = main.querySelector("article.swarm-public");
-  expect(swPub && swGets[swGets.length - 1] === "/swarm/maintainer/maity?days=30" && swPub.querySelector("ul.swarm-live").childNodes.length === 3
-    && !text(swPub).includes("Maintainer") && text(swPub).includes("maintainer/agent-b") && text(swPub).includes("holds 1 card")
-    && !swPub.querySelector("img") && !swPub.querySelectorAll("a").some((a) => /tasks/.test(a.getAttribute("href") || "")) && !text(swPub).includes("credential exchange")
-    && swPub.querySelectorAll("table.swarm-table tbody tr").length === 3 && document.title === "Swarm · maintainer/maity · Maity"
-    && header.querySelectorAll("a.swarm-onward").map((a) => a.getAttribute("href")).join() === "#/maintainer/maity/swarm,#/login?next=%2Fmaintainer%2Fmaity%2Fswarm"
-    && header.querySelector(".theme-menu"),
-    "swarm: the public page shows agents only, by global name, counts and presence, no pictures or card titles; a theme menu, signed out");
-  // The switch in Project settings, a policy change with its reason; off, the public page is not found.
-  const swPatches = [];
-  win.Maity.api.patch = (p, b) => { swPatches.push([p, b]); return swPatch(p, b); };
+  // A redraw of the counts (a card changed) keeps the section as it is: no new read, the window kept.
+  const swReads = swGets.length;
+  const swOverview = main.querySelector(".overview-counts");
+  swFeed = [{ seq: 9990, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview-counts") !== swOverview && swBox() === swBefore && swGets.length === swReads && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true",
+    "swarm: the Overview's redraw keeps the section, its window and its read");
+  // Project settings have no swarm switch.
   await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
-  byId("swarm-public-select").value = "off";
-  main.querySelector("form.swarm-public-form").dispatch("submit"); await tick();
-  expect(!swPatches.length && text(main.querySelector("form.swarm-public-form")).includes("never a human, a picture or a card's title"), "swarm: the switch says what it exposes, and needs a reason");
-  byId("swarm-public-select").value = "off"; byId("swarm-public-reason").value = "Not yet";
-  main.querySelector("form.swarm-public-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(swPatches.length === 1 && JSON.stringify(swPatches[0][1]) === JSON.stringify({ policy: { swarm_public: "off" }, reason: "Not yet" }), "swarm: switched off as a policy change");
-  await go("#/maintainer/maity/swarm?as=public"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("No public swarm here") && text(main).includes("This project shows no public swarm page"), "swarm: off, the public page is a friendly not found");
-  await go("#/nobody/nothing/swarm"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("No public swarm here"), "swarm: a project one is not a member of, or none, reads the same");
-  win.Maity.api.patch = swPatch;
-  await swPatch("/projects/maintainer/maity", { policy: { swarm_public: "on" }, reason: "back on" });
-  // A hub without the swarm says so in the tab.
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : swGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("This hub has no swarm page yet.") && !main.querySelector("table.swarm-table"), "swarm: a hub without it says so");
+  expect(!byId("swarm-public-select") && !main.querySelector("form.swarm-public-form") && !text(main).includes("Public swarm"), "swarm: no public switch in Project settings");
   win.Maity.api.get = swGet; win.Maity.api.forgetRoutes();
   // The contract's section on a contract card (js/contract-panel.js, docs/api.md §6.8): folded until opened,
   // the repository's text untrusted, the hub's code when it cannot resolve it, never an older text.
@@ -3868,10 +3855,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "landing: the root without a session is the login page, the landing never read here; the legal pages set are linked");
   win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
-  // The public swarm page without a session (§6.22): the fixture serves /swarm/ signed out, as the hub does.
-  await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector("article.swarm-public") && main.querySelector("article.swarm-public ul.swarm-live") && !byId("login-handle"),
-    "swarm: the public page opens without a session");
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
@@ -5337,12 +5320,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ovRows = main.querySelectorAll(".overview-row").map((row) => row.querySelectorAll(".overview-part").map((x) => x.getAttribute("aria-labelledby")).join("+"));
   const ovStack = main.querySelector(".overview-row-2 .overview-stack");
   const ovBar = ovPart("overview-board").querySelector(".overview-bar");
-  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-links+overview-badge+overview-reports", "overview-org"])
+  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-links+overview-badge+overview-reports", "overview-swarm", "overview-org"])
     && ovStack && ovStack.childNodes.map((x) => x.getAttribute("aria-labelledby")).join("+") === "overview-members+overview-links+overview-badge"
     && ovStack.parentNode.childNodes[1] === ovPart("overview-reports")
     && ovBar && ovBar.getAttribute("role") === "img" && ovBar.getAttribute("aria-label").includes(ov.board.counts.in_progress + " in progress")
     && main.querySelectorAll(".overview-head").every((hd) => !hd.childNodes[0].querySelector("a")),
-    "overview: three rows, what needs you first, Project and README badge under Team before Latest reports, the organisation last; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
+    "overview: four rows, what needs you first, Project and README badge under Team before Latest reports, then the swarm, the organisation last; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
   // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
   ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
@@ -5850,9 +5833,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // Which 401s say a session ended: the visitor's calls, with or without a query, never; the session's own always.
   const ppPublic = ["/auth/session", "/auth/login", "/auth/device-login?wait=0", "/auth/device-login/complete", "/auth/email-code", "/auth/methods",
-    "/legal", "/openapi.json", "/swarm/maintainer/maity?days=30", "/invitations/open-xxxxxxxxxxxxxxxx1"];
+    "/legal", "/openapi.json", "/invitations/open-xxxxxxxxxxxxxxxx1"];
   const ppSession = ["/auth/sessions", "/auth/sessions?ended=true", "/auth/password", "/auth/device-codes", "/auth/second-factor", "/me", "/me/notifications?limit=0",
-    "/legal/x", "/auth/login-other", "/invitations/abc/accept", "/projects/maintainer/maity/members"];
+    "/legal/x", "/auth/login-other", "/invitations/abc/accept", "/projects/maintainer/maity/members", "/swarm/maintainer/maity?days=30"];
   const ppWrong = ppPublic.filter((p) => !win.Maity.api.isPublicPath(p)).concat(ppSession.filter((p) => win.Maity.api.isPublicPath(p)));
   expect(!ppWrong.length, "session: a visitor's call is public with any query, a session's own call never " + JSON.stringify(ppWrong));
 
