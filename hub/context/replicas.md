@@ -11,7 +11,7 @@ read from the code on 2026-10-30 (`main` at `0e190c95`); file and line reference
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the maintainer's goal "simple scaling toward about 200 000 users in two weeks" (inbox, 2026-10-30, seq 15111) as carried by the card; `docs/ops/ovh-prod.md` §12 (#726, managed PostgreSQL); the inventory of process state on `main` 2026-10-30
+**Source:** the maintainer's goal "simple scaling toward about 200 000 users in two weeks" (inbox, 2026-10-30, seq 15111) as carried by the card; the maintainer's internal deployment planning (2026-10-30), which runs PostgreSQL as a managed service with failover; the inventory of process state on `main` 2026-10-30
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-30
 **Revisit when:** a measured limit of the database (connections, NOTIFY throughput, write load of the shared counters) is reached in the load test below, or an operator needs replicas on MariaDB
 
@@ -45,8 +45,8 @@ supported with one replica, since what follows uses `LISTEN`/`NOTIFY`, `UNLOGGED
 `INSERT … ON CONFLICT`, and doubling each for MariaDB is work no deployment asks for. The shared
 state goes into the database the hub already has, not into a second service.
 
-**Reason:** every pod already holds a pool to PostgreSQL, and the managed service of the
-production plan (#726) is highly available; a second stateful service would add a failure mode,
+**Reason:** every pod already holds a pool to PostgreSQL, and a managed PostgreSQL with failover
+is highly available already; a second stateful service would add a failure mode,
 a backup, a secret and an operator task for state that is small (nonces for ten minutes,
 counters for at most a day) and must be as durable as the rows it guards. PostgreSQL has every
 primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upserts with `RETURNING`,
@@ -167,7 +167,7 @@ is the cheapest shared check there is.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; `docs/ops/ovh-prod.md` §12
+**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30)
 **Revisit when:** the counter writes show in the load test, or a limit needs exact sliding-window semantics across pods
 
 `ratelimit.Limiter` keeps its interface (`hit`, `give_back`) and gets a shared backend on
@@ -286,7 +286,7 @@ causes errors (403 or 429 from the forge for everyone).
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `attachment_store.py` (`LocalStore` under `MAITY_ATTACHMENT_DIR`, written whole with `os.replace`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job), `docs/ops/ovh-prod.md` §12 ("shared file storage or S3-compatible object storage; which one is a decision for that card")
+**Source:** `attachment_store.py` (`LocalStore` under `MAITY_ATTACHMENT_DIR`, written whole with `os.replace`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job), the maintainer's internal deployment planning (2026-10-30) (shared file storage or S3-compatible object storage, the choice left to this card)
 **See:** kubernetes.md — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-10-30
 **Revisit when:** the coordinator or the maintainer prefers shared file storage, or the object store's latency shows in the load test of uploads and downloads
 
@@ -295,16 +295,16 @@ The store gets a second implementation, `S3Store`, behind the same interface
 Downloads stay behind the hub's access checks: the hub streams the object (or answers with a
 presigned URL of a minute, a choice for the build card); uploads are written by the hub as today.
 The sweep and `remove_stray` keep their project-lock discipline and delete objects instead of files.
-Backups stop tarring a volume: the bucket's versioning (and replication to the second location of
-the production plan) replaces the attachment tar, and the dump marker stops requiring it.
+Backups stop tarring a volume: the bucket's versioning (and its replication to a second
+location) replaces the attachment tar, and the dump marker stops requiring it.
 `LocalStore` stays for one replica and for development.
 
 This is the one entry where the choice is the maintainer's as much as the design's: shared file
-storage (`ReadWriteMany`, OVH's file storage) would need no code change in the hub, only in the
+storage (a `ReadWriteMany` volume) would need no code change in the hub, only in the
 chart and the backup job. The recommendation is object storage, for the reasons below.
 
-**Reason:** object storage scales and replicates independently of the nodes, the production plan
-already orders a bucket for backups, and it removes the volume from every node's scheduling. A
+**Reason:** object storage scales and replicates independently of the nodes, a bucket is the
+usual home for off-site backups anyway, and it removes the volume from every node's scheduling. A
 shared file system brings NFS semantics (locking, latency on many small files) and is one more
 piece to keep available; the hub writes files whole and never appends, which fits objects.
 
@@ -320,7 +320,7 @@ piece to keep available; the hub writes files whole and never appends, which fit
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** `db.postgres_options` (the `options` startup parameter, `db.py:71-112, 144`), `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), `docs/ops/ovh-prod.md` §12 on the branch of #726 (open when this was written; the figures are that plan's, not checked here) (about 100 connections per 4 GB of the managed service, at most 1000; OVH's PgBouncer in session, transaction and statement modes; psycopg 3 prepares named statements after a few runs)
+**Source:** `db.postgres_options` (the `options` startup parameter, `db.py:71-112, 144`), `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), the maintainer's internal deployment planning (2026-10-30) (a managed PostgreSQL whose connections are limited by its size, with its own pooler port in session, transaction and statement modes); psycopg 3 prepares named statements after a few runs
 **Revisit when:** the load test sets the pool size, or `prepare_threshold=None` is in and tested behind PgBouncer's transaction mode
 
 With N pods the hub asks for N × (pool + overflow) + N listener connections + health checks.
@@ -337,12 +337,11 @@ PgBouncer:
 - **Transaction mode** needs `prepare_threshold=None` on the psycopg connection (a small setting
   the build adds and tests), and it cannot carry `LISTEN`: the listener connection of each pod
   (entry 387c2409) connects directly to PostgreSQL, past the pool, through an optional
-  `MAITY_DIRECT_DATABASE_URL` (the pooler is its own port and database name on the managed
-  service; without the setting the listener uses `MAITY_DATABASE_URL`, right for a direct or
+  `MAITY_DIRECT_DATABASE_URL` (a managed pooler usually has its own port and database name; without the setting the listener uses `MAITY_DATABASE_URL`, right for a direct or
   session-mode connection). Nothing else in the design
   needs session state: the workers claim passes in a row (entry 24489a9c), not with advisory
   locks.
-- Migrations connect directly, as the production plan says.
+- Migrations connect directly, never through the pooler.
 
 **Reason:** the connection limit is the first wall a horizontal scale-out hits on a managed
 database; writing the arithmetic and the PgBouncer constraints down keeps the chart's defaults
@@ -389,7 +388,7 @@ card, once the load test says the platform holds.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** kubernetes.md 5e42eb26 (`replicas` fixed in the template, the values schema refuses unknown keys), `docs/ops/ovh-prod.md` §12 (HorizontalPodAutoscaler on CPU, PodDisruptionBudget, topology spread, hourly autoscaled node pool), routes/events.py (`WAIT_MAX` 55 s)
+**Source:** kubernetes.md 5e42eb26 (`replicas` fixed in the template, the values schema refuses unknown keys), the maintainer's internal deployment planning (2026-10-30) (HorizontalPodAutoscaler on CPU, PodDisruptionBudget, topology spread, an autoscaled node pool), routes/events.py (`WAIT_MAX` 55 s)
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-30
 **Revisit when:** the load test shows CPU is not the signal that tracks load (open long-polls or connections instead)
 
@@ -415,7 +414,7 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), `docs/ops/ovh-prod.md` §12 (staging address, 1, 2 and 4 pods, sets node pool, HPA target, database flavor and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
@@ -458,7 +457,7 @@ about 670 writes a second and about 1.1 logins a second.
 - with the in-process wake-up gone, database reads while idle grow with changes, not with waits.
 
 The run's numbers set the node pool's maximum, the HPA target, the pool size per pod and the
-database flavor (#726 §12). The statement-count tests of `test_load.py` stay as the per-request
+database size. The statement-count tests of `test_load.py` stay as the per-request
 guard in CI.
 
 **Reason:** a plan with thresholds fixed before the run makes the result a pass or a fail, not an
