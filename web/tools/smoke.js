@@ -3512,20 +3512,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
-  // Meat proxy (docs/api.md §5.2): the human's own switch on the account, PATCH /me; the page says the one sentence agents read.
+  // Meat proxy (docs/api.md §5.2): the human's own switch on the account with its two parts under it, PATCH /me;
+  // the page shows the hub's note, the words agents read.
   const mpPatch = win.Maity.api.patch, mpSent = [];
   win.Maity.api.patch = (p, b) => { mpSent.push([p, b]); return mpPatch(p, b); };
+  const MP_LEAD = "Lead me step by step rather than expecting me to explain.", MP_HANDS = "When you need a human's hands, come to me first.";
+  const mpState = () => [byId("meat-proxy"), byId("meat-proxy-lead"), byId("meat-proxy-hands")].map((x) => (x.checked ? "1" : "0")).join("");
+  const mpNote = () => text(byId("meat-proxy-note"));
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(byId("meat-proxy-note")) === "This person says: I am a meat proxy. "
-    + "Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first.",
-    "meat proxy: the account offers the switch, off, and shows exactly the note agents read (§5.2)");
+  expect(byId("meat-proxy") && mpState() === "000" && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD + " " + MP_HANDS
+    && text(byId("meat-proxy-lead").parentNode).includes(MP_LEAD)
+    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("switched on, they would read:"),
+    "meat proxy: the switch off with its two parts under it, and the note switching on would send (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && byId("meat-proxy").checked
-    && text(main).includes("Saved: your agents and the agents of your projects are told"), "meat proxy: switched on with PATCH /me, said so");
+  expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && mpState() === "111"
+    && text(main).includes("Saved: your agents and the agents of your projects are told the text above.") && text(byId("meat-proxy-hint")).includes("in these words:"),
+    "meat proxy: switched on, both parts ticked, said so");
+  byId("meat-proxy-hands").checked = false; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(mpSent[1]) === JSON.stringify(["/me", { meat_proxy_hands: false }]) && mpState() === "110"
+    && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD, "meat proxy: a part cleared alone, the note as the hub now sends it");
+  byId("meat-proxy-lead").checked = false; byId("meat-proxy-lead").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(mpState() === "000" && text(main).includes("Saved: they are no longer told.") && mpNote().endsWith(MP_HANDS),
+    "meat proxy: the last part cleared turns the mode off");
+  byId("meat-proxy-hands").checked = true; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(mpSent[3]) === JSON.stringify(["/me", { meat_proxy_hands: true }]) && mpState() === "101"
+    && mpNote() === "This person says: I am a meat proxy. " + MP_HANDS, "meat proxy: a part ticked while off turns the mode on with that part only");
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 500, "/me", "internal"));
   byId("meat-proxy").checked = false; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy").checked && text(main).includes("Not saved"), "meat proxy: a failed change is said and the switch goes back");
+  expect(mpState() === "101" && text(main).includes("Not saved"), "meat proxy: a failed change is said and the boxes go back");
   win.Maity.api.patch = mpPatch;
+  let mpRefused = null;
+  try { await mpPatch("/me", { meat_proxy: false, meat_proxy_lead: true }); } catch (err) { mpRefused = err; }
+  expect(mpRefused && mpRefused.status === 400 && JSON.stringify(mpRefused.details.fields) === JSON.stringify({ meat_proxy: "conflicts_with_parts" }),
+    "meat proxy: the fixture hub refuses the switch off with a part on, as §5.2 does");
   await mpPatch("/me", { meat_proxy: false });
   const mpBody = win.Maity.api.hubBody;
   win.Maity.api.hubBody = () => Promise.resolve(new Set());

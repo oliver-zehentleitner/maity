@@ -1235,12 +1235,25 @@ window.Maity = window.Maity || {};
       return { slug: entry.slug, full_name: entry.full_name, include: entry.include };
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
-    // §5.2 "Meat proxy": the human's own switch, a boolean; nobody sets it for another.
+    // §5.2 "Meat proxy": the human's own switch and its two parts; nobody
+    // sets them for another. The switch sets or clears both parts, then the
+    // parts the body names apply; it is on while one part is. The note names
+    // the parts set while on, both while off (what switching on would send).
     ["PATCH", /^\/me$/, (m, body, path) => {
-      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
-      if ("meat_proxy" in body && typeof body.meat_proxy !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { meat_proxy: "type" } });
-      if ("meat_proxy" in body) me().member.meat_proxy = body.meat_proxy;
-      return Object.assign({}, me().member);
+      const mm = me().member;
+      if (mm.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
+      const fields = {};
+      ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"].forEach((k) => { if (k in body && typeof body[k] !== "boolean") fields[k] = "type"; });
+      if (body.meat_proxy === false && (body.meat_proxy_lead === true || body.meat_proxy_hands === true)) fields.meat_proxy = "conflicts_with_parts";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      if ("meat_proxy" in body) { mm.meat_proxy_lead = body.meat_proxy; mm.meat_proxy_hands = body.meat_proxy; }
+      ["meat_proxy_lead", "meat_proxy_hands"].forEach((k) => { if (k in body) mm[k] = body[k]; });
+      mm.meat_proxy = !!(mm.meat_proxy_lead || mm.meat_proxy_hands);
+      const parts = mm.meat_proxy ? [mm.meat_proxy_lead, mm.meat_proxy_hands] : [true, true];
+      mm.meat_proxy_note = ["This person says: I am a meat proxy."]
+        .concat(parts[0] ? ["Lead me step by step rather than expecting me to explain."] : [])
+        .concat(parts[1] ? ["When you need a human's hands, come to me first."] : []).join(" ");
+      return Object.assign({}, mm);
     }],
     // §6.26 Organisations: humans only; a caller who is not a member gets not_found,
     // one whose role does not allow the call forbidden (org_role).
@@ -2147,7 +2160,7 @@ window.Maity = window.Maity || {};
       "/api/v1/me/deletion": { post: {}, delete: {} },
       "/api/v1/agents": { get: {}, post: {} },
       "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
-      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
+      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {}, meat_proxy_lead: {}, meat_proxy_hands: {} } } } } } } },
       "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
       "/api/v1/requests/{request_id}/answer": { post: {} },
       "/api/v1/auth/device-codes": { post: {} },
