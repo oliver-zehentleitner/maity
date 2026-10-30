@@ -152,7 +152,7 @@ def _receiver(conn: Connection, project_id: str, human_id: str) -> Any:
     ).first()
 
 
-def _authority(conn: Connection, mine: Membership) -> None:
+def authority(conn: Connection, mine: Membership) -> None:
     """Who transfers a project: its namespace owner, a human; for a project of an organisation
     any owner of it (§6.25, §6.26)."""
     project = mine.project
@@ -172,7 +172,7 @@ def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str
     to themselves needs no request). §2.8.4 lists this call for the step-up; a hub without the
     second factor asks for none, as for every human not enrolled."""
     project = mine.project
-    _authority(conn, mine)
+    authority(conn, mine)
     if project.owner_org_id is not None:  # §16.8: a suspended organisation's project stays in it
         moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
     if to == project.owner_id:
