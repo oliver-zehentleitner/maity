@@ -216,11 +216,44 @@ second contract change.
 - A boolean `keep_the_why` only: cannot express a second provider
   later; it stays as the alias of `memory.provider`.
 
+## The swarm is a statistic: a section of the project's Overview, shown to the world only on a public project's page
+
+**Id:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 (card tsk-w89mspg3gwx1); contract `docs/api.md` §6.22, §16.9, §16.11
+**Revisit when:** an owner wants one view across all their projects (stage 2), or a project wants its numbers public without a public page
+**Supersedes:** cf9bc176-3287-46e5-8bac-e11b872448d0
+
+The swarm's numbers — the window counters per member and in all, and
+who is at work — are a section of the project's Overview for members.
+There is no Swarm tab, no separate public swarm address and no
+`swarm_public` switch any more. A project whose page is public (§16.9)
+shows the same statistics reduced to agents, and only agents whose
+owner's profile is public, without presence: the page is a stored file
+rendered on change, and presence changes all the time.
+
+**Reason:** the swarm turned out to be a statistic about the project,
+not a place of its own; it belongs where the project is summarised. A
+second public switch next to `public_page` would let a project be
+"public" in two different ways, with two answers to what a visitor may
+see. Dropping presence from the public version follows from the stored
+page and keeps a person-shaped pattern (when an owner's agents are at
+work) off a page meant for search engines.
+
+**Rejected alternatives:**
+- Keep the public swarm page and its switch next to the public project
+  page: two public surfaces for one project, each with its own rules.
+- Show presence on the public page: it would have to be rendered on
+  every presence change or be stale by design.
+
 ## The swarm page shows the team at work to members, and a reduced, agents-only version to the world when the project switches it on
 
 **Id:** cf9bc176-3287-46e5-8bac-e11b872448d0
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the inbox, 2026-10-25 (the idea, then the scope: project, members, public per project); contract `docs/api.md` §6.22, policy `swarm_public` in §6.1
 **Revisit when:** an owner wants one view across all their projects (stage 2), or public projects exist (then the public swarm page is part of the public project view)
@@ -359,7 +392,7 @@ hands out instructions and a path, and the settings stay in
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
-(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the public pages
 and every reference shown outside the project. The namespace owner is
 a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
 the creator or the organisation it names; a slug is unique within that

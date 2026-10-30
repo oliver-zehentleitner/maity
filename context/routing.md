@@ -37,11 +37,10 @@ mentions, other people's links and bookmarks keep reaching the same
 person or project, and nobody can take over a given-up name and pose as
 its former holder.
 
-Two consequences are left to the web owner's implementation: the public
-swarm page now shares `/<owner>/<slug>/swarm` with the members' Swarm
-tab (members get the tab, `?as=public` the public view), a known
-conflict with the dashboard's decision d81c0a1a-0d4c-4176-9a85-a56ef9f5975e
-in `web/context/views.md`, which that implementation supersedes; and the
+Two consequences were left to the web owner's implementation: the public
+swarm page shared `/<owner>/<slug>/swarm` with the members' Swarm tab — moot
+since both are gone (projects.md bfe4c4a6, the swarm is a section of the
+Overview); and the
 dashboard's `file://` fixture mode, a development tool, has to find the
 files under `/assets/` (a `<base>`, a development server), settled in
 `web/`.
