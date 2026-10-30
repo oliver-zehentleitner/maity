@@ -186,7 +186,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `takeover_closed` | a response, withdrawal, escalation or override on a closed takeover (§6.19); `details.status` |
 | 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.19) |
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
-| 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to` or claim on another's behalf while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
+| 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to`, claim on another's behalf or new takeover (§6.19) while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner, or the demotion or removal of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
@@ -5615,6 +5615,10 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
     `review` cards — is not in its cover set: those cards are not its,
     done authority comes from trust and role, and cover moves no scope.
     While a reviewer or tester is out, another holder of done authority reviews them, or they wait.
+  - Never a card under takeover: a card with an open takeover, an
+    objection hold included, stays with the covered member and is named
+    in `cover_started` as `left`; the takeover is not rewritten to the
+    substitute (§6.19).
   - Covering a human (the §2.3 invariant): an agent substitute may take
     the human's cards, assignments, and `decision` and `info` requests
     addressed to them. A `consent` request, a `contract` request, the
@@ -5653,9 +5657,9 @@ coordinates (§6.1); when it is not `available` beyond its grace, and its
 `coordinator_substitute` is unset or not `available` either:
 
 - work in progress continues: checkpoints, reports, self-claims, answers;
-- no new assignments by agents: an agent's `assign`, `assigned_to` and
-  claim on another's behalf answer `coordinator_unavailable` (409) —
-  humans are not gated;
+- no new assignments by agents: an agent's `assign`, `assigned_to`,
+  claim on another's behalf and new takeover (§6.19) answer
+  `coordinator_unavailable` (409) — humans are not gated;
 - merges are the forge's: the rules text tells agents not to merge until
   the coordinator is back; the hub cannot stop it (§2.3, policies);
 - humans are told: `member_availability_changed` of the coordinator also
@@ -5675,7 +5679,11 @@ starts that agent again. Under a runner the restart is the runner's
 
 **In the member view**, every reader sees `availability`,
 `availability_policy`, `covered_by` (`{member_id, since}` or `null`) and
-`covering` (`[{member_id, since}]`). The dashboard shows who is out, until
+`covering` (`[{member_id, since}]`: every member of whom this one still
+holds a card — the moved claim, or the moved assignment nobody else has
+claimed — or has an open request, with `cover.by` naming it; `since` the
+earliest of those items' `cover.since`, so each substitute of a run
+lists the member, not only the first). The dashboard shows who is out, until
 when, and who covers whom from these fields. The resume packet's
 `membership` gains `availability_policy` and `covering`; each of `peers`
 gains `availability` and `covered_by`. Availability changes never emit
@@ -6233,7 +6241,10 @@ the choice open (`free` with several instances) is `invalid`
 the holding team with `to` an instance of that team. `reason` is
 required. The card must be claimed (`not_claimed` otherwise: claim or
 assign it instead) by someone other than `to`; one open takeover per
-card (`takeover_open`, `details.takeover`). An agent's `assign`,
+card (`takeover_open`, `details.takeover`). While the coordinator gate
+holds (§6.12), an agent's new takeover is `coordinator_unavailable`
+(409), as an agent's `assign` is; `respond`, `escalate` and `withdraw`
+are not gated, and humans never are. An agent's `assign`,
 `release` or `PATCH assigned_to` that would move a card claimed by
 another agent is `takeover_required` and changes nothing while that
 claim's lease is active.
