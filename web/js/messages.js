@@ -64,6 +64,40 @@ window.Maity = window.Maity || {};
   M.recentEvents = (ctx, keep, stillHere) => scan(ctx, stillHere || (() => true), keep);
   M.recentEvents.WINDOW = WINDOW;
 
+  // A review result's facts (§8.4): the verdict, what was reviewed, the
+  // commit at its short head, and the places the reviewer read, each with
+  // its quote as written. Folded after five; all text as text.
+  const VERDICTS = { approve: "Approve", changes: "Changes requested", comment: "Comment" };
+  const CITES_SHOWN = 5;
+  // A commit's page on the project's forge, GitHub and GitLab, whose path
+  // shapes are known; anything else gets no link.
+  function commitUrl(repo, head) {
+    const base = repo && M.dom.safeUrl(repo.url) ? String(repo.url).replace(/\.git$/, "").replace(/\/+$/, "") : null;
+    if (!base || !/^[0-9a-f]{40}$/.test(head)) return null;
+    if (repo.forge === "github") return base + "/commit/" + head;
+    if (repo.forge === "gitlab") return base + "/-/commit/" + head;
+    return null;
+  }
+  function reviewBlock(ctx, r) {
+    const head = String(r.head || "");
+    const short = h("code", null, head.slice(0, 7));
+    const url = commitUrl(ctx.project && ctx.project.repository, head);
+    const cite = (c) => h("li", { class: "review-cite" },
+      h("span", { class: "review-place" }, h("code", null, c.path + (c.line ? ":" + c.line : "")), c.line ? null : h("span", { class: "muted" }, " removed")),
+      h("code", { class: "review-quote" }, c.quote));
+    const cites = r.cites || [];
+    const shown = cites.slice(0, CITES_SHOWN);
+    const rest = cites.slice(CITES_SHOWN);
+    return h("div", { class: "review" },
+      h("p", { class: "review-head" },
+        h("span", { class: "pill review-verdict verdict-" + r.verdict }, VERDICTS[r.verdict] || String(r.verdict)),
+        " " + (r.subject || "") + " at ",
+        url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank", title: head }, short) : h("span", { title: head }, short)),
+      cites.length ? h("ul", { class: "review-cites", "aria-label": "Places the reviewer read" }, shown.map(cite)) : null,
+      rest.length ? h("details", { class: "review-more" }, h("summary", null, rest.length + " more " + (rest.length === 1 ? "place" : "places")),
+        h("ul", { class: "review-cites" }, rest.map(cite))) : null);
+  }
+
   M.views.messages = async function (ctx, root) {
     const here = M.route.current().path;
     const read = await scan(ctx, () => M.route.current().path === here);
@@ -110,6 +144,7 @@ window.Maity = window.Maity || {};
 
     function item(e) {
       const p = e.payload;
+      const review = p.type === "review_result" && p.review ? reviewBlock(ctx, p.review) : null;
       const from = e.actor && e.actor.member_id;
       // The file's uploader is the message's sender; an admin deletes any (§8.7).
       const canDelete = () => from === ctx.me.id || ctx.canAdmin;
@@ -119,6 +154,7 @@ window.Maity = window.Maity || {};
           h("span", null, " ", M.dom.memberRef(ctx, from, { instance: e.actor }), " to ", toWords(ctx, p.to)),
           p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
+        review,
         p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx))) : null,
         (p.mentions || []).length
           ? h("p", { class: "muted pmsg-mentions" }, "Mentions: ",

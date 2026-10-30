@@ -466,6 +466,27 @@ window.Maity = window.Maity || {};
     };
   }
   // §16.7's checks of a landing page and its footer, each at its path.
+  // §8.4 "A review result cites what it judged": the review's fields, each
+  // refusal at its own path.
+  function reviewErrors(r, errors) {
+    if (r === undefined || r === null) { errors.review = "required"; return; }
+    if (typeof r !== "object" || Array.isArray(r)) { errors.review = "format"; return; }
+    const text = (v, max, at) => { if (typeof v !== "string" || !v.length) errors[at] = "format"; else if ([...v].length > max) errors[at] = "too_long"; };
+    text(r.subject, 120, "review.subject");
+    if (typeof r.head !== "string" || !/^[0-9a-f]{40}$/.test(r.head)) errors["review.head"] = "format";
+    if (!["approve", "changes", "comment"].includes(r.verdict)) errors["review.verdict"] = "format";
+    if (!Array.isArray(r.cites)) { errors["review.cites"] = "format"; return; }
+    if (!r.cites.length) errors["review.cites"] = "too_few";
+    else if (r.cites.length > 50) errors["review.cites"] = "too_many";
+    r.cites.forEach((c, k) => {
+      const at = "review.cites." + k;
+      if (!c || typeof c !== "object") { errors[at] = "format"; return; }
+      text(c.path, 300, at + ".path");
+      text(c.quote, 300, at + ".quote");
+      if (typeof c.quote === "string" && /[\r\n]/.test(c.quote)) errors[at + ".quote"] = "format";
+      if (c.line !== undefined && c.line !== null && !(Number.isInteger(c.line) && c.line > 0)) errors[at + ".line"] = "format";
+    });
+  }
   const LANDING_TYPES = {
     hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
@@ -2235,6 +2256,9 @@ window.Maity = window.Maity || {};
         || members.some((x) => x.id === to))) errors.to = "not_a_member";
       // A chat names its conversation and goes to its two parties only (§8.4).
       if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
+      // §8.4: a review result cites what it judged; no other type carries a review.
+      if (body.type === "review_result") reviewErrors(body.review, errors);
+      else if (body.review !== undefined && body.review !== null) errors.review = "not_allowed";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];
@@ -2265,7 +2289,8 @@ window.Maity = window.Maity || {};
       const files = bindAttachments(m[1], body.attachments, seq, path);
       const event = { seq, kind: "message", at: nowIso(), actor: { kind: "member", member_id: me().member.id }, subject: body.task_id ? { type: "task", id: body.task_id } : null,
         audience: [body.to === "all" ? "all" : /^(role|trust):/.test(body.to) ? body.to : "member:" + body.to], redacted: false,
-        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
+        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files,
+          review: body.type === "review_result" ? body.review : null } };
       // A chat lives in its conversation; a project message in the log.
       if (body.type !== "chat") log.push(event);
       return event;
