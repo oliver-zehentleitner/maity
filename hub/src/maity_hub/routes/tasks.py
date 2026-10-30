@@ -47,7 +47,7 @@ from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES, keep_the_why_effective
 from maity_hub.routes.members import AREA
-from maity_hub.scopes import in_admin_team
+from maity_hub.scopes import in_admin_team, role_tokens
 from maity_hub.views import (
     human_paused,
     paused,
@@ -1920,7 +1920,7 @@ def report(
             conn,
             mine.project.id,
             "task_reported",
-            list(dict.fromkeys(targets)) + ["role:reviewer", "trust:admin"],
+            list(dict.fromkeys(targets)) + [*role_tokens("reviewer"), "trust:admin"],
             # The persisted status on both sides, so that a reader tells an entry into
             # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
             {**stored, "status_before": status_before, "status_after": card.status},

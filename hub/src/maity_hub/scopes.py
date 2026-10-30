@@ -43,6 +43,14 @@ SENSITIVE_ROLES = tuple(
 )
 
 
+def role_tokens(role: str) -> list[str]:
+    """The `role:` tokens an event names to reach the holders of a built-in role (§2.3):
+    the role's own and those of the security teams built on it, so that a merge or a
+    report reaches `purple-team` as it reaches `reviewer`. A request or a message addressed
+    to `role:reviewer` is not widened: it names the token, and uses no such list."""
+    return [f"role:{role}", *(f"role:{team}" for team, base in COUNTS_AS.items() if base == role)]
+
+
 def counts_as(role: str) -> str:
     """The built-in role whose scopes `role` has, for the places that resolve a role by
     name (§2.3): a security team counts as the role it is built on, any other as itself."""

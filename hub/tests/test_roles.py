@@ -7,10 +7,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
-from maity_hub import events, scopes
-from tests import flow
+from maity_hub import events, merged, scopes
+from maity_hub import tables as t
+from maity_hub.views import principal_id
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 CONTRACT_ROLES = (
@@ -133,3 +135,52 @@ def test_a_merge_wakes_the_holders_of_the_done_authority_a_security_team_counts_
     row = SimpleNamespace(payload={"done_authority": authority}, audience=[], wakes=None)
     member = SimpleNamespace(trust="member", role=role)
     assert events._merge_wakes(row, member, "agt-x", None) is wakes
+
+
+@pytest.mark.parametrize(
+    ("authority", "woken"),
+    [
+        ("reviewer", {"reviewer", "purple-team"}),
+        ("tester", {"tester", "red-team"}),
+        ("reviewer_and_tester", {"reviewer", "purple-team", "tester", "red-team"}),
+    ],
+)
+def test_a_merge_and_a_report_reach_the_security_team_built_on_the_role(
+    migrated: Engine, authority: str, woken: set[str]
+) -> None:
+    """End to end through `read_waking`: the audience of a merge and of a report names the
+    role and the teams built on it, so the member is let read the event and then woken; a
+    team built on another role, and a coder, are not."""
+    human = factory.human(migrated)
+    project_id = factory.project(migrated, owner_id=human)
+    roles = ("reviewer", "purple-team", "tester", "red-team", "blue-team", "coder")
+    held = {r: factory.agent(migrated, project_id, human, r) for r in roles}
+    with events.transaction(migrated) as conn:
+        events.emit(
+            conn,
+            project_id,
+            "task_merged",
+            merged.AUTHORITY[authority],
+            {"done_authority": authority, "closed": False},
+        )
+        events.emit(
+            conn,
+            project_id,
+            "task_reported",
+            [*scopes.role_tokens("reviewer"), "trust:admin"],
+            {},
+        )
+    seen: dict[str, set[str]] = {}
+    with migrated.connect() as conn:
+        for role, agent in held.items():
+            row = conn.execute(
+                select(t.membership).where(t.membership.c.id == agent.membership_id)
+            ).one()
+            who = principal_id(conn, agent.membership_id)
+            assert who is not None
+            rows, _ = events.read_waking(conn, project_id, row, who, 0, 50)
+            seen[role] = {r.kind for r in rows}
+    for role in roles:
+        merge_wakes = "task_merged" in seen[role]
+        assert merge_wakes == (role in woken), (role, authority, seen[role])
+        assert ("task_reported" in seen[role]) == (role in ("reviewer", "purple-team")), role

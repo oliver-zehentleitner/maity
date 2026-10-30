@@ -92,8 +92,12 @@ Losing the guest is the safer failure, and an admin can re-invite them.
 against `ROLES`, so a new role cannot be added to one list and forgotten in another (the invitation list had
 no `writer` and the join list no security team). Where the hub resolves a built-in role by name (the
 audience of a merge that wakes the done authority, the members whose change waits for a human's go),
-`scopes.counts_as` gives the role whose scopes a security team has; a `role:` token in an address is not
-widened, so a request to `role:reviewer` does not reach the purple team.
+`scopes.counts_as` gives the role whose scopes a security team has. The audience of the events that
+wake the holders of a role (`task_merged`, `task_reported`) is built with `scopes.role_tokens`, which adds
+the teams' tokens (`role:reviewer` and `role:purple-team`): the audience is what lets a member read the event
+at all, so widening only the check of who holds the done authority would leave the purple team blind to it.
+A `role:` token in an address a person writes is not widened, so a request or a message to `role:reviewer`
+does not reach the purple team.
 
 **Reason:** the contract names the roles in a dozen places and each of them had its own list, which is how
 the three roles and `writer` went missing from some.
