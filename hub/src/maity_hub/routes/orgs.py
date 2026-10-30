@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, StrictBool
 
-from maity_hub import events, org_invitations, orgs
+from maity_hub import events, limits, org_invitations, orgs
 from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, not_found
@@ -65,9 +65,8 @@ def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
 def create_org(request: Request, caller: AnyCaller, body: CreateOrg) -> JSONResponse:
     human_id = _human(caller)
     with events.transaction(engine_of(request)) as conn:
-        org, role = orgs.create(
-            conn, human_id, body.handle, body.display_name, settings_of(request).max_orgs_per_human
-        )
+        limit = limits.of(conn, settings_of(request), "max_orgs_per_human")
+        org, role = orgs.create(conn, human_id, body.handle, body.display_name, limit)
         return JSONResponse(orgs.view(conn, org, role), status_code=201)
 
 

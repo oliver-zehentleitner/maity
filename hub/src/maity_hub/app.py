@@ -102,6 +102,9 @@ from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
 from maity_hub.routes import legal as legal_routes
+from maity_hub.routes import (
+    limits as limits_routes,
+)
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import probe as probe_routes
@@ -270,6 +273,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
+    app.include_router(limits_routes.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
