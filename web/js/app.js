@@ -719,11 +719,13 @@ window.Maity = window.Maity || {};
     const provider = ctx.project.memory && ctx.project.memory.provider;
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([, title]) => title) : [];
+    // The dashboard's option names its path (§6.1 setup.dashboard_path).
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path ? title + " under " + s.dashboard_path : title)) : [];
     let setup;
     if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
     else if (Array.isArray(s.cards) && s.cards.length) {
-      setup = h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]));
+      setup = [h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)])),
+        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, "The dashboard is published under " + s.dashboard_path + ".") : null];
     } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
     else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
     return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
