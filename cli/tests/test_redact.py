@@ -39,7 +39,13 @@ TOKEN_URL = f"https://x-access-token:{SECRET}@github.com/acme/widget.git"
         ("git+https://tok@github.com/o/r", "git+https://github.com/o/r"),
         ("HTTPS://TOK@H/r", "HTTPS://H/r"),
         ("'https://a:b@h/x' and 'https://c:d@g/y'", "'https://h/x' and 'https://g/y'"),
-        ("`https://h`,me@x.com", "`https://h`,me@x.com"),  # a closing backtick ends the URL
+        ("<https://a:b@h/x> (https://c:d@g/y)", "<https://h/x> (https://g/y)"),
+        ("`https://tok@h/r`", "`https://h/r`"),
+        ("`https://h` and me@x.com", "`https://h` and me@x.com"),  # whitespace ends a URL
+        # A quote, backtick or bracket does not end the userinfo when an `@` follows before the
+        # path: it may stand unencoded in a password (#792). A URL without a path that runs
+        # into text with an `@` then shows the wrong host, which leaks nothing.
+        ("`https://h`,me@x.com", "`https://x.com"),
         ("git@github.com:acme/widget.git", "git@github.com:acme/widget.git"),
         ("https://github.com/a/b", "https://github.com/a/b"),
         ("origin", "origin"),
@@ -47,6 +53,14 @@ TOKEN_URL = f"https://x-access-token:{SECRET}@github.com/acme/widget.git"
 )
 def test_userinfo_is_taken_out_of_every_url(text: str, shown: str) -> None:
     assert without_userinfo(text) == shown
+
+
+@pytest.mark.parametrize("char", ["`", "'", '"', "(", ")", "<", ">"])
+def test_a_password_with_a_quote_or_bracket_goes_entirely(char: str) -> None:
+    assert (
+        without_userinfo(f"push to https://u:pa{char}ss@h/r failed") == "push to https://h/r failed"
+    )
+    assert without_userinfo(f"'https://u:pa{char}ss@h'") == "'https://h'"
 
 
 def _upstream_is_the_token_url(clone: Path) -> None:

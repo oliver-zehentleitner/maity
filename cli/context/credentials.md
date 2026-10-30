@@ -271,14 +271,17 @@ as its remote, and git and gh repeat a remote's URL as configured in their own e
 place that shows a remote, an upstream or a line of git's or gh's error output passes it
 through one helper, `redact.without_userinfo`, which takes `user:password@` out of each URL
 and keeps the rest. It cuts at the last `@` before the path, as git and `urlsplit` read a URL,
-so an `@` in a user or a password does not leave the rest of it behind. Whitespace, quotes,
-backticks and brackets end a URL; anything else up to an `@` counts as userinfo. A URL without
-a path that runs straight into text with an `@` (`https://h,admin@x.com`) is then shown with
-the wrong host, accepted because it leaks nothing and a comma may stand in a password. An
-unencoded `/` in a password stays in the text: git and `urlsplit` read it as the start of the
-path, so such a URL is broken before maity sees it. `gitfacts.collect` stores the remote already without it, since the facts
-go into the refusal messages and, as `upstream`, into the report the hub keeps; `ls-remote`
-is run before that with the remote as configured, so the token still does its work. The
+so an `@` in a user or a password does not leave the rest of it behind. Only whitespace and
+the path end the userinfo; anything else up to the last `@` before them counts, quotes,
+backticks and brackets included, since an unencoded one may stand in a password
+(`` https://u:pa`ss@h/r ``) and stopping there left the whole password in the text. A URL
+without a path that runs straight into text with an `@` (`https://h,admin@x.com`, or a URL
+in backticks followed by `,me@x.com`) is then shown with the wrong host: accepted, because
+a message with too little in it leaks nothing. An unencoded `/` in a password stays in the
+text: git and `urlsplit` read it as the start of the path, so such a URL is broken before
+maity sees it. `gitfacts.collect` stores the remote already without it, since the facts go
+into the refusal messages and, as `upstream`, into the report the hub keeps; `ls-remote` is
+run before that with the remote as configured, so the token still does its work. The
 runner's `workspace claim` shows a clone's origin the same way, `runner gc` a `.git/config`
 section named by a URL (`[http "https://…"]`), and `hub.get_text` names an
 unreachable URL through `safe_url` like the other hub errors.
@@ -288,5 +291,8 @@ unreachable URL through `safe_url` like the other hub errors.
   setups push, and the report would fail for a reason that has nothing to do with the work.
 - Leaving the remote out of the messages: "does not exist on <remote>" is what tells the
   agent which remote it pushed to; without userinfo the URL still says that.
+- Ending the userinfo at a quote, backtick or bracket as well, so that a URL quoted in an
+  error stops at its closing mark: a password with that character then stayed in the text
+  whole (review of #792); a wrong host in a rare message is the smaller harm.
 - `safe_url` for remotes as well: it also drops the query and an scp-like `git@host:path`
   is not a URL to it; a remote is shown as written, minus the credential.

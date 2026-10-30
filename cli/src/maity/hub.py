@@ -546,8 +546,11 @@ class Text:
 
 
 def _json_or_text(response: Any) -> Any:
+    answer: bytes = response.read()
+    if not answer:
+        return None  # a 204 has no type; `get_content_type` would call it text/plain
     kind = response.headers.get_content_type()
     if kind == "application/json" or kind.endswith("+json"):
-        return _json(response)
+        return json.loads(answer)
     charset = response.headers.get_content_charset() or "utf-8"
-    return Text(response.read().decode(charset, errors="replace"), kind)
+    return Text(answer.decode(charset, errors="replace"), kind)

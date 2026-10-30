@@ -694,6 +694,14 @@ def test_api_prints_an_answer_in_text_as_it_came(
     assert capsys.readouterr().out == rules
 
 
+def test_api_prints_nothing_for_an_empty_answer(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("DELETE", "/api/v1/orgs/acme")] = lambda seen: (204, b"")
+    assert cli.main(["api", "DELETE", "/orgs/acme"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
 def test_api_refuses_a_fragment(joined: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["api", "GET", "/projects/oliver/maity/tasks#x"]) == cli.EXIT_ERROR
     assert "fragment" in capsys.readouterr().err
