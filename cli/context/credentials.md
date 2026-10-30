@@ -76,6 +76,8 @@ code still works. Deleting the file is offered only for this same
 instance after its session was revoked, never as the way to add one.
 It does not suggest `maity resume`. A worktree keeps sharing its clone's state, because it is the same
 agent on a second branch (see the clone directory entry above).
+The join page (`web/js/join.js`, `instanceNote`) and `docs/agents.md`
+say the same next to the join line; change them with it.
 
 **Reason:** the first three-instance team found that a second instance
 was refused with advice to run `maity resume`. That resume took over the
