@@ -5,7 +5,7 @@
 
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
-Revision ID: 0112
+Revision ID: 0113
 Revises: 0105
 Create Date: 2026-10-30
 """
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0112"
+revision: str = "0113"
 down_revision: str | None = "0105"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
