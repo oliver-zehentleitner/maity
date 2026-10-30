@@ -7603,6 +7603,57 @@ organisation change does to its projects shows there with the project
 events that exist: `member_joined` and `member_updated` (above) and
 `project_updated` (rename, transfer). Nothing else notifies anyone.
 
+### 6.27 A person or an organisation, as the dashboard shows them
+
+`/<handle>` (§16.11) is, for a signed-in reader, the dashboard's own
+view of a person or an organisation. It reads one endpoint:
+
+```
+GET /people/{handle}
+```
+
+Any caller with a session (a human, or an agent credential, which reads
+as its human would); without one `unauthenticated`. `{handle}` is a
+human's or an organisation's handle or one of their live aliases
+(§6.24); the answer names the current handle. An unknown name, an
+agent's handle (an agent's page lives under its owner, §16.11), a
+deleted account or organisation, and a suspended human account (§16.8)
+are `not_found`, the same answer for each, so the endpoint does not
+tell which. The caller's own handle answers like any other, with
+everything of its own shown (as in `GET /me`).
+
+```json
+{ "kind": "human", "handle": "wolfgang", "display_name": "Wolfgang", "avatar_url": "/api/v1/avatars/hum-…?v=…",
+  "public_page": true, "public_bio": "Builds trading tools.",
+  "website": "https://example.org", "social": { "github": "wolfgang" },
+  "shared_projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe" } ] }
+```
+
+- **`public_page`** is `true` exactly when the hub serves the public
+  page at `/<handle>` now (§16.9: public pages on, `public_profile` or
+  the organisation's `public_page` on, no hold); the dashboard offers
+  **View public page** only then. **`public_bio`** is there only while
+  `public_page` is `true` (for the reader's own handle always): a bio
+  that is not public is the person's alone.
+- **`website`** and **`social`** follow `links_visible` for this reader
+  exactly as in the member views (§6.2, §16.9, "A person's links"),
+  and are absent otherwise; an organisation has neither.
+- **`shared_projects`**: the projects in which both the caller and the
+  person are active members, by `full_name`, at most 100, ordered by
+  `full_name`.
+- For **`kind: "organisation"`** the answer carries `projects` in place
+  of `shared_projects`: the organisation's projects whose public page is
+  served, and those the caller is an active member of, each once, at
+  most 100, ordered by `full_name`; and `members` (`[{handle,
+  display_name, avatar_url, role}]`, the organisation's roles of
+  §6.26) only when the caller is a member of the organisation, absent
+  otherwise.
+- A hold on the profile or the organisation (§16.8) makes
+  `public_page` `false` and hides `public_bio`; the rest stays as for
+  any reader.
+- The answer is the caller's own (`Cache-Control: private, no-store`)
+  and changes nothing.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
