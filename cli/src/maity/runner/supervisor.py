@@ -778,10 +778,6 @@ class Supervisor:
             if exc.status is None or exc.status >= 500 or exc.status == 429:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
             detail = exc.code if exc.code in PICKUP_DETAILS else None
-            route = "/runner/placements/{id}/join"
-            if exc.status == 404 and hub.offers(self.client.base, "post", route) is False:
-                self.log(f"{place.path.name}: this hub has no runner pickup: no POST {route}")
-                detail = "not_found"
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):

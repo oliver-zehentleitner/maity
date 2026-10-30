@@ -16,9 +16,9 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo, formatTime } = M.dom;
   const TABS = [["activity", "Activity"], ["cards", "Cards"], ["briefing", "Briefing"], ["sessions", "Sessions & credentials"]];
   const PRESENCE = { online: "Online", away: "Away", offline: "Offline", paused: "Paused" };
-  // The project's latest events the Activity tab looks through (one page from
-  // the head): the hub has no filter by actor, so they are filtered here.
-  const ACTIVITY_PAGE = 200;
+  // The Activity tab lists at most this many of the member's events, newest
+  // first, from the window the project's messages read (js/messages.js).
+  const ACTIVITY_SHOWN = 50;
   // An event in words: its kind, and the card or message it is about.
   const KIND_WORDS = { task_created: "created a card", task_claimed: "claimed a card", task_released: "released a card", task_updated: "changed a card",
     task_reported: "reported on a card", request_created: "asked", request_answered: "answered", message: "wrote", member_joined: "joined", member_updated: "changed a membership" };
@@ -78,16 +78,20 @@ window.Maity = window.Maity || {};
   // Activity: what the member did among the project's latest events.
   async function activity(ctx, m, box) {
     append(box, h("p", { class: "muted" }, "Reading…"));
-    let items;
+    let items, cut;
     try {
-      const head = (await M.api.get(ctx.base + "/events?after=latest&wait=0")).cursor;
-      const page = await M.api.get(ctx.base + "/events?after=" + Math.max(0, head - ACTIVITY_PAGE) + "&wait=0&limit=" + ACTIVITY_PAGE);
-      items = (page.items || []).filter((e) => e.actor && e.actor.member_id === m.id && !e.redacted).reverse();
+      // The hub has no filter by actor (§8.3): the window is read and filtered here.
+      const here = M.route.current().path;
+      const read = await M.recentEvents(ctx, (e) => e.actor && e.actor.member_id === m.id && !e.redacted, () => M.route.current().path === here);
+      if (!read) return;
+      items = read.kept.slice(-ACTIVITY_SHOWN).reverse();
+      cut = read.cut;
     } catch (err) {
       append(clear(box), h("p", { class: "send-status failed" }, "Could not read the activity: " + err.message));
       return;
     }
-    append(clear(box), h("p", { class: "hint" }, "What they did among the project's latest " + ACTIVITY_PAGE + " events, newest first."),
+    append(clear(box), h("p", { class: "hint" }, "What they did in this project, newest first"
+      + (cut ? ", within the hub's latest " + M.recentEvents.WINDOW + " events (all projects counted)." : ".")),
       items.length
         ? h("ul", { class: "member-activity" }, items.map((e) => {
           const subject = e.subject && e.subject.type === "task" ? h("a", { href: ctx.link("tasks", e.subject.id) }, h("span", { class: "mono" }, e.subject.id)) : null;

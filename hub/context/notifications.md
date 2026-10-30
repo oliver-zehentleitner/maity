@@ -407,6 +407,55 @@ items and so are all derived: a page takes 0.12 s at 1000 unread and 0.42 s at 4
 PostgreSQL, the same 52 statements at both, so the cost is the derivation in Python and is
 linear in the unread requests of the window. Card `tsk-r8f0jm3xs9y6` takes it on.
 
+**Since 2026-10-30 (tsk-r8f0jm3xs9y6) every source is paged.** "The rest is few" stopped
+holding: a human with many hub notices (one personal request each) has thousands of inbox
+items, and the page grew linearly with them (F's load test: 83 ms at 1,000, 355 ms at
+4,000). Now the non-chat events and the account records are read like the chat messages,
+in the listing's order and in growing chunks, until the page is full (`items._paged`,
+`items._records_paged`); the counts read their own few items (`items.count_items`, see the
+next entry). The events of a personal request never make an item (`_classify`: it is one
+item, from its record), so they are left out in SQL instead of being read and dropped one
+by one; `open_requests` skips personal requests the same way, and the open personal
+requests are counted per project in SQL. A request lists one item, its latest addressed
+event (`ADDRESSED`); `_items_of` replaces the earlier one only among the rows it is given,
+so the paged read takes only each request's newest such event in SQL, and a forward never
+brings back the item it replaced on a later page. Measured on SQLite with 1,000 and 2,000 hub
+notices, `limit=20`: 105 and 188 ms before, 18 and 21 ms after. A page with more items than
+it shows costs the same however many there are (the statement test); under a page it
+costs fewer chunks. The load test of `main` (#677) found two more growths. A long-poll with
+`after` read the whole window and kept only what lay past the position, so its read is now
+bounded in SQL (`seq` past the position per project, records past its record number). An
+`unread` page whose first chunk held read items took one more chunk with the larger history,
+and every chunk repeats the item lookups, so the events (outside the chats) and the records
+start with a whole chunk (`CHUNK`): one statement covers a page whatever the history. All
+four load tests pass at `MAITY_LOAD_UNIT=1000`.
+
+## The counts of the bell classify only their candidates; the mentions stay exact
+
+**Id:** f643bd86-fb41-4c13-b4f9-65d46f97e50a
+**Type:** constraint
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-r8f0jm3xs9y6, the coordinator's ruling of 2026-10-30 ("correct numbers before a pure SQL counter"); `docs/api.md` §18.2
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-10-30
+**Revisit when:** a human can have thousands of unread mentions, or the payload marks a mention so that SQL can tell it exactly
+
+`counts` reads no item for `inbox` (open requests and personal requests are counted in SQL)
+and none for `chat` (the chats' own marks). What it still needs of the items, the unread
+`mention` and `security` and the open inbox records, comes from `items.count_items`: the
+events that can be a mention (`mentioned`, and messages whose payload text names the human)
+and the security and inbox records, classified as on every other path.
+
+**Reason:** the payload text is a superset; only `_classify` tells a mention from a message
+that names the human in another field, and `forge_access_changed` is a security item only
+for `linked` and `token_set`. Classifying just these candidates keeps every count exactly as
+§18.2 defines it, at a cost that grows with mentions, not with the inbox.
+
+**Rejected alternative:** count mentions and security items with one SQL aggregate over the
+text and the record types. Cheaper, but a false hit of the text test or a forge change that
+is no security item would be counted, and the counts would disagree with the items listed.
+
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
 **Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6

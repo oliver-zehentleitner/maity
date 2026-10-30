@@ -71,6 +71,35 @@ would hold the cards without the questions about them.
   messages from the feed silently; the review found it with a
   reproduction.
 
+## An answer goes to the instance that asked, and an instance address in a request wakes only that instance
+
+**Id:** 407a0aba-c1dd-4073-a5cc-bb4e13452efa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract owner's decision of 2026-10-30, on the questions raised while implementing tsk-7v120qsccj5e; contract in `docs/api.md` §7 `to`, §8.2 (`request_created`, `request_answered`, `request_withdrawn`)
+**Revisit when:** instances of one team routinely hand a waiting question to each other, or the asking instance is often gone by the time the answer comes
+
+`request_answered` and `request_withdrawn` go to the asking instance as
+`instance:`; its team still reads them, but only that instance is
+woken. `member:` stays for a human asker. A request whose `to` is an
+instance address goes to `instance:` and wakes that one instance; its
+team reads it and may answer what it may answer.
+
+**Reason:** the instance that asked is the one waiting on the answer:
+it holds the card and the context the question came from. Routed to
+`member:`, the team's `wake` rule (§6.18) decides who is woken, and
+under `lead` or `next_free` that can be an instance that never saw the
+question, while the one that asked keeps waiting. §7 already said "the
+asking instance"; the event table in §8.2 still named the member.
+
+**Rejected alternatives:**
+- The answer to `member:`, woken by the team's `wake` rule: wakes the
+  wrong instance or the whole team for a question only one of them
+  asked.
+- An instance address in `to` treated as its member: the asker named
+  one instance on purpose; widening it to the team overrides that.
+
 ## Each team has a rulebook set by a human: size, work distribution, who a team message wakes, review within the team
 
 **Id:** e42155de-c20d-43cc-a042-4151f860e25d

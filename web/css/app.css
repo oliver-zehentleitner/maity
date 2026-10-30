@@ -767,6 +767,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
 .jump-latest[hidden] { display: none; }
 .msg.out { justify-self: end; background: var(--out-bg); }
+/* A link in one's own bubble: the accent falls under 4.5:1 on --out-bg (4.33 light),
+   so it takes the text's colour, underlined to stay a link. */
+.msg.out a { color: var(--text); text-decoration: underline; }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }

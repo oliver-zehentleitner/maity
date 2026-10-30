@@ -11,6 +11,7 @@ from sqlalchemy import Engine, select
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_orgs import add_member, make_org
 from tests.test_two_factor import Clock, code_now, enrol, signed_in
 from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
@@ -136,3 +137,75 @@ def test_confirming_needs_a_recent_factor(
     assert human.post("/auth/second-factor/verify", {"code": code_now(secret, moment.at)})
     assert human.post(CONFIRM, {"url": URL}).status_code == 200
     assert confirmed(human) is True
+
+
+def confirmed_by(who: flow.Human, name: str) -> Any:
+    return who.get(f"/projects/{name}").json()["repository"]["confirmed_by"]
+
+
+def test_the_namespace_owner_is_named_in_confirmed_by(owner: flow.Human) -> None:
+    assert confirmed_by(owner, "maintainer/maity") is None
+    owner.post(CONFIRM, {"url": URL})
+    assert confirmed_by(owner, "maintainer/maity") == {"id": owner.id, "handle": "maintainer"}
+    owner.patch("/projects/maintainer/maity", {"repository": {"url": OTHER}})
+    assert confirmed_by(owner, "maintainer/maity") is None
+
+
+@pytest.fixture
+def org_project(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> tuple[flow.Human, flow.Human, flow.Human]:
+    """`maintainer/maity` in the organisation `oz-team` of `owner`, `second` (an owner) and
+    `admin` (an admin): the transfer took the confirmation back."""
+    second = flow.human(make_client, migrated, "second")
+    admin = flow.human(make_client, migrated, "adm")
+    org = make_org(owner, "oz-team", "OZ Team")
+    add_member(migrated, org["id"], second.id, "owner")
+    add_member(migrated, org["id"], admin.id, "admin")
+    moved = owner.post("/projects/maintainer/maity/transfer", {"to": org["id"]})
+    assert moved.status_code == 200, moved.text
+    return owner, second, admin
+
+
+def test_an_owner_of_the_organisation_confirms_with_their_own_grants(
+    org_project: tuple[flow.Human, flow.Human, flow.Human], migrated: Engine
+) -> None:
+    from maity_hub.forge_access import ForgeAccess
+
+    owner, second, admin = org_project
+    name = "oz-team/maity"
+    url = f"/projects/{name}/repository/confirm"
+    assert confirmed_by(owner, name) is None
+    # an admin of the organisation is no member of its projects: the project is not theirs to see
+    status, code, _ = error(admin.post(url, {"url": URL}))
+    assert (status, code) == (404, "not_found")
+    assert second.post(url, {"url": URL}).status_code == 200
+    assert confirmed_by(owner, name) == {"id": second.id, "handle": "second"}
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    # their grants are read, the organisation has none
+    assert ForgeAccess(migrated, None, None)._facts(project_id).owner_id == second.id
+    # a later confirmation by another owner replaces them
+    assert owner.post(url, {"url": URL}).status_code == 200
+    assert confirmed_by(owner, name) == {"id": owner.id, "handle": "maintainer"}
+
+
+def test_the_confirmation_ends_when_the_confirming_owner_stops_being_one(
+    org_project: tuple[flow.Human, flow.Human, flow.Human],
+) -> None:
+    owner, second, _ = org_project
+    name = "oz-team/maity"
+    url = f"/projects/{name}/repository/confirm"
+    assert second.post(url, {"url": URL}).status_code == 200
+    demoted = owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "admin"})
+    assert demoted.status_code == 200, demoted.text
+    assert confirmed_by(owner, name) is None
+    assert (
+        confirmed(owner) is False
+        or owner.get(f"/projects/{name}").json()["repository"]["owner_confirmed"] is False
+    )
+    # another owner's confirmation is not touched by the end of someone else's
+    assert owner.post(url, {"url": URL}).status_code == 200
+    removed = owner.delete(f"/orgs/oz-team/members/{second.id}")
+    assert removed.status_code == 204, removed.text
+    assert confirmed_by(owner, name) == {"id": owner.id, "handle": "maintainer"}

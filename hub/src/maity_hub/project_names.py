@@ -69,6 +69,29 @@ def withdraw_into(conn: Connection, org_id: str, reason: str) -> None:
         close_request(conn, row.id, "withdrawn", None, reason=reason)
 
 
+def withdraw_started_by(conn: Connection, human_id: str, reason: str) -> None:
+    """Withdraw every open transfer into an organisation that `human_id` started (§2.9): the
+    consent requests to the owners are theirs, and nobody is left to stand behind them. The
+    organisations' rows are locked by the caller (`orgs.lock_all_of`), before the projects'."""
+    from maity_hub.routes.requests import close_request
+
+    rows = conn.execute(
+        select(t.request.c.id, t.request.c.project_id, t.request.c.proposal)
+        .where(
+            t.request.c.status == "open",
+            t.request.c.proposal.is_not(None),
+            cast(t.request.c.proposal, String).contains(human_id, autoescape=True),
+        )
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).all()
+    for row in rows:
+        proposal = row.proposal or {}
+        if proposal.get("kind") != KIND or proposal.get("by") != human_id:
+            continue
+        events.lock_project(conn, row.project_id)
+        close_request(conn, row.id, "withdrawn", None, reason=reason)
+
+
 def _announce(
     conn: Connection,
     project_id: str,
@@ -273,7 +296,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     conn.execute(
         update(t.project)
         .where(t.project.c.id == project.id)
-        .values(repository_owner_confirmed=False)
+        .values(repository_owner_confirmed=False, repository_confirmed_by=None)
     )
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(
@@ -299,9 +322,12 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if s.outcome != "go":
         return
     to = proposal["to"]
-    org = (
-        orgs.lock(conn, to) if to.startswith("org-") else None
-    )  # the organisation, then the project (§6.26)
+    # The organisations' rows before the project's, in the order of their ids (§6.26): the one
+    # the project leaves and the one it goes to.
+    locked = {
+        i: orgs.lock(conn, i) for i in sorted({proposal["owner_id"], to}) if i.startswith("org-")
+    }
+    org = locked.get(to)
     events.lock_project(conn, proposal["project_id"])
     project = conn.execute(select(t.project).where(t.project.c.id == proposal["project_id"])).one()
     full = namespace.full_name(conn, project)

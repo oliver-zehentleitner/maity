@@ -49,7 +49,8 @@ An organisation's handle is held to the reserved first segments like a human's: 
 `namespace.reserved_holders` reports an organisation that holds a word reserved later.
 
 **Known limit:** `PATCH /orgs/{org}` takes no `handle` yet, and `{org}` resolves the current
-handle only: the rename, the aliases and their limits wait for #523's alias table.
+handle only: the rename, the aliases and their limits wait for #523's alias table. For the
+same reason `q` of `GET /admin/orgs` (§16.10) matches the handle and the display name, not yet an alias.
 
 ## An organisation's changes run under its row lock, and the caller's role is read under it
 
@@ -75,9 +76,13 @@ the account first, then every organisation it belongs to in the order of their i
 with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
 owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
 the deletion, and the invitations it sent that are still open are withdrawn; the organisations
-and their handles stay. A `go` into an organisation (`project_names.settle`) takes the organisation's
-row before the project's, the order `suspend_org` has, so a `go` and a suspension that meet cannot
-wait on each other.
+and their handles stay. A `go` into an organisation (`project_names.settle`) takes the rows of
+both organisations, the one the project leaves and the one it goes to, in the order of their ids and
+before the project's, the order `suspend_org` has, so a `go` and a suspension of either that meet
+cannot wait on each other nor pass each other; a rename (`PATCH` with `slug`) of a project of an
+organisation locks the organisation first for the same reason, since it reads the namespace.
+Deleting an organisation withdraws every open transfer into it, and deleting an account withdraws the
+ones it started (`project_names.withdraw_into`, `withdraw_started_by`), as a suspension does.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a
@@ -276,10 +281,8 @@ organisation after the project) would break the organisation-then-project rule.
 - Letting the project route answer the personal requests: it is the personal inbox's route, and the
   project must not tell anyone else that such a request exists (§7).
 
-**Known limit (until part 4):** the repository's confirmation (`POST …/repository/confirm`) and the
-forge grants of a project of an organisation, the project's public page and its About still need the
-namespace owner as a human, so for a project of an organisation they fail closed; the owners' own
-confirmation with `confirmed_by` (§11.4) comes with the instance's forge work.
+**Known limit (until part 4):** the project's public page and its About of a project of an
+organisation still need the namespace owner as a human, so they fail closed.
 
 ## An organisation's suspension is a hold on the organisation, in the table of holds
 
@@ -347,8 +350,8 @@ default` and made an admin value impossible), a number or `unlimited` otherwise.
 the effective value in its transaction. The agent cap, which the contract gives the same section and
 which no code had yet, is checked in `routes.agents.create_profile` under the owner's row lock: the
 one place both `POST /agents` and a join that names a new handle create a profile, so the count and
-the insert are one step per owner across both. The exchange of a link already issued creates no
-profile that counts: it calls `create_profile` without a cap, as it did.
+the insert are one step per owner across both. The exchange of a link already issued creates its
+profile without the cap (§16.5: an exchange is not gated); the profile counts from then on.
 
 **Reason:** the contract names both caps in one section and the response shows both counters, so a
 section with one of them would have been a second change of the same endpoint; the gate sits where
@@ -361,3 +364,36 @@ the insert is, so no creation path can forget it.
   be `default` or `admin`, and the admin's value would have nowhere to win.
 - Counting at the endpoints instead of in `create_profile`: two paths, two places to keep in step,
   and the lock per owner would have to be taken in both.
+
+## A project of an organisation is read with the grants of the owner who confirmed its repository
+
+**Id:** 8e3f863e-ec98-4377-8cf9-8f34c56716d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §11.4 ("`repository` also carries `confirmed_by`"); the coordinator's order of part 4, step 3, on the card tsk-whe4wv1jpsae
+**Revisit when:** an organisation can hold forge grants of its own, or the project's public page needs the confirming owner
+
+`project.repository_confirmed_by` names the human whose grants the hub reads the repository with:
+the namespace owner for a project of a human, whichever owner of the organisation confirmed for one of
+an organisation (`POST …/repository/confirm` takes any owner of it, under the organisation's row lock
+and then the project's). `forge_access` takes that human's installation links and token instead of
+`project.owner_id`, which for such a project is an organisation with none, and nobody's while the
+project is unconfirmed. A later confirmation replaces the human; every change of the URL and every
+transfer clears both fields, as before. When the confirming human stops being an owner (demoted,
+removed, leaving: `org_projects.release_in_all`; the deletion of the organisation, the same path; the
+deletion of their account: `account_deletion._forget_confirmations`) the confirmation is cleared in
+that transaction and their grants stop with it. The migration fills the column for the confirmations
+that exist, which were all the namespace owner's.
+
+**Reason:** a confirmation is a person's consent to open their own grants to one repository, so it
+has to name the person; the organisation cannot grant anything, and the contract wants the owners to
+confirm without an extra role.
+
+**Rejected alternatives:**
+- Reading the grants of the organisation's first owner, or of any owner who has some: nobody agreed to
+  it, and the grants of someone who never confirmed would read a private repository.
+- Deriving the human from the confirmation event instead of a column: the clearing on a demotion or a
+  deletion would have to search the events, and the view needs the answer on every read.
+- Keeping the confirmation when its owner leaves, and reading with the grants that remain: the
+  contract ends the grants at once, and a stale confirmation is the one thing the flag exists to stop.

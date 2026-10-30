@@ -257,6 +257,62 @@ def test_the_last_owner_of_an_organisation_is_refused_both_times(
         assert conn.execute(select(t.handle_register.c.handle)).all()  # handles stay taken
 
 
+def test_an_owner_of_an_organisation_that_has_projects_may_delete_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The organisations' owners own its projects collectively (§6.26): one who is not the last
+    owner goes with the account, the seats the hub kept for them end, and the project stays with
+    the others, under its name, open."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    add_member(migrated, org["id"], other, "owner")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop", "owner": "pat-team"})
+    assert made.status_code in (200, 201), made.text
+    assert ask_deletion(pat).status_code == 202  # two owners, an open project: not refused
+    done = press(pat, token_of(migrated))
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert (project.state, project.owner_org_id) == ("build", org["id"])
+        seats = {
+            r.human_id: r.active
+            for r in conn.execute(
+                select(t.membership.c.human_id, t.membership.c.active).where(
+                    t.membership.c.project_id == project.id
+                )
+            ).all()
+        }
+        assert seats[pat.id] is None  # ended, the seat the hub kept for the organisation
+        assert seats[other] is True  # the hub made them an owner when the project was created
+        assert [r.human_id for r in conn.execute(select(t.org_member)).all()] == [other]
+
+
+def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """An admin of an organisation who asked its owners to take a project in is deleted: the
+    requests were theirs, and are withdrawn with the account (§2.9, §6.26)."""
+    admin_first(migrated, moment)
+    boss = person(make_client, migrated, moment, "boss")
+    org = boss.post("/orgs", {"handle": "boss-team", "display_name": "Boss Team"}).json()
+    pat = person(make_client, migrated, moment)
+    add_member(migrated, org["id"], pat.id, "admin")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop"})
+    assert made.status_code in (200, 201), made.text
+    filed = pat.post(f"/projects/{pat.handle}/shop/transfer", {"to": org["id"]})
+    assert filed.status_code == 202, filed.text
+    archived = pat.patch(f"/projects/{pat.handle}/shop", {"state": "archived", "reason": "done"})
+    assert archived.status_code == 200, archived.text  # an open project of theirs would refuse
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.request.c.status, t.request.c.withdraw_reason)).all()
+    assert [tuple(r) for r in rows] == [("withdrawn", "initiator_deleted")] * len(rows) != []
+
+
 def test_the_last_instance_admin_is_refused_both_times(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

@@ -522,22 +522,12 @@ def test_files_get_refuses_a_size_beyond_the_ceiling(joined: Path, fake: fakehub
     assert not [s for s in fake.signed() if s.path.endswith("/content")]
 
 
-@pytest.mark.parametrize(
-    ("paths", "said"),
-    [
-        ({}, "this hub does not have group chats yet"),
-        ({"/api/v1/projects/{owner}/{slug}/conversations": {"get": {}, "post": {}}},
-         "cnv-0009 is not in your conversations"),
-    ],
-)  # fmt: skip
-def test_chat_with_a_group_id_says_when_the_hub_has_no_group_chats(
-    paths: dict[str, Any], said: str, joined: Path, fake: fakehub.FakeHub,
-    capsys: pytest.CaptureFixture[str],
-) -> None:  # fmt: skip
-    fake.openapi = {"paths": paths}
+def test_chat_with_a_group_id_not_listed_is_not_in_your_conversations(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
     fake.routes[("GET", f"{P}/conversations")] = listing()
     assert cli.main(["chat", "cnv-0009"]) == cli.EXIT_ERROR
-    assert said in capsys.readouterr().err
+    assert "cnv-0009 is not in your conversations" in capsys.readouterr().err
 
 
 def test_chat_participants_sharing_a_handle_show_names_or_ids() -> None:
