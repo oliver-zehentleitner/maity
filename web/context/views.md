@@ -955,8 +955,15 @@ the human would see fields that do nothing.
 **Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
 
 The create form has **Project memory** (Keep the Why preselected, None)
-and the three setup options beneath it, all ticked, each sent as `true`
-or `false`. Project settings show the provider and the setup's cards
+and the five setup options beneath it in the cards' order (three until
+#715 added the CI linter and the published dashboard, 2026-10-30), all
+ticked, each sent as `true` or `false`. The dashboard's option has a
+**Path** field under it, prefilled with `keep-the-why-dashboard` and
+checked as the hub checks it (§6.21: one to five segments, and `..`
+nowhere in the value, `a..b` included, as the coordinator settled it on
+2026-10-30), its refusal said at the field;
+`dashboard_path` is sent only while that option is ticked, and left out
+of the request otherwise, never sent as `null`. Project settings show the provider and the setup's cards
 read only, with a pointer to a card for an agent, and offer the README
 badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
 the hub's `/openapi.json` whether `POST /projects` names `memory` and
@@ -966,7 +973,16 @@ and sends them (e1699490, the alpha rule).
 **Reason:** the hub would accept a provider change by `PATCH`, but it
 creates and cancels no setup card on it, so a switch in the panel would
 change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. The badge sits with the other policy
+change is work in the repository, which is what a card is for. The
+path is left out with the dashboard unticked because the hub would only
+drop it, `null` is `invalid` (§6.21), and a malformed value in a hidden
+field would refuse a creation for something the human did not choose. The
+form's check is the hub's, not a stricter or looser one of its own: a
+refusal only one side makes stops or lets through a creation for no
+reason; the hub alone checking would show the error only after sending.
+Barring only a segment `..` was rejected: the segment rule already bars
+it, and it would let `a..b` through, which the hub refuses.
+The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 
 **Rejected alternative:** a provider dropdown in Project settings: it
@@ -1465,6 +1481,14 @@ loader and loads again, and **Sign in again** on a 401) are centred in
 what the header leaves of the screen: `body:has(> main >
 …)` becomes a column of the screen's height and `main` takes the rest.
 A browser without `:has` shows them at the top, as before.
+
+Since 2026-10-30 the lockup is a link home (the maintainer's wish, the
+card tsk-vqn9m1qt4rtt): signed in to everything waiting (`/all`),
+without a session to the instance's start page (`/`), the static
+header's link `/` as no session is known yet. The link carries the
+accessible name ("Maity: everything waiting for you", "Maity: home");
+the two pictures have empty `alt`, since only one of them shows and the
+name would otherwise be read twice or be the bare word.
 
 **Reason:** the first thing a person sees should say where they are, and
 a failure should not look like a broken page; plain HTML and CSS show
