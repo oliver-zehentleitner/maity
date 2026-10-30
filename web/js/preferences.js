@@ -115,8 +115,7 @@ window.Maity = window.Maity || {};
     try {
       mine = await M.api.get("/me/preferences");
     } catch (err) {
-      if (await M.api.missingRoute(err, "GET", "/me/preferences")) append(el, M.dom.notOnHub("This hub keeps no preferences yet."));
-      else append(el, M.errorBox(err));
+      append(el, M.errorBox(err));
       return { el, heading };
     }
 

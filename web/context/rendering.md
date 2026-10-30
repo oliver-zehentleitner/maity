@@ -417,7 +417,7 @@ and on the preview routes and the root's `?as=public` (#628's contract
 and its hub change); until those are on main, its saves are refused
 and its preview has no address, so it is merged after them.
 
-## A hub whose attachment store is off is treated like a hub without attachments
+## A hub whose attachment store is off hides Attach files and is not asked again
 
 **Id:** 831e6402-6484-42a6-971a-0cafd0e7ecb4
 **Type:** decision

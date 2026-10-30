@@ -129,13 +129,9 @@ window.Maity = window.Maity || {};
       form);
   }
 
-  // The section for a human; null for an agent. Each part only where the
-  // hub's machine form lists its route; a hub without it is said quietly, and
-  // a machine form that cannot be read keeps the parts (views.md).
+  // The section for a human; null for an agent.
   async function section(ctx) {
     if (ctx.me.kind !== "human") return null;
-    const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
-    const [exports, deletes] = await Promise.all([has("GET", "/me/export"), has("POST", "/me/deletion")]);
     const heading = h("h3", { id: "your-data-heading", tabindex: "-1" }, "Your data");
     const ask = h("div", { class: "step-up-slot" });
     ask.hidden = true;
@@ -143,8 +139,8 @@ window.Maity = window.Maity || {};
     const body = h("div");
     const draw = (words) => {
       append(clear(body),
-        exports ? exportPart(ctx, ask) : M.dom.notOnHub("This hub cannot export your data yet."),
-        deletes ? deletionPart(ctx, ask, draw) : M.dom.notOnHub("This hub cannot delete an account yet."));
+        exportPart(ctx, ask),
+        deletionPart(ctx, ask, draw));
       clear(note);
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
     };

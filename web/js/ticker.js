@@ -5,8 +5,7 @@
 // link when it is https, and for the viewer why it is theirs, in words.
 // The viewer's own follow and mute are edited here (§17.8); an owner or
 // admin posts a note, a deploy or a release (§17.6). New items come with
-// the project's feed. A hub without the ticker says so, asked once per
-// page load.
+// the project's feed.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -21,10 +20,6 @@ window.Maity = window.Maity || {};
   const PAGE = 50;
   // How many pages of new items one live round reads at most.
   const LIVE_PAGES = 20;
-  // Whether this hub has the ticker, from its machine form (§17.6), never
-  // from a 404 alone. A hub without it is not asked again until the page is
-  // loaded anew; a hub with it is asked again on the next unexplained 404.
-  let hubHas = null;
 
   const article = (word) => (/^[aeiou]/.test(word) ? "an " : "a ") + word;
   // A reason token (§17.3, §17.6, §17.8) as the viewer reads it.
@@ -71,20 +66,10 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // Whether the hub lists the ticker in its machine form (§17.6: a 404 on
-  // the listing alone may be a mistyped project).
-  async function hubHasTicker() {
-    if (hubHas === false) return false;
-    hubHas = await M.api.hubHas("GET", "/projects/{owner}/{slug}/ticker");
-    return hubHas;
-  }
-
   M.views.ticker = async function (ctx, root) {
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     const toolbar = h("div", { class: "toolbar" }, h("h2", null, "Ticker"));
-    const none = () => append(root, toolbar, h("p", { class: "muted" }, "This hub has no ticker yet."));
-    if (hubHas === false) { none(); return; }
     let forMe = true;
     let type = "";
     let area = "";
@@ -204,15 +189,7 @@ window.Maity = window.Maity || {};
       append(status.el, h("span", null, added === 1 ? "1 new item." : added + " new items."));
     }
 
-    // The first read; a 404 is the hub's lack of a ticker only when its machine form says so.
-    let first;
-    try {
-      first = await M.api.get(query());
-    } catch (err) {
-      if (err.status !== 404) throw err;
-      if (!(await hubHasTicker())) { none(); return; }
-      throw err;
-    }
+    const first = await M.api.get(query());
 
     const tab = (mine, label) => h("button", { type: "button", class: "small", "aria-pressed": String(forMe === mine),
       onclick: (e) => { forMe = mine; Array.from(tabs.querySelectorAll("button")).forEach((b) => b.setAttribute("aria-pressed", String(b === e.target))); load(true); } }, label);

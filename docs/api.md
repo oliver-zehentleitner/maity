@@ -2295,8 +2295,12 @@ The sensitive calls:
   (`POST /runners/enrollments`, §15.2),
   and approving a device code (§2.6.2);
 - transferring a project to another namespace owner (`POST
-  /projects/{owner}/{slug}/transfer`, §6.25) and deleting an
-  organisation (`DELETE /orgs/{org}`, §6.26);
+  /projects/{owner}/{slug}/transfer`, §6.25), including into an
+  organisation and to oneself, and the `go` that consents to a transfer
+  (`reply_id: go` on a `project_transfer` request, on the project's
+  route and on the personal one of an organisation's owner, §6.26); a
+  `no` needs none, since it moves nothing;
+- deleting an organisation (`DELETE /orgs/{org}`, §6.26);
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
   for it (`POST /projects/{owner}/{slug}/repository/confirm`, §11.4);
@@ -7115,7 +7119,7 @@ both. The receiving human must already hold trust `owner` in the
 project, and nothing moves into a namespace without its owner's word:
 the call files a `consent` request to the receiver (§7), whose summary
 names the project's repository URL, and the
-transfer happens when they answer `go`; the namespace owner may withdraw
+transfer happens when they answer `go` (with the step-up of §2.8.4); the namespace owner may withdraw
 it until then. A project has at most one open transfer: a new one
 withdraws the open one, and so does every change of the project's
 namespace owner or full name (a rename, another transfer). The request
@@ -7473,7 +7477,7 @@ names a human (`hum-…`) or an organisation (`org-…`).
   speaks only for themselves: the hub files a personal `consent`
   request (§7) to each owner of the receiving organisation, bound as in
   §6.25, carrying both `project` and `org: {id, handle}` (the receiving
-  organisation), and the first owner's `go` moves the project; it
+  organisation), and the first owner's `go` (with the step-up of §2.8.4) moves the project; it
   withdraws the others. A `no` closes that owner's request alone, and an
   owner's withdrawal of their own request counts as their `no`; the
   transfer ends only once no owner has said `go` and every request is
