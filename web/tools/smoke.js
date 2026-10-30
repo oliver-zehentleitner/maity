@@ -6628,12 +6628,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.owner-reports").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-d" }]),
     "owner reports_to: only reports_to is sent " + JSON.stringify(orPatches));
-  // A boss of another owner stays chosen and marked, so saving does not end it unasked.
-  win.Maity.api.getAll = ((orAll) => (p) => (p === "/projects/maintainer/maity/members" ? orAll(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" }) : x)) })) : orAll(p)))(win.Maity.api.getAll);
+  // A guest is never offered; a boss of another owner stays chosen and marked, so saving does not end it unasked.
+  const orAll = win.Maity.api.getAll, orGet2 = win.Maity.api.get;
+  const orShape = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" })
+    : x.id === "agt-r" ? Object.assign({}, x, { trust: "guest" }) : x)) });
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then(orShape) : orAll(p));
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orGet2(p).then((r) => (r && r.items ? orShape(r) : r)) : orGet2(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
+  const orC = byId("owner-reports-agt-c");
+  expect(orC && orC.value === "hum-other" && text(orC.querySelectorAll("option").find((o) => o.getAttribute("value") === "hum-other")).includes("another owner's")
+    && !orC.querySelectorAll("option").some((o) => o.getAttribute("value") === "agt-r"),
+    "owner reports_to: another owner's boss stays chosen and marked; a guest is not offered");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
   expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
     "owner reports_to: the project's Agents has it beside the rulebook");
-  win.Maity.api.get = orGet; win.Maity.api.patch = orPatch;
+  win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
   await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
   await go("#/maintainer/maity/inbox");
   // Lead routing and the direct/group boundary.

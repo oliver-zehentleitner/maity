@@ -320,7 +320,8 @@ window.Maity = window.Maity || {};
         }
         return false;
       };
-      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !circle(x.id));
+      // Never a guest (§2.3), never one that would close a circle.
+      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !M.trust.guest(x) && !circle(x.id));
       const options = [["", "nobody"]].concat(mine.map((x) => [x.id, x.id === ctx.me.id ? "you (" + x.display_name + ")" : x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")"]));
       if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
         options.push([m.reports_to, ctx.nameOf(m.reports_to) + " (another owner's; kept unless you choose here)"]);

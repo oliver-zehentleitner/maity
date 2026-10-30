@@ -2647,6 +2647,7 @@ window.Maity = window.Maity || {};
         if (target.kind === "agent" && target.owner_id === who.member.id
           && (to === null || (boss && (boss.id === who.member.id || (boss.kind === "agent" && boss.owner_id === who.member.id))))) {
           if (to === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "self" } });
+          if (boss && boss.trust === "guest") fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "guest" } });
           for (let at = to, seen = new Set(); at; at = (all.find((x) => x.id === at) || {}).reports_to) {
             if (at === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "cycle" } });
             if (seen.has(at)) break;
