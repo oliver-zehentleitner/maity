@@ -603,7 +603,9 @@ first raises its file's count, so a ratchet PR merges main last and
 raises those counts by hand with the reason. Rejected: computing the
 baseline in CI from main, which would accept every new string and hold
 nothing back. English is the only catalog; the first
-keys are the chat's instance choice.
+keys are the chat's instance choice. A label kept in a table at load time
+(the tabs, the states, a field's rules) is a getter that calls `M.t`
+when it is read, so a language set after the page loads still applies.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
