@@ -7643,10 +7643,11 @@ everything of its own shown (as in `GET /me`).
   "members": [ { "handle": "anna", "display_name": "Anna", "avatar_url": "…", "role": "owner" } ] }
 ```
 
-The answer never carries an `avatar_url` the caller could not read
-(§6.10): a human or organisation that is not `not_found` shares a
-project with the caller or serves a public page, either of which lets
-the caller read the image.
+`avatar_url` follows §6.10 ("Who may read an image"): it is the
+image's address only where the caller may read it (a shared project,
+the organisation's own members and its projects' members, the caller's
+own); otherwise `null`, and the dashboard draws the generated avatar
+from the handle. A public page grants no image (§16.9).
 
 - **`page_served`** (a boolean, not the organisation's `public_page`
   switch of §6.26) is `true` exactly when the hub serves the public page
