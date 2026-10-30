@@ -162,6 +162,10 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* A header that is the bar alone (sign-in, an invitation, registration,
+   the landing page, the loader): as much room below it as above, where the
+   full header's rows of tabs would otherwise give it. */
+#header > .bar:only-child { padding-bottom: 10px; }
 /* The page's one h1: the product name, at the size of the header line. */
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
 /* The lockup, 28 px tall; the dark file where the page is dark (as the tokens above decide). */
