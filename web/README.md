@@ -1253,6 +1253,22 @@ file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
 
+## Words: the text catalog
+
+The dashboard's sentences come from a catalog per language,
+`i18n/<lang>.json` (English only so far), read with `Maity.t(key,
+values)` (`js/i18n.js`): one key per sentence, `{name}` placeholders,
+and plural forms (`{"one": …, "other": …}`, chosen by `values.count`
+through `Intl.PluralRules`); never a sentence put together from pieces.
+Dates and numbers go through `Intl` (`Maity.fmt.number`, `.date`,
+`.time`, `.dateTime`) in the reader's locale. As with the fixtures, the
+page loads `js/i18n/<lang>.js`, which `make fixtures` builds from the JSON.
+`make check` fails on a key that is malformed, missing, unused, or not
+a string literal at `M.t`, and on any view whose prose string literals
+grow past `tools/strings-baseline.json`: new text goes into the catalog,
+old text moves over view by view (`make fixtures` then lowers the
+baseline; nothing raises it but an edit to the file).
+
 ## Refresh
 
 - `GET /me` every 60 seconds and after every answer, none while the tab
