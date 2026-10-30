@@ -339,7 +339,7 @@ window.Maity = window.Maity || {};
     if (!isSilentAgent(member)) return null;
     const date = member.last_seen_at && new Date(member.last_seen_at);
     const known = date && !Number.isNaN(date.getTime());
-    const text = known ? M.t("member.silent_since", { time: date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }) })
+    const text = known ? M.t("member.silent_since", { time: M.fmt.time(date) })
       : M.t("member.silent_unknown");
     return h("span", { class: "member-silence " + (warn ? "flag-inline" : "muted"),
       title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
