@@ -2106,7 +2106,8 @@ to the Overview: the alpha rule, no compatibility routes.
 
 **Id:** df54f284-212c-4eab-995d-778dce37f7fb
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29; the coordinator's ruling in the review of #649 (no fallback), 2026-10-30
 **Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
@@ -2741,4 +2742,34 @@ address, as the card first proposed: the export already names it, and a
 second address could drift from the one the family publishes. Only the
 Overview's Project panel, where both links already are: one click
 further, on one view only.
+
+## A project has one Settings view: Project for its admins, Mine at settings/mine for every human member
+
+**Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
+**Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
+**See:** views.md#a-members-own-settings-in-a-project-are-a-tab-of-their-own-my-settings-at-my-settings — df54f284-212c-4eab-995d-778dce37f7fb — as of 2026-10-30
+
+The project's tabs end in one **Settings**, offered to its admins and to
+every human member. Inside it two tabs, as links: **Project**
+(`/<owner>/<slug>/settings`) for a member with `project:admin`, and
+**Mine** (`/<owner>/<slug>/settings/mine`) for a human, one's own settings
+for the project with one's default from the account. A member without
+`project:admin` who opens `settings` is sent on to `settings/mine` and
+sees no tab bar, having one tab. `/<owner>/<slug>/my-settings` is gone,
+without a redirect.
+
+**Reason:** two tabs called Settings and My settings side by side read as
+one thing twice; one place with a part for the project and a part for
+oneself is where a member looks for either.
+
+**Rejected alternative:** keeping **My settings** as a tab of its own
+(df54f284): the maintainer asked for one Settings. Showing a member the
+Project tab read only, as before: the contract shows it to admins only,
+and what a member may read of it (language, memory) is on the overview
+or in the project's files. A redirect from `my-settings`: the alpha
+rule, no route kept for an old address.
 

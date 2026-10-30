@@ -6157,13 +6157,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("not-listening-mode").value = "off"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("not-listening-mode-error")) === "Not a choice of this hub.", "not listening: the hub's refusal of the mode is said at the field");
   win.Maity.api.patch = nlPatch;
-  // A project's My settings (§6.2): the personal default or a value for the project, with what applies now.
+  // A project's Settings, the Mine tab (§6.2, §16.11): the personal default or a value for the project, with what applies now.
   nlPatches.length = 0;
   win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
-  await go("#/maintainer/maity/inbox");
-  const msTab = header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("My settings"));
-  expect(msTab && msTab.getAttribute("href") === "#/maintainer/maity/my-settings", "my settings: a tab of every human member's");
-  await go("#/maintainer/maity/my-settings"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
+  const msTabs = () => main.querySelectorAll("nav.settings-tabs a").map((a) => text(a) + "=" + a.getAttribute("href") + (a.getAttribute("aria-current") ? "*" : "")).join();
+  expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("My settings"))
+    && msTabs() === "Project=#/maintainer/maity/settings*,Mine=#/maintainer/maity/settings/mine",
+    "settings: one Settings view, its Project tab shown, Mine beside it; no My settings tab");
+  await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
+  expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
+    "settings: settings/mine shows one's own settings, its tab marked, not the project's");
   const msForm = () => main.querySelector("form.my-settings");
   expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");
@@ -6804,9 +6808,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/me"
     ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { trust: "member", role: "coder" })) }) : value);
   await go("#/maintainer/maity/inbox"); await projectSettings();
-  expect(!byId("project-language") && text(main).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
-  expect(onSettings() && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("section.memory-panel")
-    && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
+  expect(/settings\/mine$/.test(win.location.hash) && !byId("project-language") && !byId("state-select") && !main.querySelector("nav.settings-tabs")
+    && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("form.my-settings"),
+    "settings: a member without project:admin who opens Settings gets settings/mine, no project tab (§16.11)");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
   delete win.Notification;
