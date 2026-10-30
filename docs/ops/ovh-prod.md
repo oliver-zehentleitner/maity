@@ -182,6 +182,51 @@ Then Vultr becomes test: new domain and certificate, the mail sink, a values fil
 - The container image is pulled from `ghcr.io`; if the package is not public, the cluster needs a pull Secret.
 - Costs are not in this plan: they come from the order form, not from me.
 
+## 12. Growth: simple scaling toward about 200 000 users in two weeks
+
+The maintainer's addition: scaling must be simple. The hub runs as one pod today; its multi-pod work is card
+`tsk-f5jge5aw7ah1`. This plan is laid out for several pods so that card is the only thing missing, not the platform.
+I cannot derive a capacity from the user count; the load test below produces the numbers that set the sizes.
+
+**Nodes.** OVH's cluster autoscaler is switched on per node pool with minimum and maximum node counts. OVH's guide warns
+not to autoscale monthly-billed pools and suggests the pattern used here: a **fixed base pool** (two nodes, monthly
+billing allowed) for Traefik, cert-manager, monitoring and the first hub pods, and an **autoscaled hourly-billed pool**
+(minimum 0 or 1, maximum set from the load test and the budget) for the hub pods that the HorizontalPodAutoscaler adds.
+Free-plan clusters allow 100 nodes, far more than needed.
+
+**Hub pods.** HorizontalPodAutoscaler on CPU, a PodDisruptionBudget, topology spread across nodes, resource requests
+that make the autoscaler's decisions meaningful. Needed from the hub side (B's card, listed so none is forgotten):
+- every pod counts login and join rate limits in the same place, not in its own memory (otherwise N pods allow N times
+  the limit); the events long-poll must wake on a write made through another pod;
+- the attachment store is today a `ReadWriteOnce` volume, which only one node can mount. With several pods it must
+  become shared storage (OVH's shared file storage or S3-compatible object storage); which one is a decision for that card.
+- the migrate Job runs once per release, with the hub stopped, as now.
+
+**Ingress.** Traefik at two or more replicas, spread over nodes; the load balancer's health check on the Traefik port;
+`externalTrafficPolicy: Local` as in section 4, so each Traefik replica sees the real client address; no session
+stickiness, because the hub holds no state a request must return to (this holds once the points above are done). Traefik
+gets the same autoscaler as the hub if the load test shows it is the limit.
+
+**PostgreSQL.** Start on the Business plan (two nodes) with a flavor that leaves room, because OVH lets a service's
+flavor and plan be updated later (the pages exist; whether that is without downtime is read in the console during the
+rehearsal). The limit to plan around is connections: about 100 per 4 GB of RAM, capped at 1000. The hub opens up to
+16 + 16 per pod (`db_pool_size`, `db_max_overflow`), so ten pods can ask for 320 connections. Two ways to keep within
+the limit: lower the per-pod pool, and **connection pooling by OVH's managed PgBouncer** (a pool is created per database
+in the console and reached on its own port, with the pool name as the database name; session, transaction and statement
+modes). Transaction mode breaks named prepared statements, and the hub's driver (`psycopg` 3) prepares statements on
+its own after a few runs; use it only with `prepare_threshold=None` on the connection (a small hub change, tested on
+test) or with PgBouncer's prepared-statement tracking. Until then use session mode on the pool. Migrations connect
+directly to the database, not through the pool.
+
+**Read replica.** I found nothing in OVH's PostgreSQL pages about a read-only replica service, and the hub does not
+split reads from writes. So the plan does not rely on one: scale up the primary first, use the standby only for
+failover, and decide on a replica (a read path in the hub plus a service) only if the load test shows reads, not
+writes, as the limit.
+
+**Load test before launch.** On the staging address of section 9: many `maity wait` long-polls, logins, join
+exchanges and writes, at a multiple of the expected load, with the hub at 1, 2 and 4 pods. It sets the node pool
+maximum, the HPA target, the database flavor and the pool size, and it is where the multi-pod behaviour is proved.
+
 ## Sources
 
 - [Available datacenters, worker nodes and persistent storage flavors](https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/datacenters-nodes-storage-flavors)
@@ -189,4 +234,6 @@ Then Vultr becomes test: new domain and certificate, the mail sink, a values fil
 - [Public Cloud Databases for PostgreSQL: capabilities](https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-capabilities)
 - [Automated backups for Public Cloud Databases](https://docs.ovhcloud.com/en/guides/public-cloud/databases/backups)
 - [Migrate from Load Balancer for MKS to the Public Cloud Load Balancer](https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/migrate-iolb-to-public-cloud-loadbalancer.md)
+- [Dynamically resizing a cluster with the cluster autoscaler](https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/using-cluster-autoscaler)
+- [Connection pools in Public Cloud Databases for PostgreSQL](https://docs.ovhcloud.com/en/guides/public-cloud/databases/postgresql-pool)
 - [Getting the source IP behind the LoadBalancer](https://docs.ovhcloud.com/en/guides/public-cloud/containers-orchestration/managed-kubernetes/getting-source-ip-behind-loadbalancer.md)
