@@ -523,3 +523,20 @@ def test_the_production_sender_keeps_nothing() -> None:
     from maity_hub import registration_mail as module
 
     assert not hasattr(module, "SENT")
+
+
+def test_the_dropped_count_forgets_the_hour_before_while_nobody_reads_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`add` drops what is past the hour too: the count is read only when an admin
+    looks, and the list must not grow for as long as nobody does."""
+    from types import SimpleNamespace
+
+    dropped = registration.Dropped()
+    now = [1000.0]
+    monkeypatch.setattr(registration, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    for _ in range(50):
+        dropped.add()
+        now[0] += 600  # one every ten minutes, for over eight hours
+    assert len(dropped._at) == 7  # the last add kept its own hour, both ends included
+    assert dropped.last_hour() == 6

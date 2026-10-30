@@ -340,14 +340,19 @@ class Dropped:
         self._lock = threading.Lock()
 
     def add(self) -> None:
+        now = time.monotonic()
         with self._lock:
-            self._at.append(time.monotonic())
+            self._drop_before(now - 3600)  # here too: nobody may read the count for days
+            self._at.append(now)
 
     def last_hour(self) -> int:
-        cutoff = time.monotonic() - 3600
         with self._lock:
-            self._at = [at for at in self._at if at >= cutoff]
+            self._drop_before(time.monotonic() - 3600)
             return len(self._at)
+
+    def _drop_before(self, cutoff: float) -> None:
+        if self._at and self._at[0] < cutoff:  # in order: the oldest is first
+            self._at = [at for at in self._at if at >= cutoff]
 
 
 class Breaker:
