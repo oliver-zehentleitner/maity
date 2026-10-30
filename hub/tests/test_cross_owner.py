@@ -359,6 +359,18 @@ def test_an_owner_of_the_edge_who_is_a_member_without_scopes_withdraws_on_the_pr
     assert friend.post(f"{PROJECT}/requests/{again}/withdraw", {}).status_code == 200
 
 
+def test_a_human_boss_who_is_not_the_agents_owner_withdraws_as_an_owner_of_the_edge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = flow.human(make_client, migrated, "friend")
+    boss = flow.human(make_client, migrated, "boss")
+    factory.membership(migrated, _project(migrated), human_id=boss.id, role="coder")
+    lent = _lent(migrated, friend)
+    request_id = put(owner, lent, reports_to=boss.id).json()["id"]
+    assert boss.post(f"{PROJECT}/requests/{request_id}/withdraw", {}).status_code == 200
+    assert all(r.status == "withdrawn" for r in _requests(migrated))
+
+
 def test_nobody_but_the_addressee_answers_it(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
