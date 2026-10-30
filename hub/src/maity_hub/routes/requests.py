@@ -2177,6 +2177,17 @@ def withdraw_hub_notice(conn: Connection, request_id: str | None, reason: str) -
     )
 
 
+def _is_cross_owner(row: Any) -> bool:
+    return (row.proposal or {}).get("kind") == cross_owner.KIND
+
+
+def _asker_matches(conn: Connection, row: Any, caller: Caller, asked_by: str) -> bool:
+    """`asked_by` of a personal request: a member id, or `me` for a request the caller asked
+    themselves as an owner outside the project (§7)."""
+    asker = principal_id(conn, row.asked_by) if row.asked_by is not None else row.asked_by_human
+    return asker == asked_by or (asked_by == "me" and asker == caller.human_id)
+
+
 def _personal_inbox(
     conn: Connection,
     caller: Caller,
@@ -2189,8 +2200,11 @@ def _personal_inbox(
     """The personal requests addressed to the caller, for `GET /requests` (§7)."""
     if to not in ("me", "all"):
         return []  # addressed to the caller, never to a member, role or the owner
+    # Addressed to the caller, or a cross-owner `reports_to` request they asked as an owner
+    # outside the project (§7): no one else's, whatever else carries `asked_by_human`.
     query = select(t.request).where(
-        t.request.c.personal.is_(True), t.request.c.to_human == caller.human_id
+        t.request.c.personal.is_(True),
+        (t.request.c.to_human == caller.human_id) | (t.request.c.asked_by_human == caller.human_id),
     )
     if status != "all":
         query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
@@ -2199,10 +2213,8 @@ def _personal_inbox(
     rows = [
         row
         for row in conn.execute(query).all()
-        # `me`: a human never asks a personal request, but to an organisation
-        if asked_by is None
-        or (principal_id(conn, row.asked_by) if row.asked_by is not None else row.asked_by_human)
-        == asked_by
+        if (row.to_human == caller.human_id or _is_cross_owner(row))
+        and (asked_by is None or _asker_matches(conn, row, caller, asked_by))
     ]
     inline = {p: _project_inline(conn, p) for p in {r.project_id for r in rows if r.project_id}}
     orgs_inline = {o: _org_inline_of(conn, o) for o in {r.org_id for r in rows if r.org_id}}

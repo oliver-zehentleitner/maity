@@ -253,6 +253,41 @@ def test_a_boss_who_is_a_manager_gets_the_reach_at_the_go(
     assert _row(migrated, lent).line_consent is True
 
 
+def test_a_go_names_the_managers_rights_for_an_edge_that_is_already_there(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An edge from before the consent flow (alpha, kept as it is): the pair still asks, and
+    the go sets `line_consent` although `reports_to` does not change."""
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    boss = flow.agent(make_client, owner, role="manager", reports_to=owner.id)
+    boss_row = _row(migrated, boss.id).id
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == lent).values(reports_to=boss_row)
+        )
+    assert _row(migrated, lent).line_consent is False
+    request_id = put(owner, lent, reports_to=boss.id).json()["id"]
+    assert answer(friend, request_id, "go").status_code == 200
+    assert _boss_of(migrated, lent) == boss.id and _row(migrated, lent).line_consent is True
+
+
+def test_the_inbox_lists_the_request_an_owner_outside_the_project_asked(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    boss_owner = flow.human(make_client, migrated, "other")
+    boss = factory.agent(migrated, _project(migrated), boss_owner.id).agent_id
+    request_id = put(friend, lent, reports_to=boss).json()["id"]  # friend is no member
+    mine = friend.get("/requests?asked_by=me&status=all").json()["items"]
+    assert [r["id"] for r in mine] == [request_id]
+    assert [r["id"] for r in friend.get("/requests").json()["items"]] == [request_id]
+    assert [r["id"] for r in boss_owner.get("/requests").json()["items"]] == [request_id]
+    # What someone else asked is not listed for them, whatever `asked_by_human` says.
+    assert owner.get("/requests?asked_by=me").json()["items"] == []
+
+
 def test_a_boss_who_lost_the_role_before_the_go_gets_no_reach(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

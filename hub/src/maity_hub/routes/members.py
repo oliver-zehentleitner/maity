@@ -374,6 +374,9 @@ def apply_patch(
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
+    if line_consent and "reports_to" in values and not target.line_consent:
+        # The edge is already there and the go now names the manager's rights for it (§6.2).
+        changed["line_consent"] = True
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
