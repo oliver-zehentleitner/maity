@@ -11987,8 +11987,9 @@ all languages.
     for every reserved first segment of §16.11 but the three legal pages
     (`impressum`, `privacy`, `terms`, which stay open as above) the two
     lines `Disallow: /<segment>/` and `Disallow: /<segment>$` (so a
-    handle such as `login-help` is not caught by `/login`), then
-    `Allow: /`; whatever else a
+    handle such as `login-help` is not caught by `/login`), while the
+    landing page is enabled `Allow: /assets/landing/` (the longer path
+    wins over `Disallow: /assets/`), then `Allow: /`; whatever else a
     crawler fetches that is not a public page is the app shell, which
     answers `X-Robots-Tag: noindex` (§16.11). The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
