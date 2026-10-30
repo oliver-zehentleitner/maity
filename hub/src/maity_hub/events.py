@@ -287,6 +287,8 @@ def readable_by(
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project."""
+    if membership.agent_id is not None and membership.isolated_since is not None:
+        return False  # an isolated agent is left out of every audience (§6.2)
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -449,7 +451,9 @@ def wakes(
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
     sender's own) is still `all`."""
-    if row.kind in NON_WAKING:
+    if row.kind in NON_WAKING or (
+        membership.agent_id is not None and membership.isolated_since is not None
+    ):
         return False
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)

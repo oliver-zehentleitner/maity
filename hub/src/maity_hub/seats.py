@@ -49,6 +49,23 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
     availability.drop_substitute(conn, project_id, principal, deciders, actor)
 
 
+def routed_arbiter(conn: Connection, project: Any) -> str:
+    """The contract arbiter as routing reads it: the policy's, but an isolated agent is
+    routed past as if the seat held its default after a removal (§6.2, "Isolation")."""
+    seat: str = project.contract_arbiter
+    if seat == "trust:admin":
+        return seat
+    isolated = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.agent_id == seat,
+            t.membership.c.active.is_(True),
+            t.membership.c.isolated_since.isnot(None),
+        )
+    ).first()
+    return seat if isolated is None else _arbiter_fallback(conn, project.id, isolated)
+
+
 def _deciders(conn: Connection, project_id: str) -> list[str]:
     """`member:<id>` of every human with trust `owner` or `admin`: they name the next
     holder, so each reset is addressed to them, not only broadcast."""

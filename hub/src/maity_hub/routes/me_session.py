@@ -59,6 +59,7 @@ from maity_hub.views import (
     confirmed_by_of,
     event_views,
     git_identity,
+    isolated,
     meat_proxy_view,
     member_views,
     memory_of,
@@ -480,6 +481,7 @@ def _packet(
             "scopes": scopes,
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
+            "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,

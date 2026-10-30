@@ -302,6 +302,18 @@ def principal_id(conn: Connection, membership_id: int | None) -> str | None:
     return principal_ids(conn, [membership_id])[membership_id]
 
 
+def routing_boss(conn: Connection, membership_id: int | None) -> str | None:
+    """The boss events and notices are routed to: `principal_id`, but an isolated boss is
+    routed past as if the edge held its default after a removal, nobody (§6.2), without
+    the edge changing."""
+    if membership_id is None:
+        return None
+    isolated_since = conn.execute(
+        select(t.membership.c.isolated_since).where(t.membership.c.id == membership_id)
+    ).scalar()
+    return None if isolated_since is not None else principal_id(conn, membership_id)
+
+
 def principal_ids(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int, str]:
     """The member ids of several membership row ids, in one query. Lists build
     their views through this and the other `*_views`, so a page costs a fixed
@@ -325,6 +337,13 @@ def paused(row: Any) -> dict[str, Any] | None:
     if row.paused_since is None:
         return None
     return {"reason": row.paused_reason, "since": ts(row.paused_since), "by": row.paused_by}
+
+
+def isolated(row: Any) -> dict[str, Any] | None:
+    """`isolated: {reason, since, by}` of an agent member a human isolated (§6.2)."""
+    if row.isolated_since is None:
+        return None
+    return {"reason": row.isolated_reason, "since": ts(row.isolated_since), "by": row.isolated_by}
 
 
 # Best first: a member's presence is the best of its instances' (§5.3); an instance
@@ -613,6 +632,7 @@ def member_views(
                 "last_seen_at": ts(row.last_seen_at),
                 "presence": shown_presence,
                 "paused": stopped,
+                "isolated": isolated(row),
                 "availability": availability.view(
                     row,
                     shown_presence,

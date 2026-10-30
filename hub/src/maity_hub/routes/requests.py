@@ -28,6 +28,7 @@ from maity_hub import (
     orgs,
     placements,
     proposals,
+    seats,
     ticker,
 )
 from maity_hub import tables as t
@@ -302,7 +303,7 @@ def _resolve_to(
     """`to` as written, or its default (§7)."""
     if body.to is None:
         if body.class_ == "contract":
-            arbiter = mine.project.contract_arbiter  # contract requests go to the arbiter
+            arbiter = seats.routed_arbiter(conn, mine.project)  # contract requests go to it
             return _parse_to(conn, mine, arbiter)
         row = conn.execute(select(t.membership).where(t.membership.c.id == asker)).one()
         if row.agent_id is None:
@@ -328,11 +329,15 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
         return inbox.Addressee("role", role=to)
     principal, instance = instances.split_address(to)
     addressee = _member_id(conn, mine, principal, "to")
-    trust = conn.execute(
-        select(t.membership.c.trust).where(t.membership.c.id == addressee)
-    ).scalar_one()
+    trust, isolated_since = conn.execute(
+        select(t.membership.c.trust, t.membership.c.isolated_since).where(
+            t.membership.c.id == addressee
+        )
+    ).one()
     if trust == "guest":  # a guest answers nothing, so nothing is asked of it (§2.3)
         raise invalid({"to": "guest"}, "a guest is never asked")
+    if isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
+        raise invalid({"to": "isolated"}, "the agent is isolated")
     if instance is not None:
         instances.addressed(conn, addressee, principal, instance, "to")  # `not_an_instance`
     return inbox.Addressee("member", member=addressee, instance=instance)
@@ -1196,6 +1201,8 @@ def forward(
                 target = member_row(conn, mine.project.id, body.to)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
+            if target.isolated_since is not None:
+                raise invalid({"to": "isolated"}, "the agent is isolated")
             if target.id in (mine.id, row.holder_member) or target.id in (
                 row.asked_by,
                 row.on_behalf_of,

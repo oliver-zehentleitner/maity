@@ -191,6 +191,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         project_id=mine.project.id,
         session_id=caller.session_id,
         loop=asyncio.get_running_loop(),
+        membership_id=caller.membership_id,
     )
     longpoll.registry.enter(waiter)
     try:
@@ -201,7 +202,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 # Nothing read, nothing delivered, the cursor where it was: the wait that
                 # took over owns what came in (§8.3).
                 return answer([], after, superseded=True)
-            if await request.is_disconnected():
+            if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
             items, cursor = await run_in_threadpool(read, True, since)
@@ -311,6 +312,8 @@ def post_message(
         if me not in parties:
             raise forbidden(message="only the two parties write in a conversation")
         to = parties[1] if me == parties[0] else parties[0]
+        if agent.isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
+            raise invalid({"to": "isolated"}, "the agent is isolated")
         audience = [f"member:{p}" for p in parties]
         if body.to_instance is not None:
             # The human's message wakes exactly one instance of the agent, resolved as an
@@ -343,6 +346,8 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
+            if addressee.isolated_since is not None:
+                raise invalid({"to": "isolated"}, "the agent is isolated")
             # One instance of a team: its token wakes only it, the team reads it; a replaced
             # instance's address reaches its successor (§8.2).
             target = (

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, case, select, update
+from sqlalchemy import Connection, select, update
 
 from maity_hub import (
     admin_agents,
@@ -22,6 +22,7 @@ from maity_hub import (
     group_chats,
     idempotency,
     instances,
+    isolation,
     line,
     namespace,
     person_links,
@@ -804,19 +805,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
-    conn.execute(
-        update(t.card)
-        .where(t.card.c.claim_holder == target.id, t.card.c.status.notin_(("done", "cancelled")))
-        .values(
-            claim_holder=None,
-            claim_instance=None,
-            claim_session_id=None,
-            claim_since=None,
-            lease_until=None,
-            status=case((t.card.c.status == "in_progress", "open"), else_=t.card.c.status),
-            updated_at=now,
-        )
-    )
+    isolation.release_claims(conn, target.id)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -904,6 +893,51 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         apply_remove(conn, change_of(mine, caller), target)
         # The answer goes to the admin who removed it, like a repeated DELETE's.
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+class IsolateIn(Strict):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _isolation_target(conn: Connection, mine: Membership, caller: Caller, member_id: str) -> Any:
+    """Only a human with `members:admin` isolates, and only an agent member (§6.2)."""
+    if mine.kind == "agent":
+        raise humans_only("only a human isolates an agent")
+    mine.require("members:admin")
+    target = member_row(conn, mine.project.id, member_id)
+    if target.agent_id is None:
+        raise invalid({"member": "not_an_agent"}, "a human member cannot be isolated")
+    return target
+
+
+@router.post("/projects/{owner}/{slug}/members/{member_id}/isolate")
+def isolate_member(
+    slug: str, member_id: str, body: IsolateIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """Stop an agent at once, whoever brought it (§6.2, "Isolation")."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        target = _isolation_target(conn, mine, caller, member_id)
+        isolation.isolate(
+            conn, mine.project, target, body.reason, mine.principal_id, caller.actor(mine.id)
+        )
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.delete("/projects/{owner}/{slug}/members/{member_id}/isolate")
+def lift_isolation(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Give an isolated agent its access back, nothing it held (§6.2, "Isolation")."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        target = _isolation_target(conn, mine, caller, member_id)
+        isolation.lift(conn, mine.project, target, mine.principal_id, caller.actor(mine.id))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
