@@ -2114,14 +2114,20 @@ def join_expiry_step(run: Run, page: Page) -> None:
     # the join read as open again: the step failed or passed by which came first.
     # So this tab sees the hub's clock moved by the same amount as its own.
     moved = {"by": timedelta(0)}
+    # Set before the tab's context goes: a poll held then fails with "Request
+    # context disposed" or "closed", the same end of the step, not a problem.
+    ending = {"now": False}
+
+    def quiet(err: PlaywrightError) -> bool:
+        return ending["now"] or "closed" in str(err)
 
     def hub_clock(route: object) -> None:
-        # Only a tab closed while an answer was held is quiet; any other error
+        # Only a tab ending while an answer was held is quiet; any other error
         # is said where it happens and the request ends, not as a later timeout.
         try:
             answer = route.fetch()
         except PlaywrightError as err:
-            if "closed" not in str(err):
+            if not quiet(err):
                 run.problems.append(f"join expiry: the hub's answer could not be held: {err}")
                 try:
                     route.abort()
@@ -2136,7 +2142,7 @@ def join_expiry_step(run: Run, page: Page) -> None:
         try:
             route.fulfill(response=answer, headers=headers)
         except PlaywrightError as err:
-            if "closed" not in str(err):
+            if not quiet(err):
                 run.problems.append(f"join expiry: the moved answer could not be given: {err}")
 
     second.route(re.compile(r"/api/v1/"), hub_clock)
@@ -2162,6 +2168,8 @@ def join_expiry_step(run: Run, page: Page) -> None:
     expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
     expect(second.locator(f'article.seat[data-join="{join_id}"]')).to_have_count(0)
     run.shot(second, "join-expired")
+    ending["now"] = True
+    second.unroute_all(behavior="ignoreErrors")
     other.close()
     no_problems(run, "joins")
 
