@@ -9,3 +9,8 @@
 
 - Dashboard, **Message the project**: "A review's result" as a type; a review result carries cites
   against the diff and comes from `maity say --type review_result --review-file`.
+
+### Fixed
+
+- Dashboard: the fixture hub takes an `opensource` section without `links`, as the hub does (§16.7);
+  the header-links docs say Gitea gets a branch mark, as the code does.
