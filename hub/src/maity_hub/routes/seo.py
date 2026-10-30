@@ -26,6 +26,7 @@ from maity_hub.views import ts
 router = APIRouter()
 
 CACHE = {"Cache-Control": "public, max-age=3600"}
+LANDING_FILES = "/assets/landing/"
 
 
 def _set_pages(pages: dict[str, Any]) -> list[tuple[str, str]]:
@@ -59,11 +60,17 @@ def robots(
         return (
             "User-agent: *\n"
             + "".join(f"Disallow: /{first}/\nDisallow: /{first}$\n" for first in closed)
+            # The longer path wins over `Disallow: /assets/`: a crawler may render the page.
+            + (f"Allow: {LANDING_FILES}\n" if enabled else "")
             + sitemap_line
         )
     if not enabled:
         return "User-agent: *\nAllow: /$\nDisallow: /\n"
-    allowed = "Allow: /$\n" + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
+    allowed = (
+        "Allow: /$\n"
+        + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
+        + f"Allow: {LANDING_FILES}\n"  # the page's style, script and fonts (§16.7)
+    )
     return f"User-agent: *\n{allowed}Disallow: /\n{sitemap_line}"
 
 

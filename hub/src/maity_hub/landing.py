@@ -115,7 +115,8 @@ def _control(value: object) -> bool:
 # A field is `(kind, …, required)`: ("text", maximum, required), ("md", bytes, required),
 # ("link", required), ("int", low, high, required), ("object", {name: field}, required),
 # ("list", item, low, high, required), ("choice", options, low, high, required),
-# ("enum", options, required) and ("names", pattern, high, required). An absent optional field is left out of the stored page.
+# ("enum", options, required) and ("names", pattern, high, required). An absent optional field
+# is left out of the stored page.
 
 Spec = tuple[Any, ...]
 

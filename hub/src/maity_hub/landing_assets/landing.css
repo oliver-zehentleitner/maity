@@ -1,7 +1,7 @@
 /* Maity landing — tokens, dark hero, motion. Source: the designer's canvas board "Landing V3 – volle Fassung"
    (landing-v3.css), plus the layout of the hub's own sections. Plain CSS, no build step.
-   Every animation stops under prefers-reduced-motion. The hub fills each {font:file} with the file's URL
-   and its digest, so the fonts are cached for good (docs/api.md §16.7, "Progressive enhancement"). */
+   Every animation stops under prefers-reduced-motion. The hub replaces each font placeholder below with the
+   font file's own versioned URL, so the fonts are cached for good (docs/api.md §16.7, "Progressive enhancement"). */
 
 /* Fonts, self-hosted (SIL OFL, licence files beside them), Latin subset */
 @font-face{font-family:"Space Grotesk";font-weight:500;font-style:normal;font-display:swap;src:url({font:space-grotesk-500.woff2}) format("woff2")}

@@ -51,7 +51,11 @@ def test_robots_lets_a_crawler_read_the_landing_page_while_it_is_enabled(
     assert answer.headers["content-type"].startswith("text/plain")
     lines = answer.text.splitlines()
     assert lines[0] == "User-agent: *"
-    assert [line for line in lines if line.startswith("Allow:")] == ["Allow: /$"]
+    # The page's style, script and fonts too, so that a crawler that renders it may fetch them.
+    assert [line for line in lines if line.startswith("Allow:")] == [
+        "Allow: /$",
+        "Allow: /assets/landing/",
+    ]
     assert "Disallow: /" in lines and lines.index("Disallow: /") > lines.index("Allow: /$")
     assert lines[-1] == f"Sitemap: {PUBLIC}/sitemap.xml"
 
@@ -67,6 +71,7 @@ def test_robots_also_allows_the_legal_pages_that_are_set(
         "Allow: /$",
         "Allow: /impressum$",
         "Allow: /terms$",
+        "Allow: /assets/landing/",
     ]
 
 
