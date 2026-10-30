@@ -6756,6 +6756,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(waitWrites.length === 1 && "up_to" in waitWrites[0] && !("ids" in waitWrites[0])
     && !waitItems().some((li) => li.classList.contains("unread") && !/sign-in|address/i.test(text(li))),
     "notifications: Mark all read marks up to the first page's head; the list is read again " + JSON.stringify(waitWrites));
+  // Mark all read stays in place, off with nothing left to mark; sign-in alerts said to stay (tsk-bt2p3rem8tbj).
+  expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves sign-in and address alerts unread"),
+    "notifications: Mark all read stays, off while nothing it marks is unread; sign-in and address alerts said to stay unread");
+  // Mark read per item, without opening it (tsk-bt2p3rem8tbj): the chat item unread again here, and an open report
+  // (report_open, target report) added; a sign-in alert only where this session may confirm it (§2.6.5).
+  const waitReport = { id: "ntf-acr-90", record: "acr-90", kind: "inbox", at: "2026-10-22T13:19:30Z", project: null, actor: null,
+    title: "A report waits for you", target: { type: "report", id: "rep-0001" }, url: "https://maity.team/admin", read: false, redacted: false };
+  let waitCurrent = "hss-41c0";
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && waitWrites.length === 1
+    ? waitGet(p).then((r) => Object.assign({}, r, { items: [waitReport].concat(r.items.map((x) => (x.id === "ntf-4237" || x.id === "ntf-acr-7" ? Object.assign({}, x, { read: false }) : x))) }))
+    : p === "/auth/sessions?ended=true" ? waitGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => Object.assign({}, x, { current: x.id === waitCurrent })) }))
+    : waitGet(p));
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  const waitRow = (id) => waitItems().find((li) => li.getAttribute("data-notification") === id);
+  const waitMark = (id) => waitRow(id) && waitRow(id).querySelector("button.mark-read");
+  expect(waitMark("ntf-4237") && waitMark("ntf-4237").getAttribute("aria-label").startsWith("Mark read: ") && !btn(main, "Mark all read").disabled
+    && waitRow("ntf-acr-90") && !waitMark("ntf-acr-90") && !waitMark("ntf-acr-8"),
+    "notifications: Mark read on an unread item; none on an open matter (a report, a registration)");
+  // From an older, confirmed session the sign-in alert of a newer one may be confirmed here.
+  expect(waitMark("ntf-acr-7"), "notifications: Mark read on a sign-in alert where this session may confirm it (older, in good standing)");
+  waitMark("ntf-acr-7").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(waitWrites[1]) === JSON.stringify({ ids: ["ntf-acr-7"] }) && waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"),
+    "notifications: the sign-in alert's Mark read sends its id " + JSON.stringify(waitWrites));
+  // The chat item marked in place: the row stays, read, its button gone; the pages read so far stay.
+  const waitBefore = waitItems().length;
+  waitMark("ntf-4237").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(waitWrites[2]) === JSON.stringify({ ids: ["ntf-4237"] }) && waitRow("ntf-4237").classList.contains("read")
+    && !text(waitRow("ntf-4237")).includes("(unread)") && !waitMark("ntf-4237") && waitItems().length === waitBefore,
+    "notifications: Mark read marks the row in place, its button and its (unread) gone, the list kept " + JSON.stringify(waitWrites));
+  // From the reported session itself the alert is not offered.
+  waitCurrent = "hss-41d2"; waitWrites.length = 1;
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  expect(waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"), "notifications: no Mark read on a sign-in alert from the session it reports on");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // Languages: project writes are human-admin only; personal language is not mail-gated.
