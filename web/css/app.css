@@ -1357,6 +1357,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }
 
+/* The landing page and legal pages editor (js/landing.js). */
+.lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
+.lp-section.kept { opacity: 0.8; }
+.lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lp-section-title { margin: 0; flex: 1 1 auto; }
+.lp-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.lp-tabs button[aria-pressed="true"] { border-color: var(--accent); }
+.lp-field { margin: 6px 0; }
+.lg-page { margin-top: 16px; }
+.legal-links { margin-top: 16px; text-align: center; }
 /* All notifications: unread in bold with a dot, as on the bell. */
 .waiting-items li.unread a { font-weight: 600; }
 .waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
