@@ -1,10 +1,11 @@
-// The project at a glance (/<owner>/<slug>/overview, docs/api.md §6.11): its
-// repository and Keep the Why links, members and roles, the board's counts
-// per column, open requests, the latest reports, and the swarm statistics
-// (js/swarm.js, §6.22). The project and its
-// members are what the header already read; the counts come from one call,
-// GET …/overview, read again when a card, a request or the probe changes.
-// Every count links to where its items are.
+// The project at a glance (/<owner>/<slug>/overview, docs/api.md §6.11), in
+// three tabs: Summary (what waits for the reader, the board's counts per
+// column, the team, the latest reports), Swarm (overview/swarm, the swarm
+// statistics, js/swarm.js, §6.22) and Project (overview/project: the
+// repository, Keep the Why links and the README badge). The project and
+// its members are what the header already read; the counts come from one
+// call, GET …/overview, read on Summary only and again when a card, a
+// request or the probe changes. Every count links to where its items are.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -18,6 +19,13 @@ window.Maity = window.Maity || {};
   const PR_STATES = { merged: "merged", open: "open", closed: "closed without merge" };
   const REREAD = /^(task_|request_|probe_observed$)/;
   const NARROW_MS = 60000;
+  // The tabs (the maintainer, 2026-10-30: one page was too full). Getters:
+  // the labels are the catalog's when shown.
+  const TABS = [
+    { key: "", get label() { return M.t("overview.tab.summary"); } },
+    { key: "swarm", get label() { return M.t("overview.tab.swarm"); }, when: () => !!M.swarm },
+    { key: "project", get label() { return M.t("overview.tab.project"); } },
+  ];
 
   // A link from data: plain https only, in a new tab; anything else is text.
   // key: the control's name across redraws, so the focus can come back to it.
@@ -211,29 +219,36 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, "No card has been reported yet."));
   }
 
-  // The order (the designer's handover): what needs the reader, then the
-  // state, then the facts; one column on a phone in the same order. Project
-  // and README badge stand under Team, beside Latest reports, not after it:
-  // the list is long, and they were out of sight below it. The swarm, the
-  // team's numbers, comes after the facts, before the organisation.
-  function layout(ctx, parts, swarm) {
+  // Summary in the designer's order: what needs the reader, then the
+  // state; one column on a phone in the same order. The team stands
+  // beside Latest reports. The organisation is a tab of the Team page
+  // (js/org.js), the facts and the swarm tabs of their own.
+  function layout(ctx, tab, parts, swarm) {
+    if (tab === "project") return h("div", { class: "overview-row overview-row-facts" }, project(ctx), badge(ctx));
+    if (tab === "swarm") return h("div", { class: "overview-row overview-row-3" }, swarm);
     return [
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
-      h("div", { class: "overview-row overview-row-2" },
-        h("div", { class: "overview-stack" }, members(ctx), project(ctx), badge(ctx)), parts.reports),
-      swarm ? h("div", { class: "overview-row overview-row-3" }, swarm) : null,
-      // Who reports to whom (js/org.js), once the Organisation tab.
-      M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
+      h("div", { class: "overview-row overview-row-2" }, h("div", { class: "overview-stack" }, members(ctx)), parts.reports),
     ];
   }
 
-  M.views.overview = async function (ctx, root) {
+  function tabsNav(ctx, chosen) {
+    return h("nav", { class: "view-tabs overview-tabs", "aria-label": M.t("overview.tabs.label") },
+      TABS.filter((t) => !t.when || t.when()).map((t) =>
+        h("a", { href: t.key ? ctx.link("overview", t.key) : ctx.link("overview"), class: "view-tab", "aria-current": t.key === chosen ? "page" : null }, t.label)));
+  }
+
+  // args[0]: the tab (overview/<tab>); none, or one not offered, is Summary.
+  M.views.overview = async function (ctx, root, args) {
+    const asked = args && args[0];
+    const tab = TABS.some((t) => t.key === asked && t.key && (!t.when || t.when())) ? asked : "";
+    const counts = tab === "";
     const since = new Date(Date.now() - M.boardWindowDays * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     const path = ctx.base + "/overview?closed_after=" + encodeURIComponent(since);
     const status = M.statusLine();
     const box = h("div", { class: "overview" });
-    // The swarm reads on its own and is kept across the redraws below.
-    const swarm = M.swarm ? M.swarm.section(ctx) : null;
+    // The swarm reads on its own, on its tab only, and is kept across the redraws below.
+    const swarm = tab === "swarm" ? M.swarm.section(ctx) : null;
     // The links and members come from what the header holds; only the
     // counts need the overview call, and a failed one is said where they go.
     // A redraw keeps the focus on the same control (its data-key).
@@ -242,24 +257,28 @@ window.Maity = window.Maity || {};
       last = [o, err];
       const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
       // A failed read stands where the counts would.
-      const missing = !o && h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message);
-      append(clear(box), layout(ctx, o
+      const missing = counts && !o && h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message);
+      append(clear(box), layout(ctx, tab, !counts ? null : o
         ? { requests: requests(ctx, o), board: board(ctx, o), reports: reports(ctx, o) }
         : { requests: missing, board: null, reports: null }, swarm));
       const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
       if (again) again.focus();
     }
-    try {
-      draw(await M.api.get(path));
-    } catch (err) {
-      draw(null, err);
+    if (!counts) draw(null, null);
+    else {
+      try {
+        draw(await M.api.get(path));
+      } catch (err) {
+        draw(null, err);
+      }
     }
-    append(root, h("h2", null, "Overview"), status.el, box);
+    append(root, h("h2", null, "Overview"), tabsNav(ctx, tab), status.el, box);
     // A summary is not read line by line: it is drawn again in place. A
     // trigger during a read runs one more read after it, so none is lost.
     let reading = false;
     let pendingRead = false;
     async function reread() {
+      if (!counts) return;
       if (reading) { pendingRead = true; return; }
       reading = true;
       try {
@@ -272,8 +291,8 @@ window.Maity = window.Maity || {};
         if (pendingRead) { pendingRead = false; reread(); }
       }
     }
-    // The organisation follows the members: they are read again, the
-    // counts drawn as they were.
+    // The team follows the members: they are read again, the counts drawn
+    // as they were.
     ctx.onEvents((events) => {
       if (events.some((e) => REREAD.test(e.kind))) reread();
       if (events.some((e) => /^member_/.test(e.kind))) {
@@ -283,7 +302,7 @@ window.Maity = window.Maity || {};
     // §6.11: a viewer who is neither owner nor admin is in few events'
     // audiences, so the view also re-reads every 60 seconds and when the
     // tab comes back; the timer ends with the view, the listener with it.
-    if (!(ctx.canAdmin || ctx.isOwner)) {
+    if (counts && !(ctx.canAdmin || ctx.isOwner)) {
       ctx.every(NARROW_MS, reread);
       // The tab shown again, or its window focused again (another window was
       // in front while the tab stayed visible); both end with the view.

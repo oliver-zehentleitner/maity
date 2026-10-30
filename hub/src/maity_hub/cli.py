@@ -19,6 +19,7 @@ from maity_hub import (
     __version__,
     clock,
     handle_register,
+    handles,
     longpoll,
     moderation,
     namespace,
@@ -162,6 +163,12 @@ def _owner_create(
                     return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
                 if handle_register.taken(conn, handle):
                     return _fail(f"an organisation has the handle {handle!r}", EXIT_FAILURE)
+                handles.lock(conn, handles.HUMANS, handle)
+                if handles.holder(conn, handles.HUMANS, handle) is not None:
+                    return _fail(
+                        f"a human kept the handle {handle!r} as an alias",
+                        EXIT_FAILURE,
+                    )
                 conn.execute(insert(t.human).values(**values))
                 if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
                     raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
@@ -220,7 +227,7 @@ def _unsuspend(settings: Settings, handle: str) -> int:
         # A process without the app renders the page it brings back (docs: public-pages.md).
         public_pages.configure(settings)
         with engine.begin() as conn:
-            human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+            human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
             if human_id is None:
                 return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
             lifted = moderation.unsuspend(conn, human_id)

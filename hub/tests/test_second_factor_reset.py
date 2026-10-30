@@ -310,6 +310,24 @@ def test_requests_for_one_human_are_limited(
     second_factor_reset.BY_HUMAN._hits.clear()
 
 
+def test_the_operator_resets_by_an_alias_of_the_handle(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin, grace, _ = world(make_client, migrated, moment)
+    with migrated.begin() as conn:
+        conn.execute(
+            t.handle_alias.insert().values(
+                human_id=grace.id, scope="human", handle="old-grace", created_at=clock.now()
+            )
+        )
+    monkeypatch.setenv("MAITY_DATABASE_URL", migrated.url.render_as_string(hide_password=False))
+    assert cli_main(["second-factor", "reset", "--handle", "old-grace"]) == 0
+    assert factor(migrated, grace.id).secret is None
+
+
 def test_the_operator_resets_at_once(
     make_client: ClientFactory,
     migrated: Engine,

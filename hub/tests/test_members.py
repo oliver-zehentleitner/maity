@@ -48,6 +48,7 @@ def test_the_member_view_has_the_contract_shape(
         "id",
         "kind",
         "handle",
+        "aliases",
         "name",
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
@@ -291,6 +292,7 @@ def test_profiles_belong_to_their_human(
     assert set(body) == {
         "id",
         "handle",
+        "aliases",
         "name",
         "display_name",
         "avatar_url",

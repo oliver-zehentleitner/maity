@@ -1430,9 +1430,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/sample/why");
   expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line") && btn(main, "Read again"),
     "why: not configured, said so with what the hub reads");
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
   const tree = main.querySelector(".org-tree");
-  expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical"), "org tree by areas, policy preset, in the Overview");
+  const teamTabs = () => main.querySelectorAll("nav.team-tabs a");
+  expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical")
+    && JSON.stringify(teamTabs().map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("aria-current")]))
+      === JSON.stringify([["Members", "#/maintainer/maity/members", null], ["Organisation", "#/maintainer/maity/organisation", "page"]])
+    && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members").getAttribute("aria-current") === "page"
+    && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Organisation"),
+    "org tree by areas, policy preset, on the Team page's Organisation tab; the Members tab marked in the header, no tab of its own there");
+  await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector(".org-tree"), "org: no longer in the Overview");
+  await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+  expect(teamTabs().length === 2 && teamTabs()[0].getAttribute("aria-current") === "page", "members: the Team page's tabs, Members marked");
 
   // Presence is re-read in place in Members; an open row's form is kept.
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
@@ -1716,8 +1726,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const relMark = () => header.querySelector(".project-state .released");
   expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
     && relMark().getAttribute("title").includes("migrations stay backward compatible"), "released: the header marks a released project, the rules in its title");
-  await go("#/maintainer/sample/overview"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview shows the state and the mark");
+  await go("#/maintainer/sample/overview/project"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview's Project tab shows the state and the mark");
   await projectSettings(); await tick();
   expect(main.querySelector(".released-note") && text(main.querySelector(".released-note")).includes("for good"), "released: Project settings say it is never cleared");
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
@@ -1909,7 +1919,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(mRow("Agent C"), "Done").click(); await tick();
   win.Maity.api.patch = mPatch;
   // The organisation follows at once.
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
   const orgNode = (name) => main.querySelectorAll(".org-tree li").find((li) => li.querySelector(".org-node strong").textContent === name);
   expect(orgNode("Agent D").querySelector("ul") && text(orgNode("Agent D").querySelector("ul")).includes("Reviewer"), "members: the organisation shows the Reviewer under Agent D");
   // The mock refuses a circle as the hub does (docs/api.md §6.2, #118); a removal clearing reports_to is checked with the removal below.
@@ -2162,6 +2172,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const swGet = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p.includes("swarm")) swGets.push(p); return swGet(p); };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector("section.overview-swarm") && !swGets.length, "swarm: not on the Overview's Summary, and not read there");
+  await go("#/maintainer/maity/overview/swarm"); for (let k = 0; k < 6; k++) await tick();
   const swBox = () => main.querySelector("section.overview-swarm");
   const swLive = () => (swBox().querySelector("ul.swarm-live") || { childNodes: [] }).childNodes;
   const swLi = (id) => swLive().find((li) => li.attrs["data-member"] === id);
@@ -2195,11 +2207,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "swarm: the switch reads 7 days and draws them");
   // A redraw of the counts (a card changed) keeps the section as it is: no new read, the window kept.
   const swReads = swGets.length;
-  const swOverview = main.querySelector(".overview-counts");
   swFeed = [{ seq: 9990, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".overview-counts") !== swOverview && swBox() === swBefore && swGets.length === swReads && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true",
-    "swarm: the Overview's redraw keeps the section, its window and its read");
+  expect(!main.querySelector(".overview-counts") && swBox() === swBefore && swGets.length === swReads && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true",
+    "swarm: on its tab a card event draws no counts and keeps the section, its window and its read");
   // Project settings have no swarm switch.
   await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("swarm-public-select") && !main.querySelector("form.swarm-public-form") && !text(main).includes("Public swarm"), "swarm: no public switch in Project settings");
@@ -5396,6 +5407,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && Math.abs(Date.parse(decodeURIComponent(ovGets[0].split("=")[1])) - (Date.now() - 14 * 86400000)) < 60000,
     "overview: read once, with the board's 14-day window");
   const ovPart = (id) => main.querySelector("section.overview-part[aria-labelledby=\"" + id + "\"]");
+  // The tabs: Summary here, Swarm and Project each at their own address.
+  const ovTabs = () => main.querySelectorAll("nav.overview-tabs a");
+  expect(JSON.stringify(ovTabs().map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("aria-current")])) === JSON.stringify([
+    ["Summary", "#/maintainer/maity/overview", "page"], ["Swarm", "#/maintainer/maity/overview/swarm", null], ["Project", "#/maintainer/maity/overview/project", null]])
+    && !ovPart("overview-links") && !ovPart("overview-badge"), "overview: three tabs, Summary shown; the project's facts are not on it");
+  // Project: the facts and the README badge, without a read of the counts; its tab marked, the header's Overview too.
+  await go("#/maintainer/maity/overview/project"); for (let k = 0; k < 4; k++) await tick();
+  expect(ovGets.length === 1 && ovTabs()[2].getAttribute("aria-current") === "page" && ovTab().getAttribute("aria-current") === "page"
+    && main.querySelector(".overview-row-facts") && !ovPart("overview-board"), "overview: the Project tab reads no counts");
   const repoLink = ovPart("overview-links").querySelectorAll("a")[0];
   expect(repoLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity" && repoLink.getAttribute("rel") === "noopener noreferrer"
     && repoLink.getAttribute("target") === "_blank", "overview: the repository, linked in a new tab without an opener");
@@ -5414,6 +5434,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && ovBadge.querySelector(".overview-snippet code").getAttribute("tabindex") === "0" && ovBadge.querySelector(".overview-snippet code").getAttribute("aria-label")
     && ovBadge.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/settings"),
     "overview: the README badge's state, its snippet with Copy, and for an owner the way to change it");
+  // An unknown tab is Summary; back on it, the counts are read once more.
+  await go("#/maintainer/maity/overview/nothing"); for (let k = 0; k < 4; k++) await tick();
+  expect(ovGets.length === 2 && ovTabs()[0].getAttribute("aria-current") === "page" && ovPart("overview-board"), "overview: an unknown tab shows Summary");
+  ovGets.length = 0;
+  await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
   // The team: per role, member chips (the designer's layout); All members at the head's end.
   const ovChips = ovPart("overview-members").querySelectorAll("a.member-chip");
   const ovOwner = ovChips.find((a) => a.getAttribute("data-member") === "hum-maintainer");
@@ -5442,12 +5467,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ovRows = main.querySelectorAll(".overview-row").map((row) => row.querySelectorAll(".overview-part").map((x) => x.getAttribute("aria-labelledby")).join("+"));
   const ovStack = main.querySelector(".overview-row-2 .overview-stack");
   const ovBar = ovPart("overview-board").querySelector(".overview-bar");
-  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-links+overview-badge+overview-reports", "overview-swarm", "overview-org"])
-    && ovStack && ovStack.childNodes.map((x) => x.getAttribute("aria-labelledby")).join("+") === "overview-members+overview-links+overview-badge"
+  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-reports"])
+    && ovStack && ovStack.childNodes.map((x) => x.getAttribute("aria-labelledby")).join("+") === "overview-members"
     && ovStack.parentNode.childNodes[1] === ovPart("overview-reports")
     && ovBar && ovBar.getAttribute("role") === "img" && ovBar.getAttribute("aria-label").includes(ov.board.counts.in_progress + " in progress")
     && main.querySelectorAll(".overview-head").every((hd) => !hd.childNodes[0].querySelector("a")),
-    "overview: four rows, what needs you first, Project and README badge under Team before Latest reports, then the swarm, the organisation last; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
+    "overview: Summary in two rows, what needs you first, then Team beside Latest reports; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
   // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
   ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
@@ -5466,19 +5491,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         reported_at: "2026-10-22T13:10:00Z", code: true, verification: "signed", pr: { number: 9, url: "javascript:alert(1)" }, pr_state: "merged", observed_at: null, mismatch: true }] })
     : p === "/projects/maintainer/maity" ? ovGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : ovGet(p));
   await go("#/maintainer/maity/overview");
-  expect(text(ovPart("overview-board")).includes("No cards yet.") && text(ovPart("overview-requests")).includes("Nothing waits for an answer.")
-    && text(ovPart("overview-links")).includes("No repository.") && text(ovPart("overview-links")).includes("No Keep the Why dashboard is published.")
-    && text(ovPart("overview-links")).includes("dashboard-state line"), "overview: empty states, and for an owner where the Keep the Why link comes from");
+  expect(text(ovPart("overview-board")).includes("No cards yet.") && text(ovPart("overview-requests")).includes("Nothing waits for an answer."), "overview: empty states");
   const badPr = ovPart("overview-reports").querySelector("li");
   expect(!badPr.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").startsWith("javascript")) && text(badPr).includes("PR #9 merged")
     && text(badPr).includes("does not match what was reported"), "overview: a pull request URL that is no https link stays text; a mismatch is said");
+  await go("#/maintainer/maity/overview/project");
+  expect(text(ovPart("overview-links")).includes("No repository.") && text(ovPart("overview-links")).includes("No Keep the Why dashboard is published.")
+    && text(ovPart("overview-links")).includes("dashboard-state line"), "overview: the Project tab's empty states, and for an owner where the Keep the Why link comes from");
   btn(ovPart("overview-links"), "Set the repository").click(); win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
   expect(onSettings() && main.all().some((e) => e.id === "project-panel") && byId("repo-url"), "overview: Set the repository opens the Settings tab at the repository");
-  // A failed read of the counts (404 or 500): links and members still, the failure said where the counts would be.
+  // A failed read of the counts (404 or 500): the team still, the failure said where the counts would be.
   for (const [status, code] of [[404, "not_found"], [500, "internal"]]) {
     win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("down", status, p, code, {})) : ovGet(p));
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview");
-    expect(ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
+    expect(ovPart("overview-members") && !ovPart("overview-board")
       && main.querySelector(".send-status.failed") && text(main).includes("The counts could not be read: down"),
       "overview: a " + status + " is said as an error, the rest stays");
   }

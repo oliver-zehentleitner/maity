@@ -29,6 +29,8 @@ window.Maity = window.Maity || {};
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
     { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
+    // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
+    { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },

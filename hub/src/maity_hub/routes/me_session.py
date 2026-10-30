@@ -20,6 +20,7 @@ from maity_hub import (
     environment,
     events,
     group_chats,
+    handles,
     idempotency,
     instances,
     ktw_skill,
@@ -164,6 +165,7 @@ class MePatch(Strict):
 
     paused: PausedIn | None = None
     meat_proxy: StrictBool | None = None
+    handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
     meat_proxy_lead: StrictBool | None = None
     meat_proxy_hands: StrictBool | None = None
     public_profile: StrictBool | None = None
@@ -711,13 +713,18 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             body.meat_proxy is None
             and all(v is None for v in parts.values())
             and not (public or links)
+            and body.handle is None
         ):
-            raise invalid({"meat_proxy": "required"}, "nothing to change")
+            raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
             raise invalid(
                 {"meat_proxy": "conflicts_with_parts"}, "off, and a part on, in one request"
             )
         assert caller.human_id is not None
+        if body.handle is not None:  # a human renames themselves (§6.24)
+            done = handles.rename(conn, caller.human_id, None, body.handle)
+            if done is not None:
+                handles.announce(conn, caller, caller.human_id, None, *done)
         values: dict[str, Any] = {}
         # §5.2, "Meat proxy": the switch first (it sets both parts), then each part given.
         if body.meat_proxy is not None or any(v is not None for v in parts.values()):
@@ -767,7 +774,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             changed = any(
                 getattr(current, name) != values[name] for name in values if name in LINKS
             )
-        conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
+        if values:
+            conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
         if changed:  # an edit that stores what was there is no news to the projects
             person_links.announce(conn, caller.human_id)
         if public or links_given:
@@ -780,6 +788,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def action(conn: Connection) -> idempotency.Outcome:
         if any(field in given for field in HUMAN_FIELDS):
             raise humans_only("only a human sets their own profile")
+        if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
+            raise humans_only("only the owner of an agent profile renames its handle")
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
