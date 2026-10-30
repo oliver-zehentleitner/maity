@@ -668,7 +668,7 @@ def test_an_undecided_account_goes_after_thirty_days(
         conn.execute(
             update(t.account_registration).values(expires_at=clock.now() - timedelta(seconds=1))
         )
-    worker = registration_accounts.Worker(migrated, "https://hub.example", interval=0.05)
+    worker = registration_accounts.Worker(migrated, settings_for(), interval=0.05)
     worker.start()
     try:
         for _ in range(100):
@@ -709,6 +709,13 @@ def test_a_waiting_registration_is_the_admins_inbox_item_until_decided(
 # --- the mails of a decision (§2.7.5, §16.2) --------------------------------------------------
 
 
+def _with_mail(make_client: ClientFactory, admin: flow.Human) -> flow.Human:
+    """The instance admin on a hub whose mail is complete and enabled."""
+    client = make_client(mail=settings_for().mail)
+    client.post("/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD})
+    return flow.Human(client, client.get("/api/v1/auth/session").json()["csrf_token"], admin.id)
+
+
 def _mailed(engine: Engine, address: str) -> list[Any]:
     with engine.connect() as conn:
         return list(
@@ -725,7 +732,9 @@ def test_an_approval_mails_the_login_link_and_writes_the_record(
 ) -> None:
     done, _ = pending_account(make_client, migrated)
     before = len(_mailed(migrated, "ada@example.com"))
-    assert admin.post(f"{ADMIN}/{done.human_id}/approve").status_code == 200
+    assert (
+        _with_mail(make_client, admin).post(f"{ADMIN}/{done.human_id}/approve").status_code == 200
+    )
     [mail] = _mailed(migrated, "ada@example.com")[before:]
     assert (mail.kind, mail.human_id) == ("security", done.human_id)
     assert mail.subject == "[Maity] Your Maity account is approved"
@@ -745,12 +754,15 @@ def test_a_rejection_mails_the_reason_to_an_account_that_is_gone(
 ) -> None:
     done, _ = pending_account(make_client, migrated)
     before = len(_mailed(migrated, "ada@example.com"))
-    rejected = admin.post(f"{ADMIN}/{done.human_id}/reject", {"reason": "Not a team member."})
+    rejected = _with_mail(make_client, admin).post(
+        f"{ADMIN}/{done.human_id}/reject", {"reason": "Not a team member, see www.x.org"}
+    )
     assert rejected.status_code == 200, rejected.text
     [mail] = _mailed(migrated, "ada@example.com")[before:]
     assert (mail.kind, mail.human_id) == ("security", None)  # the account is deleted
     assert mail.subject == "[Maity] Your Maity account was not approved"
-    assert "Not a team member." in mail.body and "30 days" in mail.body
+    assert "Not a team member" in mail.body and "30 days" in mail.body
+    assert "www.x.org" not in mail.body  # the operator's words make no link (§18.5)
     assert "https://hub.example" in mail.body
 
 
@@ -763,7 +775,20 @@ def test_an_expiry_mails_that_it_was_not_approved_in_time(
         conn.execute(
             update(t.account_registration).values(expires_at=clock.now() - timedelta(seconds=1))
         )
-        assert registration_accounts.expire(conn, "https://hub.example") == 1
+        assert registration_accounts.expire(conn, settings_for()) == 1
     [mail] = _mailed(migrated, "ada@example.com")[before:]
     assert mail.subject == "[Maity] Your Maity account was not approved in time"
     assert "not approved in time" in mail.body and "reason" not in mail.body
+
+
+def test_without_mail_a_decision_queues_no_mail(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, claims: dict[str, str]
+) -> None:
+    """A mail held until mail is switched on could arrive weeks after the decision."""
+    first, _ = pending_account(make_client, migrated)
+    second, _ = pending_account(make_client, migrated, "bob@example.com", "bob")
+    before = len(_mailed(migrated, "ada@example.com")), len(_mailed(migrated, "bob@example.com"))
+    assert admin.post(f"{ADMIN}/{first.human_id}/approve").status_code == 200  # a hub without mail
+    assert admin.post(f"{ADMIN}/{second.human_id}/reject", {"reason": "No."}).status_code == 200
+    after = len(_mailed(migrated, "ada@example.com")), len(_mailed(migrated, "bob@example.com"))
+    assert after == before

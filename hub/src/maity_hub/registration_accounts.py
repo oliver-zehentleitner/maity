@@ -320,7 +320,7 @@ def locked(conn: Connection, human_id: str) -> Any:
     ).first()
 
 
-def approve(conn: Connection, row: Any, by: str, public_url: str) -> None:
+def approve(conn: Connection, row: Any, by: str, hub: Any) -> None:
     now = clock.now()
     conn.execute(
         update(t.human).where(t.human.c.id == row.human_id).values(account_status="active")
@@ -338,10 +338,12 @@ def approve(conn: Connection, row: Any, by: str, public_url: str) -> None:
     if row.address:
         _mail(
             conn,
+            hub,
             row.address,
             row.human_id,
             "[Maity] Your Maity account is approved",
-            f"Your Maity account on {public_url} is approved.\n\n" f"Sign in: {public_url}/login\n",
+            f"Your Maity account on {hub.public_url} is approved.\n\n"
+            f"Sign in: {hub.public_url}/login\n",
         )
 
 
@@ -351,7 +353,7 @@ def remove(
     status: str,
     by: str | None,
     reason: str | None,
-    public_url: str,
+    hub: Any,
 ) -> None:
     """Delete the pending account with its sessions and block its address for 30 days:
     a rejection (`by`, `reason`) or an expiry (§2.7.5). The row keeps the decision and
@@ -379,15 +381,18 @@ def remove(
         )
     )
     if row.address:  # the address was read before the row forgot it
-        _mail(conn, row.address, None, *_ending(status, reason, public_url))
+        _mail(conn, hub, row.address, None, *_ending(status, reason, hub.public_url))
 
 
 def _ending(status: str, reason: str | None, public_url: str) -> tuple[str, str]:
     """Subject and body of the mail that tells the person their pending account is gone
     (§2.7.5): the operator's `reason` on a rejection, as plain text (§18.5); "was not
     approved in time" on an expiry. Neither says more about the instance than its address."""
+    from maity_hub.notifications.mailer import quoted
+
     if status == "rejected":
-        why = f"The operator gave this reason:\n\n{reason}\n\n" if reason else ""
+        # The operator's words, defanged: the hub's own address is the only link (§18.5).
+        why = f"The operator gave this reason: {quoted(reason)}\n\n" if reason else ""
         return (
             "[Maity] Your Maity account was not approved",
             f"Your request for a Maity account on {public_url} was not approved, and the "
@@ -402,12 +407,17 @@ def _ending(status: str, reason: str | None, public_url: str) -> tuple[str, str]
     )
 
 
-def _mail(conn: Connection, to: str, human_id: str | None, subject: str, body: str) -> None:
+def _mail(
+    conn: Connection, hub: Any, to: str, human_id: str | None, subject: str, body: str
+) -> None:
     """A security mail of registration (§2.7.5, §16.2), in the caller's transaction: it goes
     out only if the decision commits. Security mail is never dropped over its budget; it
-    waits for the next hour."""
+    waits for the next hour. Without mail (not complete or not enabled) nothing is queued:
+    a mail held until mail is switched on could arrive weeks after the decision."""
     from maity_hub.mail import outbox
 
+    if not registration.mail_ready(conn, hub):
+        return
     outbox.enqueue(conn, kind="security", to=to, human_id=human_id, subject=subject, body=body)
 
 
@@ -432,7 +442,7 @@ def block(conn: Connection, normalized: str, until: Any) -> None:
         )
 
 
-def expire(conn: Connection, public_url: str) -> int:
+def expire(conn: Connection, hub: Any) -> int:
     """Delete every pending account nobody decided on within 30 days (§2.7.5)."""
     now = clock.now()
     due = conn.execute(
@@ -445,7 +455,7 @@ def expire(conn: Connection, public_url: str) -> int:
     for human_id in list(due):
         row = locked(conn, human_id)
         if row is not None and row.status == "pending" and row.expires_at <= now:
-            remove(conn, row, "expired", None, None, public_url)
+            remove(conn, row, "expired", None, None, hub)
             count += 1
     return count
 
@@ -457,9 +467,9 @@ class Worker:
     """Runs `expire` in the background: an undecided account goes after 30 days whether
     or not an instance admin looks (§2.7.5)."""
 
-    def __init__(self, engine: Engine, public_url: str, interval: float | None = None) -> None:
+    def __init__(self, engine: Engine, hub: Any, interval: float | None = None) -> None:
         self.engine = engine
-        self.public_url = public_url
+        self.hub = hub
         self.interval = INTERVAL if interval is None else interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -477,6 +487,6 @@ class Worker:
         while not self._stop.wait(self.interval):
             try:
                 with self.engine.begin() as conn:
-                    expire(conn, self.public_url)
+                    expire(conn, self.hub)
             except Exception:
                 log.exception("the registration expiry sweep failed")

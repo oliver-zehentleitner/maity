@@ -788,7 +788,12 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     flow.project(owner)
     made = owner.post(
         "/projects/maintainer/maity/invitations",
-        {"address": "new@example.org", "trust": "member", "role": "reviewer", "note": "Hi!"},
+        {
+            "address": "new@example.org",
+            "trust": "member",
+            "role": "reviewer",
+            "note": "Hi! See https://evil.example",
+        },
     )
     assert made.status_code == 201, made.text
     [mail] = [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"]
@@ -796,6 +801,7 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
     for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
         assert shown in mail.body, shown
+    assert "https://evil.example" not in mail.body and "evil[.]example" in mail.body  # §18.5
     unbound = owner.post("/projects/maintainer/maity/invitations", {})
     assert unbound.status_code == 201
     assert len([r for r in outbox_rows(migrated) if r.subject == mail.subject]) == 1

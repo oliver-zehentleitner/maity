@@ -6,7 +6,8 @@ commits, on the security budget (§16.2): over it the mail waits for the next ho
 Without mail (not complete or not enabled) nothing is queued and the inviter passes the `url` on,
 as the contract says. Plain text, in English, with the inviter's display name, the project's name,
 the trust and role, the `note` and the link; the address may belong to nobody on the hub yet, so
-the mail names no account. Tests replace `send` to see what would go out.
+the mail names no account, and it is tied to an account only where one holds the address. Tests
+replace `send` to see what would go out.
 """
 
 from __future__ import annotations
@@ -39,7 +40,15 @@ def send(conn: Connection, *, invitation_id: str, to: str, url: str, hub: Any) -
         url=url,
         expires_at=invitation.expires_at,
     )
-    outbox.enqueue(conn, kind="security", to=to, subject=subject, body=body)
+    # An account that holds this address as verified: the mail is tied to it, so a disabled
+    # address stops it as any of that account's mail (§18.7). Most often there is none yet.
+    holder = conn.execute(
+        select(t.notification_settings.c.human_id).where(
+            t.notification_settings.c.address_normalized == registration.normalized(to),
+            t.notification_settings.c.address_status.in_(("verified", "disabled")),
+        )
+    ).scalar()
+    outbox.enqueue(conn, kind="security", to=to, human_id=holder, subject=subject, body=body)
 
 
 def text(
@@ -54,9 +63,13 @@ def text(
     url: str,
     expires_at: Any,
 ) -> tuple[str, str]:
-    """Subject and body of the invitation's mail. The `note` is the inviter's own words, plain
-    text, never made into a link (§18.5)."""
-    said = f"{inviter} wrote:\n\n{note}\n\n" if note else ""
+    """Subject and body of the invitation's mail. What the hub did not write (the inviter's
+    name, the project's name, the `note`) is defanged, so that no mail client makes a link of
+    it: the only links are the hub's own (§18.5)."""
+    from maity_hub.notifications.mailer import defang, quoted
+
+    inviter, project_name = defang(inviter), defang(project_name)
+    said = f"{inviter} wrote: {quoted(note)}\n\n" if note else ""
     return (
         f"[Maity] {inviter} invites you to {project_name}",
         f"{inviter} invites you to the Maity project {project_name} ({full_name}) on "
