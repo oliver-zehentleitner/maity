@@ -273,3 +273,31 @@ repository's URL is a leak that cannot be taken back from a crawler.
   outage on the instance's side would otherwise leave a URL on the page that turned private meanwhile.
 - The visibility read last in the sweep, like the other reads: the sweep ends at the first read the forge does
   not answer, so a repository that turned private could stay on the page for as long as any other read failed.
+
+## A page that shows people is rendered again with them, through dependents and the member events
+
+**Id:** dd4a04fc-9382-4966-b77e-0d9aba7c9fcb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("A project's page", "How the pages are made"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** a page shows a fact of a person that no event of a membership or of the person's page announces
+
+A project's page lists the human members whose own profile is public (a link to their page) and the agents
+whose owner's is, and counts the other agents (`public_projects.team`). Two things keep that true. A person's
+page and the project pages that show them change together: a kind may name its `dependents`, and `touch` of a
+person renders those project pages with the person (a profile going private or public, a bio, a suspension, a
+deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
+`member_joined` (an addition: it waits for the run under `interval`) or a `member_updated` (a removal, an
+agent profile deleted among them) when the project's page is on, so the many places that add or remove a
+member need no call of their own.
+
+**Reason:** the places that change a membership are a dozen, the events they all write are the one thing they
+share; and a person's profile is shown on pages they have no event on.
+
+**Rejected alternatives:**
+- A call in each place that adds or removes a member: a dozen places, and the next one forgets.
+- Reading the people when the page is served: the contract stores the page and takes a person off in the
+  transaction that changed it, not on the next request.
+- Re-rendering every public project when any profile changes: a profile touches the pages of the projects its
+  person (or their agents) belongs to, and only those.
