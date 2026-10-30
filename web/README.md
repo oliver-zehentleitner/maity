@@ -609,9 +609,8 @@ too.
      chats too.
    **Attachments** (`docs/api.md` §8.7, `js/attachments.js`) go with a
    message in a direct chat, a group chat and a project message.
-   - **Attaching.** Offered only where the hub's `openapi.json` lists
-     `POST /projects/{owner}/{slug}/attachments`, and hidden once the hub answered
-     404 to the pending list. **Attach files** uploads each chosen file at once as
+   - **Attaching.** Offered, except once the hub answered
+     `409 attachments_not_configured` (off on the instance, below). **Attach files** uploads each chosen file at once as
      its raw body (`POST …/attachments?name=`), an image with the type
      its bytes say. The file shows as pending with **Remove** until the
      message is sent and names it. A message may be only files. One's

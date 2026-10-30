@@ -3976,7 +3976,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/requests" ? Promise.resolve({ items: [], next_cursor: null }) : npGetAll(p));
   await go("#/new"); await go("#/all"); await tick();
   expect(text(main).includes("No projects yet") && !main.querySelector("li.entry") && !text(main).includes("Nothing waits for you")
-    && !text(main).includes("Waiting for you") && win.Maity.notify.state.available !== false,
+    && !text(main).includes("Waiting for you"),
     "no project and nothing personal: only the empty state");
   win.Maity.api.getAll = npGetAll;
   const createLink = main.querySelectorAll("a").find((a) => a.textContent === "Create a project");
@@ -6538,9 +6538,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
-  const oldAvailable = win.Maity.notify.state.available;
   delete win.Notification;
-  win.Maity.notify.state.available = true;
   for (const mail of [false, true]) {
     let setting = { email: { language: "en", address: null }, mail_available: mail };
     const writes = [];
@@ -6555,7 +6553,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(part.el).includes("Personal language saved."), "language: saves independently of mail=" + mail);
   }
   if (oldNotification) win.Notification = oldNotification;
-  win.Maity.notify.state.available = oldAvailable;
   win.Maity.api.patch = languagePatch;
   win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/projects/maintainer/maity/members"
     ? { ...value, items: value.items.map((m) => ({ ...m, language: "de" })).concat([

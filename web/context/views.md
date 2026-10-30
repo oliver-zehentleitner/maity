@@ -519,7 +519,8 @@ is only the signal: the view reads its own listing after the newest item
 it shows (`after=`, oldest first, page by page), with the same filters,
 and puts what it has not shown on top. Every read belongs to one filter
 set, and an answer that arrives after the filters changed is dropped. A
-404 means "no ticker" only when the hub's `openapi.json` lacks the path. Reasons are shown as
+404 is an error (until 2026-10-30 it meant "no ticker" when the hub's
+`openapi.json` lacked the path, e1699490). Reasons are shown as
 words ("you own hub/", "you implement §13"), not as the API's tokens. A
 manual post to everyone asks first, since it wakes every member who has
 not muted it.
