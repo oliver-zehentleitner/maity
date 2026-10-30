@@ -18,7 +18,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit
-from maity_hub.scopes import has_scope, in_admin_team
+from maity_hub.scopes import counts_as, has_scope, in_admin_team
 
 HELD = ("in_progress", "blocked", "review")  # the cards a member holds that cover moves
 
@@ -45,9 +45,10 @@ def _handle(conn: Connection, row: Any) -> str:
 
 def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     """The policy's `substitutes`, expanded: `role:<role>` is that role's agent members by
-    handle, `trust:admin` the admin agents (§2.3), a human only when named; never the
-    member itself, each once. Every entry is checked again as it stands now: one that
-    has become a guest or a proxy since the policy was set does not cover (§6.12)."""
+    handle, a security team counted as the role it is built on, `trust:admin` the admin
+    agents (§2.3), a human only when named; never the member itself, each once. Every
+    entry is checked again as it stands now: one that has become a guest or a proxy since
+    the policy was set does not cover (§6.12)."""
     from maity_hub import availability
 
     members = conn.execute(
@@ -60,7 +61,7 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     for entry in availability.policy_of(row)["substitutes"]:
         if entry.startswith("role:"):
             role = entry.removeprefix("role:")
-            agents = [m for m in members if m.agent_id and m.role == role]
+            agents = [m for m in members if m.agent_id and role in (m.role, counts_as(m.role))]
             order += sorted(agents, key=lambda m: _handle(conn, m))
         elif entry == "trust:admin":
             agents = [m for m in members if m.agent_id and in_admin_team(m.trust, m.role)]
