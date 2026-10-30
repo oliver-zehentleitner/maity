@@ -11813,7 +11813,11 @@ here: the content lives in the database, written by the instance admin,
 never in the repository, so the code stays the same for everyone and
 the hosted instance's words are the operator's. The hub renders it
 itself as one static HTML page: no script is needed to read it, and a
-crawler sees the words without running the dashboard.
+crawler sees the words without running the dashboard. Its look — the
+template, colours, fonts, the hero's rings, the motion — is code, the
+same for every instance; a small first-party script improves the page
+(motion, the demo's typing, the theme switch) and is never needed to
+read or use it (**progressive enhancement**, below).
 
 ```
 GET, PATCH /admin/settings/landing
@@ -11841,7 +11845,9 @@ fixed and not sections. The types and their fields:
 | `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
-| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always |
+| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
+| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the last line, and the steps are shown at once |
+| `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
@@ -11920,7 +11926,8 @@ all languages.
   max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
   language: `?lang=<tag>` if offered, else the best match of
   `Accept-Language`, else `default_language`; a missing field falls
-  back to the default language's page. It carries no script. With a
+  back to the default language's page. It loads only the first-party
+  files of **progressive enhancement** (below). With a
   valid session, or while the landing page is disabled, `GET /` is the
   app shell (§16.11): the dashboard's home with a session, the login
   page without. `/login` and `/register` are always the app shell, the
@@ -11929,10 +11936,35 @@ all languages.
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
-- **Content security.** The landing page carries no script and answers
-  with `Content-Security-Policy: default-src 'none'; style-src
-  'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors
-  'none'`; the legal pages (§16.7.1) carry no script either and
+- **Progressive enhancement.** The page references three kinds of
+  files from the hub's own code, the same for every instance and never
+  from the database: `/assets/landing/landing.css`,
+  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB)
+  and the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
+  under their OFL licences, `font-display: swap`). Their URLs carry
+  `?v=<digest>` of the file and are answered with `Cache-Control:
+  public, max-age=31536000, immutable`. The hero's rings and other
+  pictures of the design are inline SVG in the template. The page is
+  complete without the script: all text is in the HTML, every section
+  shows its end state, and the FAQ opens without it. The script only
+  adds motion (ring rotation, the demo's typing, counters), the
+  theme switch (`data-theme` on the root, remembered in the visitor's
+  browser, never sent to the hub; the switch is in the HTML with its
+  label in the page's language and `hidden` until the script shows it,
+  and without script the page follows `prefers-color-scheme`) and
+  nothing else: it reads only the
+  page's own DOM, makes no request, and never turns database content
+  into HTML or script. Under `prefers-reduced-motion: reduce` there is
+  no motion and every animated element shows its end state.
+- **Content security.** The landing page answers
+  with `Content-Security-Policy: default-src 'none'; script-src
+  'self'; style-src 'self' 'unsafe-inline'; img-src 'self';
+  font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
+  'none'; frame-ancestors 'none'`, so it runs only scripts from the
+  hub's own origin and loads nothing from elsewhere; `img-src 'self'`
+  covers the instance's logo and favicon, the design's pictures are
+  inline SVG. The preview of a draft (below) answers with the same
+  policy. The legal pages (§16.7.1) carry no script and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
   documents only.
@@ -11942,9 +11974,11 @@ all languages.
 - **Search engines.** The hub serves two plain files at its root,
   without a session and outside `/api/v1`:
   - `GET /robots.txt` (`text/plain`): while the landing page is
-    enabled, `User-agent: *`, then `Allow:` for the root (`/$`) and for
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
     the legal pages that are set (`/impressum$`, `/privacy$`,
-    `/terms$`, §16.7.1), then `Disallow: /` and a `Sitemap:` line with
+    `/terms$`, §16.7.1) and for `/assets/landing/` (so a crawler that
+    renders the page may fetch its style, script and fonts), then
+    `Disallow: /` and a `Sitemap:` line with
     the absolute URL of `/sitemap.xml` built from `MAITY_PUBLIC_URL`.
     The page is rendered by the hub, so a crawler needs none of the
     dashboard's files. While the landing page is not enabled,
@@ -11958,8 +11992,9 @@ all languages.
     for every reserved first segment of §16.11 but the three legal pages
     (`impressum`, `privacy`, `terms`, which stay open as above) the two
     lines `Disallow: /<segment>/` and `Disallow: /<segment>$` (so a
-    handle such as `login-help` is not caught by `/login`), then
-    `Allow: /`; whatever else a
+    handle such as `login-help` is not caught by `/login`), while the
+    landing page is enabled `Allow: /assets/landing/` (the longer path
+    wins over `Disallow: /assets/`), then `Allow: /`; whatever else a
     crawler fetches that is not a public page is the app shell, which
     answers `X-Robots-Tag: noindex` (§16.11). The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
@@ -12604,7 +12639,13 @@ default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
-is the web owner's to settle in `web/`. Only the built files under
+is the web owner's to settle in `web/`. `/assets/landing/` holds the
+landing page's own files (§16.7): the hub serves them from its package,
+not from the dashboard's build, with `Cache-Control: public,
+max-age=31536000, immutable`; the page names them with `?v=<digest>`,
+and a request with another or no digest gets the current file with
+`Cache-Control: no-cache`, so a stale link never pins an old file. Only
+the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
 (`web/fixtures/`, `web/tools/`) are never reachable — such a path gets
