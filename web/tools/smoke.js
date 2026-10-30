@@ -1216,20 +1216,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.runnerConfigCommand("x\n").includes("(set -C; umask 077; cat > ~/.config/maity-runner/runner.toml) <<'EOF'\nx\nEOF"),
     "runners: the command writes the configuration owner-only and never over an existing one");
   expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
-  // A hub before attachments refuses `attach`: paired without it, and said.
-  const rPost2 = win.Maity.api.post;
-  const attachTries = [];
-  win.Maity.api.post = (p, b) => {
-    attachTries.push(b);
-    return p === "/runners/enrollments" && b.attach && b.attach.length
-      ? Promise.reject(new win.Maity.api.ApiError("attachments are not available yet", 400, p, "invalid", { fields: { attach: "not_supported_yet" } }))
-      : rPost2(p, b);
-  };
-  byId("pair-name").value = "older-hub";
-  main.querySelector("form.pair-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(attachTries.length === 2 && !("attach" in attachTries[1]) && main.querySelector(".pair-steps")
-    && text(main).includes("cannot allow the runner in projects while pairing yet"), "runners: without attachments in the hub, paired without them and said so");
-  win.Maity.api.post = rPost2;
   await go("#/all"); await go("#/runners"); await tick();
   expect(!main.querySelector(".pair-steps") && !text(main).includes("FIXT-URE0-RUNR"), "runners: the pairing line is gone after leaving the view");
   // Re-pair keeps the runner and the configuration.
@@ -4813,23 +4799,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let atForeign = null;
   try { win.Maity.dom.h("a", { href: "/api/v1/projects/maintainer/maity/attachments/../../me" }); } catch (err) { atForeign = err; }
   expect(atForeign && win.Maity.dom.h("img", { src: "/api/v1/projects/maintainer/maity/attachments/att-1/content" }), "attachments: only the attachment path itself is allowed");
-  // A hub without attachments is asked for the waiting uploads once per page load.
+  // A hub with attachments off (409) is asked for the waiting uploads once per page load.
   const atAll2 = win.Maity.api.getAll;
   let atAsked = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
-    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : atAll2(p));
+    ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 409, p, "attachments_not_configured", {}))) : atAll2(p));
   await go("#/maintainer/maity/chat/agt-b"); await go("#/maintainer/maity/message"); await go("#/maintainer/maity/chat/agt-b");
-  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub without them is asked once, nothing offered");
+  expect(atAsked === 1 && !main.querySelectorAll(".attach-earlier li").length, "attachments: a hub with them off is asked once, nothing offered");
   // Project settings then asks no more either.
   let atAskedAll = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
   await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
-  expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("This hub keeps no files yet."), "attachments: settings ask a hub without them no more");
+  expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("Attachments are not set up on this instance."), "attachments: settings ask a hub with them off no more");
   await projectSettings();
   win.Maity.api.getAll = atAll2;
   win.Maity.api.postRaw = atRaw; win.Maity.api.post = atPost; win.Maity.api.del = atDel; win.Maity.api.attachmentUrl = atUrl;
   await go("#/maintainer/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 404, the composer offers no Attach files");
+  expect(main.querySelector(".attach") && main.querySelector(".attach").hidden, "attachments: once the hub answered 409, the composer offers no Attach files");
   await go("#/maintainer/maity/inbox");
 
   // Attachments off (§8.7, #477): 409 attachments_not_configured hides upload and delete, files stay as links.

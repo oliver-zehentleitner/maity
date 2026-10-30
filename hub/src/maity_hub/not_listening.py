@@ -145,10 +145,26 @@ def _announce(
     )
 
 
+def _owner_wants_requests(conn: Connection, member: Any) -> bool:
+    """Only an owner under `not_listening.mode: inbox` hears of an episode as a request
+    (§5.3, §18.4); `bell` has the digest's bell item instead, and `off` hears nothing."""
+    from maity_hub.notifications import preferences
+
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
+    ).scalar()
+    if owner is None:
+        return False
+    return bool(preferences.preferences(conn, owner)["not_listening"]["mode"] == "inbox")
+
+
 def _notice(
     conn: Connection, member: Any, credential: Any, session: Any, oldest_at: datetime
-) -> str:
+) -> str | None:
     from maity_hub.routes.requests import file_hub_notice
+
+    if not _owner_wants_requests(conn, member):
+        return None
 
     handle = conn.execute(
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == member.agent_id)
