@@ -30,8 +30,9 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
+from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
@@ -941,6 +942,17 @@ def _refuse_unless_open(row: Any) -> None:
         )
 
 
+def _step_up_for_a_transfer(
+    conn: Connection, request: Request, caller: Caller, row: Any, body: Any
+) -> None:
+    """The `go` that moves a project is as sensitive as the transfer that asked for it
+    (§2.8.4); a `no` changes nothing and is not asked."""
+    from maity_hub import project_names
+
+    if body.reply_id == "go" and (row.proposal or {}).get("kind") == project_names.KIND:
+        second_factor.require_step_up(conn, settings_of(request), caller)
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/answer")
 def answer(
     slug: str, request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
@@ -974,6 +986,7 @@ def answer(
         if inbox.is_asker(row, mine):
             raise _self_answer()
         _check_answer(row, body)
+        _step_up_for_a_transfer(conn, request, caller, row, body)
         conversation_id = None
         if body.talk:
             conversation_id = _talk_allowed(conn, row, caller)
@@ -1842,6 +1855,7 @@ def answer_personal(
         _refuse_unless_open(row)
         proposals.require_known(row)
         _check_answer(row, body)
+        _step_up_for_a_transfer(conn, request, caller, row, body)
         if (row.proposal or {}).get("kind") == "preferences":
             row = _preference_edit(conn, row, body)
         conversation_id = _talk_allowed(conn, row, caller) if body.talk else None

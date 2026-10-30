@@ -88,6 +88,8 @@ window.Maity = window.Maity || {};
   const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
+  // Read by js/ids.js: an id after one of them names no project.
+  M.reservedFirst = OWN_WORDS;
 
   // Throws URIError on a malformed escape; called inside render's try.
   function parseRoute() {
