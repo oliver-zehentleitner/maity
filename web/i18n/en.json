@@ -318,13 +318,34 @@
   "overview.badge.snippet": "Badge snippet for the README",
   "overview.badge.states": "Badge",
   "overview.badge.title": "README badge",
-  "overview.bar.blocked": "{count} blocked",
-  "overview.bar.cancelled": "{count} cancelled",
-  "overview.bar.done": "{count} done",
-  "overview.bar.in_progress": "{count} in progress",
-  "overview.bar.open": "{count} open",
-  "overview.bar.proposed": "{count} proposed",
-  "overview.bar.review": "{count} review",
+  "overview.bar.blocked": {
+    "one": "{count} blocked",
+    "other": "{count} blocked"
+  },
+  "overview.bar.cancelled": {
+    "one": "{count} cancelled",
+    "other": "{count} cancelled"
+  },
+  "overview.bar.done": {
+    "one": "{count} done",
+    "other": "{count} done"
+  },
+  "overview.bar.in_progress": {
+    "one": "{count} in progress",
+    "other": "{count} in progress"
+  },
+  "overview.bar.open": {
+    "one": "{count} open",
+    "other": "{count} open"
+  },
+  "overview.bar.proposed": {
+    "one": "{count} proposed",
+    "other": "{count} proposed"
+  },
+  "overview.bar.review": {
+    "one": "{count} review",
+    "other": "{count} review"
+  },
   "overview.board.cards": {
     "one": "{count} card",
     "other": "{count} cards"
@@ -348,10 +369,22 @@
   "overview.pr.closed": "closed without merge",
   "overview.pr.merged": "merged",
   "overview.pr.open": "open",
-  "overview.prio.high": "{count} high",
-  "overview.prio.low": "{count} low",
-  "overview.prio.normal": "{count} normal",
-  "overview.prio.urgent": "{count} urgent",
+  "overview.prio.high": {
+    "one": "{count} high",
+    "other": "{count} high"
+  },
+  "overview.prio.low": {
+    "one": "{count} low",
+    "other": "{count} low"
+  },
+  "overview.prio.normal": {
+    "one": "{count} normal",
+    "other": "{count} normal"
+  },
+  "overview.prio.urgent": {
+    "one": "{count} urgent",
+    "other": "{count} urgent"
+  },
   "overview.project.contract": "Contract",
   "overview.project.no_repository": "No repository.",
   "overview.project.no_why": "No Keep the Why dashboard is published.",
@@ -370,16 +403,20 @@
   "overview.project.why_root": "the project",
   "overview.project.why_source": "The link comes from the dashboard-state line in the repository's .keep-the-why.",
   "overview.project.why_truncated": "Only part of the family is shown: it has more parts than the hub reads.",
+  "overview.project.why_unknown": "unknown",
   "overview.refresh_failed": "Could not refresh: ",
   "overview.reports.mismatch": "The pull request does not match what was reported.",
   "overview.reports.no_code": "no code",
   "overview.reports.none": "No card has been reported yet.",
   "overview.reports.pr": "PR #{number}",
   "overview.reports.title": "Latest reports",
-  "overview.requests.for_others": "{count} open for others",
+  "overview.requests.for_others": {
+    "one": "{count} open for others",
+    "other": "{count} open for others"
+  },
   "overview.requests.for_you": {
-    "one": "open request for you",
-    "other": "open requests for you"
+    "one": "{number} open request for you",
+    "other": "{number} open requests for you"
   },
   "overview.requests.inbox": "Open the inbox",
   "overview.requests.none": "Nothing waits for an answer.",
