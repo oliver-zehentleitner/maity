@@ -25,10 +25,14 @@ window.Maity = window.Maity || {};
   // next (paths.safe_next). This is the boundary for every link the views
   // write and for a sign-in's next (§2.6.5).
   const UNSAFE = /[\s\p{Cc}\p{Cf}]/u;
+  const safePath = (value) => typeof value === "string" && value.startsWith("/") && !value.includes("//") && !value.includes("\\")
+    && !value.includes("#") && !UNSAFE.test(value);
   function isRoute(value) {
-    return typeof value === "string" && value.startsWith("/") && !value.includes("//") && !value.includes("\\")
-      && !value.includes("#") && !UNSAFE.test(value) && !hubPath(value);
+    return safePath(value) && !hubPath(value);
   }
+  // A page the hub serves itself on this host (the legal pages, §16.7.1):
+  // the same checks, a link the browser follows as a page load.
+  const isHubPage = (value) => safePath(value) && hubPath(value) && /^\/(impressum|privacy|terms)(\/[A-Za-z0-9:._-]+)?$/.test(value);
 
   // Where the page is: its path, its query and, over http(s), its fragment
   // (the device code travels there, never to the hub, §2.6.2).
@@ -92,5 +96,5 @@ window.Maity = window.Maity || {};
     if (!fixture && window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 
-  M.route = { fixture, isRoute, current, href, go, listen, dropFragment };
+  M.route = { fixture, isRoute, isHubPage, current, href, go, listen, dropFragment };
 })(window.Maity);

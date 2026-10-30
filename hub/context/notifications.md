@@ -401,6 +401,12 @@ timestamp, and for `after` chains, the bounded pages equal the pages cut from `d
 **Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
 still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
 
+**Known limit, found 2026-10-30:** "few" did not hold for requests. The load test
+(`hub/tests/test_load.py`, process.md bb9d58df) seeded unread requests, which are not chat
+items and so are all derived: a page takes 0.12 s at 1000 unread and 0.42 s at 4000 on
+PostgreSQL, the same 52 statements at both, so the cost is the derivation in Python and is
+linear in the unread requests of the window. Card `tsk-r8f0jm3xs9y6` takes it on.
+
 **Since 2026-10-30 (tsk-r8f0jm3xs9y6) every source is paged.** "The rest is few" stopped
 holding: a human with many hub notices (one personal request each) has thousands of inbox
 items, and the page grew linearly with them (F's load test: 83 ms at 1,000, 355 ms at
@@ -416,7 +422,13 @@ so the paged read takes only each request's newest such event in SQL, and a forw
 brings back the item it replaced on a later page. Measured on SQLite with 1,000 and 2,000 hub
 notices, `limit=20`: 105 and 188 ms before, 18 and 21 ms after. A page with more items than
 it shows costs the same however many there are (the statement test); under a page it
-costs fewer chunks.
+costs fewer chunks. The load test of `main` (#677) found two more growths. A long-poll with
+`after` read the whole window and kept only what lay past the position, so its read is now
+bounded in SQL (`seq` past the position per project, records past its record number). An
+`unread` page whose first chunk held read items took one more chunk with the larger history,
+and every chunk repeats the item lookups, so the events (outside the chats) and the records
+start with a whole chunk (`CHUNK`): one statement covers a page whatever the history. All
+four load tests pass at `MAITY_LOAD_UNIT=1000`.
 
 ## The counts of the bell classify only their candidates; the mentions stay exact
 

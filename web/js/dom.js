@@ -18,6 +18,9 @@ window.Maity = window.Maity || {};
         } else if (key === "href" && M.route.isRoute(value)) {
           // A path of the dashboard, as the address bar holds it (js/route.js).
           el.setAttribute("href", M.route.href(value));
+        } else if (key === "href" && M.route.isHubPage(value)) {
+          // A page the hub serves itself (a legal page): a plain page load.
+          el.setAttribute("href", value);
         } else if (key === "href" && !isLocalRef(value) && !safeUrl(value) && !isOwnFile(value)) {
           throw new TypeError("h(): href is neither a route nor an https URL");
         } else if (key === "src" && !isLocalRef(value) && !isOwnImage(value) && !isOwnFile(value)) {

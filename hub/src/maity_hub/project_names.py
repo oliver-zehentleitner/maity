@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, String, cast, select, update
 
 from maity_hub import events, inbox, namespace, proposals, ticker
 from maity_hub import tables as t
@@ -44,6 +44,29 @@ def withdraw_open(conn: Connection, project_id: str, actor: Actor | None, reason
 
     for row in open_transfers(conn, project_id):
         close_request(conn, row.id, "withdrawn", actor, reason=reason)
+
+
+def withdraw_into(conn: Connection, org_id: str, reason: str) -> None:
+    """Withdraw every open transfer into the organisation, whichever project it moves (§6.26,
+    §16.8): its suspension and its deletion end them. The organisation's row is locked by the
+    caller, before the projects' (`lock_project`) as everywhere."""
+    from maity_hub.routes.requests import close_request
+
+    rows = conn.execute(
+        select(t.request.c.id, t.request.c.project_id, t.request.c.proposal)
+        .where(
+            t.request.c.status == "open",
+            t.request.c.proposal.is_not(None),
+            cast(t.request.c.proposal, String).contains(org_id, autoescape=True),
+        )
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).all()
+    for row in rows:
+        proposal = row.proposal or {}
+        if proposal.get("kind") != KIND or proposal.get("to") != org_id:
+            continue
+        events.lock_project(conn, row.project_id)
+        close_request(conn, row.id, "withdrawn", None, reason=reason)
 
 
 def _announce(

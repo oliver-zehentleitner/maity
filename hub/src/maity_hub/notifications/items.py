@@ -18,7 +18,7 @@ from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
-from maity_hub.views import human_languages
+from maity_hub.views import deleted, deleted_person, human_languages
 
 WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
@@ -251,6 +251,7 @@ def derive_page(
     count: int,
     newest_first: bool,
     wanted: Callable[[Item], bool],
+    since: Any = None,
 ) -> list[Item]:
     """The items a page of `count` can reach: of each project's events, of its plain chat
     messages and of the account records, only the first `count` that `wanted` accepts,
@@ -264,6 +265,12 @@ def derive_page(
     found: list[Item] = []
     for mine in where.memberships:
         window = _event_window(where, mine, now)
+        if since is not None:
+            # Read after a position (`after`, oldest first): start right behind it, so a held
+            # poll looks at what came since, not at the window from its beginning (§18.2).
+            start = where.joined_seq[mine.project.id]
+            floor = max(since.projects.get(mine.project.id, start), start)
+            window = (*window, t.event.c.seq > floor)
         # A personal request's events never make an item (`_classify`: it is one item,
         # from its record), so they are left out in SQL, not read and dropped one by one.
         personal = (
@@ -294,11 +301,15 @@ def derive_page(
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
+        # Its first chunk is a whole one: few of these rows are rejected, so one statement
+        # covers a page whatever the history, as the load test keeps (test_load.py).
         found += _paged(
-            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted
+            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted, CHUNK
         )
         found += _chats(conn, where, mine, window, count, newest_first, wanted)
-    found += _records_paged(conn, where, now, count, newest_first, wanted)
+    found += _records_paged(
+        conn, where, now, count, newest_first, wanted, None if since is None else since.account
+    )
     found.sort(key=lambda item: item.order, reverse=True)
     return found
 
@@ -323,13 +334,15 @@ def _paged(
     count: int,
     newest_first: bool,
     wanted: Callable[[Item], bool],
+    first: int | None = None,
 ) -> list[Item]:
     """The first `count` items of one project's rows under `condition` that `keep` and
     `wanted` accept, read in chunks of the order the listing uses (`at`, then `seq`) until
-    they are found: a page costs the page, not every row of the window."""
+    they are found: a page costs the page, not every row of the window. `first` is the
+    first chunk's size, by default as many as are wanted."""
     taken: list[Item] = []
     last: tuple[datetime, int] | None = None
-    size = max(count, 1)  # as many as are wanted, then more while a filter rejects them
+    size = first or max(count, 1)  # then more while a filter rejects them
     sort = (
         (t.event.c.at.desc(), t.event.c.seq.desc())
         if newest_first
@@ -380,15 +393,19 @@ def _records_paged(
     count: int,
     newest_first: bool,
     wanted: Callable[[Item], bool],
+    after_record: int | None = None,
 ) -> list[Item]:
-    """The first `count` record items that `wanted` accepts, read as `_paged` reads rows."""
+    """The first `count` record items that `wanted` accepts, read as `_paged` reads rows;
+    with `after_record`, only the records after a position's record number."""
     taken: list[Item] = []
     last: tuple[datetime, int] | None = None
-    size = max(count, 1)
+    size = CHUNK  # a whole chunk first, as for the events: one statement for most pages
     c = t.account_record.c
     sort = (c.at.desc(), c.n.desc()) if newest_first else (c.at, c.n)
     while len(taken) < count:
         query = _record_rows(where, now)
+        if after_record is not None:
+            query = query.where(c.n > after_record)
         if last is not None:
             before = (c.at < last[0]) if newest_first else (c.at > last[0])
             tie = (c.n < last[1]) if newest_first else (c.n > last[1])
@@ -564,6 +581,10 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
     }
     requests_by_id = _by_id(conn, t.request, {r for r in asked if r is not None})
     names = _member_names(conn, {r.asked_by for r in requests_by_id.values() if r.asked_by})
+    inviters = _inviter_names(
+        conn,
+        {r.asked_by_human for r in requests_by_id.values() if not r.asked_by and r.asked_by_human},
+    )
     items = []
     for row in rows:
         data = row.data or {}
@@ -573,7 +594,11 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
             request = requests_by_id.get(str(data.get("request_id")))
             if request is None:
                 continue
-            asker = names.get(request.asked_by, "someone") if request.asked_by else "Maity"
+            asker = (
+                names.get(request.asked_by, "someone")
+                if request.asked_by
+                else inviters.get(request.asked_by_human, "Maity")
+            )
             items.append(
                 Item(
                     kind="inbox",
@@ -838,6 +863,23 @@ def _shared_actor(
         seen["actor", membership_id] = _actor(conn, membership_id)
     found: dict[str, Any] | None = seen["actor", membership_id]
     return None if found is None else dict(found)
+
+
+def _inviter_names(conn: Connection, human_ids: set[str]) -> dict[str, str]:
+    """The display names of the humans who invite to an organisation, in one statement:
+    "Deleted account" for one who deleted theirs (§2.9). A request the hub files on nobody's
+    behalf has no inviter, its caller says "Maity"."""
+    if not human_ids:
+        return {}
+    rows = conn.execute(
+        select(t.human.c.id, t.human.c.display_name, t.human.c.deleted_at).where(
+            t.human.c.id.in_(human_ids)
+        )
+    ).all()
+    return {
+        row.id: str(deleted_person()["display_name"]) if deleted(row) else str(row.display_name)
+        for row in rows
+    }
 
 
 def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None:

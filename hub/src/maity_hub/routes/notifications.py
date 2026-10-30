@@ -208,7 +208,7 @@ def _answer(
     # A page needs `limit` items and to know whether one more follows, so every source is
     # derived only as far as the page reaches; the counts read their own few items.
     found = items.derive_page(
-        conn, where, count=limit + 1, newest_first=since is None, wanted=wanted
+        conn, where, count=limit + 1, newest_first=since is None, wanted=wanted, since=since
     )
     answer: dict[str, Any] = listing.counts(conn, where, items.count_items(conn, where))
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=unread)

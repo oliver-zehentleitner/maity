@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
         h("label", { for: id("terms-url") }, "Address (https)"), termsUrl,
         h("label", { for: id("terms-version") }, "Version"), termsVersion,
         h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages"
-          ? "These come from the legal pages (Landing page → Terms)."
+          ? "These come from the legal pages (Legal pages → Terms)."
           : "Shown on the registration form and accepted when an account is completed. Leave both empty for none."),
         errors.terms),
       h("label", { for: id("max") }, "New accounts per hour at most", source("max_new_accounts_per_hour")), max, errors.max,

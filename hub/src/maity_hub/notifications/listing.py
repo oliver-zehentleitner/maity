@@ -39,7 +39,11 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
         entry["inbox"] = open_requests(conn, mine.id)
         entry["chat"] = chats[mine.project.id]
         by_project[mine.project.id] = {"member": True, **entry}
+    loose = 0
     for project_id, open_count in _open_personal(conn, where.human_id):
+        if project_id is None:  # an organisation's invitation: no project's count
+            loose += open_count
+            continue
         entry = by_project.setdefault(project_id, {"member": False, **dict.fromkeys(COUNTED, 0)})
         entry["inbox"] += open_count
     for item in found:
@@ -65,6 +69,7 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
         # until its matter is closed, not until it is read (§18.1).
         if item.kind == "inbox" and item.open:
             total["inbox"] += 1
+    total["inbox"] += loose
     total["total"] = total["inbox"] + total["chat"] + total["mention"]
     return {"counts": total, "by_project": shown}
 

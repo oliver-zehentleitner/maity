@@ -238,7 +238,6 @@ window.Maity = window.Maity || {};
   };
 
   function renderLogin(main, note) {
-    // A landing page may have set the tab's title (§16.7).
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
@@ -271,7 +270,8 @@ window.Maity = window.Maity || {};
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
     append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      M.legal ? M.legal.links() : null);
   }
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
@@ -1443,15 +1443,9 @@ window.Maity = window.Maity || {};
         await M.api.get("/auth/session");
       } catch (err) {
         if (err.status === 401 && swarmHere) { await publicSwarm(); return; }
-        if (err.status === 401) {
-          // At the root, the instance's landing page where it has one
-          // (§16.7); anywhere else, and when it is off or fails, sign-in.
-          const landing = where.scope === null && M.landing ? await M.landing.read() : null;
-          if (seq !== renderSeq) return;
-          if (landing) M.landing.show(main, landing, document.getElementById("header"));
-          else renderLogin(main);
-          return;
-        }
+        // Without a session the login page; the landing page at the root
+        // is the hub's own static page (§16.7), never drawn here.
+        if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
       const me = await M.api.get("/me");

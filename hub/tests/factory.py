@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from sqlalchemy import Engine, insert, inspect, select
 
-from maity_hub import clock, handle_register
+from maity_hub import clock, handle_register, namespace
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
@@ -47,6 +47,11 @@ def _has_register(engine: Engine) -> bool:
     return inspect(engine).has_table("handle_register")
 
 
+def _owner_shaped(engine: Engine) -> bool:
+    """Whether the database is at a revision where a project's owner may be an organisation."""
+    return any(c["name"] == "owner_human_id" for c in inspect(engine).get_columns("project"))
+
+
 def _namespaced(engine: Engine) -> bool:
     """Whether the database is at a revision with the project namespace (§6.25)."""
     return any(c["name"] == "owner_id" for c in inspect(engine).get_columns("project"))
@@ -65,6 +70,8 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
     project_id = new_id("project")
     if "owner_id" not in values and _namespaced(engine):
         values = {**values, "owner_id": _maintainer(engine)}
+    if "owner_id" in values and _owner_shaped(engine):  # §6.26: the owner's kind columns too
+        values = {**values, **namespace.owner_values(values["owner_id"])}
     row: dict[str, Any] = {
         "id": project_id,
         "slug": slug or project_id,
