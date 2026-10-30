@@ -399,3 +399,32 @@ woken by every chat message and answered what the lead was meant to answer.
   narrowing rule, which is the case the rule exists for.
 - Handing the chat to the lead in the route (a different audience): the audience is what the team
   reads; the wake is a separate fact and `row.wakes` is where it is recorded.
+
+## The handover is cut from three numbers on the credential, delivered until the first packet is acknowledged
+
+**Id:** 5ad49946-291f-48a9-bddd-01bedf2e873e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §5.2 `handover` and §6.17 (contract #575); the implementation of card tsk-gdsxg2y2hqjc, 2026-10-30
+**See:** instances.md#an-instance-address-resolves-in-one-function-in-a-message-a-request-and-a-mention — f1486a50-2c5b-4f56-b19a-e57e2ce6ce4e — as of 2026-10-30
+**Revisit when:** a replacing instance is seen to miss events, or the packet's size becomes a problem for a long unread stretch
+
+`credential` carries `exchange_seq` (the project's newest event when the exchange created
+the instance), `first_after` and `first_cursor` (`events.after` and `events.cursor` of
+its first resume packet, stored by that resume). `handover.block` needs nothing else: the
+chain comes from `replaces`, the position from the sessions' acknowledged seqs, the window
+from `first_after`. It is in every packet until a session of the instance has acknowledged
+a position at or above `first_cursor`: a lost first packet, resumed again without a cursor,
+gets it again. The scan is bounded (25 pages of 200 events); a longer stretch is
+`truncated: true`. The events the exchange writes to `member:<id>` (the revocation, the
+join) are in the items as team-addressed events, because the contract names the audience,
+not the kind.
+
+**Reason:** the three numbers are the only things the contract's "at least once" cannot be
+derived from afterwards: the first packet's cursor exists only while it is built. Everything
+else is a read of what the hub keeps anyway.
+
+**Rejected alternative:** deriving the window from the sessions alone (the earliest session's
+`acknowledged_seq`) — it moves with the long-poll's acknowledgements, so a lost first packet
+could shrink the window. Storing the items — a copy of events the log already has.

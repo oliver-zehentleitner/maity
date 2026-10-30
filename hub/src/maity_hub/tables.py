@@ -538,6 +538,10 @@ project = Table(
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),
     Column("public_about", MARKDOWN_TEXT),
+    # Whether the forge's last answer said the repository is public (§16.9, §11.4); null
+    # before the hub looked, which counts as private. Cleared when the page goes on or off, a
+    # transfer happens or the repository changes: the answer of an earlier page is never reused.
+    Column("repository_public", Boolean),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
@@ -698,6 +702,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # An agent member a human with `members:admin` isolated (§6.2, "Isolation"): why, since
+    # when and by whom; null while free. The membership keeps its history either way.
+    Column("isolated_reason", String(500)),
+    Column("isolated_since", UtcDateTime),
+    Column("isolated_by", String(ID)),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -873,6 +882,12 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # What the resume packet's `handover` needs (§5.2): the project's newest event when the
+    # exchange created this instance, and `events.after` and `events.cursor` of its first
+    # packet (set by its first resume).
+    Column("exchange_seq", Integer),
+    Column("first_after", Integer),
+    Column("first_cursor", Integer),
     _ref("join_id", "join_link.id"),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -1655,7 +1670,7 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
     Column("here", Boolean, default=True),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"

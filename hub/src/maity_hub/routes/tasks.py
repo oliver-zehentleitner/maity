@@ -32,6 +32,7 @@ from maity_hub import (
     paging,
     ranks,
     releases,
+    seats,
     takeovers,
     ticker,
 )
@@ -331,8 +332,9 @@ def _release_conflict(error: IntegrityError, body: ReleaseIn | None) -> Exceptio
 
 
 def _new_contract(conn: Connection, mine: Membership, body: ContractIn) -> dict[str, Any]:
-    arbiter = body.arbiter or mine.project.contract_arbiter
-    if arbiter != mine.project.contract_arbiter:
+    policy_arbiter = seats.routed_arbiter(conn, mine.project)  # an isolated seat is routed past
+    arbiter = body.arbiter or policy_arbiter
+    if arbiter != policy_arbiter:
         mine.require("tasks:admin")  # naming another arbiter than the policy's (§6.8)
     if arbiter != "trust:admin":
         _target_id(conn, mine, arbiter, "contract.arbiter")
@@ -360,8 +362,11 @@ def _check_contract_place(path: str | None, section: str | None) -> None:
         raise invalid(errors)
 
 
-def _is_arbiter(mine: Membership, contract: dict[str, Any]) -> bool:
+def _is_arbiter(conn: Connection, mine: Membership, contract: dict[str, Any]) -> bool:
+    # A card naming an isolated agent is arbitrated by the seat's default (§6.2).
     arbiter = contract.get("arbiter")
+    if arbiter is not None:
+        arbiter = seats.routed_arbiter(conn, mine.project, arbiter)
     if arbiter == "trust:admin":
         return in_admin_team(mine.trust, mine.role)
     return bool(arbiter == mine.principal_id)
@@ -475,7 +480,7 @@ def _patched_contract(
         raise invalid({"contract": "contracts_only"})
     contract = dict(card.contract or {})
     if body.state is not None and body.state != contract.get("state"):
-        if not (_is_arbiter(mine, contract) or mine.may("tasks:admin")):
+        if not (_is_arbiter(conn, mine, contract) or mine.may("tasks:admin")):
             raise forbidden("tasks:admin", "only the arbiter moves a contract's state")
         contract["state"] = body.state
     if body.watchers is not None:
@@ -975,7 +980,7 @@ def patch_task(
             and body.contract is not None
             and body.contract.model_fields_set <= {"state"}
             and card.kind == "contract"
-            and _is_arbiter(mine, card.contract or {})
+            and _is_arbiter(conn, mine, card.contract or {})
         )
         # And the release fields are any releaser's, holder or not (§6.7).
         release_edit = (

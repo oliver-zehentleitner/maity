@@ -16,20 +16,21 @@ window.Maity = window.Maity || {};
   const CLOSED_STATES = ["archived"];
 
   // The hub's refusals, in words.
+  // Getters: the words are the catalog's when said.
   const REFUSED = {
-    too_few: "a group chat needs at least one other participant",
-    too_many: "a group chat has at most twelve participants, you included",
-    not_a_member: "someone chosen is not a member of this project",
-    use_direct: "that is your direct chat with your agent",
+    get too_few() { return M.t("group.refused.too_few"); },
+    get too_many() { return M.t("group.refused.too_many"); },
+    get not_a_member() { return M.t("group.refused.not_a_member"); },
+    get use_direct() { return M.t("group.refused.use_direct"); },
   };
   function said(err) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
     const why = fields && (fields.participants || fields.member_id);
-    if (why) return { message: REFUSED[why] || why };
-    if (err.code === "project_closed") return { message: "the project is closed: no new group chats and no one added" };
-    if (err.code === "conversation_closed") return { message: "the chat is closed: no human is in it any more" };
-    if (err.code === "conversation_quota") return { message: "this project has as many open group chats as the hub allows" };
-    if (err.code === "forbidden" && err.details && err.details.reason === "observer") return { message: "you read along as an agent's owner and do not write here" };
+    if (why) return { message: Object.hasOwn(REFUSED, why) ? REFUSED[why] : why };
+    if (err.code === "project_closed") return { message: M.t("group.refused.project_closed") };
+    if (err.code === "conversation_closed") return { message: M.t("group.refused.chat_closed") };
+    if (err.code === "conversation_quota") return { message: M.t("group.refused.quota") };
+    if (err.code === "forbidden" && err.details && err.details.reason === "observer") return { message: M.t("group.refused.observer") };
     return err;
   }
 
@@ -38,27 +39,27 @@ window.Maity = window.Maity || {};
   // ---- creating ----------------------------------------------------------
 
   function create(ctx, layout, list) {
-    const pane = h("section", { class: "chat-pane group-new", "aria-label": "New group chat" });
+    const pane = h("section", { class: "chat-pane group-new", "aria-label": M.t("group.new.title") });
     append(layout, pane);
-    const back = h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations");
-    const heading = h("h2", { tabindex: "-1" }, "New group chat");
+    const back = h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("group.back"));
+    const heading = h("h2", { tabindex: "-1" }, M.t("group.new.title"));
     if (CLOSED_STATES.includes(ctx.project.state)) {
-      append(pane, back, heading, h("p", { class: "muted" }, "The project is closed: it takes no new group chat."));
+      append(pane, back, heading, h("p", { class: "muted" }, M.t("group.new.closed")));
       return;
     }
     const status = M.statusLine();
-    const title = h("input", { id: "group-title", maxlength: "200", autocomplete: "off", placeholder: "What it is about" });
+    const title = h("input", { id: "group-title", maxlength: "200", autocomplete: "off", placeholder: M.t("group.new.title_placeholder") });
     const others = ctx.members.filter((m) => m.id !== ctx.me.id && !m.removed_at);
     // ?with=<member id> (a Chat button on Members): that person chosen.
     const asked = M.route.current().query.get("with");
     const boxes = others.map((m) => {
       const box = h("input", { type: "checkbox", id: "group-member-" + m.id, value: m.id });
       box.checked = m.id === asked;
-      const owner = m.kind === "agent" ? (m.owner_id === ctx.me.id ? "your agent" : "agent of " + nameOf(ctx, m.owner_id)) : "human";
+      const owner = m.kind === "agent" ? (m.owner_id === ctx.me.id ? M.t("group.new.your_agent") : M.t("group.new.agent_of", { name: nameOf(ctx, m.owner_id) })) : M.t("group.new.human");
       return { m, box, el: h("label", { class: "check", for: box.id }, box, " " + m.display_name, h("span", { class: "muted" }, " @" + m.handle + " · " + owner)) };
     });
     const error = h("p", { class: "field-error", id: "group-people-error", role: "alert" });
-    const send = h("button", { type: "submit" }, "Create");
+    const send = h("button", { type: "submit" }, M.t("group.new.create"));
     const form = h("form", {
       class: "project-form group-form",
       novalidate: true,
@@ -67,33 +68,32 @@ window.Maity = window.Maity || {};
         error.textContent = "";
         const chosen = boxes.filter((b) => b.box.checked).map((b) => b.m);
         // As the hub counts (§9.2): you and two to eleven others.
-        if (!chosen.length) { error.textContent = "Choose at least one other participant."; return; }
-        if (chosen.length + 1 > MAX_PEOPLE) { error.textContent = "At most twelve participants, you included."; return; }
+        if (!chosen.length) { error.textContent = M.t("group.new.choose"); return; }
+        if (chosen.length + 1 > MAX_PEOPLE) { error.textContent = M.t("group.new.too_many"); return; }
         if (chosen.length === 1 && chosen[0].kind === "agent" && chosen[0].owner_id === ctx.me.id) {
-          append(clear(error), "That is your direct chat with " + chosen[0].display_name + ": ",
-            h("a", { href: ctx.link("chat", chosen[0].id) }, "open it"), ".");
+          append(clear(error), M.tn("group.new.direct", { name: chosen[0].display_name,
+            link: h("a", { href: ctx.link("chat", chosen[0].id) }, M.t("group.new.open_it")) }));
           return;
         }
         send.disabled = true;
-        status.busy("Creating…");
+        status.busy(M.t("group.new.creating"));
         try {
           const created = await M.api.post(ctx.base + "/conversations",
             { title: title.value.trim() || null, participants: chosen.map((m) => m.id) });
           status.done();
           M.route.go(ctx.link("chat", created.id));
         } catch (err) {
-          status.fail("Not created: ", said(err));
+          status.fail(M.t("group.new.failed"), said(err));
         } finally {
           send.disabled = false;
         }
       },
     },
-    h("label", { for: "group-title" }, "Title (optional)"), title,
-    h("p", { class: "hint" }, "Without one, the chat is named after its participants."),
+    h("label", { for: "group-title" }, M.t("group.new.title_label")), title,
+    h("p", { class: "hint" }, M.t("group.new.title_hint")),
     h("fieldset", { class: "group-people", "aria-describedby": "group-people-error group-people-hint" },
-      h("legend", null, "Participants"), boxes.map((b) => b.el)),
-    h("p", { class: "hint", id: "group-people-hint" }, "Agents read a group chat when they resume and answer when mentioned (@handle). "
-      + "Their owners read along, also when they are not in the chat."),
+      h("legend", null, M.t("group.new.participants")), boxes.map((b) => b.el)),
+    h("p", { class: "hint", id: "group-people-hint" }, M.t("group.new.agents_hint")),
     error,
     h("div", { class: "actions" }, send),
     status.el);
@@ -117,12 +117,12 @@ window.Maity = window.Maity || {};
     const projectClosed = CLOSED_STATES.includes(ctx.project.state);
     const inChat = (memberId) => view.participants.some((p) => p.member_id === memberId);
     const manager = () => !observer && !closed && (view.created_by === ctx.me.id || ctx.canAdmin || ctx.isOwner);
-    const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || "Group chat";
+    const titleOf = () => view.title || view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) => nameOf(ctx, p.member_id)).join(", ") || M.t("group.untitled");
     // An observer outside the project is not in the member list: said so, not by id.
-    const observerName = (o) => (o === ctx.me.id ? "you" : ctx.outsider ? "another agent's owner"
-      : ctx.memberById && ctx.memberById[o] ? M.dom.memberRef(ctx, o) : "an owner outside the project");
+    const observerName = (o) => (o === ctx.me.id ? M.t("group.observer.you") : ctx.outsider ? M.t("group.observer.another_owner")
+      : ctx.memberById && ctx.memberById[o] ? M.dom.memberRef(ctx, o) : M.t("group.observer.outside"));
 
-    const pane = h("section", { class: "chat-pane group-chat", "aria-label": "Group chat " + titleOf() });
+    const pane = h("section", { class: "chat-pane group-chat", "aria-label": M.t("group.pane", { title: titleOf() }) });
     append(layout, pane);
     const pollStatus = M.statusLine();
     const status = M.statusLine();
@@ -143,9 +143,9 @@ window.Maity = window.Maity || {};
     // observer, and no agent uses this page.
     const mayRedact = !observer;
     async function redact(msg) {
-      const reason = parts.askReason("Remove this message for everyone in the chat? Its text is replaced by a note. Say why:");
+      const reason = parts.askReason(M.t("group.redact.ask"));
       if (reason === null) return;
-      status.busy("Removing…");
+      status.busy(M.t("group.redact.busy"));
       try {
         await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
         // The answer is the event (§8.5); the message shows its tombstone.
@@ -153,9 +153,9 @@ window.Maity = window.Maity || {};
         if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason } });
         redraw();
         status.done();
-        append(status.el, h("span", { class: "ok" }, "Removed."));
+        append(status.el, h("span", { class: "ok" }, M.t("group.redact.done")));
       } catch (err) {
-        status.fail("Not removed: ", err.code === "forbidden" ? { message: "only a human in the chat removes a message" } : err);
+        status.fail(M.t("group.redact.failed"), err.code === "forbidden" ? { message: M.t("group.redact.forbidden") } : err);
       }
     }
 
@@ -178,9 +178,8 @@ window.Maity = window.Maity || {};
       draw = parts.timeline(ctx, new Map(), firstUnread, observer || closed ? null : quote, opts);
       clear(messages);
       if (!all.length) {
-        append(messages, h("li", { class: "empty" }, h("p", null, earlier === null ? "No messages yet." : "Nothing new since you joined."),
-          h("p", { class: "muted" }, earlier === null ? "The agents in it read it when they resume, and answer when mentioned."
-            : "What was said before is there with Show earlier messages.")));
+        append(messages, h("li", { class: "empty" }, h("p", null, earlier === null ? M.t("group.empty.none") : M.t("group.empty.nothing_new")),
+          h("p", { class: "muted" }, earlier === null ? M.t("group.empty.none_hint") : M.t("group.empty.nothing_new_hint"))));
       } else {
         all.forEach((m) => append(messages, draw(m)));
       }
@@ -208,7 +207,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         const button = earlierBox.querySelector("button");
         if (button) button.disabled = false;
-        pollStatus.fail("The earlier messages could not be read: ", err);
+        pollStatus.fail(M.t("group.earlier.failed"), err);
       } finally {
         readingOlder = false;
       }
@@ -219,7 +218,7 @@ window.Maity = window.Maity || {};
       append(earlierBox, h("button", {
         type: "button", class: "small",
         onclick: (e) => { e.target.disabled = true; older(true); },
-      }, "Show earlier messages"));
+      }, M.t("group.earlier.show")));
     }
     drawEarlier();
     messages.addEventListener("scroll", () => { if (messages.scrollTop < parts.NEAR_TOP) older(false); });
@@ -267,7 +266,7 @@ window.Maity = window.Maity || {};
           });
           if (changed) { const top = messages.scrollTop; redraw(); messages.scrollTop = top; }
         } catch (err) {
-          pollStatus.fail("The chat could not be read again: ", err);
+          pollStatus.fail(M.t("group.reread_failed"), err);
         }
       }
       events.filter((e) => e.kind === "attachment_deleted" && e.payload).forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
@@ -288,18 +287,19 @@ window.Maity = window.Maity || {};
         pollStatus.done();
         list.refresh(false);
       } catch (err) {
-        pollStatus.fail("New messages could not be fetched: ", err);
+        pollStatus.fail(M.t("group.fetch_failed"), err);
       }
     });
 
     // Who is in it, and who else reads it (§9.2: shown in the chat itself).
-    const people = () => h("p", { class: "muted group-people-line" }, "In it: ",
-      view.participants.map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id), p.kind === "agent" ? " (agent)" : null]));
+    // Lists of nodes: the comma between them is a separator, the sentence around them the catalog's.
+    const listed = (nodes) => nodes.map((n, i) => [i ? ", " : null, n]);
+    const people = () => h("p", { class: "muted group-people-line" }, M.tn("group.people.in", {
+      people: listed(view.participants.map((p) => p.kind === "agent" ? M.tn("group.people.agent", { member: M.dom.memberRef(ctx, p.member_id) }) : M.dom.memberRef(ctx, p.member_id))) }));
     const observers = () => ((view.observers || []).length
-      ? h("p", { class: "muted group-observers" }, "Also read by: ",
-        view.observers.map((o, i) => [i ? ", " : null, observerName(o),
-          " (owner of ", view.participants.filter((p) => p.owner_id === o).map((p, i) => [i ? ", " : null, M.dom.memberRef(ctx, p.member_id)]), ")"]),
-        ". They read every message and write nothing.")
+      ? h("p", { class: "muted group-observers" }, M.tn("group.people.observers", {
+        observers: listed(view.observers.map((o) => M.tn("group.people.observer", { name: observerName(o),
+          agents: listed(view.participants.filter((p) => p.owner_id === o).map((p) => M.dom.memberRef(ctx, p.member_id))) }))) }))
       : null);
 
     // Managing: rename, add, remove; anyone in it leaves. The disclosure
@@ -308,16 +308,17 @@ window.Maity = window.Maity || {};
     let renameDraft = null;
     function manage() {
       if (observer || closed) return null;
-      const box = h("details", { class: "group-manage" }, h("summary", null, manager() ? "Manage this chat" : "Leave this chat"));
+      const box = h("details", { class: "group-manage" }, h("summary", null, manager() ? M.t("group.manage.title") : M.t("group.manage.leave_title")));
       if (manageOpen) box.setAttribute("open", "");
       box.addEventListener("toggle", () => { manageOpen = box.hasAttribute ? box.hasAttribute("open") : manageOpen; });
       // A change is drawn in place; the status line says what happened and has the focus.
-      const act = async (label, done, call, after) => {
-        status.busy(label + "…");
+      // busy: the status line meanwhile; failed: its prefix to the hub's words.
+      const act = async (busy, failed, done, call, after) => {
+        status.busy(busy);
         try {
           await call();
         } catch (err) {
-          status.fail(label + " failed: ", said(err));
+          status.fail(failed, said(err));
           return;
         }
         if (after) { after(); return; }
@@ -334,35 +335,36 @@ window.Maity = window.Maity || {};
         append(box, h("form", { class: "inline-form", onsubmit: (e) => {
           e.preventDefault();
           const typed = name.value.trim() || null;
-          act("Renaming", "Renamed.", () => M.api.patch(base, { title: typed }).then(() => { renameDraft = null; }));
-        } }, h("label", { for: "group-rename" }, "Title"), name, h("button", { type: "submit", class: "small" }, "Rename")));
+          act(M.t("group.manage.renaming"), M.t("group.manage.rename_failed"), M.t("group.manage.renamed"),
+            () => M.api.patch(base, { title: typed }).then(() => { renameDraft = null; }));
+        } }, h("label", { for: "group-rename" }, M.t("group.manage.title_label")), name, h("button", { type: "submit", class: "small" }, M.t("group.manage.rename"))));
         const free = ctx.members.filter((m) => !inChat(m.id) && !m.removed_at);
         if (projectClosed) {
-          append(box, h("p", { class: "muted" }, "The project is closed: no one can be added."));
+          append(box, h("p", { class: "muted" }, M.t("group.manage.closed")));
         } else if (free.length && view.participants.length < MAX_PEOPLE) {
-          const pick = h("select", { id: "group-add" }, free.map((m) => h("option", { value: m.id }, m.display_name + " @" + m.handle)));
+          const pick = h("select", { id: "group-add" }, free.map((m) => h("option", { value: m.id }, M.t("group.manage.option", { name: m.display_name, handle: m.handle }))));
           pick.value = free[0].id;
           append(box, h("form", { class: "inline-form", onsubmit: (e) => {
             e.preventDefault();
             const who = free.find((m) => m.id === pick.value);
-            act("Adding", who.display_name + " is in the chat.", () => M.api.post(base + "/participants", { member_id: pick.value }));
-          } }, h("label", { for: "group-add" }, "Add"), pick, h("button", { type: "submit", class: "small" }, "Add")),
-          h("p", { class: "hint" }, "Someone added starts with what is said from then on, and can read what came before with Show earlier messages. "
-            + "Write here as for everyone who is or will be in the chat."));
+            act(M.t("group.manage.adding"), M.t("group.manage.add_failed"), M.t("group.manage.added", { name: who.display_name }),
+              () => M.api.post(base + "/participants", { member_id: pick.value }));
+          } }, h("label", { for: "group-add" }, M.t("group.manage.add")), pick, h("button", { type: "submit", class: "small" }, M.t("group.manage.add"))),
+          h("p", { class: "hint" }, M.t("group.manage.add_hint")));
         }
         append(box, h("ul", { class: "group-members" }, view.participants.filter((p) => p.member_id !== ctx.me.id).map((p) =>
-          h("li", null, M.dom.memberRef(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": "Remove " + nameOf(ctx, p.member_id) + " from the chat", onclick: () => {
-            if (!window.confirm("Remove " + nameOf(ctx, p.member_id) + " from this chat? They no longer read it.")) return;
-            act("Removing", nameOf(ctx, p.member_id) + " is no longer in the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
-          } }, "Remove")))));
+          h("li", null, M.dom.memberRef(ctx, p.member_id), " ", h("button", { type: "button", class: "small", "aria-label": M.t("group.manage.remove_label", { name: nameOf(ctx, p.member_id) }), onclick: () => {
+            if (!window.confirm(M.t("group.manage.remove_confirm", { name: nameOf(ctx, p.member_id) }))) return;
+            act(M.t("group.manage.removing"), M.t("group.manage.remove_failed"), M.t("group.manage.removed", { name: nameOf(ctx, p.member_id) }),
+              () => M.api.del(base + "/participants/" + encodeURIComponent(p.member_id)));
+          } }, M.t("group.manage.remove"))))));
       }
       const lastHuman = view.participants.filter((p) => p.kind === "human").length === 1;
       append(box, h("button", { type: "button", class: "danger", onclick: () => {
-        const what = lastHuman ? " You are its last human: it closes, and no one writes in it any more." : "";
-        if (!window.confirm("Leave this chat?" + what)) return;
-        act("Leaving", "You left the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(ctx.me.id)),
-          () => { M.route.go(ctx.link("chat")); });
-      } }, "Leave the chat"));
+        if (!window.confirm(lastHuman ? M.t("group.manage.leave_confirm_last") : M.t("group.manage.leave_confirm"))) return;
+        act(M.t("group.manage.leaving"), M.t("group.manage.leave_failed"), M.t("group.manage.left"),
+          () => M.api.del(base + "/participants/" + encodeURIComponent(ctx.me.id)), () => { M.route.go(ctx.link("chat")); });
+      } }, M.t("group.manage.leave")));
       return box;
     }
 
@@ -373,11 +375,11 @@ window.Maity = window.Maity || {};
     let compose = null;
     let hintMention = () => {};
     if (observer) {
-      compose = h("p", { class: "muted group-readonly" }, "You read along as the owner of an agent in this chat. You do not write here.");
+      compose = h("p", { class: "muted group-readonly" }, M.t("group.readonly.observer"));
     } else if (closed) {
-      compose = h("p", { class: "muted group-readonly" }, "This chat is closed: no human is in it any more. It stays readable.");
+      compose = h("p", { class: "muted group-readonly" }, M.t("group.readonly.closed"));
     } else {
-      text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to everyone in the chat" });
+      text = h("textarea", { id: "chat-text", rows: "3", placeholder: M.t("group.compose.placeholder") });
       text.value = parts.drafts.get(key) || "";
       const hint = h("p", { class: "hint mention-hint", "aria-live": "polite", hidden: true });
       const MENTIONED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*[a-z0-9])(?![A-Za-z0-9_])/g;
@@ -387,23 +389,23 @@ window.Maity = window.Maity || {};
         const outside = [...parts.withoutCode(text.value).matchAll(MENTIONED)].map((x) => x[2]).filter((hd) => !handles.has(hd));
         clear(hint);
         hint.hidden = !outside.length;
-        if (outside.length) append(hint, "@" + outside[0] + " is not in this chat: it reaches nobody.");
+        if (outside.length) append(hint, M.t("group.compose.outside", { handle: outside[0] }));
       };
       text.addEventListener("input", () => {
         if (text.value.trim()) parts.drafts.set(key, text.value); else parts.drafts.delete(key);
         hintMention();
       });
       hintMention();
-      const button = h("button", { type: "submit", class: "primary" }, "Send");
+      const button = h("button", { type: "submit", class: "primary" }, M.t("group.compose.send"));
       const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
       const sendIt = async (e) => {
         e.preventDefault();
         const body = text.value.trim();
         const ids = files ? files.ids() : [];
         if (!body && !ids.length) { text.focus(); return; }
-        if (files && files.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
+        if (files && files.busy()) { status.fail(M.t("group.compose.failed"), { message: M.t("group.compose.uploading") }); return; }
         button.disabled = true;
-        status.busy("Sending…");
+        status.busy(M.t("group.compose.sending"));
         try {
           add(await M.api.post(path, ids.length ? { body, attachments: ids } : { body }));
           if (files) files.clear(ids);
@@ -413,14 +415,14 @@ window.Maity = window.Maity || {};
           status.done();
           list.refresh(false);
         } catch (err) {
-          status.fail("Not sent: ", said(err));
+          status.fail(M.t("group.compose.failed"), said(err));
         } finally {
           button.disabled = false;
         }
       };
       M.dom.sendOnCtrlEnter(text, sendIt, button);
       compose = h("form", { class: "compose", onsubmit: sendIt },
-        h("label", { for: "chat-text" }, "Message (", h("span", { class: "visually-hidden" }, M.dom.SEND_KEYS + " sends; "), "@handle reaches someone in the chat)"),
+        h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) })),
         text, hint, files ? files.el : null, parts.actionRow(files, button));
     }
 
@@ -431,7 +433,7 @@ window.Maity = window.Maity || {};
     function drawHead() {
       const had = document.activeElement && head.contains(document.activeElement) ? document.activeElement.id : null;
       heading.textContent = titleOf();
-      pane.setAttribute("aria-label", "Group chat " + titleOf());
+      pane.setAttribute("aria-label", M.t("group.pane", { title: titleOf() }));
       append(clear(head), people(), observers(), manage());
       const again = had && Array.from(head.querySelectorAll("input, select, button")).find((e) => e.id === had);
       if (again) again.focus();
@@ -445,7 +447,7 @@ window.Maity = window.Maity || {};
         fresh = await M.api.get(base);
       } catch (err) {
         if (err.status === 404) { ctx.refresh(); return; }
-        pollStatus.fail("The chat could not be read again: ", err);
+        pollStatus.fail(M.t("group.reread_failed"), err);
         return;
       }
       if (fresh.access !== view.access || !!fresh.closed_at !== closed) { ctx.refresh(); return; }
@@ -454,8 +456,8 @@ window.Maity = window.Maity || {};
     }
     drawHead();
     append(pane,
-      h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
-      h("div", { class: "toolbar" }, heading, closed ? h("span", { class: "flag" }, "closed") : null),
+      h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("group.back")),
+      h("div", { class: "toolbar" }, heading, closed ? h("span", { class: "flag" }, M.t("group.closed_flag")) : null),
       head,
       earlierBox,
       messages,
@@ -502,8 +504,8 @@ window.Maity = window.Maity || {};
           }
           pollStatus.done();
         } catch (err) {
-          if (err.status === 404) pollStatus.fail("You no longer read this chat: ", { message: "your agent left it, or left the project" });
-          else pollStatus.fail("The chat could not be read again: ", err);
+          if (err.status === 404) pollStatus.fail(M.t("group.gone"), { message: M.t("group.gone_reason") });
+          else pollStatus.fail(M.t("group.reread_failed"), err);
         }
       });
     } else if (observer) {
@@ -513,7 +515,7 @@ window.Maity = window.Maity || {};
           fresh.items.forEach(add);
           pollStatus.done();
         } catch (err) {
-          pollStatus.fail("New messages could not be fetched: ", err);
+          pollStatus.fail(M.t("group.fetch_failed"), err);
         }
       });
     }

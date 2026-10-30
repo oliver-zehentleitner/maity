@@ -20,6 +20,9 @@ window.Maity = window.Maity || {};
   // As the hub reads a code: case ignored, hyphens and spaces dropped, I and
   // L as 1, O as 0 (§2.6.2). null when it is not 12 characters of the alphabet.
   const CODE_LENGTH = 12;
+  // The mail's code (§2.6.3): this many digits, said and checked from one number.
+  const MAIL_DIGITS = 6;
+  const MAIL_CODE = new RegExp("^\\d{" + MAIL_DIGITS + "}$");
   function normalCode(text) {
     const c = String(text || "").toUpperCase().replace(/[\s-]/g, "").replace(/[IL]/g, "1").replace(/O/g, "0");
     return c.length === CODE_LENGTH && [...c].every((ch) => ALPHABET.includes(ch)) ? c : null;
@@ -47,9 +50,9 @@ window.Maity = window.Maity || {};
 
   // What a refusal means here, in words.
   function said(err) {
-    if (err.code === "code_invalid") return { message: "this code does not work: it may be mistyped, used, denied or expired. Make a new one on your other device" };
-    if (err.code === "rate_limited") return { message: "too many tries just now; wait a minute and try again" };
-    if (err.details && err.details.reason === "method_disabled") return { message: "this hub does not offer it" };
+    if (err.code === "code_invalid") return { message: M.t("device.refused.code_invalid") };
+    if (err.code === "rate_limited") return { message: M.t("device.refused.rate") };
+    if (err.details && err.details.reason === "method_disabled") return { message: M.t("device.refused.disabled") };
     return err;
   }
 
@@ -73,8 +76,8 @@ window.Maity = window.Maity || {};
           methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
           methods.email_link ? mailLink(signedIn) : null,
           // §2.7: offered only where the instance registers.
-          methods.registration ? h("p", { class: "register-link" }, "No account yet? ",
-            h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, "Create an account")) : null);
+          methods.registration ? h("p", { class: "register-link" }, M.tn("device.register", {
+            link: h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, M.t("device.register.link")) })) : null);
       }, () => {});
     return box;
   }
@@ -99,36 +102,36 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const input = h("input", { id: "device-code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false",
       placeholder: "XXXX-XXXX-XXXX", "aria-describedby": "device-code-hint" });
-    const submit = h("button", { type: "submit", class: "primary" }, "Continue");
+    const submit = h("button", { type: "submit", class: "primary" }, M.t("device.code.continue"));
     const form = h("form", {
       class: "sign-in-form",
       onsubmit: (e) => {
         e.preventDefault();
         const code = normalCode(input.value);
-        if (!code) { status.fail("Not sent: ", { message: "a code is twelve letters and digits, like K7QM-4XPR-9D2F" }); input.focus(); return; }
+        if (!code) { status.fail(M.t("device.not_sent"), { message: M.t("device.code.format", { example: "K7QM-4XPR-9D2F" }) }); input.focus(); return; }
         redeem(code);
       },
     },
-    h("label", { for: "device-code" }, "The code from your other device"),
-    h("p", { class: "hint", id: "device-code-hint" }, "On a device where you are signed in: your profile → Sign in another device."),
+    h("label", { for: "device-code" }, M.t("device.code.label")),
+    h("p", { class: "hint", id: "device-code-hint" }, M.t("device.code.hint")),
     input, submit, status.el);
     const open = h("button", { type: "button", class: "link-button", "aria-expanded": "false",
-      onclick: () => { showForm(); input.focus(); } }, "Have a code?");
+      onclick: () => { showForm(); input.focus(); } }, M.t("device.code.open"));
 
     function showForm() {
       open.setAttribute("aria-expanded", "true");
-      append(clear(panel), h("h3", { id: "sign-in-code-title" }, "Sign in with a code"), form);
+      append(clear(panel), h("h3", { id: "sign-in-code-title" }, M.t("device.code.title")), form);
     }
     async function redeem(code) {
       submit.disabled = true;
-      status.busy("Sending…");
+      status.busy(M.t("device.sending"));
       let answer;
       try {
         const next = M.signInNext ? M.signInNext() : null;
         answer = await M.api.post("/auth/device-login", next ? { code, next } : { code });
       } catch (err) {
         submit.disabled = false;
-        status.fail("Not signed in: ", said(err));
+        status.fail(M.t("device.not_signed_in"), said(err));
         return;
       }
       waiting(answer);
@@ -138,12 +141,12 @@ window.Maity = window.Maity || {};
       const countdown = h("span", { class: "countdown" }, left(answer.expires_at));
       const note = M.statusLine();
       let expiresAt = answer.expires_at;
-      const again = h("button", { type: "button", onclick: () => { stop(); input.value = ""; submit.disabled = false; status.done(); showForm(); input.focus(); } }, "Use another code");
+      const again = h("button", { type: "button", onclick: () => { stop(); input.value = ""; submit.disabled = false; status.done(); showForm(); input.focus(); } }, M.t("device.wait.another"));
       const view = h("div", { class: "device-waiting", role: "status" },
-        h("h3", { id: "sign-in-code-title" }, "Waiting for approval on your other device"),
-        h("p", null, "Pick this number there:"),
-        h("p", { class: "match-number", "aria-label": "Number " + answer.match_number }, String(answer.match_number)),
-        h("p", { class: "muted" }, "Expires in ", countdown, "."),
+        h("h3", { id: "sign-in-code-title" }, M.t("device.wait.title")),
+        h("p", null, M.t("device.wait.pick")),
+        h("p", { class: "match-number", "aria-label": M.t("device.wait.number", { number: String(answer.match_number) }) }, String(answer.match_number)),
+        h("p", { class: "muted" }, M.tn("device.expires", { time: countdown })),
         note.el, again);
       append(clear(panel), view);
       every(1000, () => { countdown.textContent = left(expiresAt); });
@@ -152,29 +155,30 @@ window.Maity = window.Maity || {};
         try {
           now = await M.api.get("/auth/device-login?wait=0");
         } catch (err) {
-          if (err.status === 404) { stop(); note.fail("", { message: "This sign-in is no longer pending. Use another code." }); }
+          if (err.status === 404) { stop(); note.fail("", { message: M.t("device.wait.gone") }); }
           return;
         }
         expiresAt = now.expires_at || expiresAt;
         if (now.status === "approved") { stop(); approved(now.account); }
-        else if (now.status === "denied") { stop(); note.fail("", { message: "It was denied on your other device." }); }
-        else if (now.status === "expired") { stop(); note.fail("", { message: "The code expired. Make a new one on your other device." }); }
+        else if (now.status === "denied") { stop(); note.fail("", { message: M.t("device.wait.denied") }); }
+        else if (now.status === "expired") { stop(); note.fail("", { message: M.t("device.wait.expired") }); }
       });
     }
     // Approved: only now the account (§2.6.2), then this browser's session.
     async function approved(account) {
       const status2 = M.statusLine();
       append(clear(panel), h("div", { class: "device-approved", role: "status" },
-        h("h3", { id: "sign-in-code-title" }, "Approved"),
-        account ? h("p", { class: "device-account" }, M.avatar(Object.assign({ id: account.handle }, account), 32), " Signing you in as ", h("strong", null, account.display_name), " @" + account.handle) : null,
+        h("h3", { id: "sign-in-code-title" }, M.t("device.approved.title")),
+        account ? h("p", { class: "device-account" }, M.avatar(Object.assign({ id: account.handle }, account), 32), " ",
+          M.tn("device.approved.as", { name: h("strong", null, account.display_name), handle: account.handle })) : null,
         status2.el));
-      status2.busy("Signing in…");
+      status2.busy(M.t("device.signing_in"));
       try {
         const done = await M.api.post("/auth/device-login/complete", {});
         goNext(done.next);
         signedIn();
       } catch (err) {
-        status2.fail("Not signed in: ", said(err));
+        status2.fail(M.t("device.not_signed_in"), said(err));
       }
     }
 
@@ -193,20 +197,20 @@ window.Maity = window.Maity || {};
       onsubmit: async (e) => {
         e.preventDefault();
         if (!address.value.trim()) { address.focus(); return; }
-        status.busy("Sending…");
+        status.busy(M.t("device.sending"));
         try {
           const next = M.signInNext ? M.signInNext() : null;
           await M.api.post("/auth/email-link", next ? { address: address.value.trim(), next } : { address: address.value.trim() });
           status.done();
           codeForm();
         } catch (err) {
-          status.fail("Not sent: ", said(err));
+          status.fail(M.t("device.not_sent"), said(err));
         }
       },
     },
-    h("h3", { id: "sign-in-mail-title" }, "Sign in by mail"),
-    h("label", { for: "sign-in-address" }, "Your address"), address,
-    h("button", { type: "submit" }, "Email me a sign-in link"), status.el);
+    h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.title")),
+    h("label", { for: "sign-in-address" }, M.t("device.mail.address")), address,
+    h("button", { type: "submit" }, M.t("device.mail.send")), status.el);
     function codeForm() {
       const code = h("input", { id: "sign-in-mail-code", inputmode: "numeric", autocomplete: "one-time-code", "aria-describedby": "sign-in-mail-sent" });
       const status2 = M.statusLine();
@@ -215,25 +219,25 @@ window.Maity = window.Maity || {};
         onsubmit: async (e) => {
           e.preventDefault();
           const digits = code.value.replace(/\s/g, "");
-          if (!/^\d{6}$/.test(digits)) { status2.fail("Not sent: ", { message: "the code in the mail has six digits" }); code.focus(); return; }
-          status2.busy("Signing in…");
+          if (!MAIL_CODE.test(digits)) { status2.fail(M.t("device.not_sent"), { message: M.t("device.mail.digits", { count: MAIL_DIGITS }) }); code.focus(); return; }
+          status2.busy(M.t("device.signing_in"));
           try {
             const done = await M.api.post("/auth/email-code", { code: digits });
             goNext(done.next);
             signedIn();
           } catch (err) {
-            status2.fail("Not signed in: ", err.code === "code_invalid" ? { message: "that code does not match" } : said(err));
+            status2.fail(M.t("device.not_signed_in"), err.code === "code_invalid" ? { message: M.t("device.mail.no_match") } : said(err));
           }
         },
       },
-      h("h3", { id: "sign-in-mail-title" }, "Check your mail"),
-      h("p", { id: "sign-in-mail-sent", role: "status" }, "If this address belongs to an account, a link is on its way. Open it here, or enter the code from the mail."),
-      h("label", { for: "sign-in-mail-code" }, "The six-digit code"), code,
-      h("button", { type: "submit", class: "primary" }, "Sign in"), status2.el));
+      h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.check")),
+      h("p", { id: "sign-in-mail-sent", role: "status" }, M.t("device.mail.sent")),
+      h("label", { for: "sign-in-mail-code" }, M.t("device.mail.code", { count: MAIL_DIGITS })), code,
+      h("button", { type: "submit", class: "primary" }, M.t("device.mail.sign_in")), status2.el));
       code.focus();
     }
     const open = h("button", { type: "button", class: "link-button", "aria-expanded": "false",
-      onclick: () => { append(clear(panel), ask); address.focus(); } }, "Email me a sign-in link");
+      onclick: () => { append(clear(panel), ask); address.focus(); } }, M.t("device.mail.send"));
     append(panel, open);
     return panel;
   }
@@ -241,11 +245,10 @@ window.Maity = window.Maity || {};
   // ---- the signed-in device: /account/sign-in-device ----------------------
 
   async function anotherDevice(ctx, root) {
-    const heading = h("h2", { tabindex: "-1" }, "Sign in another device");
+    const heading = h("h2", { tabindex: "-1" }, M.t("device.other.title"));
     const stage = h("div", { class: "device-stage" });
     append(root, heading,
-      h("p", { class: "muted" }, "On the other device, open the sign-in page and choose Have a code?, or scan the QR code. "
-        + "You approve it here, after it entered the code."),
+      h("p", { class: "muted" }, M.t("device.other.intro")),
       stage);
     window.setTimeout(() => heading.focus(), 0);
     await start(ctx, stage);
@@ -256,34 +259,34 @@ window.Maity = window.Maity || {};
     try {
       return h("div", { class: "qr-box" }, M.qr.svg(url, 200));
     } catch (err) {
-      return h("p", { class: "muted" }, "No QR code for this hub's address: enter the code on the other device instead.");
+      return h("p", { class: "muted" }, M.t("device.other.no_qr"));
     }
   }
 
   async function start(ctx, stage) {
     const status = M.statusLine();
     append(clear(stage), status.el);
-    status.busy("Making a code…");
+    status.busy(M.t("device.other.making"));
     let made;
     try {
       made = await M.api.post("/auth/device-codes", {});
     } catch (err) {
-      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), h("p", { class: "muted" }, "This hub does not offer sign-in by code.")); return; }
-      status.fail("No code: ", said(err));
+      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), h("p", { class: "muted" }, M.t("device.other.disabled"))); return; }
+      status.fail(M.t("device.other.no_code"), said(err));
       return;
     }
     const code = normalCode(made.code) || made.code;
     const countdown = h("span", { class: "countdown" }, left(made.expires_at));
-    const fresh = () => h("button", { type: "button", onclick: () => { stop(); start(ctx, stage); } }, "New code");
+    const fresh = () => h("button", { type: "button", onclick: () => { stop(); start(ctx, stage); } }, M.t("device.other.new_code"));
     const cancel = h("button", { type: "button", onclick: async () => {
       stop();
       try { await M.api.del("/auth/device-codes/" + encodeURIComponent(made.id)); } catch (err) { /* it ends with its expiry anyway */ }
-      ended("Cancelled.");
-    } }, "Cancel");
+      ended(M.t("device.other.cancelled"));
+    } }, M.t("device.other.cancel"));
     const view = h("div", { class: "device-code" },
-      h("p", { class: "device-code-text", "aria-label": "Code " + [...code.replace("-", "")].join(" ") }, grouped(code.replace("-", ""))),
+      h("p", { class: "device-code-text", "aria-label": M.t("device.other.code_label", { code: [...code.replace("-", "")].join(" ") }) }, grouped(code.replace("-", ""))),
       qrOf(made.url),
-      h("p", { class: "muted" }, "Expires in ", countdown, ". Waiting for the other device…"),
+      h("p", { class: "muted" }, M.tn("device.other.expires", { time: countdown })),
       h("div", { class: "actions" }, cancel));
     append(clear(stage), view);
     let expiresAt = made.expires_at;
@@ -294,14 +297,14 @@ window.Maity = window.Maity || {};
       try {
         now = await M.api.get("/auth/device-codes/" + encodeURIComponent(made.id) + "?wait=0");
       } catch (err) {
-        if (err.status === 404) { stop(); ended("This code is gone (its session ended)."); }
+        if (err.status === 404) { stop(); ended(M.t("device.other.gone")); }
         return;
       }
       expiresAt = now.expires_at || expiresAt;
       if (now.status === "redeemed" && shown !== "redeemed") { shown = "redeemed"; approval(now); }
-      else if (now.status === "approved" || now.status === "used") { stop(); ended(now.status === "used" ? "The other device is signed in." : "Approved: the other device is signing in.", true); }
-      else if (now.status === "denied") { stop(); ended("Denied. The code is dead."); }
-      else if (now.status === "expired") { stop(); ended("The code expired."); }
+      else if (now.status === "approved" || now.status === "used") { stop(); ended(now.status === "used" ? M.t("device.other.used") : M.t("device.other.approved"), true); }
+      else if (now.status === "denied") { stop(); ended(M.t("device.other.denied")); }
+      else if (now.status === "expired") { stop(); ended(M.t("device.other.expired")); }
     });
 
     function ended(words, good) {
@@ -312,9 +315,12 @@ window.Maity = window.Maity || {};
     // as such, the three numbers, and Deny as the default (§2.6.2, §2.6.7).
     function approval(now) {
       const d = now.device || {};
-      const claim = d.browser || d.os
-        ? "Says it is " + (d.browser || "an unknown browser") + " on " + (d.os || "an unknown system")
-        : "Says nothing we could read about its browser";
+      // One whole sentence for each case: a filler phrase put into one would
+      // not fit another language's grammar.
+      const claim = d.browser && d.os ? M.t("device.approval.claims", { browser: d.browser, os: d.os })
+        : d.browser ? M.t("device.approval.claims_browser", { browser: d.browser })
+          : d.os ? M.t("device.approval.claims_os", { os: d.os })
+            : M.t("device.approval.claims_nothing");
       const status2 = M.statusLine();
       const busy = (yes) => dialog.querySelectorAll("button").forEach((b) => { b.disabled = yes; });
       const send = async (verb, body, words) => {
@@ -323,25 +329,25 @@ window.Maity = window.Maity || {};
         try {
           await M.api.post("/auth/device-codes/" + encodeURIComponent(made.id) + "/" + verb, body);
           stop();
-          ended(verb === "approve" ? "Approved: the other device is signing in." : "Denied. The code is dead.", verb === "approve");
+          ended(verb === "approve" ? M.t("device.other.approved") : M.t("device.other.denied"), verb === "approve");
         } catch (err) {
           stop();
-          if (err.code === "code_invalid") ended("That was not the number it shows, so the code is denied. If the device is yours, make a new code.");
-          else { busy(false); status2.fail("Not sent: ", said(err)); }
+          if (err.code === "code_invalid") ended(M.t("device.approval.wrong_number"));
+          else { busy(false); status2.fail(M.t("device.not_sent"), said(err)); }
         }
       };
-      const deny = h("button", { type: "button", class: "primary deny", onclick: () => send("deny", {}, "Denying…") }, "Deny");
+      const deny = h("button", { type: "button", class: "primary deny", onclick: () => send("deny", {}, M.t("device.approval.denying")) }, M.t("device.approval.deny"));
       const dialog = h("section", { class: "device-approval", role: "alertdialog", "aria-labelledby": "device-approval-title", "aria-describedby": "device-approval-warning" },
-        h("h3", { id: "device-approval-title" }, "Approve this device?"),
+        h("h3", { id: "device-approval-title" }, M.t("device.approval.title")),
         h("dl", { class: "facts" },
-          h("dt", null, "Address"), h("dd", null, d.ip || "—"),
-          h("dt", null, "Entered the code"), h("dd", null, d.redeemed_at ? formatTime(d.redeemed_at) : "—"),
-          h("dt", null, "Claims"), h("dd", null, claim, d.user_agent ? h("details", null, h("summary", null, "What it sent"), h("code", { class: "user-agent" }, d.user_agent)) : null)),
-        d.new_device ? h("p", { class: "muted" }, "First sign-in from this browser.") : null,
-        h("p", { class: "flag", id: "device-approval-warning" }, h("strong", null, "Only approve a device you are holding now.")),
-        h("p", null, "Pick the number it shows. None of these, or no number on it? Deny."),
-        h("div", { class: "match-choices", role: "group", "aria-label": "The number the device shows" },
-          (now.choices || []).map((n) => h("button", { type: "button", class: "match-choice", onclick: () => send("approve", { number: n }, "Approving…") }, String(n)))),
+          h("dt", null, M.t("device.approval.address")), h("dd", null, d.ip || "—"),
+          h("dt", null, M.t("device.approval.entered")), h("dd", null, d.redeemed_at ? formatTime(d.redeemed_at) : "—"),
+          h("dt", null, M.t("device.approval.claims_label")), h("dd", null, claim, d.user_agent ? h("details", null, h("summary", null, M.t("device.approval.sent")), h("code", { class: "user-agent" }, d.user_agent)) : null)),
+        d.new_device ? h("p", { class: "muted" }, M.t("device.approval.first")) : null,
+        h("p", { class: "flag", id: "device-approval-warning" }, h("strong", null, M.t("device.approval.warning"))),
+        h("p", null, M.t("device.approval.pick")),
+        h("div", { class: "match-choices", role: "group", "aria-label": M.t("device.approval.choices") },
+          (now.choices || []).map((n) => h("button", { type: "button", class: "match-choice", onclick: () => send("approve", { number: n }, M.t("device.approval.approving")) }, String(n)))),
         h("div", { class: "actions" }, deny),
         status2.el);
       append(clear(stage), dialog);

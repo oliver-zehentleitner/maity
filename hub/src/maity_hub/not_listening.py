@@ -27,7 +27,7 @@ from sqlalchemy import Connection, Engine, or_, select, update
 from maity_hub import clock, events, listening
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
-from maity_hub.views import principal_id
+from maity_hub.views import routing_boss
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +99,8 @@ def _excluded(session: Any, member: Any, credential: Any) -> str | None:
         return "the agent is paused"
     if member.active is None or member.removed_at is not None:
         return "the agent left the project"
+    if member.isolated_since is not None:
+        return "the agent is isolated"
     if (member.availability_state or "available") != "available":
         return "the agent is not available"
     return None
@@ -108,7 +110,7 @@ def _audience(conn: Connection, member: Any) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
     member (§8.2)."""
     audience = ["trust:admin"]
-    boss = principal_id(conn, member.reports_to)
+    boss = routing_boss(conn, member.reports_to)
     if boss is not None:
         audience.insert(0, f"member:{boss}")
     owner = conn.execute(

@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import Field
 from sqlalchemy import Connection, func, select, update
 
-from maity_hub import clock, namespace, policy, project_roles
+from maity_hub import availability, clock, namespace, project_roles
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.mentions import global_name
@@ -77,7 +77,11 @@ def target(conn: Connection, project: Any) -> Any | None:
         return None
     # A guest is never whom a newcomer checks in with (§2.3): not by token, not by a
     # stored id, not as the coordinator or the owner fallback.
-    rows = [row for row in members(conn, project.id) if row.trust != "guest"]
+    rows = [
+        row
+        for row in members(conn, project.id)
+        if row.trust != "guest" and row.isolated_since is None  # routed past (§6.2)
+    ]
     ordered = sorted(rows, key=lambda row: (row.handle, principal(row)))
     if token != "coordinator":
         if token.startswith(("role:", "trust:")):
@@ -90,7 +94,7 @@ def target(conn: Connection, project: Any) -> Any | None:
             return matches[0]
         if not token.startswith(("role:", "trust:")):
             return None
-    coordinator = policy.of(project)["coordinator"]
+    coordinator = availability.coordinator_of(conn, project)
     if coordinator == "trust:admin":
         candidates = [row for row in ordered if row.agent_id and in_admin_team(row.trust, row.role)]
     else:

@@ -24,6 +24,9 @@ class Waiter:
     loop: asyncio.AbstractEventLoop
     event: asyncio.Event = field(default_factory=asyncio.Event)
     superseded: bool = False
+    # Set when the agent's membership was isolated: the wait ends at once (§6.2).
+    ended: bool = False
+    membership_id: int | None = None
     # A runner's waiter reads several projects (docs/api.md §15.8); the reader
     # replaces the set on every pass, an assignment the notifier reads atomically.
     project_ids: frozenset[str] = frozenset()
@@ -62,6 +65,14 @@ class Registry:
                 if w.project_id == project_id or project_id in w.project_ids
             ]
         for waiter in waiting:
+            waiter.wake()
+
+    def end(self, membership_id: int) -> None:
+        """End every open wait of an isolated agent's credentials (§6.2, "Isolation")."""
+        with self._lock:
+            waiting = [w for w in self._by_key.values() if w.membership_id == membership_id]
+        for waiter in waiting:
+            waiter.ended = True
             waiter.wake()
 
     def wake_all(self) -> None:

@@ -3056,3 +3056,34 @@ signing in on the same browser would inherit the filter. A key per
 project: the maintainer asked for it per viewer, and switching projects
 would lose it. A setting on the hub: there is no such field, and a
 contract change for a list filter is out of proportion.
+
+## An agent is isolated from its Manage row on Members, with a reason and a confirmation; the row and the list show it
+
+**Id:** d2546b1d-4a69-4e89-9b98-d9b894c572ed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's
+**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), or another owner's agent gets Propose change beside it
+
+In an agent's **Manage** row, for a human with `members:admin`, after
+the pause: **Isolate with a reason** (1–500 characters), sent as
+`POST …/members/{id}/isolate` after a confirmation that names what
+happens at once; an isolated agent shows who isolated it, when and why,
+and **Lift isolation** (`DELETE` on the same path, no confirmation). The
+name cell carries an **Isolated** badge with the reason in its title, on
+every reader's list, since the member view carries `isolated` for all.
+An agent's own caller and a member without `members:admin` get no
+control. The fixture hub answers both routes as §6.2 describes.
+
+**Reason:** isolation is the project's lever against a misbehaving
+agent, beside the pause and the removal that already live in that row;
+it takes effect at once for an agent another human owns, so the
+confirmation says so before it is sent. Lifting gives access back and
+loses nothing more, so it needs no question.
+
+**Rejected alternative:** a separate Isolate button on the list row:
+the row holds Chat and Manage only (54a49af9), every other member action
+is in Manage. Isolating without a confirmation like the pause: the pause
+is a soft stop the owner may lift, isolation releases claims and closes
+placements of someone else's agent.

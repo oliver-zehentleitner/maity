@@ -655,6 +655,8 @@ def patch_project(
                 if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
                     moderation.refuse_held(conn, "project", project.id)
                 values["public_page"] = body.public_page
+                # What the forge said belongs to the time the page was on: asked again.
+                values["repository_public"] = None
                 settings_changed["public_page"] = body.public_page
         if "public_about" in given:
             about = public_projects.check_about(body.public_about)
@@ -668,6 +670,7 @@ def patch_project(
                 # The owner confirmed the old URL, not this one, whoever changes it (§11.4).
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
+                values["repository_public"] = None  # the forge has not said anything of this one
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -899,7 +902,7 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
-        if given & {"public_page", "public_about", "name", "slug", "state"}:
+        if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
             # What the page shows, or whether it exists, changed: at once (§16.9).
             public_pages.touch(conn, public_projects.KIND, project.id)
         return idempotency.Outcome(

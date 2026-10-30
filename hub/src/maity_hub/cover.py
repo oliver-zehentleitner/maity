@@ -71,7 +71,7 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
     seen: set[int] = set()
     shown = []
     for member in order:
-        if member.trust == "guest" or member.role == "proxy":
+        if member.trust == "guest" or member.role == "proxy" or member.isolated_since is not None:
             continue  # never a substitute, whatever the policy said when it was set
         if member.id != row.id and member.id not in seen:
             seen.add(member.id)
@@ -340,10 +340,10 @@ def _announce_card(conn: Connection, project: Any, card_id: str, actor: Actor | 
 
 
 def _audience(conn: Connection, covered: Any, sub: Any) -> list[str]:
-    from maity_hub.views import principal_id
+    from maity_hub.views import routing_boss
 
     audience = [f"member:{_principal(covered)}", f"member:{_principal(sub)}"]
-    boss = principal_id(conn, covered.reports_to)
+    boss = routing_boss(conn, covered.reports_to)
     if boss is not None:
         audience.append(f"member:{boss}")
     audience.append("trust:admin")

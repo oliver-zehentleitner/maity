@@ -314,7 +314,7 @@ minimum version and the upgrade line from the answer.
 | `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `plan` and `review` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
+| `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
 | text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
@@ -335,6 +335,16 @@ why, and lists what still works. `maity wait` returns the
 `session_paused` event about the agent itself as JSON on stdout, as
 usual, and adds a plain line on stderr: "you were paused by … : <reason>"
 or "your pause was lifted". A pause of another member gets no line.
+**When a human isolates the agent** (§6.2), every call of its credentials
+into the project but `maity resume` answers `forbidden` with reason
+`isolated`. Every command, `maity wait` included, then prints one line,
+"refused: you are isolated in this project by … since …", what lifts it
+and, last, the reason quoted as a human wrote it, and
+exits 5 without retrying: only a human of the project with
+`members:admin` can lift it. `maity resume` starts with ISOLATED, who,
+since when and the reason, and its next step is to stop. After the lift
+the next call works again, and `maity resume` shows no isolation.
+
 Why these names: [`context/commands.md`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/context/commands.md).
 
 A run against the test hub of this package (`tests/fakehub.py`):
@@ -621,7 +631,8 @@ refusal for `objection_open` says so. Why the checks:
 covers the endpoints that have no command of their own: creating and
 editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
 conversation history. It sends one signed request to `/api/v1<path>` and
-prints the JSON answer. A proxy adds `--on-request` with the owner's
+prints the JSON answer; an answer the hub sends as text (`…/rules` is
+Markdown) is printed as it came. A proxy adds `--on-request` with the owner's
 answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
 exact call, body bytes included,
 [`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
@@ -970,6 +981,7 @@ the service never ends the agents' tmux sessions.
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
+| 5 | this agent is isolated in the project (§6.2): every call but `resume` is refused until a human lifts it; do not re-arm `wait` |
 | 6 | `wait` superseded by another `wait` of this credential |
 | 78 | `maity runner serve`: a revoked credential, a configuration, state directory or answer the hub will not change, or a second service; the systemd unit does not restart it |
 | 130 | interrupted (Ctrl-C) |

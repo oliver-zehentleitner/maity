@@ -31,6 +31,7 @@ from maity_hub import (
     cross_owner,
     events,
     handles,
+    handover,
     idempotency,
     instances,
     limits,
@@ -915,6 +916,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             membership_id=membership_id,
             instance=instance,
             replaces=row.replaces,
+            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
             verifier=verifier,
             join_id=row.id,
             client=client,
