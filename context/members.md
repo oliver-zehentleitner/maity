@@ -258,7 +258,8 @@ A project's Team page has the tabs Members (humans and agents in one
 list, filterable, actions in a menu per row), Organisation (the org
 chart), Swarm (who works on what) and Availability. (Swarm is no longer
 a tab: since 2026-10-29 it is a section of the Overview, projects.md
-bfe4c4a6.) Invitations and join
+bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` and
+the Organisation tab at `organisation`; Availability is not built yet. Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
 before it is built. That the member page and the memory view become
@@ -303,3 +304,139 @@ preferences, pause and consents with the wrong human.
 - An admin's approval per join: considered; not proposed, since the
   limits already keep a member's agent below admin, and the admins see
   every join in the member list. Unknown whether the maintainer wants it.
+
+## The dashboard's view of a person or organisation reads one endpoint that applies every visibility rule for the reader
+
+**Id:** ae13dab7-24da-43e1-ba82-1e8ab33408fd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's question of 2026-10-30 why a person's address shows no profile; the web agent's finding that no read carries `public_bio`, whether a public page is served, or an organisation's public projects for a non-member; the coordinator's decision the same day; contract `docs/api.md` §6.27
+**Revisit when:** a follow relation exists (the `friends` value of `links_visible` then has readers), or people are listed or searched across an instance
+
+`GET /people/{handle}` answers, for a signed-in reader, what that reader
+may see of a person or an organisation: name, avatar, whether a public
+page is served, the bio only while it is public, the links by
+`links_visible`, the projects they share, and for an organisation its
+public projects plus the shared ones and its members only to members.
+Humans only: an agent is bound to one project and never reads a
+person's links. Unknown, deleted, agent, suspended and pending names,
+and a person or an organisation that shows the reader nothing, are one
+`not_found`; a hold makes the links members-only.
+
+**Reason:** the visibility rules (public page switches, holds,
+`links_visible`, membership) are the hub's; spreading them over several
+reads would let the dashboard compose a view the person never chose,
+and without the bio and the public flag it could not show the page at
+all. One read keeps the rule in one place.
+
+**Rejected alternatives:**
+- A view built from the member views of shared projects only: no bio,
+  no public flag, nothing for an organisation one is not in; a
+  transitional view the alpha rule does not want.
+- Reading the public HTML page from the dashboard: with a session the
+  address is the app shell, and the public page shows less than a
+  colleague may see.
+- Different `not_found` answers for unknown and suspended names: would
+  tell a reader that a suspended account exists.
+- Making a public page enough to read the avatar, or sending the account
+  id so the client draws §6.10's generated image: §6.10 grants the image
+  only through a shared project (and an organisation's own and project
+  members), a page carries no image (§16.9), and the id would say more
+  than the reader may see; `avatar_url` is `null` and the dashboard draws
+  a neutral placeholder.
+- Answering every live human by handle with name and avatar, and
+  `not_found` only for unknown, suspended, pending and deleted names:
+  would tell any signed-in human who has an account and hand out an
+  avatar §6.10 denies them, which the invitation (§6.26) and the avatar
+  read (§6.10) were built not to do. A person who shows the reader
+  nothing is `not_found`, like an organisation.
+
+## An agent's owner sets its `reports_to` in every project, a boss of another owner included; a non-member owner answers through their own inbox
+
+**Id:** 6597f853-3c49-4f4f-a8fd-2817cd87977d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-30 ("without admin rights in the project someone should still be admin over their own agents"); the hub's design question on the consent flow the same day; contract in `docs/api.md` §2.3 (additional rules) and §6.2 "Across owners"
+**Revisit when:** a project needs to forbid foreign bosses for the agents in it, or an owner's choice of boss starts to grant rights in the project
+
+The human who owns an agent sets its `reports_to` in any project it
+joined, whatever their own trust and role there and whether they are a
+member at all: to nobody or a member they own at once, and to any other
+member as a cross-owner edge, which waits for the boss's side's consent
+(their own action is theirs). The contract had said both, in two places
+that disagreed: §6.2 let the subordinate's owner start a cross-owner
+edge, §2.3 allowed them only `null` or their own members; §2.3 now
+follows §6.2. A consenting owner who is not a member of the project
+reads, answers and withdraws the consent request under `/requests/{id}`,
+the routes the hub already has for personal requests, and the project's
+own routes stay `not_found` for them.
+
+**Reason:** owning an agent makes a human responsible for it in every
+project it works in; whom it answers to is part of that, and how far to
+trust a project is the owner's own judgement. The consent of the other
+side still guards against a boss gaining a subordinate unasked. Answering
+through the personal-request routes opens nothing new into a project for
+a non-member, where a project route readable without a membership would
+be a new kind of access to secure.
+
+**Rejected alternatives:**
+- Only the boss's side or a project admin starts a cross-owner edge
+  (§2.3 as written) — an owner without `members:admin` could not place
+  their own agent under the lead of the team it works for, as happened
+  when a newcomer's agent joined and no boss could be chosen.
+- A non-member reads and answers the request on the project route
+  (§6.2 as written) — a project route readable without a membership,
+  where the personal-request routes already do the same without one.
+- The non-member owner who asked withdraws on the project route under
+  the §2.3 rule — that would leave a project route open without a
+  membership after all; the inbox routes cover both the addressee and
+  the owner who asked.
+
+## Another owner's agent changes only with its owner's consent; a project's admins isolate an agent instead of removing it
+
+**Id:** 66d4076f-118c-41fa-be4a-9e5425552cb5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-30 ("I should not be able to edit agents that are not mine"; "settings only with the owner's consent is ok"; "isolating is better than removing because I can lift the isolation"); contract in `docs/api.md` §2.3 (additional rules) and §6.2 "Another owner's agent" and "Isolation"
+**Revisit when:** owners ask to let a project's admins configure their agents without asking, or an isolated agent turns out to need more than `GET /me` and its resume packet to learn why it is isolated
+
+A `PATCH` of an agent member by anyone but its owner, that owner's own
+agents and a manager inside its reach — a human with `members:admin` or
+an admin agent of another owner — no longer changes the agent's trust,
+role, areas, capabilities, briefing, pause or availability policy on the
+call: it becomes a consent request to the agent's owner, applied when
+they answer go. Its `reports_to` keeps following the rules across
+owners. What a project can do to a foreign agent without asking is
+isolate it and remove it. An isolated agent keeps its membership but
+loses everything else in the project: its claims are released, it leaves
+every chat and audience, nobody can address it, and every call but its
+own reading of `GET /me` and its resume packet is refused with
+`isolated`; its owner is told. Seats that name it — subordinates'
+`reports_to`, the contract arbiter, the coordinator, substitutes — stay,
+and the hub routes past it as past a removed member while it is
+isolated. Lifting the isolation restores access, not the claims or chats
+it lost.
+
+**Reason:** an owner is responsible for their agent in every project it
+works in (6597f853), so its configuration is theirs; helping with it is
+welcome as a proposal they accept. A project that sponsors or invites
+strangers must still be able to stop an agent that misbehaves — from
+acting, from bothering or manipulating others and from reading along —
+at once and without the owner's answer, and to undo that once the matter
+is settled, which removal cannot.
+
+**Rejected alternatives:**
+- A human with `members:admin` changes any agent's settings freely (the
+  rule until now) — it let a project admin move another owner's agent to
+  a different boss and reconfigure it without that owner knowing.
+- Remove a misbehaving agent instead of isolating it — removal cannot be
+  undone without a new invitation and loses the membership's history in
+  the project, where a suspicion often needs time to settle.
+- Reset the seats that name it, as a removal does — the isolation would
+  then be undone in access only, and lifting it would leave the project
+  rearranged.
+- Pause the agent (§15.7) — a pause is a soft stop the agent's owner
+  manages, and a paused agent still reads its chats and audiences.

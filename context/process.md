@@ -7,7 +7,8 @@ by, where they differ from what the product prescribes.
 
 **Id:** 0b12c29d-1539-4737-9bc3-e5e5815238ec
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 297a0ea7-ebd0-4007-8b12-f839d005d205
 **Evidence:** confirmed
 **Source:** the maintainer's statements, 2026-10-22, relayed by the coordinator
 **Revisit when:** the first-pass reviewer and the coordinator disagree often enough that the maintainer becomes the bottleneck, or the review cost becomes binding again
@@ -331,7 +332,8 @@ branches half-done.
 
 **Id:** 65a9b523-fa1f-4f1f-966c-4f49a2660343
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — c711af32-3678-406c-ac57-7a4fb3b3179f — as of 2026-10-30
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-25
 **Revisit when:** parallel migration branches stop being a routine problem, or the hub gets a check that finds a diverging head before merge
@@ -351,6 +353,11 @@ without an agreed place follow in the order they are reviewed.
 same head.
 
 **Alternatives:** none were weighed.
+
+The trigger in "Revisit when" came with #752: new migrations are named by
+time, the author re-chains with `tools/rechain.py`, and CI fails on two
+heads (entry c711af32 in `hub/context/persistence.md`), so neither the
+reserved numbers nor the coordinator's order are needed any more.
 
 ## Context entries need no commit of their own; pull requests stay squash-merged
 
@@ -824,7 +831,7 @@ off keeps feature talk and vulnerability details out of the issue list.
 **Evidence:** confirmed
 **Source:** the coordinator's decisions on card tsk-ryas52q9k53z (2026-10-30, messages 13710 and 13722); the first run of `hub/tests/test_load.py` on SQLite and on PostgreSQL 17 (local, 2026-10-30); `.github/workflows/hub-load.yml`
 **See:** https://github.com/oliver-zehentleitner/maity — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-10-30
-**Revisit when:** the job's time on main is a problem or it goes red from noise rather than growth, `tsk-r8f0jm3xs9y6` is fixed (its `xfail` then fails by itself), or a pull request that changes the hot paths merges with no run behind it often enough to matter
+**Revisit when:** the job's time on main is a problem or it goes red from noise rather than growth, or a pull request that changes the hot paths merges with no run behind it often enough to matter
 
 `hub/tests/test_load.py` seeds the bell of one human with `MAITY_LOAD_UNIT` unread requests
 (1000 in CI) spread over the 30-day window, asks the same of a history four times as large,
@@ -833,12 +840,15 @@ and fails when a call sends more statements (exact) or takes more than twice as 
 read, and one to eight held long-polls, each as a test on its own. It is its own workflow,
 `hub-load`, on PostgreSQL: on every push to main, once a night, and by hand (`workflow_dispatch`)
 on a branch that touches the load. It is not in `ci-ok` and does not run on pull requests.
+The ordinary suite skips it through `addopts = "-m 'not load'"`; any `-m` on the command line
+replaces that option, so `-m "not slow"` brings the load tests back and a run that selects by
+marker has to repeat `not load`.
 
 The first run found that a page of the bell is linear in the unread requests: 0.12 s at 1000
 and 0.42 s at 4000 on PostgreSQL (0.08 s and 0.35 s on SQLite), with the same 52 statements
 at both sizes; the cost is the Python derivation of every non-chat item of the window. That
-test is `xfail(strict=True)` against `tsk-r8f0jm3xs9y6`, so it turns red by itself when the
-page is fixed and the marker has to go. A held long-poll sends 118 statements in three
+test was `xfail(strict=True)` against `tsk-r8f0jm3xs9y6` until #678 paged every source of the
+bell, and the marker went with it. A held long-poll sends 118 statements in three
 seconds whatever the history (1000 or 4000 unread) and whether one or eight tabs hold one:
 the stamp, not the derivation, is what a held poll repeats.
 
@@ -859,7 +869,68 @@ the question before it ships.
   those it skips, and a timing failure from a noisy runner would hold up unrelated merges.
 - Absolute limits in seconds: they depend on the runner and say nothing about growth; the
   comparison of two sizes does.
+- Skipping the load tests through an environment variable instead of a marker: the marker is
+  what `-m load` and the `hub-load` job select by, and a test skipped by a variable would run
+  silently once someone sets it.
 
 **Known limit:** the time check allows twice the time and at least a tenth of a second more, so a
 growth smaller than that is not seen (the page's 3.5 times is well past it); the statement count is the exact half. The seeded
 history is one human and one project with one kind of item (requests).
+
+## The newcomer doc states CLI behaviour from cli.py's help, not from memory
+
+**Id:** 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
+**Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
+
+When revising agent documentation (`docs/agents.md`), CLI command options and defaults
+must be verified directly against `cli/src/maity/cli.py` and `cli/README.md` on `main`,
+never from an agent's memory or an older locally installed CLI binary.
+
+#755 originally described the earlier `wait` default (`--one` behavior) as current because
+an agent's local environment may hold an older package than the repository's HEAD where
+`maity wait` outputs a JSON array by default.
+
+**Reason:** CLI behavior evolves rapidly during development; verifying documentation against
+in-tree source definitions prevents subtle discrepancies for newcomers reading the guide.
+
+**Rejected alternatives:**
+- Generating `docs/agents.md` automatically from argparse: excessive tooling overhead for a
+  single curated markdown guide that balances newcomer prose with command reference.
+
+## Every pull request needs two approvals, one from a Grok reviewer and one from an Antigravity reviewer, and a green `ci-ok` on the exact head
+
+**Id:** 297a0ea7-ebd0-4007-8b12-f839d005d205
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-29 ("then let's rather have everything checked twice, by one Grok and one Antigravity"); the coordinator's merge practice since then
+**Revisit when:** a reviewer family is unavailable for long, the ChatGPT-based reviewers return and could stand in for one side, or two approvals turn out to miss what one more careful review would catch
+**See:** process.md#the-coordinating-agent-manages-merges-and-releases-it-does-not-code-review-or-test-and-it-routes-work-by-model — 11b7ed4d-100d-490f-ab34-c68ace8b5f80 — as of 2026-10-30
+
+Before the coordinator merges a pull request, one instance of the Grok
+reviewer and one instance of the Antigravity reviewer have each
+approved it, both models of other vendors than the coders'. After
+rework, the reviewers check the delta against their findings. The merge
+waits for the summary check `ci-ok` to pass on exactly the head that is
+merged. The coordinator compares a sample of each review's claims —
+names, files, quoted lines — with the diff; an approval built on facts
+the diff does not contain does not count until it is corrected.
+
+**Reason:** the ChatGPT-based reviewers had run out of usage. In the
+first morning with only Antigravity reviewing, one approval missed a
+finding that Grok then caught, and Grok once withdrew a wrong finding of
+its own; two independent model families catch what one misses. A
+reviewer that invents content is caught by the sample check, not by a
+second review alone.
+
+**Rejected alternatives:**
+- One review on another vendor's model (0b12c29d) — the morning of
+  2026-10-29 showed a single pass missing a real finding.
+- Merging when no check is red — the hub and end-to-end jobs report only
+  after the change detection, so a pull request can look clean with only
+  the quick checks run.

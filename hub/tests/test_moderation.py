@@ -45,11 +45,12 @@ def test_hide_takes_a_project_members_only_until_dismissed(
     team: dict[str, Any], migrated: Engine
 ) -> None:
     owner = team["owner"]
-    owner.patch(f"/projects/{PROJECT}", {"policy": {"swarm_public": "on"}, "reason": "show"})
+    shown = owner.patch(f"/projects/{PROJECT}", {"policy": {"badge": "members"}, "reason": "show"})
+    assert shown.status_code == 200, shown.text
     made = report(team["pat"], {"type": "project", "id": PROJECT}).json()
     assert resolve(team, made["id"], "hide", "spam page").status_code == 200
     project = owner.get(f"/projects/{PROJECT}").json()
-    assert (project["policy"]["badge"], project["policy"]["swarm_public"]) == ("off", "off")
+    assert project["policy"]["badge"] == "off"
     assert project["moderation"]["action"] == "hide"
     assert project["moderation"]["report_id"] == made["id"]
     [changed] = [e for e in events(owner) if e["kind"] == "policy_changed"][-1:]
@@ -296,17 +297,16 @@ def test_a_suspension_locks_projects_before_the_human(
     assert max(revoked + paired) < min(human), statements
 
 
-def test_an_agent_on_a_public_swarm_page_can_be_reported_by_its_name(
+def test_an_agent_is_reported_by_its_name_only_by_who_can_read_it(
     team: dict[str, Any], make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """Strangers see it there (§6.22), so they report it there (§16.8)."""
+    """No page outside a project shows an agent since the public swarm page went (§6.22): a
+    stranger's report by its global name is `not_found`, a fellow member's is taken (§16.8)."""
     owner, stranger = team["owner"], team["stranger"]
     agent = flow.agent(make_client, owner)
     name = f"maintainer/{owner.get(f'/agents/{agent.id}').json()['handle']}"
     assert report(stranger, {"type": "profile", "id": name}).status_code == 404
-    on = owner.patch(f"/projects/{PROJECT}", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    assert on.status_code == 200, on.text
-    made = report(stranger, {"type": "profile", "id": name})
+    made = report(team["pat"], {"type": "profile", "id": name})
     assert made.status_code == 201, made.text
     shown = owner.get(f"/admin/reports/{made.json()['id']}").json()
     assert shown["target"] == {"type": "profile", "id": agent.id}

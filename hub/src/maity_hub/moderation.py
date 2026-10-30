@@ -12,7 +12,14 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import account_deletion, attachment_store, clock, write_guard
+from maity_hub import (
+    account_deletion,
+    attachment_store,
+    clock,
+    public_pages,
+    public_projects,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.auth import email_links, leaks, sessions
 from maity_hub.errors import ApiError, invalid
@@ -203,7 +210,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
 def unsuspend(conn: Connection, human_id: str) -> bool:
     """The operator lifts a suspension; True when one stood. Nothing comes back by itself:
     the account signs in again, and its agents join again."""
-    return (
+    lifted = (
         conn.execute(
             update(t.human)
             .where(t.human.c.id == human_id, t.human.c.suspended_at.isnot(None))
@@ -211,6 +218,10 @@ def unsuspend(conn: Connection, human_id: str) -> bool:
         ).rowcount
         == 1
     )
+    if lifted:
+        public_pages.touch(conn, "person", human_id, removal=False)  # the page may return
+        public_projects.touch_owned(conn, human_id, removal=False)
+    return lifted
 
 
 # --- the account a report concerns ----------------------------------------------------------
@@ -299,6 +310,7 @@ def suspend_org(conn: Connection, org_id: str, report: Any, note: str | None) ->
     for project in org_projects.projects_of(conn, org_id):
         if project.state != "archived":
             archive_by_moderation(conn, project.id, reason, by)
+    public_projects.touch_of_org(conn, org_id)  # none of its projects has a page now (§16.9)
     return org_projects.owners_of(conn, org_id)
 
 
@@ -389,6 +401,11 @@ def apply(
         )
     conn.execute(delete(t.moderation_hold).where(t.moderation_hold.c.report_id == report.id))
     if action == "dismiss":
+        if account is not None:  # a lifted hold may bring the person's page back
+            public_pages.touch(conn, "person", account, removal=False)
+            public_projects.touch_owned(conn, account, removal=False)
+        if report.target_type == "project":
+            public_pages.touch(conn, "project", str(report.project_id), removal=False)
         return
     if action == "hide":
         _hide(conn, report, note)
@@ -405,6 +422,12 @@ def apply(
                 report_id=report.id, target_type=kind, target_id=key, action=action, at=clock.now()
             )
         )
+    if account is not None:  # a hidden, removed or suspended person has no page (§16.9)
+        public_pages.touch(conn, "person", account)
+        if action == "suspend":  # nor have the projects under their name
+            public_projects.touch_owned(conn, account)
+    if report.target_type == "project":  # a project a hold stands on is not served either
+        public_pages.touch(conn, "project", str(report.project_id))
     again = report.status == "resolved" and report.action == action and report.note == note
     # The affected account's notice: the action and the note, never the reporter. A repeat of
     # the same resolution tells it nothing new. For an organisation's suspension and for an

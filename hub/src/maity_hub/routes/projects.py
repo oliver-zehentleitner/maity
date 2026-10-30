@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
@@ -18,6 +18,7 @@ from maity_hub import (
     availability,
     clock,
     commitment,
+    handles,
     idempotency,
     images,
     ktw,
@@ -29,6 +30,8 @@ from maity_hub import (
     placements,
     policy,
     project_names,
+    public_pages,
+    public_projects,
     releases,
     rules,
     setup_cards,
@@ -79,7 +82,6 @@ class PolicyIn(Strict):
     on_runner_revoke: str | None = None
     badge: str | None = None
     subtasks: str | None = None
-    swarm_public: str | None = None
     keep_the_why: str | None = None
     keep_the_why_defaults: str | None = None
     merged_closes: str | None = None
@@ -181,6 +183,9 @@ class ProjectPatch(Strict):
     absence: AbsenceIn | None = None
     settings: SettingsIn | None = None
     rules_markdown: str | None = markdown(default=None)
+    # The project's public page and its text (§16.9): the namespace owner's, not the policy's.
+    public_page: Literal["off", "on"] | None = None
+    public_about: str | None = None
     reason: str | None = Field(default=None, max_length=16384)
 
 
@@ -189,12 +194,12 @@ def _load(conn: Connection, project_id: str) -> Any:
 
 
 # What a public project shows outside it (§6.20, §16.8): `hide` turns these off.
-PUBLIC_OFF = {"badge": "off", "swarm_public": "off"}
+PUBLIC_OFF = {"badge": "off"}
 
 
 def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
-    """`hide` on a project (§16.8): members-only, its README badge and public swarm page
-    off, with the `policy_changed` a `PATCH` would write."""
+    """`hide` on a project (§16.8): members-only, its README badge off, with the
+    `policy_changed` a `PATCH` would write."""
     project = lock_project(conn, project_id)
     current = policy.of(project)
     new = {**current, **PUBLIC_OFF}
@@ -232,6 +237,7 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
         actor=actor,
     )
     placements.project_archived(conn, project_id, actor, None)
+    public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
 def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
@@ -462,7 +468,8 @@ def _creation_owner(
     organisation's row is locked, and the role read under the lock, before any project's."""
     assert caller.human_id is not None
     own = conn.execute(select(t.human.c.handle).where(t.human.c.id == caller.human_id)).scalar()
-    if owner is None or owner == own:
+    gave_up = handles.aliases(conn, [caller.human_id])[caller.human_id]  # §6.24
+    if owner is None or owner == own or owner in gave_up:
         return str(caller.human_id), None, None
     found = conn.execute(
         select(t.org.c.id)
@@ -524,6 +531,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 **policy.columns(filled),
                 settings={"release_checklist": []},
                 rules_version=1,
+                rules_text_digest=rules.text_digest(),
                 created_at=now,
             )
         )
@@ -623,6 +631,8 @@ def patch_project(
             raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
+        if given & PUBLIC_FIELDS:
+            _namespace_owner_only(conn, mine)
         project = mine.project
         actor = caller.actor(mine.id)
         # A rename first, so that every event below names the project by its new full name.
@@ -637,6 +647,19 @@ def patch_project(
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
             rules_inputs_changed = True
+        if "public_page" in given:
+            if body.public_page is None:
+                raise invalid({"public_page": "required"})
+            if body.public_page != project.public_page:
+                if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
+                    moderation.refuse_held(conn, "project", project.id)
+                values["public_page"] = body.public_page
+                settings_changed["public_page"] = body.public_page
+        if "public_about" in given:
+            about = public_projects.check_about(body.public_about)
+            if about != project.public_about:
+                values["public_about"] = about
+                settings_changed["public_about"] = about is not None  # the text is not an event
         if "repository" in given:
             columns = _repository_columns(body.repository)
             values.update(columns)
@@ -875,6 +898,9 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
+        if given & {"public_page", "public_about", "name", "slug", "state"}:
+            # What the page shows, or whether it exists, changed: at once (§16.9).
+            public_pages.touch(conn, public_projects.KIND, project.id)
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
         )
@@ -967,7 +993,6 @@ def confirm_repository(
 
 # Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
 HUMANS_ONLY_POLICY = {
-    "swarm_public",  # it shows the agents and their owners to the world (§6.22)
     "spawn_consent_by",
     "signing",
     "tag_authority",
@@ -1021,6 +1046,23 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("no agent changes this, whatever its role")
 
 
+PUBLIC_FIELDS = {"public_page", "public_about"}
+
+
+def _namespace_owner_only(conn: Connection, mine: Membership) -> None:
+    """The page is published under the namespace owner's name, so its existence and its words
+    are theirs: the human who is the namespace owner, any owner of the organisation that is
+    (§16.9, §6.26)."""
+    project = mine.project
+    if mine.kind != "human":
+        raise humans_only("the public page is set by the namespace owner, a human")
+    if project.owner_org_id is not None:
+        if orgs.role_of(conn, project.owner_org_id, mine.row.human_id) != "owner":
+            raise orgs.org_role()
+    elif mine.row.human_id != project.owner_id:
+        raise forbidden(message="only the project's namespace owner sets its public page")
+
+
 def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> None:
     if (
         mine.kind == "agent"
@@ -1068,7 +1110,23 @@ def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        text = rules.generate(mine.project, mine.trust, mine.role, arbiter_text(conn, mine.project))
+        # The duty line follows the caller's session: a supervised one gets §15.11's (§6.9).
+        supervised = (
+            caller.kind == "agent"
+            and conn.execute(
+                select(t.agent_session.c.supervisor).where(
+                    t.agent_session.c.id == caller.session_id
+                )
+            ).scalar()
+            is not None
+        )
+        text = rules.generate(
+            mine.project,
+            mine.trust,
+            mine.role,
+            arbiter_text(conn, mine.project),
+            supervised=supervised,
+        )
     return Response(
         text,
         media_type="text/markdown; charset=utf-8",

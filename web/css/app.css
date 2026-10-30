@@ -170,6 +170,8 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
 /* The lockup, 28 px tall; the dark file where the page is dark (as the tokens above decide). */
 .brand-lockup { display: block; height: 28px; width: auto; }
+/* The lockup is the way home (js/app.js brandTitle): a link without underline, its focus ring round the lockup. */
+.brand-home { display: block; text-decoration: none; border-radius: 4px; }
 .brand-lockup.brand-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .brand-lockup.brand-light { display: none; }
@@ -252,6 +254,11 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
 .switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
 .project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+/* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
+.header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
+.header-link:hover { border-color: var(--accent); }
+.header-link-mark { flex: none; }
 .state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
@@ -346,6 +353,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
+.members-filter { margin: 4px 0 8px; }
+.members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
 
 .prio-high { color: var(--high); }
 .prio-normal { color: var(--normal); }
@@ -914,6 +923,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .overview-row { display: grid; gap: 16px; min-width: 0; }
 .overview-row-1 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
+.overview-row-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; }
 .overview-stack { flex: 2 1 480px; display: grid; gap: 16px; min-width: 0; }
 .overview-latest { flex: 1 1 300px; }
 .overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
@@ -1395,6 +1405,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-here h4 { margin: 0 0 4px; }
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
+/* Agents that stop listening, on the account (js/notify-settings.js). */
+.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings h3 { margin: 0; }
+.not-listening-settings button { justify-self: start; }
+/* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
+.my-nl { display: grid; gap: 6px; }
+.my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.my-nl input[type="number"] { max-width: 8rem; }
 
 /* A member's page (js/member-page.js): the breadcrumb, the header, the tabs. */
 .breadcrumb { margin: 4px 0 12px; font-size: 0.9rem; }
@@ -1411,6 +1429,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+.view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
+.view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
 /* Phone: avatar, text, then the buttons at full width (the handover). */
@@ -1419,3 +1441,41 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
   .member-head-actions { flex-direction: column; align-items: stretch; }
   .member-head-actions > * { width: 100%; }
 }
+
+/* The instance a chat message wakes (js/chat.js, §9.1), beside the heading. */
+.chat-instance { display: inline-flex; align-items: center; gap: 6px; }
+.chat-instance select { min-height: 28px; }
+.msg-to { white-space: nowrap; }
+
+/* A review result's facts (js/messages.js, §8.4): verdict, head, the places read. */
+.review { display: grid; gap: 4px; margin: 4px 0; }
+.review-head { margin: 0; }
+.review-cites { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 0.85rem; }
+.review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
+.review-quote { white-space: pre-wrap; }
+@media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
+
+/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
+.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
+
+/* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
+.meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
+.meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+
+/* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
+.person-head { display: flex; align-items: center; gap: 14px; }
+.person-head h2 { margin: 0; }
+.person-head p { margin: 2px 0 0; }
+/* No picture the reader may see: a neutral placeholder, not a generated avatar. */
+.person-picture-none { display: inline-block; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); vertical-align: middle; }
+.person-picture-none.size-64 { width: 64px; height: 64px; }
+.person-picture-none.size-20 { width: 20px; height: 20px; }
+.person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+
+/* Renaming a handle (js/handles.js, docs/api.md §6.24). */
+.handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
+.handle-form .error { flex-basis: 100%; margin: 0; }
+.handle-at { color: var(--muted, inherit); }

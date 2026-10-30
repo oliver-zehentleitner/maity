@@ -105,8 +105,19 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
-    # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
-    Column("meat_proxy", Boolean, nullable=False, server_default=false()),
+    # "I am a meat proxy" (docs/api.md §5.2): the two things the human says about themselves.
+    # The switch `meat_proxy` is derived: on while a part is.
+    Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
+    Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
+    # Whether the person has a public page, and the plain text on it (§16.9); a person is
+    # private until they choose.
+    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    Column("public_bio", String(280)),
+    # The person's website and their names on the networks of §16.9 (never URLs), and who
+    # sees them; the links are built from the names when shown.
+    Column("website", String(200)),
+    Column("social", JSON_VALUE),
+    Column("links_visible", String(24), nullable=False, server_default="private"),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -522,6 +533,10 @@ project = Table(
     Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # The project's public page and the text on it (§16.9): both belong to the namespace
+    # owner and are off and empty until they choose; not part of the policy.
+    Column("public_page", String(8), nullable=False, server_default="off"),
+    Column("public_about", MARKDOWN_TEXT),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
@@ -534,8 +549,6 @@ project = Table(
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
     Column("subtasks", String(16), nullable=False, server_default="proposed"),
-    # Whether visitors without a session see the swarm page, agents only (§6.22).
-    Column("swarm_public", String(8), nullable=False, server_default="off"),
     # What a merged pull request does to its card in review: notify or auto (§6.6).
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
     # Whether a human with trust member creates joins for agents of their own, and how
@@ -586,12 +599,55 @@ project = Table(
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # The digest of the hub's generated text this project's `rules_version` last counted
+    # (§6.9): a start with another digest bumps the version once. Null: never counted.
+    Column("rules_text_digest", String(64)),
     # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
     CheckConstraint(OWNER_SHAPE, name="owner_shape"),
+    **MYSQL_TABLE,
+)
+
+# A handle a human or an agent profile gave up by a rename (§6.24): it stays with the id, oldest
+# first, and nobody else can take it. `scope` is where handles are unique: "human" for all
+# humans, the owner's id for an owner's agent profiles; a deleted profile's aliases leave the
+# scope with it (`live` NULL), as its handle does.
+handle_alias = Table(
+    "handle_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id"),
+    _ref("agent_id", "agent_profile.id"),
+    Column("scope", String(ID), nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("live", Boolean, server_default=true()),
+    UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
+    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per rename (a no-op leaves none), for the limit of 3 in 24 hours (§1.7, §6.24).
+handle_change = Table(
+    "handle_change",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("subject_id", String(ID), nullable=False, index=True),
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The lock a rename or a creation takes on the handle it wants, so that two of them for one
+# handle in one scope run one after the other (§6.24); rows are made when first asked for.
+handle_lock = Table(
+    "handle_lock",
+    metadata,
+    Column("scope", String(ID), primary_key=True),
+    Column("handle", String(HANDLE), primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -682,6 +738,11 @@ membership = Table(
     Column("availability_state", String(16)),
     Column("availability_since", UtcDateTime),
     Column("outage_since", UtcDateTime),
+    # The policy's answer once the outage passed its grace (§6.12): `wait`, `covered`
+    # (by `cover_by` since `cover_since`), or `none_available`, retried; null otherwise.
+    Column("cover_state", String(16)),
+    _membership_ref("cover_by"),
+    Column("cover_since", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
     CheckConstraint(
@@ -1166,6 +1227,9 @@ card = Table(
     Column("contract", JSON_VALUE),
     # The forge issue an import read (§6.14): set once, never changed; null otherwise.
     Column("imported_from", JSON_VALUE),
+    # `{for, by, since}` while the card moved to a substitute (§6.12), with what moved
+    # (`claim`, `assignment`) and whether the substitute has touched it since.
+    Column("cover", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.
@@ -1312,6 +1376,7 @@ request = Table(
     Column("jour_fixe", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
+    Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
     Column("ktw_ref", String(255)),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
@@ -1345,9 +1410,14 @@ request = Table(
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
-    # No project: only a personal request that concerns an organisation (§7, §6.26).
+    # No project: a personal request that concerns an organisation (§7, §6.26), or the owner's
+    # digest of agent instances that are not listening, which concerns every project of the
+    # human's agents at once and has no asker (§5.3).
     CheckConstraint(
-        "project_id IS NOT NULL OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)",
+        "project_id IS NOT NULL"
+        " OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)"
+        " OR (org_id IS NULL AND personal AND filed_by = 'hub' AND asked_by IS NULL"
+        " AND asked_by_human IS NULL)",
         name="scope_known",
     ),
     Index("ix_request_project_status", "project_id", "status"),

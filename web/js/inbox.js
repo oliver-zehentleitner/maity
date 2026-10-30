@@ -31,8 +31,15 @@ window.Maity = window.Maity || {};
 
   // Who asked, from the request itself: asked_by and, where the request was
   // filed for someone else, on_behalf_of.
+  // A request the hub files itself (asked_by null, filed_by "hub": an
+  // outage, an unconfirmed commitment, the not-listening digest, §5.3, §7).
+  const byHub = (req) => !req.asked_by && req.filed_by === "hub";
+  // The not-listening digest (§5.3): the hub's, personal, about no project
+  // and no organisation; it leads to one's agents.
+  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org;
+
   function asker(req) {
-    const by = req.asked_by ? req.asked_by.display_name : "—";
+    const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
     return req.on_behalf_of ? by + " for " + req.on_behalf_of.display_name : by;
   }
 
@@ -164,7 +171,7 @@ window.Maity = window.Maity || {};
         ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
       titleRefs.length ? [h("dt", null, "In the title"), h("dd", { class: "title-refs" }, titleRefs.map((a, i) => [i ? ", " : null, a]))] : null,
-      h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : "—"),
+      h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : byHub(req) ? "Maity, on its own" : "—"),
       req.on_behalf_of ? [h("dt", null, "On behalf of"), h("dd", null, who(ctx, req, req.on_behalf_of))] : null,
       req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req))] : null,
       h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
@@ -174,15 +181,17 @@ window.Maity = window.Maity || {};
           : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) },
             M.ids.ref(req.slug, req.task.id, ctx.scope !== "project") + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
         : null,
-      h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
+      digest(req) ? [h("dt", null, "Your agents"), h("dd", null, h("a", { class: "digest-agents", href: "/agents" }, "See them and their memberships"))] : null,
+      // Nobody waits on one the hub filed itself.
+      byHub(req) ? null : [h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
         ? "the agent proceeds provisionally"
-        : "the agent waits for the answer"),
+        : "the agent waits for the answer")],
       req.ktw_ref ? [h("dt", null, "Reasoning"), h("dd", null, h("code", null, req.ktw_ref))] : null));
 
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at);
+    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at, ctx);
     if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
     if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {

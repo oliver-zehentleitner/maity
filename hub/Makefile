@@ -4,7 +4,7 @@
 PYTHON ?= python3
 UV ?= uv
 
-.PHONY: install format check lint typecheck test revision lock lock-upgrade lock-check
+.PHONY: install format check lint typecheck test revision rechain lock lock-upgrade lock-check
 
 # The tested set: every dependency pinned with hashes in requirements/, the
 # hub itself on top without resolving anything again.
@@ -31,9 +31,13 @@ PYTEST_ARGS ?= -n auto
 test:
 	$(PYTHON) -m pytest $(PYTEST_ARGS)
 
-# make revision m="add the task table"
+# make revision m="add the tasks"
 revision:
 	$(PYTHON) scripts/new_revision.py "$(m)"
+
+# After merging origin/main: hang the branch's new migration on main's head.
+rechain:
+	cd .. && $(PYTHON) tools/rechain.py
 
 # The locks in requirements/: runtime (the image), dev (CI and `install`,
 # with the runtime pins as constraints), build (hatchling, with the dev pins

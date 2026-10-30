@@ -1353,6 +1353,13 @@ def cmd_say(args: argparse.Namespace) -> int:
     attach = args.attach or []
     if len(attach) > ATTACH_MAX:
         raise UsageError(f"at most {ATTACH_MAX} --attach on one message")
+    review = getattr(args, "review", None)  # read with the texts (`_load_texts`)
+    if review is not None and args.type != "review_result":
+        raise UsageError("--review-file goes with --type review_result only")
+    if args.type == "review_result" and review is None:
+        raise UsageError(
+            "--type review_result needs --review-file: the review object as JSON (§8.4)"
+        )
     if args.chat is not None:
         if args.body is not None:
             raise UsageError("with --chat give only the message: the chat is the recipient")
@@ -1397,6 +1404,8 @@ def cmd_say(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {"kind": "message", "type": args.type, "to": to, "body": text}
     if args.task is not None:
         body["task_id"] = args.task
+    if review is not None:
+        body["review"] = review  # as given: the hub checks it and names each bad path
     session = Session()
 
     def post(ids: list[str]) -> Any:
@@ -3051,6 +3060,13 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help=f"send a file with the message, up to {ATTACH_MAX}; a failed upload sends nothing",
     )
+    p.add_argument(
+        "--review-file",
+        dest="review_file",
+        metavar="PATH",
+        help="with --type review_result, required: the review object (subject, head, verdict, "
+        "cites) as JSON from PATH, - for stdin; sent as given",
+    )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
 
@@ -3675,6 +3691,28 @@ def _load_texts(args: argparse.Namespace) -> None:
         text = getattr(args, attr)
         if isinstance(text, str) and text.count("`") % 2:
             _err(f"warning: {flag} has an odd number of backticks: a `code` span is not closed")
+    if getattr(args, "handler", None) is cmd_say:
+        args.review = _load_review(getattr(args, "review_file", None), stdin_used)
+
+
+def _load_review(path: str | None, stdin_used: bool) -> Any:
+    """`--review-file`: the review object of §8.4 as JSON, from a file or stdin (`-`), parsed
+    and sent as given, so a quote may hold any character. Stdin is read once: a message
+    from stdin leaves the review to a file."""
+    if path is None:
+        return None
+    if path == "-":
+        if stdin_used:
+            raise UsageError(
+                "the message and --review-file cannot both come from stdin: put one in a file"
+            )
+        raw = sys.stdin.read()
+    else:
+        raw = _read_text_file(path, "--review-file")
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise UsageError(f"--review-file: not JSON: {exc}") from None
 
 
 def main(argv: Sequence[str] | None = None) -> int:

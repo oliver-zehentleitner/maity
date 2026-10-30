@@ -104,26 +104,22 @@ window.Maity = window.Maity || {};
     return el;
   }
 
+  // A date and time in the reader's locale, through Intl (js/i18n.js).
   function formatTime(iso) {
     if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
+    return M.fmt.dateTime(iso);
   }
 
   // "3 min ago" relative to now; falls back to the absolute time after a day.
   function formatAgo(iso, now) {
-    if (!iso) return "never";
+    if (!iso) return M.t("time.never");
     const then = new Date(iso).getTime();
     const diff = Math.round(((now || Date.now()) - then) / 1000);
     if (Number.isNaN(diff)) return iso;
     if (diff < 0) return formatTime(iso);
-    if (diff < 60) return "just now";
-    if (diff < 3600) return Math.floor(diff / 60) + " min ago";
-    if (diff < 86400) return Math.floor(diff / 3600) + " h ago";
+    if (diff < 60) return M.t("time.just_now");
+    if (diff < 3600) return M.t("time.minutes_ago", { count: Math.floor(diff / 60) });
+    if (diff < 86400) return M.t("time.hours_ago", { count: Math.floor(diff / 3600) });
     return formatTime(iso);
   }
 
@@ -131,18 +127,38 @@ window.Maity = window.Maity || {};
   // said up front where one is typed, and again when one breaks them.
   const NAME_RULES = {
     handle: { pattern: "[a-z0-9][a-z0-9\\-]{1,30}", test: /^[a-z0-9][a-z0-9-]{1,30}$/,
-      text: "Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit." },
+      get text() { return M.t("name_rules.handle"); } },
     slug: { pattern: "[a-z0-9][a-z0-9\\-]{1,62}", test: /^[a-z0-9][a-z0-9-]{1,62}$/,
-      text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
+      get text() { return M.t("name_rules.slug"); } },
   };
+
+  // Whether `said` is "@" + one of the member's aliases (§6.24), or the long form
+  // "@<owner>/<handle>" where the handle part is the member's handle or an alias and
+  // the owner part is the owner's current handle (the first half of the member's global
+  // name) or one of the owner's aliases, when the owner is among the member views the
+  // context knows. The stored mention says who is meant; this only says that the typed
+  // name was one of theirs.
+  function aliasSaid(ctx, x, said, suffix) {
+    const m = ctx && ctx.memberById ? ctx.memberById[x.member_id] : null;
+    if (!m || !said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
+    const typed = said.slice(1, suffix ? said.length - suffix.length : said.length);
+    const slash = typed.indexOf("/");
+    if (slash < 0) return (m.aliases || []).indexOf(typed) >= 0;
+    if ([m.handle].concat(m.aliases || []).indexOf(typed.slice(slash + 1)) < 0) return false;
+    const owner = typed.slice(0, slash);
+    const named = ctx.memberById[m.owner_id];
+    return owner === String(m.name || "").split("/")[0] || (!!named && (named.aliases || []).indexOf(owner) >= 0);
+  }
 
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
   // nodes and member links. Offsets and lengths count code points; only the
   // stored ones for this field are links, and only where the text there is
   // "@" + the stored handle; nothing the writer typed becomes a member link.
   // `at` (M.ids.where): the project the text belongs to, for the ids in
-  // the text between mentions as links (js/ids.js).
-  function withMentions(text, mentions, field, hrefOf, at) {
+  // the text between mentions as links (js/ids.js). `ctx` (optional): the
+  // member views it knows; a mention typed as an alias of the member (§6.24),
+  // alone or after an owner or an owner's alias, is a link as well.
+  function withMentions(text, mentions, field, hrefOf, at, ctx) {
     const chars = Array.from(String(text || ""));
     const marks = (mentions || [])
       .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
@@ -156,7 +172,7 @@ window.Maity = window.Maity || {};
       // The hub stores a long mention (§8.6) with the whole @owner/handle,
       // and an instance mention with its #id after either form.
       const suffix = x.instance ? "#" + x.instance : "";
-      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix)) return;
+      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
       if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
       // No href: a mention named where its member cannot be opened. An
       // instance mention links to the member; the instance is in the title.
@@ -263,9 +279,11 @@ window.Maity = window.Maity || {};
     const fields = err && err.code === "invalid" && err.details && err.details.fields;
     if (!fields || !Object.values(fields).includes("ambiguous_mention")) return null;
     const named = (err.details && err.details.mentions) || {};
-    const parts = Object.keys(named).map((handle) => "@" + handle + " is " + named[handle].length + " agents here: write "
-      + named[handle].map((n) => "@" + n).join(" or "));
-    return { message: (parts.length ? parts.join("; ") : "a handle here is two agents: write its long form, @owner/handle") + "." };
+    // One sentence per handle; the long forms joined as the catalog's language says "or".
+    const or = new Intl.ListFormat(M.i18n.language, { type: "disjunction" });
+    const parts = Object.keys(named).map((handle) => M.t("mention.ambiguous", { handle: "@" + handle, count: named[handle].length,
+      names: or.format(named[handle].map((n) => "@" + n)) }));
+    return { message: (parts.length ? parts.join("; ") : M.t("mention.ambiguous_unnamed")) + "." };
   }
 
   // A member as every view names them: always a way to their view in the
@@ -308,7 +326,7 @@ window.Maity = window.Maity || {};
   }
   function instanceTitle(inst) {
     const said = [inst.harness, inst.model].filter((x) => typeof x === "string" && x);
-    return "Instance " + inst.id + (said.length ? " · " + said.join(" · ") : "");
+    return M.t("member.instance", { id: inst.id }) + (said.length ? " · " + said.join(" · ") : "");
   }
 
   // A member as a chip (the designer's handover on the overview, #6484):
@@ -341,10 +359,10 @@ window.Maity = window.Maity || {};
     if (!isSilentAgent(member)) return null;
     const date = member.last_seen_at && new Date(member.last_seen_at);
     const known = date && !Number.isNaN(date.getTime());
-    const text = known ? "silent since " + date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
-      : "silent · last call unknown";
+    const text = known ? M.t("member.silent_since", { time: M.fmt.time(date) })
+      : M.t("member.silent_unknown");
     return h("span", { class: "member-silence " + (warn ? "flag-inline" : "muted"),
-      title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
+      title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
   }
 
   M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };

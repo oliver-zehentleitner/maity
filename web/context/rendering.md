@@ -440,7 +440,10 @@ pages link to the legal pages that are set, from `GET /legal`. In the
 admin area **Landing page** edits the setting per language: the page's
 title and description, its sections of the contract's types in their
 order (add, move, show or hide, remove; items within a section the same
-way; `activity` and `collab` kept as they are, never offered), and the
+way, and so each named list of the newer types, `demo`'s
+`terminal_lines` and `steps` and `opensource`'s `tiles` and `links`, a
+list of an exact length offered without Add or Remove below it;
+`activity` and `collab` kept as they are, never offered), and the
 footer for all languages. A save sends the whole draft in one `PATCH`;
 the hub's refusal names fields by their path
 (`pages.de.sections.2.items.0.title`), and each is said at the field of
@@ -532,4 +535,111 @@ the accent's own ratios on `--bg` and `--surface` were measured and
 documented. A link colour of the bubble's own per scheme: another token
 to keep in step with both backgrounds, for what the text's colour
 already does with room to spare.
+
+## The landing page's one script only adds motion, the theme switch and tabs, by hooks the hub's template carries
+
+**Id:** 515a9304-a7fd-4d81-953a-3f5c253ab9a5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7 after the contract #737 (progressive enhancement: at most 10 KiB, `defer`, no request, only the page's own DOM, never database content as HTML, nothing under `prefers-reduced-motion`); the designer's handover for landing V3 stage 1 (`landing.js` sets `.demo-on` by IntersectionObserver, `data-theme` with its button and localStorage, `.scales-tabs`; rings and loader by CSS); the hooks agreed with the template's implementer on the card tsk-m6ew67r1w3hc, and the file in the hub's package so a hub without the dashboard serves it, 2026-10-30; the card tsk-xtyr12836zwa
+**Revisit when:** the landing page gets stage 2 (the public feed), or the template's hooks change
+
+`hub/src/maity_hub/landing_assets/landing.js` does four things and no
+other: shows the theme button (`[data-lp-theme]`, hidden in the HTML)
+and switches `data-theme` on the root, kept in `localStorage` only; adds
+`.demo-on` to a `.demo` section while it is on screen, so the CSS plays
+the demo's loop; turns `.scales` columns into tabs (`.scales-tabs`, the
+tab names taken from each column's first `h3` as text); and counts
+`[data-lp-count]` up to the number the page holds, putting the page's
+own text back at the end and leaving any text that is not a plain number
+alone. Under `prefers-reduced-motion` neither the demo loop nor the
+counting starts. A stored theme is set when the script runs, after the
+first paint (`defer`, and the page's policy allows no inline script), so
+a visitor whose choice differs from the system's sees the system's theme
+for a moment. `web/tools/check.py` checks the file with the
+dashboard's rules, its size and the absence of any request.
+
+**Reason:** the page is complete and readable without it (§16.7); every
+look stays in the CSS the designer wrote, so the script holds no
+styling to drift from it. Hooks named on both sides once keep the
+template and the script apart: neither builds the other's markup.
+
+**Rejected alternative:** typing the demo's lines from script (writing
+text node by node): the CSS loop already does it from the HTML, and the
+script would then hold the timing a second time. A class that switches
+all motion on (`.lp-motion`): the rings and the loader are pure CSS and
+stop under reduced motion by the stylesheet itself. The file under
+`web/landing/`: a hub serving only the landing page, without the
+dashboard's files, would have no script.
+
+## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
+
+**Id:** adaebd69-6541-4f4c-81ce-8c38f1fb70aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-k9j3nxcw9htw, 2026-10-29 (multilingual support comes last, but what saves rework later is done now: a catalog function reading a static file per language, never the database; Intl for dates and numbers; no assembled sentences; a check that flags new strings in views if it can be done without noise; old strings move over view by view); the coordinator's instruction to land the mechanism and the check first, the views in small PRs after, 2026-10-30
+**Revisit when:** a second language is added, the account gets a language and locale of its own, the hub's WORDS move to per-language files, or the hub adds a role or trust (its sentence gets a key; the neutral one stays only the fallback)
+
+`js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
+which `js/i18n/<lang>.js` sets; `tools/check.py --write` builds that file
+from `i18n/<lang>.json`, as it builds the fixtures' bundle, because a
+page from `file://` cannot fetch JSON. The bundle sits under `js/`, the one script
+directory the hub serves at `/assets/` besides `css/` and `brand/`
+(`hub/src/maity_hub/shell.py`), so it needs no hub change; the JSON
+beside it is the file a translator edits. A text is a string or plural
+forms chosen by `Intl.PluralRules`; a number in a placeholder is
+formatted for the locale; a key the catalog lacks reads as itself.
+`M.fmt` formats dates and numbers with `Intl` in `M.i18n.locale`, the
+browser's own until the account sets one. `make check` ratchets the
+views: a file may hold no more prose string literals than
+`tools/strings-baseline.json` allows, `--write` only lowers that count,
+and a new file starts at none. A count is raised only by an edit of the file by hand,
+with the reason in the commit (as for #741, #746, #740, #753 and #757, which
+added text before the ratchet landed). The baseline is taken from main
+at merge time, not from the branch's base: every view PR that lands
+first raises its file's count, so a ratchet PR merges main last and
+raises those counts by hand with the reason. Rejected: computing the
+baseline in CI from main, which would accept every new string and hold
+nothing back. English is the only catalog; the first
+keys are the chat's instance choice. A label kept in a table at load time
+(the tabs, the states, a field's rules) is a getter that calls `M.t`
+when it is read, so a language set after the page loads still applies.
+A sentence that holds a link or a member
+is `M.tn(key, values)`: the same text as pieces, each node placed where
+the language puts its placeholder, never a sentence cut around a link.
+A list inside a sentence is joined with `Intl.ListFormat` in the
+catalog's language, so from three names on English reads "@a, @b, or
+@c", not "@a or @b or @c": the order and the commas of a list differ
+between languages. A Node tool that runs `dom.js` in a `vm`
+(`tools/starter-configs.js`) loads `js/i18n/en.js` and `js/i18n.js`
+first, in the order of `index.html`, and hands the context `Intl`:
+`dom.js` calls `M.t` while it loads. Rejected: a fallback in `dom.js` for
+a missing `M.t`, which would let the page and the tool drift apart.
+A value from a set the hub defines (the ticker's types, a reason's role
+or trust) is one key per value, the sentence whole with the language's
+article ("you are an owner"); a value the hub adds later reads as a
+neutral sentence ("you have the role {role}"). Rejected: choosing "a"
+or "an" in code, which only English has. A key per value also lets a
+value read in its own words ("you work in ops", not "you are an ops").
+Not in the catalog: the runner's starter configuration
+(`runners.js`), a file the runner reads and `tools/starter_configs.py`
+checks as written, with commands and product names. Still put together from
+pieces: a status line's prefix and its reason ("Not saved: " + the
+hub's words, `status.fail`), for a later part of stage 2.
+
+**Reason:** translating later is then filling a file, not finding and
+splitting sentences in code. A per-file ceiling stops new text in code
+without flagging the hundreds of old strings at once, and it is quiet:
+it fails only where a count grows.
+
+**Rejected alternative:** fetching `i18n/<lang>.json` at run time:
+fixture mode runs from `file://`, where that fails, and it is one more
+request before anything is drawn. A translation library from a CDN: a
+dependency for a lookup of a few lines, against the page's policy of
+first-party scripts only. A check that fails on every prose literal: it
+would fail on today's code until every view had moved. Sentences put
+together from translated pieces: word order differs between languages,
+so those pieces cannot be translated on their own.
 

@@ -23,7 +23,15 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, handle_register, invitations, paths, registration
+from maity_hub import (
+    clock,
+    handle_register,
+    handles,
+    invitations,
+    paths,
+    public_pages,
+    registration,
+)
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -105,11 +113,9 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
         errors["handle"] = "invalid"
     elif handle in paths.RESERVED_FIRST:  # a first segment of the hub or the dashboard (§16.11)
         errors["handle"] = "reserved"
-    elif (
-        handle_register.taken(conn, handle)
-        or conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first()
-    ):
-        errors["handle"] = "taken"  # a human's or an organisation's (§6.26)
+    elif handles.holder(conn, handles.HUMANS, handle) is not None:
+        # a human's or an organisation's handle, or a human's alias (§6.24, §6.26)
+        errors["handle"] = "taken"
     if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or any(
         ord(c) < 32 or ord(c) == 127 for c in display_name
     ):
@@ -184,6 +190,8 @@ def complete(
     terms = resolved.value("terms")
     if terms is not None and terms_seen != terms["version"]:
         return Completion("terms_changed")  # nothing created, no acceptance (§2.7.2)
+    if _HANDLE.fullmatch(handle):
+        handles.lock(conn, handles.HUMANS, handle)  # a rename to it waits for this account (§6.24)
     errors = check_names(conn, handle, display_name)
     if terms is not None and not terms_accepted:
         errors["terms"] = "required"
@@ -320,23 +328,41 @@ def locked(conn: Connection, human_id: str) -> Any:
     ).first()
 
 
-def approve(conn: Connection, row: Any, by: str) -> None:
+def approve(conn: Connection, row: Any, by: str, hub: Any) -> None:
     now = clock.now()
     conn.execute(
         update(t.human).where(t.human.c.id == row.human_id).values(account_status="active")
     )
+    public_pages.touch(conn, "person", row.human_id, removal=False)
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == row.human_id)
         .values(status="active", decided_at=now, decided_by=by)
     )
-    # TODO(#280): the mail "Your Maity account is approved" with the login page's link
-    # (security budget, §16.2), and the `registration_approved` account record, an audit
-    # record that is no notification (§18.1). The admin's `registration_pending` item
-    # reads as closed from this decision; nothing to write for it.
+    # The admin's `registration_pending` item reads as closed from this decision; nothing to
+    # write for it. The person learns of it by mail and at the next sign-in (§2.7.5): the
+    # account record is no notification (§18.1).
+    records.write(conn, row.human_id, "registration_approved", {"human": row.human_id, "by": by})
+    if row.address:
+        _mail(
+            conn,
+            hub,
+            row.address,
+            row.human_id,
+            "[Maity] Your Maity account is approved",
+            f"Your Maity account on {hub.public_url} is approved.\n\n"
+            f"Sign in: {hub.public_url}/login\n",
+        )
 
 
-def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str | None) -> None:
+def remove(
+    conn: Connection,
+    row: Any,
+    status: str,
+    by: str | None,
+    reason: str | None,
+    hub: Any,
+) -> None:
     """Delete the pending account with its sessions and block its address for 30 days:
     a rejection (`by`, `reason`) or an expiry (§2.7.5). The row keeps the decision and
     the reason, no longer the address or where the request came from."""
@@ -362,8 +388,45 @@ def remove(conn: Connection, row: Any, status: str, by: str | None, reason: str 
             source_ip=None,
         )
     )
-    # TODO(#280): mail the person — `reason` on a rejection, "was not approved in time"
-    # on an expiry (security budget, §16.2) — and the `registration_rejected` record.
+    if row.address:  # the address was read before the row forgot it
+        _mail(conn, hub, row.address, None, *_ending(status, reason, hub.public_url))
+
+
+def _ending(status: str, reason: str | None, public_url: str) -> tuple[str, str]:
+    """Subject and body of the mail that tells the person their pending account is gone
+    (§2.7.5): the operator's `reason` on a rejection, as plain text (§18.5); "was not
+    approved in time" on an expiry. Neither says more about the instance than its address."""
+    from maity_hub.notifications.mailer import quoted
+
+    if status == "rejected":
+        # The operator's words, defanged: the hub's own address is the only link (§18.5).
+        why = f"The operator gave this reason: {quoted(reason)}\n\n" if reason else ""
+        return (
+            "[Maity] Your Maity account was not approved",
+            f"Your request for a Maity account on {public_url} was not approved, and the "
+            f"account was deleted.\n\n{why}"
+            "This address cannot register there again for 30 days.\n",
+        )
+    return (
+        "[Maity] Your Maity account was not approved in time",
+        f"Your request for a Maity account on {public_url} was not approved in time, and "
+        "the account was deleted after 30 days.\n\n"
+        "This address cannot register there again for 30 days.\n",
+    )
+
+
+def _mail(
+    conn: Connection, hub: Any, to: str, human_id: str | None, subject: str, body: str
+) -> None:
+    """A security mail of registration (§2.7.5, §16.2), in the caller's transaction: it goes
+    out only if the decision commits. Security mail is never dropped over its budget; it
+    waits for the next hour. Without mail (not complete or not enabled) nothing is queued:
+    a mail held until mail is switched on could arrive weeks after the decision."""
+    from maity_hub.mail import outbox
+
+    if not registration.mail_ready(conn, hub):
+        return
+    outbox.enqueue(conn, kind="security", to=to, human_id=human_id, subject=subject, body=body)
 
 
 def block(conn: Connection, normalized: str, until: Any) -> None:
@@ -387,7 +450,7 @@ def block(conn: Connection, normalized: str, until: Any) -> None:
         )
 
 
-def expire(conn: Connection) -> int:
+def expire(conn: Connection, hub: Any) -> int:
     """Delete every pending account nobody decided on within 30 days (§2.7.5)."""
     now = clock.now()
     due = conn.execute(
@@ -400,7 +463,7 @@ def expire(conn: Connection) -> int:
     for human_id in list(due):
         row = locked(conn, human_id)
         if row is not None and row.status == "pending" and row.expires_at <= now:
-            remove(conn, row, "expired", None, None)
+            remove(conn, row, "expired", None, None, hub)
             count += 1
     return count
 
@@ -412,8 +475,9 @@ class Worker:
     """Runs `expire` in the background: an undecided account goes after 30 days whether
     or not an instance admin looks (§2.7.5)."""
 
-    def __init__(self, engine: Engine, interval: float | None = None) -> None:
+    def __init__(self, engine: Engine, hub: Any, interval: float | None = None) -> None:
         self.engine = engine
+        self.hub = hub
         self.interval = INTERVAL if interval is None else interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -431,6 +495,6 @@ class Worker:
         while not self._stop.wait(self.interval):
             try:
                 with self.engine.begin() as conn:
-                    expire(conn)
+                    expire(conn, self.hub)
             except Exception:
                 log.exception("the registration expiry sweep failed")

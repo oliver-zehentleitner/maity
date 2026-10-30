@@ -47,6 +47,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "released_at",
         "state_note",
         "state_changed_at",
+        "public_page",
+        "public_about",
         "repository",
         "logo",
         "banner",
@@ -88,7 +90,6 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "on_runner_revoke": "inherit",  # the instance setting decides (§15.3)
         "badge": "off",
         "subtasks": "proposed",
-        "swarm_public": "off",
         "keep_the_why": "required",
         "keep_the_why_defaults": "adopt",
         "merged_closes": "notify",  # §6.6: a merge wakes the done authority

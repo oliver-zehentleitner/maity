@@ -21,8 +21,11 @@ from maity_hub import (
     policy,
     ticker_read,
 )
+from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.cover import still_with as cover_still_with
+from maity_hub.cover import view as cover_view
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -123,13 +126,41 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+MEAT_PROXY_INTRO = "This person says: I am a meat proxy."
+MEAT_PROXY_LEAD = "Lead me step by step rather than expecting me to explain."
+MEAT_PROXY_HANDS = "When you need a human's hands, come to me first."
 
 
-def meat_proxy_view(on: bool) -> dict[str, Any]:
-    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
-    the one fixed sentence and nothing that says what it means."""
-    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+def meat_proxy_note(lead: bool, hands: bool) -> str:
+    """The note for the parts that are on, in the person's own words: the sentence of each part,
+    the lead part first, after the intro (docs/api.md §5.2, "Meat proxy")."""
+    parts = [s for on, s in ((lead, MEAT_PROXY_LEAD), (hands, MEAT_PROXY_HANDS)) if on]
+    return " ".join([MEAT_PROXY_INTRO, *parts])
+
+
+def meat_proxy_member(lead: bool, hands: bool) -> dict[str, Any]:
+    """A human's own `GET /me`: the switch, both parts and the note, always. While the mode is
+    off the note is the one switching it on would send, with both parts."""
+    on = lead or hands
+    return {
+        "meat_proxy": on,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands) if on else meat_proxy_note(True, True),
+    }
+
+
+def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
+    """The resume packet's fields (docs/api.md §5.2, "Meat proxy"): the switch, and while it is on
+    both parts and the note, nothing that says what it means."""
+    if not (lead or hands):
+        return {"meat_proxy": False}
+    return {
+        "meat_proxy": True,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands),
+    }
 
 
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
@@ -243,6 +274,8 @@ def project_view(
         "state": project.state,
         "released_at": ts(project.released_at),
         "state_note": project.state_note,
+        "public_page": project.public_page,
+        "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
         "logo": shown.get("logo", NO_IMAGE),
@@ -384,14 +417,19 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
 
 
 def member_view(
-    conn: Connection, row: Any, *, briefing: bool = False, details: bool = False
+    conn: Connection,
+    row: Any,
+    *,
+    briefing: bool = False,
+    details: bool = False,
+    links: Any = None,
 ) -> dict[str, Any]:
     """The member view of §6.2: the principal, the membership, the live session.
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
     an event that goes to everyone; the caller decides. `details` adds `owner` and
     `credentials`, for `members:admin` and an agent's owner, never in an event."""
-    return member_views(conn, [row], briefing=briefing, details=details)[0]
+    return member_views(conn, [row], briefing=briefing, details=details, links=links)[0]
 
 
 def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
@@ -443,9 +481,12 @@ def member_views(
     *,
     briefing: bool | Callable[[Any], bool] = False,
     details: bool | Callable[[Any], bool] = False,
+    links: Any = None,
 ) -> list[dict[str, Any]]:
     """`member_view` for several membership rows, with a fixed number of queries;
-    `briefing` for every row, or per row through a predicate."""
+    `briefing` for every row, or per row through a predicate. `links` is the reader
+    (`person_links.Reader`) of a human's `website` and `social`, which only the readers their
+    `links_visible` admits get (§16.9); without it a view has none, and no event does."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     agent_ids = {r.agent_id for r in rows if r.agent_id is not None}
@@ -468,6 +509,7 @@ def member_views(
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
+    aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -483,6 +525,7 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    covered_by, covering = _covers(conn, rows)
     project_ids = {r.project_id for r in rows}
     projects = (
         {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
@@ -502,6 +545,16 @@ def member_views(
     profile_holds = moderation.holds_of(
         conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
     )
+    seen_links: set[str] = set()
+    if links is not None:
+        from maity_hub import person_links  # person_links reads views' tables
+
+        seen_links = person_links.admitted(
+            conn,
+            {h.id: h.links_visible for h in humans.values()},
+            links,
+            {h for h in humans if h in profile_holds},
+        )
     views = []
     for row in rows:
         head = (
@@ -515,6 +568,7 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "aliases": aliased[row.agent_id or row.human_id],
             "trust": row.trust,
             "role": row.role,
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
@@ -528,6 +582,10 @@ def member_views(
         }
         if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
             view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())
+            if row.human_id in seen_links:
+                from maity_hub import person_links
+
+                view.update(person_links.shown(humans[row.human_id]))
         session = None
         if row.agent_id is not None:
             session = live.get(row.id)
@@ -566,9 +624,8 @@ def member_views(
                     project_name=names[row.project_id],
                 ),
                 "availability_policy": availability.policy_of(row),
-                # Cover by a substitute is not built yet (§6.12).
-                "covered_by": None,
-                "covering": [],
+                "covered_by": covered_by.get(row.id),
+                "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
                 "placement": placed.get(row.id),  # always null for a human
             }
@@ -604,6 +661,56 @@ def member_views(
             view["moderation"] = held
         views.append(view)
     return views
+
+
+def _covers(
+    conn: Connection, rows: Sequence[Any]
+) -> tuple[dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
+    """`covered_by` and `covering` of the rows (§6.12): `covering` from the items each
+    member holds as cover (`cover.by`), so every substitute of a run sees whom it
+    covers, not only the one the run started with. A card counts while the substitute
+    still holds it (`cover.still_with`), a request while it is open."""
+    covered_by: dict[int, dict[str, Any]] = {}
+    by_ids = {r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by is not None}
+    principals = principal_ids(conn, by_ids)
+    for row in rows:
+        if row.cover_state == "covered" and row.cover_by is not None:
+            covered_by[row.id] = {
+                "member_id": principals[row.cover_by],
+                "since": ts(row.cover_since),
+            }
+    by_principal = {(r.project_id, r.agent_id or r.human_id): r.id for r in rows}
+    projects = list({r.project_id for r in rows})
+    found: dict[int, dict[str, str]] = {}  # the substitute's row -> covered member -> since
+    if projects:
+        held = [
+            item
+            for item in conn.execute(
+                select(t.card).where(t.card.c.project_id.in_(projects), t.card.c.cover.is_not(None))
+            )
+            if cover_still_with(item, by_principal.get((item.project_id, item.cover["by"])))
+        ]
+        held += conn.execute(
+            select(t.request).where(
+                t.request.c.project_id.in_(projects),
+                t.request.c.cover.is_not(None),
+                t.request.c.status == "open",
+            )
+        ).all()
+        for item in held:
+            row_id = by_principal.get((item.project_id, item.cover["by"]))
+            if row_id is not None:
+                of = found.setdefault(row_id, {})
+                since = item.cover["since"]
+                of[item.cover["for"]] = min(of.get(item.cover["for"], since), since)
+    covering = {
+        row_id: [
+            {"member_id": member_id, "since": since}
+            for member_id, since in sorted(of.items(), key=lambda item: (item[1], item[0]))
+        ]
+        for row_id, of in found.items()
+    }
+    return covered_by, covering
 
 
 def _org_owners(conn: Connection, projects: Iterable[Any]) -> dict[str, set[str]]:
@@ -710,6 +817,10 @@ def agent_view(
     shown = {
         "id": row.id,
         "handle": row.handle,
+        # §6.24; a tombstone keeps its aliases for the record, though they are free to take
+        "aliases": handle_book.aliases(conn, [row.id], include_retired=row.deleted_at is not None)[
+            row.id
+        ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this
@@ -909,6 +1020,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
                 "imported_from": row.imported_from,
+                "cover": cover_view(row.cover),
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),

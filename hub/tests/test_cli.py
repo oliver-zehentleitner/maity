@@ -1,15 +1,24 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from maity_hub.cli import main
+from maity_hub.db import head_revision, make_engine
 
 PASSWORD = "s3cret-pw"
 ACCOUNT_PASSWORD = "correct-horse-battery-staple"
+
+
+def head() -> str | None:
+    """The head of the migrations the package carries: a number or a UTC time and a slug."""
+    engine = make_engine("sqlite://")
+    try:
+        return head_revision(engine)
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +31,7 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 @pytest.mark.wheel
 def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0
-    assert re.search(r"schema empty -> \d{4}$", capsys.readouterr().out.strip())
+    assert capsys.readouterr().out.strip().endswith(f"schema empty -> {head()}")
     assert Path("maity-hub.db").is_file()
 
 
@@ -286,7 +295,7 @@ def test_quickstart_sets_up_a_new_hub_and_ends_on_the_dashboard(
     assert main(["quickstart", "--handle", "me"]) == 0
     captured = capsys.readouterr()
     out = captured.out.strip().splitlines()
-    assert re.fullmatch(r"maity-hub: schema empty -> \d{4}", out[0])
+    assert out[0] == f"maity-hub: schema empty -> {head()}"
     assert out[1].startswith("maity-hub: created me (hum-")
     assert out[-2:] == ["maity-hub: sign in as me", out[-1]]
     assert out[-1].startswith("maity-hub: dashboard at http://127.0.0.1:8080/") or (
@@ -385,6 +394,33 @@ def test_quickstart_never_adds_a_second_first_account(
 
         assert [r.handle for r in conn.execute(select(t.human.c.handle))] == ["other"]
     engine.dispose()
+
+
+def test_owner_create_refuses_a_handle_another_human_kept_as_an_alias(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    from sqlalchemy import create_engine, insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
+    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    engine = create_engine("sqlite:///maity-hub.db")
+    with engine.begin() as conn:
+        human_id = conn.execute(select(t.human.c.id)).scalar_one()
+        conn.execute(
+            insert(t.handle_alias).values(
+                human_id=human_id, scope="human", handle="old-maint", created_at=clock.now()
+            )
+        )
+    engine.dispose()
+    monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
+    assert main(["owner", "create", "--handle", "old-maint", "--display-name", "X"]) == 1
+    assert "alias" in capsys.readouterr().err
 
 
 def test_quickstart_refuses_a_reserved_handle_for_the_first_account(

@@ -53,8 +53,10 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect, sync_playwright
 
 WEB = Path(__file__).resolve().parent.parent
@@ -885,6 +887,7 @@ def scenario(run: Run, page: Page) -> None:
     direct_removal_step(run, page, agent_id)
     attachments_step(run, page, agent_id)
     members_step(run, page)
+    my_settings_step(run, page)
     invitations_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
@@ -953,6 +956,7 @@ def scenario(run: Run, page: Page) -> None:
 
     users_step(run, page)
     registration_admin_step(run, page)
+    reports_admin_step(run, page, alpha)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1320,9 +1324,11 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
     run.shot(page, "review-absence")
     run.a11y(page, "header in review with absence")
-    view_tab(page, "Overview").click()
-    expect(page.locator("main section.view-overview .org-tree")).to_be_visible()
-    run.a11y(page, "overview with the organisation")
+    view_tab(page, "Members").click()
+    page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/organisation$"))
+    expect(page.locator("main .org-tree")).to_be_visible()
+    run.a11y(page, "team page, organisation tab")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
     assert project["state"] == "review" and project["state_note"] == "e2e review: fixes only", (
@@ -1696,6 +1702,21 @@ def overview_step(run: Run, page: Page) -> None:
     expect(counts).to_have_count(7)
     expect(main.locator('.overview-counts li[data-status="cancelled"]')).not_to_have_text(re.compile(r"^0 "))
     run.shot(page, "overview")
+    run.step("overview: the tabs Swarm and Project, each at its own address")
+    tabs = main.locator("nav.overview-tabs")
+    tabs.get_by_role("link", name="Swarm", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview/swarm$"))
+    expect(main.locator("section.overview-swarm")).to_be_visible()
+    expect(main.locator(".overview-counts")).to_have_count(0)
+    run.a11y(page, "overview, swarm tab")
+    tabs.get_by_role("link", name="Project", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview/project$"))
+    expect(main.locator('section.overview-part[aria-labelledby="overview-links"]')).to_be_visible()
+    expect(main.locator('section.overview-part[aria-labelledby="overview-badge"]')).to_be_visible()
+    run.a11y(page, "overview, project tab")
+    run.shot(page, "overview-project")
+    tabs.get_by_role("link", name="Summary", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/overview$"))
     main.locator('.overview-counts li[data-status="open"] a').click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/board$"))
     no_problems(run, "overview")
@@ -2098,6 +2119,42 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
+    """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
+    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("reports: an agent reports a card; the admin reads it as text and hides it with a note")
+    card = run.api(alpha, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "e2e: a card to report", "body": "<b>not markup</b>"})
+    filed = run.api(
+        alpha,
+        "POST",
+        "/reports",
+        {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
+    )
+    assert filed.get("id"), filed
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Reports", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Reports']")
+    row = section.locator(f"li.report-item[data-report='{filed['id']}']")
+    expect(row).to_be_visible()
+    row.get_by_role("button").click()
+    opened = section.locator("section.report-open")
+    expect(opened).to_contain_text("e2e: a card to report")
+    # The reporter's text and the snapshot are text, never markup.
+    expect(opened.locator("pre.report-body").first).to_have_text("<i>e2e</i> report")
+    expect(opened.locator("i, b")).to_have_count(0)
+    page.locator("#report-action").select_option("hide")
+    page.locator("#report-note").fill("e2e: hidden on purpose")
+    opened.get_by_role("button", name="Resolve", exact=True).click()
+    expect(section).to_contain_text("Resolved: Hide.")
+    expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    run.shot(page, "reports-admin")
+    run.a11y(page, "reports admin")
+    no_problems(run, "reports admin")
+
+
 def join_expiry_step(run: Run, page: Page) -> None:
     """A join that expires while Agents is open leaves the seats for the record, without Revoke."""
     run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
@@ -2105,6 +2162,44 @@ def join_expiry_step(run: Run, page: Page) -> None:
     other = page.context.browser.new_context(storage_state=page.context.storage_state())
     second = other.new_page()
     watch_page(run, second)
+    # The page judges expiry by the hub's clock: every answer's Maity-Server-Time
+    # sets how far the browser is off it (js/api.js). Moving only the browser's
+    # clock let the next answer pull the page back to the hub's real time, and
+    # the join read as open again: the step failed or passed by which came first.
+    # So this tab sees the hub's clock moved by the same amount as its own.
+    moved = {"by": timedelta(0)}
+    # Set before the tab's context goes: a poll held then fails with "Request
+    # context disposed" or "closed", the same end of the step, not a problem.
+    ending = {"now": False}
+
+    def quiet(err: PlaywrightError) -> bool:
+        return ending["now"] or "closed" in str(err)
+
+    def hub_clock(route: object) -> None:
+        # Only a tab ending while an answer was held is quiet; any other error
+        # is said where it happens and the request ends, not as a later timeout.
+        try:
+            answer = route.fetch()
+        except PlaywrightError as err:
+            if not quiet(err):
+                run.problems.append(f"join expiry: the hub's answer could not be held: {err}")
+                try:
+                    route.abort()
+                except PlaywrightError:
+                    pass
+            return
+        headers = dict(answer.headers)
+        served = headers.get("maity-server-time")
+        if served and moved["by"]:
+            at = datetime.fromisoformat(served.replace("Z", "+00:00")) + moved["by"]
+            headers["maity-server-time"] = at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        try:
+            route.fulfill(response=answer, headers=headers)
+        except PlaywrightError as err:
+            if not quiet(err):
+                run.problems.append(f"join expiry: the moved answer could not be given: {err}")
+
+    second.route(re.compile(r"/api/v1/"), hub_clock)
     second.clock.install()
     second.goto(f"{run.base}/owner/e2e-alpha/agents/join")
     # A direct navigation to Agents with the join panel open: the focus in its first field.
@@ -2119,12 +2214,16 @@ def join_expiry_step(run: Run, page: Page) -> None:
     row = second.locator("article.seat").first
     expect(row.get_by_role("button", name=re.compile(r"^Revoke"))).to_be_visible()
     join_id = row.get_attribute("data-join")
-    second.clock.fast_forward("16:00")  # past the default 15 minutes
+    # Past the default 15 minutes, the browser's clock and the hub's as this tab sees it.
+    moved["by"] = timedelta(minutes=16)
+    second.clock.fast_forward("16:00")
     gone = second.locator("ul.closed-joins li", has_text=join_id)
     expect(gone).to_contain_text("expired")
     expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
     expect(second.locator(f'article.seat[data-join="{join_id}"]')).to_have_count(0)
     run.shot(second, "join-expired")
+    ending["now"] = True
+    second.unroute_all(behavior="ignoreErrors")
     other.close()
     no_problems(run, "joins")
 
@@ -2186,6 +2285,32 @@ def invitations_step(run: Run, page: Page) -> None:
     no_problems(run, "invitations")
 
 
+def my_settings_step(run: Run, page: Page) -> None:
+    """Agents that stop listening (§5.3, §6.2, §18.4): the account's default, a project's own value."""
+    run.step("my settings: the account's default, then a value for the project, then back to the default")
+    page.goto(f"{run.base}/account/notifications")
+    form = page.locator("form.not-listening-settings")
+    expect(page.locator("#not-listening-minutes")).to_have_value("60")
+    page.locator("#not-listening-minutes").fill("45")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    view_tab(page, "Settings").click()
+    page.locator("nav.settings-tabs").get_by_role("link", name="Mine", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/settings/mine$"))
+    effective = page.locator(".my-nl-effective")
+    expect(effective).to_have_text("Applies now: 45 minutes, your default.")
+    page.locator("#my-nl-here").check()
+    page.locator("#my-nl-minutes").fill("20")
+    page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()
+    expect(effective).to_have_text("Applies now: 20 minutes, set here.")
+    run.a11y(page, "my settings")
+    page.locator("#my-nl-default").check()
+    page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()
+    expect(effective).to_have_text("Applies now: 45 minutes, your default.")
+    no_problems(run, "my settings")
+
+
 def members_step(run: Run, page: Page) -> None:
     """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
     run.step("members: the owner and the agent in one list; an agent's role changed and back")
@@ -2202,6 +2327,20 @@ def members_step(run: Run, page: Page) -> None:
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
+    run.step("members: Only my agents shows the owner's agents alone, and is kept on the next visit")
+    mine = page.get_by_role("checkbox", name="Only my agents", exact=True)
+    expect(mine).not_to_be_checked()
+    mine.check()
+    expect(page.locator("table.members")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_contain_text("E2E Agent")
+    expect(mine).to_be_focused()
+    run.a11y(page, "members, only my agents")
+    page.reload()
+    expect(page.get_by_role("checkbox", name="Only my agents", exact=True)).to_be_checked()
+    expect(page.locator("table.members")).to_have_count(1)
+    page.get_by_role("checkbox", name="Only my agents", exact=True).uncheck()
+    expect(page.locator("table.members")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))
@@ -2230,7 +2369,7 @@ def members_step(run: Run, page: Page) -> None:
     manage.locator("select[id^=member-reports-]").select_option(label="Owner (@owner)")
     manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("Saved for E2E Agent: reports to.")
-    view_tab(page, "Overview").click()
+    page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
     view_tab(page, "Members").click()

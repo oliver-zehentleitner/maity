@@ -188,6 +188,26 @@ def test_what_they_wrote(owner: flow.Human, colleague: flow.Human) -> None:
     assert given["text"] == "Yes, the owner says ship" and given["answered_at"]
 
 
+def test_a_review_result_is_exported_with_its_review(
+    owner: flow.Human, colleague: flow.Human
+) -> None:
+    """§8.4: what a review result judged and read is part of the message they wrote."""
+    review = {
+        "subject": "#743",
+        "head": "7039a4b6fd8b988d71a63338711da188fcd95fba",
+        "verdict": "changes",
+        "cites": [
+            {"path": "docs/api.md", "line": 11929, "quote": "the inbox item appears"},
+            {"path": "old.py", "line": None, "quote": "def removed():"},
+        ],
+    }
+    say(colleague, "One P1.", type="review_result", review=review)
+    say(colleague, "A plain notice")
+    [first, second] = export(colleague).json()["messages"]
+    assert first["type"] == "review_result" and first["review"] == review
+    assert second["type"] == "notice" and second["review"] is None
+
+
 def test_redacted_stays_redacted(owner: flow.Human, colleague: flow.Human) -> None:
     theirs = card(owner, "Owner's card")
     message = say(colleague, "Something I regret")

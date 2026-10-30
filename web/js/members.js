@@ -300,7 +300,54 @@ window.Maity = window.Maity || {};
       }, "Remove from the project"));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart };
+    // Whom one's own agent reports to, for its human owner whatever their
+    // trust and role (§2.3): nobody, the owner (where a member here), or
+    // another of the owner's agents in the project; only reports_to is
+    // sent. A boss of another owner is not offered (that edge needs both
+    // owners' consent, §6.2), and one set already stays chosen, marked,
+    // so that saving does not end it unasked.
+    function reportsToPart(m, memberPath) {
+      if (!ownAgent(m) || m.removed_at) return null;
+      const id = "owner-reports-" + m.id;
+      const members = ctx.members || [];
+      const circle = (boss) => {
+        const byIdNow = Object.fromEntries(members.map((x) => [x.id, x]));
+        const seen = new Set();
+        for (let at = boss; at; at = byIdNow[at] && byIdNow[at].reports_to) {
+          if (at === m.id) return true;
+          if (seen.has(at)) return false;
+          seen.add(at);
+        }
+        return false;
+      };
+      // Never a guest (§2.3), never one that would close a circle.
+      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !M.trust.guest(x) && !circle(x.id));
+      const options = [["", M.t("members.reports.nobody")]].concat(mine.map((x) => [x.id, x.id === ctx.me.id
+        ? M.t("members.reports.you", { name: x.display_name })
+        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
+      if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
+        options.push([m.reports_to, M.t("members.reports.other_owner", { name: ctx.nameOf(m.reports_to) })]);
+      }
+      const pick = keyed("owner-reports:" + m.id, h("select", { id }, options.map(([v, l]) => h("option", { value: v }, l))));
+      pick.value = m.reports_to || "";
+      const save = h("button", { type: "submit", class: "small" }, M.t("members.reports.save"));
+      return h("form", {
+        class: "inline-form owner-reports",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const to = pick.value || null;
+          if (to === (m.reports_to || null)) { status.done(); append(status.el, h("span", null, M.t("members.reports.unchanged"))); return; }
+          save.disabled = true;
+          await act(M.t("members.reports.saving"), to ? M.t("members.reports.saved", { name: m.display_name, boss: ctx.nameOf(to) })
+            : M.t("members.reports.saved_nobody", { name: m.display_name }),
+            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id);
+          save.disabled = false;
+        },
+      }, h("label", { for: id }, M.t("members.reports.label")), pick, save,
+      h("p", { class: "hint" }, M.t("members.reports.hint")));
+    }
+
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart, reportsToPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -308,6 +355,12 @@ window.Maity = window.Maity || {};
   // args[0]: a member (/<owner>/<slug>/members/<id>[/<tab>], a mention's link):
   // that member's page (js/member-page.js). ?manage=<id> (its Actions menu):
   // the list with that member's Manage row open, for an admin.
+  // The Team page's tabs (context/members.md f0ca2279): Members, this
+  // list, and Organisation (js/org.js), each at its own project view.
+  M.teamTabs = (ctx, chosen) => h("nav", { class: "view-tabs team-tabs", "aria-label": M.t("team.tabs.label") },
+    [["members", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
+      h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
+
   M.views.members = async function (ctx, root, args) {
     if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1]); return; }
     const wanted = ctx.canAdmin ? M.route.current().query.get("manage") : null;
@@ -358,6 +411,15 @@ window.Maity = window.Maity || {};
     function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
+      // Without members:admin, one's own agent's row holds what its owner
+      // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
+      // preferences switch.
+      if (!ctx.canAdmin) {
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          P.reportsToPart(m, memberPath),
+          M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
+          P.teamForm(m, memberPath)));
+      }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; sent only to whom may see it.
@@ -405,9 +467,9 @@ window.Maity = window.Maity || {};
         const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
         const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
         if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
-        append(clear(role), offered.map((r) => h("option", { value: r }, r)));
-        role.value = offered.includes(wanted) ? wanted : offered.includes(m.role) ? m.role : "coder";
+        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder");
       };
+      const roleHelp = M.trust.roleHint(role);
       fillRoles();
       trust.addEventListener("change", () => { keep("trust", trust.value); fillRoles(); });
       // The current boss stays offered even if it is not in the list read.
@@ -441,7 +503,7 @@ window.Maity = window.Maity || {};
       const errors = { trust: errorOf("trust"), role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
       if (bossGone) errors.reports.textContent = bossGone + ", whom you picked, is no longer a member; reports to is back to what it is.";
       [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
-        + (k === "areas" ? " " + id("areas") + "-hint" : "")));
+        + (k === "areas" ? " " + id("areas") + "-hint" : k === "role" ? " " + roleHelp.id : "")));
       const clearErrors = () => [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
       const fieldFail = (f, k, text) => { errors[k].textContent = text; f.setAttribute("aria-invalid", "true"); status.fail("Not saved: ", { message: text }); f.focus(); };
       const save = h("button", { type: "submit" }, "Save changes");
@@ -478,7 +540,7 @@ window.Maity = window.Maity || {};
       },
       h("div", { class: "member-fields" },
         h("label", { for: id("trust") }, "Trust"), trust, errors.trust,
-        h("label", { for: id("role") }, "Role"), role, errors.role,
+        h("label", { for: id("role") }, "Role"), role, roleHelp, errors.role,
         h("label", { for: id("reports") }, "Reports to"), reports, errors.reports,
         h("label", { for: id("areas") }, "Areas"), areas,
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
@@ -529,7 +591,7 @@ window.Maity = window.Maity || {};
                   return td;
                 }),
                 h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, chatLink(m),
-                  !ctx.canAdmin ? null : keyed("manage:" + m.id, h("button", {
+                  !ctx.canAdmin && !P.ownAgent(m) ? null : keyed("manage:" + m.id, h("button", {
                     type: "button",
                     class: "small",
                     "aria-expanded": expanded ? "true" : "false",
@@ -537,18 +599,37 @@ window.Maity = window.Maity || {};
                     "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
                     onclick: () => {
                       // Done closes the row and drops its unsaved edits.
-                      if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                      if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw((ctx.canAdmin ? "role:" : "owner-reports:") + m.id); }
                     },
                   }, expanded ? "Done" : "Manage"))));
               return expanded ? [row, manage(m, rowId)] : row;
             }))))];
     }
 
+    // Only my agents (the maintainer, 2026-10-30): the agents the viewer
+    // owns, without the humans; remembered per viewer in this browser.
+    const mineKey = "maity.members.mine." + ctx.me.id;
+    let mineOnly = false;
+    if (ctx.me.kind === "human") {
+      try { mineOnly = window.localStorage.getItem(mineKey) === "1"; } catch (err) { mineOnly = false; }
+    }
+    function mineFilter() {
+      if (ctx.me.kind !== "human") return null;
+      const box = keyed("mine", h("input", { type: "checkbox", id: "members-mine" }));
+      box.checked = mineOnly;
+      box.addEventListener("change", () => {
+        mineOnly = box.checked;
+        try { if (mineOnly) window.localStorage.setItem(mineKey, "1"); else window.localStorage.removeItem(mineKey); } catch (err) { /* this browser keeps nothing */ }
+        redraw("mine");
+      });
+      return h("div", { class: "members-filter" }, h("label", { class: "check", for: "members-mine" }, box, " " + M.t("members.filter.mine")));
+    }
+
     function draw() {
       presenceCells.clear();
       focusables.clear();
-      const humans = items.filter((m) => m.kind === "human");
-      const agents = items.filter((m) => m.kind === "agent");
+      const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
+      const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
       const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
       const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
@@ -556,15 +637,15 @@ window.Maity = window.Maity || {};
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), table("human", humans, [role, presence, joined]),
+      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
         h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
-          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
+          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : "No agents yet.")]));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
-    append(root, h("h2", null, "Members"),
+    append(root, M.teamTabs(ctx, "members"), h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
         + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member." : ""),
       // A guest brings no agent (§3.1): no way there said to them.

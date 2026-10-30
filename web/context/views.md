@@ -670,6 +670,22 @@ read and unread look alike; the inbox is for what asks for an answer.
 apart: the activity would still sit under the requests and be read on
 every visit, while the bell already shows it.
 
+Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
+`/notifications` also has **Mark read** beside each unread item, sent
+with its id, without opening it, the row marked read in place (its
+button gone, the focus on its link, the pages read so far kept), and
+**Mark all read** stays in place,
+off while nothing it marks is unread, with a line that sign-in and
+address alerts stay unread. **Mark read** is not offered on one of the
+four open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`report_open`, `agents_not_listening`, told by their targets
+(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+— which read as read once the matter is closed, nor on a sign-in or
+address alert unless this session may confirm it (`M.sessions.mayConfirm`,
+§2.6.5): the hub skips such an id without saying so, and a button that
+does nothing would look broken. The sessions are read for that only
+when the page shows an unread security item.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
@@ -955,8 +971,15 @@ the human would see fields that do nothing.
 **Revisit when:** a second provider arrives, the hub sets something up on a provider change, or the overview gets its badge section (§6.20 names the overview for the snippet)
 
 The create form has **Project memory** (Keep the Why preselected, None)
-and the three setup options beneath it, all ticked, each sent as `true`
-or `false`. Project settings show the provider and the setup's cards
+and the five setup options beneath it in the cards' order (three until
+#715 added the CI linter and the published dashboard, 2026-10-30), all
+ticked, each sent as `true` or `false`. The dashboard's option has a
+**Path** field under it, prefilled with `keep-the-why-dashboard` and
+checked as the hub checks it (§6.21: one to five segments, and `..`
+nowhere in the value, `a..b` included, as the coordinator settled it on
+2026-10-30), its refusal said at the field;
+`dashboard_path` is sent only while that option is ticked, and left out
+of the request otherwise, never sent as `null`. Project settings show the provider and the setup's cards
 read only, with a pointer to a card for an agent, and offer the README
 badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
 the hub's `/openapi.json` whether `POST /projects` names `memory` and
@@ -966,7 +989,16 @@ and sends them (e1699490, the alpha rule).
 **Reason:** the hub would accept a provider change by `PATCH`, but it
 creates and cancels no setup card on it, so a switch in the panel would
 change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. The badge sits with the other policy
+change is work in the repository, which is what a card is for. The
+path is left out with the dashboard unticked because the hub would only
+drop it, `null` is `invalid` (§6.21), and a malformed value in a hidden
+field would refuse a creation for something the human did not choose. The
+form's check is the hub's, not a stricter or looser one of its own: a
+refusal only one side makes stops or lets through a creation for no
+reason; the hub alone checking would show the error only after sending.
+Barring only a segment `..` was rejected: the segment rule already bars
+it, and it would let `a..b` through, which the hub refuses.
+The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 
 **Rejected alternative:** a provider dropdown in Project settings: it
@@ -1466,6 +1498,14 @@ what the header leaves of the screen: `body:has(> main >
 …)` becomes a column of the screen's height and `main` takes the rest.
 A browser without `:has` shows them at the top, as before.
 
+Since 2026-10-30 the lockup is a link home (the maintainer's wish, the
+card tsk-vqn9m1qt4rtt): signed in to everything waiting (`/all`),
+without a session to the instance's start page (`/`), the static
+header's link `/` as no session is known yet. The link carries the
+accessible name ("Maity: everything waiting for you", "Maity: home");
+the two pictures have empty `alt`, since only one of them shows and the
+name would otherwise be read twice or be the bare word.
+
 **Reason:** the first thing a person sees should say where they are, and
 a failure should not look like a broken page; plain HTML and CSS show
 before the scripts load, which on a slow phone is the longest wait. A
@@ -1521,7 +1561,8 @@ alone: it is not seen without a mouse resting on the button.
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Waiting for you and Board come first, then Team and Latest reports;
-where Project and README badge stand is d7ee1073 below. A member in a list is a chip
+Project and README badge stood under Team (d7ee1073 below) and are the
+Overview's Project tab since 2026-10-30 (58c58a28-d6b1-453f-99dc-7f21179b3ee2). A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1547,7 +1588,8 @@ any forge: a wrong path shape would be a dead link that looks right.
 
 **Id:** d7ee1073-1752-4134-9e51-878c5c28f2c2
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 58c58a28-d6b1-453f-99dc-7f21179b3ee2
 **Evidence:** inferred
 **Source:** the maintainer's screenshot and wish on tsk-b67chbx96n29 ("move the two blocks in front of Latest reports"), as the coordinator passed it on, 2026-10-30: on a wide desktop Project and README badge were a row of their own below the whole report list, with empty space under Team; the place under Team is the implementation's choice from the two the coordinator named
 **Revisit when:** the maintainer asks for another place, or the overview gets a panel that competes for the space under Team
@@ -1556,6 +1598,10 @@ any forge: a wrong path shape would be a dead link that looks right.
 The second row is Team with Project and README badge under it
 (`.overview-stack`), and Latest reports beside them. On a phone, where
 the row wraps, the order is Team, Project, README badge, Latest reports.
+That phone order follows from the page's own order alone: the smoke test
+checks the order of the elements, not how the row wraps, so a CSS
+`order` on Latest reports would put it first on a phone without a red
+test.
 
 **Reason:** Latest reports is a long list; whatever came after it was
 out of sight, while Team left empty space beside it. Under Team the
@@ -1567,6 +1613,67 @@ before the reports: on a wide screen it leaves the empty space under
 Team and pushes the reports, the second thing a reader looks for,
 further down. Keeping the three rows and only shortening the report
 list: the wish was about the order, not the length.
+
+## Abuse reports are a section of /admin: the snapshot as text, each action said before it is sent, a suspension asked first
+
+**Id:** f4e5de2b-d329-444e-b98f-1ea8888b147a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub has the routes, the dashboard had no screen), 2026-10-30; docs/api.md §16.8 (the snapshot is the one content an instance admin reads; text untrusted; the four actions; a suspension lifted only by the operator)
+**Revisit when:** reports get a target of their own for organisations, or an admin may lift a suspension from the dashboard
+
+The instance admin's **Reports** section (`js/admin-reports.js`) lists
+the reports as the hub orders them (open first, newest first), filtered
+by status and type. One opened shows the reporter's text and the
+snapshot, every field as plain text in `pre` or a definition list,
+never as markup or a link. The action is chosen from the four with the
+effect of each said under the choice. **Suspend** asks for a
+confirmation naming the target. A resolved report can be resolved
+again to replace its action, and **Dismiss** then lifts its hold.
+
+**Reason:** the snapshot is untrusted content that someone chose to
+report, often because it is hostile (prompt injection, spam); shown as
+text, nothing in it acts. A suspension ends every session and
+credential of an account at once and only the operator lifts it, so it
+is the one action asked twice.
+
+**Rejected alternative:** opening the reported target in its project:
+§16.8 gives the admin no read of the project, only the copy. Confirming
+every action: dismiss and hide are undone by resolving again, and a
+dialog for each would teach clicking through.
+
+The fixture hub (`js/api.js`) mirrors `/admin/reports`; the e2e step
+`reports_admin_step` checks the shapes against the real hub, because
+the fixture's default status, its `closed_at` on a second resolve and
+the snapshot missing from its `resolve` answer had drifted once (review
+of #778).
+
+## The limits per person are chosen as a number, no limit or the default, the environment's shown locked
+
+**Id:** 28adb478-d5fa-450b-9bbd-e985d93405c4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation
+**Revisit when:** plans set the limits per plan (§2.7, part two), or the hub adds a limit
+
+The **Limits** section (`js/admin-limits.js`) shows each value with a
+choice of how it is set — a number, no limit, or the default — the
+number field only for the first, the value's source in words and the
+people at or over it. A value from the environment is shown, its
+controls disabled. Only changed values are sent: a number, `unlimited`,
+or `null` for the default; the call goes through `M.stepUp.run`, so a
+missing second factor or password is asked where it stands.
+
+**Reason:** the contract gives three different meanings — a number,
+"no limit" stored by the admin, and the default restored by `null` —
+and one number field cannot say the last two apart; an empty field read
+as the default would be guessing.
+
+**Rejected alternative:** a single number field with "0 means no
+limit": the hub refuses 0 (`invalid`), and the default would still need
+a gesture of its own.
 
 ## The instance admin area shows one section at a time
 
@@ -1756,6 +1863,48 @@ paste it, and 200 sections fit.
 members, roles and trusts: many controls for a short list, and it could
 not hold a token that names nobody yet, which the hub accepts.
 
+## An agent's owner sets whom it reports to, on Members and on Agents, without members:admin
+
+**Id:** c848b045-9411-43b3-8763-2fd998270a1d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
+**Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
+
+Without `members:admin`, one's own agent's row on Members has
+**Manage**, holding only what its owner sets: **Reports to**, the
+owner's preferences switch and the rulebook. **Reports to** offers
+nobody, oneself (where a member here) and one's other agents in the
+project, without those that would close a circle, and sends only
+`reports_to`. The project's Agents shows the same form beside the
+rulebook. A boss of another owner is never offered; one set already
+stays chosen, marked, so that saving keeps it.
+
+There is no **Withdraw** for an open cross-owner request about the
+agent: §6.2 says nothing in the member view shows a pending edge, and a
+request names no member, so the page could find it only by its title,
+which a wording change would break. It comes with the contract's answer
+on cross-owner edges (a field such as `reports_to_pending` for the two
+owners).
+
+The page and the fixture hub went ahead of the hub: until its owner
+path for §2.3 (tsk-fw3x5c13vq9g, #759) is merged, the hub answers this
+`PATCH` from an owner without `members:admin` with 403, so the two are
+merged together. Showing the form only with `members:admin` until then
+was rejected: the owner would still have no lever, and the page would
+have to change again.
+
+**Reason:** §2.3 gives the owner this lever whatever their trust; a
+field only an admin sees left the owner none. A cross-owner boss files
+consent requests (§6.2) whose start by the owner the contract has not
+settled, so it is not offered until it has.
+
+**Rejected alternative:** the whole membership form for the owner: it
+would offer trust, role and areas the hub refuses them. Finding the
+pending request by its title: fragile and invisible to the reader when
+it breaks.
+
 ## An agent's credentials, briefing and pause live in its row on Members; an owner opens their own agents as Details
 
 **Id:** 1c00024d-a3a6-49bc-ba2e-704359713aeb
@@ -1901,7 +2050,7 @@ is read by the hub's member list.
 A human member without `members:admin` sees **+ Add my agent** at the
 head of Agents (the agents' table on Members before 54a49af9) when the project's `member_agents`
 is not `off`. The panel offers only what §3.1 lets a member
-set (trust member or guest; role coder, reviewer, tester or designer;
+set (trust member or guest; every role of §2.3 but ops and proxy;
 no reports to, no areas) and lists only the member's own joins. A line
 says how many agents of theirs the project allows. The count is the
 member's distinct agents that are active members or have an open join,
@@ -2014,7 +2163,7 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
-## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation in the Overview
+## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation on the Team page
 
 **Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Type:** decision
@@ -2039,8 +2188,9 @@ placements and the earlier joins are there; `…/agents/join[?agent=<id>]`
 opens the panel, `…/agents/<id>/rulebook` the limit, and a new project
 lands on Agents. The parts the Members row and the Agents card share
 (rulebook, credentials, picture, pause, removal) are one code,
-`M.memberParts`. The organisation tree is a section of the Overview and
-is redrawn there when a member event arrives. The join panel and the
+`M.memberParts`. The organisation tree was a section of the Overview,
+redrawn there when a member event arrived; since 2026-10-30 it is the
+Team page's Organisation tab (58c58a28-d6b1-453f-99dc-7f21179b3ee2). The join panel and the
 placements belong to Agents because both are about one's own agents:
 a join makes one, and where they run is managed by their owner or the
 runner's; a list everybody reads is no place for either.
@@ -2056,6 +2206,110 @@ panel at the head of the agents' table, the placements under it, and an
 Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
+
+## A member's own settings in a project are a tab of their own, My settings, at `my-settings`
+
+**Id:** df54f284-212c-4eab-995d-778dce37f7fb
+**Type:** decision
+**Status:** superseded
+**Superseded by:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29; the coordinator's ruling in the review of #649 (no fallback), 2026-10-30
+**Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
+
+**My settings** (`/<owner>/<slug>/my-settings`, a project view in
+§16.11) shows every human member their own settings for the project:
+each either **Use my default**, the value from the account sent as
+`null`, or a value for this project, with what applies now. The first
+is how long one of one's agent instances here may stop listening
+before one hears of it. The account's notification settings hold the
+default and its mode (inbox, bell or off). A failed read of a
+member's settings is shown as an error; there is no quiet note for a
+hub without the route (e1699490 removes that mechanism everywhere).
+
+**Reason:** the project's Settings are kept by its owner and admins;
+one member's own choices are not the project's and must not sit under
+them. A tab of its own makes them reachable from inside the project,
+where one thinks of that project's agents.
+
+**Rejected alternative:** `settings/me`, under the project's Settings:
+no new word for the slugs to avoid, but its tab would be marked as the
+one shown and mix the owner's page with a member's own. One list of
+per-project overrides on the account: far from the project it is about. A quiet "this hub has
+no settings of your own per project yet" (`M.dom.notOnHub`) where the
+route is missing: the hub and the dashboard ship together, and such a
+note would hide a broken deploy behind words that sound normal.
+
+## A request the hub files itself is Maity's; the not-listening digest leads to one's agents
+
+**Id:** 967ed0c0-9e46-42cc-bd45-4fbc4ceae370
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.3 (`agents_not_listening`, target `agents`, linking to `/agents`; read only once its matter is closed — the coordinator's rulings of 2026-10-29); the coordinator's decision of 2026-10-29 on the target `agents` and "Maity" as the requester; the card tsk-32g2cjbm52ft; the review of #649
+**Revisit when:** the hub files requests of its own that are about one project and should lead into it, or the dashboard gets a personal inbox
+
+A request with `asked_by: null` and `filed_by: "hub"` names its asker
+**Maity** (in the list) and **Maity, on its own** (in its facts), and
+says nothing about an agent waiting, since none does. The hourly digest
+of agent instances that are not listening — personal, about no project
+and no organisation — adds a link to one's agents (`/agents`); its
+summary lists the instances. The bell's `agents_not_listening` item
+(target `agents`) leads to `/agents` too, and is not marked read when
+opened: like `registration_pending` and `mail_disabled` it asks for an
+action (resume or end the instances) and is read once the matter is
+closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
+names its target `agents`.
+
+**Reason:** "—" as an asker reads as a missing name, not as the hub;
+and "the agent waits for the answer" would be false. The instances
+named in the digest can be resumed or ended only from one's agents.
+
+**Rejected alternatives:**
+- The item's `url` as the link: the dashboard builds every bell link
+  from the target (the entries above), so one item built otherwise would
+  be the exception.
+- Reading the bell's item on open, like a request's item: the bell would
+  go quiet while the instances are still away, and the next hour's
+  record would bring it back.
+
+## A person or an organisation at /<handle> is one read of GET /people/{handle}, shown as the hub answers it
+
+**Id:** 63efb194-f0ff-4137-bb1f-fb4265356e3b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30
+**Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
+
+`/<handle>` (one segment, not one of the dashboard's own words) is the
+person or organisation view (`js/person.js`). It reads `GET
+/people/{handle}` once and shows only what that answer holds for this
+reader: the name, `@handle`, the picture, for a person the bio and the
+links (each sent by the hub already built from the name, #764, so the
+page builds none; Discord's name as text), the projects, for an
+organisation its members. **View public
+page** is there only while `page_served`, and opens `/<handle>?as=public`
+in a new tab. A picture the answer gives no address for is a neutral
+placeholder, not §6.10's generated avatar. A shared project leads to its
+Overview, any other to its public page. An alias answers with the
+current handle and the address follows it; `not_found` says that there
+is nobody to see, as for an unknown name.
+
+**Reason:** what a reader may see of another person (the bio only while
+the page is public, the links by `links_visible`, a picture by §6.10)
+is the hub's to decide per reader; one read that already answers that
+keeps the view from guessing it from member lists, which would show a
+bio or a link to the wrong reader or miss the public projects. The
+generated avatar needs the account id, which the answer leaves out on
+purpose.
+
+**Rejected alternative:** building the view from the member views of
+the shared projects: no bio, no public page, nothing for a person one
+shares no project with, and no organisation for a non-member. A
+generated avatar from the handle: it would differ from the one every
+other view draws for the same person, and change with a rename. Hiding
+the picture's place: the layout would jump from one person to the next.
 
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
@@ -2198,6 +2452,46 @@ only deletion that can succeed there.
 confirmation on `profile_in_use`: two dialogs for what the page can say
 at once. A browser `confirm()`: it names neither the projects nor the
 handle, and is clicked away too easily.
+
+## Every role of §2.3 is offered from one list, by its label, with what the role does under the picker
+
+**Id:** 43c080d3-e47c-45a3-9add-3da834cdf588
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
+**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
+
+`js/trust.js` holds the one list of built-in roles, in the order of the
+§2.3 table, each with a label ("Red team") and a few words of what the
+member does, taken from that table. Every role picker (a member's form,
+an invitation, a join, a member's own agent) fills its options from it
+by label, with the role's words as the option's tooltip and, under the
+picker, as a hint line the select is described by, following the chosen
+role. What a picker offers stays its own rule: proxy only with trust
+admin and only from an owner, a member's own agent every role but `ops`
+and `proxy`. A security team counts as the role whose scopes it has
+(red team as tester, purple team as reviewer) where the dashboard asks
+who reviews, tests or prepares a release. The fixture hub keeps the
+same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
+and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
+side is changed on the other in the same contract change. A member's
+line elsewhere ("admin · red-team", `M.trust.words`) keeps the hub's
+token: it is what the CLI and the hub's answers show, and the label is
+for the moment a role is chosen.
+
+**Reason:** the roles had been copied into each picker, and `manager`
+and the three security teams were missing from all of them; one list is
+one place to add the next. A token like `purple-team` does not say what
+the member will do, and a choice of role is made by someone deciding
+what an agent is for.
+
+**Rejected alternative:** the tokens as the options' text, as before:
+correct for the hub, unclear for the person choosing. The help as the
+options' tooltip only: a tooltip is not read on a phone or by every
+screen reader. A table of every role beside each form: longer than the
+form it explains.
 
 ## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
 
@@ -2499,7 +2793,7 @@ its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
 of the project's events and said nothing about it.
 
-## The swarm statistics are a section of the Overview, read on their own and kept across its redraws; no tab, no public page, no switch
+## The swarm statistics are the Overview's Swarm tab, read on their own; no project tab, no public page, no switch
 
 **Id:** 8a528eb5-8dd6-4fec-996e-79c5b57abb51
 **Type:** decision
@@ -2508,14 +2802,15 @@ of the project's events and said nothing about it.
 **Source:** the maintainer's decision of 2026-10-29 that the swarm is a statistic (root context/projects.md, bfe4c4a6, card tsk-w89mspg3gwx1); docs/api.md §6.11, §6.22, §16.11 after the contract #697; the card tsk-b8ndat73wttr; how the section reads and redraws is the implementer's, 2026-10-30
 **Revisit when:** a public project's page draws the reduced numbers in the dashboard (§16.9), or the Overview gets a refresh of its own for the swarm
 
-The project's Overview carries a **Swarm** section after the team,
-project and reports rows and before the organisation: who is at work
+The project's Overview carries the **Swarm** section: who is at work
 now, what each holds, and the window's counters with the 7/30/90-day
-switch, as the Swarm tab had them (`js/swarm.js`, `M.swarm.section`).
-The section is built once per Overview and reads `GET …/swarm` itself,
-once and on a window change; the Overview's redraws on card, request
-and probe events place the same node again. There is no Swarm tab, no
-`/<owner>/<slug>/swarm` view, no public swarm page or `?as=public`, and
+switch, as the old Swarm tab had them (`js/swarm.js`, `M.swarm.section`).
+Since 2026-10-30 it is the Overview's own Swarm tab
+(`/<owner>/<slug>/overview/swarm`, 58c58a28-d6b1-453f-99dc-7f21179b3ee2), no longer a row under
+the counts. The section is built once per visit of that tab and reads
+`GET …/swarm` itself, once and on a window change; a card, request or
+probe event draws nothing there. There is no Swarm tab in the
+project's row of tabs, no `/<owner>/<slug>/swarm` view, no public swarm page or `?as=public`, and
 no `swarm_public` switch in Project settings; the fixture hub no longer
 serves `/swarm/{owner}/{slug}`.
 
@@ -2531,3 +2826,233 @@ and the address was never shared outside the dashboard. Drawing the
 section anew with the Overview's counts: a swarm read per card event,
 and the window lost. Keeping the public page until public projects get
 their pages: the contract removed its route and its switch.
+
+## A chat with an agent sends to the whole team unless one instance is chosen beside its heading
+
+**Id:** 4236b804-8b55-4a94-a166-5fb4c010f127
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request relayed on the card tsk-f0ctq47mw0f6 (a selector of the agent's live instances beside the heading, the whole team by default, the choice kept per chat for the session, shown on the sent message, hidden with one instance), 2026-10-30; docs/api.md §9.1 (`to_instance` on a direct message wakes exactly one instance) and the coordinator's ruling that the message carries `to_instance` back (id or `null`), 2026-10-30; the hub side is the card tsk-p1df7ggm17bc
+**Revisit when:** group chats get a choice of instance, or the hub tells which instance the wake rule chose for a message to the team
+
+An agent with more than one instance that is not revoked gets **Send
+to** beside **Chat with <agent>**: **The whole team** first and chosen,
+then each live instance as `<handle>#<id> · <presence>`. A chosen
+instance goes as `to_instance` on `POST …/conversations/{agent}/messages`;
+the team is no field at all. The choice is kept per conversation in this
+tab, like a draft, and ends with signing out; one whose instance is gone
+falls back to the team. One's own message sent to an instance says "to
+<handle>#<id>" from the message's own `to_instance`, never from the
+selector. An offline instance is offered too, marked so.
+
+**Reason:** the team by default keeps the agent's own wake rule in
+charge; picking one instance is for the times the human knows which
+session holds the work. The label is read from the answer, which carries
+`to_instance` as written (a replaced instance's message reaches its
+successor, but the message still names the instance the human chose), so
+it says what was sent, whatever the selector shows by then.
+
+**Rejected alternative:** a mention `@handle#id` in the text: a direct
+chat never resolves mentions (§8.6), so it would wake nobody. Offering
+only online instances: an offline one still gets the message at its next
+resume, and its being offline is said in the option. Keeping the choice
+in browser storage: a stale instance id would outlive the session it
+named.
+
+## The project's repository and Keep the Why dashboard are links beside its state, from what the project view already holds
+
+**Id:** bdb4632c-1047-4a88-9249-f09f8c50d1e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on the card tsk-n161gf6h8feb (two buttons top right beside the state, the repository with its forge's icon, the Keep the Why dashboard, both in a new tab), 2026-10-29; the coordinator's note that the project view already carries `repository` and `keep_the_why_export.members[]` with the root at `path: ""` and its `dashboard_url`, so no contract change, 2026-10-30
+**Revisit when:** a project needs a dashboard address other than its export's, or the hub derives more forges
+
+In a project the header shows, after the state, the absence and the
+released mark, a link to the repository (`repository.url`, labelled by
+`repository.forge`: GitHub and GitLab with their marks, Gitea by its
+name with a branch mark, any other as "Repository" with a branch mark) and **Why**, the dashboard of the Keep
+the Why family's root member. Either is left out where the project has
+none or its address is not plain `https`; both open in a tab of their
+own and are named for a screen reader with where they go.
+
+**Reason:** these are the two places one leaves the dashboard for most
+often; the data is in the project view already, so the links cost no
+request and no new setting.
+
+**Rejected alternative:** a new project field for the dashboard's
+address, as the card first proposed: the export already names it, and a
+second address could drift from the one the family publishes. Only the
+Overview's Project panel, where both links already are: one click
+further, on one view only.
+
+## A review result shows its verdict, head and cites in the Messages view; the dashboard does not compose one
+
+**Id:** 2ca8d25f-79db-47ea-9108-3397ad03296e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §8.4 "A review result cites what it judged" (contract #745: `review` with subject, head, verdict and cites, required on `review_result`, shown by the dashboard under the verdict); the card tsk-c4dez2qc7dd0 (verdict badge, subject, short head linking to the commit, cites as path:line or removed with the quote in monospace, folded after five), 2026-10-30; the coordinator's ruling to take review_result out of the composer, 2026-10-30
+**Revisit when:** humans write review results in the dashboard, or a chat or a card's thread shows project messages
+
+In **Messages** a `review_result` shows above its text the verdict as a
+pill, the subject, and the head's first seven characters, linked to the
+commit on GitHub or GitLab (title: the whole head); then the cites, each
+`path:line`, or the path and "removed" where `line` is `null`, with its
+quote as code text, the first five shown and the rest in a fold. Every
+part is text, never markup. The Messages view is the one place project
+messages are drawn; chats carry only `chat` messages, and a card's
+thread its notes. **Message the project** no longer offers "A review's
+result": the hub refuses one without `review`, and a review's cites are
+quoted from the diff by the reviewer's tools (`maity say
+--review-file`). The fixture hub's check of `review` is a copy by hand of
+`hub/src/maity_hub/reviews.py`, not a second source for §8.4: where
+they differ (reasons, unknown keys, which characters break a line), the
+hub is right.
+
+**Reason:** the lead checks the cites against the diff before an
+approval counts; showing them under the verdict lets a human do the
+same without the CLI.
+
+**Rejected alternative:** a form for verdict, head and cites in **Message
+the project**: a reviewer quotes lines from the diff at its head, which
+a browser form would have them copy by hand, for a message humans do
+not send. Leaving the type in the composer: every send would be refused
+for want of `review`.
+
+## A project has one Settings view: Project for its admins, Mine at settings/mine for every human member
+
+**Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
+**Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
+**See:** views.md#a-members-own-settings-in-a-project-are-a-tab-of-their-own-my-settings-at-my-settings — df54f284-212c-4eab-995d-778dce37f7fb — as of 2026-10-30
+
+The project's tabs end in one **Settings**, offered to its admins and to
+every human member. Inside it two tabs, as links: **Project**
+(`/<owner>/<slug>/settings`) for a member with `project:admin`, and
+**Mine** (`/<owner>/<slug>/settings/mine`) for a human, one's own settings
+for the project with one's default from the account. A member without
+`project:admin` who opens `settings` is sent on to `settings/mine` and
+sees no tab bar, having one tab. `/<owner>/<slug>/my-settings` is gone,
+without a redirect.
+
+**Reason:** two tabs called Settings and My settings side by side read as
+one thing twice; one place with a part for the project and a part for
+oneself is where a member looks for either.
+
+**Rejected alternative:** keeping **My settings** as a tab of its own
+(df54f284): the maintainer asked for one Settings. Showing a member the
+Project tab read only, as before: the contract shows it to admins only,
+and what a member may read of it (language, memory) is on the overview
+or in the project's files. A redirect from `my-settings`: the alpha
+rule, no route kept for an old address.
+
+## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
+
+**Id:** e9c14296-f8da-4f83-871b-056a0d3ab6ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2 `GET /me`, §5.2 "Meat proxy" and the `PATCH /me` row after the contract #702 (two stored parts, the switch derived, the order in which a body applies); the coordinator's card tsk-j9mgn2z3e7pf (two sub-points, both ticked on switching on, each cleared alone, the note under them from `GET /me`), 2026-10-30; the page's shape is the implementer's, 2026-10-30; the review of #720 (the answer's shape), 2026-10-30
+**See:** views.md#the-meat-proxy-hint-quotes-the-hubs-note-as-me-carries-it-and-no-text-of-its-own — 8eb486bb-357a-477c-aaf5-2a4d51024cc4 — as of 2026-10-30
+**Revisit when:** the hub adds a third part, or the note gets text per human or a translation
+
+Under **I am a meat proxy** the account shows the two parts, *Lead me
+step by step rather than expecting me to explain.* and *When you need a
+human's hands, come to me first.*, as checkboxes of their own. The
+switch sends `meat_proxy` alone (on ticks both, off clears both); a part
+sends only that part, so ticking one while the mode is off turns it on
+with that part, and clearing the last turns it off. After every answer
+the switch, both parts and the note are drawn from what the hub sent
+back, never from what was clicked. The answer of `PATCH /me` is `/me`
+itself (§5.1), so the page reads `answer.member`, as it reads `GET /me`;
+the fixture hub answers in that same shape. The note stands under the parts;
+while the mode is off it is the text switching on would send.
+
+**Reason:** the hub stores the parts and derives the switch, so drawing
+from its answer keeps the page and the agents' text the same, whatever
+order the person clicks in. Sending the one field that changed lets the
+hub's order rule decide, as §5.2 spells it out.
+
+**Rejected alternative:** sending the whole state (switch and both parts)
+on every change: `meat_proxy: false` with a part set to `true` is
+`invalid`, and the page would have to repeat the hub's rule. Disabling
+the parts while the switch is off: the contract lets one part alone turn
+the mode on, which a disabled box would hide. Labels of the page's own
+wording for the parts: they are the person's own sentences in §5.2, the
+same words the note puts together. Reading the fields at the top of the
+answer with the clicked value as fallback (the earlier code): against the
+hub it never read the answer at all, and the fixture's flat answer hid it.
+
+## The Overview has three tabs, Summary, Swarm and Project; the organisation is a tab of the Team page
+
+**Id:** 58c58a28-d6b1-453f-99dc-7f21179b3ee2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (the Overview too full, split into tabs; the org chart on the Team/Members page as its own tab, not on the Overview; the swarm may stay or become a tab, the implementer's proposal); docs/api.md §16.11 (`organisation` is a project view); the split of the panels into the three tabs is the implementer's
+**Supersedes:** d7ee1073-1752-4134-9e51-878c5c28f2c2
+**Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
+
+The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
+**Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
+links with the shown one marked. Summary is what needs the reader and
+the state: Waiting for you and Board, then Team beside Latest reports;
+only it reads `GET …/overview` and re-reads it on card, request and
+probe events and, for a narrow viewer, on its timer. Swarm is the swarm
+section, read on its own. Project holds the facts (repository, state,
+policy, contract, Keep the Why) and the README badge, read from what
+the header already has. A tab the page does not know shows Summary.
+The organisation tree left the Overview: it is the Team page's
+**Organisation** tab at `/<owner>/<slug>/organisation`, a project view
+the contract already lists, beside **Members** at `members`; both
+pages carry the same two links (`M.teamTabs`), and the project's row
+of tabs marks Members for either. The tree is drawn again when a member
+event arrives.
+
+**Reason:** one page with every panel had grown past what is read at a
+glance; what needs the reader belongs on the first screen, and the
+facts and the statistics are looked up, not watched. The swarm as a tab
+keeps its own read out of every visit to the Overview. The org chart
+describes the team, so it belongs with the team's list, as f0ca2279
+planned the Team page.
+
+**Rejected alternative:** the swarm kept as a row of Summary: a swarm
+read on every Overview visit, and the page still long. The organisation
+as a fourth Overview tab: the maintainer placed it with the team. A
+`members/organisation` address: `members/<id>` is a member's page, and
+a word there would have to be told apart from an id.
+
+## Members filters to one's own agents with Only my agents, kept per viewer in the browser
+
+**Id:** 7b08511c-7f7e-4af2-bd7e-df6f01476e0b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (a filter 'Only my agents' on the members list, the member's `owner` being the signed-in human, remembered per viewer); where it is kept is the implementer's
+**Revisit when:** the hub keeps per-viewer view settings, or the GUI round asks for the filter on other lists too
+
+A human viewer of Members gets the checkbox **Only my agents**. On, the
+list is the agents whose `owner_id` is the viewer, and the humans'
+table is not drawn; with none, it says so. The choice is kept in the
+browser's `localStorage` under one key per viewer
+(`maity.members.mine.<member id>`), for every project, and a browser
+that keeps nothing still filters for the visit. Agents never see the
+box: they own no agent. What an owner may change on their own agent's
+row without `members:admin` is unchanged (Manage with reports to,
+preferences and team, §2.3).
+
+**Reason:** the maintainer wants their own agents at a glance on a list
+that holds everyone's. A per-viewer key keeps one person's choice from
+another's on a shared browser, and the hub has no field for view
+settings.
+
+**Rejected alternative:** one key for every viewer: a second person
+signing in on the same browser would inherit the filter. A key per
+project: the maintainer asked for it per viewer, and switching projects
+would lose it. A setting on the hub: there is no such field, and a
+contract change for a list filter is out of proportion.

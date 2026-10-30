@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import attachment_store, clock, events, moderation, namespace
+from maity_hub import attachment_store, clock, events, handles, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
@@ -26,7 +26,6 @@ from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.notifications import records
-from maity_hub.policy import CLOSED_STATES
 from maity_hub.views import principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
@@ -101,35 +100,29 @@ def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
     )
 
 
-def _on_a_public_swarm(conn: Connection, agent_id: str) -> bool:
-    """Whether a project's public swarm page shows the agent (§6.22): an active member of
-    a project that is open and has `swarm_public: on`, readable by anyone."""
-    m, p = t.membership.c, t.project.c
-    return (
-        conn.execute(
-            select(m.id)
-            .join(t.project, p.id == m.project_id)
-            .where(
-                m.agent_id == agent_id,
-                m.active.is_(True),
-                p.swarm_public == "on",
-                p.state.not_in(CLOSED_STATES),
-            )
-            .limit(1)
-        ).first()
-        is not None
-    )
-
-
 def _agent_by_name(conn: Connection, name: str) -> str:
-    """An agent's id from its global name `<owner>/<handle>`, as the public swarm page
-    shows it (§6.3, §6.22); `not_found` for none."""
+    """An agent's id from its global name `<owner>/<handle>`, as a project's public page
+    shows it (§6.3, §16.9); `not_found` for none."""
     owner, _, handle = name.partition("/")
+    owner_id = handles.human_id_of(conn, owner)  # a handle or an alias of the owner (§6.24)
+    if owner_id is None:
+        raise not_found()
     found = conn.execute(
-        select(t.agent_profile.c.id)
-        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
-        .where(t.human.c.handle == owner, t.agent_profile.c.handle == handle)
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == owner_id,
+            t.agent_profile.c.handle == handle,
+        )
     ).scalar()
+    if found is None:  # the profile's handle may be an alias as well
+        found = conn.execute(
+            select(t.handle_alias.c.agent_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.handle_alias.c.agent_id)
+            .where(
+                t.handle_alias.c.scope == owner_id,
+                t.handle_alias.c.handle == handle,
+                t.handle_alias.c.live.is_(True),
+            )
+        ).scalar()
     if found is None:
         raise not_found()
     return str(found)
@@ -150,8 +143,9 @@ def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any
         if not (
             own
             or profile_id == caller.principal_id
+            # An agent on a project's public page joins these with the public pages
+            # (§16.9, tsk-w89mspg3gwx1); no page outside a project shows one yet.
             or _shares_a_project(conn, caller, profile_id)
-            or _on_a_public_swarm(conn, profile_id)
         ):
             raise not_found()
         return {

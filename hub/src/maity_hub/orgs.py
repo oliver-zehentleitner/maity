@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
-from maity_hub import avatars, clock, handle_register, namespace, paths
+from maity_hub import avatars, clock, handle_register, handles, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -323,6 +323,10 @@ def create(
         if owned >= limit:
             raise org_limit(limit, owned)
     org_id = new_id("org")
+    # A handle a human gave up stays theirs (§6.24): the register does not know aliases.
+    handles.lock(conn, handles.HUMANS, handle)
+    if handles.holder(conn, handles.HUMANS, handle) is not None:
+        raise invalid({"handle": "taken"})
     if not handle_register.claim(conn, handle, handle_register.ORG, org_id):
         raise invalid({"handle": "taken"})
     now = clock.now()
@@ -424,7 +428,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
     with them, its open invitations are withdrawn, the row stays with `deleted_at` and its
     handle stays taken for good (§6.26). Only while it owns no project that is not archived:
     `namespace_owner`, naming them; an archived one stays archived under its name."""
-    from maity_hub import org_invitations, org_projects, project_names
+    from maity_hub import org_invitations, org_projects, project_names, public_projects
 
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
@@ -445,3 +449,4 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
         org_projects.release_in_all(conn, org.id, human_id)
     avatars.remove_upload(conn, org.id)  # the avatar goes with the organisation (§6.26)
     conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=clock.now()))
+    public_projects.touch_of_org(conn, org.id)  # a deleted organisation's projects have no page

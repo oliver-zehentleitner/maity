@@ -602,7 +602,12 @@ def _messages(
                 redacted=False,
             )
             if not chat:
-                item.update(to=payload.get("to"), task=titles.card(payload.get("task_id")))
+                item.update(
+                    to=payload.get("to"),
+                    task=titles.card(payload.get("task_id")),
+                    # What a review result judged and read (§8.4): null for every other type.
+                    review=payload.get("review"),
+                )
         out.append(item)
     return out
 
