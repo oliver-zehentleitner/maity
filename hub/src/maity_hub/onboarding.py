@@ -88,7 +88,7 @@ def target(conn: Connection, project: Any) -> Any | None:
             return matches[0]
         if not token.startswith(("role:", "trust:")):
             return None
-    coordinator = policy.of(project).get("coordinator", "trust:admin")
+    coordinator = policy.of(project)["coordinator"]
     if coordinator == "trust:admin":
         candidates = [row for row in ordered if row.agent_id and in_admin_team(row.trust, row.role)]
     else:

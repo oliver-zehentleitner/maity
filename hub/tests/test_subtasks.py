@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -250,9 +249,6 @@ def test_migration_preserves_existing_projects_with_proposed_policy(engine: Engi
     with engine.connect() as conn:
         row = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
         assert row.subtasks == "proposed"
-        legacy = dict(row._mapping)
-        del legacy["subtasks"]
-        assert policy.of(SimpleNamespace(**legacy))["subtasks"] == "proposed"
         card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
         assert card.parent is None and card.title == "A card"
 

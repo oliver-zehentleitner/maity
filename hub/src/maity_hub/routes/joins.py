@@ -31,6 +31,7 @@ from maity_hub import (
     events,
     idempotency,
     instances,
+    limits,
     line,
     moderation,
     namespace,
@@ -123,7 +124,13 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         if member_rule:
             _require_member_rule(mine)
         second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
-        agent_id = _agent_for_join(conn, body.agent, caller.principal_id, member_rule)
+        agent_id = _agent_for_join(
+            conn,
+            body.agent,
+            caller.principal_id,
+            member_rule,
+            limits.of(conn, settings, "max_agents_per_human"),
+        )
         existing = conn.execute(
             select(t.membership).where(
                 t.membership.c.project_id == mine.project.id,
@@ -420,7 +427,11 @@ def live_profile(conn: Connection, agent_id: str) -> None:
 
 
 def _agent_for_join(
-    conn: Connection, agent: JoinAgent, owner_id: str, member_rule: bool = False
+    conn: Connection,
+    agent: JoinAgent,
+    owner_id: str,
+    member_rule: bool = False,
+    limit: int | None = None,
 ) -> str:
     if agent.id is not None:
         if agent.handle is not None or agent.display_name is not None:
@@ -440,7 +451,9 @@ def _agent_for_join(
         raise invalid(
             {"agent": "id_or_handle"}, "name an agent by id, or give handle and display_name"
         )
-    return create_profile(conn, owner_id, agent.handle, agent.display_name, agent.git_identity)
+    return create_profile(
+        conn, owner_id, agent.handle, agent.display_name, agent.git_identity, limit
+    )
 
 
 @router.get("/projects/{owner}/{slug}/joins")

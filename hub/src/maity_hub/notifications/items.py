@@ -45,6 +45,7 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "an unknown system",
         "address_changed": "Sign-in address changed",
         "mail_disabled": "Mail to {address} disabled after 3 failures",
+        "not_listening": "{n} of your agent instances are not listening",
         "tf_enrolled": "Two-factor sign-in turned on",
         "tf_disabled": "Two-factor sign-in turned off",
         "tf_recovery_codes": "New recovery codes",
@@ -71,6 +72,7 @@ WORDS: dict[str, dict[str, str]] = {
         "unknown_os": "einem unbekannten System",
         "address_changed": "Anmeldeadresse geändert",
         "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
+        "not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
         "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
         "tf_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
         "tf_recovery_codes": "Neue Wiederherstellungscodes",
@@ -572,6 +574,19 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
     """The items of these account records (§18.1)."""
     waiting = _waiting_registrations(conn, rows)
     open_reports = _open_reports(conn, rows)
+    # Only the newest `agents_not_listening` record can be open; the older ones ended. Read
+    # from the table, not from `rows`: a paged read hands over one chunk, which may hold an
+    # older record without the newest (`_records_paged`).
+    newest_away_record = (
+        conn.execute(
+            select(func.max(t.account_record.c.n)).where(
+                t.account_record.c.human_id == where.human_id,
+                t.account_record.c.type == "agents_not_listening",
+            )
+        ).scalar()
+        if any(row.type == "agents_not_listening" for row in rows)
+        else None
+    )
     # The personal requests and their askers' names in a fixed number of statements, not
     # three per record: a human with many hub notices reads them all on every call.
     asked = {
@@ -721,6 +736,34 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     open=pending,
                 )
             )
+        elif (
+            row.type == "agents_not_listening"
+            and row.n == newest_away_record
+            and int(data.get("instances", 0)) > 0  # a closing record `{instances: 0}` lists nothing
+        ):
+            # Listed while any instance is away, with the count as it is now (§5.3,
+            # §18.1): the record marks only when it began, the rest is read live.
+            from maity_hub import not_listening_digest
+            from maity_hub.notifications import preferences
+
+            away = not_listening_digest.away_of(conn, where.human_id, now)
+            if (
+                away
+                and preferences.preferences(conn, where.human_id)["not_listening"]["mode"] == "bell"
+            ):
+                items.append(
+                    Item(
+                        kind="inbox",
+                        at=row.at,
+                        record=row.n,
+                        title=_cut(where.say("not_listening", n=len(away))),
+                        target={"type": "agents"},
+                        url=_url(where, "/agents"),
+                        read=False,
+                        record_type=row.type,
+                        open=True,
+                    )
+                )
         elif row.type == "report_open":
             # Listed while the report is open, however old, and read once it is resolved or
             # expired (§16.8, §18.1); no read mark closes it.
