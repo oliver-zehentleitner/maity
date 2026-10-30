@@ -446,8 +446,10 @@ def is_admin(packet: dict[str, Any]) -> bool:
 
 
 def _trust_role(member: dict[str, Any], text: str) -> str:
-    """A member's trust and role (§2.3)."""
-    return text.format(trust=inline(member.get("trust")), role=inline(member.get("role")))
+    """A member's trust and role (§2.3); `?` for one the hub left out."""
+    return text.format(
+        trust=inline(member.get("trust") or "?"), role=inline(member.get("role") or "?")
+    )
 
 
 def _formerly(member: dict[str, Any]) -> str:

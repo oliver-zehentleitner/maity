@@ -408,10 +408,12 @@ class Client:
         timeout: float | None = None,
         raw: bytes | None = None,
         content_type: str | None = None,
+        text: bool = False,
     ) -> Any:
         """Send one request; return the decoded JSON body. `path` is relative to /api/v1.
         `raw` sends those bytes as the body, as `content_type` (an image upload), instead of
-        `body` as JSON; they are signed the same way."""
+        `body` as JSON; they are signed the same way. `text` takes an answer that is not JSON
+        (a route that answers Markdown) as a `Text` instead of refusing it."""
         method = method.upper()
         if not path.startswith("/"):
             raise HubError(f"path must start with '/': {path!r}")
@@ -442,7 +444,15 @@ class Client:
         send = data if body is not None or raw is not None else None
         try:
             return self._send(
-                method, url, full_path, query_string, data, send, headers, timeout, _json
+                method,
+                url,
+                full_path,
+                query_string,
+                data,
+                send,
+                headers,
+                timeout,
+                _json_or_text if text else _json,
             )
         except ValueError as exc:
             raise HubError(f"{method} {full_path}: the hub answered with invalid JSON") from exc
@@ -525,3 +535,19 @@ class _SinkFailed(Exception):
 def _json(response: Any) -> Any:
     answer: bytes = response.read()
     return json.loads(answer) if answer else None
+
+
+@dataclass(frozen=True)
+class Text:
+    """An answer the hub sent as text, not JSON (`call(..., text=True)`)."""
+
+    body: str
+    content_type: str
+
+
+def _json_or_text(response: Any) -> Any:
+    kind = response.headers.get_content_type()
+    if kind == "application/json" or kind.endswith("+json"):
+        return _json(response)
+    charset = response.headers.get_content_charset() or "utf-8"
+    return Text(response.read().decode(charset, errors="replace"), kind)

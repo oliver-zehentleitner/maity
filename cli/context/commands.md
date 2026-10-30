@@ -408,7 +408,9 @@ links for a card without a `links` list. A resume that the hub refuses
 is not sent again without `environment` or `supervisor`. A state that
 holds only the slug is refused with "run `maity resume`" instead of
 asking `GET /me`. A membership without `trust` is not admin and is no
-longer shown by its role alone. One fallback stays: a project that
+longer shown by its role alone; its trust shows as `?`. A resume whose
+packet names no `instance` keeps the one stored before rather than
+clearing it. One fallback stays: a project that
 answers `not_found` is looked up once with `GET /me` and followed
 (f502c036), because a rename or transfer happens on the current hub,
 not only on an old one.
@@ -761,3 +763,25 @@ text can have two spaces too, so refusing would block valid messages.
 - Reading standard input whenever it is not a terminal: an agent's
   harness often runs commands with a non-terminal stdin, so plain
   `maity say` calls would hang or read stray input.
+
+## `--review-file` sends the review as parsed JSON and leaves its rules to the hub
+
+**Id:** 0870475d-9546-404c-871c-58290f51f954
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ht8te6y0mhcy (`maity say --type review_result --review-file`, §8.4, §13), PR #751 and its reviews (2026-10-30)
+**Revisit when:** a review result gains a field that cannot be written as JSON by hand, or the hub's error paths stop naming the bad field
+
+`maity say … --type review_result --review-file <path|->` reads the review object of §8.4
+(`subject`, `head`, `verdict`, `cites`) as JSON and sends it as given. The CLI checks only that
+it is JSON: the hub owns the rules of §8.4 and names each bad field by its path
+(`review.cites.2.line`), which the CLI shows unchanged. Only `review_result` takes the flag,
+and a `review_result` without it is refused before anything is sent. The message and the review
+cannot both come from standard input, which is read once (1be5edbf).
+
+**Rejected alternatives:**
+- A flag per field (`--subject`, `--head`, `--cite path:line:quote`): a quote may hold any
+  character, colons and quotes included, and a shell argument would mangle it.
+- Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
+  hub's.
