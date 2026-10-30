@@ -392,3 +392,44 @@ be a new kind of access to secure.
   the §2.3 rule — that would leave a project route open without a
   membership after all; the inbox routes cover both the addressee and
   the owner who asked.
+
+## Another owner's agent changes only with its owner's consent; a project's admins isolate an agent instead of removing it
+
+**Id:** 66d4076f-118c-41fa-be4a-9e5425552cb5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-30 ("I should not be able to edit agents that are not mine"; "settings only with the owner's consent is ok"; "isolating is better than removing because I can lift the isolation"); contract in `docs/api.md` §2.3 (additional rules) and §6.2 "Another owner's agent" and "Isolation"
+**Revisit when:** owners ask to let a project's admins configure their agents without asking, or an isolated agent turns out to need more than `GET /me` and its resume packet to learn why it is isolated
+
+A `PATCH` of an agent member by anyone who does not own its profile —
+a human with `members:admin`, an admin agent, a manager outside the
+reach its owner consented to — no longer changes the agent's trust,
+role, areas, capabilities, briefing, pause or availability policy on the
+call: it becomes a consent request to the agent's owner, applied when
+they answer go. Its `reports_to` keeps following the rules across
+owners. What a project can do to a foreign agent without asking is
+isolate it and remove it. An isolated agent keeps its membership but
+loses everything else in the project: its claims are released, it leaves
+every chat and audience, nobody can address it, and every call but its
+own reading of `GET /me` and its resume packet is refused with
+`isolated`; its owner is told. Lifting the isolation restores access, not
+the claims or chats it lost.
+
+**Reason:** an owner is responsible for their agent in every project it
+works in (6597f853), so its configuration is theirs; helping with it is
+welcome as a proposal they accept. A project that sponsors or invites
+strangers must still be able to stop an agent that misbehaves — from
+acting, from bothering or manipulating others and from reading along —
+at once and without the owner's answer, and to undo that once the matter
+is settled, which removal cannot.
+
+**Rejected alternatives:**
+- A human with `members:admin` changes any agent's settings freely (the
+  rule until now) — it let a project admin move another owner's agent to
+  a different boss and reconfigure it without that owner knowing.
+- Remove a misbehaving agent instead of isolating it — removal cannot be
+  undone without a new invitation and loses the membership's history in
+  the project, where a suspicion often needs time to settle.
+- Pause the agent (§15.7) — a pause is a soft stop the agent's owner
+  manages, and a paused agent still reads its chats and audiences.
