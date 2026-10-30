@@ -13,20 +13,35 @@ window.Maity = window.Maity || {};
   // closed, and on a sign-in or address alert only where this session may
   // confirm it (§2.6.5, M.sessions.mayConfirm), else the hub would skip it.
   function row(ctx, x, mark, sessions) {
+    let li = null;
     const title = x.redacted ? "Removed" : x.title || M.notify.KIND_WORDS[x.kind] || "Notification";
     const security = x.kind === "security";
     const reported = security && sessions && (x.target || {}).type === "session" ? sessions.list.find((s) => s.id === x.target.id) || null : null;
     const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayConfirm(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
+    const link = h("a", { href: M.notify.linkOf(x), onclick: () => {
+      if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
+      mark({ ids: [x.id] });
+    } }, title);
+    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " (unread)");
+    // Marked read in place: the row, its words and its button change, the
+    // focus goes to its link, the pages read so far stay.
     const markButton = markable ? h("button", { type: "button", class: "small mark-read", "aria-label": "Mark read: " + title }, "Mark read") : null;
-    if (markButton) markButton.addEventListener("click", () => mark({ ids: [x.id] }, markButton));
-    return h("li", { class: "waiting-item " + (x.read ? "read" : "unread"), "data-notification": x.id },
-      h("a", { href: M.notify.linkOf(x), onclick: () => {
-        if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
-        mark({ ids: [x.id] }, null);
-      } }, title),
-      x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"),
+    if (markButton) {
+      markButton.addEventListener("click", async () => {
+        markButton.disabled = true;
+        if (!(await mark({ ids: [x.id] }))) { markButton.disabled = false; return; }
+        x.read = true;
+        li.className = "waiting-item read";
+        if (unread && unread.parentNode) unread.parentNode.removeChild(unread);
+        if (markButton.parentNode) markButton.parentNode.removeChild(markButton);
+        link.focus();
+      });
+    }
+    li = h("li", { class: "waiting-item " + (x.read ? "read" : "unread"), "data-notification": x.id },
+      link, unread,
       h("span", { class: "muted" }, (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
       markButton);
+    return li;
   }
 
   async function full(ctx, root) {
@@ -41,17 +56,19 @@ window.Maity = window.Maity || {};
     let sessions = null;
     ctx.onDispose(() => { disposed = true; });
     const markAllOff = () => { markAll.disabled = top === null || !items.some((x) => !x.read && !M.notify.keepsUnread(x)); };
-    async function mark(body, button) {
-      if (button) button.disabled = true;
+    // True once the hub took it; the counts follow. Mark all read reads
+    // the list again, since it reaches items on pages not shown.
+    async function mark(body) {
       try {
         await M.api.post("/me/notifications/read", body);
-        M.notify.changed();
-        await ctx.refreshCounts();
-        if (button || body.up_to) { clear(list); cursor = null; items = []; await load(); }
       } catch (err) {
         status.fail("Not marked: ", err);
-        if (button) button.disabled = false;
+        return false;
       }
+      M.notify.changed();
+      await ctx.refreshCounts().catch(() => null);
+      if (body.up_to) { clear(list); cursor = null; items = []; await load(); } else markAllOff();
+      return true;
     }
     async function load() {
       older.disabled = true;
@@ -77,7 +94,7 @@ window.Maity = window.Maity || {};
     markAll.addEventListener("click", async () => {
       markAll.disabled = true;
       status.busy("Marking…");
-      await mark({ up_to: top }, null);
+      await mark({ up_to: top });
       markAllOff();
     });
     older.addEventListener("click", load);

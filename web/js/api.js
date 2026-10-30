@@ -1223,6 +1223,8 @@ window.Maity = window.Maity || {};
           x.read = true;
           return;
         }
+        // An open matter is never marked by a caller (§18.3).
+        if (x.kind === "inbox" && x.open_matter) return;
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
             && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;

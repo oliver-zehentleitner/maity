@@ -672,10 +672,15 @@ every visit, while the bell already shows it.
 
 Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 `/notifications` also has **Mark read** beside each unread item, sent
-with its id, without opening it, and **Mark all read** stays in place,
+with its id, without opening it, the row marked read in place (its
+button gone, the focus on its link, the pages read so far kept), and
+**Mark all read** stays in place,
 off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on an open
-matter, which reads as read once it is closed, nor on a sign-in or
+address alerts stay unread. **Mark read** is not offered on one of the
+four open matters of §18.3 — `registration_pending`, `mail_disabled`,
+`report_open`, `agents_not_listening`, told by their targets
+(`registration`, `settings`, `report`, `agents`, `M.notify.keepsUnread`)
+— which read as read once the matter is closed, nor on a sign-in or
 address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 §2.6.5): the hub skips such an id without saying so, and a button that
 does nothing would look broken. The sessions are read for that only
