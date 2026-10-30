@@ -618,8 +618,8 @@ must not publish its members by an update.
   publish for good that two names belong together.
 - Listing every agent of a public project: agents of other owners and
   their activity would be published by someone else's choice; they show
-  only with the project's `swarm_public` and their owner's public
-  profile, the rest as a number.
+  only with their owner's public profile, the rest as a number (the
+  separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
 
 ## The landing and legal pages are instance content in sections, rendered by the hub as static HTML
 
