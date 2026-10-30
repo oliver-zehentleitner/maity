@@ -6873,6 +6873,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 413, p, "payload_too_large")) : leSize(p, b));
   await leSave();
   expect(text(main).includes("the draft is larger than the hub takes in one request (512 KiB)"), "landing editor: a draft over the request cap is said in words");
+  // A field's own limit: in its hint, and with the hub's too_long at it.
+  const lmHint = byId("lp-pages-en-sections-3-markdown").parentNode.querySelector(".hint");
+  expect(lmHint && text(lmHint).endsWith("At most 16 KiB."), "landing editor: a Markdown field says its limit");
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "pages.en.sections.3.markdown": "too_long" } })) : leSize(p, b));
+  await leSave();
+  expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "too long: at most 16 KiB", "landing editor: too long names the field's limit");
   win.Maity.api.patch = leSize;
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
@@ -6915,6 +6921,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("lp-privacy-en-markdown").value = "We keep <b>nothing</b>."; byId("lp-privacy-en-markdown").dispatch("input");
   lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(byId("lp-privacy-en-markdown-error")) === "holds HTML outside fenced code", "legal: the hub's refusal at the page's field");
+  // The hub folds an empty or too long legal text into invalid: said with the field's limit (64 KiB).
+  const lgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/legal" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "privacy.en.markdown": "invalid" } })) : lgReal(p, b));
+  lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("lp-privacy-en-markdown-error")) === "empty, or longer than allowed (at most 64 KiB)", "legal: an invalid text names the page's limit");
+  win.Maity.api.patch = lgReal;
   byId("lp-privacy-en-markdown").value = "We keep what the service needs."; byId("lp-privacy-en-markdown").dispatch("input");
   lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   const lgLast = lePatches[lePatches.length - 1];
