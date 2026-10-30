@@ -43,6 +43,9 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why" },
+    // One's own settings for this project (js/notify-settings.js, §6.2), for
+    // every human member; the project's Settings stay its owner's.
+    { route: "my-settings", view: "mySettings", label: "My settings", when: (ctx) => ctx.me.kind === "human" },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     { route: "settings", label: "Settings" },

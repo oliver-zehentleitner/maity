@@ -45,6 +45,7 @@
   ],
   "settings": {
     "kinds": ["inbox", "chat", "mention", "security"],
+    "not_listening": { "mode": "inbox", "minutes": 60 },
     "browser": {
       "enabled": false,
       "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },

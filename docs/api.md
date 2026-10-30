@@ -12591,7 +12591,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
@@ -13665,7 +13665,9 @@ rules that make a position safe to resume from:
   item links to — `request`, `task` (a mention in a card's thread),
   `conversation`, `project` (a mention in a
   project message), `registration` (a `registration_pending` record:
-  the waiting human's id, linking to Admin → Registration), `report` (a
+  the waiting human's id, linking to Admin → Registration), `agents`
+  (an `agents_not_listening` record, linking to the human's agents,
+  `/agents`), `report` (a
   `report_open` record: the report's id, linking to Admin → Reports),
   `moderation` (a `moderation_applied` record: the report's id, which
   the account cannot open, linking to the account page), and for
@@ -13678,10 +13680,10 @@ rules that make a position safe to resume from:
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`
   and a `mention` in a chat, when the conversation has been read past its
   `seq` (§9) — one read mark, the chat's own; a `registration_pending`,
-  `report_open` or `mail_disabled` item only when its matter is closed
-  (§18.1, §18.3). A `moderation_applied` item is read by a read mark, as
-  any notice: it is no open matter, since nothing in it is the account's
-  to act on — only an instance admin lifts a hold (§16.8).
+  `report_open`, `mail_disabled` or `agents_not_listening` item only when
+  its matter is closed (§18.1, §18.3). A `moderation_applied` item is read
+  by a read mark, as any notice: it is no open matter, since nothing in it
+  is the account's to act on — only an instance admin lifts a hold (§16.8).
 
 ### 18.3 `POST /me/notifications/read`
 
@@ -13702,7 +13704,7 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
-other than the two open matters below are marked read, and the open
+other than the four open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
 that is not one of them is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a
@@ -13719,12 +13721,13 @@ id), and the rest of the call applies. Answers `200` with the counts
 of §18.2. No event: reading is not news to anyone.
 
 The `inbox` items of an open matter, `registration_pending`,
-`report_open` and `mail_disabled` (§18.1), are never marked read by a
-caller: `up_to` skips them and an `ids` entry naming one is ignored, as
-an id the human has no item for; each reads as read on its own once its
-matter is closed — the registration decided or expired, the report
-resolved or expired (§16.8), the address set again and verified, or
-removed (§18.7). So "mark all read" never hides an open matter from "Waiting
+`report_open`, `mail_disabled` and `agents_not_listening` (§18.1), are
+never marked read by a caller: `up_to` skips them and an `ids` entry
+naming one is ignored, as an id the human has no item for; each reads as
+read on its own once its matter is closed — the registration decided or
+expired, the report resolved or expired (§16.8), the address set again
+and verified, or removed (§18.7), no instance of the human's away any
+more (§5.3). So "mark all read" never hides an open matter from "Waiting
 for you" while it still counts in `counts.inbox`.
 
 ### 18.4 `GET`, `PATCH /me/notification-settings`
