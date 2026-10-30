@@ -21,7 +21,9 @@ from maity_hub import cross_owner, namespace, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
+from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
+from maity_hub.scopes import has_scope, in_admin_team
 from maity_hub.views import principal_id
 
 KIND = "foreign_agent_change"
@@ -141,6 +143,21 @@ def file(
     )
 
 
+def _still_allowed(asker: Any) -> None:
+    """The asker may still ask: not isolated, and still holding `members:admin` (a human) or
+    still an admin agent. Otherwise the `go` is refused and the request stays open, for a
+    `no` or a withdrawal, as every other refusal at a `go` (§6.2)."""
+    allowed = asker.isolated_since is None and (
+        in_admin_team(asker.trust, asker.role)
+        if asker.agent_id is not None
+        else has_scope(asker.trust, asker.role, "human", "members:admin")
+    )
+    if not allowed:
+        raise ApiError(
+            409, "asker_not_allowed", "the one who asked may not change this member any more"
+        )
+
+
 def settle(conn: Connection, s: proposals.Settlement) -> None:
     """Apply the whole change on `go`, the owner as approver and the asker as actor; `no` and a
     withdrawal change nothing (§6.2)."""
@@ -159,6 +176,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     asker = conn.execute(select(t.membership).where(t.membership.c.id == request.asked_by)).first()
     if asker is None or asker.active is None:
         return  # the one who asked left: nobody proposes this now
+    _still_allowed(asker)
     by = principal_id(conn, asker.id)
     assert by is not None
     change = members.Change(project, s.proposer, by, s.approver, None, None)

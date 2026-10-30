@@ -215,3 +215,25 @@ def test_a_manager_changes_another_owners_agent_in_its_reach_at_once_and_only_th
     assert inside.status_code == 200, inside.text  # at once, no request to the owner
     assert _row(migrated, lent).areas == ["web/"]
     assert [r.proposal["kind"] for r in _requests(migrated) if r.status == "open"] == []
+
+
+def test_a_go_is_refused_when_the_asker_may_not_ask_any_more(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    deputy = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, _project(migrated), "admin", human_id=deputy.id)
+    asked = put(deputy, lent, role="reviewer")
+    assert asked.status_code == 202, asked.text
+    with migrated.begin() as conn:  # the deputy lost the admin trust meanwhile
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == deputy.id).values(trust="member")
+        )
+    refused = answer(friend, asked.json()["id"], "go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "asker_not_allowed"
+    assert _row(migrated, lent).role == "coder"
+    assert answer(friend, asked.json()["id"], "no").status_code == 200  # still open for a no
