@@ -328,3 +328,18 @@ def test_the_admin_search_finds_an_account_by_an_alias_and_login_is_limited_per_
         )
     assert 429 in codes  # alias and handle share one account's limit
     auth.LOGIN_BY_HANDLE._hits.clear()
+
+
+def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_needs_a_field(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner, agent={"handle": "bee", "display_name": "Bee"})
+    for value in ("wasp", None):
+        refused = agent.patch("/me", {"handle": value})
+        assert refused.status_code == 403
+        assert refused.json()["error"]["details"]["reason"] == "humans_only"
+    nothing = owner.patch("/me", {})
+    assert nothing.status_code == 400
+    assert _fields(nothing) == {"handle": "required", "meat_proxy": "required"}

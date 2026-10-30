@@ -656,7 +656,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         if "paused" in given:
             raise invalid({"paused": "agents_only"})
         if body.meat_proxy is None and body.handle is None:
-            raise invalid({"meat_proxy": "required"}, "nothing to change")
+            raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         assert caller.human_id is not None
         if body.handle is not None:  # a human renames themselves (§6.24)
             done = handles.rename(conn, caller.human_id, None, body.handle)
@@ -675,7 +675,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def action(conn: Connection) -> idempotency.Outcome:
         if "meat_proxy" in given:
             raise humans_only("only a human sets their own profile")
-        if body.handle is not None:  # nobody renames an agent but its owner (§2.3, §6.24)
+        if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
             raise humans_only("only the owner of an agent profile renames its handle")
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")

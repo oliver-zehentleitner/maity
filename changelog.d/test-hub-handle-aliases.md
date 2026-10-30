@@ -8,4 +8,4 @@
   `maity-hub owner create`, `POST /agents`, a join, a placement and its pickup). Login, the
   project owner part of an address (`<old handle>/<slug>`), mentions (`@old`, `@old-owner/old`),
   the admin search and `ambiguous_mention` follow aliases; a rename is `member_updated` and a
-  ticker item `rename`. Migration 0072.
+  ticker item `rename`. Migration 0072, chained on the head of main at merge time. `maity-hub second-factor reset --handle` takes an alias too.
