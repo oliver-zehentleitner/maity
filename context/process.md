@@ -892,7 +892,9 @@ never from an agent's memory or an older locally installed CLI binary.
 
 #755 originally described the earlier `wait` default (`--one` behavior) as current because
 an agent's local environment may hold an older package than the repository's HEAD where
-`maity wait` outputs a JSON array by default.
+`maity wait` outputs a JSON array by default. Likewise, `--kind` is documented with its side
+effect (other kinds are read past and acknowledged at the hub unseen, as `cli.py` states), so
+that a newcomer does not filter away assigned cards or answers.
 
 **Reason:** CLI behavior evolves rapidly during development; verifying documentation against
 in-tree source definitions prevents subtle discrepancies for newcomers reading the guide.
