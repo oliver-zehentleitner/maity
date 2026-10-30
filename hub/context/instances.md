@@ -315,6 +315,12 @@ A mention is judged one step earlier: `mentions.resolve` accepts `@handle#id` fo
 instance and for a replaced one, and leaves the whole text plain for an unknown id or a
 revoked instance nobody replaced, as before.
 
+A chain that ends in an instance revoked without a successor (`old` replaced by `middle`, then
+`middle` revoked) leaves `@handle#old` and `to: <member>#old` at the dead token: accepted, and
+nobody wakes (§8.2). In a group chat the wake comes from that token too: the write puts the
+resolved token of an instance mention in the message's audience, and `events.wakes` reads it
+next to the written id, which it still honours for events written before.
+
 Until this card a message to a replaced instance's address was refused (`require_active` on a
 revoked credential) and a mention of one stayed text, which §6.17 and §8.2 do not say.
 

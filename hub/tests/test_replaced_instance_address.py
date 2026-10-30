@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, events
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -103,3 +103,43 @@ def test_a_member_id_in_the_list_filter_also_names_its_teams_instance_addresses(
     assert listed(f"{first.id}#{second.instance}") == {to_instance["id"]}  # one instance only
     assert listed(f"{first.id}#{first.instance}") == set()
     assert listed(other.id) == {to_other["id"]}
+
+
+def test_in_a_group_chat_a_mention_of_a_replaced_instance_wakes_its_successor(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine  # noqa: F811
+) -> None:
+    old, middle, new = _replaced_twice(make_client, owner)
+    other = agent_named(make_client, owner, "agent-c")
+    chat = owner.post(
+        "/projects/maintainer/maity/conversations",
+        {"title": "Room", "participants": [old.id, other.id]},
+    ).json()
+    sent = owner.post(
+        f"/projects/maintainer/maity/conversations/{chat['id']}/messages",
+        {"body": f"@agent-b#{old.instance} please"},
+    )
+    assert sent.status_code == 201, sent.text
+    with migrated.connect() as conn:
+        row = conn.execute(
+            select(t.event).where(t.event.c.kind == "message").order_by(t.event.c.seq.desc())
+        ).first()
+        member = conn.execute(select(t.membership).where(t.membership.c.agent_id == old.id)).one()
+    assert events.wakes(row, member, old.id, new.instance)
+    assert not events.wakes(row, member, old.id, middle.instance)  # replaced, wakes nobody
+
+
+def test_a_chain_that_ends_in_a_revoked_instance_wakes_nobody(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine  # noqa: F811
+) -> None:
+    old = agent_named(make_client, owner, "agent-b")
+    middle = flow.agent(make_client, owner, agent={"id": old.id}, replaces=old.instance)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == middle.credential_id)
+            .values(revoked_at=clock.now())
+        )
+    writer = agent_named(make_client, owner, "agent-a")
+    sent = say(writer, to=f"{old.id}#{old.instance}", body="Anyone?")
+    assert sent.status_code == 201, sent.text  # accepted (§8.2)
+    assert _token(old, middle.instance) in sent.json()["audience"]  # the dead end's token

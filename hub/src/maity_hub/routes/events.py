@@ -340,6 +340,22 @@ def post_message(
         inside = {group_chats.principal(s) for s in current}
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
+        # An instance mention wakes the instance it comes down to, a successor when the one
+        # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
+        audience = list(
+            dict.fromkeys(
+                [
+                    *audience,
+                    *(
+                        mentions.instance_token(
+                            conn, mine.project.id, m["member_id"], m["instance"]
+                        )
+                        for m in mentioned
+                        if m["instance"] is not None
+                    ),
+                ]
+            )
+        )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
