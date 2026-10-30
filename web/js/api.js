@@ -1783,7 +1783,7 @@ window.Maity = window.Maity || {};
       const owner = me().member;
       const created = {
         id: localId("prj"), slug: body.slug, owner: org ? { id: org.id, handle: org.handle } : { id: owner.id, handle: owner.handle }, full_name: space + "/" + body.slug,
-        legacy_slug: null, aliases: [],
+        aliases: [],
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,

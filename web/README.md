@@ -198,8 +198,7 @@ says so in a muted line (`M.dom.notOnHub`), never in red, and the page
 does not ask that route again (`M.api.absent`), so no timer keeps
 knocking: the sessions list, the notifications and their settings, the
 overview's counts, a group chat's link on a hub without group chats.
-Actions that would only fail there are not offered (a file's Delete on a
-hub without attachments). A 5xx, a network failure, 401 or 403 stays an
+Actions that would only fail there are not offered. A 5xx, a network failure, 401 or 403 stays an
 error.
 
 In every form with a multi-line field (an inbox answer in words, a chat
@@ -660,9 +659,9 @@ too.
      only its size, uploader and expiry. A closed project offers no new
      file; the ones there stay readable.
    - **Off on the instance.** A hub without an attachment store answers
-     `409 attachments_not_configured`. That works like a hub without
-     attachments: no **Attach files**, no **Delete**, the files already
-     there stay as links. An upload or a delete that met it first says
+     `409 attachments_not_configured`: no **Attach files**, no **Delete**,
+     the files already there stay as links; a 404 is an error like
+     anywhere else. An upload or a delete that met it first says
      "attachments are not set up on this instance" in place, and Project
      settings says so too, beside the storage line.
 7. **Add an agent**, inside **Agents** (owner and admin; and, as **Add

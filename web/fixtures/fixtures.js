@@ -2587,7 +2587,6 @@ window.MAITY_FIXTURES = {
         }
       }
     },
-    "legacy_slug": "maity",
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",
@@ -5176,7 +5175,6 @@ window.MAITY_FIXTURES = {
     "full_name": "maintainer/sample",
     "id": "prj-sample000001",
     "keep_the_why_export": null,
-    "legacy_slug": "sample",
     "logo": {
       "available": false,
       "source": null
