@@ -161,7 +161,27 @@ def git_identity(row: Any) -> dict[str, str] | None:
     return {"name": row.git_name, "email": row.git_email}
 
 
-def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
+def confirmed_by_of(conn: Connection, projects: Sequence[Any]) -> dict[str, dict[str, str] | None]:
+    """`{id, handle}` of the human whose grants each project's confirmation put to use, or
+    None while it is not confirmed (§11.4)."""
+    ids = {p.repository_confirmed_by for p in projects if p.repository_owner_confirmed} - {None}
+    handles = {
+        row.id: row.handle
+        for row in conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
+    }
+    return {
+        p.id: (
+            {"id": p.repository_confirmed_by, "handle": handles[p.repository_confirmed_by]}
+            if p.repository_owner_confirmed and p.repository_confirmed_by in handles
+            else None
+        )
+        for p in projects
+    }
+
+
+def repository(
+    project: Any, settings: Settings, confirmed_by: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
     via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
@@ -172,6 +192,7 @@ def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
         "probe_configured": via is not None,
         "probe_via": via,
         "owner_confirmed": bool(project.repository_owner_confirmed),
+        "confirmed_by": confirmed_by,
     }
 
 
@@ -206,12 +227,13 @@ def project_view(
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
     stored: dict[str, int] | None = None,
+    confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
     `images.views` says the project shows as logo and banner, `export` the Keep the Why
     export as `ktw.export_for_view` holds it, `aliases` the former full names, oldest
     first, `stored` the attachments `{used, quota}` for a caller with `project:admin`
-    (§8.7) and None for anyone else."""
+    (§8.7) and None for anyone else, `confirmed_by` who confirmed the repository (§11.4)."""
     shown = shown or {}
     return {
         "id": project.id,
@@ -224,7 +246,7 @@ def project_view(
         "released_at": ts(project.released_at),
         "state_note": project.state_note,
         "state_changed_at": ts(project.state_changed_at),
-        "repository": repository(project, settings),
+        "repository": repository(project, settings, confirmed_by),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),

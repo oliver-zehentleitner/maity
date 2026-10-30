@@ -147,6 +147,20 @@ def release_in_all(conn: Connection, org_id: str, human_id: str) -> None:
     """A human stopped being an owner of the organisation: every project it owns."""
     for project in projects_of(conn, org_id):
         release_owner(conn, project, human_id)
+        forget_confirmation(conn, project, human_id)
+
+
+def forget_confirmation(conn: Connection, project: Any, human_id: str) -> None:
+    """The repository confirmation of `human_id`, who stops being an owner of the project's
+    organisation, ends with their grants (§11.4): another owner confirms again."""
+    if project.repository_confirmed_by != human_id:
+        return
+    lock_project(conn, project.id)
+    conn.execute(
+        update(t.project)
+        .where(t.project.c.id == project.id)
+        .values(repository_owner_confirmed=False, repository_confirmed_by=None)
+    )
 
 
 def keep_all_owners(conn: Connection, org_id: str, project: Any) -> None:

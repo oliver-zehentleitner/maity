@@ -527,6 +527,10 @@ project = Table(
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
+    # Whose grants the confirmation put to use: the namespace owner for a project of a human,
+    # the owner of the organisation who confirmed for one of an organisation; set with the
+    # confirmation and cleared with it (§11.4).
+    _ref("repository_confirmed_by", "human.id"),
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
