@@ -94,6 +94,18 @@ def test_the_stylesheet_is_cached_for_good_under_its_digest_and_repairs_a_stale_
     assert client.get("/assets/landing/landing.css").headers["cache-control"] == "no-cache"
     assert "set-cookie" not in current.headers
     assert client.head(link.group(1)).status_code == 200
+    # A revalidation of an unchanged file costs no body; another tag gets the file.
+    etag = current.headers["etag"]
+    same = client.get(link.group(1), headers={"If-None-Match": etag})
+    assert same.status_code == 304 and same.content == b""
+    assert same.headers["cache-control"] == current.headers["cache-control"]
+    assert (
+        client.get(
+            "/assets/landing/landing.css", headers={"If-None-Match": f'W/{etag}, "x"'}
+        ).status_code
+        == 304
+    )
+    assert client.get(link.group(1), headers={"If-None-Match": '"other"'}).status_code == 200
 
 
 def test_every_font_of_the_stylesheet_is_a_versioned_file_of_the_hub(

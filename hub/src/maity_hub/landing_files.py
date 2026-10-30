@@ -103,12 +103,17 @@ def serve(name: str, request: Request) -> Response:
     if asset is None:
         raise not_found()
     current = request.query_params.get("v") == asset.digest
-    return Response(
-        asset.body,
-        media_type=asset.kind,
-        headers={
-            "Cache-Control": IMMUTABLE if current else "no-cache",
-            "ETag": f'"{asset.digest}"',
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    etag = f'"{asset.digest}"'
+    headers = {
+        "Cache-Control": IMMUTABLE if current else "no-cache",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    # A revalidation of a file that has not changed costs no body (a stale link's `no-cache`).
+    sent = {
+        tag.strip().removeprefix("W/")
+        for tag in request.headers.get("if-none-match", "").split(",")
+    }
+    if etag in sent or "*" in sent:
+        return Response(status_code=304, headers=headers)
+    return Response(asset.body, media_type=asset.kind, headers=headers)

@@ -149,7 +149,9 @@ reads the file, so the fonts are cached for good as well; the script is linked o
 exists. The hero's rings, the call-to-action band's loader and the logo are inline SVG
 (`hero-rings.svg`, `band-loader.svg`, `mark.svg` beside the files, not served), coloured by the CSS
 variables. Everything is text in the HTML: the demo's lines are `d1`… with the inbox item as `d5`
-and the lines after the fourth following it (the designer's timeline), the steps `s1`–`s3`, the
+and the lines after the fourth following it. That is the designer's timeline (the question after the
+fourth line, or after the last when there are fewer), which the coordinator takes into §16.7 (2026-10-30); building the timeline for the
+inbox after any last line would mean generating it per number of lines. The steps are `s1`–`s3`, the
 scales three columns in `.scales-grid`, the FAQ `<details>`, the counters `<span data-lp-count>`,
 and the theme switch a `hidden` button in the page's language, so without the script the page
 follows `prefers-color-scheme` and shows every end state. If the stylesheet cannot be read the page
@@ -160,7 +162,9 @@ on the page and on the preview. `robots.txt` allows `/assets/landing/` in both o
 the page is enabled. The middleware keeps the cache the route chose for these files.
 
 **Reason:** the designer's page needs a stylesheet, fonts and motion, and the contract keeps the
-words in the HTML so that nothing is needed to read it. Files in the package are the same for every
+words in the HTML so that nothing is needed to read it. The rings, the loader and the pulses turn by
+CSS alone, also without the script, and stop under `prefers-reduced-motion`; the script adds only the
+demo's start (`.demo-on`), the counters and the theme (the coordinator takes this into §16.7, 2026-10-30, after the review of #739). Files in the package are the same for every
 instance, need no dashboard directory and can be hashed when they are read; a digest in the URL
 makes them cacheable for a year without a stale file ever being served for good.
 
