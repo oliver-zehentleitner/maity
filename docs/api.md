@@ -5112,10 +5112,14 @@ that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
 background process; for `"supervised"` it is the line of §15.11. The
 hub's own generated text (the duty line, the briefs, the attachment
-rule) is an input too: the first start of a hub whose generated text
-differs from the one the instance last ran bumps every project's
-`rules_version` once, with `rules_changed`, so a running agent reads
-the new text at its next resume. A
+rule) is an input too: each project stores a digest of the generated
+text it was last bumped for; the first start of a hub whose digest
+differs bumps that project's `rules_version` once, with
+`rules_changed`, under the project lock, so of several hubs starting at
+once only one bumps, and a running agent reads the new text at its
+next resume. A new project starts with the current digest. A session
+switching between `"self"` and `"supervised"` bumps nothing: the duty
+line differs per caller, like the brief for trust and role. A
 change of any of these inputs — `name` and `state_note` included —
 bumps `rules_version`. `rules_version`
 increments on every change of any input. Every bump is marked by an
@@ -8943,7 +8947,7 @@ parties as the audience — nobody else, admins included.
 | `GET /projects/{owner}/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent | the conversation as its direct item in the list (§9.3) |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; `before` pages back as in a group chat (§9.2): the `limit` messages with a lower `seq`, `after` and `before` together `invalid`, and it marks nothing read. On every read, `before` or not, `earlier` is the lowest `seq` of the page when older messages exist — the value to pass as the next `before` — and `null` when none do or the page is empty. A direct conversation has no window: without `before` it reads from `after` as always |
-| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?, to_instance?}` (§8.7); `201` with the message. `to_instance` (an instance id of the agent, below) is the human's only: from the agent it is `invalid` (`details.fields.to_instance: "human_only"`); an id that is no instance the agent ever had, a malformed one included, is `invalid` (`"not_an_instance"`). In a group chat (§9.2), and on the project's message route (§8.2) for anything but a direct chat message, a `to_instance` is `invalid` (`"direct_chat_only"`) |
+| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?, to_instance?}` (§8.7); `201` with the message. `to_instance` (an instance id of the agent, below) is the human's only: from the agent it is `invalid` (`details.fields.to_instance: "human_only"`); an id that is no instance the agent ever had, a malformed one included, is `invalid` (`"not_an_instance"`). In a group chat (§9.2), and on the project's message route (§8.2) for anything but a direct chat message, a `to_instance` is `invalid` (`"direct_chat_only"`), checked before `human_only` |
 
 Message shape:
 
