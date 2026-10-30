@@ -3,6 +3,7 @@
     "id": "hum-maintainer",
     "kind": "human",
     "handle": "maintainer",
+    "aliases": [],
     "display_name": "Maintainer",
     "instance_admin": true,
     "meat_proxy": false,
