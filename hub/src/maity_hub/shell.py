@@ -10,13 +10,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fastapi import Response
+from fastapi import Request, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException
 from starlette.routing import BaseRoute, Match
 from starlette.types import Receive, Scope, Send
 
-from maity_hub import paths
+from maity_hub import paths, public_pages
 from maity_hub.errors import error_response
 
 # The built files the dashboard names under `/assets/` (§16.11): web/'s three directories of
@@ -26,6 +27,7 @@ ASSET_DIRS = frozenset({"brand", "css", "js"})
 SHELL_HEADERS = {
     "Cache-Control": "no-cache",  # small, and it must follow a deploy at once (§16.11)
     "X-Robots-Tag": "noindex",
+    "Vary": "Cookie",  # the same address is a page for a visitor and the shell for a member (§16.9)
 }
 
 
@@ -73,9 +75,12 @@ class ShellRoute(BaseRoute):
         return Match.FULL, {}
 
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
-        response: Response
+        response: Response | None
         if scope["method"] in ("GET", "HEAD"):
-            response = shell_response(self.web_dir)
+            # A stored public page first, for a visitor, while the instance serves pages (§16.9).
+            response = await run_in_threadpool(public_pages.answer, Request(scope, receive))
+            if response is None:
+                response = shell_response(self.web_dir)
         else:
             response = error_response(404, "not_found", "no such resource")
         await response(scope, receive, send)

@@ -52,6 +52,14 @@ An organisation's handle is held to the reserved first segments like a human's: 
 handle only: the rename, the aliases and their limits wait for #523's alias table. For the
 same reason `q` of `GET /admin/orgs` (§16.10) matches the handle and the display name, not yet an alias.
 
+**Constraint:** `q` lower-cases in Python and the database lower-cases the column, and SQLite's
+`LOWER()` knows ASCII only: `q=öz` does not find "Özil Team" there while PostgreSQL does, so
+"case-insensitive" holds beyond ASCII on the server databases only. The cursor of that list is
+ordered by handle and carries `clock.now()` in the slot `paging.cursor` keeps for a timestamp, only
+because that slot needs a time; nothing reads it. **Revisit when:** the search has to find
+non-ASCII names on every database, SQLite stops being a target, or `paging` gets a key cursor that
+replaces the placeholder.
+
 ## An organisation's changes run under its row lock, and the caller's role is read under it
 
 **Id:** 3d679346-7e9d-45be-a4f7-f1137a2a274e
