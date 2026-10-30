@@ -4546,6 +4546,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Hidden, the whole attachments part goes, so no file field is left without its label.
   expect(/\.attach\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
     "attachments: the part's own display does not beat its hidden attribute");
+  // A header that is the bar alone gets the room below it that the tab rows give the full one (tsk-swr1bywv3agq).
+  expect(/#header > \.bar:only-child \{ padding-bottom: 10px; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "header: the bar alone has room below it, as much as above");
   await go("#/maintainer/maity/inbox");
 
   // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
