@@ -205,7 +205,9 @@ def test_the_log_masks_the_join_hosts_token(
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         join_client(make_client).get(f"/{token}")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == ["GET /join/… 200"]
+    assert [re.sub(r" ms=\d+", " ms=N", line) for line in lines] == [
+        "GET /join/… 200 ms=N route=/join/{token}"
+    ]
     assert not any(token in line for line in lines)
 
 
@@ -224,7 +226,9 @@ def test_the_log_masks_a_token_that_was_not_rewritten(
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         join_client(make_client).request(method, f"/{token}{suffix}", follow_redirects=False)
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == [f"{method} /…{suffix} {status}"]
+    assert len(lines) == 1
+    assert re.fullmatch(rf"{method} /…{suffix} {status} ms=\d+ route=\S+", lines[0])
+    assert token not in lines[0]
 
 
 @pytest.mark.parametrize(
