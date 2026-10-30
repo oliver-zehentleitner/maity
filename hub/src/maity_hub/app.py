@@ -36,6 +36,7 @@ from maity_hub import (
     registration_accounts,
     reports,
     request_stats,
+    rules,
     takeovers,
     write_guard,
 )
@@ -50,6 +51,7 @@ from maity_hub.db import (
     make_health_engine,
 )
 from maity_hub.errors import error_response
+from maity_hub.events import transaction
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail
@@ -157,6 +159,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
         check_secrets(engine, settings.secret_key)
+        with transaction(engine) as conn:  # an event wakes the long-polls once it commits
+            # The hub's own generated text is a rules input: a start with other text bumps
+            # every project that has not counted it, once (§6.9).
+            rules.sync_text(conn)
         # Every public page again before any is served (§16.9), then the safety net's worker.
         public_pages.startup(engine, settings)
         with engine.begin() as conn:
