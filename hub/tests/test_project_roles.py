@@ -241,3 +241,12 @@ def test_the_rules_carry_a_project_roles_guide_quoted_with_who_set_it(
     rules = agent.get(f"{BASE}/rules").text
     assert "Your role is legal, a project role with the scopes of a reviewer." in rules
     assert "Set by maintainer:\n\n> You check licences.\n> Ask before merging." in rules
+
+
+def test_the_onboardings_check_in_with_keeps_the_role_in_use(owner: flow.Human) -> None:
+    put(owner, [LEGAL])
+    response = owner.patch(
+        "/projects/maintainer/maity", {"settings": {"onboarding": {"check_in_with": "role:legal"}}}
+    )
+    assert response.status_code == 200, response.text
+    assert put(owner, []).json()["error"]["details"]["uses"] == ["check_in_with"]

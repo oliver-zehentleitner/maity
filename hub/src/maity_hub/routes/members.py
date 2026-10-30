@@ -39,7 +39,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import TRUSTS, in_admin_team
+from maity_hub.scopes import ROLES, TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -160,7 +160,13 @@ def validate_assignment(
             errors["trust"] = "humans_only"
         values["trust"] = trust
     if role is not None:
-        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        # A project role is read under the project's lock, which `PUT …/roles` holds while it
+        # checks what still names a role it removes: no assignment slips past that check.
+        project = (
+            conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+            if role in ROLES
+            else lock_project(conn, project_id)
+        )
         base = project_roles.base_of(project, role)  # a project role too (§2.3)
         if base is None:
             errors["role"] = "unknown"

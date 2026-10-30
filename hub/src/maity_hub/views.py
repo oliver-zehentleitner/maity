@@ -753,13 +753,7 @@ def agent_view(
     """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
     list has looked them up together."""
     memberships = conn.execute(
-        select(
-            t.project.c.id,
-            t.project.c.slug,
-            t.membership.c.trust,
-            t.membership.c.role,
-            t.membership.c.role_base,
-        )
+        select(t.project.c.id, t.project.c.slug, t.membership.c.trust, t.membership.c.role)
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)

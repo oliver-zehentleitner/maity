@@ -108,7 +108,9 @@ def create_invitation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
-        if project_roles.base_of(mine.project, body.role) is None:
+        # Under the lock `PUT …/roles` holds, so a role it removes is never invited to.
+        project = events.lock_project(conn, mine.project.id)
+        if project_roles.base_of(project, body.role) is None:
             raise invalid({"role": "unknown"}, "the project has no such role")
         if body.role == "proxy" and body.trust != "admin":
             raise invalid({"role": "proxy_needs_admin"}, "a proxy holds trust admin")

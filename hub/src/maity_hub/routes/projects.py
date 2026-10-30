@@ -342,7 +342,7 @@ def _agent_role(conn: Connection, project_id: str, member_id: str) -> str | None
     """`admin` for an active admin agent (trust `admin`, never a proxy, §2.3), else the
     agent's role; None when the id names no active agent member."""
     row = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role, t.membership.c.role_base).where(
+        select(t.membership.c.trust, t.membership.c.role).where(
             t.membership.c.project_id == project_id,
             t.membership.c.agent_id == member_id,
             t.membership.c.active.is_(True),

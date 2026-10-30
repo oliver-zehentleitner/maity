@@ -133,10 +133,15 @@ unknown role silently got the coder's scopes, which would have given a project r
 little and hidden every caller that forgot the base.
 
 `role_in_use` counts what exists in the hub today: an active membership, an open join or invitation, an
-open request to `role:<name>`, an entry in a `substitutes` list. A card's `needs`, the role memory store
+open request to `role:<name>`, a placement that has not made its membership yet, the onboarding's
+`check_in_with`, an entry in a `substitutes` list. An assignment or invitation of a project role reads
+the role list under the project's lock, the lock `PUT …/roles` holds while it checks these, so a role
+cannot be removed between the check of a new join and its insert (a join exchanged later would
+otherwise meet a role with no base). A card's `needs`, the role memory store
 and `membership.guide` in the packet are in the contract but not built; the pull request that builds one
 adds it to `project_roles.uses` (and, for the guide, takes it from `project.roles` as the rules text
-does). The 0112 downgrade turns a project role into its base in memberships, joins and invitations, so
+does). The 0112 downgrade turns a project role into its base in memberships, joins, invitations and a
+placement's profile, so
 the older code meets no name it does not know.
 
 **Reason:** about 25 places read a member's scopes or tokens from a membership row, most without the

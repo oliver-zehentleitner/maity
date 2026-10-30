@@ -38,7 +38,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Before this revision every role was a built-in one: a project role becomes its base
-    # wherever it is named, so no reader meets a name it does not know.
+    # wherever it is named (memberships, joins, invitations, a placement's profile), so no
+    # reader meets a name it does not know.
     bind = op.get_bind()
     project = sa.table("project", sa.column("id"), sa.column("roles", JSON_VALUE))
     for project_id, roles in bind.execute(sa.select(project.c.id, project.c.roles)).all():
@@ -50,6 +51,24 @@ def downgrade() -> None:
                     .where(rows.c.project_id == project_id, rows.c.role == role["name"])
                     .values(role=role["base"])
                 )
+    placement = sa.table(
+        "placement", sa.column("id"), sa.column("project_id"), sa.column("new_profile", JSON_VALUE)
+    )
+    bases = {
+        project_id: {role["name"]: role["base"] for role in roles or []}
+        for project_id, roles in bind.execute(sa.select(project.c.id, project.c.roles)).all()
+    }
+    for row in bind.execute(
+        sa.select(placement.c.id, placement.c.project_id, placement.c.new_profile)
+    ).all():
+        role = (row.new_profile or {}).get("role")
+        base = bases.get(row.project_id, {}).get(role)
+        if base is not None:
+            bind.execute(
+                sa.update(placement)
+                .where(placement.c.id == row.id)
+                .values(new_profile={**row.new_profile, "role": base})
+            )
     with op.batch_alter_table("membership", schema=None) as batch_op:
         batch_op.drop_column("role_base")
     with op.batch_alter_table("project", schema=None) as batch_op:

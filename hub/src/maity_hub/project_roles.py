@@ -96,7 +96,8 @@ def parse(raw: Any) -> list[dict[str, Any]]:
 
 def uses(conn: Connection, project: Any, name: str) -> list[str]:
     """What still names the project role `name` (§2.3 `role_in_use`): a membership, an
-    open join or invitation, an open request's `to`, an entry in a `substitutes` list.
+    open join or invitation, an open request's `to`, a placement that has not made its
+    membership yet, the onboarding's `check_in_with`, an entry in a `substitutes` list.
     A card's `needs` and the role memory store are not in the hub yet; their pull
     request adds them here."""
     from maity_hub import clock
@@ -142,6 +143,18 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
         )
     ).first():
         found.append("request")
+    placements = conn.execute(
+        select(t.placement.c.new_profile).where(
+            t.placement.c.project_id == project.id,
+            t.placement.c.membership_id.is_(None),
+            t.placement.c.closed_at.is_(None),
+        )
+    ).scalars()
+    if any((profile or {}).get("role") == name for profile in placements):
+        found.append("placement")
+    onboarding = (project.settings or {}).get("onboarding") or {}
+    if onboarding.get("check_in_with") == f"role:{name}":
+        found.append("check_in_with")
     policies = conn.execute(
         select(t.membership.c.availability_policy).where(
             t.membership.c.project_id == project.id, t.membership.c.active.is_(True)
