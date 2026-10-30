@@ -260,7 +260,10 @@ member's items wait with it until one of the two is back. A member's
 (`cover.still_with`), a request while it is open. `since` is the
 earliest `cover.since`. A second entry that took what the first could
 not sees the member as well; one that released or lost every item no
-longer does; `covered_by` still names the run's first substitute.
+longer does; `covered_by` still names the run's first substitute. `covering` and `cover.end` share
+the one rule, so what the view shows and what the return gives back
+cannot drift apart; requests count only while open, because `end`
+leaves an answered request with the substitute.
 
 **Reason:** a chain would move the same card through several hands, the
 returning member would not know where its work went, and `cover_ended`
@@ -275,3 +278,6 @@ one carried `cover` too: the items are what a substitute actually holds.
   inside the first.
 - `covering` from `membership.cover_by` alone: blind to every substitute
   but the first.
+- `covering` from `cover.by` alone: a substitute went on listing the
+  covered member after it had released the card or a third member had
+  taken it over.

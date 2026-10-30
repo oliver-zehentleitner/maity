@@ -160,6 +160,10 @@ def test_a_substitute_answers_on_the_covered_members_behalf(
     assert answered.status_code == 200, answered.text
     assert answered.json()["answer"]["by"] == sub.id
     assert answered.json()["answer"]["on_behalf_of"] == covered.id
+    # Answered, the request still carries `cover` until the return, but the substitute
+    # holds nothing of the covered member any more: it covers nobody (§6.12).
+    view = owner.get(f"/projects/maintainer/maity/members/{sub.id}").json()
+    assert view["covering"] == []
 
 
 def test_cover_never_hands_over_what_the_entry_may_not_take(
