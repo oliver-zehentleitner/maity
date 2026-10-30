@@ -287,7 +287,7 @@ window.Maity = window.Maity || {};
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
     document.title = "Waiting for approval · Maity";
-    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(true), themeMenu()));
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
       h("h2", null, "Your account waits for the operator's approval"),
       h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),

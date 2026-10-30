@@ -1548,9 +1548,12 @@ Personal, linking into nothing), so it shows exactly what its tab counts
 ones in bold with a dot, **Mark all read**), conversations on the **Chat**
 button, and every notification on **All notifications**
 (`/notifications`): paged by the hub's cursor, an unread one in bold with
-a dot and said to a screen reader, **Mark all read** marking up to the head
-of the first page (§18.3); a sign-in or address alert stays unread until
-confirmed with **This was me**.
+a dot and said to a screen reader, **Mark read** beside each unread item
+that may be marked from here (not an open matter; a sign-in or address
+alert only where this session may confirm it, §2.6.5), and **Mark all
+read**, always there and off while nothing it marks is unread, marking up
+to the head of the first page (§18.3); the page says that a sign-in or
+address alert stays unread until confirmed with **This was me**.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other

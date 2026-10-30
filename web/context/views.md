@@ -670,6 +670,17 @@ read and unread look alike; the inbox is for what asks for an answer.
 apart: the activity would still sit under the requests and be read on
 every visit, while the bell already shows it.
 
+Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
+`/notifications` also has **Mark read** beside each unread item, sent
+with its id, without opening it, and **Mark all read** stays in place,
+off while nothing it marks is unread, with a line that sign-in and
+address alerts stay unread. **Mark read** is not offered on an open
+matter, which reads as read once it is closed, nor on a sign-in or
+address alert unless this session may confirm it (`M.sessions.mayConfirm`,
+§2.6.5): the hub skips such an id without saying so, and a button that
+does nothing would look broken. The sessions are read for that only
+when the page shows an unread security item.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
