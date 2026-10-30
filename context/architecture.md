@@ -115,7 +115,7 @@ no consumer.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decisions, 2026-10-30, on card tsk-4ee6s3ch3kp3: OVHcloud for production, then Paris with the Standard plan instead of Frankfurt on the Free plan (the plan and its details are the ops agent's proposal in `docs/ops/ovh-prod.md`, not yet approved)
-**Revisit when:** the order form shows that Paris lacks Business-plan Managed PostgreSQL, or the 3-AZ region's volume and node-pool behaviour does not fit the single-pod hub
+**Revisit when:** the order form shows that Paris lacks Business-plan Managed PostgreSQL, the 3-AZ region's volume and node-pool behaviour does not fit the single-pod hub, or a script of the release flow (`post-upgrade-checks.sh`, `join-host.sh`) changes path or behaviour
 **See:** architecture.md#runs-on-kubernetes-in-production-and-starts-locally-with-docker-or-plain-python — 4713ab88-72a2-408b-9625-87345628eb5a — as of 2026-10-30
 
 The single k3s VM on Vultr, which was the first dogfooding production,
@@ -131,6 +131,10 @@ that has run on test with the same chart and the same migrations before
 production sees it.
 
 **Alternatives:**
+- Spreading the hub's nodes over several zones: rejected for the one-pod hub. Its `ReadWriteOnce` attachment volume
+  (csi-cinder) is bound to one zone, so the pod can only restart there; the hub's resilience comes from at least two
+  nodes in the volume's zone, and a zone failure stays a known outage until the attachments are on shared storage (the
+  multi-pod work, #728). Revisit when attachments are on object or multi-attach storage.
 - Frankfurt on the Free plan: no SLA (99.5 % SLO) and a single zone, which
   the maintainer did not accept for the launch.
 - Keep one environment: every merge would reach real users, and the
