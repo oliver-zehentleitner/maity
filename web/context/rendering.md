@@ -533,3 +533,39 @@ documented. A link colour of the bubble's own per scheme: another token
 to keep in step with both backgrounds, for what the text's colour
 already does with room to spare.
 
+## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
+
+**Id:** adaebd69-6541-4f4c-81ce-8c38f1fb70aa
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-k9j3nxcw9htw, 2026-10-29 (multilingual support comes last, but what saves rework later is done now: a catalog function reading a static file per language, never the database; Intl for dates and numbers; no assembled sentences; a check that flags new strings in views if it can be done without noise; old strings move over view by view); the coordinator's instruction to land the mechanism and the check first, the views in small PRs after, 2026-10-30
+**Revisit when:** a second language is added, the account gets a language and locale of its own, or the hub's WORDS move to per-language files
+
+`js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
+which `i18n/<lang>.js` sets; `tools/check.py --write` builds that file
+from `i18n/<lang>.json`, as it builds the fixtures' bundle, because a
+page from `file://` cannot fetch JSON. A text is a string or plural
+forms chosen by `Intl.PluralRules`; a number in a placeholder is
+formatted for the locale; a key the catalog lacks reads as itself.
+`M.fmt` formats dates and numbers with `Intl` in `M.i18n.locale`, the
+browser's own until the account sets one. `make check` ratchets the
+views: a file may hold no more prose string literals than
+`tools/strings-baseline.json` allows, `--write` only lowers that count,
+and a new file starts at none. English is the only catalog; the first
+keys are the chat's instance choice.
+
+**Reason:** translating later is then filling a file, not finding and
+splitting sentences in code. A per-file ceiling stops new text in code
+without flagging the hundreds of old strings at once, and it is quiet:
+it fails only where a count grows.
+
+**Rejected alternative:** fetching `i18n/<lang>.json` at run time:
+fixture mode runs from `file://`, where that fails, and it is one more
+request before anything is drawn. A translation library from a CDN: a
+dependency for a lookup of a few lines, against the page's policy of
+first-party scripts only. A check that fails on every prose literal: it
+would fail on today's code until every view had moved. Sentences put
+together from translated pieces: word order differs between languages,
+so those pieces cannot be translated on their own.
+
