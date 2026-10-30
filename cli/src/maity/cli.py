@@ -2848,7 +2848,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Long-poll the project's events. Prints every pending event addressed to this agent "
         f"(at most {BATCH_MAX}) as one JSON array and exits {EXIT_OK}, so a burst costs one "
         f"wake and one request; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
-        f"{EXIT_SUPERSEDED} when another wait of this credential took over. Meant to run as a "
+        f"{EXIT_SUPERSEDED} when another wait of this credential took over, {EXIT_ISOLATED} when "
+        "a human isolated this agent (do not re-arm it then). Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two.",
     )
     p.add_argument(
