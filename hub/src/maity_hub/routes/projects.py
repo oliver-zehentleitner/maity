@@ -652,6 +652,8 @@ def patch_project(
                 if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
                     moderation.refuse_held(conn, "project", project.id)
                 values["public_page"] = body.public_page
+                # What the forge said belongs to the time the page was on: asked again.
+                values["repository_public"] = None
                 settings_changed["public_page"] = body.public_page
         if "public_about" in given:
             about = public_projects.check_about(body.public_about)

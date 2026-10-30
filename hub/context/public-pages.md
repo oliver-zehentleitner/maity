@@ -257,7 +257,9 @@ repository while the forge answered clears the value and is not overwritten. A c
 once when the repository turned private. An answer the forge does not give (a 404, no `private` field, a
 refusal, a spent budget) is stored as private: the contract says a repository the hub could not read counts as
 private, so a short outage takes the URL off the page until the next round. A new repository URL clears the
-value. The page prints the URL as a `nofollow ugc` link only while the value is true.
+value, and so do the page going on or off and a transfer: an old `true` rendered when the page comes back
+would show a URL that turned private meanwhile until the next round, and after a transfer one the old owner's
+look found. The page prints the URL as a `nofollow ugc` link only while the value is true.
 
 **Reason:** the page is public, the repository may be private, and only the forge knows; showing a private
 repository's URL is a leak that cannot be taken back from a crawler.

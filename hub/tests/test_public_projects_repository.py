@@ -230,3 +230,49 @@ def test_the_hub_s_own_token_asks_once_and_a_private_answer_drops_the_cache(
     assert key not in forge._public  # the stale "public" is gone
     answer["private"] = False
     assert reader.repository_public("acme/maity") is True  # fresh, not the ten-minute cache
+
+
+def test_what_the_forge_said_is_forgotten_when_the_page_goes_off_and_asked_again_when_it_is_on(
+    make_client: ClientFactory,
+    migrated: Engine,
+    public: flow.Human,
+    github: FakeGitHub,  # noqa: F811
+) -> None:
+    github.answers["/repos/acme/maity"] = {"private": False}
+    look(migrated)
+    assert URL in page(make_client)
+    assert public.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
+    assert stored(migrated) is None
+    # the repository turns private while the page is off; switching it on shows no URL
+    github.answers["/repos/acme/maity"] = {"private": True}
+    assert public.patch("/projects/maintainer/maity", {"public_page": "on"}).status_code == 200
+    assert URL not in page(make_client)
+    look(migrated)
+    assert stored(migrated) is False and URL not in page(make_client)
+
+
+def test_a_transfer_forgets_the_answer_of_the_old_owner(
+    make_client: ClientFactory,
+    migrated: Engine,
+    public: flow.Human,
+    github: FakeGitHub,  # noqa: F811
+) -> None:
+    from tests import factory
+
+    anna = flow.human(lambda **kw: make_client(public_pages=True, **kw), migrated, "anna")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "owner", human_id=anna.id)
+    github.answers["/repos/acme/maity"] = {"private": False}
+    look(migrated)
+    assert stored(migrated) is True
+    filed = public.post("/projects/maintainer/maity/transfer", {"to": anna.id})
+    assert filed.status_code == 202, filed.text
+    done = anna.post(
+        f"/projects/maintainer/maity/requests/{filed.json()['id']}/answer", {"reply_id": "go"}
+    )
+    assert done.status_code == 200, done.text
+    assert stored(migrated) is None
+    assert anna.patch("/projects/anna/maity", {"public_page": "on"}).status_code == 200
+    got = make_client(public_pages=True).get("/anna/maity")
+    assert got.status_code == 200 and URL not in got.text
