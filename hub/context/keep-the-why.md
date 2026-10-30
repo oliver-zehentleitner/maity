@@ -91,10 +91,12 @@ What a dropped key held is read or computed again on its next use. For
   lock, because dropping walks the map while other threads write it.
 - **A changed repository is not a matter of room.** `ktw.Cache.forget`
   (the repository URL changed) drops the project's answers and last good
-  reads always, even while a request uses the project: a last good read
-  is keyed by path, and the old repository's must not stand in for the
-  new one's. Only the project's lock stays while it is in use. Dropping
-  for room spares a project in use entirely.
+  reads always, even while a request uses the project: the old
+  repository's reads must not stand in for the new one's members of the
+  same path. A last good read is also keyed by its repository, so one
+  that a read still running writes after `forget` is never used for
+  another repository. Only the project's lock stays while it is in use.
+  Dropping for room spares a project in use entirely.
 - **Lock order.** In `ktw`, a project's lock first, then `guard`, never
   the other way round: under `guard` no project lock is taken, only
   looked up. In `images`, the gate first, then `_guard`; the gate is

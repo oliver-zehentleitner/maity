@@ -138,7 +138,7 @@ alternatives: unknown.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; `hub/tests/test_forge.py` (`test_budgets_that_say_nothing_go_beyond_the_kept_number`, `test_a_visibility_cache_drops_stale_entries_and_keeps_at_most_the_bound`)
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the review of #671 (the gate's trade-off, the scan's cost); `hub/tests/test_forge.py` (`test_budgets_that_say_nothing_go_beyond_the_kept_number`, `test_a_visibility_cache_drops_stale_entries_and_keeps_at_most_the_bound`)
 **Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows the bounds (256 budgets, 4096 visibility entries) too small or too large
 
 The budgets (`forge._budgets`), the visibility of a repository to a
@@ -158,9 +158,17 @@ gained keys for as long as the process ran, and nothing removed them.
   `/repos/{repository}`, nothing else. The writes and the `_forget` of
   `_public` go under one lock, since the probe's worker and the requests
   write them from different threads.
+- **A contract text read's gate** (`contract_text._pending`) goes in a
+  `finally`, also when the forge did not answer. Every new commit is a
+  new key, so a gate kept after a failure would stay for good. Accepted
+  in return: after a failed read, a request still waiting on the old
+  gate and a new one with a new gate may both read the forge at once.
 
 The numbers are a first estimate: far above what a single instance uses
-today, and small enough to stay a few MB at most.
+today, and small enough to stay a few MB at most. Above `BUDGETS_KEPT`,
+while every budget is in use, each read scans the whole map under
+`_budgets_lock` (O(n) per read). That is negligible at today's counts,
+and part of what the revisit weighs.
 
 **Rejected alternatives:**
 - A plain LRU for the budgets: it could drop a budget that still holds
