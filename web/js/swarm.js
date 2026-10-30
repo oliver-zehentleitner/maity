@@ -101,10 +101,7 @@ window.Maity = window.Maity || {};
   // ---- the members' page ---------------------------------------------------
 
   M.views.swarm = async function (ctx, root) {
-    let served = true;
-    try { served = await M.api.hubHas("GET", "/projects/{owner}/{slug}/swarm"); } catch (err) { served = true; }
     append(root, h("h2", null, "Swarm"));
-    if (!served) { append(root, M.dom.notOnHub("This hub has no swarm page yet.")); return; }
     let days = 30;
     const status = M.statusLine();
     const body = h("div", { class: "swarm-body" });

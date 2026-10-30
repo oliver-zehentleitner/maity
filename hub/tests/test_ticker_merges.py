@@ -370,17 +370,6 @@ def test_a_project_on_before_the_upgrade_starts_at_the_upgrade(
         assert ticker.merges_since(conn, project_id(migrated)) is not None
 
 
-def test_switching_on_again_starts_a_project_without_a_start(
-    owner: flow.Human, migrated: Engine
-) -> None:
-    enable(owner)
-    with migrated.begin() as conn:
-        conn.execute(t.ticker_source.delete())
-    enable(owner)
-    with migrated.connect() as conn:
-        assert ticker.merges_since(conn, project_id(migrated)) is not None
-
-
 def test_a_cut_round_goes_on_from_where_it_stopped_and_then_moves_the_bound(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:

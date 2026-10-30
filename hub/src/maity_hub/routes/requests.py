@@ -21,6 +21,7 @@ from maity_hub import (
     events,
     idempotency,
     inbox,
+    instances,
     mentions,
     namespace,
     orgs,
@@ -167,14 +168,7 @@ def _asker(conn: Connection, row: Any) -> Any:
     if row.asked_by is None and row.asked_by_human is not None:
         return _inviter(conn, row.asked_by_human)  # an organisation's invitation (§6.26)
     person = _person(conn, row.asked_by, row.asked_session_id)
-    instance = None
-    if row.asked_session_id is not None:
-        instance = conn.execute(
-            select(t.credential.c.instance)
-            .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-            .where(t.agent_session.c.id == row.asked_session_id)
-        ).scalar()
-    return {**person, "instance": instance}
+    return {**person, "instance": _asking_instance(conn, row)}
 
 
 def _with_avatar(conn: Connection, needs: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -327,13 +321,16 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
         if not inbox.valid_token(to):
             raise invalid({"to": "unknown_role"})
         return inbox.Addressee("role", role=to)
-    addressee = _member_id(conn, mine, to, "to")
+    principal, instance = instances.split_address(to)
+    addressee = _member_id(conn, mine, principal, "to")
     trust = conn.execute(
         select(t.membership.c.trust).where(t.membership.c.id == addressee)
     ).scalar_one()
     if trust == "guest":  # a guest answers nothing, so nothing is asked of it (§2.3)
         raise invalid({"to": "guest"}, "a guest is never asked")
-    return inbox.Addressee("member", member=addressee)
+    if instance is not None:
+        instances.addressed(conn, addressee, principal, instance, "to")  # `not_an_instance`
+    return inbox.Addressee("member", member=addressee, instance=instance)
 
 
 def _needs_in_session(
@@ -439,6 +436,7 @@ def create_request(
                     "priority": body.priority,
                     "to_kind": to.kind,
                     "to_member": to.member,
+                    "to_instance": to.instance,
                     "to_role": to.role,
                     "asked_by": mine.id,
                     "asked_session_id": caller.session_id,
@@ -522,17 +520,39 @@ def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list
     if to.kind == "owner":
         owner = inbox.owner_membership(conn, project_id)
         return [f"member:{owner.human_id}"] if owner else ["trust:owner"]
-    return [f"member:{principal_id(conn, to.member)}"]
+    principal = principal_id(conn, to.member)
+    if to.instance is None or to.member is None:
+        return [f"member:{principal}"]
+    # One instance: its token wakes only it, the team reads it (§7, §8.2).
+    return [instances.addressed(conn, to.member, str(principal), to.instance, "to")]
+
+
+def _asking_instance(conn: Connection, row: Any) -> str | None:
+    """The instance of the credential whose session filed the request; `None` for a
+    human, and for a request the hub filed, which has no session (§7)."""
+    if row.asked_session_id is None:
+        return None
+    instance: str | None = conn.execute(
+        select(t.credential.c.instance)
+        .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
+        .where(t.agent_session.c.id == row.asked_session_id)
+    ).scalar()
+    return instance
 
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
     # A notice the hub files has no asker who reads it: never the agent it names (§7).
-    members = (
-        []
-        if row.filed_by == "hub"
-        else [principal_id(conn, row.asked_by), principal_id(conn, row.on_behalf_of)]
-    )
-    audience = list(dict.fromkeys(f"member:{m}" for m in members if m))
+    # The asking instance is woken alone, its team reads along (§8.2); a human asker, and
+    # an asker with no session, are `member:`.
+    audience: list[str] = []
+    if row.filed_by != "hub":
+        asker = principal_id(conn, row.asked_by)
+        if asker:
+            audience.append(instances.token(asker, _asking_instance(conn, row)))
+        behalf = principal_id(conn, row.on_behalf_of)
+        if behalf:
+            audience.append(f"member:{behalf}")
+    audience = list(dict.fromkeys(audience))
     if row.personal and _member_of(conn, row.project_id, row.to_human) is not None:
         audience.append(f"member:{row.to_human}")  # the owner, when a member (§7)
     return audience

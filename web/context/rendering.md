@@ -417,13 +417,13 @@ and on the preview routes and the root's `?as=public` (#628's contract
 and its hub change); until those are on main, its saves are refused
 and its preview has no address, so it is merged after them.
 
-## A hub whose attachment store is off is treated like a hub without attachments
+## A hub whose attachment store is off hides Attach files and is not asked again
 
 **Id:** 831e6402-6484-42a6-971a-0cafd0e7ecb4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's
+**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's; the coordinator's ruling on tsk-gn9w6mwazfyd (alpha rule: the 404/405 branch removed), 2026-10-30
 **Revisit when:** an operator can switch the store on without reloading the page, or the hub tells the dashboard which parts it has before it asks
 **See:** rendering.md#attachments-an-image-is-shown-from-the-hubs-own-path-every-other-file-is-only-ever-a-download-link-and-nothing-is-previewed-before-it-is-sent — 52e88bfb-69a5-4f6d-95e8-a2a3dd8acdd7 — as of 2026-10-27
 
@@ -433,6 +433,10 @@ routes but no store answers `409` with the code `attachments_not_configured`
 to the same calls, and the e2e run counted that as a problem on a page that
 does nothing wrong. The same check now covers that code, so the Attach files
 part is hidden and the listing of waiting files is not asked for again.
+Since 2026-10-30 only that `409` counts: the `404`/`405` reading for a hub
+without the routes was a compatibility branch for hubs before #464, which
+the alpha rule removes, and such an answer is now an error like anywhere
+else.
 
 **Reason:** to the person at the page the two hubs are the same: no files can
 be sent. The dashboard should not report an operator's choice as a fault.

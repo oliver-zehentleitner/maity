@@ -410,7 +410,7 @@ window.Maity = window.Maity || {};
   // registration page link to them): an element filled once GET /legal answers.
   function links() {
     const p = h("p", { class: "legal-links muted" });
-    M.api.hubHas("GET", "/legal").then((has) => (has ? M.api.get("/legal") : null)).then((v) => {
+    M.api.get("/legal").then((v) => {
       const set = v && v.pages ? PAGES.filter(([key]) => v.pages[key]) : [];
       set.forEach(([, label, served], i) => append(p, i ? " · " : null, h("a", { href: served }, label)));
     }, () => {});

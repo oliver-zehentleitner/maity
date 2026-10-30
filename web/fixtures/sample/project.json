@@ -3,7 +3,6 @@
   "slug": "sample",
   "owner": { "id": "hum-maintainer", "handle": "maintainer" },
   "full_name": "maintainer/sample",
-  "legacy_slug": "sample",
   "aliases": ["maintainer/sample-1", "maintainer/sample-2", "maintainer/sample-3", "maintainer/sample-4", "maintainer/sample-5", "maintainer/sample-6", "maintainer/sample-7", "maintainer/sample-old"],
   "name": "Sample shop",
   "state": "review",

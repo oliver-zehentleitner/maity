@@ -6,14 +6,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, StrictBool
 
-from maity_hub import events, org_invitations, orgs
+from maity_hub import clock, events, limits, org_invitations, orgs, paging
+from maity_hub.admin import require_instance_admin
 from maity_hub.auth import second_factor
-from maity_hub.deps import AnyCaller, engine_of, settings_of
-from maity_hub.errors import forbidden, humans_only, not_found
+from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
+from maity_hub.errors import forbidden, humans_only, invalid, not_found
 
 router = APIRouter()
 
@@ -65,10 +66,33 @@ def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
 def create_org(request: Request, caller: AnyCaller, body: CreateOrg) -> JSONResponse:
     human_id = _human(caller)
     with events.transaction(engine_of(request)) as conn:
-        org, role = orgs.create(
-            conn, human_id, body.handle, body.display_name, settings_of(request).max_orgs_per_human
-        )
+        limit = limits.of(conn, settings_of(request), "max_orgs_per_human")
+        org, role = orgs.create(conn, human_id, body.handle, body.display_name, limit)
         return JSONResponse(orgs.view(conn, org, role), status_code=201)
+
+
+@router.get("/admin/orgs")
+def admin_orgs(
+    request: Request,
+    caller: HumanCaller,
+    q: str | None = None,
+    suspended: bool | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = None,
+) -> JSONResponse:
+    """The organisations of the instance, by handle, for the instance admin (§16.10)."""
+    if q is not None and not 1 <= len(q) <= 64:
+        raise invalid({"q": "invalid"})
+    bound = paging.scope(list="admin/orgs", q=q, suspended=suspended)
+    after = None if cursor is None else paging.uncursor(cursor, bound)[1]
+    with engine_of(request).begin() as conn:
+        require_instance_admin(conn, caller.principal_id)
+        items, more = orgs.admin_list(conn, q, suspended, after, limit)
+        # The cursor is ordered by handle: the timestamp slot only has to be a time.
+        next_cursor = (
+            paging.cursor(clock.now(), items[-1]["handle"], bound) if more and items else None
+        )
+        return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
 @router.get("/orgs")

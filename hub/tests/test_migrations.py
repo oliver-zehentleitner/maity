@@ -676,3 +676,46 @@ def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) 
     assert released[ids["two"]] == early
     assert released[ids["missing"]] is None and released[ids["other"]] is None
     assert released[ids["none"]] is None
+
+
+def test_cards_are_written_in_the_one_shape_the_code_reads(engine: Engine) -> None:
+    """0101: a reported card without `reported_instances` gets the instance of its report,
+    a contract without a place gets the default place; nothing else is touched."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human_id = factory.human(engine, "a")
+    project_id = factory.project(engine, "shop", owner_id=human_id)
+    membership_id = factory.membership(engine, project_id, "owner", human_id=human_id)
+    report = {"reported_by": "agt-x", "reported_instance": "ab12"}
+    old_report = factory.card(engine, project_id, membership_id, report=report)
+    new_report = factory.card(
+        engine,
+        project_id,
+        membership_id,
+        report=report,
+        reported_instances=[{"member_id": "agt-y", "instance": "cd34"}],
+    )
+    unreported = factory.card(engine, project_id, membership_id)
+    bare = {"arbiter": "trust:admin", "state": "proposed", "watchers": []}
+    old_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=bare)
+    placed = {**bare, "path": "docs/other.md", "section": "2.1"}
+    new_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=placed)
+    downgrade(engine, "0100")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == old_report).values(reported_instances=None)
+        )
+    migrate(engine)
+    with engine.connect() as conn:
+        found = {
+            r.id: r for r in conn.execute(select(t.card).where(t.card.c.project_id == project_id))
+        }
+    assert found[old_report].reported_instances == [{"member_id": "agt-x", "instance": "ab12"}]
+    assert found[new_report].reported_instances == [{"member_id": "agt-y", "instance": "cd34"}]
+    assert found[unreported].reported_instances is None
+    assert found[old_contract].contract == {**bare, "path": "docs/api.md", "section": None}
+    assert found[new_contract].contract == placed

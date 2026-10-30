@@ -96,7 +96,6 @@ window.Maity = window.Maity || {};
   // where a change takes its logged reason.
   function badge(ctx) {
     const policy = ctx.project.policy || {};
-    if (!("badge" in policy)) return null;
     const state = policy.badge || "off";
     const names = { off: "Off", members: "Members", agents_online: "Agents online" };
     const admin = (ctx.canAdmin || ctx.isOwner) && ctx.me.kind === "human";
@@ -128,7 +127,7 @@ window.Maity = window.Maity || {};
     const humans = list.filter((m) => m.kind === "human").length;
     const agents = list.filter((m) => m.kind === "agent").length;
     const online = list.filter((m) => m.presence === "online").length;
-    return h("section", { class: "overview-part overview-team", "aria-labelledby": "overview-members" },
+    return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", "Team", list.length ? plural(humans, "human", "humans") + ", " + plural(agents, "agent", "agents") + " · " + online + " online" : null,
         h("a", { href: ctx.link("members"), "data-key": "members" }, "All members")),
       list.length
@@ -212,12 +211,14 @@ window.Maity = window.Maity || {};
   }
 
   // The order (the designer's handover): what needs the reader, then the
-  // state, then the facts; one column on a phone in the same order.
+  // state, then the facts; one column on a phone in the same order. Project
+  // and README badge stand under Team, beside Latest reports, not after it:
+  // the list is long, and they were out of sight below it.
   function layout(ctx, parts) {
     return [
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
-      h("div", { class: "overview-row overview-row-2" }, members(ctx), parts.reports),
-      h("div", { class: "overview-row overview-row-3" }, project(ctx), badge(ctx)),
+      h("div", { class: "overview-row overview-row-2" },
+        h("div", { class: "overview-stack" }, members(ctx), project(ctx), badge(ctx)), parts.reports),
       // Who reports to whom (js/org.js), once the Organisation tab.
       M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
     ];
@@ -235,24 +236,17 @@ window.Maity = window.Maity || {};
     function draw(o, err) {
       last = [o, err];
       const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
-      // A hub without the overview (404) is said quietly, as a fact of that
-      // hub, never as an error; any other failure is one. Either stands
-      // where the counts would.
-      const missing = !o && (err.notOnHub ? h("p", { class: "muted overview-missing" }, "This hub has no overview yet, so no counts are shown here.")
-        : h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message));
+      // A failed read stands where the counts would.
+      const missing = !o && h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message);
       append(clear(box), layout(ctx, o
         ? { requests: requests(ctx, o), board: board(ctx, o), reports: reports(ctx, o) }
         : { requests: missing, board: null, reports: null }));
       const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
       if (again) again.focus();
     }
-    // Not on this hub: said once, and its timers and events ask no more.
-    const absent = () => M.api.absent.has("GET", path);
     try {
-      if (absent()) throw new M.api.ApiError("not on this hub", 404, path, "not_found");
       draw(await M.api.get(path));
     } catch (err) {
-      if (absent() || await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); }
       draw(null, err);
     }
     append(root, h("h2", null, "Overview"), status.el, box);
@@ -261,14 +255,13 @@ window.Maity = window.Maity || {};
     let reading = false;
     let pendingRead = false;
     async function reread() {
-      if (absent()) return;
       if (reading) { pendingRead = true; return; }
       reading = true;
       try {
         draw(await M.api.get(path));
         status.done();
       } catch (err) {
-        if (await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); draw(null, err); status.done(); } else status.fail("Could not refresh: ", err);
+        status.fail("Could not refresh: ", err);
       } finally {
         reading = false;
         if (pendingRead) { pendingRead = false; reread(); }

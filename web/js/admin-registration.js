@@ -57,7 +57,6 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, "Who may create an account on this hub by themselves (§2.7). Invitations work in every mode."),
       status.el, body);
     let current = await M.api.get(SETTINGS);
-    const canSave = await M.api.hubHas("PATCH", SETTINGS).catch(() => true);
     const stepSlot = h("div", { class: "step-up-slot" });
     // What the hub does now, what is missing and the counts: redrawn on their
     // own after a decision, so the form keeps what is typed and not saved.
@@ -80,30 +79,30 @@ window.Maity = window.Maity || {};
       const errorOf = (k) => h("p", { class: "field-error", id: id(k) + "-error", role: "alert" });
       const errors = { mode: errorOf("mode"), domains: errorOf("domains"), addresses: errorOf("addresses"), terms: errorOf("terms"), max: errorOf("max") };
 
-      const mode = h("select", { id: id("mode"), disabled: !canSave || fromEnv("mode") ? true : null, "aria-describedby": id("mode") + "-error" },
+      const mode = h("select", { id: id("mode"), disabled: fromEnv("mode") ? true : null, "aria-describedby": id("mode") + "-error" },
         MODES.map(([k, l]) => h("option", { value: k }, l)));
       mode.value = v("mode");
-      const domains = h("textarea", { id: id("domains"), rows: "3", placeholder: "@example.com", disabled: !canSave || fromEnv("domains") ? true : null,
+      const domains = h("textarea", { id: id("domains"), rows: "3", placeholder: "@example.com", disabled: fromEnv("domains") ? true : null,
         "aria-describedby": id("domains") + "-hint " + id("domains") + "-error" });
       domains.value = (v("domains") || []).join("\n");
-      const addresses = h("textarea", { id: id("addresses"), rows: "3", placeholder: "ada@example.net", disabled: !canSave || fromEnv("addresses") ? true : null,
+      const addresses = h("textarea", { id: id("addresses"), rows: "3", placeholder: "ada@example.net", disabled: fromEnv("addresses") ? true : null,
         "aria-describedby": id("addresses") + "-error" });
       addresses.value = (v("addresses") || []).join("\n");
-      const approval = h("select", { id: id("approval"), disabled: !canSave || fromEnv("approval") ? true : null },
+      const approval = h("select", { id: id("approval"), disabled: fromEnv("approval") ? true : null },
         APPROVALS.map(([k, l]) => h("option", { value: k }, l)));
       approval.value = v("approval");
       const terms = v("terms");
-      const termsOff = !canSave || fromEnv("terms") || (current.terms || {}).source === "legal_pages";
+      const termsOff = fromEnv("terms") || (current.terms || {}).source === "legal_pages";
       const termsUrl = h("input", { id: id("terms-url"), type: "url", placeholder: "https://example.com/terms", disabled: termsOff ? true : null,
         "aria-describedby": id("terms") + "-error" });
       termsUrl.value = terms ? terms.url : "";
       const termsVersion = h("input", { id: id("terms-version"), placeholder: "2026-10", disabled: termsOff ? true : null,
         "aria-describedby": id("terms") + "-error" });
       termsVersion.value = terms ? terms.version : "";
-      const max = h("input", { id: id("max"), type: "number", min: "1", step: "1", disabled: !canSave || fromEnv("max_new_accounts_per_hour") ? true : null,
+      const max = h("input", { id: id("max"), type: "number", min: "1", step: "1", disabled: fromEnv("max_new_accounts_per_hour") ? true : null,
         "aria-describedby": id("max") + "-error" });
       max.value = String(v("max_new_accounts_per_hour"));
-      const save = h("button", { type: "submit", disabled: canSave ? null : true }, "Save");
+      const save = h("button", { type: "submit" }, "Save");
       const formStatus = M.statusLine();
 
       const form = h("form", {
@@ -182,8 +181,8 @@ window.Maity = window.Maity || {};
     status.done();
     const pendingBox = h("div", { class: "reg-pending" });
     append(root, pendingBox);
-    if (await M.api.hubHas("GET", PENDING).catch(() => false)) await pendingPart(pendingBox, async () => { current = await M.api.get(SETTINGS); drawSummary(); });
-    if (await M.api.hubHas("DELETE", "/admin/registrations/blocks/{blocked}").catch(() => false)) append(root, blockPart());
+    await pendingPart(pendingBox, async () => { current = await M.api.get(SETTINGS); drawSummary(); });
+    append(root, blockPart());
   }
 
   // The accounts that wait for approval (§2.7.5, §16.4), oldest first.
