@@ -18,6 +18,8 @@ window.Maity = window.Maity || {};
     get admin() { return M.t("orgs.role.admin"); },
     get member() { return M.t("orgs.role.member"); },
   };
+  // Names in a sentence: "a, b, c" in English, in the catalog's language (KTW adaebd69).
+  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
   const orgPath = (org) => "/orgs/" + encodeURIComponent(org);
   const orgLink = (org) => "/account/orgs/" + encodeURIComponent(org);
 
@@ -46,7 +48,7 @@ window.Maity = window.Maity || {};
     if (err.code === "org_limit") return { message: M.t("orgs.refused.limit") };
     if (err.code === "namespace_owner") {
       const projects = (err.details && err.details.projects) || [];
-      return { message: projects.length ? M.t("orgs.refused.owns_named", { projects: projects.join(", ") }) : M.t("orgs.refused.owns") };
+      return { message: projects.length ? M.t("orgs.refused.owns_named", { projects: names(projects) }) : M.t("orgs.refused.owns") };
     }
     if (err.code === "rate_limited") return { message: M.t("orgs.refused.rate") };
     if (err.code === "alias_limit") return { message: M.t("orgs.refused.aliases", { count: (err.details && err.details.limit) || 8 }) };
@@ -311,7 +313,7 @@ window.Maity = window.Maity || {};
         h("div", { class: "org-head" }, M.avatar(org, 48),
           h("h2", { id: "org-heading", tabindex: "-1" }, org.display_name),
           h("p", { class: "muted" }, (org.aliases || []).length
-            ? M.t("orgs.head.aliases", { handle: org.handle, role: org.my_role, aliases: org.aliases.map((a) => "@" + a).join(", ") })
+            ? M.t("orgs.head.aliases", { handle: org.handle, role: org.my_role, aliases: names(org.aliases.map((a) => "@" + a)) })
             : M.t("orgs.head", { handle: org.handle, role: org.my_role }))),
         words ? h("p", { class: "ok", role: "status" }, words) : null,
         org.moderation ? h("p", { class: "flag", role: "status" }, M.t("orgs.suspended", { time: formatTime(org.moderation.at) })) : null,
