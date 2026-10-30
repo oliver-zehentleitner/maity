@@ -206,7 +206,7 @@ and the reader-dependent visibility cannot go into an event that goes to all.
 **Source:** `docs/api.md` §6.27 (contract #738), §6.10 ("Who may read an image"), §6.26; implementation of `GET /people/{handle}` (tsk-4ar8vw61fvj0), 2026-10-30
 **See:** public-pages.md — 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f — as of 2026-10-30
 **See:** public-pages.md — 05d38e67-97ac-4fee-b0ac-e0f75c03862f — as of 2026-10-30
-**Revisit when:** the organisation's page kind is rendered, the member views take a hold on the profile into account for links as well, or handle aliases resolve (§6.24)
+**Revisit when:** the organisation's page kind is rendered, or handle aliases resolve (§6.24)
 
 `routes/people.py` answers `GET /people/{handle}` for a signed-in human. `page_served` is `true`
 when public pages are on and the store holds the page (a `public_page` row of the kind and target);
@@ -220,8 +220,8 @@ that shows the caller nothing are the same `not_found`. `avatar_url` comes only 
 `avatars.may_read` lets the caller read the image; the organisation's picture got its rule there
 (its members and the members of its projects, §6.10), which the image route had lacked. The answer
 is `private, no-store`, a value `middleware.ROUTE_CACHE` now admits. `website` and `social` come
-from `person_links.admitted` and `person_links.shown`, the member views' rule, with one addition
-§6.27 makes: under a hold on the profile `links_visible: everyone` counts as `colleagues`. A link
+from `person_links.admitted` and `person_links.shown`, the member views' rule, the hold rule
+included (under a hold on the profile `links_visible: everyone` counts as `colleagues`). A link
 the caller is admitted to is enough for the person to be found; a person with no link has none
 to admit.
 
