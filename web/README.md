@@ -1008,12 +1008,15 @@ session of this human was signed out while this one stays signed in.
 **Create a project** (`/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
 its rule said under the field and checked before sending), an optional repository URL, the project
-memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
-setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
-badge — the last one also offered with `none`), and
+memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the five prefilled
+setup options of §6.21 — set up Keep the Why in the repository, add its badge, run its linter in
+CI, publish its dashboard with a **Path** under it (`keep-the-why-dashboard`, checked as the hub
+checks it, its refusal said at the field), add the Maity badge — the last one also offered with
+`none`), and
 the policy preset (`hierarchical` or `solo`). The memory goes as
 `memory: {provider}` and every option as `true` or `false` in `setup`
-(under `none` the Keep the Why ones are `false`); the hint says that an
+(under `none` the Keep the Why ones are `false`), `dashboard_path` only
+while the dashboard is ticked; the hint says that an
 agent sets the memory up in the repository through setup cards, made
 once the project has a repository, and that the Maity badge also
 switches the project's public badge on. The creator becomes the

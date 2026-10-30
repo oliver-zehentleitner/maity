@@ -4059,14 +4059,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(fieldError("project-slug").includes("already") && fieldError("project-repository").includes("forge"),
     "the hub's invalid fields shown next to slug and repository");
   byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
-  // Project memory (§6.1, §6.21): Keep the Why preselected, its three setup options ticked beneath it.
+  // Project memory (§6.1, §6.21): Keep the Why preselected, its five setup options ticked beneath it, the dashboard's Path under it.
   const setupRow = (key) => byId("setup-" + key).parentNode;
-  const setupKeys = ["keep_the_why_init", "keep_the_why_badge", "maity_badge"];
+  const setupShown = (key) => !setupRow(key).hidden && !(setupRow(key).parentNode.className === "check-row" && setupRow(key).parentNode.hidden);
+  const setupKeys = ["keep_the_why_init", "keep_the_why_badge", "keep_the_why_ci", "keep_the_why_dashboard", "maity_badge"];
   expect(byId("project-memory").value === "keep-the-why" && byId("project-memory").querySelectorAll("option").map((o) => text(o)).join() === "Keep the Why,None"
-    && setupKeys.every((k) => byId("setup-" + k).checked && !setupRow(k).hidden)
-    && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|Add the Maity badge to the README"
+    && setupKeys.every((k) => byId("setup-" + k).checked && setupShown(k))
+    && setupKeys.map((k) => text(setupRow(k)).trim()).join("|") === "Set up Keep the Why in the repository|Add the Keep the Why badge to the README|"
+      + "Run the Keep the Why linter in CI|Publish the Keep the Why dashboard|Add the Maity badge to the README"
     && text(main).includes("an agent sets it up in the repository, through the setup cards below"),
-    "create: Project memory with Keep the Why preselected, the three setup options ticked, the setup's agent said");
+    "create: Project memory with Keep the Why preselected, the five setup options ticked in the cards' order, the setup's agent said");
+  const spPath = () => byId("setup-dashboard-path");
+  const spPathShown = () => !spPath().parentNode.hidden;
+  expect(spPath() && spPath().value === "keep-the-why-dashboard" && spPathShown() && text(spPath().parentNode).includes("Path")
+    && spPath().getAttribute("aria-describedby") === "setup-dashboard-path-hint setup-dashboard-path-error",
+    "create: the dashboard's Path under its option, prefilled with keep-the-why-dashboard, its rule as the hint");
+  byId("setup-keep_the_why_dashboard").checked = false; byId("setup-keep_the_why_dashboard").dispatch("change");
+  expect(!spPathShown(), "create: unticking the dashboard hides its Path");
+  byId("setup-keep_the_why_dashboard").checked = true; byId("setup-keep_the_why_dashboard").dispatch("change");
+  expect(spPathShown(), "create: ticking it again shows the Path");
+  // A path the hub would refuse is said at the field, nothing sent; so is the hub's own format refusal.
+  const spBefore = posts.length;
+  for (const bad of ["/docs", "docs/", "docs/../x", "Docs", "a/b/c/d/e/f", ""]) {
+    spPath().value = bad;
+    main.querySelector("form").dispatch("submit"); await tick(); await tick();
+    if (posts.length !== spBefore || !text(byId("setup-dashboard-path-error")).startsWith("One to five parts") || spPath().getAttribute("aria-invalid") !== "true") {
+      expect(false, "create: a malformed path is refused at its field, nothing sent: " + JSON.stringify(bad));
+    }
+  }
+  expect(posts.length === spBefore, "create: malformed paths (a leading or trailing /, .., capitals, six parts, none) are refused at the field, nothing sent");
+  spPath().value = "docs/why";
+  const spFmt = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.dashboard_path": "format" } })) : spFmt(p, b));
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(text(byId("setup-dashboard-path-error")).startsWith("One to five parts") && spPath().getAttribute("aria-invalid") === "true" && !text(byId("project-setup-error")),
+    "create: the hub's format refusal of the path is said at the Path field");
+  win.Maity.api.post = spFmt;
+  spPath().value = "keep-the-why-dashboard";
   const cpNote = byId("setup-maity_badge-note");
   expect(cpNote && byId("setup-maity_badge").getAttribute("aria-describedby") === "setup-maity_badge-note" && text(cpNote).includes("how many humans and agents")
     && cpNote.parentNode === setupRow("maity_badge").parentNode && !text(byId("project-setup-hint")).includes("badge")
@@ -4091,7 +4120,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sent = posts[posts.length - 1];
   expect(sent[0] === "/projects" && JSON.stringify(sent[1]) === JSON.stringify({
     slug: "dogfood", name: "Dogfood Hub", repository: { url: "https://github.com/example/dogfood" },
-    memory: { provider: "keep-the-why" }, setup: { keep_the_why_init: true, keep_the_why_badge: true, maity_badge: true }, policy: { preset: "solo" },
+    memory: { provider: "keep-the-why" }, setup: { keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true,
+      maity_badge: true, dashboard_path: "keep-the-why-dashboard" }, policy: { preset: "solo" },
   }) && !("keep_the_why" in sent[1]), "POST /projects with memory and every setup option sent explicitly " + JSON.stringify(sent[1]));
   expect(!fieldError("project-slug") && !byId("project-slug").getAttribute("aria-invalid"), "errors cleared on resubmit");
   noProjects = false;
@@ -4105,14 +4135,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // With a repository the hub makes the setup cards at once; the Maity badge is on from the start.
   await go("#/maintainer/dogfood/board"); for (let k = 0; k < 4; k++) await tick();
   const setupCards = main.querySelectorAll("article.card.card-setup");
-  expect(setupCards.map((c) => c.attrs["aria-label"]).sort().join("|") === "Add the Keep the Why badge to the README|Add the Maity badge to the README|Set up Keep the Why in the repository"
+  expect(setupCards.map((c) => c.attrs["aria-label"]).sort().join("|") === "Add the Keep the Why badge to the README|Add the Maity badge to the README|"
+      + "Publish the Keep the Why dashboard|Run the Keep the Why linter in CI|Set up Keep the Why in the repository"
     && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
-    "create: the three setup cards on the new project's board, open, marked Setup");
+    "create: the five setup cards on the new project's board, open, marked Setup");
   await projectSettings();
   const memPanel = main.querySelector("section.memory-panel");
-  expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 3
+  expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 5 && text(memPanel).includes("The dashboard is published under keep-the-why-dashboard.")
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
-    "settings: the memory provider read only, with links to its setup cards");
+    "settings: the memory provider read only, with links to its setup cards and the dashboard's path");
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
@@ -4132,13 +4163,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/new");
   byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
   byId("project-memory").value = "none"; byId("project-memory").dispatch("change");
-  expect(setupRow("keep_the_why_init").hidden && setupRow("keep_the_why_badge").hidden && !setupRow("maity_badge").hidden,
+  expect(["keep_the_why_init", "keep_the_why_badge", "keep_the_why_ci", "keep_the_why_dashboard"].every((k) => !setupShown(k)) && setupShown("maity_badge"),
     "create: under None only the Maity badge is offered");
   byId("setup-maity_badge").checked = false; byId("project-preset").value = "hierarchical";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "plain", name: "Plain", memory: { provider: "none" },
-    setup: { keep_the_why_init: false, keep_the_why_badge: false, maity_badge: false }, policy: { preset: "hierarchical" } }),
-    "create: None sends the Keep the Why options false and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
+    setup: { keep_the_why_init: false, keep_the_why_badge: false, keep_the_why_ci: false, keep_the_why_dashboard: false, maity_badge: false },
+    policy: { preset: "hierarchical" } }),
+    "create: None sends the Keep the Why options false, no path, and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
   expect(text(main.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
@@ -4150,10 +4182,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/new");
   byId("project-name").value = "Later"; byId("project-name").dispatch("input");
   byId("setup-keep_the_why_badge").checked = false; byId("project-preset").value = "hierarchical";
+  byId("setup-keep_the_why_dashboard").checked = false; byId("setup-keep_the_why_dashboard").dispatch("change");
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  const ltSent = posts[posts.length - 1][1];
+  expect(ltSent.setup.keep_the_why_dashboard === false && !("dashboard_path" in ltSent.setup),
+    "create: with the dashboard unticked, dashboard_path is not sent at all " + JSON.stringify(ltSent.setup));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Add the Maity badge to the README.")
+  expect(text(main.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
     && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
