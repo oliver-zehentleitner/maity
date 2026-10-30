@@ -432,7 +432,8 @@ open that chat.
 **Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-10-23
 
-The Messages tab reads the project's latest 5000 events
+The Messages tab reads the project's events within the hub's latest
+5000 (the `seq` counts all projects, 4c3f8949)
 (`wait=0`, 200 per page, from the head that `after=latest` names) and
 keeps every message that is not a chat and not removed. When the log is
 longer, the view says that older messages are not read. A cursor that

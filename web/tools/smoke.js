@@ -2488,9 +2488,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(thCss.includes(".id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }") && thCss.includes("a.id-ref { text-decoration: none; }"),
     "ids: never broken across lines, underlined only on hover");
   const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
-  expect(idHrefs(mdIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12"
-    && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("pre a"),
-    "ids: in Markdown linked in text and emphasis, plain in code spans, fenced code and a link's own text " + idHrefs(mdIds));
+  expect(idHrefs(mdIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12 tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab"
+    && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("a.id-ref code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("code.md-inline-copy") && !mdIds.querySelector("pre a"),
+    "ids: in Markdown linked in text, emphasis and a code span that is the id alone (drawn as code); plain in fenced code and a link's own text " + idHrefs(mdIds));
+  const mdCmd = idBox(win.Maity.markdown("Run `maity task show tsk-0123456789ab` and ` tsk-0123456789ab `", idAt));
+  expect(mdCmd.querySelectorAll("code.md-inline-copy").length === 1 && text(mdCmd.querySelector("code.md-inline-copy")) === "maity task show tsk-0123456789ab"
+    && idHrefs(mdCmd) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab",
+    "ids: a code span with more than the id stays code that copies itself; one padded with spaces still links " + idHrefs(mdCmd));
+  expect(text(MD("`tsk-0123456789ab`").querySelector("code.md-inline-copy")) === "tsk-0123456789ab", "ids: without the text's project a code span with an id stays code");
+  const idFull = idBox(IDS.link("see guest/shop/tsk-0123456789ab, maintainer/maity/req-abcdefghjkmn and https://x.org/guest/shop/tsk-0123456789ab", idAt));
+  expect(idHrefs(idFull) === "guest/shop/tsk-0123456789ab=#/guest/shop/tasks/tsk-0123456789ab maintainer/maity/req-abcdefghjkmn=#/maintainer/maity/inbox/req-abcdefghjkmn",
+    "ids: a card or request with a project's full name before it links into that project, as written; inside a URL nothing links " + idHrefs(idFull));
   expect(!MD("tsk-0123456789ab").querySelector("a"), "ids: Markdown without the text's project links no id");
   const idOut = IDS.where({ slug: "maintainer/maity", outsider: true, project: { repository: { url: "https://github.com/o/r" } } });
   expect(idOut.slug === null && idOut.repository === null && !idBox(win.Maity.markdown("See tsk-0123456789ab and #4", idOut)).querySelector("a.id-ref"),
@@ -2656,6 +2664,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let quoteDepth = 0;
   for (let q = mdDeep.querySelector("blockquote"); q; q = q.querySelector("blockquote")) quoteDepth += 1;
   expect(quoteDepth === 8 && mdDeep.querySelector(".md-deep") && text(mdDeep).includes("deep"), "markdown: quotes nest at most eight deep, the rest as written");
+  // Nested lists (tsk-gx88t3myb81q): an item indented further opens a list inside the one before it, of either kind.
+  const mdNest = MD("- one\n  - one a\n  - one b\n- two\n  1. two first\n  2. two second\n- three\n\n1. first\n\t- first a\n\t- first b\n2. second");
+  const nestTop = mdNest.childNodes;
+  const nestItems = (list) => list.childNodes.filter((c) => c.tagName === "LI");
+  const nestSub = (li) => li.childNodes.find((c) => c.tagName === "UL" || c.tagName === "OL");
+  expect(JSON.stringify(tagsOf(mdNest)) === '["ul","ol"]' && nestItems(nestTop[0]).length === 3
+    && nestSub(nestItems(nestTop[0])[0]).tagName === "UL" && nestItems(nestSub(nestItems(nestTop[0])[0])).map((x) => text(x)).join() === "one a,one b"
+    && nestSub(nestItems(nestTop[0])[1]).tagName === "OL" && nestItems(nestSub(nestItems(nestTop[0])[1])).length === 2 && !nestSub(nestItems(nestTop[0])[2])
+    && nestItems(nestTop[1]).length === 2 && nestItems(nestSub(nestItems(nestTop[1])[0])).map((x) => text(x)).join() === "first a,first b",
+    "markdown: nested lists, two levels, bullets in bullets, numbers in bullets and bullets in numbers, a tab as an indent");
+  const mdBack = MD("- a\n    - a deep\n  - a shallower\n- b");
+  expect(nestItems(mdBack.childNodes[0]).length === 2 && nestItems(mdBack.childNodes[0])[0].childNodes.filter((c) => c.tagName === "UL").length === 1
+    && nestItems(nestSub(nestItems(mdBack.childNodes[0])[0])).map((x) => text(x)).join() === "a deep,a shallower",
+    "markdown: an item less indented than its list's first but more than the list around it is one more item of the inner list");
+  const mdDeepList = MD(Array.from({ length: 12 }, (_, k) => " ".repeat(2 * k) + "- level " + k).join("\n"));
+  let listDepth = 0; for (let n = mdDeepList.childNodes[0]; n; n = nestItems(n).length ? nestSub(nestItems(n)[nestItems(n).length - 1]) : null) listDepth += 1;
+  expect(listDepth === 8 && text(mdDeepList).includes("level 11"), "markdown: lists nest at most eight deep, deeper items stay in the deepest list");
   const mdFences = MD("```python title=x.py\nprint(1)\n```\n  ~~~~\n```\nstill code\n~~~~~\n3. three\n4. four");
   const mdCodes = mdFences.querySelectorAll("pre code");
   expect(mdCodes.length === 2 && mdCodes[0].textContent === "print(1)" && text(mdFences.querySelector(".md-lang")) === "python"

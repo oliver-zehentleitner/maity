@@ -226,8 +226,10 @@ linked by its shape alone, never looked up: a page it opens says when it
 holds no such thing. The link's text is the id as written, and no mention
 is made; outside the id's project (the global chat, `/all`) a card's
 or request's reads `<owner>/<slug>/tsk-…` (`docs/api.md` §6.25, display
-only, `M.ids.ref` the one place that writes it). In Markdown (messages, chats) ids in code spans and fenced code
-stay plain; the other texts are not Markdown, so backticks there are just
+only, `M.ids.ref` the one place that writes it). A card or request
+written that way, `<owner>/<slug>/tsk-…`, links into that project. In
+Markdown (messages, chats) a code span that is one id alone links, drawn
+as code; a code span with more, and fenced code, stay plain; the other texts are not Markdown, so backticks there are just
 characters and an id between them still links. A text read along from
 outside a project (`/observe`) links no id, as it links no member. In
 **All projects** `#123` stays text: `/me` gives no project's repository.
@@ -554,7 +556,8 @@ too.
    An unread count that cannot be read is said. An empty chat
    says that the agent reads it at its next wait or resume. Messages
    are drawn as Markdown (`js/markdown.js`): paragraphs and line breaks,
-   headings as strong lines, lists, quotes, fenced code with its language
+   headings as strong lines, lists (nested by indentation, at most eight
+   deep), quotes, fenced code with its language
    and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
    or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
