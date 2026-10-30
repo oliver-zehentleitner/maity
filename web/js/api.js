@@ -1978,7 +1978,6 @@ window.Maity = window.Maity || {};
       const next = items.length > limit ? page[page.length - 1].seq + "~" + filterKey : null;
       return { items: page.map(clean), next_cursor: next };
     }],
-    // The hub's machine form (§4): here only what the views ask of it.
     // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
     // instance; a window beyond the fixture's days reads zero days, with
     // reviews unknown before the hub kept history, as the hub answers.
@@ -2114,60 +2113,6 @@ window.Maity = window.Maity || {};
           cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-Number(query.get("days") || 30)) },
         coverage: s.coverage };
     }],
-    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
-      "/api/v1/admin/users": { get: {} },
-      "/api/v1/admin/statistics": { get: {} },
-      "/api/v1/admin/settings/landing": { get: {}, patch: {} },
-      "/api/v1/admin/settings/legal": { get: {}, patch: {} },
-      "/api/v1/admin/settings/landing/preview": { post: {} },
-      "/api/v1/admin/settings/legal/preview": { post: {} },
-      "/api/v1/legal": { get: {} },
-      "/api/v1/admin/settings/mail": { get: {}, patch: {} },
-      "/api/v1/admin/settings/registration": { get: {}, patch: {} },
-      "/api/v1/admin/registrations": { get: {} },
-      "/api/v1/admin/registrations/{human_id}/approve": { post: {} },
-      "/api/v1/admin/registrations/{human_id}/reject": { post: {} },
-      "/api/v1/admin/registrations/blocks/{blocked}": { delete: {} },
-      "/api/v1/admin/settings/mail/test": { post: {} },
-      "/api/v1/health": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/ticker": { get: {}, post: {} },
-      "/api/v1/projects/{owner}/{slug}/forge/webhook": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/forge/webhook/secret": { post: {}, delete: {} },
-      "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
-      "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
-      "/api/v1/me/conversations": { get: {} },
-      "/api/v1/orgs": { get: {}, post: {} },
-      "/api/v1/orgs/{org}": { get: {}, patch: {}, delete: {} },
-      "/api/v1/orgs/{org}/avatar": { put: {}, delete: {} },
-      "/api/v1/orgs/{org}/members": { get: {} },
-      "/api/v1/orgs/{org}/members/{member_id}": { patch: {}, delete: {} },
-      "/api/v1/orgs/{org}/members/invitations": { get: {}, post: {} },
-      "/api/v1/orgs/{org}/members/invitations/{invitation_id}": { delete: {} },
-      "/api/v1/me/export": { get: {} },
-      "/api/v1/me/deletion": { post: {}, delete: {} },
-      "/api/v1/agents": { get: {}, post: {} },
-      "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
-      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
-      "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
-      "/api/v1/requests/{request_id}/answer": { post: {} },
-      "/api/v1/auth/device-codes": { post: {} },
-      "/api/v1/auth/methods": { get: {} },
-      "/api/v1/me/preferences": { get: {}, put: {} },
-      "/api/v1/requests/{request_id}/withdraw": { post: {} },
-      "/api/v1/projects/{owner}/{slug}/swarm": { get: {} },
-      "/api/v1/swarm/{owner}/{slug}": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
-      "/api/v1/invitations/{token}": { get: {} },
-      "/api/v1/auth/register": { post: {} },
-      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "/components/schemas/ProjectCreate" } } } } } },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/contract": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/history": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
-    },
-    components: { schemas: { ProjectCreate: { properties: {
-      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, policy: {}, owner: {},
-    } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
@@ -3374,73 +3319,6 @@ window.Maity = window.Maity || {};
     return { items, next_cursor: null };
   }
 
-  // What the hub serves, from its machine form (GET /openapi.json), read
-  // once per page: a view offers a control only for a route the hub lists.
-  // The hub lists its paths under its prefix (/api/v1/…); either form
-  // counts, as in the CLI, and parameter names are not compared. A failed
-  // read is not kept: the next ask reads again.
-  let hubDoc = null;
-  let hubPaths = null;
-  const routeKey = (method, path) => method.toUpperCase() + " "
-    + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
-  function machineForm() {
-    if (!hubDoc) {
-      hubDoc = M.api.get("/openapi.json");
-      hubDoc.catch(() => { hubDoc = null; });
-    }
-    return hubDoc;
-  }
-  function hubRoutes() {
-    if (!hubPaths) {
-      hubPaths = machineForm().then((doc) => {
-        const found = new Set();
-        Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
-          Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
-        return found;
-      });
-      hubPaths.catch(() => { hubPaths = null; });
-    }
-    return hubPaths;
-  }
-
-  // The fields the hub's machine form names for the JSON body of `method
-  // path` (path as in docs/api.md), one $ref followed: what a form may
-  // send to this hub. Rejects when the machine form cannot be read.
-  function bodyFields(method, path) {
-    return machineForm().then((doc) => {
-      const paths = (doc && doc.paths) || {};
-      const op = (paths["/api/v1" + path] || paths[path] || {})[method.toLowerCase()];
-      const json = op && op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
-      let schema = json && json.schema;
-      if (schema && schema.$ref) schema = schema.$ref.split("/").slice(1).reduce((o, k) => (o ? o[k] : null), doc);
-      return new Set(Object.keys((schema && schema.properties) || {}));
-    });
-  }
-
-  // Whether the hub's machine form lists a route for this method and this
-  // concrete path (its parameters matched as path segments); null when the
-  // machine form cannot be read.
-  const escapeRe = (t) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
-  function routeListed(method, path) {
-    const want = method.toUpperCase();
-    const at = String(path).split("?")[0];
-    return hubRoutes().then((found) => Array.from(found).some((key) => {
-      const [m, template] = key.split(" ");
-      return m === want && new RegExp("^" + template.split("{}").map(escapeRe).join("[^/]+") + "$").test(at);
-    }), () => null);
-  }
-
-  // A route this hub does not serve: a 404 or 405 for a method and path its
-  // machine form does not list. Where a view's feature needs one, that is a
-  // fact of this hub, said quietly in its place (M.dom.notOnHub), never as
-  // an error, and the view does not ask it again until the next navigation,
-  // so no timer keeps knocking. A 404 on a route the hub lists is the
-  // resource's (a project left, a card gone) and stays an error, as does an
-  // answer when the machine form cannot be read, and any 5xx, network
-  // failure, 401 or 403.
-  const absentRoutes = new Set();
-  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
-
   M.api = {
     // The session read last (null before the first read or after the end).
     session: () => lastSession,
@@ -3452,22 +3330,6 @@ window.Maity = window.Maity || {};
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),
-    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
-    // A promise: true when err says the route itself is missing (see above).
-    missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
-      ? routeListed(method, path).then((yes) => yes === false) : Promise.resolve(false)),
-    absent: {
-      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
-      has: (method, path) => absentRoutes.has(routeOf(method, path)),
-      // On every navigation (js/app.js): a hub deployed meanwhile is asked again.
-      clear: () => { absentRoutes.clear(); },
-    },
-    // Whether the hub serves `method path` (path as in docs/api.md, without
-    // the prefix); rejects when its machine form cannot be read.
-    hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
-    hubBody: bodyFields,
-    // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubDoc = null; hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

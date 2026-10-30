@@ -465,12 +465,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Transfer: to another human owner, or into an organisation one owns or administers (§6.26); without either the way is said.
   expect(nsTr0() && byId("project-transfer-to").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "org-oz00team0001,org-oz00crew0001"
     && text(byId("project-transfer-to")).includes("@oz-team · OZ Team (organisation)"), "namespace: without another owner the transfer offers the organisations one owns or administers");
-  const nsHasT = win.Maity.api.hubHas;
-  win.Maity.api.hubHas = (m, p) => (p === "/orgs" ? Promise.resolve(false) : nsHasT(m, p));
+  const nsOrgsT = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/orgs" ? Promise.resolve({ items: [] }) : nsOrgsT(p));
   await go("#/maintainer/maity/inbox"); await projectSettings(); await nsSettle();
   expect(nsNames().querySelector(".project-transfer") && text(nsNames().querySelector(".project-transfer")).includes("make them an owner of it first"),
     "namespace: without another owner or an organisation the transfer says what comes first");
-  win.Maity.api.hubHas = nsHasT;
+  win.Maity.api.get = nsOrgsT;
   const nsGetT = win.Maity.api.get, nsPostT = win.Maity.api.post;
   const nsAnna = { id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "owner", role: "coder", areas: [], capabilities: [], presence: "offline" };
   const nsAdminOrg = { id: "org-oz00guild001", handle: "guild", display_name: "Guild", avatar_url: null, aliases: [], my_role: "admin", members_create_projects: false, public_page: "off" };
@@ -973,17 +973,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await usersOpen();
   expect(text(main).includes("The users could not be read: instance:admin needed"), "users: the endpoint's 403 is said");
   uq.value = "";
-  // A hub without the list, and someone who is not the instance admin.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => p === "/openapi.json" ? Promise.resolve({ paths: {} }) : (p.startsWith("/admin/users") ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : uGet(p));
-  await usersOpen();
-  expect(!main.querySelector("table.users") && !main.querySelectorAll("nav.admin-nav button").some((b) => b.textContent === "Users") && !main.querySelector(".error"),
-    "users: a hub without the list has no Users section");
+  // Someone who is not the instance admin.
   win.Maity.api.get = (p) => (p === "/me" ? uGet(p).then((x) => { x.member.instance_admin = false; return x; }) : uGet(p));
   await usersOpen();
   expect(!header.querySelectorAll("a").some((a) => a.textContent === "Instance administration") && text(main).includes("Only the instance admin can open this area.")
     && !main.querySelector("table.users"), "users: no link and no list for anyone else");
-  win.Maity.api.get = uGet; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = uGet;
   await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
@@ -1591,10 +1586,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   bArrow("tsk-0007", "down").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("Reordering failed: the card next to it moved or changed meanwhile; the board shows the order as it is now."),
     "board: a stale neighbour re-reads the board and says so");
-  // A not_found while card and neighbour are still in place: a hub without the endpoint.
-  win.Maity.api.post = (p, b) => Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {}));
-  bArrow("tsk-0007", "down").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("Reordering failed: this hub does not order cards yet."), "board: a hub without the move endpoint is said as such");
   win.Maity.api.post = (p, b) => { bWrites.push(["POST", p, b]); return bPost(p, b); };
   // The mock as the hub: a neighbour in another column is invalid; a member may not order.
   let otherCol = null;
@@ -2139,7 +2130,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const swGets = [];
   const swGet = win.Maity.api.get, swPatch = win.Maity.api.patch;
   win.Maity.api.get = (p) => { if (p.includes("swarm")) swGets.push(p); return swGet(p); };
-  win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
   const swTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Swarm");
   const swLive = () => (main.querySelector("ul.swarm-live") || { childNodes: [] }).childNodes;
@@ -2190,12 +2180,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No public swarm here"), "swarm: a project one is not a member of, or none, reads the same");
   win.Maity.api.patch = swPatch;
   await swPatch("/projects/maintainer/maity", { policy: { swarm_public: "on" }, reason: "back on" });
-  // A hub without the swarm says so in the tab.
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : swGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("This hub has no swarm page yet.") && !main.querySelector("table.swarm-table"), "swarm: a hub without it says so");
-  win.Maity.api.get = swGet; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = swGet;
   // The contract's section on a contract card (js/contract-panel.js, docs/api.md §6.8): folded until opened,
   // the repository's text untrusted, the hub's code when it cannot resolve it, never an older text.
   const ctGets = [], ctPatches = [];
@@ -2269,7 +2254,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? (() => { const items = plFeed; plFeed = []; return Promise.resolve({ items, cursor: items.length ? items[items.length - 1].seq : 30000, superseded: false }); })()
     : plGet(p));
   win.Maity.api.getAll = (p) => { if (p === "/projects/maintainer/maity/placements") plReads += 1; return plGetAll(p); };
-  win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 8; k++) await tick();
   const plBox = () => main.querySelector("section.placements");
   const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
@@ -2358,7 +2342,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plBox() && plBox().querySelectorAll("li.placement").length === 4 && !plActs().length,
     "placements: neither the runner's nor the agent's owner sees no actions");
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
-  win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox");
 
   // The board's column filter (the maintainer's request): one column or the closed ones, remembered per project.
@@ -2607,13 +2590,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "card panel: a move to done, its menu gone, leaves the focus on the panel's heading");
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
   expect(!cpPanel(), "card panel: after an action Escape still closes it");
-  // A hub without notes or history says so in the panel, nothing asked.
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : cpGet(p));
-  win.Maity.api.forgetRoutes(); cpGets.length = 0;
-  await go("#/maintainer/maity/tasks/tsk-0001"); for (let k = 0; k < 6; k++) await tick();
-  expect(cpPanel() && text(cpPanel()).includes("This hub has no notes yet.") && text(cpPanel()).includes("This hub has no card history yet.") && !cpGets.length,
-    "card panel: a hub without notes or history says so and is not asked");
-  win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = cpGet; win.Maity.api.getAll = cpGetAll; win.Maity.api.post = cpPost;
   await go("#/maintainer/maity/tasks/tsk-zzzzzzzzzzzz"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector("article.card.wanted") && text(main.querySelector(".wanted-note")).startsWith("No card tsk-zzzzzzzzzzzz on the board"),
     "ids: a card the board does not hold is said");
@@ -3527,11 +3504,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("meat-proxy").checked && text(main).includes("Not saved"), "meat proxy: a failed change is said and the switch goes back");
   win.Maity.api.patch = mpPatch;
   await mpPatch("/me", { meat_proxy: false });
-  const mpBody = win.Maity.api.hubBody;
-  win.Maity.api.hubBody = () => Promise.resolve(new Set());
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(!byId("meat-proxy"), "meat proxy: no switch on a hub whose machine form does not name it");
-  win.Maity.api.hubBody = mpBody;
   // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
   const mpGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { m.member.meat_proxy_note = "This person says: a newer note."; return m; }) : mpGet(p));
@@ -3623,16 +3595,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
-  // A hub whose machine form lists neither route (§2.9 not deployed yet): said quietly, nothing offered.
-  const ydHas = win.Maity.api.hubHas;
-  win.Maity.api.hubHas = (m, p) => (p === "/me/export" || p === "/me/deletion" ? Promise.resolve(false) : ydHas(m, p));
-  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
-  expect(ydBox() && !btn(ydBox(), "Export my data") && !btn(ydBox(), "Delete my account") && text(ydBox()).includes("This hub cannot export your data yet.")
-    && text(ydBox()).includes("This hub cannot delete an account yet."), "your data: a hub without the routes offers neither, said quietly");
-  win.Maity.api.hubHas = () => Promise.reject(new Error("unreadable"));
-  await go("#/account/data"); for (let k = 0; k < 4; k++) await tick();
-  expect(btn(ydBox(), "Export my data") && btn(ydBox(), "Delete my account"), "your data: a machine form that cannot be read keeps both");
-  win.Maity.api.hubHas = ydHas;
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
   await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();
@@ -3703,10 +3665,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/account/orgs", "orgs: deleted with its handle typed, the page goes back to the list");
   await go("#/account/orgs/oz-crew"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("You are in no organisation @oz-crew."), "orgs: one that is gone, or not one's own, is said as not found");
-  win.Maity.api.hubHas = (m, p) => (p === "/orgs" ? Promise.resolve(false) : ydHas(m, p));
-  await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(main).includes("This hub has no organisations yet.") && !byId("org-new-handle"), "orgs: a hub without them says so quietly");
-  win.Maity.api.hubHas = ydHas;
   // Pictures (docs/api.md §6.10): one's own on the account, an agent's in its row on Members;
   // the account keeps only the agents no project of one's own shows (tsk-th1yq0jtk3yf).
   const avCalls = [];
@@ -3749,12 +3707,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("agent-git-email-" + agHelperId).value = "helper@example.org"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main).includes("Saved. The old handle @helper still names it as an earlier one.") && text(agCard(agHelperId)).includes("@maintainer/helper-2"),
     "agents page: renamed with a git identity, the old handle kept as an earlier one");
-  // A hub whose machine form does not name handle on PATCH /agents/{id} (before #523) is offered no rename.
-  const agBody = win.Maity.api.hubBody;
-  win.Maity.api.hubBody = (m, p) => (m === "PATCH" && p === "/agents/{agent_id}" ? Promise.resolve(new Set(["display_name", "git_identity"])) : agBody(m, p));
-  await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
-  expect(agCard("agt-b") && byId("agent-name-agt-b") && !byId("agent-handle-agt-b"), "agents page: a hub without renames offers no handle field");
-  win.Maity.api.hubBody = agBody;
   // A failed first read of the joins: Try again opens the panel with the profile asked for still chosen.
   const agAll = win.Maity.api.getAll;
   let agFail = true;
@@ -3801,9 +3753,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.putImage = refuse("rate_limited", {});
   await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
   expect(text(main).includes("Not uploaded: too many changes of this picture in the last hour"), "picture: the rate limit in words");
-  win.Maity.api.putImage = () => Promise.reject(new win.Maity.api.ApiError("Not found", 404, "/me/avatar", "not_found", {}));
-  await pick("avatar-file-hum-maintainer", fakeFile(PNG, 3000));
-  expect(text(main).includes("Not uploaded: this hub does not take pictures yet"), "picture: a hub without the endpoint is said as such");
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // The mock as the hub: someone else's profile is not_found; ten changes an hour.
   let notMine = null;
@@ -3846,14 +3795,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // At the root without a session the dashboard draws the login page: the landing page is the hub's own static
   // page (§16.7), which the dashboard never asks for. The legal pages that are set are linked (§16.7.1).
   const lpGet = win.Maity.api.get, lpReads = [];
-  win.Maity.api.forgetRoutes();
   win.Maity.api.get = (p) => { if (p === "/landing" || p === "/legal") lpReads.push(p); return lpGet(p); };
   await go("#/all"); await go(""); for (let k = 0; k < 6; k++) await tick();
   const lpLegal = main.querySelector(".legal-links");
   expect(byId("login-handle") && !main.querySelector("article.landing") && !lpReads.includes("/landing") && lpReads.includes("/legal")
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "landing: the root without a session is the login page, the landing never read here; the legal pages set are linked");
-  win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = lpGet;
   // The public swarm page without a session (§6.22): the fixture serves /swarm/ signed out, as the hub does.
   await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector("article.swarm-public") && main.querySelector("article.swarm-public ul.swarm-live") && !byId("login-handle"),
@@ -4012,25 +3960,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("sign-in-mail-code").value = "482 913";
   main.querySelector(".sign-in-mail form").dispatch("submit"); await dsSettle();
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign-in link: the code signs this browser in");
-  // A hub whose machine form has no /auth/methods is not asked: the password alone.
+  // A methods call that fails (404, 5xx): the password alone, and no error on the page.
   profileButton().click(); await tick();
   header.querySelectorAll("button.menu-item").find((b) => b.textContent === "Sign out").click(); await dsSettle();
   const dsGet = win.Maity.api.get;
-  const dsAsked = [];
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => { dsAsked.push(p); return p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : dsGet(p); };
-  await go("#/"); await dsSettle();
-  expect(byId("login-handle") && !dsAsked.includes("/auth/methods") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail"),
-    "sign-in: a hub without the methods is not asked for them and offers the password alone");
-  // Listed, but the call fails (404, 5xx): the same, and no error on the page.
   for (const status of [404, 503]) {
-    win.Maity.api.forgetRoutes();
     win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", status, p, status === 404 ? "not_found" : "unavailable", {})) : dsGet(p));
     await go("#/maintainer/maity/inbox"); await go("#/"); await dsSettle();
     expect(byId("login-handle") && !main.querySelector(".sign-in-code") && !main.querySelector(".sign-in-mail") && !main.querySelector(".error") && !main.querySelector(".send-status.failed"),
       "sign-in: a methods call that answers " + status + " leaves the password form alone, with no error");
   }
-  win.Maity.api.get = dsGet; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = dsGet;
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await dsSettle();
   expect(!byId("login-handle"), "sign-in: and the password signs in as before");
@@ -4217,24 +4157,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(akRefused.code === "invalid" && akRefused.details.fields.keep_the_why === "extra_forbidden"
     && akPatched.code === "invalid" && akPatched.details.fields.keep_the_why === "extra_forbidden" && !("keep_the_why" in akView),
     "create: the mock refuses the old keep_the_why alias in POST and PATCH, and the project view has none");
-  // A machine form that cannot be read: no choice offered, and the form says the hub's defaults apply.
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("bad gateway", 502, p, "unavailable")) : akGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/new"); await tick();
-  expect(!byId("project-memory") && text(main).includes("Project memory: this hub's machine form could not be read, so its defaults apply."),
-    "create: an unreadable machine form is said, not silent");
-  win.Maity.api.get = akGet; win.Maity.api.forgetRoutes();
-  // A hub whose machine form does not name memory and setup refuses them: they are not offered nor sent.
-  const omGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: { "/api/v1/projects": { post: {} } } }) : omGet(p));
-  win.Maity.api.forgetRoutes();
-  await go("#/new"); await tick();
-  byId("project-name").value = "Old Hub"; byId("project-name").dispatch("input"); byId("project-preset").value = "hierarchical";
-  expect(!byId("project-memory") && !main.querySelector("fieldset.project-setup"), "create: a hub without memory and setup offers neither");
-  main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(JSON.stringify(posts[posts.length - 1][1]) === JSON.stringify({ slug: "old-hub", name: "Old Hub", policy: { preset: "hierarchical" } }),
-    "create: and sends neither");
-  win.Maity.api.get = omGet; win.Maity.api.forgetRoutes();
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
   await go("#/maintainer/sample/inbox"); await projectSettings();
@@ -4591,48 +4513,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = gcMe;
   await go("#/maintainer/maity/inbox");
 
-  // Per hub, from its machine form (GET /openapi.json): what it does not serve is not offered.
-  const hgGet = win.Maity.api.get;
-  const hgPaths = (paths) => {
-    win.Maity.api.forgetRoutes();
-    win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths }) : hgGet(p));
-  };
+  // Group chats and attachments are offered: New group chat, the removal of a closed group chat's message, Attach files.
   const hgSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
-  hgPaths({ "/api/v1/projects/{owner}/{slug}/conversations": { get: {} } });
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); await hgSettle();
-  expect(!main.querySelector("a.new-group") && text(main).includes("This hub has no group chats yet."),
-    "hub without group chats: no New group chat, and that is said instead of an empty-looking list");
-  await go("#/maintainer/maity/chat/new"); await hgSettle();
-  expect(!main.querySelector("form.group-form") && text(main).includes("there is none to create"), "hub without group chats: nor the form");
+  expect(main.querySelector("a.new-group"), "group chat: New group chat is offered");
   await go("#/maintainer/maity/inbox"); await projectSettings(); await hgSettle();
-  expect(main.querySelector(".attach-admin") && !main.querySelector("form.remove-reported"), "hub without group chats: no removal of a closed group chat's message");
+  expect(main.querySelector("form.remove-reported"), "group chat: the removal of a closed group chat's message is offered");
   await projectSettings();
-  await go("#/all"); await hgSettle();
-  expect(!main.querySelector(".observe-note"), "hub without group chats: nothing to read along in is named");
-  await go("#/observe/guest/guestlab"); await hgSettle();
-  expect(text(main).includes("there is nothing to read along in") && !main.querySelector(".chat-list"), "hub without group chats: the read-along view says so");
   await go("#/maintainer/maity/chat/agt-b"); await hgSettle();
-  // The whole attachments part is hidden, so no file field is left without its label.
   const hgChooser = () => main.querySelector(".attach");
-  expect(hgChooser() && hgChooser().hidden && byId("chat-files").disabled, "hub without attachments: no Attach files");
+  expect(hgChooser() && !hgChooser().hidden, "attachments: Attach files is offered");
+  // Hidden, the whole attachments part goes, so no file field is left without its label.
   expect(/\.attach\[hidden\] \{ display: none; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
-    "hub without attachments: the part's own display does not beat its hidden attribute");
-  // With both: offered (the route's parameter name and prefix do not matter).
-  hgPaths({ "/projects/{owner}/{slug}/conversations": { get: {}, post: {} }, "/api/v1/projects/{who}/{project}/attachments": { post: {} } });
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); await hgSettle();
-  expect(main.querySelector("a.new-group") && !text(main).includes("This hub has no group chats yet."), "hub with group chats: New group chat is offered");
-  await go("#/maintainer/maity/inbox"); await projectSettings(); await hgSettle();
-  expect(main.querySelector("form.remove-reported"), "hub with group chats: the removal of a closed group chat's message is offered");
-  await projectSettings();
-  await go("#/maintainer/maity/chat/agt-b"); await hgSettle();
-  expect(hgChooser() && !hgChooser().hidden, "hub with attachments: Attach files is offered");
-  // A machine form that cannot be read keeps the controls.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : hgGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); await hgSettle();
-  expect(main.querySelector("a.new-group"), "an unreadable machine form keeps New group chat");
-  win.Maity.api.get = hgGet;
-  win.Maity.api.forgetRoutes();
+    "attachments: the part's own display does not beat its hidden attribute");
   await go("#/maintainer/maity/inbox");
 
   // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
@@ -5237,25 +5130,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(!tkPost() && tkSub(), "ticker: a member follows and mutes, and posts nothing");
   win.Maity.api.get = tkGet;
-  // A 404 that the hub's machine form does not explain is an error, not "no ticker"; another failure too.
+  // A 404 or another failure of the listing is an error.
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/ticker?") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : tkGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
-  expect(!text(main).includes("This hub has no ticker yet.") && main.querySelector(".error"), "ticker: a 404 while the hub lists the ticker is an error");
+  expect(main.querySelector(".error"), "ticker: a 404 is an error");
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/ticker?") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : tkGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
-  expect(!text(main).includes("This hub has no ticker yet.") && main.querySelector(".error"), "ticker: a 500 is an error, not no ticker");
-  // A hub whose machine form has no ticker: said, decided once per page load.
-  let tkAsked = 0;
-  win.Maity.api.get = (p) => {
-    if (p === "/openapi.json") return Promise.resolve({ openapi: "3.1.0", paths: {} });
-    if (p.startsWith("/projects/maintainer/maity/ticker?")) { tkAsked += 1; return Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {})); }
-    return tkGet(p);
-  };
-  win.Maity.api.forgetRoutes();
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
-  expect(tkAsked === 1 && text(main).includes("This hub has no ticker yet."), "ticker: a hub without it in its machine form is asked once, and that is said");
+  expect(main.querySelector(".error"), "ticker: a 500 is an error");
   win.Maity.api.get = tkGet;
-  win.Maity.api.forgetRoutes();
   await go("#/maintainer/maity/inbox");
 
   // The overview (docs/api.md §6.11): the project at a glance, every count a link.
@@ -5355,18 +5237,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(badPr).includes("does not match what was reported"), "overview: a pull request URL that is no https link stays text; a mismatch is said");
   btn(ovPart("overview-links"), "Set the repository").click(); win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
   expect(onSettings() && main.all().some((e) => e.id === "project-panel") && byId("repo-url"), "overview: Set the repository opens the Settings tab at the repository");
-  // A hub without the endpoint: links and members still, the counts said missing.
-  win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : ovGet(p));
-  await go("#/maintainer/maity/overview");
-  expect(!main.querySelector(".error") && ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
-    && main.querySelector(".overview-missing") && text(main).includes("This hub has no overview yet") && !main.querySelector(".send-status.failed"),
-    "overview: without the endpoint the rest stays, the counts said missing quietly, never as an error");
-  // A refresh that meets the 404 again stays quiet too; any other failure is an error.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : ovGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview");
-  expect(main.querySelector(".send-status.failed") && text(main).includes("The counts could not be read: down") && !main.querySelector(".overview-missing"),
-    "overview: a 500 is still said as an error");
+  // A failed read of the counts (404 or 500): links and members still, the failure said where the counts would be.
+  for (const [status, code] of [[404, "not_found"], [500, "internal"]]) {
+    win.Maity.api.get = (p) => (p.includes("/overview") ? Promise.reject(new win.Maity.api.ApiError("down", status, p, code, {})) : ovGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview");
+    expect(ovPart("overview-links") && ovPart("overview-members") && !ovPart("overview-board")
+      && main.querySelector(".send-status.failed") && text(main).includes("The counts could not be read: down"),
+      "overview: a " + status + " is said as an error, the rest stays");
+  }
   win.Maity.api.get = ovGet;
   // An owner gets no timer: the events reach them. A redraw keeps the focus on the same link.
   win.Maity.api.get = (p) => {
@@ -5889,9 +5767,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
     && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
     "chats: each row's project is a mark after the who line, its name on hover");
-  // One read across projects (§9.3, GET /me/conversations), not one per project; a hub without it is read project by project.
+  // One read across projects (§9.3, GET /me/conversations), not one per project; its failure is said.
   const mcReads = [];
-  const mcGetAll = win.Maity.api.getAll, mcMissing = win.Maity.api.missingRoute;
+  const mcGetAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => { mcReads.push(p); return mcGetAll(p); };
   await go("#/all"); await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   expect(mcReads.filter((p) => p === "/me/conversations?observed=true").length === 1 && !mcReads.some((p) => /^\/projects\/.+\/conversations\?/.test(p))
@@ -5899,12 +5777,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "chats: one read across projects lists every project's chats");
   mcReads.length = 0;
   win.Maity.api.getAll = (p) => { mcReads.push(p); return p.startsWith("/me/conversations") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found")) : mcGetAll(p); };
-  win.Maity.api.missingRoute = (err, method, path) => Promise.resolve(path === "/me/conversations" || mcMissing(err, method, path));
   await go("#/all"); await go("#/chats"); for (let k = 0; k < 6; k++) await tick();
-  expect(mcReads.filter((p) => /^\/projects\/.+\/conversations\?observed=true$/.test(p)).length === 2 && main.querySelectorAll(".chat-list a.conv").length === 7
-    && !main.querySelector(".chat-list-pane .send-status.failed"),
-    "chats: a hub without the list across projects is read project by project");
-  win.Maity.api.getAll = mcGetAll; win.Maity.api.missingRoute = mcMissing; win.Maity.api.forgetRoutes();
+  expect(!mcReads.some((p) => /^\/projects\/.+\/conversations\?/.test(p)) && text(main.querySelector(".chat-list-pane .send-status.failed")).includes("Your chats could not be read"),
+    "chats: a failed read across projects is said, no project read one by one");
+  win.Maity.api.getAll = mcGetAll;
   await go("#/all"); await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // Opening one keeps the global view: its messages and composer in place, the list beside it, its unread gone.
   const gxGets = [], gxPosts = [];
@@ -6059,32 +5935,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!btn(bellPanel(), "Mark all read") && bellItem("New sign-in").className === "unread", "notifications: with only a sign-in alert left, no Mark all read");
   bellBtn().dispatch("keydown", { key: "Escape" });
   win.Maity.api.post = nPost;
-  // A hub without notifications: no bell, the counts from /me as before.
+  // A failed read of the notifications is said, the page stays.
   const nGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nGet(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/inbox");
-  const bellLink = header.querySelectorAll("a.bell").find((a) => a.getAttribute("href") === "#/all");
-  expect(!bellBtn() && bellLink && bellLink.getAttribute("aria-label") === "Notifications" && !bellLink.querySelector(".count")
-    && chatBtn() && chatBtn().getAttribute("aria-label") === "Chats" && !chatBtn().querySelector(".count")
-    && !text(main).includes("Could not read your notifications") && !tabCountOf("Chat"),
-    "notifications: a hub without them keeps the bell as a link to everything waiting and Chat, both without a count, and no error");
-  // Refreshes on such a hub replace the bell in place: one bell, the order kept.
-  for (let k = 0; k < 3; k++) { await fireIntervals(); await tick(); }
-  const fbOrder = header.querySelector(".me").childNodes.map((el) => el.getAttribute("class") || "");
-  expect(header.querySelectorAll("a.bell").filter((a) => a.getAttribute("href") === "#/all").length === 1
-    && /chat-button/.test(fbOrder[0]) && fbOrder.filter((c) => c === "bell-box").length === 1 && header.querySelectorAll(".lead-button").length <= 1,
-    "notifications: refreshes without them keep one bell, one Lead, Chat first " + JSON.stringify(fbOrder));
-  const nSettingsAsked = [];
-  const nGetNone = win.Maity.api.get;
-  win.Maity.api.get = (p) => { if (p === "/me/notification-settings") nSettingsAsked.push(p); return nGetNone(p); };
-  win.Notification = function () {};
-  win.Notification.permission = "default";
-  await go("#/account/notifications");
-  expect(text(main).includes("This hub has no notification settings yet.") && !nSettingsAsked.length, "notifications: the account page does not ask such a hub for settings");
-  delete win.Notification;
-  win.Maity.api.get = nGetNone;
-  // A hub that has them again: this page had noted them as absent and asked no more.
-  win.Maity.api.forgetRoutes();
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : nGet(p));
   await go("#/maintainer/maity/board");
   expect(text(main).includes("Could not read your notifications: down") && !main.querySelector(".error"), "notifications: a failed read is said, the page stays");
@@ -6296,12 +6148,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(btn(sesRow("hss-41aa"), "End").attrs.disabled === undefined, "sessions: once this session is an hour old, the minute's check offers it");
   win.Maity.api.now = sesNow;
   win.Maity.api.get = sesGet;
-  // A hub without the session list: said, and asked once per page load.
-  let sesAsked = 0;
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? (sesAsked++, Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {}))) : sesGet(p));
+  // A failed read of the session list is said as an error.
+  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? Promise.reject(new win.Maity.api.ApiError("n", 404, p, "not_found", {})) : sesGet(p));
   await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(sesAsked === 2 && text(main.querySelector("section.sessions")).includes("This hub lists no sessions yet."), "sessions: a hub without them is asked once per view, and that is said");
+  expect(text(main.querySelector("section.sessions .send-status.failed")).includes("Could not read your sessions"), "sessions: a failed read is said as an error");
   win.Maity.api.get = sesGet;
 
   // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
@@ -6535,57 +6385,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!inMsgs[0].classList.contains("grouped") && !inMsgs[1].classList.contains("grouped") && inMsgs[2].classList.contains("grouped")
     && text(inMsgs[0].querySelector(".meta")).includes("agent-b#wqe2") && text(inMsgs[1].querySelector(".meta")).includes("agent-b#k7mq"),
     "instances: two instances of one agent in a chat are two senders, each named <handle>#<id>");
-  // Not on this hub (404 or 405): said quietly where the feature would be, asked once, never red.
-  const nhGet = win.Maity.api.get;
-  const nhAsked = {};
-  const nhAbsent = (prefix, status) => (p) => {
-    if (p.startsWith(prefix)) { nhAsked[prefix] = (nhAsked[prefix] || 0) + 1; return Promise.reject(new win.Maity.api.ApiError("x", status, p, status === 405 ? "method_not_allowed" : "not_found", {})); }
-    return nhGet(p);
-  };
-  // Sessions with a 405: muted, not red, and asked once.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = nhAbsent("/auth/sessions", 405);
-  await go("#/account/sessions"); for (let k = 0; k < 4; k++) await tick();
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".not-on-hub") && text(main).includes("This hub lists no sessions yet.") && !main.querySelector(".sessions .send-status.failed") && (nhAsked["/auth/sessions"] || 0) <= 2,
-    "not on this hub: a 405 on sessions is said quietly and asked once per view");
-  // Notifications absent: the counts' timer stops asking.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = nhAbsent("/me/notifications", 404);
-  await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
-  const nhFirst = nhAsked["/me/notifications"] || 0;
-  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
-  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
-  expect(nhFirst >= 1 && nhAsked["/me/notifications"] === nhFirst, "not on this hub: notifications absent are not asked again by the 15 s refresh " + nhFirst + "/" + nhAsked["/me/notifications"]);
-  // The overview with a 405: quiet, and its events ask no more.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = nhAbsent("/projects/maintainer/maity/overview", 405);
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
-  const nhOv = nhAsked["/projects/maintainer/maity/overview"] || 0;
-  feed = [{ seq: 10700, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
-  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".overview-missing") && !main.querySelector(".send-status.failed") && nhOv === 1 && nhAsked["/projects/maintainer/maity/overview"] === 1,
-    "not on this hub: the overview with a 405 is quiet, and an event does not ask again");
-  // A group chat's link on a hub without group chats is quiet, not a red error.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : nhGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-9999"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector(".not-on-hub") && text(main).includes("This hub has no group chats yet, so this link cannot open here.") && !main.querySelector(".chat-layout .error"),
-    "not on this hub: a group chat link without group chats is said quietly");
-  // A 404 on a route the hub lists is the resource's (a project left): an error, never cached as absent.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: { "/api/v1/projects/{owner}/{slug}/overview": { get: {} } } })
-    : p.startsWith("/projects/maintainer/maity/overview") ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : nhGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector(".send-status.failed") && !main.querySelector(".overview-missing") && !win.Maity.api.absent.has("GET", "/projects/maintainer/maity/overview"),
-    "not on this hub: a 404 on a listed route stays an error and is not cached");
-  // A direct chat's link (agt-…) is never explained away by missing group chats.
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : nhGet(p));
+  // An unknown direct chat's link is an error.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-gone"); for (let k = 0; k < 6; k++) await tick();
-  expect(!main.querySelector(".not-on-hub") && text(main).includes("No conversation of yours with the id agt-gone."), "not on this hub: an unknown direct chat stays an error");
-  win.Maity.api.get = nhGet;
-  win.Maity.api.forgetRoutes();
+  expect(text(main).includes("No conversation of yours with the id agt-gone."), "chat: an unknown direct chat is an error");
   await go("#/maintainer/maity/inbox");
 
   // Lead routing and the direct/group boundary.
@@ -6603,9 +6405,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(win.Maity.leadChat.targets({ ...leadCtx, project: { policy: {} } }).map((m) => m.id)) === JSON.stringify([leadB.id]),
     "lead: on an older hub the Lead button reaches only the caller's own admins and proxies");
   expect(JSON.stringify(win.Maity.leadChat.targets(leadCtx).map((m) => m.id)) === JSON.stringify([leadA.id]), "lead: with a lead, the Lead button reaches that lead");
-  const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post, leadServed = win.Maity.groupChat.served;
+  const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post;
   const leadWrites = [];
-  win.Maity.groupChat.served = async () => true;
   win.Maity.api.getAll = async () => ({ items: [
     { id: "cnv-wider", kind: "group", access: "participant", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }, { member_id: "hum-third" }] },
     { id: "cnv-closed", kind: "group", access: "participant", closed_at: "2026-10-23T00:00:00Z", participants: [{ member_id: "hum-me" }, { member_id: leadA.id }] },
@@ -6643,7 +6444,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   leadRelease(); await tick(); await tick(); await tick();
   expect(leadWrites.length === 1, "lead: a second click while the first is on its way makes nothing more " + leadWrites.length);
   expect(win.Maity.leadChat.leadControl(leadCtx, { multiProject: false, list: [] }) === null, "lead: no one to reach, no button");
-  win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost; win.Maity.groupChat.served = leadServed;
+  win.Maity.api.getAll = leadGetAll; win.Maity.api.post = leadPost;
 
   // Presence is independent of a live claim; timestamps never come from the lease.
   const silenceDom = win.Maity.dom;
@@ -6815,7 +6616,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const stGets = [];
   const stGet = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p.startsWith("/admin/statistics")) stGets.push(p); return stGet(p); };
-  win.Maity.api.forgetRoutes();
   await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
   const stBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Statistics");
   const stRow = (key) => stBox().querySelectorAll("tr").find((tr) => tr.attrs["data-series"] === key);
@@ -6917,13 +6717,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
   expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
     "statistics: while it counts, users, mail and the instance are there");
-  win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = stGet;
   // The landing page's editor (js/landing.js, §16.7): per language the ordered sections of the contract's types,
   // the footer; one PATCH of the whole draft, the hub's refusals at their field paths.
   const leGet = win.Maity.api.get, lePatch = win.Maity.api.patch;
   const lePatches = [];
   win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing" || p === "/admin/settings/legal") lePatches.push([p, JSON.parse(JSON.stringify(b))]); return lePatch(p, b); };
-  win.Maity.api.forgetRoutes();
   await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
   const leBox = () => main.querySelector(".lp-editor");
   const leSections = () => leBox().querySelectorAll("li.lp-section");
@@ -7024,14 +6823,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(lgImprint(), "Take the page down").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(lePatches[lePatches.length - 1][1]) === JSON.stringify({ imprint: null }) && text(lgImprint()).includes("Not set"),
     "legal: taking a page down sends it as null");
-  win.Maity.api.get = leGet; win.Maity.api.patch = lePatch; win.Maity.api.forgetRoutes();
+  win.Maity.api.get = leGet; win.Maity.api.patch = lePatch;
   await go("#/all");
 
   // Unified instance administration: source-aware mail editing and isolated capabilities.
   const adminGet = win.Maity.api.get, adminPatch = win.Maity.api.patch, adminPost = win.Maity.api.post;
-  const adminHas = win.Maity.api.hubHas, adminMissing = win.Maity.api.missingRoute;
   const adminWrites = [], adminReads = [];
-  win.Maity.api.hubHas = async () => true;
   win.Maity.api.get = (path) => { adminReads.push(path); return adminGet(path); };
   win.Maity.api.patch = (path, body) => { adminWrites.push([path, JSON.parse(JSON.stringify(body))]); return adminPatch(path, body); };
   await go("#/admin");
@@ -7056,15 +6853,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("mail-password").value = "failed-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
   expect(byId("mail-password").value === "" && text(main).includes("instance encryption key is not configured") && !text(main).includes("failed-test-value"), "admin: failed save clears password and explains field refusal");
-  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("absent", 404, path, "not_found")) : adminGet(path);
-  win.Maity.api.missingRoute = async (err, method, path) => path === "/admin/settings/mail" && err.status === 404;
-  await go("#/all"); await go("#/admin");
-  expect(!main.querySelectorAll(".admin-section").some((s) => s.getAttribute("aria-label") === "Mail settings") && win.Maity.api.absent.has("GET", "/admin/settings/mail"), "admin: missing-route helper removes section and remembers absent endpoint");
-  win.Maity.api.missingRoute = adminMissing;
-  win.Maity.api.hubHas = async (method, path) => path === "/health";
-  await go("#/all"); await go("#/admin");
-  expect(!byId("mail-host") && !main.querySelector("table.users") && text(main).includes("Instance information"), "admin: unavailable sections are omitted independently");
-  win.Maity.api.hubHas = async () => true;
   win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
   await go("#/all"); await go("#/admin");
   expect(text(main).includes("Mail settings could not be read: denied") && text(main).includes("Instance information"), "admin:403 is visible and other sections still load");
@@ -7073,7 +6861,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   adminReads.length = 0; await go("#/all"); await go("#/admin");
   expect(text(main).includes("Only the instance admin can open this area.") && !adminReads.some((p) => p.startsWith("/admin/") || p === "/health"), "admin: non-admin cannot read configuration even by direct route");
   win.Maity.api.get = adminGet; win.Maity.api.patch = adminPatch; win.Maity.api.post = adminPost;
-  win.Maity.api.hubHas = adminHas; win.Maity.api.missingRoute = adminMissing; win.Maity.api.forgetRoutes();
 
   // Preferences (§19.4): the human writes them; an agent only proposes, reviewed in the personal inbox.
   const pfM = win.Maity.preferences;
@@ -7144,14 +6931,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pfHistory.open = true; pfHistory.dispatch("toggle"); await pfSettle();
   expect(pfHistory.querySelectorAll(".preferences-versions li").length === 5 && text(pfHistory).includes("Version 1 · written by @maintainer"),
     "preferences: the earlier versions, newest first");
-  // A hub without preferences: said quietly.
+  // A failed read is an error.
   const pfGet = win.Maity.api.get;
-  win.Maity.api.forgetRoutes();
-  win.Maity.api.get = (p) => (p === "/me/preferences" ? Promise.reject(new win.Maity.api.ApiError("x", 404, p, "not_found", {}))
-    : p === "/openapi.json" ? Promise.resolve({ openapi: "3.1.0", paths: {} }) : pfGet(p));
+  win.Maity.api.get = (p) => (p === "/me/preferences" ? Promise.reject(new win.Maity.api.ApiError("x", 404, p, "not_found", {})) : pfGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/account/preferences"); await pfSettle();
-  expect(text(main).includes("This hub keeps no preferences yet.") && !main.querySelector(".preferences .error"), "preferences: a hub without them says so quietly");
-  win.Maity.api.get = pfGet; win.Maity.api.forgetRoutes();
+  expect(main.querySelector(".preferences .error"), "preferences: a failed read is an error");
+  win.Maity.api.get = pfGet;
 
   // The review: the current text (version 5 now), the proposal on version 2: stale.
   await go("#/maintainer/maity/inbox"); await go("#/all"); await pfSettle();

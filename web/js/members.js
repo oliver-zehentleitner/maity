@@ -561,9 +561,8 @@ window.Maity = window.Maity || {};
           : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
     }
 
-    // Whether the Chat button may start a group chat with anyone (§9.2):
-    // asked beside the list, never before it; the rows get it once known.
-    let groupsServed = false;
+    // The Chat button may start a group chat with anyone (§9.2).
+    const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     append(root, h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
@@ -575,15 +574,6 @@ window.Maity = window.Maity || {};
     draw();
     // A member marked by the URL keeps the focus across this redraw.
     const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
-    if (M.groupChat) {
-      M.groupChat.served().then((yes) => {
-        if (!yes) return;
-        const had = wanted && document.activeElement === wantedHead();
-        groupsServed = true;
-        redraw();
-        if (had && wantedHead()) wantedHead().focus();
-      }, () => {});
-    }
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
       const slot = h("div", { class: "invitations-slot" });

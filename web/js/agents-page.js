@@ -91,9 +91,7 @@ window.Maity = window.Maity || {};
       + "In a project it is already in, the line starts another instance or replaces one."));
   }
 
-  // renames: whether the hub's machine form names handle on PATCH /agents/{id}
-  // (§6.24): a hub before it refuses the field, so it is not offered there.
-  function editForm(a, done, renames) {
+  function editForm(a, done) {
     const status = M.statusLine();
     const key = (k) => "agent-" + k + "-" + a.id;
     const name = h("input", { id: key("name"), required: true, maxlength: "100" });
@@ -112,7 +110,7 @@ window.Maity = window.Maity || {};
         const body = {};
         if (name.value.trim() !== a.display_name) body.display_name = name.value.trim();
         const wanted = handle.value.trim().replace(/^@/, "");
-        if (renames && wanted !== a.handle) body.handle = wanted;
+        if (wanted !== a.handle) body.handle = wanted;
         const git = gitName.value.trim() || gitMail.value.trim() ? { name: gitName.value.trim(), email: gitMail.value.trim() } : null;
         if (JSON.stringify(git) !== JSON.stringify(a.git_identity || null)) body.git_identity = git;
         if (!Object.keys(body).length) { status.busy("Nothing changed."); return; }
@@ -128,8 +126,8 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: key("name") }, "Display name"), name,
-    renames ? [h("label", { for: key("handle") }, "Handle"), handle,
-      h("p", { class: "hint" }, HANDLE.text + " A new handle keeps the old one as an earlier name (§6.24).")] : null,
+    h("label", { for: key("handle") }, "Handle"), handle,
+    h("p", { class: "hint" }, HANDLE.text + " A new handle keeps the old one as an earlier name (§6.24)."),
     h("label", { for: key("git-name") }, "Git name (optional)"), gitName,
     h("label", { for: key("git-email") }, "Git email (optional)"), gitMail,
     h("p", { class: "hint" }, "The identity its commits carry, given to the agent with its resume."),
@@ -147,7 +145,7 @@ window.Maity = window.Maity || {};
   }
 
   // One profile's card, on /agents and on a project's Agents: one component.
-  // o: {wanted, views, renames, changed (after a save), add (Add to a
+  // o: {wanted, views, changed (after a save), add (Add to a
   // project), here (what belongs to this project's membership, or none)}.
   function profileCard(ctx, a, o) {
     const marked = o.wanted === a.id;
@@ -161,7 +159,7 @@ window.Maity = window.Maity || {};
       o.add ? addToProject(ctx, a) : null,
       h("details", { class: "agent-settings", open: marked && !o.here ? true : null },
         h("summary", null, "Name, handle, picture and deletion"),
-        editForm(a, o.changed, o.renames),
+        editForm(a, o.changed),
         M.pictureEditor ? M.pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, o.changed) : null,
         M.profileDelete ? M.profileDelete(a, o.changed) : null));
   }
@@ -178,8 +176,6 @@ window.Maity = window.Maity || {};
     append(root, heading,
       h("p", { class: "hint" }, "Your agent profiles across every project: each is one identity, with its picture, its handle and the "
         + "memberships it holds. Add one to a project to make a join line there."), note, body);
-    // A machine form that cannot be read keeps the field (views.md).
-    const renames = await M.api.hubBody("PATCH", "/agents/{agent_id}").then((fields) => fields.has("handle"), () => true);
     const draw = async (words) => {
       const profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       const views = await memberViews(profiles);
@@ -187,7 +183,7 @@ window.Maity = window.Maity || {};
       clear(note);
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
       append(clear(body),
-        profiles.length ? h("ul", { class: "agent-cards" }, profiles.map((a) => profileCard(ctx, a, { wanted, views, renames, changed: redraw, add: true })))
+        profiles.length ? h("ul", { class: "agent-cards" }, profiles.map((a) => profileCard(ctx, a, { wanted, views, changed: redraw, add: true })))
           : h("p", { class: "muted" }, "You have no agent profile yet."),
         newProfile(redraw));
       // /agents/<id> (a link to one profile): that card's title focused, once.
@@ -222,7 +218,6 @@ window.Maity = window.Maity || {};
     const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
     const edits = new Map(), open = new Set();
     let items = ctx.members, profiles = [], views = {}, words = null, unread = null;
-    const renames = await M.api.hubBody("PATCH", "/agents/{agent_id}").then((fields) => fields.has("handle"), () => true);
     async function readProfiles() {
       profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       views = await memberViews(profiles);
@@ -269,7 +264,7 @@ window.Maity = window.Maity || {};
       append(clear(cards), unread
         ? h("p", { class: "send-status failed" }, "Your agents could not be read: " + unread.message)
         : list.length
-          ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, renames, changed, here: here(memberOf(a)) })))
+          ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, changed, here: here(memberOf(a)) })))
           : h("p", { class: "muted" }, "None of your agents is in this project yet.", J || mayAdd ? " Add one: its join line is made here." : ""));
       drawJoins();
     }

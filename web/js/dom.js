@@ -236,9 +236,6 @@ window.Maity = window.Maity || {};
     return field;
   }
 
-  // What a view says where a feature of a newer hub would be: muted, not red.
-  const notOnHub = (text) => h("p", { class: "muted not-on-hub" }, text);
-
   // The handle a member goes by in a project (docs/api.md §6.3): the short
   // one, or an agent's global name (owner/handle) where two members of the
   // project share the short one. A human has no long form and keeps the
@@ -350,5 +347,5 @@ window.Maity = window.Maity || {};
       title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, notOnHub, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

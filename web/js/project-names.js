@@ -157,8 +157,7 @@ window.Maity = window.Maity || {};
     const once = (to) => (to.org ? to.org.my_role === "owner" : to.id === ctx.me.id);
     fill([]);
     if (ctx.me.kind === "human") {
-      M.api.hubHas("GET", "/orgs")
-        .then((yes) => (yes ? M.api.get("/orgs") : { items: [] }))
+      M.api.get("/orgs")
         .then((r) => {
           // A suspended organisation takes no transfer in (§6.26).
           const orgs = r.items.filter((o) => ["owner", "admin"].includes(o.my_role) && o.id !== p.owner.id && !o.moderation);

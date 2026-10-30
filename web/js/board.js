@@ -723,18 +723,9 @@ window.Maity = window.Maity || {};
     const place = (c, how, focusKey) => write("Reordering",
       c.id + (how.to ? " is now at the " + how.to : " is now " + PLACED[Object.keys(how)[0]] + " " + Object.values(how)[0]) + ".",
       () => M.api.post(cardPath(c) + "/move", how), focusKey || "order:" + c.id,
-      (err) => {
-        if (err.code !== "not_found" && err.code !== "invalid") return null;
-        // A not_found with the card and its neighbour still where they were
-        // is a hub without the endpoint, not a race.
-        const near = how.before || how.after;
-        return (fresh) => {
-          const here = (id) => fresh.some((t) => t.id === id && t.status === c.status);
-          return err.code === "not_found" && here(c.id) && (!near || here(near))
-            ? "this hub does not order cards yet."
-            : "the card next to it moved or changed meanwhile; the board shows the order as it is now.";
-        };
-      });
+      (err) => (err.code === "not_found" || err.code === "invalid"
+        ? () => "the card next to it moved or changed meanwhile; the board shows the order as it is now."
+        : null));
     const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 

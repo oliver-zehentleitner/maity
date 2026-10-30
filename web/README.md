@@ -47,8 +47,7 @@ not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
 (`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
-for a human where the hub has them), **Sign in another device** (`/account/sign-in-device`,
-where the hub's machine form lists device codes), **Change password**, **Linked
+for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
 menu; Escape closes it and puts the focus back on its button; Tab or a
@@ -89,9 +88,7 @@ Notifications, gear, profile, in one row on a phone too). **Chat** leads
 to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the
-button's name ("3 new notifications", "2 unread chat messages"). On a
-hub without notifications both stand without a count, the bell as a
-link to everything waiting (`/all`). The bell reads the latest 20
+button's name ("3 new notifications", "2 unread chat messages"). The bell reads the latest 20
 items when it opens, unread ones marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
 marks it read, except a sign-in or address alert (`security`): that is
@@ -143,9 +140,8 @@ After that:
 - **Two tabs.** When another tab took over the long-poll (`superseded`),
   this tab waits five minutes.
 
-A hub without the endpoints shows no bell and counts the open requests
-from `/me`, as before. A failed read is said in the notice and does not
-stop the page. Mail settings come with the hub's mail (stage 3).
+Until the counts are read, the switcher counts the open requests from
+`/me`. A failed read is said in the notice and does not stop the page. Mail settings come with the hub's mail (stage 3).
 
 Every route is a path (`docs/api.md` §16.11): the hub answers the app
 shell for every path that is not one of its own, and the dashboard
@@ -190,14 +186,9 @@ in Members, with the full name as tooltip (`M.dom.memberRef`). A member
 the project does not list, a personal request's people and anyone in a
 read-along view are plain text.
 
-A feature of a newer hub is no error on an older one. A route the hub does
-not serve answers 404 or 405 (`M.api.notOnHub`); where a view needs one it
-says so in a muted line (`M.dom.notOnHub`), never in red, and the page
-does not ask that route again (`M.api.absent`), so no timer keeps
-knocking: the sessions list, the notifications and their settings, the
-overview's counts, a group chat's link on a hub without group chats.
-Actions that would only fail there are not offered. A 5xx, a network failure, 401 or 403 stays an
-error.
+The dashboard and the hub ship together: the page never asks the hub's
+machine form whether it serves a route, and a 404 or 405 from a route it
+calls is an error, said like any other.
 
 In every form with a multi-line field (an inbox answer in words, a chat
 message, a project message, a ticker post, a new card, a briefing, a
@@ -285,8 +276,7 @@ too.
    Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
-   a title's or description's change as its diff); a hub without notes or
-   history says so there. **Close**, Escape and Back go to the board with
+   a title's or description's change as its diff). **Close**, Escape and Back go to the board with
    the card marked and its title focused; a card opened by its title keeps
    the board's column filter, member, area, search and scroll, while a link
    from elsewhere shows every column. An action in the panel keeps the
@@ -422,7 +412,7 @@ too.
    focused). On Members, **Manage** shows one's own agent's picture,
    rulebook and the preferences switch too.
    **Where they run** (`js/placements.js`, `docs/api.md` §15.5–§15.7),
-   on Agents after the cards where the hub has placements: one row per
+   on Agents after the cards: one row per
    active placement — the agent, the runner (and target), harness, model
    and mode, what is wanted (`desired`), what the runner last reported
    (state and reason in words, a crash loop with its count, a retry time,
@@ -569,11 +559,8 @@ too.
      names) and the people in it. An `@` marks a chat that mentions you.
      The list reads `?observed=true`, so the chats you read along as an
      agent's owner are in it too.
-   - **New group chat** (`/<owner>/<slug>/chat/new`, not in a closed project,
-     and only on a hub whose `openapi.json` lists
-     `POST /projects/{owner}/{slug}/conversations`; without it the list says
-     "This hub has no group chats yet.", Project settings offers no blind
-     removal and nothing is read along) takes a title and one to eleven
+   - **New group chat** (`/<owner>/<slug>/chat/new`, not in a closed project)
+     takes a title and one to eleven
      others. Choosing only your own agent
      points you to your direct chat with it, before anything is sent.
    - **The open chat** names who is in it and who reads along (the owners
@@ -782,9 +769,8 @@ too.
     Each part has its empty state. Without a repository or a published
     dashboard, an owner or admin gets **Set the repository** (it opens
     Project settings at the repository) and is told where the Keep the Why
-    link comes from. A hub without the endpoint
-    still shows the links and members, and says that the counts are
-    missing.
+    link comes from. A failed read of the counts still shows the links
+    and members, and says the failure where the counts would be.
 11. **Messages** (`/<owner>/<slug>/messages`, `docs/api.md` §8.4): the
     project's messages the reader may see, every type but chat, newest
     first, with a filter by type and **Message the project**.
@@ -835,10 +821,6 @@ too.
       listing after the newest item shown (`after=`, oldest first, page by
       page), in its filters, and puts what is new on top, the rest left in
       place. A failed read is said.
-    - A hub without the ticker says so: a 404 on the listing counts as
-      that only when the hub's `openapi.json` lacks the ticker's path
-      (§17.6); otherwise it is an error. Such a hub is asked once per page
-      load.
     - Not here yet: the project settings' `settings.ticker` (sources,
       contract files, implementers).
 13. **Swarm** (`/<owner>/<slug>/swarm`, `js/swarm.js`, `docs/api.md` §6.22): the
@@ -848,8 +830,7 @@ too.
     day, and a table per member and in all — cards done, reviews given,
     PRs merged, handovers, claim → done and review → done medians in
     words, – where fewer than three cards give a median; when reviews are
-    counted from; when the hub counted. A hub without the swarm says so in
-    the tab. **The public page**, at the same path without a session or for anyone not a member, and at `/<owner>/<slug>/swarm?as=public` for everyone,
+    counted from; when the hub counted. **The public page**, at the same path without a session or for anyone not a member, and at `/<owner>/<slug>/swarm?as=public` for everyone,
     where a human owner or admin switched `policy.swarm_public` on in
     **Project settings** (a policy change with its reason; the switch
     says what it exposes): agents only, by their global names where the
@@ -909,8 +890,8 @@ and how many agents they own — counts and times only; being the instance
 admin opens no project, and the view links into none. A search by handle
 or name (case-insensitive, 1–64 characters, read 300 ms after typing
 stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
-**Load more** follows its cursor. A hub without the list (404) says so;
-anyone else gets neither the link nor the list. On a phone each row is a
+**Load more** follows its cursor. Anyone but the instance admin gets
+neither the link nor the list. On a phone each row is a
 card.
 
 **Pictures** (`/account/picture`, `docs/api.md` §6.10). The account
@@ -928,8 +909,7 @@ deleted with `?cascade=true`.
 The file is checked as the hub checks it before it is sent: PNG, JPEG or
 WebP by its first bytes, at most 1 MiB; it goes as the raw body with the
 sniffed type (`PUT /me/avatar`). The hub's refusals (`dimensions`,
-`undecodable`, the hourly limit, a hub without the endpoint) are said in
-words. After a change the page is drawn again from `/me`, so the header's
+`undecodable`, the hourly limit) are said in words. After a change the page is drawn again from `/me`, so the header's
 picture follows at once. There is no preview of a chosen file before the
 upload: the hub's CSP allows no `blob:` images, and what shows afterwards
 is what the hub made of it (a square of at most 256 pixels).
@@ -944,14 +924,12 @@ meanwhile (another tab, an accepted proposal), your text stays in the editor,
 the newer version and a diff to yours are shown, and you **take** it or **save
 yours over it**. Below: the projects whose agents read them, one switch each
 (`PUT /me/preferences/projects/{owner}/{slug}`, on by default), and **Earlier
-versions**, read when opened. A hub without preferences says so in a muted
-line.
+versions**, read when opened.
 
 **Signing in without a password** (`docs/api.md` §2.6, `js/device-sign-in.js`,
-`js/qr.js`). Where the hub's machine form lists `GET /auth/methods`, the login
-page reads it and, below the password form, offers what the hub has on: **Have
-a code?** and **Email me a sign-in link**; a hub without the route is not asked
-and offers the password alone.
+`js/qr.js`). The login page reads `GET /auth/methods` and, below the password
+form, offers what the hub has on: **Have a code?** and **Email me a sign-in
+link**; when that read fails, the password alone.
 - *Sign in another device* (profile menu, `/account/sign-in-device`) makes a
   code (`POST /auth/device-codes`) and shows it in three groups (`K7QM-4XPR-9D2F`), a
   QR of its URL and the time left by the hub's clock, with **Cancel**. Once the
@@ -1020,7 +998,7 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
   A check each minute draws the section again when this session crosses
   an hour or a day of age, which changes what it may do.
-- A hub without the list says so, and is asked once per page load.
+- A failed read of the list is said as an error.
 
 **Change password** (`/account`) sends `POST /auth/password {current,
 new}` (`docs/api.md` §2.1): the new password twice, at least 12
@@ -1040,9 +1018,7 @@ the policy preset (`hierarchical` or `solo`). The memory goes as
 (under `none` the Keep the Why ones are `false`); the hint says that an
 agent sets the memory up in the repository through setup cards, made
 once the project has a repository, and that the Maity badge also
-switches the project's public badge on. A hub whose machine form does
-not name `memory` and `setup` for `POST /projects` would refuse them, so
-there they are neither shown nor sent. The creator becomes the
+switches the project's public badge on. The creator becomes the
 owner. On `201` the page opens the new project's Agents, where the join
 panel is open at once. The hub's `invalid` answer is shown under
 each field it names in `details.fields` (`slug: taken`,
@@ -1251,8 +1227,7 @@ fails while the bundle is stale.
 
 - `GET /me` every 60 seconds and after every answer, none while the tab
   is hidden (shown again, it reads within 5 seconds), for the switcher's
-  counts, with `GET /me/notifications?limit=0` beside it where the hub has
-  notifications (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
+  counts, with `GET /me/notifications?limit=0` beside it (the bell, the tab counts and the title follow). When the number of open requests on screen changes, the page
   offers **Reload the list** rather than replacing it while the human is
   reading. A list with no open entry on screen, where nothing is being
   read or typed, reloads on its own and says "1 new request." in its
@@ -1406,12 +1381,11 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     /runners/pair/{token}`), after which the panel says the runner is
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
-    credential; revoke; remove with nothing left running. Only a hub
-    that answers 404 on `GET /runners` skips this step. Before the
+    credential; revoke; remove with nothing left running. Before the
     revoke, in **Project → Runners**: the runner (allowed while pairing,
-    then detached, where the hub can) is allowed in the project and
+    then detached) is allowed in the project and
     detached again, each detach confirmed with "Nothing runs on it
-    here."; a hub without attachments has to say so in the tab;
+    here.";
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
@@ -1535,8 +1509,7 @@ or on All projects any more. Your own agent opens in direct chat. Another
 owner's agent opens an existing open group of exactly you and that agent
 (or you and all leads), or creates one on click; the agents' owners can
 read along. This does not expand direct-chat access. Agents get none of
-it. A hub without group chats says so under the header instead of opening
-an unauthorized direct chat.
+it.
 
 Held cards show the holder's presence beside the claim. An agent that is
 away, offline or paused shows **silent since HH:MM** in your browser's local

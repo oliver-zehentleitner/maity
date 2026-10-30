@@ -182,10 +182,10 @@ window.Maity = window.Maity || {};
         draw();
       }
     });
-    // Hidden, the whole part, until the hub is known to take files (§8.7):
-    // a chooser whose every file would be refused is not offered, and no
-    // file field is left in the page without its visible label. An
-    // unreadable machine form offers it, and an upload's failure says itself.
+    // Hidden, the whole part, while the hub has attachments off (§8.7): a
+    // chooser whose every file would be refused is not offered, and no file
+    // field is left in the page without its visible label. An upload's
+    // failure says itself.
     const chooser = h("label", { for: id, class: "button small attach-button" }, "Attach files");
     const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
     function offer(yes) {
@@ -196,10 +196,8 @@ window.Maity = window.Maity || {};
     }
     if (hubOff) offer(false);
     else {
-      M.api.hubHas("POST", "/projects/{owner}/{slug}/attachments").catch(() => true).then((yes) => {
-        offer(yes && !hubOff);
-        if (yes) loadEarlier();
-      });
+      offer(true);
+      loadEarlier();
     }
     return {
       el,

@@ -27,17 +27,11 @@ window.Maity = window.Maity || {};
     const heading = h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, "Language and notifications");
     const status = M.statusLine();
     append(box, heading);
-    // A hub that answered 404 to the notifications has no settings either: not asked.
-    if (M.notify.state.available === false) {
-      append(box, h("p", { class: "muted" }, "This hub has no notification settings yet."));
-      return { el: box, heading };
-    }
     let settings;
     try {
       settings = await M.api.get("/me/notification-settings");
     } catch (err) {
-      append(box, await M.api.missingRoute(err, "GET", "/me/notification-settings") ? M.dom.notOnHub("This hub has no notification settings yet.")
-        : h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
+      append(box, h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
       return { el: box, heading };
     }
 

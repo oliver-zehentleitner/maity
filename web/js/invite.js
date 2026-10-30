@@ -129,10 +129,9 @@ window.Maity = window.Maity || {};
   // A join URL's host, as the person sees it in the link ("join.maity.team").
   const hostOf = (url) => { try { return new URL(url).host; } catch (err) { return String(url); } };
 
-  // For a human with members:admin; null otherwise or on a hub without invitations.
+  // For a human with members:admin; null otherwise.
   async function membersPanel(ctx) {
     if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
-    if (!(await M.api.hubHas("POST", "/projects/{owner}/{slug}/invitations").catch(() => true))) return null;
     const box = h("section", { class: "invitations", "aria-labelledby": "invitations-heading" });
     const listBox = h("div");
     const issued = h("div", { class: "invite-issued" });

@@ -58,7 +58,6 @@ window.Maity = window.Maity || {};
   // direct chat with someone else's agent.
   async function open(ctx, member) {
     if (member.owner_id === ctx.me.id) { M.route.go(ctx.link("chat", member.id)); return; }
-    if (M.groupChat && !(await M.groupChat.served())) throw new Error("This hub does not support group chats yet.");
     const page = await M.api.getAll(ctx.base + "/conversations");
     const existing = page.items.find((c) => c.kind === "group" && !c.closed_at && c.access === "participant"
       && Array.isArray(c.participants) && c.participants.length === 2
@@ -93,7 +92,6 @@ window.Maity = window.Maity || {};
   // A group chat of exactly the reader and these agents, an open one
   // reused, else made (§9.2); their owners can read along.
   async function openGroup(ctx, members) {
-    if (M.groupChat && !(await M.groupChat.served())) throw new Error("This hub does not support group chats yet.");
     const want = new Set([ctx.me.id].concat(members.map((m) => m.id)));
     const page = await M.api.getAll(ctx.base + "/conversations");
     const existing = page.items.find((c) => c.kind === "group" && !c.closed_at && c.access === "participant"

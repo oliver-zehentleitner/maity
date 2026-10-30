@@ -573,11 +573,43 @@ prefix off the names: the card asked for the name to stay readable as
 it is, and a prefix shared by today's agents need not be shared
 tomorrow. Presence as a line of its own: the dot already says it.
 
+## The dashboard asks the hub no capability question; a route it calls that is missing is an error
+
+**Id:** e1699490-402f-45ac-9461-d85189411559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's alpha rule (no compatibility layers before launch, 2026-10-29); the coordinator's ruling on tsk-wgg2t8ngx9xg (the notifications fallback and the "not on this hub" mechanism removed, `hubHas` and `hubBody` with them), 2026-10-30; hub/src/maity_hub/app.py (every router mounted unconditionally)
+**Revisit when:** Maity leaves alpha and a dashboard must run against an older hub (§1.6), or the hub mounts a route only under a setting
+
+The page no longer reads `GET /openapi.json`: there is no `M.api.hubHas`,
+`M.api.hubBody`, `M.api.missingRoute`, `M.api.absent` or
+`M.dom.notOnHub`. Every control is offered by the page's own rules
+(role, trust, project state), and every route it calls is called; a
+404 or 405 from one is an error and is said as one. The notifications'
+counts are read like any other call: until they are read the switcher
+counts the open requests from `/me`, and a failed read is said.
+Settings a hub really may have off stay explicit in its answers, such as
+`409 attachments_not_configured` or a sign-in method's `method_disabled`.
+
+**Reason:** the dashboard and the hub ship together from one
+repository, and the hub mounts every router without a condition, so a
+route "not on this hub" only happens with an older hub, which nobody
+runs in the alpha. The machinery cost a request per page, a muted text
+per feature and a branch per view, and it hid a broken deploy behind a
+quiet line.
+
+**Rejected alternative:** keeping the machine-form checks for the
+controls only: the same dead branches in each view, for the same hub
+that does not exist. Keeping the quiet line for a 404: a missing route
+now means something is broken, and that should read as broken.
+
 ## A control for a route a hub may lack is offered only when the hub's machine form lists it; an unreadable one keeps the control
 
 **Id:** 51dab38e-abd9-4848-91ed-a066eea39e9f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e1699490-402f-45ac-9461-d85189411559
 **Evidence:** confirmed
 **Source:** the coordinator's web-vs-live audit and its card (tsk-x995qwddkrk2), 2026-10-23: on maity.team "New group chat" and "Attach files" were offered while the hub served neither; the dashboard's implementation, 2026-10-23
 **Revisit when:** every hub the dashboard serves has group chats and attachments, or the hub answers a capability list of its own
@@ -728,7 +760,8 @@ is linkable (listed, inside the project) would drift between pages.
 
 **Id:** aa3669b7-71e6-4e87-9376-5759824653d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e1699490-402f-45ac-9461-d85189411559
 **Evidence:** confirmed
 **Source:** the coordinator's card from H's audit of every route the web calls against the hub on main (tsk-yht5tzadgv83, tsk-056gjh5jpfq7), 2026-10-23: 19 of 83 not served, some red, the notifications read every 15 s regardless; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub answers a capability list, or every route the web calls is served on every supported hub
@@ -906,7 +939,7 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
-## Project memory is chosen on /new and only shown afterwards; its fields are offered where the hub's machine form names them
+## Project memory is chosen on /new and only shown afterwards
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
 **Type:** decision
@@ -919,24 +952,22 @@ The create form has **Project memory** (Keep the Why preselected, None)
 and the three setup options beneath it, all ticked, each sent as `true`
 or `false`. Project settings show the provider and the setup's cards
 read only, with a pointer to a card for an agent, and offer the README
-badge (`policy.badge`) with its snippet. The form asks the hub's
-`/openapi.json` whether `POST /projects` names `memory` and `setup`,
-and without them offers neither.
+badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
+the hub's `/openapi.json` whether `POST /projects` names `memory` and
+`setup`, and without them offered neither; since then it always offers
+and sends them (e1699490, the alpha rule).
 
 **Reason:** the hub would accept a provider change by `PATCH`, but it
 creates and cancels no setup card on it, so a switch in the panel would
 change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. Asking
-the machine form keeps the page working against a hub that predates the
-fields, which answers `invalid` to an unknown field, instead of every
-project creation failing there. The badge sits with the other policy
+change is work in the repository, which is what a card is for. The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 
 **Rejected alternative:** a provider dropdown in Project settings: it
 would invite a change whose consequences the hub does not carry out.
-Sending `memory` and `setup` always: a creation on an older hub would
-fail. Inferring support from a project's view having `memory`: a human
-without projects has no view to look at.
+Until 2026-10-30 sending `memory` and `setup` always was rejected
+because a creation on an older hub would fail; under the alpha rule no
+such hub runs, so they are always sent now.
 
 Until 2026-10-29 the form also sent the `keep_the_why` boolean to a hub
 that knew the provider only under that alias (before §6.21). It no
@@ -1241,8 +1272,8 @@ one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
 then reads its conversations once a burst has settled (0.4 s): in one
-read across projects (`GET /me/conversations`, §9.3) where the hub has
-it, and each project's list on a hub without it. The open conversation fetches what came after its last
+read across projects (`GET /me/conversations`, §9.3; until 2026-10-30
+each project's list on a hub without it, e1699490). The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
@@ -1540,10 +1571,11 @@ list: the wish was about the order, not the length.
 **Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
 **Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
 
-`/admin` reads every section the hub serves as before, then shows one:
-a row of buttons at the top names them (`aria-pressed` on the shown
-one), and the page opens on the first, Statistics. A section the hub
-turns out not to serve leaves the row with its section. The others stay
+`/admin` reads every section as before, then shows one: a row of
+buttons at the top names them (`aria-pressed` on the shown one), and the
+page opens on the first, Statistics. A section whose read fails says so
+in its place (until 2026-10-30 a section the hub did not serve left the
+row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
 
 **Reason:** the admin comes for one thing at a time; five long sections
@@ -1959,8 +1991,8 @@ component, where the project's rules (who may bring agents, the
 member's limit, the team's) are known. The profile asked for
 (`?agent=<id>`) is kept across a failed first read of the joins, so
 **Try again** opens the panel with it chosen, as the first open would
-have. The handle is offered only where the hub's machine form names it
-on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
+have. The handle is offered on every profile (§6.24); until 2026-10-30
+only where the hub's machine form named it. `/agents/<id>` marks one profile.
 The account keeps the human's own picture and points to this page; an
 agent's picture stays settable on its card on a project's Agents and in
 its Manage row on Members as well.
@@ -2309,7 +2341,7 @@ dashboard's addresses from its own copy of the hub's list. It is a copy,
 not a read: when the hub changes its words, `web/js/api.js` has to
 change with it. On a real hub the hub alone refuses.
 
-## New project offers an organisation as owner only where the hub takes `owner`, and only one it may create in
+## New project offers an organisation as owner only where the human may create in it
 
 **Id:** e0cf14f3-56b8-40c4-9e6e-4c5fb739b037
 **Type:** decision
@@ -2318,16 +2350,15 @@ change with it. On a real hub the hub alone refuses.
 **Source:** docs/api.md §6.26 ("The organisation's projects", "Suspended"); web/js/new-project.js; the review of #609, 2026-10-29
 **Revisit when:** the hub's form names the owners a human may choose, or organisations get a page of their own for new projects
 
-The **Owner** field shows only where the hub's machine form names
-`owner` on `POST /projects`, and offers the human and the organisations
+The **Owner** field (until 2026-10-30 only where the hub's machine form
+named `owner` on `POST /projects`, e1699490) offers the human and the organisations
 in which they may create a project: as owner or admin, or as a member
 while `members_create_projects` is on, and none that is suspended. When
 `GET /orgs` fails, only the personal choice is left; the form still
 works.
 
-**Reason:** a hub without organisations refuses a field it does not
-know, and an organisation the human may not create in would only lead to
-`org_role` or `moderation_hold`.
+**Reason:** an organisation the human may not create in would only
+lead to `org_role` or `moderation_hold`.
 
 **Rejected alternative:** offering every organisation and saying the
 hub's 403 afterwards: the rule moves into an error message.

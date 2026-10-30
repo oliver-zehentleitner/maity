@@ -31,7 +31,7 @@ window.Maity = window.Maity || {};
     let methods = null;
     let invitation = null;
     try {
-      if (await M.api.hubHas("GET", "/auth/methods")) methods = await M.api.get("/auth/methods");
+      methods = await M.api.get("/auth/methods");
       // Only a token of the hub's form (§3.4) is asked about.
       const invited = next && /^\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
       if (invited) invitation = await M.api.get("/invitations/" + encodeURIComponent(invited[1])).catch(() => null);

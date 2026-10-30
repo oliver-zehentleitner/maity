@@ -2163,10 +2163,6 @@ def invitations_step(run: Run, page: Page) -> None:
     without a session opens the link, signs in with it as next and comes back; joining is refused
     in the hub's words (the only human there is a member already: without mail the e2e hub makes
     no second account); revoked, the link is one uniform answer."""
-    paths = page.request.get(f"{run.base}/api/v1/openapi.json").json().get("paths", {})
-    if "/api/v1/projects/{owner}/{slug}/invitations" not in paths:
-        run.step("invitations: this hub has none yet")
-        return
     run.step("invitations: the owner invites a person from Members; the link is shown once")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     box = page.locator("section.invitations")
@@ -2332,9 +2328,9 @@ def change_password(run: Run, page: Page) -> None:
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Change password", exact=True).click()
     expect(page).to_have_url(re.compile(r"/account$"))
-    # The sessions (§2.6.5): the list where the hub has it, else said so.
+    # The sessions (§2.6.5): the list, this session in it.
     sessions = page.locator("section.sessions")
-    expect(sessions.locator("li.session.current").or_(sessions.get_by_text("This hub lists no sessions yet."))).to_be_visible()
+    expect(sessions.locator("li.session.current")).to_be_visible()
     page.locator("#password-current").fill("not the password")
     page.locator("#password-new").fill(new_password)
     page.locator("#password-repeat").fill(new_password)
