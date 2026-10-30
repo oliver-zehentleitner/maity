@@ -792,7 +792,10 @@ and no event: the contract wants no new request event, and a request without a p
 none anyway; the human hears of it through its `personal_request_created` record and its
 mail, as of an organisation's invitation. It is withdrawn when none is away any more, and at
 the `PATCH` that leaves `inbox`: closing a request without a project emits nothing, so the
-settings' `PATCH` can do it although it is no events transaction. After the owner answers
+settings' `PATCH` can do it although it is no events transaction. The mode change takes the
+human's lock before it looks for the open digest, as the hourly pass does, so a pass that read
+the old mode commits first and the `PATCH` then withdraws what it filed; without it the digest
+could stay open under `bell` for an hour. After the owner answers
 `seen`, an instance counts again only when its episode started after the answer
 (`not_listening_since > answered_at` of the newest answered digest), so the next hour files
 a new request only for those. The pass withdraws the old per-episode requests first, under

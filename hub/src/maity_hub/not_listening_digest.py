@@ -259,7 +259,9 @@ def mode_changed(conn: Connection, owner_id: str, old: str, new: str) -> None:
     """A change of `not_listening.mode` takes effect at the `PATCH` (§5.3): leaving
     `bell` closes an open record, leaving `inbox` withdraws an open digest request, both at
     once. The digest request has no project, so withdrawing it emits no event and needs no
-    events transaction."""
+    events transaction. The human's lock first, as the hourly pass takes it: a pass that read
+    the old mode commits before this looks for its digest."""
+    records.lock_human(conn, owner_id)
     if old == "bell" and new != "bell" and _is_open(latest(conn, owner_id)):
         records.write(conn, owner_id, RECORD, {"instances": 0})
     if old == "inbox" and new != "inbox":
