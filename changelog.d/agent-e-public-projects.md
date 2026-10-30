@@ -1,0 +1,3 @@
+### Added
+
+- hub: a project's public page (§16.9, step 4a): `public_page` (`off`/`on`) and `public_about` (Markdown, at most 4 KiB) of `PATCH /projects/{owner}/{slug}`, set by the namespace owner, a human (any owner of an organisation for its projects), `project_updated` names the fields; `GET /{owner}/{slug}` shows the name, the full name, the state and the text while the page is on and the project is not archived, hidden by moderation or owned by someone who is suspended, deleted or in an organisation that is; a transfer turns the page off and its consent request says so (migration `0110`, tsk-w89mspg3gwx1).

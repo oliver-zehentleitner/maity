@@ -47,6 +47,8 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "released_at",
         "state_note",
         "state_changed_at",
+        "public_page",
+        "public_about",
         "repository",
         "logo",
         "banner",
