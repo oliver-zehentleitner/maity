@@ -45,7 +45,7 @@ from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
-from maity_hub.views import forge_of, member_view, principal_id, project_view
+from maity_hub.views import confirmed_by_of, forge_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -401,6 +401,7 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
         _export(project, request),
         aliases,
         _stored(conn, project, request),
+        confirmed_by_of(conn, [project])[project.id],
     )
     held = moderation.view(moderation.hold(conn, "project", project.id))
     if held is not None:  # only while a hold stands (§16.8)
@@ -430,6 +431,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
         aliases = namespace.aliases_by(conn, [r.id for r in rows])
+        confirmed = confirmed_by_of(conn, rows)
         return JSONResponse(
             {
                 "items": [
@@ -441,6 +443,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         _export(r, request),
                         aliases[r.id],
                         _stored(conn, r, request),
+                        confirmed[r.id],
                     )
                     for r in rows
                 ],
@@ -633,6 +636,7 @@ def patch_project(
             if columns["repository_url"] != project.repository_url:
                 # The owner confirmed the old URL, not this one, whoever changes it (§11.4).
                 values["repository_owner_confirmed"] = False
+                values["repository_confirmed_by"] = None
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -910,16 +914,25 @@ def transfer_project(
 def confirm_repository(
     slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
-    """The namespace owner confirms the project's repository for their own forge grants
-    (§11.4): only the URL they saw, and only while the project still carries it."""
+    """The namespace owner confirms the project's repository for their own forge grants, for a
+    project of an organisation any owner of it does (§11.4): only the URL they saw, and only
+    while the project still carries it."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        if found_owner is not None:  # the organisation's row before the project's (§6.26)
+            orgs.lock(conn, found_owner)
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         project = mine.project
+        if project.owner_org_id != found_owner:
+            raise orgs.project_moved()
         if mine.kind != "human":
             raise humans_only("only the namespace owner confirms the repository")
-        if mine.row.human_id != project.owner_id:
+        if project.owner_org_id is not None:
+            if orgs.role_of(conn, project.owner_org_id, mine.row.human_id) != "owner":
+                raise orgs.org_role()
+        elif mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
@@ -934,7 +947,7 @@ def confirm_repository(
         conn.execute(
             update(t.project)
             .where(t.project.c.id == project.id)
-            .values(repository_owner_confirmed=True)
+            .values(repository_owner_confirmed=True, repository_confirmed_by=mine.row.human_id)
         )
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)

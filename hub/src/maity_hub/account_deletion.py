@@ -402,6 +402,7 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     _leave_projects(conn, human_id)
+    _forget_confirmations(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
     _end_access(conn, hub, human_id)
@@ -475,6 +476,23 @@ def _leave_projects(conn: Connection, human_id: str) -> None:
         target = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
         project = lock_project(conn, target.project_id)
         apply_remove(conn, Change(project, HUB, human_id, human_id, None, None), target)
+
+
+def _forget_confirmations(conn: Connection, human_id: str) -> None:
+    """The repositories it confirmed are not confirmed any more: their grants end with the
+    account (§11.4); another owner of the organisation confirms again."""
+    for project_id in _ids(
+        conn,
+        select(t.project.c.id)
+        .where(t.project.c.repository_confirmed_by == human_id)
+        .order_by(t.project.c.id),
+    ):
+        lock_project(conn, project_id)
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(repository_owner_confirmed=False, repository_confirmed_by=None)
+        )
 
 
 def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:

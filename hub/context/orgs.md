@@ -280,10 +280,8 @@ organisation after the project) would break the organisation-then-project rule.
 - Letting the project route answer the personal requests: it is the personal inbox's route, and the
   project must not tell anyone else that such a request exists (§7).
 
-**Known limit (until part 4):** the repository's confirmation (`POST …/repository/confirm`) and the
-forge grants of a project of an organisation, the project's public page and its About still need the
-namespace owner as a human, so for a project of an organisation they fail closed; the owners' own
-confirmation with `confirmed_by` (§11.4) comes with the instance's forge work.
+**Known limit (until part 4):** the project's public page and its About of a project of an
+organisation still need the namespace owner as a human, so they fail closed.
 
 ## An organisation's suspension is a hold on the organisation, in the table of holds
 
@@ -333,3 +331,36 @@ place that has to be kept in step. No migration is needed.
   themselves, to another owner with their `go`, to another organisation) would have been the one call
   that undoes a suspension. Instead the transfer out is refused (`moderation_hold`) at the filing and
   at the `go`, as the transfer in is; the contract says "no transfer in or out".
+
+## A project of an organisation is read with the grants of the owner who confirmed its repository
+
+**Id:** 8e3f863e-ec98-4377-8cf9-8f34c56716d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §11.4 ("`repository` also carries `confirmed_by`"); the coordinator's order of part 4, step 3, on the card tsk-whe4wv1jpsae
+**Revisit when:** an organisation can hold forge grants of its own, or the project's public page needs the confirming owner
+
+`project.repository_confirmed_by` names the human whose grants the hub reads the repository with:
+the namespace owner for a project of a human, whichever owner of the organisation confirmed for one of
+an organisation (`POST …/repository/confirm` takes any owner of it, under the organisation's row lock
+and then the project's). `forge_access` takes that human's installation links and token instead of
+`project.owner_id`, which for such a project is an organisation with none, and nobody's while the
+project is unconfirmed. A later confirmation replaces the human; every change of the URL and every
+transfer clears both fields, as before. When the confirming human stops being an owner (demoted,
+removed, leaving: `org_projects.release_in_all`; the deletion of the organisation, the same path; the
+deletion of their account: `account_deletion._forget_confirmations`) the confirmation is cleared in
+that transaction and their grants stop with it. The migration fills the column for the confirmations
+that exist, which were all the namespace owner's.
+
+**Reason:** a confirmation is a person's consent to open their own grants to one repository, so it
+has to name the person; the organisation cannot grant anything, and the contract wants the owners to
+confirm without an extra role.
+
+**Rejected alternatives:**
+- Reading the grants of the organisation's first owner, or of any owner who has some: nobody agreed to
+  it, and the grants of someone who never confirmed would read a private repository.
+- Deriving the human from the confirmation event instead of a column: the clearing on a demotion or a
+  deletion would have to search the events, and the view needs the answer on every read.
+- Keeping the confirmation when its owner leaves, and reading with the grants that remain: the
+  contract ends the grants at once, and a stale confirmation is the one thing the flag exists to stop.
