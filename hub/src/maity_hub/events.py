@@ -494,8 +494,12 @@ def wakes(
     own = instance is not None and f"instance:{principal}#{instance}" in audience
     if row.actor_membership == membership.id:
         return own and row.actor_credential_id != credential_id
-    if own or row.conversation_id == principal:
+    if own:
         return True
+    if row.conversation_id == principal:
+        # A direct chat message that names an instance wakes that one only (§9.1).
+        named = (row.payload or {}).get("to_instance")
+        return named is None or instance is None
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (

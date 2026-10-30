@@ -55,6 +55,7 @@ class ChatIn(Written):
 
     attachments: list[str] = Field(default_factory=list)
     body: str = markdown()
+    to_instance: str | None = Field(default=None, max_length=16)  # a direct chat only (§9.1)
 
     @field_validator("body")
     @classmethod
@@ -183,6 +184,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "from": principal_id(conn, row.actor_membership),
             "from_instance": instance_of.get(row.actor_credential_id or ""),
             "to": payload.get("to"),
+            "to_instance": payload.get("to_instance"),  # a direct chat's, as written (§9.1)
             "body": None if row.redacted else payload.get("body"),
             "sent_at": ts(row.at),
         }
@@ -726,6 +728,7 @@ def send_message(
                 body=body.body,
                 attachments=body.attachments,
                 conversation_id=conversation_id,
+                to_instance=body.to_instance,
             ),
             settings_of(request),
         )
