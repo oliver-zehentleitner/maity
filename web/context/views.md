@@ -2726,8 +2726,8 @@ named.
 
 In a project the header shows, after the state, the absence and the
 released mark, a link to the repository (`repository.url`, labelled by
-`repository.forge`: GitHub, GitLab or Gitea with their mark, else
-"Repository" with a branch mark) and **Why**, the dashboard of the Keep
+`repository.forge`: GitHub and GitLab with their marks, Gitea by its
+name with a branch mark, any other as "Repository" with a branch mark) and **Why**, the dashboard of the Keep
 the Why family's root member. Either is left out where the project has
 none or its address is not plain `https`; both open in a tab of their
 own and are named for a screen reader with where they go.
@@ -2741,4 +2741,35 @@ address, as the card first proposed: the export already names it, and a
 second address could drift from the one the family publishes. Only the
 Overview's Project panel, where both links already are: one click
 further, on one view only.
+
+## A review result shows its verdict, head and cites in the Messages view; the dashboard does not compose one
+
+**Id:** 2ca8d25f-79db-47ea-9108-3397ad03296e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §8.4 "A review result cites what it judged" (contract #745: `review` with subject, head, verdict and cites, required on `review_result`, shown by the dashboard under the verdict); the card tsk-c4dez2qc7dd0 (verdict badge, subject, short head linking to the commit, cites as path:line or removed with the quote in monospace, folded after five), 2026-10-30; the coordinator's ruling to take review_result out of the composer, 2026-10-30
+**Revisit when:** humans write review results in the dashboard, or a chat or a card's thread shows project messages
+
+In **Messages** a `review_result` shows above its text the verdict as a
+pill, the subject, and the head's first seven characters, linked to the
+commit on GitHub or GitLab (title: the whole head); then the cites, each
+`path:line`, or the path and "removed" where `line` is `null`, with its
+quote as code text, the first five shown and the rest in a fold. Every
+part is text, never markup. The Messages view is the one place project
+messages are drawn; chats carry only `chat` messages, and a card's
+thread its notes. **Message the project** no longer offers "A review's
+result": the hub refuses one without `review`, and a review's cites are
+quoted from the diff by the reviewer's tools (`maity say
+--review-file`).
+
+**Reason:** the lead checks the cites against the diff before an
+approval counts; showing them under the verdict lets a human do the
+same without the CLI.
+
+**Rejected alternative:** a form for verdict, head and cites in **Message
+the project**: a reviewer quotes lines from the diff at its head, which
+a browser form would have them copy by hand, for a message humans do
+not send. Leaving the type in the composer: every send would be refused
+for want of `review`.
 

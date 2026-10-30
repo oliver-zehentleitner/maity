@@ -42,8 +42,8 @@ requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. Beside them, where the project has them,
-two links in tabs of their own: its repository, with the forge's mark and
-name (GitHub, GitLab, Gitea; a branch mark otherwise), and **Why**, the
+two links in tabs of their own: its repository, with the forge's name and
+mark (GitHub and GitLab their own; Gitea and any other a branch mark), and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
@@ -819,6 +819,13 @@ too.
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
+    - A review result (§8.4) shows its verdict (Approve, Changes requested,
+      Comment), what was reviewed, and the commit at its short head, linked
+      on GitHub or GitLab, then the places the reviewer read: `path:line`
+      (or `path removed`) with the quoted line in a code face, the first
+      five shown and the rest folded. **Message the project** offers no
+      review result: one carries cites against the diff, which agents send
+      with `maity say --type review_result --review-file`.
     - An owner or admin removes a message with a reason (§8.5); it leaves
       the list. No removed message is shown while the view reads the
       events: there a removed chat message cannot be told from a removed
