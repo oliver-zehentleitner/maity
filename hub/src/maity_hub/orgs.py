@@ -88,7 +88,9 @@ def find(conn: Connection, human_id: str, handle: str) -> tuple[Any, str]:
 
 
 def view(conn: Connection, org: Any, role: str) -> dict[str, Any]:
-    return {
+    from maity_hub import moderation
+
+    shown = {
         "id": org.id,
         "handle": org.handle,
         "display_name": org.display_name,
@@ -99,6 +101,8 @@ def view(conn: Connection, org: Any, role: str) -> dict[str, Any]:
         "members_create_projects": bool(org.members_create_projects),
         "public_page": org.public_page,
     }
+    held = moderation.view(moderation.hold(conn, "org", org.id))
+    return {**shown, "moderation": held} if held is not None else shown
 
 
 def mine(conn: Connection, human_id: str) -> list[dict[str, Any]]:
@@ -264,6 +268,10 @@ def change_settings(conn: Connection, org: Any, fields: dict[str, Any]) -> Any:
     if "public_page" in fields:
         if fields["public_page"] not in PUBLIC_PAGE:
             raise invalid({"public_page": "invalid"})
+        if fields["public_page"] == "on":  # a suspended organisation's page stays off (§16.8)
+            from maity_hub import moderation
+
+            moderation.refuse_held(conn, "org", org.id, "suspend")
         values["public_page"] = fields["public_page"]
     if values:
         conn.execute(update(t.org).where(t.org.c.id == org.id).values(**values))

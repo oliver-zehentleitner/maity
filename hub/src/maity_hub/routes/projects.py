@@ -478,6 +478,7 @@ def _creation_owner(
         raise invalid({"owner": "unknown"})
     if role == "member" and not org.members_create_projects:
         raise orgs.org_role()
+    moderation.refuse_held(conn, "org", str(org.id), "suspend")  # no new project while suspended
     return str(org.id), org, role
 
 

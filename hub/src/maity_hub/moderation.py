@@ -251,7 +251,55 @@ def account_of(conn: Connection, report: Any) -> str | None:
     return None if gone is None or gone.deleted_at is not None else account
 
 
+def org_of(conn: Connection, report: Any) -> str | None:
+    """The organisation that owns the reported project (§6.26), by the owner the report's copy
+    recorded, else as it stands: None for a project of a human and for every other target."""
+    if report.target_type != "project":
+        return None
+    author = ((report.snapshot or {}).get("author") or {}).get("id")
+    if author is None:
+        author = _live_author(conn, report)
+    return author if isinstance(author, str) and author.startswith("org-") else None
+
+
 # --- the actions ----------------------------------------------------------------------------
+
+
+def suspend_org(conn: Connection, org_id: str, report: Any, note: str | None) -> list[str]:
+    """`suspend` on a project of an organisation applies to the organisation, never to a person
+    (§16.8, §6.26): it takes no new project and no transfer in, its page is off, every open
+    transfer into it is withdrawn, and each of its projects that is not archived is archived as
+    `remove` archives one. A hold on the organisation (`moderation` in its view) marks it, lifted
+    as every hold is; its owners, admins and members are untouched. Returns the owners, whom the
+    notice goes to."""
+    from maity_hub import org_projects, orgs, project_names
+    from maity_hub.routes.projects import archive_by_moderation
+
+    org = orgs.lock(conn, org_id)
+    if org is None:
+        raise ApiError(
+            400,
+            "invalid",
+            "the organisation no longer exists",
+            {"fields": {"action": "no_org"}, "reason": "no_org"},
+        )
+    by = actor(report.id)
+    reason = _reason(report, note)
+    conn.execute(
+        insert(t.moderation_hold).values(
+            report_id=report.id,
+            target_type="org",
+            target_id=org_id,
+            action="suspend",
+            at=clock.now(),
+        )
+    )
+    conn.execute(update(t.org).where(t.org.c.id == org_id).values(public_page="off"))
+    project_names.withdraw_into(conn, org_id, reason)
+    for project in org_projects.projects_of(conn, org_id):
+        if project.state != "archived":
+            archive_by_moderation(conn, project.id, reason, by)
+    return org_projects.owners_of(conn, org_id)
 
 
 def _reason(report: Any, note: str | None) -> str:
@@ -330,7 +378,9 @@ def apply(
     """Make the change `action` asks for. Resolving again replaces the report's hold;
     `dismiss` lifts it and restores nothing. A suspension is the operator's to lift."""
     account = account_of(conn, report)
-    if action == "suspend" and account is None:
+    org_id = org_of(conn, report)
+    owners: list[str] = []
+    if action == "suspend" and account is None and org_id is None:
         raise ApiError(
             400,
             "invalid",
@@ -344,6 +394,8 @@ def apply(
         _hide(conn, report, note)
     elif action == "remove":
         _remove(conn, report, note, fg, store)
+    elif org_id is not None:
+        owners = suspend_org(conn, org_id, report, note)
     elif account is not None:
         suspend(conn, account, report.id)
     if action in HOLDING:
@@ -354,15 +406,23 @@ def apply(
             )
         )
     again = report.status == "resolved" and report.action == action and report.note == note
-    if account is not None and not again:
-        # The affected account's notice: the action and the note, never the reporter. A
-        # repeat of the same resolution tells it nothing new.
-        records.write(
-            conn,
-            account,
-            "moderation_applied",
-            {"report": report.id, "action": action, "type": report.target_type, "note": note},
-        )
+    # The affected account's notice: the action and the note, never the reporter. A repeat of
+    # the same resolution tells it nothing new. For an organisation's suspension and for an
+    # action on a project of an organisation, every owner of the organisation gets it (§16.8).
+    if org_id is not None and action != "dismiss":
+        from maity_hub import org_projects
+
+        recipients = owners if action == "suspend" else org_projects.owners_of(conn, org_id)
+    else:
+        recipients = [account] if account is not None else []
+    if not again:
+        for recipient in recipients:
+            records.write(
+                conn,
+                recipient,
+                "moderation_applied",
+                {"report": report.id, "action": action, "type": report.target_type, "note": note},
+            )
 
 
 def check(action: Any) -> None:
