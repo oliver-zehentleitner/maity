@@ -27,15 +27,21 @@ lives in the process. The inventory finds three kinds:
   `ReadWriteOnce` volume.
 - **Weaker:** every `ratelimit.Limiter` (about thirty, N times their limit with N pods), the forge
   rate budget (`forge._budgets`), forge and image caches (N times the forge reads), the hourly
-  digest's narrow double-write race.
+  digest's narrow double-write race, and the instance figures counted in memory: the admin's
+  `requests_dropped_last_hour` (`registration.DROPPED`, added where a registration is refused,
+  read by the registration settings) shows only the pod that answers; and the forge source a
+  project's view shows (`forge_access._last_via`, read by `probe_via` for
+  `GET /projects/{owner}/{slug}` and the resume packet), learned only on the pod whose probe read
+  the project.
 - **Safe already:** the mail outbox (claimed by a conditional `UPDATE`), the notification mailer
   (the human's settings row `FOR UPDATE`), and the workers that settle under `lock_project` with
   compare-and-set writes (takeovers, availability, commitment, not-listening, organisation
   invitations, registrations, reports, jour fixe rounds); the idempotency store; the static
-  registries filled at import.
+  registries filled at import; the read caches with short lives that may differ per pod
+  (`swarm.CACHE`, `statistics.CACHE`, `landing_stats._cached`).
 
 Several replicas are offered on PostgreSQL only. SQLite is one file on one node; MariaDB stays
-supported with one replica, since what follows uses `LISTEN`/`NOTIFY`, advisory locks and
+supported with one replica, since what follows uses `LISTEN`/`NOTIFY`, `UNLOGGED` tables and
 `INSERT … ON CONFLICT`, and doubling each for MariaDB is work no deployment asks for. The shared
 state goes into the database the hub already has, not into a second service.
 
@@ -43,7 +49,7 @@ state goes into the database the hub already has, not into a second service.
 production plan (#726) is highly available; a second stateful service would add a failure mode,
 a backup, a secret and an operator task for state that is small (nonces for ten minutes,
 counters for at most a day) and must be as durable as the rows it guards. PostgreSQL has every
-primitive needed: `pg_notify` delivered on commit, advisory locks, upserts with `RETURNING`,
+primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upserts with `RETURNING`,
 `UNLOGGED` tables for state that may be lost on a crash.
 
 **Rejected alternatives:**
@@ -63,7 +69,7 @@ primitive needed: `pg_notify` delivered on commit, advisory locks, upserts with 
 **Status:** open
 **Evidence:** inferred
 **Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes)
-**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test, or a wake-up is measured late across pods
+**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
 `engine.begin()`); a waiter on another pod sees the row at its 2-second fallback re-read. The
@@ -75,21 +81,32 @@ design:
    after commit stays, so the writing pod wakes without the round trip.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
-   every waiter (`wake_all`, each re-reads from its cursor) and reconnects with backoff, so a missed
-   notification costs one re-read, not an event. The 2-second fallback stays as the safety net and
+   every waiter and reconnects with backoff, so a missed notification costs one re-read, not an
+   event. The waiters re-read spread over a random 0–2 s, not all at once: a pod holding 10 000
+   waits must not send 10 000 reads in the same instant. The 2-second fallback stays as the safety net and
    can be raised to about 10 s once the load test shows the listener reliable.
 3. **Superseding across pods:** a new long-poll of a key (`credential_id`, `session:<cookie>`,
    runner key) sends `pg_notify('maity_supersede', key || ':' || token)` when it starts; a pod
    holding an older wait of that key ends it with `superseded`. The rule of §8.3, "the wait that
-   took over owns what came in", holds again across pods.
-4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(key, pod,
-   opened_at)` written when a wait opens and deleted when it closes; each pod refreshes a heartbeat
-   row `hub_pod(pod, seen_at)` every 15 s, and a wait whose pod has not been seen for 45 s does not
-   count. `is_listening` reads it (batched per call where `team_wakes` asks for many instances).
-   A crashed pod's rows stop counting after 45 s and are removed by the next pod's sweep.
+   took over owns what came in", holds again across pods. The bell's and the device codes' own
+   "newer wait supersedes" maps (`routes/notifications._holding`, `routes/device_codes._holding`)
+   move onto the same channel. A closing wait removes only what it owns: its own `wait_id`
+   (point 4), never the row or the holder entry of the wait that superseded it, as
+   `longpoll.Registry` already checks today in the one process.
+4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(wait_id,
+   listening_key, pod, opened_at)`, one row per open wait, keyed by a fresh `wait_id`, inserted
+   when a wait opens and deleted by that `wait_id` when it closes, so two waits of one key (today
+   `listening._open` counts them, +1 and −1) never delete each other's row. `listening_key` is
+   what `is_listening` is asked with today: the agent session's id, or the runner's listening key;
+   superseding (point 3) keeps its own key, the credential or the cookie session. Each pod
+   refreshes a heartbeat row `hub_pod(pod, seen_at)` every 15 s, and a wait whose pod has not been
+   seen for 45 s does not count. `is_listening` counts the live rows of its key (batched per call
+   where `team_wakes` asks for many instances). A crashed pod's rows stop counting after 45 s and
+   are removed by the next pod's sweep.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
    move onto the same wake-up: a notification-relevant write (event, account record, read mark)
-   notifies `maity_bell` with the human's id. With 20 000 open dashboards the 0.5-second poll alone
+   notifies `maity_bell` with the human's id, and a device-code write (`redeem`, `approve`,
+   `deny`, `void_open`) notifies `maity_device` with the code's key. With 20 000 open dashboards the 0.5-second poll alone
    would be 40 000 stamp reads a second; on the wake-up it is a read per change.
 
 **Reason:** `NOTIFY` inside the transaction makes the wake-up exactly as durable as the write;
@@ -117,10 +134,16 @@ A signed request's nonce is claimed with `INSERT INTO request_nonce (credential_
 expires_at) VALUES (…) ON CONFLICT DO NOTHING`; no row inserted means a replay, refused as today.
 The claim happens after the signature verifies, as now, in its own short transaction. A sweep
 deletes rows past `expires_at` (600 s, twice the timestamp window). The table is `UNLOGGED`: no
-WAL per request, and it is emptied by a crash of the database, which is why
-`PROCESS_STARTED` is replaced by the database's start time (`pg_postmaster_start_time()`, read
-once per pod): a request signed before the nonces were lost is refused, whichever pod gets it,
-and a newly started pod no longer refuses requests that another pod would take.
+WAL per request.
+
+An `UNLOGGED` table is emptied by a crash of the database and is not replicated, so it is empty
+on a promoted standby after a failover. `PROCESS_STARTED` is therefore replaced by an **epoch
+row that vanishes exactly when the nonces do**: a one-row `UNLOGGED` table `nonce_epoch(since)`.
+Each check reads it in the same round trip as the claim; when it is missing, the first pod to
+notice inserts `now()` (`ON CONFLICT DO NOTHING`, then reads it back), and every request signed
+before `since` is refused (`timestamp_skew`), on every pod. A database restart or a failover
+thus closes the replay gap at once, and a newly started pod no longer refuses requests that
+another pod would take. Reading one row per request takes no lock and stays in the buffer cache.
 
 **Reason:** a replay across pods today repeats a DELETE, a PUT, the exempt paths
 (`/api/v1/join/`, `/api/v1/auth/`, `/me/resume`) and any GET within ±300 s, once per pod; only
@@ -128,8 +151,12 @@ POST and PATCH are covered by the idempotency store. One primary-key insert per 
 is the cheapest shared check there is.
 
 **Rejected alternatives:**
-- **A logged table:** survives a crash of the database, but writes WAL for state that is
-  worthless after ten minutes; the start-time rule covers the crash.
+- **A logged table:** survives a crash and a failover, so it needs no epoch, but writes WAL for
+  state that is worthless after ten minutes; the epoch row covers both cases for one read.
+- **The database's start time (`pg_postmaster_start_time()`), read once per pod:** misses a
+  database restart while the pods keep running (their cached time is old) and a failover (the
+  promoted standby keeps its own, older start time), so a request signed in the last 300 s could
+  be replayed once in either case.
 - **Pin each credential to a pod (consistent hashing at the ingress):** depends on the ingress,
   breaks on every scale event, and an attacker with a captured request sends it anywhere.
 - **Shorter timestamp window instead:** narrows the replay, does not close it.
@@ -140,14 +167,16 @@ is the cheapest shared check there is.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; `docs/ops/ovh-prod.md` §12
+**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; `docs/ops/ovh-prod.md` §12
 **Revisit when:** the counter writes show in the load test, or a limit needs exact sliding-window semantics across pods
 
 `ratelimit.Limiter` keeps its interface (`hit`, `give_back`) and gets a shared backend on
 PostgreSQL: an `UNLOGGED` table `rate_count(bucket, key, window_start, count)`, incremented with
 `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count`, read as a sliding window
 approximated by the current and the previous fixed window (weighted by the overlap). `give_back`
-decrements. The breakers and `_wrong_in_session` become buckets of the same table. A sweep deletes
+decrements. The breakers and `_wrong_in_session` become buckets of the same table, and so does
+`registration.DROPPED`: the count of refused registrations an admin reads as
+`requests_dropped_last_hour` is the sum over every pod, not the answering pod's. A sweep deletes
 windows older than their limit's span. On SQLite and MariaDB the in-process backend stays.
 
 Two things stay per pod on purpose: the concurrency caps that protect the pod itself (`avatars._slots`,
@@ -165,7 +194,7 @@ is the standard trade-off and errs by at most the previous window's share.
 - **Keep the courtesy limits per pod and share only the security ones:** two backends to reason
   about per limit; with one cheap upsert there is no reason to split.
 
-## Each worker's pass runs on one pod at a time, under a PostgreSQL advisory lock
+## Each worker's pass is claimed once per interval in a shared row, whichever pod is first
 
 **Id:** 24489a9c-6035-41d0-9236-9eb0e04fc902
 **Type:** decision
@@ -174,20 +203,34 @@ is the standard trade-off and errs by at most the previous window's share.
 **Source:** the fifteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, reports, request stats, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
 **Revisit when:** one worker's pass takes longer than its interval on the one pod that holds it, so that it has to be split across pods
 
-Every worker keeps running in every pod, so any pod can take over at once, but each pass begins
-with `pg_try_advisory_xact_lock(<worker's fixed key>)` in its own transaction (or a session lock
-on the pod's listener connection for passes longer than one transaction): the pod that gets it
-runs the pass, the others skip it until their next tick. Workers that are already safe under row
-locks (mail outbox, mailer, takeovers and the others above) are not slowed by it; the lock removes
-the N-fold forge reads of the probe and the image refresh, the digest's double-write race and the
-jour fixe's presence insert race (which also becomes `ON CONFLICT DO NOTHING`). The request stats
-reporter stays per pod. Probe jobs queued by a webhook on the pod that took the request stay there:
-their writes are deduplicated already (`dedupe_key`), and the next sweep catches what a dying pod
+Every worker keeps running in every pod, so any pod can take over at once, but a pass starts only
+after claiming it in a shared row, `worker_run(name, started_at, pod, lease_until)`, with one
+compare-and-set:
+
+```sql
+UPDATE worker_run SET started_at = now(), pod = :me, lease_until = now() + :lease
+ WHERE name = :name AND started_at <= now() - :interval AND lease_until < now()
+```
+
+One row updated means this pod runs the pass; none means another pod ran it within the interval
+or still holds it. Ticks are per process and offset between pods, so the interval check, not
+mutual exclusion alone, is what keeps a sweep to once per interval across N pods. A pass longer
+than its lease renews it between its own transactions (`UPDATE … SET lease_until = … WHERE pod =
+:me`); a pass whose renewal finds another pod's name stops before its next write. A pod that dies
+leaves a lease that simply expires. No session or advisory lock is involved, so nothing depends
+on a connection staying open, and it works behind PgBouncer in any mode (entry a83fc8e7).
+
+The claim is about cost, not correctness: the workers that settle under row locks (mail outbox,
+mailer, takeovers and the others above) stay correct without it. The two that are not get their
+own fix as well: the digest takes the owner's lock before it reads `latest()`, and the jour fixe's
+presence insert becomes `ON CONFLICT DO NOTHING`. The request stats reporter stays per pod and
+claims nothing. Probe jobs queued by a webhook on the pod that took the request stay there: their
+writes are deduplicated already (`dedupe_key`), and the next sweep catches what a dying pod
 dropped.
 
 **Reason:** one rule for all workers is easier to review than a proof per worker, and a skipped
-pass costs nothing where the next pod runs it seconds later. Advisory locks are released by
-PostgreSQL when the session ends, so a dead pod never holds one.
+pass costs nothing where the next pod runs it seconds later. A row with a lease survives the loss
+of any connection and of any pod, and it carries the "last ran" time that the interval needs.
 
 **Rejected alternatives:**
 - **A separate worker Deployment with one replica:** clean split, but the one-pod problem moves
@@ -196,6 +239,12 @@ PostgreSQL when the session ends, so a dead pod never holds one.
   under Docker Compose.
 - **Rely on each worker's row locks alone:** correct for most, but not for the digest and the
   presence insert, and the forge calls stay N-fold.
+- **`pg_try_advisory_xact_lock` at the start of a pass:** a transaction-level lock ends with its
+  transaction, before the pass runs its own; and with ticks offset between pods each pod still
+  runs the pass once per interval, one after the other.
+- **A session advisory lock on a dedicated connection:** holds across the pass, but is lost when
+  that connection drops while the pass goes on through the pool, needs a direct connection past
+  PgBouncer, and still lacks the "last ran" time.
 
 ## The forge budget is shared; forge caches stay per pod
 
@@ -203,7 +252,8 @@ PostgreSQL when the session ends, so a dead pod never holds one.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_links.forget_token`, `ktw.CACHE`, `contract_text`
+**Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_access.py:258-277` (`_last_via`, `probe_via`, read in `views.py:185` and `releases.py:190`), `forge_links.forget_token`, `ktw.CACHE` and its `forget` at `routes/projects.py:743`, `contract_text`
+**See:** keep-the-why.md — f5af1bd9-bb11-4310-b751-334de2668dfe — as of 2026-10-30
 **Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user
 
 The budget per token (`remaining`, the reset time) moves to a small shared row updated from each
@@ -211,8 +261,15 @@ response's headers, so every pod sees what the others spent and the 5 % reserve 
 stays per pod (it bounds that pod's concurrency). The caches (visibility, installation tokens, the
 Keep the Why reads, contract texts, image gates) stay per pod: each is keyed on what it reads and
 expires within minutes, so N pods read the forge up to N times more often for them, not
-wrongly. `forget_token` and a refused installation are also sent on a `maity_forget` channel, so
-no pod keeps using a token that was removed.
+wrongly. `forget_token`, a refused installation and a project's changed `repository_url`
+(today `ktw.CACHE.forget(project.id)` on the answering pod only) are also sent on a
+`maity_forget` channel, so no pod keeps using a token that was removed or a family read of the
+old repository.
+
+`probe_via` is the one cache that is shown, not used: with the probe claimed by one pod per
+interval (entry 24489a9c), the others never learn it. The source the last choice found is
+therefore written beside the project's other probe facts when it changes (one small column or
+row per project, written only on a change), and views read it from there.
 
 **Reason:** with the probe and the image refresh on one pod (entry 24489a9c), the remaining
 forge reads come from requests and are bounded by them; sharing every cache would put a database
@@ -263,7 +320,7 @@ piece to keep available; the hub writes files whole and never appends, which fit
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), `docs/ops/ovh-prod.md` §12 (about 100 connections per 4 GB of the managed service, at most 1000; OVH's PgBouncer in session, transaction and statement modes; psycopg 3 prepares named statements after a few runs)
+**Source:** `db.postgres_options` (the `options` startup parameter, `db.py:71-112, 144`), `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), `docs/ops/ovh-prod.md` §12 on the branch of #726 (open when this was written; the figures are that plan's, not checked here) (about 100 connections per 4 GB of the managed service, at most 1000; OVH's PgBouncer in session, transaction and statement modes; psycopg 3 prepares named statements after a few runs)
 **Revisit when:** the load test sets the pool size, or `prepare_threshold=None` is in and tested behind PgBouncer's transaction mode
 
 With N pods the hub asks for N × (pool + overflow) + N listener connections + health checks.
@@ -271,10 +328,20 @@ The chart sets `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` per pod so that 
 maximum the sum stays under the service's limit with room for migrations and the backup. Behind
 PgBouncer:
 - **Session mode** works as is.
+- **Session timeouts:** the hub sets `statement_timeout` and `idle_in_transaction_session_timeout`
+  through the `options` startup parameter (`db.postgres_options`, used by `make_engine` and
+  `make_health_engine`). PgBouncer refuses an unknown startup parameter unless it is listed in
+  `ignore_startup_parameters`, and then it is ignored. Behind PgBouncer the timeouts move to the
+  database role (`ALTER ROLE … SET`), and the hub stops sending `options` when told it is behind a
+  pooler.
 - **Transaction mode** needs `prepare_threshold=None` on the psycopg connection (a small setting
-  the build adds and tests), and it cannot carry `LISTEN` or session advisory locks: the
-  listener connection of each pod (entry 387c2409) connects directly to PostgreSQL, past the pool,
-  and the workers use transaction-level advisory locks only.
+  the build adds and tests), and it cannot carry `LISTEN`: the listener connection of each pod
+  (entry 387c2409) connects directly to PostgreSQL, past the pool, through an optional
+  `MAITY_DIRECT_DATABASE_URL` (the pooler is its own port and database name on the managed
+  service; without the setting the listener uses `MAITY_DATABASE_URL`, right for a direct or
+  session-mode connection). Nothing else in the design
+  needs session state: the workers claim passes in a row (entry 24489a9c), not with advisory
+  locks.
 - Migrations connect directly, as the production plan says.
 
 **Reason:** the connection limit is the first wall a horizontal scale-out hits on a managed
@@ -354,6 +421,9 @@ land on another pod.
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
 signs requests with `k6/crypto` HMAC-SHA256, and reports percentiles and thresholds that fail
 the run. A seeding script creates projects, humans and agent credentials through the API first.
+The 60 000 held connections are spread over several generator pods with their own source
+addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
+hub, not the generator's port exhaustion.
 
 **Assumptions** (the user count does not give a concurrency; these are stated so they can be
 replaced): of 200 000 registered humans, 10 % online at the peak hour, each with one dashboard
@@ -370,7 +440,8 @@ about 670 writes a second and about 1.1 logins a second.
 3. **Mixed traffic:** the writes above (messages, card moves, reports) with their wake-ups, plus
    bell pages and board reads at one read per waiter per minute.
 4. **Limits and replays:** login and join-exchange bursts spread over all pods; one captured
-   signed request replayed on every pod.
+   signed request replayed on every pod, and again after a restart of the database and after a
+   failover of the managed service.
 5. **Pod loss and rollout:** one pod killed under scenario 3; a `RollingUpdate` without a
    migration under scenario 3.
 
@@ -379,7 +450,9 @@ about 670 writes a second and about 1.1 logins a second.
 - API p95 under 300 ms for writes, under 200 ms for reads; no 5xx except during scenario 5's kill
   (where clients' retries must succeed within 10 s);
 - every rate limit exact to within one window's share across all pods; a replayed request accepted
-  zero times after its first;
+  zero times after its first, also across a database restart and a failover;
+- the probe's and the image refresh's forge reads per interval the same at 1, 2 and 4 pods;
+- commit latency of notifying writes p95 under 50 ms at the peak write rate;
 - database connections under 70 % of the service's limit; CPU per pod under the HPA target at the
   planned replica count;
 - with the in-process wake-up gone, database reads while idle grow with changes, not with waits.
@@ -404,16 +477,18 @@ interpretation; the scenarios are exactly the behaviours the entries above chang
 **Source:** the card's step 2 ("build cards from the design"); the dependencies between the entries above
 **Revisit when:** the coordinator orders the cards differently
 
-1. Nonces in the database (1c65bb74), with the database start time replacing `PROCESS_STARTED`.
+1. Nonces in the database (1c65bb74), with the epoch row replacing `PROCESS_STARTED`.
 2. Shared limits, breakers and guess counters (2bd65fec).
 3. NOTIFY wake-ups, cross-pod superseding and the listening table (387c2409), including the bell
-   and device-code waits.
-4. Worker advisory locks and the presence upsert (24489a9c); the shared forge budget and the
-   forget channel (83da2bfa).
+   and device-code waits and their superseding.
+4. The `worker_run` claim with its interval and lease, the digest's lock order and the presence
+   upsert (24489a9c); the shared forge budget, the forget channel and the stored `probe_via`
+   (83da2bfa).
 5. `S3Store` and the backup change (a70d7269), once the storage choice is confirmed.
 6. Chart: replicas, autoscaling, disruption budget, spread, values gate, `RollingUpdate` for
-   releases without migrations, pool sizing and the `prepare_threshold` setting (2e7de08a,
-   a83fc8e7); kubernetes.md 5e42eb26 is superseded then.
+   releases without migrations, pool sizing, the `prepare_threshold` setting, the timeouts on
+   the role and `MAITY_DIRECT_DATABASE_URL` (2e7de08a, a83fc8e7); kubernetes.md 5e42eb26 is
+   superseded then.
 7. The load test (cac80c88) on staging, then the sizes.
 8. Expand/contract migrations (36157878), after the load test.
 
