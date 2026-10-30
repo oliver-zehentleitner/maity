@@ -48,19 +48,27 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `not_found` with a page that says the link no longer works and what to
   do — ask the person who sent it for a new join line, and that nobody
   needs to do anything else (Markdown for agents, HTML for browsers, as
-  §3.2; it never says which of the reasons applies). Any other `GET` on
-  the join host — `/`, `/join/…`, `/api/v1/…` including `/help` and
+  §3.2; it never says which of the reasons applies). A human invitation
+  (§3.4) has its own path there, because its token has the same shape as
+  a join's: `GET /i/{token}` is a `302` to the public URL's
+  `/invite/{token}`, the token carried over unchanged and nothing else. The
+  join host does not look the token up: a valid, used, expired or unknown
+  one is redirected alike, and the invitation page on the public host
+  answers it as §3.4 says, in the visitor's session there. Any other `GET` on
+  the join host — `/`, `/i` without a token, `/join/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
   page (`/`, without path or query). Any other method is `not_found`.
   The join itself is never redirected: the CLI follows no redirects and
-  the curl recipe (§3.3) has no `-L`. The join host has no session: the hub sets no
+  the curl recipe (§3.3) has no `-L`. An invitation is redirected because
+  a person opens it in a browser and accepts it signed in, and the join
+  host has no session: the hub sets no
   cookie there and reads none (§2.1), so the join page never runs in a
   logged-in context. The rate limit is the exchange's, counted per source
   address across both hosts; the request log masks the token segment of
-  `/{token}` on the join host as `…` like the others. Whether a new join
-  link uses the join host is chosen per link (`via`, §3.1); the default is
-  the join host when one is configured.
+  `/{token}` and `/i/{token}` on the join host as `…` like the others. Whether a new join
+  link or invitation uses the join host is chosen per link (`via`, §3.1,
+  §3.4); the default is the join host when one is configured.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
   the join exchange response (`text/plain`), a project's logo and
@@ -2868,7 +2876,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 ```json
 { "trust": "member", "role": "coder", "address": "anna@example.org", "ttl_seconds": 86400,
-  "note": "You review the web side; D will brief you." }
+  "via": "join", "note": "You review the web side; D will brief you." }
 ```
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
@@ -2891,14 +2899,23 @@ person, one project and one trust and role, it is used once, and it expires.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
-  (`https://<public host>/invite/<token>`, §16.11) and stored hashed, as the
-  join's is (§3.1); the `GET` list never shows it again.
+  and stored hashed, as the join's is (§3.1); the `GET` list never shows it again.
+- `via` (optional) picks the host of `url`, as for a join link (§3.1):
+  `"join"` gives `https://<join host>/i/<token>`, which redirects to the
+  invitation page (§1.1); `"public"` gives `https://<public host>/invite/<token>`
+  (§16.11). It defaults to `"join"` when a join host is configured and to
+  `"public"` otherwise; `"join"` without a join host is `invalid` with
+  `details.fields.via: "no_join_host"`. The mailed link is the same `url`.
+  The token works in both shapes whatever `via` says, and the invitation
+  lists `via` (`GET`) so the inviter sees which link went out. The
+  dashboard's invite form shows "link via <join host>", on by default,
+  only when a join host is configured.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
   "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
-  "url": "https://maity.team/invite/9fK2…" }
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "via": "join",
+  "url": "https://join.maity.team/i/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
@@ -12395,7 +12412,7 @@ names:
 | `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
-| `/invite/<token>` | an invitation (§3.4) |
+| `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
