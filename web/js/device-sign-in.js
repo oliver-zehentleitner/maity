@@ -20,6 +20,9 @@ window.Maity = window.Maity || {};
   // As the hub reads a code: case ignored, hyphens and spaces dropped, I and
   // L as 1, O as 0 (§2.6.2). null when it is not 12 characters of the alphabet.
   const CODE_LENGTH = 12;
+  // The mail's code (§2.6.3): this many digits, said and checked from one number.
+  const MAIL_DIGITS = 6;
+  const MAIL_CODE = new RegExp("^\\d{" + MAIL_DIGITS + "}$");
   function normalCode(text) {
     const c = String(text || "").toUpperCase().replace(/[\s-]/g, "").replace(/[IL]/g, "1").replace(/O/g, "0");
     return c.length === CODE_LENGTH && [...c].every((ch) => ALPHABET.includes(ch)) ? c : null;
@@ -216,7 +219,7 @@ window.Maity = window.Maity || {};
         onsubmit: async (e) => {
           e.preventDefault();
           const digits = code.value.replace(/\s/g, "");
-          if (!/^\d{6}$/.test(digits)) { status2.fail(M.t("device.not_sent"), { message: M.t("device.mail.digits", { count: 6 }) }); code.focus(); return; }
+          if (!MAIL_CODE.test(digits)) { status2.fail(M.t("device.not_sent"), { message: M.t("device.mail.digits", { count: MAIL_DIGITS }) }); code.focus(); return; }
           status2.busy(M.t("device.signing_in"));
           try {
             const done = await M.api.post("/auth/email-code", { code: digits });
@@ -229,7 +232,7 @@ window.Maity = window.Maity || {};
       },
       h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.check")),
       h("p", { id: "sign-in-mail-sent", role: "status" }, M.t("device.mail.sent")),
-      h("label", { for: "sign-in-mail-code" }, M.t("device.mail.code", { count: 6 })), code,
+      h("label", { for: "sign-in-mail-code" }, M.t("device.mail.code", { count: MAIL_DIGITS })), code,
       h("button", { type: "submit", class: "primary" }, M.t("device.mail.sign_in")), status2.el));
       code.focus();
     }
@@ -312,9 +315,12 @@ window.Maity = window.Maity || {};
     // as such, the three numbers, and Deny as the default (§2.6.2, §2.6.7).
     function approval(now) {
       const d = now.device || {};
-      const claim = d.browser || d.os
-        ? M.t("device.approval.claims", { browser: d.browser || M.t("device.approval.unknown_browser"), os: d.os || M.t("device.approval.unknown_os") })
-        : M.t("device.approval.claims_nothing");
+      // One whole sentence for each case: a filler phrase put into one would
+      // not fit another language's grammar.
+      const claim = d.browser && d.os ? M.t("device.approval.claims", { browser: d.browser, os: d.os })
+        : d.browser ? M.t("device.approval.claims_browser", { browser: d.browser })
+          : d.os ? M.t("device.approval.claims_os", { os: d.os })
+            : M.t("device.approval.claims_nothing");
       const status2 = M.statusLine();
       const busy = (yes) => dialog.querySelectorAll("button").forEach((b) => { b.disabled = yes; });
       const send = async (verb, body, words) => {
