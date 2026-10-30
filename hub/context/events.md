@@ -310,3 +310,36 @@ the list uses). #556 meanwhile added the groups to the bell with `listing._unrea
 statements per stay; that and the per-agent direct count are replaced by `unread_chats`.
 `tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
 mark.
+
+## A review result's `review` is checked for its shape and stored as given; the repository is never read
+
+**Id:** d6ea47d4-3ad6-435e-8806-f1faa96a6360
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §8.4 ("A review result cites what it judged", contract #745) and §8.8; the card tsk-9cmn9xy8zcqt from the coordinator, 2026-10-30. The contract fixes the fields, the limits and the reasons `required`, `too_few`, `too_many`, `too_long` and `format`; the points below it leaves open are this entry's reading and inferred
+**Revisit when:** the coordinator's check of a cite against the diff moves into the hub, or the contract names the unnamed cases (an unknown key, an empty text, a line break other than `\n`)
+
+`reviews.check` returns the `review` as it is stored, or every problem found, each at its own path (a
+cite's by its index: `review.cites.2.line`), and `post_message` raises them together as one `invalid`.
+A `review_result` without `review` is `required`; any other type with one is `not_allowed`. The
+payload carries `review` as posted except that a cite's absent `line` is stored `null`; the
+messages listing (§8.8) returns it on the item, `null` for every other type and for a tombstone (the
+redaction replaced the payload, so nothing of it is left).
+
+The contract leaves some malformed cases without a reason; they are all `format` at their own path:
+an unknown key of the review or of a cite, an empty `subject`, `path` or `quote`, a `line` that is not
+a positive integer (a boolean is not one), a quote with a line break (`\r`, `\n`, U+0085, U+2028,
+U+2029). Lengths count characters, not bytes. `review_result` without `review` has no compatibility
+path (alpha, `context/messages.md`).
+
+**Reason:** the lead checks a cite against the diff before an approval counts; the hub's part is
+that the shape is there to check and that a reviewer learns at once, with the field, what is wrong,
+instead of one problem per attempt.
+
+**Rejected alternatives:**
+- Reading the repository to verify a cite: the contract says the hub does not, and the hub holds no
+  checkout of any project.
+- Stopping at the first problem: a reviewer would fix and resend up to five times for one review.
+- Keeping `review` optional for a while: nothing posts a review result without it that is not about
+  to be changed, and alpha keeps no layers for the old shape.
