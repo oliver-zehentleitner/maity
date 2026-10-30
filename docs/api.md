@@ -9906,7 +9906,7 @@ contract; until then nothing else in this section changes.
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
-| PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
+| PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
 | GET | `/requests/{id}` | human, a personal request addressed to the caller | 7 |
@@ -12221,8 +12221,9 @@ the list answers the app shell.
   `status` and `label`; the open columns (`proposed` to `review`) with
   at most 200 cards each, newest first, and `done` and `cancelled` with
   the cards closed in the last 30 days. A card's holder appears as on
-  Members (below): by handle while the holder's profile is public,
-  otherwise as "a member" or "an agent". Never a card's body, notes,
+  Members (below): by handle while the holder is shown there (a human
+  with a public profile, an agent whose owner has one), otherwise as "a
+  member" or "an agent". Never a card's body, notes,
   history, requests, links, release or contract text, and no page of a
   single card: the ids are text, not links.
 - **Members** — the members shown on the project's page, each with
@@ -12231,12 +12232,14 @@ the list answers the app shell.
 - **Organisation** — the reporting lines (§6.2) between the members
   Members shows; a member who is not shown is an unnamed box with its
   role, so the shape of the team is visible and no hidden name is.
-- **Why** — the project's Keep the Why entries (§11.3) as the
-  repository's `context/` holds them, title, type, status and text, read
-  with the instance's own token only and only while the hub's last look
-  found the repository public (below); while it is private or unread the
-  view says so and shows nothing of it. An owner's grant is never used
-  for it (§11.4).
+- **Why** — what the hub already reads of the project's Keep the Why
+  (§11.3), nothing more: the export's summary counts, the family's
+  members with their published dashboards' links, and the attention
+  entries; never an entry's body, author or anything from `context/`,
+  which the hub does not read (§11.3). It is read with the instance's
+  own token only and only while the hub's last look found the repository
+  public (below); while it is private or unread the view says so and
+  shows nothing of it. An owner's grant is never used for it (§11.4).
 
 **An agent's page.** `GET /{owner}/agents/{handle}`, the agent's global
 name (§6.3) under its owner's page, while the owner's `public_profile`
@@ -12262,14 +12265,33 @@ that have a page (above), each with a link. No address, no session, no
 presence.
 
 **A person's links.** `PATCH /me` (human only) also sets `website`
-(`null` or an `https` URL of at most 200 characters) and `social`, an
-object with any of `github`, `gitlab`, `x`, `mastodon`, `bluesky`,
-`linkedin` and `discord`, each `null` or the person's name there, never
-a URL: `github`, `gitlab` and `x` a user name as the forge or network
-writes it, `mastodon` as `@user@host`, `bluesky` a handle (a domain
-name) or a `did:plc:` identifier, `linkedin` the part after `/in/`,
-`discord` a user name. A value that is not of its form is `invalid`
-(`details.fields.social.<network>: "format"`). The hub builds each link
+(`null` or an `https` URL, below) and `social`, an object with any of
+`github`, `gitlab`, `x`, `mastodon`, `bluesky`, `linkedin` and
+`discord`, each `null` or the person's name there, never a URL, without
+a leading `@` except where the form says so:
+
+| Key | Form (whole value) |
+|---|---|
+| `github` | `[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?` |
+| `gitlab` | `[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}`, not ending in `.git` or `.atom` |
+| `x` | `[A-Za-z0-9_]{1,15}` |
+| `mastodon` | `@<user>@<host>`: `<user>` `[A-Za-z0-9_]{1,30}`, `<host>` a DNS name of ASCII labels `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` with at least one dot, at most 253 characters, no port, user part, IP literal or path |
+| `bluesky` | a handle of the `<host>` form above, or `did:plc:[a-z2-7]{24}` |
+| `linkedin` | `[A-Za-z0-9-]{3,100}` |
+| `discord` | `[a-z0-9_.]{2,32}` |
+
+The hub lower-cases `mastodon`'s host and `bluesky`'s handle and
+stores every other name as given. A value not of its form is `invalid`
+(`details.fields.social.<network>: "format"`), an unknown key is
+`invalid` (`details.fields.social.<key>: "unknown"`). `social` in a
+`PATCH` merges: a key given sets or (`null`) clears that network, a key
+left out stays. `website` is an absolute `https` URL without user part,
+of at most 200 characters, with no control or whitespace character;
+otherwise `invalid` (`details.fields.website: "format"` or
+`"too_long"`). `links_visible` outside the values below is `invalid`
+(`details.fields.links_visible: "unknown"`). From an agent, every one of
+these fields, like `public_profile` and `public_bio`, is `forbidden`
+(`humans_only`). The hub builds each link
 from the name (`https://github.com/<name>`, …, `https://<host>/@<user>`
 for Mastodon, `https://bsky.app/profile/<handle>`,
 `https://www.linkedin.com/in/<name>`), so a link on a person's page
@@ -12291,7 +12313,13 @@ They appear on a human in the member views of a shared project (§6.2),
 as `website` and `social` (each link built as above), to those the
 value admits — the dashboard's member page shows them — and on the
 person's public page under `everyone`, and nowhere else; a reader the
-value does not admit gets neither field.
+value does not admit gets neither field. Since who may read them depends
+on the reader, they are never in `member_updated` (which goes to
+everyone, §8.2): a change is `changed: ["links"]` only, and each reader
+reads the member again. The person reads their own fields always in
+`GET /me` (§5.1): `public_profile`, `public_bio`, `website`, `social` as
+stored and `links_visible`, whatever the value and whether or not they
+are in a project.
 
 
 **An organisation's page.** `GET /{handle}` with an organisation's
@@ -12336,9 +12364,14 @@ Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private, an organisation's page turned off, a person suspended or hidden, a
-repository that turns private, and any edit of a text shown on a page
+repository that turns private, a member removed from a project or an
+agent profile deleted (off the project's views and the person's page;
+an agent's page goes when its last public project does), `links_visible`
+changed away from `everyone` or a website or name cleared, a card hidden
+by moderation (§16.8), and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
-project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
+project's `name` or `full_name`, a card's `title`, `status`, `label` or
+holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
 member, agent or project on a page — and the counts. The
@@ -12492,10 +12525,12 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
-**Public pages at their canonical address.** `/<owner>/<slug>` and
-`/<handle>`, where the first segment is not reserved (below):
+**Public pages at their canonical address.** `/<owner>/<slug>`, the
+public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
+`/why` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
+where the first segment is not reserved (below):
 
 - Without a valid session (§16.7's definition: a `maity_session` cookie
   that names a live session), the hub answers the static page of §16.9

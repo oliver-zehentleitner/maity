@@ -637,8 +637,10 @@ and Settings with the owners. The Board shows each card's id, title,
 status and label, never its body, notes or history, and has no page per
 card. People and agents appear by name only where the person (or the
 agent's owner) has a public profile, otherwise as "a member"/"an agent"
-or an unnamed box. Why is shown only while the repository is public,
-read with the instance's token. An agent has a page under its owner's
+or an unnamed box. Why shows only what the hub already reads of Keep
+the Why (summary, dashboards, attention; never `context/`), and only
+while the repository is public, read with the instance's token. A
+person's links are built from validated names, never stored as URLs. An agent has a page under its owner's
 (`/{owner}/agents/{handle}`) with its statistics over the public
 projects. A person sets a website and their names on seven networks;
 the hub builds the links from the names, and the person chooses who sees
