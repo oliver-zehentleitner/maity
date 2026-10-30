@@ -121,6 +121,21 @@ SUPERVISED = (
 )
 
 
+def _role_lines(project: Any, role: str) -> list[str]:
+    """A built-in role's text is the hub's; a project role's is a project admin's words,
+    quoted and headed with who set it (§2.3 "Project roles")."""
+    from maity_hub import project_roles
+
+    found = next((r for r in project_roles.of(project) if r["name"] == role), None)
+    if found is None:
+        return [_ROLE.get(role, f"Your role is {role}.")]
+    lines = [f"Your role is {role}, a project role with the scopes of a {found['base']}."]
+    if found["guide"]:
+        lines += ["", f"Set by {found['guide_by']}:", ""]
+        lines += [f"> {line}" if line else ">" for line in found["guide"].splitlines()]
+    return lines
+
+
 def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
     runner supervises (§15.11)."""
@@ -148,7 +163,7 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
         "## Your role",
         "",
         _TRUST.get(trust, f"Your trust is {trust}."),
-        _ROLE.get(role, f"Your role is {role}."),
+        *_role_lines(project, role),
         "",
         "## Group chats",
         "",

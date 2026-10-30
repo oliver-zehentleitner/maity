@@ -188,6 +188,7 @@ def test_out_of_an_organisation_to_another_human_needs_their_go(
                 human_id=heir.id,
                 trust="owner",
                 role="coder",
+                role_base="coder",
                 areas=["/"],
                 capabilities=[],
                 joined_at=conn.execute(select(t.membership.c.joined_at)).scalars().first(),

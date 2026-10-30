@@ -520,6 +520,7 @@ def member_views(
             **head,
             "trust": row.trust,
             "role": row.role,
+            "role_base": row.role_base,  # the role itself for a built-in one (§2.3)
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             # The edge's owners differ (§6.2 "The marker"); `owner_id` says whose it is.
             "cross_owner": row.reports_to is not None
@@ -752,7 +753,13 @@ def agent_view(
     """The agent profile (§6.3), for its owner; `picture` from `avatars.states` when a
     list has looked them up together."""
     memberships = conn.execute(
-        select(t.project.c.id, t.project.c.slug, t.membership.c.trust, t.membership.c.role)
+        select(
+            t.project.c.id,
+            t.project.c.slug,
+            t.membership.c.trust,
+            t.membership.c.role,
+            t.membership.c.role_base,
+        )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.agent_id == row.id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)

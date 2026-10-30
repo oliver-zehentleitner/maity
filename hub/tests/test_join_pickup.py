@@ -494,7 +494,7 @@ def _row(kind: str, audience: list[str]) -> Any:
 
 
 def test_a_supervised_session_wakes_on_less() -> None:
-    me = SimpleNamespace(id=7, trust="member", role="coder", agent_id="agt-b")
+    me = SimpleNamespace(id=7, trust="member", role="coder", role_base="coder", agent_id="agt-b")
     for kind, audience, plain, supervised in (
         ("task_created", ["all"], True, False),
         ("state_changed", ["all"], True, True),

@@ -117,8 +117,11 @@ def membership(
     engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: str
 ) -> int:
     values: dict[str, Any] = {"role": role}  # before 0067, the single role (§2.3)
-    if "trust" in {c["name"] for c in inspect(engine).get_columns("membership")}:
+    columns = {c["name"] for c in inspect(engine).get_columns("membership")}
+    if "trust" in columns:
         values["trust"], values["role"] = trust_and_role(role, trust)
+    if "role_base" in columns:  # since 0112: a built-in role is its own base
+        values["role_base"] = values["role"]
     with engine.begin() as conn:
         result = conn.execute(
             insert(t.membership).values(

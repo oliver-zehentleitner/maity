@@ -35,6 +35,7 @@ from maity_hub import (
     line,
     moderation,
     namespace,
+    project_roles,
     takeovers,
     write_guard,
 )
@@ -55,7 +56,7 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import MEMBER_RULE_ROLES, ROLES, has_scope
+from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter(route_class=ProjectRoute)
@@ -297,7 +298,7 @@ def _require_member_rule(mine: Any) -> None:
 def _within_limits(membership_row: Any) -> bool:
     """A membership a member's join may add an instance to: trust and role within §3.1."""
     return bool(
-        membership_row.trust in MEMBER_RULE_TRUSTS and membership_row.role in MEMBER_RULE_ROLES
+        membership_row.trust in MEMBER_RULE_TRUSTS and membership_row.role_base in MEMBER_RULE_ROLES
     )
 
 
@@ -322,8 +323,9 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
     """The limits of §3.1 a member's join stays within, the first broken one named."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
         raise _limit("trust")
-    if body.role is not None and body.role in ROLES and body.role not in MEMBER_RULE_ROLES:
-        raise _limit("role")  # a role the hub does not know is `invalid` below
+    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    if base is not None and base not in MEMBER_RULE_ROLES:
+        raise _limit("role")  # a role the project does not have is `invalid` below
     if (
         body.reports_to is not None
         and body.reports_to != mine.principal_id
@@ -387,7 +389,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     creator raised to `members:admin` meanwhile keeps it, and `member_agents` turned
     `off` does not void it."""
     creator = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role).where(
+        select(t.membership.c.trust, t.membership.c.role_base).where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
@@ -395,7 +397,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     ).first()
     if creator is None:
         raise not_found()
-    if has_scope(creator.trust, creator.role, "human", "members:admin"):
+    if has_scope(creator.trust, creator.role_base, "human", "members:admin"):
         return
     if creator.trust != "member":  # a guest now, or anything else below: void
         raise not_found()
@@ -845,6 +847,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 agent_id=agent_id,
                 trust=row.trust,
                 role=row.role,
+                # A role still named by an open join cannot be removed (§2.3).
+                role_base=project_roles.base_of(project, row.role),
                 reports_to=_boss_still_here(conn, row.reports_to),
                 areas=row.areas,
                 capabilities=row.capabilities,

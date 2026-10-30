@@ -56,7 +56,8 @@ def test_the_list_holds_every_role_of_the_contract() -> None:
 def test_a_member_of_each_role_has_the_scopes_of_its_row(role: str) -> None:
     assert set(scopes.scopes_for("member", role, "agent")) == SCOPES[role]
     assert scopes.token_known(f"role:{role}")
-    assert scopes.tokens_of("member", role) == {f"role:{role}"}  # never widened to its base
+    # A built-in role is its own base: a security team's token is never widened (§2.3).
+    assert scopes.tokens_of("member", role, role) == {f"role:{role}"}
     assert scopes.has_scope("member", role, "agent", "tasks:review") == (
         role in ("reviewer", "purple-team")
     )
@@ -133,7 +134,7 @@ def test_a_merge_wakes_the_holders_of_the_done_authority_a_security_team_counts_
     role: str, authority: str, wakes: bool
 ) -> None:
     row = SimpleNamespace(payload={"done_authority": authority}, audience=[], wakes=None)
-    member = SimpleNamespace(trust="member", role=role)
+    member = SimpleNamespace(trust="member", role=role, role_base=role)
     assert events._merge_wakes(row, member, "agt-x", None) is wakes
 
 

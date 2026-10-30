@@ -9,11 +9,10 @@ token is one uniform `not_found`, on the page and on accept alike.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import AfterValidator
 from sqlalchemy import Connection, and_, insert, or_, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -25,6 +24,7 @@ from maity_hub import (
     invitations,
     namespace,
     paging,
+    project_roles,
     registration,
 )
 from maity_hub import tables as t
@@ -40,7 +40,6 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
-from maity_hub.scopes import ROLES
 from maity_hub.views import member_view
 
 router = APIRouter(route_class=ProjectRoute)
@@ -48,16 +47,9 @@ router = APIRouter(route_class=ProjectRoute)
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
-def _known_role(value: str) -> str:
-    """A built-in role of §2.3, from the one list `scopes` keeps."""
-    if value not in ROLES:
-        raise ValueError(f"role must be one of {', '.join(ROLES)}")
-    return value
-
-
 class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
-    role: Annotated[str, AfterValidator(_known_role)] = "coder"
+    role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
@@ -116,9 +108,11 @@ def create_invitation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        if project_roles.base_of(mine.project, body.role) is None:
+            raise invalid({"role": "unknown"}, "the project has no such role")
         if body.role == "proxy" and body.trust != "admin":
             raise invalid({"role": "proxy_needs_admin"}, "a proxy holds trust admin")
-        if not invitations.may_issue(body.trust, body.role, mine.trust, mine.role):
+        if not invitations.may_issue(body.trust, body.role, mine.trust, mine.role_base):
             raise ApiError(
                 403,
                 "forbidden",
@@ -374,6 +368,11 @@ def _accept(
             human_id=caller.human_id,
             trust=row.trust,
             role=row.role,
+            # A role still named by an open invitation cannot be removed (§2.3).
+            role_base=project_roles.base_of(
+                conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one(),
+                row.role,
+            ),
             areas=[],
             capabilities=[],
             joined_at=now,

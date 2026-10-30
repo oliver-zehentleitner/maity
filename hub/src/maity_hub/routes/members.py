@@ -25,6 +25,7 @@ from maity_hub import (
     line,
     namespace,
     placements,
+    project_roles,
     rules,
     seats,
     takeovers,
@@ -38,7 +39,7 @@ from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_foun
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import ROLES, TRUSTS, in_admin_team
+from maity_hub.scopes import TRUSTS, in_admin_team
 from maity_hub.views import (
     credential_view,
     human_paused,
@@ -159,9 +160,12 @@ def validate_assignment(
             errors["trust"] = "humans_only"
         values["trust"] = trust
     if role is not None:
-        if role not in ROLES:
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        base = project_roles.base_of(project, role)  # a project role too (§2.3)
+        if base is None:
             errors["role"] = "unknown"
         values["role"] = role
+        values["role_base"] = base
     # The proxy holds trust `admin`, the only trust it may hold (§2.3).
     if "role" not in errors and "trust" not in errors:
         new_trust, new_role = values.get("trust", current[0]), values.get("role", current[1])

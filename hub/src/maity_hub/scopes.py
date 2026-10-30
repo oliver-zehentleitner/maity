@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 TRUSTS = ("owner", "admin", "member", "guest")
 # The tokens a request, a message or a setting names (§7, §8.2): `trust:<trust>`
 # for the two governing trusts, `role:<role>` for every role.
@@ -28,6 +30,9 @@ _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "purple-team": _REVIEWER,
 }
 ROLES = tuple(_ROLE_SCOPES)
+# What a project role may be built on (§2.3 "Project roles"): never `proxy`, `manager` or a
+# security team, whose scopes are already those of a base.
+BASES = ("coder", "reviewer", "tester", "designer", "ops", "writer")
 # Where the hub resolves a built-in role to find who holds done authority, whom a change
 # waits for the owner's go, a substitute (§6.12), a security team counts as the role whose
 # scopes it has (§2.3). A `role:` token in an address is not widened that way.
@@ -99,9 +104,13 @@ SCOPES = (
 
 
 def _granted(trust: str, role: str) -> set[str]:
+    """`role` is a built-in role: a project role is passed as its base (`role_base`), and
+    any other name is a fault of the caller, never a coder."""
+    if role not in _ROLE_SCOPES:
+        raise ValueError(f"no built-in role {role!r}: pass a project role's role_base")
     if trust == "guest":
         return set(_GUEST)
-    granted = set(_ROLE_SCOPES.get(role, _CODER))
+    granted = set(_ROLE_SCOPES[role])
     if role == "proxy":
         # Until the owner's go per call (`Maity-On-Request`) is in place, a proxy relays
         # answers and holds no other governance scope, as under the single role.
@@ -138,19 +147,22 @@ def in_admin_team(trust: str, role: str) -> bool:
     return trust in ("owner", "admin") and role != "proxy"
 
 
-def token_known(token: str) -> bool:
-    """`trust:owner`, `trust:admin` or `role:<role>`; any other token is unknown (§2.3)."""
+def token_known(token: str, custom: Iterable[str] = ()) -> bool:
+    """`trust:owner`, `trust:admin` or `role:<role>`, a built-in role or one of the
+    project's own (`custom`); any other token is unknown (§2.3)."""
     if token.startswith("trust:"):
         return token.removeprefix("trust:") in TOKEN_TRUSTS
     if token.startswith("role:"):
-        return token.removeprefix("role:") in ROLES
+        role = token.removeprefix("role:")
+        return role in ROLES or role in custom
     return False
 
 
-def tokens_of(trust: str, role: str) -> set[str]:
-    """The `role:` and `trust:` tokens a membership answers to (§8.2): `trust:admin`
-    resolves to the admin team's admins, never a proxy."""
-    tokens = {f"role:{role}"}
+def tokens_of(trust: str, role: str, base: str) -> set[str]:
+    """The `role:` and `trust:` tokens a membership answers to (§8.2): a project role's
+    member answers to its base's token as well (§2.3), a security team only to its own;
+    `trust:admin` resolves to the admin team's admins, never a proxy."""
+    tokens = {f"role:{role}", f"role:{base}"}
     if trust == "owner":
         tokens.add("trust:owner")
     if trust == "admin" and role != "proxy":
