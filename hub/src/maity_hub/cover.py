@@ -345,7 +345,7 @@ def _audience(conn: Connection, covered: Any, sub: Any) -> list[str]:
     boss = principal_id(conn, covered.reports_to)
     if boss is not None:
         audience.append(f"member:{boss}")
-    audience.append("role:admin")
+    audience.append("trust:admin")
     return list(dict.fromkeys(audience))
 
 

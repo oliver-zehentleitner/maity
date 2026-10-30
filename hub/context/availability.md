@@ -241,3 +241,35 @@ holds one holds the other.
   never held the card.
 - Gating every takeover call while the coordinator is out: a holder
   could then not answer or object to one that was already open.
+
+## A cover does not chain; `covering` comes from the items each substitute holds
+
+**Id:** 9beeec47-0887-4b6b-9da3-108d97737cbc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviews of #626 (2026-10-30) and the coordinator's ruling on them that `covering` is derived from the items
+**Revisit when:** a substitute's own outage leaves covered work waiting long enough to matter, or `cover` gains a second level
+
+Cards and requests that already carry `cover` are not in the next cover
+set (`cover.is_(None)` in `_cover_set`). When a substitute goes out
+itself, its own policy applies to its own work only; the covered
+member's items wait with it until one of the two is back. A member's
+`covering` lists every member of whom it holds an item as cover
+(`cover.by`), with the earliest `cover.since`, so a second entry that
+took what the first could not sees the member as well; `covered_by`
+still names the run's first substitute.
+
+**Reason:** a chain would move the same card through several hands, the
+returning member would not know where its work went, and `cover_ended`
+could no longer name one run. `covering` from the membership row named
+only the substitute the run started with, while the cards of a second
+one carried `cover` too: the items are what a substitute actually holds.
+
+**Rejected alternatives:**
+- Passing covered items on to the substitute's substitute: the ping-pong
+  that trust.md 10798a45 names as its revisit case.
+- Returning them to the covered member's next list entry: a second run
+  inside the first.
+- `covering` from `membership.cover_by` alone: blind to every substitute
+  but the first.

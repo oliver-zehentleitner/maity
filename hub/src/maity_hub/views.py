@@ -569,7 +569,6 @@ def member_views(
                     project_name=names[row.project_id],
                 ),
                 "availability_policy": availability.policy_of(row),
-                # Cover by a substitute is not built yet (§6.12).
                 "covered_by": covered_by.get(row.id),
                 "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
@@ -612,7 +611,9 @@ def member_views(
 def _covers(
     conn: Connection, rows: Sequence[Any]
 ) -> tuple[dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
-    """`covered_by` and `covering` of the rows (§6.12), in two queries."""
+    """`covered_by` and `covering` of the rows (§6.12): `covering` from the items each
+    member holds as cover (`cover.by`), so every substitute of a run sees whom it
+    covers, not only the one the run started with."""
     covered_by: dict[int, dict[str, Any]] = {}
     by_ids = {r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by is not None}
     principals = principal_ids(conn, by_ids)
@@ -622,21 +623,27 @@ def _covers(
                 "member_id": principals[row.cover_by],
                 "since": ts(row.cover_since),
             }
-    covering: dict[int, list[dict[str, Any]]] = {}
-    wanted = {r.id for r in rows}
-    if wanted:
-        for other in conn.execute(
-            select(t.membership)
-            .where(
-                t.membership.c.cover_by.in_(wanted),
-                t.membership.c.cover_state == "covered",
-                t.membership.c.active.is_(True),
-            )
-            .order_by(t.membership.c.cover_since, t.membership.c.id)
-        ):
-            covering.setdefault(other.cover_by, []).append(
-                {"member_id": other.agent_id or other.human_id, "since": ts(other.cover_since)}
-            )
+    by_principal = {(r.project_id, r.agent_id or r.human_id): r.id for r in rows}
+    projects = list({r.project_id for r in rows})
+    found: dict[int, dict[str, str]] = {}  # the substitute's row -> covered member -> since
+    if projects:
+        for table in (t.card, t.request):
+            for project_id, cover in conn.execute(
+                select(table.c.project_id, table.c.cover).where(
+                    table.c.project_id.in_(projects), table.c.cover.is_not(None)
+                )
+            ):
+                row_id = by_principal.get((project_id, cover["by"]))
+                if row_id is not None:
+                    of = found.setdefault(row_id, {})
+                    of[cover["for"]] = min(of.get(cover["for"], cover["since"]), cover["since"])
+    covering = {
+        row_id: [
+            {"member_id": member_id, "since": since}
+            for member_id, since in sorted(of.items(), key=lambda item: (item[1], item[0]))
+        ]
+        for row_id, of in found.items()
+    }
     return covered_by, covering
 
 

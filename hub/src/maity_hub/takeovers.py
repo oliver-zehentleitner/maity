@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, instances, proposals
+from maity_hub import availability, clock, instances, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -155,24 +155,6 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
     return target, instances.resolve(conn, target, named, "to")
 
 
-def _refuse_coordinator_out(conn: Connection, mine: Membership) -> None:
-    """A new takeover by an agent moves a card on an agent's initiative, as `assign` does,
-    so the coordinator gate holds it back too (§6.12, §6.19); a response, an escalation
-    and a withdrawal are not new moves, and humans are never gated."""
-    from maity_hub import availability
-
-    if mine.kind != "agent":
-        return
-    gate = availability.coordinator_gate(conn, mine.project)
-    if gate is not None:
-        raise ApiError(
-            409,
-            "coordinator_unavailable",
-            "the coordinator is out; agents open no takeover until it is back",
-            gate,
-        )
-
-
 def open_takeover(
     conn: Connection, mine: Membership, caller: Caller, card: Any, reason: str, to: str | None
 ) -> tuple[Any, int]:
@@ -180,7 +162,7 @@ def open_takeover(
     already transferred when the lease has run out or a human admin takes it."""
     if card.claim_holder is None:
         raise ApiError(409, "not_claimed", "nobody holds this card: claim or assign it instead")
-    _refuse_coordinator_out(conn, mine)
+    availability.refuse_coordinator_out(conn, mine, "new takeovers")
     holder = _row(conn, card.claim_holder)
     refuse_human_holder(conn, card)
     current = open_on(conn, card.id)

@@ -5647,7 +5647,10 @@ starts that agent again. Under a runner the restart is the runner's
 
 **In the member view**, every reader sees `availability`,
 `availability_policy`, `covered_by` (`{member_id, since}` or `null`) and
-`covering` (`[{member_id, since}]`). The dashboard shows who is out, until
+`covering` (`[{member_id, since}]`: every member of whom this one holds a
+card or request with `cover.by` naming it, `since` the earliest of those
+items' `cover.since`, so each substitute of a run lists the member, not
+only the first). The dashboard shows who is out, until
 when, and who covers whom from these fields. The resume packet's
 `membership` gains `availability_policy` and `covering`; each of `peers`
 gains `availability` and `covered_by`. Availability changes never emit

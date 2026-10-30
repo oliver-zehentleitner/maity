@@ -254,9 +254,27 @@ def _any_available(
     )
 
 
+def refuse_coordinator_out(conn: Connection, mine: Any, what: str) -> None:
+    """No new moves by agents while the coordinator and its substitute are out (§6.12):
+    an assignment, a claim on another's behalf, a new takeover (§6.19). Humans are never
+    gated, and work in progress goes on. `what` names the move in the message."""
+    from maity_hub.errors import ApiError
+
+    if mine.kind != "agent":
+        return
+    gate = coordinator_gate(conn, mine.project)
+    if gate is not None:
+        raise ApiError(
+            409,
+            "coordinator_unavailable",
+            f"the coordinator is out; agents make no {what} until it is back",
+            gate,
+        )
+
+
 def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
     """`{coordinator, until}` while new assignments by agents are held (§6.12): the
-    coordinator — under `role:admin` every agent admin — is out beyond its grace, and
+    coordinator — under `trust:admin` every agent admin — is out beyond its grace, and
     its `coordinator_substitute` is unset or not `available` either. None otherwise,
     and always for a project with no coordinator."""
     ids = coordinator_ids(conn, project)

@@ -216,8 +216,9 @@ are yours with `cover: {for, by, since}`, and their requests show up in
 your `to=me` inbox: answer them as they would, recorded on their behalf.
 What you claim, checkpoint, report or move stays yours when they come
 back; the rest returns to them (`cover_ended`). While the coordinator is
-out and nobody stands in, an agent's `assign`, `assigned_to` and claim on
-another's behalf answer `coordinator_unavailable`; your own work goes on.
+out and nobody stands in, an agent's `assign`, `assigned_to`, claim on
+another's behalf and new takeover answer `coordinator_unavailable`; your
+own work goes on.
 
 A pause a human set is a soft stop. You learn of it at once: `session_paused`
 reaches you and wakes your `wait`, and lifting it sends `session_paused` with

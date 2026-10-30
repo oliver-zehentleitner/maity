@@ -100,7 +100,7 @@ def test_a_substitute_takes_the_work_and_gives_back_what_it_did_not_touch(
         f"member:{covered.id}",
         f"member:{sub.id}",
         f"member:{owner.id}",
-        "role:admin",
+        "trust:admin",
     ]
     assert [e.payload["reason"] for e in events(migrated, "task_assigned")][-2:] == [
         "cover",
@@ -308,6 +308,21 @@ def test_agents_make_no_new_assignments_while_the_coordinator_is_out(
         f"/projects/maintainer/maity/tasks/{card['id']}/claim", {"holder": worker.id}
     )
     assert on_behalf.json()["error"]["code"] == "coordinator_unavailable"
+    created = admin.post(
+        "/projects/maintainer/maity/tasks", {"title": "A card", "assigned_to": worker.id}
+    )
+    assert created.status_code == 409, created.text
+    assert created.json()["error"]["code"] == "coordinator_unavailable"
+    patched = admin.patch(
+        f"/projects/maintainer/maity/tasks/{card['id']}", {"assigned_to": worker.id}
+    )
+    assert patched.status_code == 409, patched.text
+    assert patched.json()["error"]["code"] == "coordinator_unavailable"
+    # The right comes first: an agent without it is refused as without, gate or not.
+    unrighted = worker.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/assign", {"assignee": worker.id}
+    )
+    assert unrighted.status_code == 403, unrighted.text
     # Work in progress goes on, and humans are not gated.
     assert (
         worker.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
@@ -579,3 +594,75 @@ def test_a_returned_assignment_gets_its_instance_by_the_teams_distribution(
     covered.resume()
     back = card_of(owner, card["id"])
     assert back["assigned_to"] == covered.id and back["assigned_instance"] == before
+
+
+def test_trust_admin_expands_at_its_place_in_the_cover_order_by_handle(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`trust:admin` stands for the admin agents at its own position in `substitutes`,
+    ordered by `handle` (§6.12), never only as a fallback after the named members."""
+    from maity_hub import cover
+
+    covered, named, plain = (flow.agent(make_client, owner) for _ in range(3))
+    admins = [flow.agent(make_client, owner) for _ in range(3)]
+    for agent in (covered, named, plain, *admins):
+        agent.resume()
+    policy(
+        owner,
+        covered.id,
+        on_unavailable="substitute",
+        substitutes=["trust:admin", named.id],
+        grace_minutes=0,
+    )
+    with migrated.begin() as conn:
+        for agent in admins:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent.id)
+                .values(trust="admin", role="coder")
+            )
+        project = conn.execute(select(t.project).where(t.project.c.slug == "maity")).one()
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == covered.id)).one()
+        handles = dict(conn.execute(select(t.agent_profile.c.id, t.agent_profile.c.handle)).all())
+        order = [m.agent_id for m in cover.cover_order(conn, project, row)]
+    by_handle = sorted((a.id for a in admins), key=lambda agent_id: handles[agent_id])
+    assert order == [*by_handle, named.id]  # the admins first, where the policy put them
+
+
+def test_every_substitute_of_a_run_lists_whom_it_covers(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """`covering` comes from the items each member holds as cover: the second entry,
+    which took what the first could not, lists the covered member too."""
+    covered = flow.agent(make_client, owner)
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    member = flow.agent(make_client, owner)
+    for agent in (covered, reviewer, member):
+        agent.resume()
+    in_review = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{in_review['id']}/claim", {})
+    covered.post(
+        f"/projects/maintainer/maity/tasks/{in_review['id']}/report",
+        {"summary": "done", "code": False, "pr_status": "none"},
+    )
+    plain = task(owner)
+    owner.post(f"/projects/maintainer/maity/tasks/{plain['id']}/assign", {"assignee": covered.id})
+    policy(
+        owner,
+        covered.id,
+        on_unavailable="substitute",
+        substitutes=[reviewer.id, member.id],
+        grace_minutes=0,
+    )
+    limit(covered, now[0] + timedelta(hours=1))
+    started = {e.payload["substitute_id"]: e.payload for e in events(migrated, "cover_started")}
+    assert started[reviewer.id]["tasks"] == [plain["id"]]
+    assert started[member.id]["tasks"] == [in_review["id"]]  # the reviewer may not take it
+    for sub in (reviewer, member):
+        view = owner.get(f"/projects/maintainer/maity/members/{sub.id}").json()
+        assert [c["member_id"] for c in view["covering"]] == [covered.id]
+        packet = sub.resume().json()
+        assert [c["member_id"] for c in packet["membership"]["covering"]] == [covered.id]
+    covered.resume()  # back: the run ends, nobody covers anyone
+    for sub in (reviewer, member):
+        assert owner.get(f"/projects/maintainer/maity/members/{sub.id}").json()["covering"] == []

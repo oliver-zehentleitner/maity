@@ -416,21 +416,6 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
         )
 
 
-def _refuse_coordinator_out(conn: Connection, mine: Membership) -> None:
-    """No new assignments by agents while the coordinator and its substitute are out
-    (§6.12); humans are not gated, and work in progress goes on."""
-    if mine.kind != "agent":
-        return
-    gate = availability.coordinator_gate(conn, mine.project)
-    if gate is not None:
-        raise ApiError(
-            409,
-            "coordinator_unavailable",
-            "the coordinator is out; agents make no new assignments until it is back",
-            gate,
-        )
-
-
 def _refuse_closed_release(card: Any) -> None:
     """A closed release is the record of what shipped (§6.7)."""
     if card.kind == "release" and card.status in cards.CLOSED:
@@ -837,7 +822,7 @@ def create_card(
     if body.assigned_to is not None:
         assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
         _require_assigner(conn, mine, assigned)
-        _refuse_coordinator_out(conn, mine)
+        availability.refuse_coordinator_out(conn, mine, "new assignments")
     else:
         # Findings and hand-outs go to the owner of the narrowest area (§6.2), and while
         # that owner is covered to its substitute (§6.12): the hub's routing, not an
@@ -1052,7 +1037,7 @@ def patch_task(
             values["area"] = body.area
         if "assigned_to" in given:
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
-            _refuse_coordinator_out(conn, mine)
+            availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = new_assignee
@@ -1309,7 +1294,7 @@ def claim(
             instances.address(mine.principal_id, mine.instance or ""),
         ):
             mine.require("tasks:admin")
-            _refuse_coordinator_out(conn, mine)
+            availability.refuse_coordinator_out(conn, mine, "new assignments")
             principal, named = instances.split_address(body.holder)
             holder_id = _target_id(conn, mine, principal, "holder")  # never a guest (§2.3)
             holder_row = conn.execute(
@@ -1597,7 +1582,6 @@ def assign(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
-        _refuse_coordinator_out(conn, mine)
         card = _project_card(conn, mine, card_id)
         assignee = _target_id(conn, mine, body.assignee, "assignee")
         if card.claim_holder not in (None, assignee):
@@ -1614,6 +1598,7 @@ def assign(
             # A manager moves a card among itself and its reach, an expired claim
             # included (§2.3 "The manager"): every member it touches in the reach.
             _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
+        availability.refuse_coordinator_out(conn, mine, "new assignments")  # after the right
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
