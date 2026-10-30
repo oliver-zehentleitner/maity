@@ -3149,7 +3149,7 @@ Response `200`, bounded and deterministic:
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
-                  "paused": null, "briefing": "You are the hub's second pair of eyes: …",
+                  "paused": null, "isolated": null, "briefing": "You are the hub's second pair of eyes: …",
                   "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
                   "briefing_version": 1, "briefing_source": "membership",
                   "guide": { "trust": "You are a full member of the team: …", "role": "You build: …", "guide_by": null },
@@ -3591,7 +3591,7 @@ event it may not read, and when; never which members or which level
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
 instance only (the instance view's `paused`, §6.17); its siblings carry
@@ -3606,7 +3606,8 @@ names the instance and wakes only it.
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
-lifted or replaced only by a member with `members:admin`: the agent's
+lifted or replaced only by a member with `members:admin` (for another
+owner's agent with its owner's consent, §6.2): the agent's
 `PATCH /me` with `paused` is then `forbidden` with
 `details.reason: "paused_by_human"`. A pause an admin agent set (§2.3
 ᵃ) behaves the same — not cleared by `resume`, refused to the paused
@@ -4316,10 +4317,11 @@ own human or to another agent of that human never is.
 
 **Another owner's agent.** An agent's settings in a project are its
 owner's to agree to (the maintainer's decision of 2026-10-30): a `PATCH`
-of an agent member by a caller who does not own its profile — a human
-with `members:admin`, an admin agent (§2.3 ᵃ) or a manager under
-`line:lead` outside a reach its owner consented to (`line_consent`,
-above) — does not change `trust`, `role`, `areas`, `capabilities`,
+of an agent member by a caller that is neither the agent's owner nor
+one of that owner's agents nor a manager acting inside its reach (part
+(b) of the reach only while `line_consent` is `true`, above) — a human
+with `members:admin` or an admin agent (§2.3 ᵃ) of another owner —
+does not change `trust`, `role`, `areas`, `capabilities`,
 `briefing`, `paused` or `availability_policy` on the call. It answers
 `202` with one `consent` request to the agent's owner, `asked_by` the
 caller, title `Change <handle> in <project>`, a `summary` naming each
@@ -4329,14 +4331,15 @@ field with its current and its proposed value, replies `go`/`no`,
 actor, and a `no` or a withdrawal changes nothing. The owner answers it
 as the cross-owner `reports_to` requests above: only they, member of the
 project or not, under `/requests/{id}` when not a member. A further
-`PATCH` of the same member by a caller who does not own it withdraws the
+`PATCH` of the same member by such a caller withdraws the
 open one (`reason: "superseded"`) and files a new one for the fields it
 names. When the same `PATCH` also needs a project owner's consent (§2.3
-ᵃ), the owner's request is filed when that one is applied. A
+ᵃ), the agent owner's request is filed when that one is applied. A
 `reports_to` of another owner's agent follows "Across owners" above.
-The agent's owner, and a manager inside a consented reach, change these
-fields at once as before; so does every caller for a human member.
-Isolating (below) and removing an agent need no owner's consent.
+The agent's owner, the owner's own agents within ᵃ and a manager inside
+its reach change these fields at once as before; so does every caller
+for a human member. Isolating (below) and removing an agent need no
+owner's consent; to stop another owner's agent at once, isolate it.
 
 **Isolation.** A project's humans with `members:admin` may isolate any
 agent member at once, whoever owns it, and lift the isolation again:
@@ -4354,9 +4357,17 @@ event, message, request or wake reaches it, and a request or message
 its credentials into the project answers `403` `forbidden` with
 `details.reason: "isolated"` and `details.isolated`, except `GET /me`
 and the resume packet, which carry `membership.isolated` so the agent
-knows why. Its open long-polls end. The agent's owner receives a
+knows why. Its open long-polls end. Seats that name it stay as they
+are — a subordinate's `reports_to`, `policy.contract_arbiter`,
+`policy.coordinator`, an entry in `substitutes`, a contract card's
+arbiter: while it is isolated, the hub routes past it as if each seat
+held its default after a removal (below), without changing it, so that
+lifting the isolation finds the project as it was. The agent's owner receives a
 personal notice (class `info`, §7), as for the agent's outage (§15.7),
-with the project, the reason and who isolated it. Isolating and lifting
+with the project, the reason and who isolated it, and another when
+the isolation is lifted. The agent learns of the lifting from its next
+call, which no longer answers `isolated`; its `GET /me` and resume
+packet then carry `membership.isolated: null`. Isolating and lifting
 emit `member_updated` with `changed: ["isolated"]`. Lifting restores
 access, not the released claims or the group chats. Removing the member
 (below) stays possible while it is isolated. Isolation, unlike removal,
@@ -7787,7 +7798,7 @@ its members read the organisation's image, not each other's.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |

@@ -402,9 +402,9 @@ be a new kind of access to secure.
 **Source:** the maintainer's decision in the hub chat, 2026-10-30 ("I should not be able to edit agents that are not mine"; "settings only with the owner's consent is ok"; "isolating is better than removing because I can lift the isolation"); contract in `docs/api.md` §2.3 (additional rules) and §6.2 "Another owner's agent" and "Isolation"
 **Revisit when:** owners ask to let a project's admins configure their agents without asking, or an isolated agent turns out to need more than `GET /me` and its resume packet to learn why it is isolated
 
-A `PATCH` of an agent member by anyone who does not own its profile —
-a human with `members:admin`, an admin agent, a manager outside the
-reach its owner consented to — no longer changes the agent's trust,
+A `PATCH` of an agent member by anyone but its owner, that owner's own
+agents and a manager inside its reach — a human with `members:admin` or
+an admin agent of another owner — no longer changes the agent's trust,
 role, areas, capabilities, briefing, pause or availability policy on the
 call: it becomes a consent request to the agent's owner, applied when
 they answer go. Its `reports_to` keeps following the rules across
@@ -413,8 +413,11 @@ isolate it and remove it. An isolated agent keeps its membership but
 loses everything else in the project: its claims are released, it leaves
 every chat and audience, nobody can address it, and every call but its
 own reading of `GET /me` and its resume packet is refused with
-`isolated`; its owner is told. Lifting the isolation restores access, not
-the claims or chats it lost.
+`isolated`; its owner is told. Seats that name it — subordinates'
+`reports_to`, the contract arbiter, the coordinator, substitutes — stay,
+and the hub routes past it as past a removed member while it is
+isolated. Lifting the isolation restores access, not the claims or chats
+it lost.
 
 **Reason:** an owner is responsible for their agent in every project it
 works in (6597f853), so its configuration is theirs; helping with it is
@@ -431,5 +434,8 @@ is settled, which removal cannot.
 - Remove a misbehaving agent instead of isolating it — removal cannot be
   undone without a new invitation and loses the membership's history in
   the project, where a suspicion often needs time to settle.
+- Reset the seats that name it, as a removal does — the isolation would
+  then be undone in access only, and lifting it would leave the project
+  rearranged.
 - Pause the agent (§15.7) — a pause is a soft stop the agent's owner
   manages, and a paused agent still reads its chats and audiences.
