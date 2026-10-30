@@ -6967,11 +6967,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A field's own limit: in its hint, and with the hub's invalid at it.
   const lmHint = byId("lp-pages-en-sections-3-markdown").parentNode.querySelector(".hint");
   expect(lmHint && text(lmHint).endsWith("At most 16 KiB."), "landing editor: a Markdown field says its limit");
-  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "pages.en.sections.3.markdown": "invalid" } })) : leSize(p, b));
+  win.Maity.api.patch = leSize;
+  byId("lp-pages-en-sections-3-markdown").value = "x".repeat(16385); byId("lp-pages-en-sections-3-markdown").dispatch("input");
   await leSave();
   expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "empty, or longer than allowed (at most 16 KiB)",
     "landing editor: the hub's invalid at a landing field names the field's limit (the hub sends invalid, never too_long, §16.7)");
-  win.Maity.api.patch = leSize;
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
   // A second language, made the default, and the page shown to visitors.
