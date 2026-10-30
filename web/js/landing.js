@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
-    required: "required", too_long: "too long", control_character: "holds a control character", html: "holds HTML outside fenced code",
+    required: "required", control_character: "holds a control character", html: "holds HTML outside fenced code",
     invalid_href: "not an https URL or a path on this host", unknown_type: "not a section this hub knows", extra_forbidden: "not a field of this section",
     too_many: "too many", too_few: "at least one is needed", invalid: "not valid here", default_language_missing: "the default language has no page",
     rate_limited: "changed too often today",
@@ -78,8 +78,8 @@ window.Maity = window.Maity || {};
   function control(x, obj, path, errors, redraw) {
     const id = "lp-" + path.replace(/[^A-Za-z0-9]+/g, "-");
     const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-    // Its limit, said with the hub's refusal of it (too_long, or invalid where the hub
-    // folds an empty or too long text into one reason, as for a legal page).
+    // Its limit, said with the hub's refusal of it: the hub reports an empty and
+    // a too long text alike as `invalid` (§16.7, §16.7.1).
     if (x.max && ["text", "long", "md"].includes(x.kind)) error.limit = limitWords(x.max);
     errors[path] = error;
     const described = { "aria-describedby": id + "-error", "data-path": path };
@@ -210,8 +210,7 @@ window.Maity = window.Maity || {};
     let first = null;
     Object.entries(fields).forEach(([path, reason]) => {
       const at = errors[path];
-      const words = at && at.limit && reason === "too_long" ? "too long: " + at.limit
-        : at && at.limit && reason === "invalid" ? "empty, or longer than allowed (" + at.limit + ")" : reasonText(reason);
+      const words = at && at.limit && reason === "invalid" ? "empty, or longer than allowed (" + at.limit + ")" : reasonText(reason);
       if (at) { at.textContent = words; if (!first) first = at; } else rest.push(path + ": " + words);
     });
     status.fail("Not saved: ", { message: rest.length ? rest.join("; ") : "see the fields marked below" });

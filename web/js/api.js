@@ -461,7 +461,7 @@ window.Maity = window.Maity || {};
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
     if (typeof x !== "string") errors[path] = "invalid";
     else if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)) errors[path] = "control_character";
-    else if ([...x].length > max) errors[path] = "too_long";
+    else if ([...x].length > max) errors[path] = "invalid";
   }
   function landingMarkdown(x, path, max, required, errors) {
     landingText(x, path, max, required, errors);
