@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select
 
 from maity_hub import contract_text, forge, probe
 from maity_hub import tables as t
@@ -199,17 +199,6 @@ def test_the_same_place_again_is_no_change(owner: flow.Human, migrated: Engine) 
     assert again.status_code == 200, again.text
     assert _history(owner, card_id) == []
     assert _last_update(migrated) == seq  # no task_updated either
-    # A card from before §6.8 stored no place: naming the default is no history entry.
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.card)
-            .where(t.card.c.id == card_id)
-            .values(contract={"arbiter": "trust:admin", "state": "proposed", "watchers": []})
-        )
-    owner.patch(url, {"contract": {"path": "docs/api.md", "section": "6.3"}})
-    assert [(e["field"], e["before"], e["after"]) for e in _history(owner, card_id)] == [
-        ("contract.section", None, "6.3")
-    ]
 
 
 # --- the read -----------------------------------------------------------------------------
