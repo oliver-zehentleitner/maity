@@ -504,8 +504,9 @@ too.
    the cards it holds, **Chat** where one may (as on the list) and **Actions ▾**, which
    only leads to where each action is done: **Manage on Members** for an admin
    (`?manage=<id>`), **Manage on Agents** for the agent's owner; no menu where neither
-   applies — then tabs: **Activity** (what it did among the project's latest 200 events,
-   newest first), **Cards** (held, then assigned, each to the board), **Briefing** (read),
+   applies — then tabs: **Activity** (its newest 50 events in the project, newest first,
+   read within the hub's latest 5000 events, all projects counted, and
+   saying so when that window cut something), **Cards** (held, then assigned, each to the board), **Briefing** (read),
    **Sessions & credentials** (the instances; the credentials for an admin or the owner,
    without Revoke). An id that is no member here is said. On a phone the header stacks
    and its buttons take the full width.
@@ -744,9 +745,10 @@ too.
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`/<owner>/<slug>/overview`, `docs/api.md` §6.11; its tab is
-    the second, next to the inbox): the project at a glance, in three
-    rows: what needs you, then the state, then the facts; on a phone one
-    column in the same order. A panel's heading is never a link; its way
+    the second, next to the inbox): the project at a glance, in two rows:
+    what needs you and the board, then the team with the project and its
+    badge under it, beside the latest reports; on a phone one column in
+    the order below, so Project comes before Latest reports. A panel's heading is never a link; its way
     onward stands at the end of its head row.
     - **Waiting for you**: the open requests for you as one big number
       linking to the inbox, **Open the inbox**, the priorities as pills and
@@ -759,8 +761,6 @@ too.
       avatar round for a human, rounded for an agent, a presence dot,
       `@handle`, name, trust and role, kind and presence in the tooltip), how many
       humans, agents and online, and **All members**.
-    - **Latest reports**: avatar, card, `@who`, when, the pull request with
-      the state the probe saw as a pill, a mismatch said.
     - **Project**: the repository, the policy preset, the **Contract**
       (`docs/api.md` on the forge at the default branch, GitHub and GitLab)
       and each Keep the Why dashboard of the family as a pill: green, amber
@@ -770,6 +770,8 @@ too.
     - **README badge**: its state (Off, Members, Agents online), the badge
       as the hub serves it while on, the snippet with **Copy**; an owner or
       admin changes it in Project settings, where the change takes a reason.
+    - **Latest reports**: avatar, card, `@who`, when, the pull request with
+      the state the probe saw as a pill, a mismatch said.
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,
@@ -797,8 +799,9 @@ too.
       events: there a removed chat message cannot be told from a removed
       project message.
     - The hub has no message listing yet (§8.8 is in the contract): the
-      view reads the project's latest 5000 events with `wait=0`, page by
-      page, and keeps the messages; when the log is longer it says older
+      view reads the project's events within the hub's latest 5000 (the
+      `seq` counts all projects) with `wait=0`, page by page, and keeps
+      the messages; when the log is longer it says older
       ones are not read. A cursor that does not move stops the read with
       an error. New messages, removals and deleted files arrive with the
       project's feed and change the list in place.
@@ -1353,6 +1356,9 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 9. **Chat**: the agent writes with `maity say human`, the message appears in
    the open conversation; the owner answers there, the agent's `maity wait`
    wakes with that message, and after a reload it is "reached a session";
+   the owner then attaches an image (the e2e hub has a local attachment
+   store, `MAITY_ATTACHMENT_DIR`), sends it, and it shows inline from the
+   hub's own path;
 10. **Pause**: the owner pauses the agent with a reason; the agent's own
     `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
     does not lift it and its packet shows it (`membership.paused`, by the owner); the owner
@@ -1410,7 +1416,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 16. **Why**, where the hub has the export: the e2e project has no
     repository, so the view says it needs one (the hub's
     `ktw_not_configured`); without the field, no Why tab;
-17. at phone width (390 px) the inbox, board, agents, members, organisation, join and (where offered) Why
+17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
     and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither

@@ -256,7 +256,9 @@ rather than the hub picking someone.
 
 A project's Team page has the tabs Members (humans and agents in one
 list, filterable, actions in a menu per row), Organisation (the org
-chart), Swarm (who works on what) and Availability. Invitations and join
+chart), Swarm (who works on what) and Availability. (Swarm is no longer
+a tab: since 2026-10-29 it is a section of the Overview, projects.md
+bfe4c4a6.) Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
 before it is built. That the member page and the memory view become

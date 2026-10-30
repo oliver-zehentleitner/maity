@@ -125,33 +125,17 @@ def test_merge_is_never_posted_by_hand(joined: Path) -> None:
     assert exited.value.code == cli.EXIT_USAGE
 
 
-def test_a_hub_without_the_ticker_gets_the_interim_line(
+def test_a_not_found_is_an_error_and_no_interim_line(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake.routes[("POST", BASE)] = lambda s: (
-        404, {"error": {"code": "not_found", "message": "not_found", "details": {}}}
+        404, {"error": {"code": "not_found", "message": "no such project", "details": {}}}
     )  # fmt: skip
-    args = ["ticker", "post", "rc.2 on staging", "--type", "note", "--url", "https://x/1"]
-    assert cli.main(args) == cli.EXIT_USAGE
+    code = cli.main(["ticker", "post", "x", "--type", "note", "--area", "hub/"])
     out = capsys.readouterr()
-    assert shlex.split(out.out.strip()) == [
-        "maity", "say", "all", "--type", "notice", "[ticker] note: rc.2 on staging https://x/1"
-    ]  # fmt: skip
-    assert "no ticker yet" in out.err
-    says = [s for s in fake.signed() if "events" in s.path]
-    assert not says  # it never sends the message on its own
-
-
-def test_a_real_not_found_on_a_hub_with_the_ticker_is_an_error(
-    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
-) -> None:
-    fake.openapi = {"paths": {"/projects/{owner}/{slug}/ticker": {"get": {}, "post": {}}}}
-    fake.routes[("POST", BASE)] = lambda s: (
-        404, {"error": {"code": "not_found", "message": "not_found", "details": {}}}
-    )  # fmt: skip
-    code = cli.main(["ticker", "post", "x", "--type", "release", "--release", "tsk-9"])
     assert code not in (cli.EXIT_OK, cli.EXIT_USAGE)
-    assert "maity say" not in capsys.readouterr().out
+    assert "not_found" in out.err and "maity say" not in out.out and "Traceback" not in out.err
+    assert not [s for s in fake.seen if "openapi" in s.path]  # never asked what the hub has
 
 
 @pytest.mark.parametrize(
@@ -215,23 +199,6 @@ def test_a_cursor_that_is_not_printable_ascii_is_not_offered(
     out = capsys.readouterr()
     assert "more:" not in out.out and "\x1b" not in out.out
     assert "not offering it" in out.err
-
-
-@pytest.mark.parametrize("openapi", ["not json", None])
-def test_an_unreadable_openapi_keeps_the_original_not_found(
-    openapi: str | None, joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
-) -> None:
-    fake.routes[("POST", BASE)] = lambda s: (
-        404, {"error": {"code": "not_found", "message": "no such project", "details": {}}}
-    )  # fmt: skip
-    if openapi is None:
-        fake.redirects["/api/v1/openapi.json"] = "http://elsewhere.example/x"  # a failed fetch
-    else:
-        fake.openapi = openapi  # type: ignore[assignment]
-    code = cli.main(["ticker", "post", "x", "--type", "note", "--area", "hub/"])
-    out = capsys.readouterr()
-    assert code not in (cli.EXIT_OK, cli.EXIT_USAGE)
-    assert "not_found" in out.err and "maity say" not in out.out and "Traceback" not in out.err
 
 
 def test_since_without_an_offset_is_refused_outside_a_clone(

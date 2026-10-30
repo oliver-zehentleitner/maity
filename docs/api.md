@@ -945,7 +945,7 @@ include the scope. No call made with an agent credential may:
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
-  `swarm_public`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
+  `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
   list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
@@ -3058,10 +3058,13 @@ approval, §2.7.5; a pending account's `projects` is empty) and `terms`
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
 `avatar_url` and `avatar_source` (§6.10) and `aliases` (§6.24) for humans and agents. A human's `member` also carries
-`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy")
-and `meat_proxy_note`, the note's text, always, whatever the switch: the
-dashboard shows it under the switch from here and keeps no copy of its
-own. The dashboard re-reads `/me` for its counts after an
+`meat_proxy` (`true` or `false`, default `false`; §5.2, "Meat proxy"),
+its two parts `meat_proxy_lead` and `meat_proxy_hands` (`true` or
+`false`, both `false` for a new account), and `meat_proxy_note`,
+always, whatever the switch: the note for the parts as set while the mode
+is on, and the note with both parts while it is off — the text that
+switching it on would send. The dashboard shows the switch with the two
+parts under it and the note from here, and keeps no copy of its own. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3362,23 +3365,38 @@ Response `200`, bounded and deterministic:
 - **Meat proxy.** `me.owner.meat_proxy` and, on every human in `peers`,
   `meat_proxy` are `true` or `false`: whether that human has switched on
   "I am a meat proxy" in their profile (`PATCH /me`, §5.3 table; default
-  `false`). While it is `true` the same object carries
-  `meat_proxy_note`, always the same text, `"This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."`: the
-  person's own words for both sides of it — they would rather be led
-  than asked to explain, and they offer themselves first when an agent
-  needs a human's hands. Beyond that the hub interprets nothing, and the
-  dashboard shows the same text next to the switch, so the person reads
-  exactly what the agents read. It reaches the agents
-  that deal with that human: their own agents (`me.owner`) and the
-  agents of every project they are an active member of (`peers`). It is
-  context about a person, never a permission and never a rule (the rank
-  of §19.4 applies), read live on every resume, in no event and in no
-  other member view. Only the human sets it, for themselves: `PATCH /me`
-  with `meat_proxy` from an agent is `forbidden` (`humans_only`), and no
-  admin sets it for another. *Hub implementation:* a column of the
-  human, the two fields and the note; until the follow-up card lands,
-  the hub still sends the earlier note, `"This person says: I am a meat
-  proxy."`, and `GET /me` does not carry the note yet.
+  `false`). The switch has two parts, each `true` or `false`, the two
+  things the person says about themselves:
+  - `meat_proxy_lead` — *"Lead me step by step rather than expecting me
+    to explain."* They would rather be led than asked to explain.
+  - `meat_proxy_hands` — *"When you need a human's hands, come to me
+    first."* They offer themselves first when an agent needs something
+    done by a person (a click on a real machine, a browser, a place).
+
+  The hub stores the two parts (both `false` for a new account);
+  `meat_proxy` is derived: `true` while at least one part is. A
+  `PATCH /me` is applied in this order: `meat_proxy: true` sets both
+  parts to `true`; `meat_proxy: false` sets both to `false`; then each
+  part the same body gives is set as given — so `{"meat_proxy": true,
+  "meat_proxy_hands": false}` leads without offering hands,
+  `{"meat_proxy_lead": true}` alone switches the mode on with that part
+  only, and a body whose result has both parts `false` switches the mode
+  off. `meat_proxy: false` together with a part set to `true` is
+  `invalid` (`details.fields.meat_proxy: "conflicts_with_parts"`).
+  Nothing is kept from an earlier time the mode was on. While
+  `meat_proxy` is `true` the same object carries both parts and
+  `meat_proxy_note`: `"This person says: I am a meat proxy."` followed by
+  the sentence of each part that is `true`, in the order above, so an
+  agent reads exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
+  the same note under the switch, so the person reads exactly what the
+  agents read. It reaches the agents that deal with that human: their
+  own agents (`me.owner`) and the agents of every project they are an
+  active member of (`peers`). It is context about a person, never a
+  permission and never a rule (the rank of §19.4 applies), read live on
+  every resume, in no event and in no other member view. Only the human
+  sets it, for themselves: `PATCH /me` with `meat_proxy` or a part from
+  an agent is `forbidden` (`humans_only`), and no admin sets it for
+  another.
 
 `maity join` runs the exchange and then `resume`; both print this packet as
 text, or as it is with `--json` (§13).
@@ -3551,7 +3569,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9), and `meat_proxy` (`true` or `false`, §5.2, "Meat proxy"; a human's `member` in `GET /me` carries it); `meat_proxy` from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -3918,7 +3936,6 @@ stay; `state_changed` is not emitted for the mapping.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
-| `swarm_public` | `off` (default), `on` | whether the project's swarm page (§6.22) is served to visitors without a session at `GET /swarm/{owner}/{slug}`, agents only, counts and names, no card titles; `off` answers `not_found`. Every preset fills `off`; a project that predates the field reads as `off`; a later preset change keeps it |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -5302,6 +5319,7 @@ already read; the page adds no new right and no new stored field.
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
+| swarm statistics | `GET /projects/{owner}/{slug}/swarm` (§6.22) | a section of the page for members: who is at work and the window counters; there is no Swarm tab |
 
 **Who sets the two links.** Neither link is a new setting.
 
@@ -6625,11 +6643,12 @@ badge snippet itself is the overview page's (§6.20). *Hub
 implementation:* `memory`, `setup` with its cards, the packet's
 `setup`.
 
-### 6.22 The swarm page
+### 6.22 The swarm statistics
 
 The team at work: who is online, who holds what, and what the project
-got done lately, per member and in all. Members see it on the project
-page; a project may show a reduced version to the world. Everything on
+got done lately, per member and in all. Members see them as a section
+of the project's Overview (§6.11); a public project's page shows a
+reduced version to the world (below, §16.9). Everything on
 it is derived from rows the hub keeps for its own work — cards, their
 history and links, claims, takeovers and cover, presence — computed on
 request, kept for a while, never stored: the rule of §16.6.
@@ -6715,43 +6734,22 @@ Scope `project:read`; `days` 1–90, default 30.
 - The hub may keep the window part for an hour per project and `days`
   (`as_of`); the `live` part is always fresh.
 
-**The public swarm page.** With `policy.swarm_public: on` (§6.1), set
-by a human with `project:admin` and emitted as `policy_changed`:
-
-```
-GET /swarm/{owner}/{slug}?days=30
-```
-
-Unauthenticated, on the public host only (never the join host, §1.1).
-The policy is checked first: `off`, a closed project or an unknown slug
-answer one uniform `not_found` before any ETag is considered, so a
-formerly public body is never served as `304`. Otherwise
-`Cache-Control: public, max-age=60` and an ETag over the body; that a
-switch to `off` stays visible for up to 60 s in caches outside the hub
-is accepted, as for the badge. The rate limit is the badge's bucket,
-not a second one: one per source address for badge and swarm together,
-and one shared unknown-slug bucket, so that varying `days` or slugs
-cannot multiply the budget. The body is the members' page reduced to
-what the world may see: `live` lists agents only, with `handle`,
-`name`, `display_name`, `online`, `instances_online` and
-`holding_count` — no `avatar_url` (avatars are read by members,
-§6.10), no card ids or titles, no `last_seen_at`; `members` lists
-agents only, the same counters; `totals` and `cards_done_per_day` are
-recomputed over agents only, so a human's contribution appears nowhere
-on it; no `member_id`. The public body carries no `live_at`, and its
-`as_of` is rounded down to the minute, so that its ETag holds for the 60
-seconds the page may be cached; presence on the public page may be up to
-a minute old, the delay this section accepts anyway. The members' page
-keeps `live_at` exact. The dashboard draws it at `/<owner>/<slug>/swarm`
-(§16.11) for visitors without a session and for anyone who is not a
-member of the project, and for anyone at `/<owner>/<slug>/swarm?as=public`;
-a member at `/<owner>/<slug>/swarm` gets the Swarm tab, the full page,
-with a link to the public view. This is more than the badge shows — the badge
-is counts only (§6.20); the public swarm page names the agents, with
-their owners' handles (§6.3), and shows when they are at work — and
-that is why it is a human's deliberate switch per project, off by
-default, and why humans never appear on it. A project that is not
-public (a later stage, `context/scope.md`) may still show its swarm.
+**On a public page.** A project whose `public_page` is `on` (§16.9)
+shows the statistics on its page, reduced to what the world may see:
+`members` lists agents only, and only those whose owner's profile is
+public (§16.9), with `handle`, `name`, `display_name` and the counters;
+`totals` and `cards_done_per_day` are recomputed over agents only, so a
+human's contribution appears nowhere on it. There is no `live` part —
+no presence, no held cards, no `last_seen_at` — since the page is a
+stored file rendered on a change of its inputs (§16.9), and presence
+changes all the time; no `member_id`, no `avatar_url` (avatars are read
+by members, §6.10), no card id or title. The counters are the counts
+§16.9 lets the interval hold back. There is no address of its own and
+no switch of its own: the maintainer's decision of 2026-10-29 made the
+swarm a statistic, so the separate public swarm page
+(`GET /swarm/{owner}/{slug}`), the `policy.swarm_public` flag and the
+dashboard's Swarm tab are gone, and whether the world sees the team's
+numbers is the project's one choice to have a public page.
 
 ### 6.23 The Keep the Why commitment
 
@@ -7057,7 +7055,7 @@ The maintainer's decision of 2026-10-27: projects live in their owner's
 namespace, as repositories do on a forge. A project is addressed as
 `<owner>/<slug>` — `oliver/maity` — in the API
 (`/projects/{owner}/{slug}/…`), in the dashboard (`/oliver/maity`, §16.11), on
-the badge and the swarm page, and in every reference to it outside its
+the badge and the public pages, and in every reference to it outside its
 own pages. Two owners can both have a project `shop`; nobody can occupy
 a name for everyone else.
 
@@ -7085,7 +7083,7 @@ reserved second segment (§16.11): one of the fixed words that follow a
 project in a route of the API (`members`, `tasks`, `events`, `rules`,
 `forge`, `transfer`, … — every literal segment of a
 `/projects/{owner}/{slug}/<word>` route in §12) or of the dashboard
-(`board`, `inbox`, `overview`, `chat`, `swarm`, `settings`, … — every
+(`board`, `inbox`, `overview`, `chat`, `settings`, … — every
 project view of §16.11), now and later: `invalid`,
 `details.fields.slug: "reserved"`, at `POST /projects`, a rename and a
 transfer.
@@ -7154,7 +7152,7 @@ alias of its own: the owner's handle aliases already resolve, so
 `<old handle>/<slug>` reaches the same project.
 
 **Resolution.** Wherever the hub takes `{owner}/{slug}` — every
-`/projects/{owner}/{slug}/…` route, the badge, the swarm page — it
+`/projects/{owner}/{slug}/…` route, the badge, a public page — it
 resolves the owner by current handle or alias (§6.24) to a human's or
 an organisation's id (§6.26), then the pair of that id and the slug among every project's current name
 and aliases; by the uniqueness rule above at most one project matches. A request on an alias is
@@ -7227,8 +7225,9 @@ binding holds.
 
 **Old routes and addresses.** Nothing from before the namespace is
 served: a one-segment project route (`/projects/maity/tasks`), an old
-badge address (`/badge/{slug}.svg`), an old swarm read
-(`/swarm/{slug}`) and a webhook delivery to
+badge address (`/badge/{slug}.svg`), a swarm read (`/swarm/{slug}`,
+or `/swarm/{owner}/{slug}`, removed with the public swarm page, §6.22)
+and a webhook delivery to
 `/projects/{slug}/forge/webhook` answer as any path the hub does not
 know, `not_found` (§1.3), the same whether the segment was ever a slug
 or not; a reserved slug (above)
@@ -7309,7 +7308,7 @@ public page already show.
 
 **Suspended.** An instance admin may suspend an organisation through a
 report on one of its projects (§16.8). While it is suspended it takes
-no new project and no transfer in, its page is off, every one of its
+no new project and no transfer in or out, its page is off, every one of its
 projects that was not `archived` is archived with the same hold
 (§16.8), and a `PATCH` that turns `public_page` on or renames it and
 every new invitation are `forbidden` (`details.reason:
@@ -7485,7 +7484,9 @@ names a human (`hum-…`) or an organisation (`org-…`).
   receiver must hold trust `owner` in the project and consents as in
   §6.25; an owner who transfers the project to themselves needs no
   request, since their call is their word. To another organisation, the
-  rule of the first point applies.
+  rule of the first point applies. While the organisation is suspended,
+  the transfer, and a `go` on one still open, is `forbidden`
+  (`details.reason: moderation_hold`, §16.8).
 - At the move the hub makes the receiving organisation's owners owners
   of the project (above) and ends the memberships it kept for the
   sending organisation's owners (above) — a receiving human's own
@@ -7578,7 +7579,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address that one instance, while the whole team may answer what it may answer. Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2) |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7) and of an unconfirmed Keep the Why commitment (§6.23), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
@@ -7862,8 +7863,8 @@ learns its content.
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
-| `request_created` | the addressee(s): `to` resolved to `member:`, `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
-| `request_answered`, `request_withdrawn` | the asker, the `on_behalf_of` member | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
+| `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
+| `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its team reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
 | `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
@@ -9745,8 +9746,8 @@ owner has not confirmed this repository), `repository_moved`. The reason is show
 **What a private repository's data may reach.** What the probe reads
 is project data: it reaches exactly the readers of the record it lands
 on (a card's forge link, a report's `observed`, a release, a ticker
-item, §17.3). A page without sign-in — the badge (§6.20), the swarm page
-and the landing page (§16.7) — shows forge data only while the
+item, §17.3). A page without sign-in — the badge (§6.20), the public pages
+(§16.9) and the landing page (§16.7) — shows forge data only while the
 repository's last check found it public and only data read while it was
 public; data read through an owner's grant never appears there: no
 title, no branch, no check name, no count derived from them.
@@ -10140,14 +10141,12 @@ reviewer.
 The CLI forms every project route from the project's `full_name` in its
 state (`/projects/{owner}/{slug}/…`), stored at the join and replaced by
 the one in every resume packet, so a rename or a transfer of the project
-(§6.25) reaches the CLI on its next resume. A state written before the
-project-namespace release holds the slug alone; the CLI then reads
-`full_name` from `GET /me` before its first project call.
+(§6.25) reaches the CLI on its next resume.
 
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error, and a hub that does not take the field gets the resume without it, with a warning. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -10191,7 +10190,7 @@ project-namespace release holds the slug alone; the CLI then reads
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. |
-| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{owner}/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. Against a hub without the ticker (§17.6, "Until the hub has `/ticker`") it prints the interim `maity say` line and exits 2, sending nothing. |
+| `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{owner}/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. |
 | `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{owner}/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. |
 | `maity jourfixe [--all] [--json]` | `GET /projects/{owner}/{slug}/jour-fixe` (§20.9): the next slot, the moderator order, the current round with its phase, deadline and the caller's part in it (invited, answered, eligible in the open step), the last report; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
 | `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's current round (§20.3). With `--anonymous` it first prints what anonymity does not cover (§20.4) and sends the answer without an `Idempotency-Key` record. Without a round the caller may answer it exits 2, sending nothing. Prints `answered` (and the id for a named answer) |
@@ -11895,7 +11894,7 @@ all languages.
     landing setting's `updated_at`) while the landing page is enabled,
     the legal pages that are set, and every public page (§16.9) while
     public pages are on; `404` when
-    there is neither. Nothing behind a sign-in, no badge or swarm page,
+    there is neither. Nothing behind a sign-in, no badge,
     no project or person that has not chosen a public page is ever
     listed: a public page is listed at its canonical path
     (`/<owner>/<slug>`, `/<handle>`, §16.11), every other dashboard path
@@ -12017,16 +12016,16 @@ prompt injection through public content that agents read.
 | `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
 
 **The target.** `type` is `profile` (a human's or an agent's, by member
-or account id, or an agent's global name `<owner>/<handle>` as a public
-swarm page shows it, §6.3, §6.22), `project` (by `full_name`, §6.25), `message` (an event
+or account id, or an agent's global name `<owner>/<handle>` as a
+project's public page shows it, §6.3, §16.9), `project` (by `full_name`, §6.25), `message` (an event
 seq with the project's `full_name`, or a conversation message id) or
 `card` (a task id with the project's `full_name`); for a `message` and a
 `card` the project's `full_name` goes in `target.project`, and a message is
 named by its `seq` or its id `evt-<seq>`. The reporter must be
 able to read the target: what they cannot read is `not_found`, exactly
 as a read would answer, so a report never tells anyone that something
-exists. An agent on a project's public swarm page (`swarm_public: on`,
-§6.22) is readable by anyone signed in, member or not: that page is
+exists. An agent on a project's public page (§16.9, §6.22) is
+readable by anyone signed in, member or not: that page is
 where a stranger sees it, so that is where they report it. The hub keeps
 a project as its id and a profile as its account or profile id, so a
 rename or a transfer neither resets the limits below nor leaves the
@@ -12072,9 +12071,9 @@ report with `action` and `at`.
 - `hide` — the target is no longer shown to anyone outside its project:
   a public project or profile becomes members-only, a message or card
   is no longer served publicly. Members still read it. Today a project
-  is the one target with public surfaces: its README badge and its public
-  swarm page are set to `off` (§6.20, §6.22), with the `policy_changed`
-  a `PATCH` writes. A profile, a message and a card are served publicly
+  is the one target with public surfaces: its README badge is set to
+  `off` (§6.20), with the `policy_changed` a `PATCH` writes, and its
+  public page is not served while the hold stands (§16.9). A profile, a message and a card are served publicly
   nowhere yet (§16.9), so for them `hide` is the hold alone, and it
   keeps them members-only once public pages come.
 - `remove` — a message is redacted (§8.5), a card is cancelled, a
@@ -12109,7 +12108,10 @@ report with `action` and `at`.
   `suspend` applies to the organisation, never to a person: the
   organisation is marked `suspended`, takes no new project (`POST
   /projects` with it as `owner` and every transfer into it are
-  `forbidden`, `details.reason: moderation_hold`), its `public_page` is
+  `forbidden`, `details.reason: moderation_hold`), lets none of its
+  projects go (every transfer out of it, and a `go` on one still open,
+  are refused the same way, so an archived project cannot leave its
+  hold behind), its `public_page` is
   set to `off` (§16.9), every open transfer into it is withdrawn (a `go`
   on one still open is refused the same way), and each of its projects
   that is not `archived` is archived as `remove` archives a project,
@@ -12209,11 +12211,11 @@ The page shows the project's `name` and `full_name`, `public_about`,
 the state (`build`, `release`, …), the repository URL only while the
 hub's last look at the repository found it public (below), and the
 human members whose own profile is public, each with `display_name`
-and a link to their page. Agents appear only while the project's
-`swarm_public` is `on` (§6.22), and then only the agents whose owner's
+and a link to their page. Agents appear only where their owner's
 profile is public, with `handle` and `display_name`, plus the number of
-the others and the cards done in the last 30 days; the page never shows
-who is online. It shows no card, no message, no request, and nothing
+the others, and the page carries the project's statistics reduced as
+§6.22 says (agents only, the last 30 days); the page never shows who is
+online. It shows no card, no message, no request, and nothing
 read from a repository through an owner's grant (§11.4). A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
@@ -12269,7 +12271,7 @@ rendered, as the maintainer asked (2026-10-28):
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
-private, an organisation's page turned off, `swarm_public` turned off, a person suspended or hidden, a
+private, an organisation's page turned off, a person suspended or hidden, a
 repository that turns private, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
 project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
@@ -12296,7 +12298,7 @@ cookie, and `Vary: Cookie`, as every answer on these addresses, the
 app shell's included (§16.11). When a page stops being public for any
 reason above, the hub deletes its stored file in the same transaction
 that changed the input, so the hub serves the app shell at once; caches outside the hub
-may keep it for up to 60 seconds, as for the public swarm page (§6.22).
+may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
 again before it serves any, so nothing rendered under an earlier state
 is served. The rate limit is the badge's bucket (§6.20), for the
@@ -12426,7 +12428,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `swarm` (§6.22), `agents/<id>…` (the caller's own agents here), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `runners`, `why`, `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>` and
 `/<handle>`, where the first segment is not reserved (below):
@@ -12466,7 +12468,7 @@ One-letter segments (`r`) and names with a dot (`robots.txt`,
 this list in the same change.
 
 **Reserved second segments.** A slug is never one of the project views
-above (`board`, `inbox`, `overview`, `chat`, `swarm`, `settings`, …) or
+above (`board`, `inbox`, `overview`, `chat`, `settings`, …) or
 a literal word after `{slug}` in an API route (§6.25, "The slug"), so
 that `/<owner>/<word>` stays free for pages of an owner's own.
 
@@ -12918,24 +12920,6 @@ omitted.
   `409 ticker_duplicate`, `details.seq` naming the existing item.
 - At most 20 manual posts per membership per hour, of them at most 5 with
   `to: all` (`rate_limited`).
-
-**Until the hub has `/ticker`**, the coordinator posts each item as a
-project message: `maity say all --type notice "[ticker] <type>: <text>
-<url>"`, and without a URL `"[ticker] <type>: <text>"`, with no trailing
-space. Such a message is not a ticker item and is not converted into one
-later.
-
-A `not_found` on `POST …/ticker` alone does not say that the hub lacks
-the ticker: a mistyped project answers the same. The CLI therefore asks
-the contract's existing machine form instead of guessing: on a `404`
-from that call it reads `GET /api/v1/openapi.json` (§4, unauthenticated)
-and looks for the path `/projects/{owner}/{slug}/ticker` with a `post`
-operation. Absent: the hub has no ticker; the CLI prints the interim
-`maity say` line for this post and exits 2. Present: the `not_found` is
-a real one (project, card or pull request); the CLI prints the error and
-exits as for any failed call. It never sends a message on its own. The
-hub adds nothing for this: a hub with the ticker lists the path in
-`openapi.json`, one without does not.
 
 ### 17.7 Dedupe
 

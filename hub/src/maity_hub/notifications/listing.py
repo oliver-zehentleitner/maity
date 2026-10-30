@@ -40,14 +40,12 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
         entry["chat"] = chats[mine.project.id]
         by_project[mine.project.id] = {"member": True, **entry}
     loose = 0
-    for request in _open_personal(conn, where.human_id):
-        if request.project_id is None:  # an organisation's invitation: no project's count
-            loose += 1
+    for project_id, open_count in _open_personal(conn, where.human_id):
+        if project_id is None:  # an organisation's invitation: no project's count
+            loose += open_count
             continue
-        entry = by_project.setdefault(
-            request.project_id, {"member": False, **dict.fromkeys(COUNTED, 0)}
-        )
-        entry["inbox"] += 1
+        entry = by_project.setdefault(project_id, {"member": False, **dict.fromkeys(COUNTED, 0)})
+        entry["inbox"] += open_count
     for item in found:
         if item.read or item.kind != "mention" or item.project_id is None:
             continue
@@ -77,13 +75,13 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
 
 
 def _open_personal(conn: Connection, human_id: str) -> list[Any]:
+    """`(project_id, count)` of the human's open personal requests, counted in SQL."""
+    c = t.request.c
     return list(
         conn.execute(
-            select(t.request).where(
-                t.request.c.personal.is_(True),
-                t.request.c.to_human == human_id,
-                t.request.c.status == "open",
-            )
+            select(c.project_id, func.count())
+            .where(c.personal.is_(True), c.to_human == human_id, c.status == "open")
+            .group_by(c.project_id)
         ).all()
     )
 

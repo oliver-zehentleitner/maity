@@ -69,6 +69,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "probe_configured": False,
         "probe_via": None,
         "owner_confirmed": False,
+        "confirmed_by": None,
     }
     assert body["policy"] == {
         "preset": "hierarchical",

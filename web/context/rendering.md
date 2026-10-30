@@ -366,7 +366,7 @@ on a failed landing read: it would stand between the person and sign-in.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29
+**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29; the coordinator's review of #680 (the hub never sends `too_long`), 2026-10-30
 **Revisit when:** an instance wants the landing page drawn by the dashboard again, or a draft needs a preview without a tab of its own
 
 The dashboard draws neither page for a visitor: without a session the
@@ -380,7 +380,12 @@ way; `activity` and `collab` kept as they are, never offered), and the
 footer for all languages. A save sends the whole draft in one `PATCH`;
 the hub's refusal names fields by their path
 (`pages.de.sections.2.items.0.title`), and each is said at the field of
-that path, a path without a field in the status line. **Legal pages**
+that path, a path without a field in the status line. A field the
+hub refuses as `invalid` with a limit reads "empty, or longer than
+allowed (…)": the hub answers `invalid` for both, never `too_long`, so
+the editor cannot tell them apart; naming only the limit was rejected
+because it misleads at an empty field, and a title with a tab or a line
+break is `invalid` too, which the wording does not name. **Legal pages**
 edits each page per language and saves one page per call, which the hub
 keeps as a new version; a page is taken down with `null`. **View as a
 visitor** opens the saved landing page at `/?as=public` in a tab of its
@@ -434,3 +439,29 @@ be sent. The dashboard should not report an operator's choice as a fault.
 
 **Rejected alternative:** switching the store on in the e2e run only: the page
 would still treat an unconfigured hub as broken in production.
+
+## A link in one's own chat bubble takes the text's colour, underlined
+
+**Id:** bf8a5722-3f5f-4265-a89b-5ed34622aded
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the e2e's accessibility check (axe-core, color-contrast) on the first real attachment upload, card tsk-8h6yzp4f8jqg, 2026-10-30: the accent #1a66d9 on `--out-bg` #dbe9ff at 4.33:1, below 4.5:1, and below it in the dark scheme too; the review of #673
+**Revisit when:** `--accent` or `--out-bg` change, or own messages get a background of their own per scheme
+
+`.msg.out a` takes `var(--text)` and stays underlined: any link in one's
+own bubble — an attachment's, a Markdown link, an id's link — reads
+13.2:1 on `--out-bg` in the light scheme and 10.9:1 in the dark one.
+Links everywhere else keep the accent.
+
+**Reason:** the bubble's tint is what makes one's own messages stand
+apart, and the accent fell under WCAG AA on it in both schemes. The
+underline keeps a link recognisable without its colour.
+
+**Rejected alternative:** a darker accent for every link: it would
+change every link and button of the dashboard for one background, and
+the accent's own ratios on `--bg` and `--surface` were measured and
+documented. A link colour of the bubble's own per scheme: another token
+to keep in step with both backgrounds, for what the text's colour
+already does with room to spare.
+

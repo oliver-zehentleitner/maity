@@ -767,6 +767,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
 .jump-latest[hidden] { display: none; }
 .msg.out { justify-self: end; background: var(--out-bg); }
+/* A link in one's own bubble: the accent falls under 4.5:1 on --out-bg (4.33 light),
+   so it takes the text's colour, underlined to stay a link. */
+.msg.out a { color: var(--text); text-decoration: underline; }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
@@ -900,13 +903,14 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
 /* The project at a glance (js/overview.js), as the designer laid it out
-   (#6484): what needs you, then the state, then the facts, in three rows;
+   (#6484): what needs you, then the state, then the facts, in two rows
+   (Project and README badge under Team, beside Latest reports);
    on a phone one column in the same order. */
 .overview { display: grid; gap: 16px; }
 .overview-row { display: grid; gap: 16px; min-width: 0; }
-.overview-row-1, .overview-row-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.overview-row-1 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
-.overview-team { flex: 2 1 480px; }
+.overview-stack { flex: 2 1 480px; display: grid; gap: 16px; min-width: 0; }
 .overview-latest { flex: 1 1 300px; }
 .overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
 .overview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }

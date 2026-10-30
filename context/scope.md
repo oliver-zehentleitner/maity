@@ -561,8 +561,8 @@ route a crawler does not fetch.
   public read; a crawler barred from both sees an empty page.
 - A static `robots.txt` and `sitemap.xml` in the repository: they would
   invite indexing of every self-hosted instance, or none of them.
-- Listing badges or swarm pages: they are per project and belong to the
-  project's owner, not to the instance's public face.
+- Listing badges: they are per project and belong to the project's
+  owner, not to the instance's public face.
 
 ## Public pages are static HTML, chosen by their owner, and the instance's operator must allow them
 
@@ -618,8 +618,8 @@ must not publish its members by an update.
   publish for good that two names belong together.
 - Listing every agent of a public project: agents of other owners and
   their activity would be published by someone else's choice; they show
-  only with the project's `swarm_public` and their owner's public
-  profile, the rest as a number.
+  only with their owner's public profile, the rest as a number (the
+  separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
 
 ## The landing and legal pages are instance content in sections, rendered by the hub as static HTML
 

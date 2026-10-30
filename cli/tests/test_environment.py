@@ -61,36 +61,21 @@ def test_resume_declares_the_environment_and_prints_no_id(
     assert str(joined) not in str(declared)  # never a path
 
 
-def test_an_older_hub_is_resumed_without_the_field(
-    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("refused", ["environment", "harness"])
+def test_a_refused_field_fails_the_resume_once(
+    refused: str, joined: Path, fake: fakehub.FakeHub
 ) -> None:
-    bodies: list[dict[str, Any]] = []
-
-    def resume(seen: fakehub.Seen) -> tuple[Any, ...]:
-        bodies.append(seen.json())
-        if "environment" in seen.json():
-            fields = {"environment": "extra_forbidden"}
-            return 400, {"error": {"code": "invalid", "message": "invalid",
-                                   "details": {"fields": fields}}}  # fmt: skip
-        return 200, {"session": {"id": "ses-x"}, "me": {"member_id": "agt-b"}}
-
-    fake.routes[("POST", "/api/v1/me/resume")] = resume
-    assert cli.main(["resume", "--json"]) == cli.EXIT_OK
-    assert "environment" in bodies[0] and "environment" not in bodies[1]
-    assert "does not take the session's environment yet" in capsys.readouterr().err
-
-
-def test_another_invalid_is_not_retried(joined: Path, fake: fakehub.FakeHub) -> None:
+    """Never resent without the field: a hub that refuses it is a fault to see (alpha, §5.3)."""
     calls = []
 
     def resume(seen: fakehub.Seen) -> tuple[Any, ...]:
         calls.append(seen)
         return 400, {"error": {"code": "invalid", "message": "invalid",
-                               "details": {"fields": {"harness": "too_long"}}}}  # fmt: skip
+                               "details": {"fields": {refused: "extra_forbidden"}}}}  # fmt: skip
 
     fake.routes[("POST", "/api/v1/me/resume")] = resume
     assert cli.main(["resume"]) != cli.EXIT_OK
-    assert len(calls) == 1
+    assert len(calls) == 1 and "environment" in calls[0].json()
 
 
 def test_secret_files_are_never_a_path_the_hub_sees() -> None:

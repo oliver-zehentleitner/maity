@@ -185,7 +185,7 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     shown = names.get(member_id) if isinstance(member_id, str) else None
     handle = inline(shown or me.get("handle") or me.get("member_id") or "?")
     name = me.get("display_name")
-    instance = me.get("instance")  # §6.17; absent until the hub has instances
+    instance = me.get("instance")  # §6.17
     line = f"You are {handle}" + (f"#{inline(instance)}" if instance else "")
     line += f" ({inline(name)})" if name and inline(name) != handle else ""
     if me.get("member_id"):
@@ -195,7 +195,7 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if others:
         lines.append("Other instances of you: " + "; ".join(others))
     if ms.get("trust") or ms.get("role"):
-        role = _trust_role(ms, "Trust: {trust}, role: {role}", "Role: {role}")
+        role = _trust_role(ms, "Trust: {trust}, role: {role}")
         if ms.get("reports_to"):
             role += f", reporting to {_name(ms['reports_to'], names)}"
         lines.append(role)
@@ -440,18 +440,14 @@ def soul_lines(soul: Any) -> list[str]:
 
 def is_admin(packet: dict[str, Any]) -> bool:
     """Whether the packet's membership is in the admin team with trust `admin`, which a proxy
-    never is (§2.3); a hub from before trust × role says so with the single role."""
+    never is (§2.3)."""
     ms = _dict(packet.get("membership"))
-    if "trust" not in ms:
-        return ms.get("role") == "admin"
     return ms.get("trust") == "admin" and ms.get("role") != "proxy"
 
 
-def _trust_role(member: dict[str, Any], both: str, single: str) -> str:
-    """A member's trust and role (§2.3); a hub from before trust × role sends the role only."""
-    if "trust" not in member:
-        return single.format(role=inline(member.get("role")))
-    return both.format(trust=inline(member.get("trust")), role=inline(member.get("role")))
+def _trust_role(member: dict[str, Any], text: str) -> str:
+    """A member's trust and role (§2.3)."""
+    return text.format(trust=inline(member.get("trust")), role=inline(member.get("role")))
 
 
 def _formerly(member: dict[str, Any]) -> str:
@@ -635,7 +631,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
                 if isinstance(p.get("member_id"), str)
                 else inline(p.get("handle") or "?")
             )
-            + f" ({_trust_role(p, '{trust} {role}', '{role}')}, {inline(p.get('presence'))}"
+            + f" ({_trust_role(p, '{trust} {role}')}, {inline(p.get('presence'))}"
             + _formerly(p)
             + ")"
             for p in peers

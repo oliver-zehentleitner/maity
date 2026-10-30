@@ -41,7 +41,7 @@ class _Facts:
     """What the choice depends on, read in one short transaction."""
 
     repository_url: str | None
-    owner_id: str
+    owner_id: str  # the human whose grants count: who confirmed (§11.4), "" while nobody did
     confirmed: bool
     links: tuple[tuple[str, int, str], ...]  # (id, installation id, status)
     token: tuple[str, Any, bytes] | None  # (status, set_at, sealed)
@@ -104,19 +104,25 @@ class ForgeAccess:
                 select(
                     t.project.c.repository_url,
                     t.project.c.owner_id,
+                    t.project.c.owner_org_id,
                     t.project.c.repository_owner_confirmed,
+                    t.project.c.repository_confirmed_by,
                 ).where(t.project.c.id == project_id)
             ).one()
+            # The namespace owner's grants for a project of a human; for one of an organisation
+            # the grants of the owner who confirmed it, and nobody's while none did.
+            grants = project.repository_confirmed_by or (
+                project.owner_id if project.owner_org_id is None else ""
+            )
             links = tuple(
-                (row.id, row.installation_id, row.status)
-                for row in forge_links.rows(conn, project.owner_id)
+                (row.id, row.installation_id, row.status) for row in forge_links.rows(conn, grants)
             )
             token = conn.execute(
-                select(t.forge_token).where(t.forge_token.c.human_id == project.owner_id)
+                select(t.forge_token).where(t.forge_token.c.human_id == grants)
             ).first()
         return _Facts(
             project.repository_url,
-            project.owner_id,
+            grants,
             bool(project.repository_owner_confirmed),
             links,
             None if token is None else (token.status, token.set_at, token.token_sealed),

@@ -1483,8 +1483,8 @@ alone: it is not seen without a mouse resting on the button.
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
-Three rows: Waiting for you and Board, then Team and Latest reports,
-then Project and README badge. A member in a list is a chip
+Waiting for you and Board come first, then Team and Latest reports;
+where Project and README badge stand is d7ee1073 below. A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1505,6 +1505,31 @@ remains.
 badge on the overview: a second place to change one setting, with the
 overview the only view that edits in place. A Contract link guessed for
 any forge: a wrong path shape would be a dead link that looks right.
+
+## Project and README badge stand under Team, before Latest reports
+
+**Id:** d7ee1073-1752-4134-9e51-878c5c28f2c2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's screenshot and wish on tsk-b67chbx96n29 ("move the two blocks in front of Latest reports"), as the coordinator passed it on, 2026-10-30: on a wide desktop Project and README badge were a row of their own below the whole report list, with empty space under Team; the place under Team is the implementation's choice from the two the coordinator named
+**Revisit when:** the maintainer asks for another place, or the overview gets a panel that competes for the space under Team
+**See:** views.md — 057e7277-3eba-4267-93d2-c6b74a5e2ff1 — as of 2026-10-30
+
+The second row is Team with Project and README badge under it
+(`.overview-stack`), and Latest reports beside them. On a phone, where
+the row wraps, the order is Team, Project, README badge, Latest reports.
+
+**Reason:** Latest reports is a long list; whatever came after it was
+out of sight, while Team left empty space beside it. Under Team the
+facts fill that space on a wide screen and still come before the
+reports on a narrow one.
+
+**Rejected alternative:** Project and README badge as their own row
+before the reports: on a wide screen it leaves the empty space under
+Team and pushes the reports, the second thing a reader looks for,
+further down. Keeping the three rows and only shortening the report
+list: the wish was about the order, not the length.
 
 ## The instance admin area shows one section at a time
 
@@ -2406,3 +2431,32 @@ up the state, so the mark belongs there as well as in the header.
 - A `released` entry in the state select: it would be lost on the next
   move back to build, which the maintainer's decision rules out.
 - The mark in the header alone: the overview is where the state is read.
+
+## A member's Activity and the project's Messages read the hub's latest 5000 events and say so
+
+**Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
+**Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
+
+The hub cannot be asked for one member's events, nor for a project's
+latest events counted in that project. The member page's Activity
+therefore pages through the project's feed from the hub's latest 5000
+`seq` forward, as the Messages view always did (one shared scan,
+`M.recentEvents`), keeps the member's own events that are not redacted,
+and shows the newest 50; each opening of the page reads up to 26 pages
+of 200, a cost bounded by the window, not by history. Where the window
+cut something, both views say
+it counts the hub's latest 5000 events, all projects counted, so a quiet
+member in a busy hub reads as cut, not as idle.
+
+**Reason:** what the client can afford to read is bounded by the hub's
+numbering, not the project's; a sentence that names the project's events
+would promise what the window cannot see.
+
+**Rejected alternative:** reading the whole feed from the first event:
+its cost grows with the hub's history, which the 2026-10-26 rule rules
+out. A window of 200 for the Activity: in a busy hub it held few or none
+of the project's events and said nothing about it.

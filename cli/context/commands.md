@@ -362,7 +362,8 @@ sent), like `report`'s, so a caller can tell them from a hub error.
 
 **Id:** 5df2d4cd-4530-4b3f-b936-ce9ef81249c5
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** aba45d60-24bd-453d-905b-3be6f66e633a
 **Evidence:** inferred
 **Source:** the coordinator's card "CLI: fail loud when the hub lacks a feature", 2026-10-23; `docs/api.md` §4 (`openapi.json`)
 **Revisit when:** the hub tells an unknown route from an unknown id in its error envelope
@@ -390,6 +391,40 @@ takes an absent field for an empty one and goes on. One unauthenticated
 - Reading a missing `openapi.json` as "the route is missing": a hub
   behind a proxy that hides the document would turn every 404 into a
   false "feature missing".
+
+## Before launch the CLI keeps no fallback for an older hub or an older state
+
+**Id:** aba45d60-24bd-453d-905b-3be6f66e633a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n); the owner's alpha rule of 2026-10-29 (build best practice, remove the old instead of keeping compatibility layers); `docs/api.md` §13, §17.6
+**Revisit when:** a hub or CLI release has users that cannot upgrade both together, or a release changes a route or field the CLI depends on after launch
+
+A 404 is the hub's own answer: the CLI no longer reads `openapi.json`
+to say that a hub lacks a feature, and neither do `maity chat cnv-…`,
+`maity ticker post` or the runner's pickup. `maity link list` shows no
+links for a card without a `links` list. A resume that the hub refuses
+is not sent again without `environment` or `supervisor`. A state that
+holds only the slug is refused with "run `maity resume`" instead of
+asking `GET /me`. A membership without `trust` is not admin and is no
+longer shown by its role alone. One fallback stays: a project that
+answers `not_found` is looked up once with `GET /me` and followed
+(f502c036), because a rename or transfer happens on the current hub,
+not only on an old one.
+
+**Reason:** every hub in use runs `main`, which sends all of these
+fields and routes. Each fallback was code and tests for a hub or state
+that no longer exists, and some of them hid a real fault: a refused
+field went unnoticed, and a 404 from a broken route read as a missing
+feature.
+
+**Rejected alternatives:**
+- Keeping the layers until after launch: they would become the
+  compatibility promise of the first release, for hubs that never
+  shipped.
+- Keeping only the `openapi.json` lookup as a diagnostic: it costs a
+  request on every 404, and a hub without the route no longer exists.
 
 ## The CLI decides which short handles are shared, among the members it shows
 
@@ -586,7 +621,8 @@ the one the docs show. A narrow rule keeps every other typo an error.
 
 **Id:** 156050f1-bac1-47aa-af43-0c677ecf888f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** eeeb8571-2df5-4385-9e4d-8b3ec73e8a41
 **Evidence:** confirmed
 **Source:** the card "cli: project namespace" (contract #424, `docs/api.md` §6.25, §13); the coordinator's assignment of 2026-10-27
 **Revisit when:** an agent's credential is no longer bound to one project, or the hub drops `full_name` from `/me` or the resume packet
@@ -619,6 +655,39 @@ the contract: the full name is computed and follows renames.
   a single-use link per agent for a change the hub can answer itself.
 - Keeping the slug as the only stored name: a slug is unique only
   within its owner's namespace now (§6.25).
+
+## The CLI keeps the project's full name, refreshed by every resume
+
+**Id:** eeeb8571-2df5-4385-9e4d-8b3ec73e8a41
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: project namespace" (contract #424, `docs/api.md` §6.25, §13); the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
+**Revisit when:** an agent's credential is no longer bound to one project, or the hub drops `full_name` from the resume packet
+
+Every project route is `/projects/<owner>/<slug>/…`, with owner and slug
+each encoded as a path segment. The state keeps `full_name` next to the
+slug. `maity resume` overwrites both from the packet, so a rename or a
+transfer reaches the CLI with the next resume and needs no new join. A
+join answer that already names `<owner>/<slug>` is taken as the full
+name. A state without a full name is an error that says to run
+`maity resume`. A value that is not `<handle>/<slug>` in shape is never
+used as a path. `client_outdated` (426) is printed as one line with the
+minimum version and the install line from the answer.
+
+**Reason:** refreshing on resume follows from the contract: the full
+name is computed and follows renames. The resume packet is the hub's own
+answer, so the CLI never builds the name itself.
+
+**Rejected alternatives:**
+- Building the owner from the owner handle the packet names: a
+  project's namespace owner is not necessarily the agent's own human,
+  and handles can be renamed (§6.24).
+- Keeping the slug as the only stored name: a slug is unique only
+  within its owner's namespace now (§6.25).
+- Completing a state that holds only the slug from `GET /me`
+  (156050f1): it served states written before the namespace, and none
+  exist before launch (aba45d60).
 
 ## A project that answers `not_found` is looked up once with `GET /me` and followed
 

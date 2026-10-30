@@ -96,3 +96,53 @@ def test_a_move_into_an_organisation_asks_for_the_factor_in_the_call_and_at_the_
     went = boss.post(f"/requests/{asked['id']}/answer", {"reply_id": "go"})
     assert went.status_code == 200, went.text
     assert adm.get("/projects/oz-team/shop").json()["owner"]["id"] == org["id"]
+
+
+def test_an_owner_of_an_organisation_hands_its_project_over_with_the_factor(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Out of an organisation: to oneself, the move happens in the call; to another owner
+    of the project, the call files a request and that owner's `go` moves it. Each asks."""
+    boss, boss_secret = enrolled(make_client, migrated, moment, "boss")
+    org = make_org(boss, "oz-team", "OZ Team")
+    second, second_secret = enrolled(make_client, migrated, moment, "second")
+    add_member(migrated, org["id"], second.id, "owner")
+    made = boss.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    assert made.status_code in (200, 201), made.text
+    path = "/projects/oz-team/shop/transfer"
+    moment.move(minutes=11)
+    # to oneself: the move is in the call
+    assert reason(boss.post(path, {"to": boss.id})) == (403, "step_up_required")
+    assert boss.get("/projects/oz-team/shop").json()["owner"]["id"] == org["id"]
+    # to the other owner: the request, then their go
+    assert reason(boss.post(path, {"to": second.id})) == (403, "step_up_required")
+    verified(boss, boss_secret, moment)
+    filed = boss.post(path, {"to": second.id})
+    assert filed.status_code == 202, filed.text
+    answer = f"/projects/oz-team/shop/requests/{filed.json()['id']}/answer"
+    moment.move(minutes=11)
+    assert reason(second.post(answer, {"reply_id": "go"})) == (403, "step_up_required")
+    assert boss.get("/projects/oz-team/shop").json()["owner"]["id"] == org["id"]
+    verified(second, second_secret, moment)
+    moved = second.post(answer, {"reply_id": "go"})
+    assert moved.status_code == 200, moved.text
+    assert second.get("/projects/second/shop").json()["owner"]["id"] == second.id
+
+
+def test_the_hand_over_to_oneself_moves_the_project_in_the_call_once_the_factor_is_given(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    boss, boss_secret = enrolled(make_client, migrated, moment, "boss")
+    org = make_org(boss, "oz-team", "OZ Team")
+    assert (
+        boss.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    moment.move(minutes=11)
+    path = "/projects/oz-team/shop/transfer"
+    assert reason(boss.post(path, {"to": boss.id})) == (403, "step_up_required")
+    verified(boss, boss_secret, moment)
+    moved = boss.post(path, {"to": boss.id})
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()["full_name"], moved.json()["owner"]["id"]) == ("boss/shop", boss.id)
+    assert org["id"] != boss.id
