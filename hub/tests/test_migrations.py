@@ -758,3 +758,35 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}
     assert found[none] is None
+
+
+def test_a_human_with_the_meat_proxy_switch_on_gets_both_parts_by_0103(engine: Engine) -> None:
+    """0103 (§5.2): `meat_proxy` true becomes both parts true, false both false; downgrading
+    makes the switch the or of the parts."""
+    from sqlalchemy import text
+
+    from tests import factory
+
+    migrate(engine, _before(engine, "0103"))
+    on, off = factory.human(engine, "on"), factory.human(engine, "off")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE human SET meat_proxy = :v WHERE id = :id"), {"v": True, "id": on})
+
+    def parts() -> dict[str, tuple[bool, bool]]:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT id, meat_proxy_lead, meat_proxy_hands FROM human")
+            ).all()
+        return {r[0]: (bool(r[1]), bool(r[2])) for r in rows}
+
+    migrate(engine)
+    assert parts()[on] == (True, True) and parts()[off] == (False, False)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE human SET meat_proxy_hands = :v WHERE id = :id"), {"v": False, "id": on}
+        )
+    downgrade(engine, _before(engine, "0103"))
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT id, meat_proxy FROM human")).all()
+    switch = {r[0]: bool(r[1]) for r in rows}
+    assert switch[on] is True and switch[off] is False
