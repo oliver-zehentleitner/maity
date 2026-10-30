@@ -621,7 +621,10 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. Still the hub's words: an
+or "an" in code, which only English has. A language offered for choice
+is named in itself ("English", "Deutsch"), never through the catalog: a
+reader looks for their own language's name, not its name in the
+language shown now. Still the hub's words: an
 organisation's roles (`owner`, `admin`, `member`) in its sentences and
 options, until a second language gives them keys. A count said with a word ("3 in
 progress" in the board bar's name, "2 urgent") is one key per word with
