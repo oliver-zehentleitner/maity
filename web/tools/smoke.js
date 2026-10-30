@@ -2396,6 +2396,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.localStorage = cfLs;
   await go("#/maintainer/maity/inbox");
 
+  // The text catalog (js/i18n.js, i18n/en.json): one key per sentence, placeholders and plural forms, Intl for numbers and dates.
+  const tr = win.Maity.t;
+  const i18nEn = win.MAITY_I18N && win.MAITY_I18N.en;
+  expect(i18nEn && tr("chat.instance.label") === "Send to" && tr("no.such.key") === "no.such.key",
+    "i18n: a key reads its English text; a key the catalog lacks reads as itself");
+  const i18nLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
+  i18nEn["test.files"] = { one: "{count} file in {where}", other: "{count} files in {where}" };
+  expect(tr("test.files", { count: 1, where: "the chat" }) === "1 file in the chat" && tr("test.files", { count: 1200, where: "x" }) === "1,200 files in x"
+    && tr("test.files", { count: 0, where: "x" }) === "0 files in x" && tr("chat.instance.team", { unused: 1 }) === "The whole team",
+    "i18n: plural forms by count, a number in a placeholder formatted for the locale " + tr("test.files", { count: 1200, where: "x" }));
+  delete i18nEn["test.files"];
+  win.Maity.i18n.locale = "de-DE";
+  expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
+    "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
+  win.Maity.i18n.locale = i18nLocale;
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
