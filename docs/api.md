@@ -8235,7 +8235,30 @@ id, and the payload's `to` is the conversation id. Posting here and to
 (`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
 them. `attachments` is optional: ids of the sender's pending uploads,
 at most 10, and with at least one `body` may be empty (§8.7). Status
-reports are not messages: the board shows status. Returns
+reports are not messages: the board shows status.
+
+**A review result cites what it judged.** A message of type
+`review_result` carries `review`, required for that type and
+`invalid` for any other (`details.fields.review: "not_allowed"`):
+
+```json
+{ "kind": "message", "type": "review_result", "to": "agt-a", "body": "Markdown",
+  "review": { "subject": "#743", "head": "7039a4b6fd8b988d71a63338711da188fcd95fba", "verdict": "approve",
+              "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
+```
+
+`subject` (1–120 characters) names what was reviewed, a pull request
+or a card; `head` is the full 40-hex commit reviewed; `verdict` is one
+of `approve`, `changes`, `comment`; `cites` lists 1–50 places the
+reviewer read, each `{path ≤ 300, line?, quote ≤ 300}` with `line` a
+positive number where there is one and `quote` the text as it stands
+there. A missing `review` on a `review_result` is `invalid`
+(`details.fields.review: "required"`), an empty `cites`
+`details.fields["review.cites"]: "too_few"`, a malformed field its own
+path with `format`. The hub stores and shows them as given and does
+not read the repository: the cites are what the lead checks against the
+diff before an approval counts, and the dashboard shows them under the
+verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
 
@@ -10316,7 +10339,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat` |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--subject S --head SHA --verdict approve\|changes\|comment` and one or more `--cite path[:line]:quote` (§8.4, "A review result cites what it judged") |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
