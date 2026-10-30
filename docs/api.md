@@ -8252,7 +8252,11 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
   of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
   `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
-  instance of that member and then pings exactly that instance. The
+  instance of that member and then pings exactly that instance, or an
+  instance that was replaced (§6.17), and then pings the instance that
+  replaced it, along the chain (§8.2); the stored mention keeps the id as
+  written. An instance revoked without a replacement does not resolve,
+  so its `@handle#id` stays plain text and pings nobody. The
   part before `#` resolves as it would alone, aliases included:
   `@old-b#wqe2`, `@oldowner/agent-b#wqe2`;
   otherwise the whole `@handle#id` stays plain text. A mention of the
