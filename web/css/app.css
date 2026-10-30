@@ -1386,3 +1386,27 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-here h4 { margin: 0 0 4px; }
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
+
+/* A member's page (js/member-page.js): the breadcrumb, the header, the tabs. */
+.breadcrumb { margin: 4px 0 12px; font-size: 0.9rem; }
+.member-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: start;
+  padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.member-head-face { position: relative; width: 64px; height: 64px; }
+/* The presence dot at the avatar's bottom right, ringed in the header's background. */
+.member-head-dot { position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; box-shadow: 0 0 0 2px var(--surface); }
+.member-head-text h2 { margin: 0; overflow-wrap: anywhere; }
+.member-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.member-pill-paused { border-color: var(--warn); }
+.member-line { margin: 0; }
+.member-head-actions { display: flex; gap: 8px; align-items: center; }
+.member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
+.member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+.member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
+/* Phone: avatar, text, then the buttons at full width (the handover). */
+@media (max-width: 600px) {
+  .member-head { grid-template-columns: minmax(0, 1fr); }
+  .member-head-actions { flex-direction: column; align-items: stretch; }
+  .member-head-actions > * { width: 100%; }
+}

@@ -367,14 +367,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
   expect(!slowList.hidden, "mentions: once read, the list is there at once");
-  // A mention's link opens the member: Members with that row marked and focused.
+  // A mention's link opens the member's page (js/member-page.js), its heading focused.
   const mlProto = Object.getPrototypeOf(main);
   const mlFocus = mlProto.focus;
   mlProto.focus = function () { document.activeElement = this; };
   await go(triedLink.getAttribute("href")); await tick(); await new Promise((r) => setTimeout(r, 5));
-  const wantedRow = main.querySelector("tr.wanted");
-  expect(plainTitle() === "Members · Maity · Maity" && wantedRow && wantedRow.getAttribute("data-member") === "agt-b"
-    && main.querySelectorAll("tr.wanted").length === 1 && document.activeElement === wantedRow.childNodes[0], "mentions: the link opens Members with the member marked and focused");
+  const mpHead = byId("member-heading");
+  expect(plainTitle() === "Members · Maity · Maity" && mpHead && text(mpHead).startsWith("Agent B") && document.activeElement === mpHead,
+    "mentions: the link opens the member's page, its heading focused");
   await go("#/maintainer/maity/members/agt-nobody"); await tick();
   expect(text(main).includes("No member with the id agt-nobody in this project.") && !main.querySelector("tr.wanted"), "mentions: an unknown member is said");
   mlProto.focus = mlFocus; document.activeElement = undefined;
@@ -6417,14 +6417,76 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (!ref) return;
     const id = ref.getAttribute("data-member");
     await go(ref.getAttribute("href")); for (let k = 0; k < 4; k++) await tick();
-    const row = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id);
-    expect(row && row.classList.contains("wanted"), "member links: from " + label + " the link lands on that member's row");
+    const known = win.Maity && main.querySelector(".member-head");
+    expect(known && text(main.querySelector(".breadcrumb")).includes("@") && main.querySelector("nav.member-tabs"),
+      "member links: from " + label + " the link opens that member's page (" + id + ")");
   };
   await mrFollow("#/maintainer/maity/overview", "the overview");
   await mrFollow("#/maintainer/maity/chat/agt-a", "the chat");
   await mrFollow("#/maintainer/maity/messages", "the project messages");
   await mrFollow("#/maintainer/maity/members", "the members list");
   await mrFollow("#/maintainer/maity/board", "the board");
+  // A member's page (the designer's handover #6484, read only since #643): header, pills, line, Chat, Actions that only lead away, tabs.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const mpBox = () => main.querySelector(".member-head");
+  const mpPills = () => mpBox().querySelectorAll(".member-pill").map((x) => text(x));
+  expect(mpBox() && text(main.querySelector(".breadcrumb")).replace(/\s+/g, " ").trim() === "Members / @agent-b"
+    && mpPills().some((t) => t.startsWith("agent of")) && text(mpBox().querySelector(".member-line")).includes("Claude Code")
+    && mpBox().querySelectorAll("a").some((a) => a.classList.contains("member-chat") && a.getAttribute("href") === "#/maintainer/maity/chat/agt-b"),
+    "member page: breadcrumb, pills (agent of the owner), the line with the harness, Chat to one's own agent");
+  const mpMenu = mpBox().querySelector(".member-actions-menu button");
+  mpMenu.click(); await tick();
+  const mpItems = mpBox().querySelectorAll(".member-actions-menu a").map((x) => [text(x), x.getAttribute("href")]);
+  expect(JSON.stringify(mpItems) === JSON.stringify([["Manage on Members", "#/maintainer/maity/members?manage=agt-b"], ["Manage on Agents", "#/maintainer/maity/agents/agt-b"]]),
+    "member page: Actions only leads to where each action is done, Members for an admin, Agents for the owner " + JSON.stringify(mpItems));
+  const mpTabs = main.querySelectorAll("nav.member-tabs a");
+  expect(mpTabs.map((a) => text(a)).join() === "Activity,Cards,Briefing,Sessions & credentials" && mpTabs[0].getAttribute("aria-current") === "page"
+    && mpTabs[1].getAttribute("href") === "#/maintainer/maity/members/agt-b/cards", "member page: four tabs, Activity first and current");
+  await go("#/maintainer/maity/members/agt-b/cards"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main.querySelector(".member-section")).includes("Holds (") && text(main.querySelector(".member-section")).includes("Assigned ("),
+    "member page: Cards lists what they hold and what is assigned to them");
+  await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".member-section .member-briefing") && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: Briefing shows an admin the agent's briefing from the member view, read only");
+  // An open session of an instance (§6.17): its id, since when, and not listening.
+  const mpsAll = win.Maity.api.getAll, mpsGet = win.Maity.api.get;
+  const mpsSession = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { instances: x.instances.map((i, n) => (n ? i
+    : Object.assign({}, i, { session: { id: "ses-b-0009", started_at: "2026-10-30T08:00:00Z", not_listening_since: "2026-10-30T09:00:00Z" } }))) }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAll(p).then(mpsSession) : mpsAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGet(p).then(mpsSession) : mpsGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/sessions"); for (let k = 0; k < 8; k++) await tick();
+  const mpsSess = main.querySelector(".member-section .member-session");
+  expect(text(main.querySelector(".member-section")).includes("Instances") && mpsSess && text(mpsSess).includes("ses-b-0009") && text(mpsSess).includes("since ")
+    && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
+    "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
+  win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
+  await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")
+    && mpBox().querySelector(".member-head-dot") && text(mpBox().querySelector(".member-line")).startsWith("Online")
+    && !main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing"),
+    "member page: one's own page has no Chat and no Actions; a human's presence shows; a human has no Briefing tab");
+  // Without members:admin: the owner reads its agent's briefing through its versions; another member gets no Briefing tab.
+  const mpsMe = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mpsMe(p).then((x) => Object.assign({}, x, { projects: x.projects.map((y) => Object.assign({}, y, { trust: "member", role: "coder" })) })) : mpsMe(p));
+  const mpsReads = [];
+  const mpsGetB = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.endsWith("/briefings")) mpsReads.push(p); return mpsGetB(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpsReads[0] === "/projects/maintainer/maity/members/agt-b/briefings" && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: the owner without members:admin reads the briefing through GET …/briefings");
+  const mpsOther = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { owner_id: "hum-other" }) : x)), next_cursor: null });
+  const mpsAllC = win.Maity.api.getAll, mpsGetC = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAllC(p).then(mpsOther) : mpsAllC(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGetC(p).then(mpsOther) : mpsGetC(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing") && main.querySelectorAll("nav.member-tabs a")[0].getAttribute("aria-current") === "page",
+    "member page: another member's agent has no Briefing tab for a member, and its address falls back to Activity");
+  win.Maity.api.getAll = mpsAllC; win.Maity.api.get = mpsMe;
+  await go("#/maintainer/maity/members/agt-nobody"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No member with the id agt-nobody in this project."), "member page: an unknown id is said");
+  // ?manage=<id>, where Actions leads: Members with that row open.
+  await go("#/maintainer/maity/members?manage=agt-c"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-c"), "member page: Manage on Members opens that member's row");
   // The inbox: the entry's asker.
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");

@@ -444,8 +444,8 @@ too.
    there also before the project has an agent, for a placement that
    creates its profile. `placement_created`, `placement_updated`
    and `placement_reported` read the list again.
-4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `/<owner>/<slug>/members/<id>`,
-   a mention's link, marks that member's row and moves the focus to it): everyone in the
+4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
+   member's Manage row for an admin, focused): everyone in the
    project as a neutral list, humans first, then agents, each with name and handle
    (a link to the member), a **Chat** button (one's own agent: its direct chat;
    anyone else: a new group chat with them chosen, `chat/new?with=<id>`, where
@@ -496,6 +496,19 @@ too.
    30 s and updated in place; a redraw keeps the keyboard focus (Manage
    to the opened row's role, Done back to Manage). On a phone each row is
    a card with its cells labelled.
+   **A member's page** (`/<owner>/<slug>/members/<id>[/<tab>]`, `js/member-page.js`,
+   every member link and mention leads there; the designer's handover #6484, read only):
+   a breadcrumb back to Members, a header — the 64 px avatar with its presence dot, the
+   name and @handle, pills for trust and role, "agent of @owner", "reports to @x" and the
+   areas, one line of presence, harness and model of the instance that speaks for it and
+   the cards it holds, **Chat** where one may (as on the list) and **Actions ▾**, which
+   only leads to where each action is done: **Manage on Members** for an admin
+   (`?manage=<id>`), **Manage on Agents** for the agent's owner; no menu where neither
+   applies — then tabs: **Activity** (what it did among the project's latest 200 events,
+   newest first), **Cards** (held, then assigned, each to the board), **Briefing** (read),
+   **Sessions & credentials** (the instances; the credentials for an admin or the owner,
+   without Revoke). An id that is no member here is said. On a phone the header stacks
+   and its buttons take the full width.
 5. **Organisation**, a section of the **Overview** (no tab or path of its
    own; the maintainer, 2026-10-29): an indented tree computed from
    `reports_to` and area ownership on every render, the policy's preset
