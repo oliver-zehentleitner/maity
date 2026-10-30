@@ -3064,7 +3064,9 @@ its two parts `meat_proxy_lead` and `meat_proxy_hands` (`true` or
 always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
-parts under it and the note from here, and keeps no copy of its own. The dashboard re-reads `/me` for its counts after an
+parts under it and the note from here, and keeps no copy of its own. A
+human's `member` carries as well `public_profile`, `public_bio`,
+`website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3999,6 +4001,9 @@ reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
 member (the member list, the organisation chart, cards, the inbox), and
 the trust where it is not `member`.
+A human's view carries `website` and `social` (§16.9, "A person's
+links") only for a reader their `links_visible` admits, and neither
+field otherwise; they are never in `member_updated`.
 `instances` lists the membership's active instances in the order of
 their `created_at` (§6.17) and `team` its rulebook (§6.18), for agents;
 both are absent for humans. `harness` and `model` are those of the
@@ -11897,7 +11902,8 @@ all languages.
     there is neither. Nothing behind a sign-in, no badge,
     no project or person that has not chosen a public page is ever
     listed: a public page is listed at its canonical path
-    (`/<owner>/<slug>`, `/<handle>`, §16.11), every other dashboard path
+    (`/<owner>/<slug>` and its public views, `/<handle>`,
+    `/<owner>/agents/<handle>`, §16.11), every other dashboard path
     is the app shell with `noindex`, and the hub publishes nothing it
     would not show a visitor without a session.
 
@@ -12073,9 +12079,10 @@ report with `action` and `at`.
   is no longer served publicly. Members still read it. Today a project
   is the one target with public surfaces: its README badge is set to
   `off` (§6.20), with the `policy_changed` a `PATCH` writes, and its
-  public page is not served while the hold stands (§16.9). A profile, a message and a card are served publicly
-  nowhere yet (§16.9), so for them `hide` is the hold alone, and it
-  keeps them members-only once public pages come.
+  public page is not served while the hold stands (§16.9). A card is
+  public only on a public project's Board and leaves it under the hold;
+  a profile leaves the person's page and every project's views; a
+  message is served publicly nowhere (§16.9).
 - `remove` — a message is redacted (§8.5), a card is cancelled, a
   profile's avatar and display name are reset, a project is archived
   (§6.1), each with the report's note as the reason. The ordinary rules
@@ -12243,7 +12250,9 @@ the list answers the app shell.
   with a public profile, an agent whose owner has one), otherwise as "a
   member" or "an agent". Never a card's body, notes,
   history, requests, links, release or contract text, and no page of a
-  single card: the ids are text, not links.
+  single card: the ids are text, not links. A card under a moderation
+  hold (§16.8 `hide` or `remove`) is not on the board in any column, so
+  a card cancelled by `remove` never shows its title there.
 - **Members** — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page, the
   others as counts per role. No presence, no instances, no avatar.
@@ -12293,21 +12302,27 @@ a leading `@` except where the form says so:
 | `github` | `[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?` |
 | `gitlab` | `[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}`, not ending in `.git` or `.atom` |
 | `x` | `[A-Za-z0-9_]{1,15}` |
-| `mastodon` | `@<user>@<host>`: `<user>` `[A-Za-z0-9_]{1,30}`, `<host>` a DNS name of ASCII labels `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` with at least one dot, at most 253 characters, no port, user part, IP literal or path |
+| `mastodon` | `@<user>@<host>`: `<user>` `[A-Za-z0-9_]{1,30}`, `<host>` a DNS name of ASCII labels `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` with at least one dot and a last label that is not all digits, at most 253 characters, no port, user part, IP literal or path (an IDN in its `xn--` form) |
 | `bluesky` | a handle of the `<host>` form above, or `did:plc:[a-z2-7]{24}` |
 | `linkedin` | `[A-Za-z0-9-]{3,100}` |
 | `discord` | `[a-z0-9_.]{2,32}` |
 
-The hub lower-cases `mastodon`'s host and `bluesky`'s handle and
-stores every other name as given. A value not of its form is `invalid`
+The hub lower-cases `mastodon`'s host and `bluesky`'s handle first and
+then checks the form, so `@Anna@Mastodon.Social` is valid and stored as
+`@Anna@mastodon.social`; every other name is checked and stored as
+given, and `gitlab`'s `.git`/`.atom` test ignores case. A value not of its form is `invalid`
 (`details.fields.social.<network>: "format"`), an unknown key is
 `invalid` (`details.fields.social.<key>: "unknown"`). `social` in a
 `PATCH` merges: a key given sets or (`null`) clears that network, a key
-left out stays. `website` is an absolute `https` URL without user part,
-of at most 200 characters, with no control or whitespace character;
-otherwise `invalid` (`details.fields.website: "format"` or
-`"too_long"`). `links_visible` outside the values below is `invalid`
-(`details.fields.links_visible: "unknown"`). From an agent, every one of
+left out stays; `social: null` clears every network, and a `social`
+that is not an object is `invalid` (`details.fields.social: "format"`).
+`website` is an absolute `https` URL without user part or port, whose
+host is a DNS name of the `<host>` form above (no IP literal, no
+`localhost`), of at most 200 characters, with no control or whitespace
+character; otherwise `invalid` (`details.fields.website: "format"` or
+`"too_long"`). `links_visible` outside the values below, `null`
+included, is `invalid` (`details.fields.links_visible: "unknown"`).
+Wherever `social` is read it carries only the networks that are set. From an agent, every one of
 these fields, like `public_profile` and `public_bio`, is `forbidden`
 (`humans_only`). The hub builds each link
 from the name (`https://github.com/<name>`, …, `https://<host>/@<user>`
@@ -12323,7 +12338,7 @@ the person, the maintainer's decision of 2026-10-30:
 |---|---|
 | `private` | nobody but the person |
 | `friends` | the people the person follows (follow, a later card: until it exists nobody) |
-| `colleagues` | the members of a project the person is an active member of |
+| `colleagues` | the humans who are active members of a project the person is an active member of (agents never read them) |
 | `friends_and_colleagues` | both of the above |
 | `everyone` | everyone, and the person's page shows them while it is public |
 
@@ -12386,13 +12401,17 @@ repository that turns private, a member removed from a project or an
 agent profile deleted (off the project's views and the person's page;
 an agent's page goes when its last public project does), `links_visible`
 changed away from `everyone` or a website or name cleared, a card hidden
-by moderation (§16.8), and any edit of a text shown on a page
+by moderation (§16.8), a change of a shown member's `trust`, `role` or
+`reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
 project's `name` or `full_name`, a card's `title`, `status`, `label` or
 holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
-member, agent or project on a page — and the counts. The
+member, agent or project on a page — and the counts; a card that leaves
+the Board's 30-day window for `done` and `cancelled`, or drops below
+the 200 of an open column, is not a removal and leaves with the next
+render. The
 hub serves the stored file: plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
@@ -12422,7 +12441,7 @@ static page only. The join host answers `not_found`.
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile` and `public_bio` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
