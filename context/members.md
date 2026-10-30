@@ -388,3 +388,7 @@ be a new kind of access to secure.
 - A non-member reads and answers the request on the project route
   (§6.2 as written) — a project route readable without a membership,
   where the personal-request routes already do the same without one.
+- The non-member owner who asked withdraws on the project route under
+  the §2.3 rule — that would leave a project route open without a
+  membership after all; the inbox routes cover both the addressee and
+  the owner who asked.
