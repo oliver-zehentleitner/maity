@@ -74,3 +74,59 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
   twenty places.
 - Touching with the settings passed through every call: the writers (a profile, a card, a membership) have
   no reason to know the hub's settings.
+
+## A person's page exists by their choice, and `touch` is called wherever that can change
+
+**Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
+**Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
+
+The kind `person` renders `/{handle}` for a human with `public_profile` on, an active account, no
+suspension, not deleted and no hold of moderation on the profile (`public_people.served`); the page has the
+display name, the handle and the bio as text, escaped. `PATCH /me` (a human only, an agent is `humans_only`) sets
+`public_profile` and `public_bio` and touches the page in the same transaction; `public_bio` is plain text of
+at most 280 characters without a C0 control character or a bidirectional override (`control_character`,
+`too_long`), an empty text clears it. The account deletion also clears `public_profile` and `public_bio` (§2.9: the profile is deleted with the person), so no personal text stays in the tombstone and `targets` no longer lists the person. The paths that take a page away or bring one back call `touch` as well:
+`moderation.apply` for the account it concerns (a hold, a suspension, a dismissal), `moderation.unsuspend`,
+the approval of a registration, and the account deletion. A process without the app (`maity-hub account unsuspend`) calls `public_pages.configure` first, for the
+reason in the entry below.
+
+**Reason:** the page is the person's, so the one switch is theirs; every other way the page can become wrong
+(an account that is suspended or gone) is a transition the hub itself makes, and each of them names the page in
+its own transaction. The bio refuses control characters and bidirectional overrides and isolates because on a
+public page they could reorder or hide text to make one person's words read as another's.
+
+**Rejected alternatives:**
+- Deriving `public_profile` from a project's page: a person who is in no public project would have no
+  page, and the choice would not be theirs.
+- Keeping the bio in the settings JSON of the account: the length and character rules are a column's job and
+  the bio is read on every render.
+- Rendering a person's page for any member of a public project: the contract shows members by their own
+  choice only.
+
+## A process without the app configures the public pages itself before it changes an input
+
+**Id:** 1f71e412-807f-4f8a-ac2b-0da5cd71f8fb
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of the engine step (#723) of the card tsk-w89mspg3gwx1
+**Revisit when:** `public_pages.touch` loads the settings itself, or a second command of `maity-hub` changes an input of a page
+
+`public_pages.touch` reads the settings (`MAITY_PUBLIC_PAGES` and the render mode) that `public_pages.startup`
+sets once when the app starts, because the write paths of the hub carry none. A process that changes an input
+without the app, today `maity-hub account unsuspend`, would find no settings and `touch` would do nothing: a page
+that has to go would stay until the next interval. So such a command calls `public_pages.configure(settings)`
+before it changes the input.
+
+**Reason:** the write paths (a profile, a card, a membership) have no reason to know the hub's settings, and
+passing them through twenty calls was the alternative that cost more than one line in each command.
+
+**Rejected alternatives:**
+- `touch` loading the settings from the environment on its own: a second place that parses them, and a process
+  with other settings than the app would disagree with it.
+- A silent no-op without configuration, as before: a removal that does not happen is the one failure this
+  engine must not have.

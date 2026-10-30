@@ -325,6 +325,9 @@ def test_robots_closes_the_reserved_first_segments_and_nothing_else(
     for legal_page in legal.ADDRESS.values():  # the legal pages stay open
         assert f"/{legal_page}" not in text
     assert "Disallow: /\n" not in text and "Disallow: /login-help" not in text
+    assert text.index("Allow: /\n") > text.rindex(
+        "Disallow:"
+    )  # the contract's format: then `Allow: /`
     assert text.endswith("\nSitemap: https://hub.example/sitemap.xml\n")
     off = make_client().get("/robots.txt").text
     assert "Disallow: /\n" in off  # as before while pages are off
@@ -350,7 +353,13 @@ def test_a_part_of_the_sitemap_is_cached_like_the_sitemap_and_unknown_names_are_
     part = client.get("/sitemap-1.xml")
     assert part.status_code == 200
     assert part.headers["cache-control"] == "public, max-age=3600"
-    for name in ("/sitemap-abc.xml", "/sitemap-1x.xml", "/sitemap--1.xml", "/sitemap-3.xml"):
+    for name in (
+        "/sitemap-abc.xml",
+        "/sitemap-1x.xml",
+        "/sitemap--1.xml",
+        "/sitemap-3.xml",
+        "/sitemap-01.xml",
+    ):
         assert client.get(name).status_code == 404, name
     # a path that is no sitemap part at all names nothing: the app shell
     assert "dashboard" in client.get("/sitemap-.xml").text
