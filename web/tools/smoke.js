@@ -5728,14 +5728,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
     "invite: without a join host there is no choice and no via; the hub picks the link");
   win.Maity.api.get = ivSession;
-  // A hub whose machine form does not name via (before the hub took it) would refuse the field: no choice, even with a join host.
-  const ivBody = win.Maity.api.hubBody;
-  win.Maity.api.hubBody = (m, p) => (p === "/projects/{owner}/{slug}/invitations" ? Promise.resolve(new Set(["trust", "role", "address", "ttl_seconds", "note"])) : ivBody(m, p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
-  const ivOld = ivPosts.length;
-  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(!byId("invite-via-join") && ivPosts[ivOld] && !("via" in ivPosts[ivOld][1]), "invite: a hub that does not take via is offered no choice and sent none");
-  win.Maity.api.hubBody = ivBody;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);

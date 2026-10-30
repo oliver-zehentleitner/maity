@@ -157,13 +157,9 @@ window.Maity = window.Maity || {};
     ttl.value = "86400";
     const note = h("textarea", { id: "invite-note", rows: "2", maxlength: "1024", placeholder: "Optional: shown on the invitation page (at most 1 KiB)" });
     // The link on the join host (§3.4 `via`, §1.1): offered, on by default, only
-    // where the hub names a join host (`join_url` of GET /auth/session) and takes
-    // `via` (its machine form); a hub before it would refuse the field.
-    const [session, takesVia] = await Promise.all([
-      M.api.get("/auth/session").catch(() => ({})),
-      M.api.hubBody("POST", "/projects/{owner}/{slug}/invitations").then((fields) => fields.has("via"), () => false),
-    ]);
-    const joinHost = takesVia && session.join_url ? hostOf(session.join_url) : null;
+    // where the hub names a join host (`join_url` of GET /auth/session).
+    const session = await M.api.get("/auth/session").catch(() => ({}));
+    const joinHost = session.join_url ? hostOf(session.join_url) : null;
     const viaJoin = joinHost ? h("input", { type: "checkbox", id: "invite-via-join" }) : null;
     if (viaJoin) viaJoin.checked = true;
     const submit = h("button", { type: "submit" }, "Create the invitation");

@@ -460,8 +460,7 @@ too.
    admin), an optional address (then only it may
    accept, and the hub mails the link), how long it is valid (an hour to
    a week), a note, and — only where the hub names a join host (`join_url`
-   of `GET /auth/session`) and its machine form takes `via` — **Link via
-   <join host>**, on by default (`via: join`; off sends `via: public`, the
+   of `GET /auth/session`) — **Link via <join host>**, on by default (`via: join`; off sends `via: public`, the
    hub's own address); the link shown once with **Copy**, never again; the
    invitations of the last 30 days with their state (open, used, revoked,
    voided, expired), for whom, by whom, which link went out (where a join

@@ -1531,30 +1531,30 @@ were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
-## An invitation's link via the join host is offered only where the hub names one and takes `via`
+## An invitation's link via the join host is offered only where the hub names one
 
 **Id:** 35607b9c-4a72-4936-bcf8-63a429436ab9
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §3.4 (`via`, "the dashboard's invite form shows 'link via <join host>', on by default, only when a join host is configured"), §1.1, §2.6 (`join_url` of `GET /auth/session`); the card tsk-053hsymxx1p8, 2026-10-30
-**Revisit when:** joins (§3.1) get the same choice in the join panel, or every hub this dashboard meets takes `via`
+**Source:** docs/api.md §3.4 (`via`, "the dashboard's invite form shows 'link via <join host>', on by default, only when a join host is configured"), §1.1, §2.6 (`join_url` of `GET /auth/session`); the card tsk-053hsymxx1p8; the coordinator's ruling against a check of the machine form (the maintainer's alpha rule: no compatibility layer; the dashboard and the hub ship together, the hub's part #681 first), 2026-10-30
+**Revisit when:** joins (§3.1) get the same choice in the join panel
 
-The invite form reads `join_url` from `GET /auth/session` and the
-invitation's body fields from the hub's machine form. Only when both
-say yes does it show **Link via <join host>**, ticked; it then sends
+The invite form reads `join_url` from `GET /auth/session`. Only when it
+is set does it show **Link via <join host>**, ticked; it then sends
 `via: "join"` or, unticked, `"public"`. Otherwise it sends no `via` and
-the hub picks the link. The list says which link went out, where a
-join host is named.
+the hub picks the link (`public`). The list says which link went out,
+where a join host is named.
 
-**Reason:** the contract makes the choice exist only with a join host;
-and a hub from before `via` refuses an unknown body field, so offering
-it there would break inviting altogether.
+**Reason:** the contract makes the choice exist only with a join host,
+and a link to a host that does not exist would lead nowhere.
 
-**Rejected alternative:** always sending `via`, `"public"` without a
-join host: correct for a hub that takes the field, a refused invitation
-on one that does not. The choice without the machine form check: the
-same refusal, only where a join host is set.
+**Rejected alternative:** also asking the hub's machine form whether it
+takes `via`, so a hub from before the field is not sent one: a
+compatibility layer, which the alpha rule leaves out; the dashboard and
+the hub ship together, the hub's part first. Always sending `via`,
+`"public"` without a join host: the same as sending none, one more
+field to keep right.
 
 ## Registration in the admin area: missing beside the fields, a block lifted by its typed address
 
