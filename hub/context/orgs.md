@@ -49,7 +49,8 @@ An organisation's handle is held to the reserved first segments like a human's: 
 `namespace.reserved_holders` reports an organisation that holds a word reserved later.
 
 **Known limit:** `PATCH /orgs/{org}` takes no `handle` yet, and `{org}` resolves the current
-handle only: the rename, the aliases and their limits wait for #523's alias table.
+handle only: the rename, the aliases and their limits wait for #523's alias table. For the
+same reason `q` of `GET /admin/orgs` (§16.10) matches the handle and the display name, not yet an alias.
 
 ## An organisation's changes run under its row lock, and the caller's role is read under it
 
