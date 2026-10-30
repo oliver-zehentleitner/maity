@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`
+**Source:** docs/api.md §6.2 "Isolation" (#771); the card tsk-8c6vdjpw82b1 from the coordinator, 2026-10-30; the maintainer's decision it records; the implementation of `isolation.py`; the lead's decision on the window after a lift (from the coordinator, 2026-10-30; the maintainer is to confirm it)
 **Revisit when:** a second way to stop an agent exists next to the pause and the isolation, or the number of seats and routes that skip an isolated agent grows past the helpers (`views.routing_boss`, `availability.coordinator_of`, `seats.routed_arbiter`)
 
 `membership.isolated_reason`, `isolated_since` and `isolated_by` are all set while an agent is isolated and all
@@ -37,12 +37,17 @@ ever rewritten and nothing can drift.
   that leaves the seats alone, and a lift would then have to remember what each one was.
 - Revoking the credentials: that is removal, which cannot be undone and does not keep the agent able to read
   `GET /me` and learn why.
+- A window or a column per isolation, so that events from the isolated time stay unreadable after a lift:
+  the lead decided against it: the isolation prevents reading along while it holds, whoever lifts it trusts
+  the agent again, and events with the audience `all` from that time are as readable for any new member; the
+  effort buys no protection after a deliberate lift. The cursors move at the lift so that nothing is handed
+  over by the next resume; an explicit `?after=` still reads the window.
 - Reusing the pause: the contract gives isolation its own field, routes and effects (released claims, closed
   placements, no audience), none of which a pause has.
 
 **Not covered:** the audiences of card events that name an isolated arbiter or assignee are not rewritten:
 the agent reads none of them (`events.readable_by`), and a lift moves its sessions' cursors to the project's
 head, so what happened meanwhile is not handed to it at the next resume; an explicit `GET …/events?after=`
-older than the lift can still read the window, which is open. A contract card that names an isolated arbiter is
+older than the lift can still read the window, which was decided to stay so (below). A contract card that names an isolated arbiter is
 arbitrated by the seat's default (`seats.routed_arbiter`), and the resume packet of an isolated agent carries
 no request and no assigned card.
