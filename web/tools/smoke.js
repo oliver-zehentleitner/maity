@@ -7318,6 +7318,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (path, body) => { adminWrites.push([path, JSON.parse(JSON.stringify(body))]); return adminPatch(path, body); };
   await go("#/admin");
   expect(text(main).includes("Instance administration") && main.querySelector("table.users") && byId("mail-host") && text(main).includes("fixture-head"), "admin: unified users, mail and instance health");
+  // Limits per person (§16.5, tsk-d4ppa9jsj0d7): each value with its source, the people at it; only what changed is sent.
+  const lmPatches = [];
+  const lmPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/limits") lmPatches.push(b); return lmPatch(p, b); };
+  const lmSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Limits");
+  const lmSubmit = async () => { lmSection().querySelector("form.admin-limits").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  expect(lmSection() && byId("limits-max_agents_per_human-mode").value === "default" && byId("limits-max_agents_per_human").hidden
+    && byId("limits-max_orgs_per_human-mode").getAttribute("disabled") !== null && text(lmSection()).includes("Set by the environment; change it there.")
+    && text(lmSection()).includes("1 person is at or over this limit.") && text(lmSection()).includes("0 people are at or over this limit."),
+    "limits: each value with its source, one set by the environment locked, the people at it counted in words");
+  byId("limits-max_agents_per_human-mode").value = "number"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  byId("limits-max_agents_per_human").value = "0";
+  await lmSubmit();
+  expect(!lmPatches.length && text(byId("limits-max_agents_per_human-error")) === "A whole number from 1 to 10000.",
+    "limits: a value out of range is said at its field and nothing is sent");
+  byId("limits-max_agents_per_human").value = "250";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[0]) === JSON.stringify({ max_agents_per_human: 250 }) && text(lmSection()).includes("Saved."),
+    "limits: only the changed value is sent, never the one set by the environment");
+  byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  await lmSubmit();
+  byId("limits-max_agents_per_human-mode").value = "default"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches.slice(1)) === JSON.stringify([{ max_agents_per_human: "unlimited" }, { max_agents_per_human: null }])
+    && byId("limits-max_agents_per_human-mode").value === "default",
+    "limits: no limit is sent as unlimited, the default as null " + JSON.stringify(lmPatches));
+  win.Maity.api.patch = lmPatch;
+  // The admin cases below count the mail settings' writes only.
+  for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/limits") adminWrites.splice(i, 1);
   expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
   byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();

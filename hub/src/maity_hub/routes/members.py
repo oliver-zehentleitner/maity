@@ -19,6 +19,7 @@ from maity_hub import (
     availability,
     briefings,
     clock,
+    cross_owner,
     group_chats,
     idempotency,
     instances,
@@ -377,11 +378,15 @@ def apply_patch(
     pause: tuple[bool, str | None],
     *,
     instance: str | None = None,
+    line_consent: bool = False,
 ) -> dict[str, Any]:
     """Write a membership change and announce it; `pause` is (given, reason), for one
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
+    if line_consent and "reports_to" in values and not target.line_consent:
+        # The edge is already there and the go now names the manager's rights for it (§6.2).
+        changed["line_consent"] = True
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
@@ -389,7 +394,7 @@ def apply_patch(
         columns = {k: v for k, v in changed.items() if k != "briefing"}
         if "reports_to" in changed:
             # A consent for a manager's rights names the edge it was given for (§6.2).
-            columns["line_consent"] = False
+            columns["line_consent"] = line_consent
         conn.execute(
             update(t.membership)
             .where(t.membership.c.id == target.id)
@@ -551,10 +556,35 @@ def patch_member(
             )
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         change = change_of(mine, caller, line=line_lead)
+        asked: list[str] | None = None
+        if "reports_to" in given:
+            # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
+            # of the member; an agent that did not ask for them does not end the decision of
+            # the two owners.
+            pending = cross_owner.open_pair(conn, target.id)
+            if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
+                raise ApiError(
+                    403,
+                    "forbidden",
+                    "an agent that did not ask for the edge does not end the owners' decision",
+                    {"reason": "pending_consent"},
+                )
+            cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
+            boss_row = (
+                member_row(conn, mine.project.id, body.reports_to)
+                if body.reports_to is not None
+                else None
+            )
+            if boss_row is not None and cross_owner.owners(conn, target, boss_row) is not None:
+                # The edge waits for both owners: the other fields apply at once (§6.2).
+                values = {k: v for k, v in values.items() if k != "reports_to"}
+                asked = cross_owner.file(conn, mine.project, mine, caller, target, boss_row)
         old = apply_patch(conn, change, target, values, pause, instance=instance)
         for field in ("trust", "role"):
             if agent_admin and field in old:
                 admin_agents.announce(conn, change, target, field, old[field], values[field])
+        if asked:
+            return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -610,11 +640,12 @@ def _owner_lifts_line_pause(
 def _owner_sets_reports_to(
     conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
 ) -> idempotency.Outcome | None:
-    """The agent's owner sets its `reports_to` to nobody or to a member they own (themselves
-    or another of their agents), member of the project or not and without members:admin
-    (§2.3). None when the call is not that: the ordinary rules then decide, which is also
-    the answer for any other target. The checks and the effects are an admin's: guest,
-    cycle, depth, the line consent that ends, `member_updated`."""
+    """The agent's owner sets its `reports_to`, member of the project or not and without
+    members:admin (§2.3): to nobody or to a member they own (themselves or another of their
+    agents) at once, to any other member as a cross-owner edge that waits for the boss's side
+    (§6.2, "Own consent"). None when the call is not that: the ordinary rules then decide.
+    The checks and the effects are an admin's: guest, cycle, depth, the line consent that ends,
+    `member_updated`."""
     if caller.kind != "human" or given != {"reports_to"}:
         return None
     project = namespace.resolve(conn, slug)
@@ -633,8 +664,6 @@ def _owner_sets_reports_to(
     if reader is not None and reader.may("members:admin"):
         return None  # the admin's own path
     boss = body.reports_to
-    if boss is not None and not _owns_member(conn, caller, project.id, boss):
-        return None  # another owner's member, or one that is not in the project
     if boss is not None:
         lock_project(conn, project.id)  # two PATCHes naming each other must not both pass
     values = validate_assignment(
@@ -658,6 +687,14 @@ def _owner_sets_reports_to(
         caller.credential_id,
         caller.via,
     )
+    # A further PATCH of `reports_to` ends the open consent requests of the member (§6.2).
+    cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
+    if boss is not None and not _owns_member(conn, caller, project.id, boss):
+        asked = cross_owner.file(
+            conn, project, reader, caller, target, member_row(conn, project.id, boss)
+        )
+        if asked:
+            return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
     apply_patch(conn, change, target, values, (False, None))
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
@@ -800,6 +837,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     onboarding.member_removed(
         conn, change.project.id, target.agent_id or target.human_id, change.actor
     )
+    cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
     now = clock.now()
     credentials = (
         conn.execute(
