@@ -760,6 +760,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = agConfirm;
   const agAAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
   expect(agAAfter && agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked, the row open");
+  // Isolation (§6.2): an admin human isolates an agent with a reason, after a confirmation; the badge, then Lift isolation.
+  {
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+    const isoRow = await agOpen("agt-b");
+    const isoForm = isoRow.querySelector("form.member-isolate");
+    const isoConfirm = win.confirm;
+    let isoAsked = null;
+    win.confirm = (q) => { isoAsked = q; return false; };
+    isoForm.dispatch("submit"); await tick();
+    expect(!isoAsked && !text(main).includes("is isolated."), "isolate: no reason, nothing asked or sent");
+    byId("member-isolate-agt-b").value = "loops on the board"; byId("member-isolate-agt-b").dispatch("input");
+    isoForm.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(isoAsked && isoAsked.startsWith("Isolate Agent B?") && !main.querySelector(".badge.member-isolated"), "isolate: asked first; declined, nothing sent");
+    win.confirm = () => true;
+    main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    win.confirm = isoConfirm;
+    const isoAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+    expect(text(main).includes("Agent B is isolated.") && agRow("agt-b").querySelector(".badge.member-isolated")
+      && agRow("agt-b").querySelector(".badge.member-isolated").getAttribute("title") === "Isolated: loops on the board"
+      && isoAfter && text(isoAfter.querySelector(".member-isolate")).includes("loops on the board") && btn(isoAfter, "Lift isolation"),
+      "isolate: the badge on the row with the reason, the Manage row says who and why and offers Lift isolation");
+    btn(isoAfter, "Lift isolation").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("The isolation of Agent B is lifted.") && !agRow("agt-b").querySelector(".badge.member-isolated")
+      && main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate"),
+      "isolate: lifted, the badge gone, the form back");
+    const isoHuman = await win.Maity.api.post("/projects/maintainer/maity/members/hum-maintainer/isolate", { reason: "x" }).catch((e) => e);
+    expect(isoHuman.status === 400 && isoHuman.details.fields.member === "not_an_agent", "isolate: the fixture hub refuses a human, as the hub does");
+  }
   // The team's rulebook (§6.18, tsk-xzbk67raztm0): in the agent's row, for its owner; the active count beside the limit.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const tmRow = await agOpen("agt-c");
