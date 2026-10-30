@@ -374,3 +374,33 @@ def test_only_an_owner_under_inbox_gets_a_request_per_episode(
     assert s.session().not_listening_since is not None  # the episode starts in every mode
     assert len(s.events()) == 1  # and the member it reports to is told, whatever the mode
     assert len(s.notices()) == requests
+
+
+@pytest.mark.parametrize("mode", ["bell", "off"])
+def test_leaving_inbox_mid_episode_withdraws_its_request_at_the_hour(
+    setup: Setup, mode: str
+) -> None:
+    """§5.3: the request of an episode that began under `inbox` is withdrawn at the first
+    digest hour after the mode left `inbox`; the episode goes on, and `bell` has only the
+    digest's bell item from then on."""
+    from maity_hub import not_listening_digest
+
+    s = setup
+    s.message()
+    s.at(11)
+    s.sweep()
+    changed = s.owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    assert [n["status"] for n in s.notices()] == ["open"]  # until the hour
+    s.at(200)
+    s.sweep()
+    not_listening_digest.run(s.engine)
+    assert [n["status"] for n in s.notices()] == ["withdrawn"]
+    assert s.session().not_listening_since is not None
+    assert s.session().not_listening_request_id is None
+    # What asks for the owner (§18.2): under `bell` the digest's item alone, under `off`
+    # nothing. The withdrawn request stays in the bell as a notice, as at an episode's end.
+    answer = s.owner.get("/me/notifications", params={"limit": 50}).json()
+    titles = [i["title"] for i in answer["items"]]
+    assert answer["counts"]["inbox"] == (1 if mode == "bell" else 0)
+    assert ("1 of your agent instances are not listening" in titles) == (mode == "bell")

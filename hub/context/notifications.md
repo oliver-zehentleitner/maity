@@ -755,6 +755,17 @@ the modes never add up. Reading the count live costs the bell a fixed few querie
 owner's episodes, notification settings and project overrides), and only while that
 newest record is open; it does not grow with the number of items.
 
+A mode that leaves `inbox` mid-episode would keep that episode's request open beside the
+bell item, because a request is filed only when an episode starts. So every digest hour
+withdraws the per-episode requests still open for an owner whose mode is not `inbox`
+(`withdraw_episode_requests`, §5.3 "at the first digest hour"); the episode itself goes
+on. Not at the `PATCH`: a withdrawal emits an event to wake the asker, and the `PATCH` of
+the notification settings is no events transaction, so the overlap lasts until the next
+hour at most. Rejected: leaving the request to the episode's end, since an episode can
+last days and the owner would hear of it twice. The other way round, `bell` → `inbox`
+mid-episode files no request for the running episode; until the digest request (mode
+`inbox`) comes, that episode stays without a request.
+
 **Reason:** `account_record` is append-only; read marks are its only change after the
 write. Deriving the open state and the count on read keeps that, lists the item exactly
 while an instance is away rather than until the next hour, and leaves the worker no

@@ -11,7 +11,9 @@ owner's first instance becomes away, `{instances: 0}` when none is away any more
 mode leaves `bell`. Whether the bell's item is open, and the count in its title, are
 derived when it is read (`away_of`), so it is listed exactly while an instance is away.
 The `inbox` mode (one personal request per owner) comes with the digest request; until
-then an owner under `inbox` hears of an episode as before, one request per episode.
+then an owner under `inbox` hears of an episode as before, one request per episode. A mode
+other than `inbox` withdraws those per-episode requests still open at the next hour, so
+the modes never add up for longer than that.
 """
 
 from __future__ import annotations
@@ -22,11 +24,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, select
+from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.events import transaction
+from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
 
 log = logging.getLogger(__name__)
@@ -123,9 +125,39 @@ def _is_open(row: Any | None) -> bool:
     return row is not None and int((row.data or {}).get("instances", 0)) > 0
 
 
+def withdraw_episode_requests(conn: Connection, owner_id: str) -> None:
+    """Withdraw the per-episode requests still open for the owner's sessions (§5.3): they
+    belong to `inbox` only. The session forgets the request only if it still holds this
+    one, so a request the episode's own check filed meanwhile is never lost."""
+    from maity_hub.routes.requests import withdraw_hub_notice
+
+    s = t.agent_session.c
+    held = conn.execute(
+        select(s.id, s.not_listening_request_id, t.membership.c.project_id)
+        .join(t.membership, t.membership.c.id == s.membership_id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(t.agent_profile.c.owner_id == owner_id, s.not_listening_request_id.isnot(None))
+        .order_by(t.membership.c.project_id, s.id)
+    ).all()
+    # The projects' locks first, as the episode's own check takes them (not_listening.check):
+    # the request's withdrawal emits under that lock, so the other order could deadlock.
+    for project_id in sorted({row.project_id for row in held}):
+        lock_project(conn, project_id)
+    for session_id, request_id, _ in held:
+        withdraw_hub_notice(conn, request_id, "the owner's digest replaces it")
+        conn.execute(
+            update(t.agent_session)
+            .where(s.id == session_id, s.not_listening_request_id == request_id)
+            .values(not_listening_request_id=None)
+        )
+
+
 def reconcile(conn: Connection, owner_id: str, now: datetime | None = None) -> None:
-    """Bring one owner's record in line with their mode and their away instances."""
+    """Bring one owner's record and requests in line with their mode and their away
+    instances."""
     mode = preferences.preferences(conn, owner_id)["not_listening"]["mode"]
+    if mode != "inbox":
+        withdraw_episode_requests(conn, owner_id)
     count = len(away_of(conn, owner_id, now)) if mode == "bell" else 0
     open_ = _is_open(latest(conn, owner_id, now))
     if count and not open_:
@@ -136,7 +168,9 @@ def reconcile(conn: Connection, owner_id: str, now: datetime | None = None) -> N
 
 def mode_changed(conn: Connection, owner_id: str, old: str, new: str) -> None:
     """A change of `not_listening.mode` takes effect at the `PATCH` (§5.3): leaving
-    `bell` closes an open record at once."""
+    `bell` closes an open record at once. Leaving `inbox` withdraws its per-episode
+    requests at the next hour (`reconcile`): a withdrawal wakes the asker, and the `PATCH`
+    is no events transaction."""
     if old == "bell" and new != "bell" and _is_open(latest(conn, owner_id)):
         records.write(conn, owner_id, RECORD, {"instances": 0})
 

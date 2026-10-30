@@ -11,4 +11,5 @@
 
 - hub: the request per not-listening episode goes only to an owner under
   `not_listening.mode: inbox`; under `bell` the bell item replaces it, under `off`
-  nothing is sent (§5.3, §18.4)
+  nothing is sent, and the first hour after the mode left `inbox` withdraws the requests
+  of episodes still running (§5.3, §18.4)
