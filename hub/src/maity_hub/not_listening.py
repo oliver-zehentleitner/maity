@@ -6,11 +6,11 @@ longer and above the session's acknowledged cursor, and the session has made no 
 for events and no resume in those 10 minutes. The worker checks every minute.
 
 An episode lives on the session row: `not_listening_since` (when the 10 minutes ran
-out), `not_listening_seq` (the oldest event that was waiting) and the notice filed to
-the agent profile's owner. It starts with `member_not_listening` (`ended: false`) and
-the notice; it ends when the acknowledged cursor reaches that event, when the session
-ends, or when an exclusion begins, with `member_not_listening` (`ended: true`) and the
-notice withdrawn unless the owner answered it. A session never not listening: one with
+out) and `not_listening_seq` (the oldest event that was waiting). It starts with
+`member_not_listening` (`ended: false`); it ends when the acknowledged cursor reaches that
+event, when the session ends, or when an exclusion begins, with `member_not_listening`
+(`ended: true`). It files no request of its own: the owner hears of it through the hourly
+digest (`not_listening_digest`). A session never not listening: one with
 an open long-poll, a paused instance or membership, an agent that is not `available`,
 and a session a runner supervises (§15.11).
 """
@@ -145,83 +145,17 @@ def _announce(
     )
 
 
-def _owner_wants_requests(conn: Connection, member: Any) -> bool:
-    """Only an owner under `not_listening.mode: inbox` hears of an episode as a request
-    (§5.3, §18.4); `bell` has the digest's bell item instead, and `off` hears nothing."""
-    from maity_hub.notifications import preferences
-
-    owner = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
-    ).scalar()
-    if owner is None:
-        return False
-    return bool(preferences.preferences(conn, owner)["not_listening"]["mode"] == "inbox")
-
-
-def _notice(
-    conn: Connection, member: Any, credential: Any, session: Any, oldest_at: datetime
-) -> str | None:
-    from maity_hub.routes.requests import file_hub_notice
-
-    if not _owner_wants_requests(conn, member):
-        return None
-
-    handle = conn.execute(
-        select(t.agent_profile.c.handle).where(t.agent_profile.c.id == member.agent_id)
-    ).scalar_one()
-    return file_hub_notice(
-        conn,
-        member.project_id,
-        member.id,
-        member.agent_id,
-        f"{handle} ({credential.instance}) is not listening",
-        f"Session {session.id} has not called the events endpoint for 10 minutes while"
-        f" events wait for it, the oldest since {clock.rfc3339(oldest_at)} (UTC). Its"
-        " harness may have stopped its wait loop, or the agent is busy without waiting;"
-        " start the loop again or end the session.",
-    )
-
-
 def _end(conn: Connection, member: Any, credential: Any, session: Any, reason: str) -> None:
     from maity_hub.routes.requests import withdraw_hub_notice
 
+    # A request filed per episode before the owner's digest replaced it (§5.3); the digest's
+    # first hour withdraws the others.
     withdraw_hub_notice(conn, session.not_listening_request_id, reason)
     _announce(conn, member, credential, session, session.not_listening_since, ended=True)
     conn.execute(
         update(t.agent_session)
         .where(t.agent_session.c.id == session.id)
         .values(not_listening_since=None, not_listening_seq=None, not_listening_request_id=None)
-    )
-
-
-def _owner_changed(conn: Connection, member: Any, credential: Any, session: Any) -> None:
-    """The profile changed hands while the notice is open: withdrawn, and filed to the
-    new owner, as for the Keep the Why commitment (§6.23)."""
-    from maity_hub.routes.requests import withdraw_hub_notice
-
-    request = conn.execute(
-        select(t.request.c.status, t.request.c.to_human).where(
-            t.request.c.id == session.not_listening_request_id
-        )
-    ).first()
-    owner = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
-    ).scalar()
-    if request is None or request.status != "open" or request.to_human == owner:
-        return
-    withdraw_hub_notice(conn, session.not_listening_request_id, "the agent's owner changed")
-    oldest_at = conn.execute(
-        select(t.event.c.at).where(
-            t.event.c.project_id == member.project_id, t.event.c.seq == session.not_listening_seq
-        )
-    ).scalar()
-    request_id = _notice(
-        conn, member, credential, session, oldest_at or session.not_listening_since
-    )
-    conn.execute(
-        update(t.agent_session)
-        .where(t.agent_session.c.id == session.id)
-        .values(not_listening_request_id=request_id)
     )
 
 
@@ -252,8 +186,6 @@ def check(engine: Engine, session_id: str) -> None:
                 _end(conn, member, credential, session, why)
             elif session.acknowledged_seq >= session.not_listening_seq:
                 _end(conn, member, credential, session, "the agent read its events again")
-            else:
-                _owner_changed(conn, member, credential, session)
             return
         if why is not None or listening.is_listening(session.id):
             return
@@ -265,15 +197,11 @@ def check(engine: Engine, session_id: str) -> None:
         if oldest is None or oldest.at > now - WAIT:
             return
         since = max(oldest.at, called_at) + WAIT
-        request_id = _notice(conn, member, credential, session, oldest.at)
+        # No request of its own: the owner hears of it through the digest (§5.3).
         conn.execute(
             update(t.agent_session)
             .where(t.agent_session.c.id == session.id)
-            .values(
-                not_listening_since=since,
-                not_listening_seq=oldest.seq,
-                not_listening_request_id=request_id,
-            )
+            .values(not_listening_since=since, not_listening_seq=oldest.seq)
         )
         refreshed = conn.execute(
             select(t.agent_session).where(t.agent_session.c.id == session_id)
