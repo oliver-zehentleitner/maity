@@ -40,3 +40,19 @@ def test_a_supervised_session_gets_the_supervised_line_and_not_the_self_one() ->
     text = rules.generate(project, "member", "coder", "the owner", supervised=True)
     assert rules.SUPERVISED in text and "## Supervised" in text
     assert "## On duty" not in text and rules.DUTY_SELF not in text
+
+
+def test_the_rules_route_follows_the_session_of_its_caller(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "maity")
+    agent = flow.agent(make_client, owner)
+    path = "/projects/maintainer/maity/rules"
+    assert agent.resume().status_code == 200
+    plain = agent.get(path).text
+    assert rules.DUTY_SELF in plain and "## Supervised" not in plain
+    assert agent.resume(supervisor="maity-runner/0.1.0").status_code == 200
+    supervised = agent.get(path).text
+    assert rules.SUPERVISED in supervised and rules.DUTY_SELF not in supervised
+    assert rules.DUTY_SELF in owner.get(path).text  # a human reads the self line

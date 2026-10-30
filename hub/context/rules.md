@@ -17,7 +17,9 @@ start the hub (`rules.sync_text`, in the lifespan) takes each project whose dige
 one (or is null), under that project's lock claims it with a conditional update, and bumps
 `rules_version` once with `rules_changed` (`reason: "generated text"`), so an agent that resumes with
 a current cursor reads the new text; a new project is created with the current digest and needs no
-bump. The first start after the migration counts every existing project once.
+bump. `sync_text` runs once in the lifespan after the schema check, in one transaction, and takes the
+projects in id order, so two hubs starting together lock them in the same order and cannot deadlock.
+The first start after the migration counts every existing project once.
 
 The duty line (`DUTY_SELF`, section `## On duty`) is the same text for every harness: it points at
 `hints.wait_timeout` in the resume packet and carries no number, so the document stays one text per

@@ -211,7 +211,9 @@ def sync_text(conn: Connection) -> int:
     current = text_digest()
     stale = or_(t.project.c.rules_text_digest.is_(None), t.project.c.rules_text_digest != current)
     bumped = 0
-    for project_id in conn.execute(select(t.project.c.id).where(stale)).scalars().all():
+    # In id order, so that two hubs starting together lock the projects in the same order.
+    stale_ids = conn.execute(select(t.project.c.id).where(stale).order_by(t.project.c.id))
+    for project_id in stale_ids.scalars().all():
         project = lock_project(conn, project_id)
         claimed = conn.execute(
             update(t.project)

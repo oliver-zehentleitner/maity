@@ -86,3 +86,21 @@ def test_an_agent_with_a_current_cursor_reads_the_new_text_after_a_bump(
     again = agent.resume(cursor=first["events"]["cursor"]).json()
     assert again["rules"]["version"] == first["rules"]["version"] + 1
     assert again["rules"]["changed"] is True and "More." in again["rules"]["markdown"]
+
+
+def test_a_hub_start_counts_the_text_once_for_a_project_that_never_did(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The lifespan calls `sync_text`: a project whose digest is null is bumped by the start
+    of the app and not again by the next one."""
+    project = factory.project(migrated, "p")
+    assert version(migrated, project) == 1
+    make_client()  # the app starts: the lifespan runs
+    assert version(migrated, project) == 2
+    make_client()
+    assert version(migrated, project) == 2
+    with migrated.connect() as conn:
+        digest = conn.execute(
+            select(t.project.c.rules_text_digest).where(t.project.c.id == project)
+        ).scalar_one()
+    assert digest == rules.text_digest()
