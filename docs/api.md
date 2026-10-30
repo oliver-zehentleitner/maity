@@ -12790,7 +12790,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and

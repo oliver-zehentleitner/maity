@@ -22,6 +22,10 @@ What is checked:
   no var, console or debugger; plus
   `node --check` per file when a node binary happens to be on the PATH
   (it is not required, and its absence is reported, not hidden).
+- hub/src/maity_hub/landing_assets/landing.js, the public landing page's
+  one script (§16.7), served by the hub: at
+  most 10 KiB, the rules above, and no request (fetch, XMLHttpRequest,
+  WebSocket, EventSource, sendBeacon, import(), setting a src or href).
 - css: balanced braces; every var(--x) is defined.
 - all text files: no tabs, no trailing whitespace, final newline.
 """
@@ -387,6 +391,53 @@ def check_js(node):
                 finding(path, 1, "node --check: " + " | ".join(msg[:4]))
 
 
+# ---- the landing page's script ----------------------------------------------
+
+# It ships with the hub (its own route, §16.7), so the page has it without
+# the dashboard's files; it is checked here with the dashboard's rules.
+LANDING_JS = os.path.join(os.path.dirname(ROOT), "hub", "src", "maity_hub", "landing_assets", "landing.js")
+LANDING_JS_MAX = 10 * 1024
+# §16.7: it reads the page's own DOM and makes no request of any kind.
+LANDING_FORBIDDEN = [
+    (r"\bfetch\s*\(", "fetch"),
+    (r"\bXMLHttpRequest\b", "XMLHttpRequest"),
+    (r"\bWebSocket\b", "WebSocket"),
+    (r"\bEventSource\b", "EventSource"),
+    (r"\bsendBeacon\b", "sendBeacon"),
+    (r"\bimport\s*\(", "import()"),
+    (r"\.src\s*=", "setting a src"),
+    (r"\.href\s*=", "setting an href"),
+]
+
+
+def check_landing_js(node):
+    """The public landing page's one script (docs/api.md §16.7): at most
+    10 KiB, the rules of js/*.js, and no request."""
+    if not os.path.exists(LANDING_JS):
+        finding(LANDING_JS, 1, "missing: the landing page loads it (§16.7)")
+        return
+    src = read(LANDING_JS)
+    if len(src.encode("utf-8")) > LANDING_JS_MAX:
+        finding(LANDING_JS, 1, "%d bytes, at most %d (§16.7)" % (len(src.encode("utf-8")), LANDING_JS_MAX))
+    code, error = strip_js(src)
+    if error:
+        finding(LANDING_JS, error[0], error[1])
+        return
+    start = len(code) - len(code.lstrip())
+    if not src.startswith('"use strict";', start):
+        finding(LANDING_JS, 1, 'first statement is not "use strict";')
+    for lineno, text in enumerate(code.split("\n"), 1):
+        for pattern, what in FORBIDDEN_JS + LANDING_FORBIDDEN:
+            if re.search(pattern, text):
+                finding(LANDING_JS, lineno, "forbidden: %s" % what)
+    check_brackets(LANDING_JS, code)
+    if node:
+        r = subprocess.run([node, "--check", LANDING_JS], capture_output=True, text=True)
+        if r.returncode != 0:
+            msg = (r.stderr.strip().splitlines() or ["syntax error"])
+            finding(LANDING_JS, 1, "node --check: " + " | ".join(msg[:4]))
+
+
 # ---- css --------------------------------------------------------------------
 
 def check_css():
@@ -426,6 +477,7 @@ def main(argv):
     check_html()
     node = shutil.which("node")
     check_js(node)
+    check_landing_js(node)
     check_css()
     check_whitespace()
     for f in findings:

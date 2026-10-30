@@ -28,7 +28,7 @@ RESERVED_FIRST = frozenset(
 PROJECT_VIEWS = frozenset(
     {
         "agents", "board", "chat", "inbox", "jour-fixe", "members", "message", "messages",
-        "my-settings", "organisation", "overview", "runners", "settings", "tasks", "ticker",
+        "organisation", "overview", "runners", "settings", "tasks", "ticker",
         "why",
     }
 )  # fmt: skip

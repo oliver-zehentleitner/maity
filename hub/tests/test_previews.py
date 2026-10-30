@@ -3,6 +3,7 @@ is saved."""
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from typing import Any
 
@@ -11,6 +12,7 @@ from sqlalchemy import Engine, func, select
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.routes.pages import LANDING_CSP
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -56,8 +58,13 @@ def test_a_draft_is_posted_then_opened_as_the_page_would_be(
     page = owner.client.get(path)
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert page.headers["cache-control"] == "no-store" and page.headers["x-robots-tag"] == "noindex"
-    assert page.headers["content-security-policy"].startswith("default-src 'none'; style-src")
-    assert "<h1>A draft title</h1>" in page.text and "<script" not in page.text
+    assert page.headers["content-security-policy"] == LANDING_CSP  # the served page's own
+    assert "<h1>A draft title</h1>" in page.text
+    # No script but, at most, the hub's own file (§16.7).
+    assert all(
+        'src="/assets/landing/landing.js?v=' in tag
+        for tag in re.findall(r"<script[^>]*>", page.text)
+    )
     assert "Preview of an unsaved draft" in page.text
     # Nothing was saved: the setting is as it was, the root still says nothing of it.
     assert owner.get(ADMIN).json()["pages"] == {} and owner.get(ADMIN).json()["enabled"] is False
