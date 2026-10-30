@@ -43,12 +43,11 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", label: "Why" },
-    // One's own settings for this project (js/notify-settings.js, §6.2), for
-    // every human member; the project's Settings stay its owner's.
-    { route: "my-settings", view: "mySettings", label: "My settings", when: (ctx) => ctx.me.kind === "human" },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
-    { route: "settings", label: "Settings" },
+    // One view with two tabs (§16.11): the project's for its admins, one's
+    // own at settings/mine for every human member.
+    { route: "settings", label: "Settings", when: (ctx) => ctx.canAdmin || ctx.me.kind === "human" },
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
@@ -1159,9 +1158,21 @@ window.Maity = window.Maity || {};
   let settingsFocus = null;
   // What the last save on Settings did, said once on the redrawn tab.
   let settingsSaved = null;
-  M.views.settings = async function (ctx, root) {
+  // Settings (§16.11): the project's tab at settings for those with
+  // project:admin, one's own at settings/mine for every human member; a
+  // member without the right who opens settings gets settings/mine.
+  M.views.settings = async function (ctx, root, args) {
+    const mine = (args || [])[0] === "mine";
+    const human = ctx.me.kind === "human";
+    if (!mine && !ctx.canAdmin) { M.route.go(projectLink(ctx.slug, "settings", "mine"), { replace: true }); return; }
+    const tabs = [ctx.canAdmin ? ["Project", projectLink(ctx.slug, "settings"), !mine] : null,
+      human ? ["Mine", projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
     append(root, h("h2", null, "Settings"),
-      h("p", { class: "muted" }, "This project's settings. Yours and the hub's are in the gear menu."),
+      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
+        tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
+    if (mine) { await M.mySettings(ctx, root); return; }
+    append(root,
+      h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
       projectPanel(ctx));
     settingsSaved = null;

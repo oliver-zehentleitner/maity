@@ -1448,3 +1448,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .review-quote { white-space: pre-wrap; }
 @media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
 
+/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
+.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
+
