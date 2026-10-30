@@ -564,7 +564,8 @@ class Cache:
     restarts. One read of a project's family at a time."""
 
     entries: OrderedDict[str, _Entry] = field(default_factory=OrderedDict)
-    last_good: dict[tuple[str, str], tuple[Read, str | None]] = field(default_factory=dict)
+    # (project, repository, member path): a repository's read never stands in for another's
+    last_good: dict[tuple[str, str, str], tuple[Read, str | None]] = field(default_factory=dict)
     locks: dict[str, threading.Lock] = field(default_factory=dict)
     # Requests between taking a project's lock and leaving `get`: such a project is
     # never dropped, so a read in progress keeps its last good reads and its lock.
@@ -579,18 +580,26 @@ class Cache:
             self.users.clear()
 
     def forget(self, project_id: str) -> None:
+        """The repository changed: no answer of the old one may stand for the new one, so
+        the answers and the last good reads go even while a request uses the project;
+        only its lock stays then."""
         with self.guard:
             self.entries.pop(project_id, None)
-            self._drop(project_id)
+            self._drop_reads(project_id)
+            if self.users.get(project_id, 0) == 0:
+                self.locks.pop(project_id, None)
 
     def _drop(self, project_id: str) -> None:
-        """The project's last good reads and its lock, unless a request uses it now. The
-        caller holds `guard`."""
+        """Dropped for room: the project's last good reads and its lock, unless a request
+        uses it now. The caller holds `guard`."""
         if self.users.get(project_id, 0) > 0:
             return
+        self._drop_reads(project_id)
+        self.locks.pop(project_id, None)
+
+    def _drop_reads(self, project_id: str) -> None:
         for key in [k for k in self.last_good if k[0] == project_id]:
             del self.last_good[key]
-        self.locks.pop(project_id, None)
 
     def cached(self, project_id: str) -> _Entry | None:
         with self.guard:
@@ -683,7 +692,7 @@ class Cache:
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
                 continue  # its path is location text, never read: no last good read
-            key = (project_id, member.path)
+            key = (project_id, repository, member.path)
             with self.guard:  # another project's eviction may walk `last_good` meanwhile
                 if member.read is not None:
                     self.last_good[key] = (member.read, member.observed_at)

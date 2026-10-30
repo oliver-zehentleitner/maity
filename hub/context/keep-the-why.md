@@ -59,7 +59,7 @@ each member's last good export.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the review of #672 (the windows of a lock in use, a read without the lock); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the reviews of #672 (the windows of a lock in use, a read without the lock; `forget` keeping an old repository's reads); `hub/src/maity_hub/bounded.py`; `hub/tests/test_bounded.py`
 **Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows a bound too small (projects read anew too often) or too large; or projects can be deleted for good, so that their entries could go at once
 
 The hub keeps several caches per project in the process. Each gained a
@@ -89,7 +89,17 @@ What a dropped key held is read or computed again on its next use. For
 - **Locks.** The maps that were written without a lock (`ktw.last_good`,
   the image maps, `_last_via`) are now written under their module's
   lock, because dropping walks the map while other threads write it.
-  `ktw.Cache.forget` drops the project's idle lock too.
+- **A changed repository is not a matter of room.** `ktw.Cache.forget`
+  (the repository URL changed) drops the project's answers and last good
+  reads always, even while a request uses the project: a last good read
+  is keyed by path, and the old repository's must not stand in for the
+  new one's. Only the project's lock stays while it is in use. Dropping
+  for room spares a project in use entirely.
+- **Lock order.** In `ktw`, a project's lock first, then `guard`, never
+  the other way round: under `guard` no project lock is taken, only
+  looked up. In `images`, the gate first, then `_guard`; the gate is
+  taken outside `_guard`. The other locks (`forge_access`, `_via_lock`,
+  `swarm`) are leaves, and `stays` only reads a dict.
 
 **Rejected alternatives:**
 - Forgetting a project when it is deleted, as first planned: the

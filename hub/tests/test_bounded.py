@@ -49,7 +49,7 @@ def test_the_ktw_cache_keeps_the_newest_projects_and_drops_their_reads(
         ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw._now(), url)
     )
     cache = ktw.Cache()
-    cache.last_good[("p0", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
+    cache.last_good[("p0", "a/b", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
     for n in range(5):
         cache.get(forge.Forge(None), f"p{n}", None, max_age=0)
     assert list(cache.entries) == ["p3", "p4"]
@@ -67,11 +67,11 @@ def test_a_ktw_project_in_use_is_never_dropped(monkeypatch: pytest.MonkeyPatch) 
     )
     cache = ktw.Cache()
     cache.get(forge.Forge(None), "p0", None, max_age=0)
-    cache.last_good[("p0", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
+    cache.last_good[("p0", "a/b", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
     lock = cache._enter("p0")  # a request of p0 between taking its lock and leaving
     for n in range(1, 5):
         cache.get(forge.Forge(None), f"p{n}", None, max_age=0)
-    assert "p0" in cache.entries and ("p0", "context/x.md") in cache.last_good
+    assert "p0" in cache.entries and ("p0", "a/b", "context/x.md") in cache.last_good
     assert cache.locks["p0"] is lock
     cache._leave("p0")
     cache.get(forge.Forge(None), "p5", None, max_age=0)
@@ -83,6 +83,19 @@ def test_ktw_forget_drops_the_lock_too() -> None:
     cache._lock("p")
     cache.forget("p")
     assert cache.locks == {}
+
+
+def test_ktw_forget_drops_the_reads_even_of_a_project_in_use() -> None:
+    """A changed repository: the old one's last good reads must not stand in for the new
+    one's members of the same path, even while a request is in `get`; the lock stays."""
+    cache = ktw.Cache()
+    cache.entries["p"] = ktw._Entry(None, ktw._now(), "https://github.com/a/old")
+    cache.last_good[("p", "a/old", "context/")] = (SimpleNamespace(), None)  # type: ignore[assignment]
+    lock = cache._enter("p")
+    cache.forget("p")
+    assert "p" not in cache.entries and cache.last_good == {}
+    assert cache.locks["p"] is lock
+    cache._leave("p")
 
 
 def test_the_swarm_cache_keeps_the_newest_windows(monkeypatch: pytest.MonkeyPatch) -> None:
