@@ -130,7 +130,12 @@ def test_the_operators_words_are_text(owner: flow.Human, make_client: ClientFact
         },
     )
     page = make_client().get("/").text
-    assert "<script" not in page and "<b onload" not in page and "<i>" not in page
+    # Nothing of the operator's runs: at most the hub's own file is linked (§16.7).
+    for tag in re.findall(r"<script[^>]*>", page):
+        assert re.fullmatch(
+            r'<script src="/assets/landing/landing\.js\?v=[0-9a-f]{16}" defer>', tag
+        )
+    assert "<script>" not in page and "<b onload" not in page and "<i>" not in page
     assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in page
 
 

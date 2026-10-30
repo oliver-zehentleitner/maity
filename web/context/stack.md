@@ -181,3 +181,35 @@ code in the page the contract keeps it out of. A QR image made by the
 hub: a server-side dependency and a second request for what the page can
 draw. Only the code, no QR: the maintainer asked for sign-in on the phone
 by scanning.
+
+## The browser test moves the hub's clock as the page sees it whenever it moves the browser's
+
+**Id:** 8c119e9f-9bc8-464f-8fae-54770977af9a
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ekyd6skhtyp0 (the join-expiry step red on main a4f214a and on #560, green on other heads with no related change), 2026-10-30; web/js/api.js (every answer's `Maity-Server-Time` sets how far the browser is off the hub, `M.api.now()`); web/js/join.js (expiry judged by `M.api.now()` every 10 seconds); the step in web/tools/e2e.py
+**Revisit when:** the hub gets a clock a test can move from outside, or the page stops judging expiry by the hub's clock
+
+`join_expiry_step` moved only the browser's clock (`clock.fast_forward`)
+past a join's 15 minutes. The page judges expiry by the hub's clock, and
+every answer of the hub sets the browser's offset from it again: until
+the next answer the page reckoned with the moved time and drew the join
+as expired; after it, with the hub's real time, and the 10-second
+re-judge drew the join as open again. Whether the check saw "expired"
+depended on which came first. The step now routes the second tab's
+calls to the hub and moves each answer's `Maity-Server-Time` by the same
+16 minutes as the browser's clock, so both clocks the page reads agree
+and nothing waits for real time.
+
+**Reason:** the page is right to follow the hub's clock, so the test has
+to move that clock too; a browser-only clock change contradicts every
+next answer.
+
+**Rejected alternative:** a join with the shortest TTL (60 seconds) and a
+wait for it: a minute of real time per run, and still a race at the
+edge. A clock the e2e hub takes from outside (an environment variable):
+a way to set the hub's time in a running hub, for a test, which the hub
+does not offer and should not need. Changing the page to keep its first
+offset: the offset follows the hub on purpose, across a long session.
+

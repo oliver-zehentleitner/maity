@@ -2007,10 +2007,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : mGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members");
   const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
-    "members: a member reads the list without managing; the owner from the members");
+  expect(!btn(mRow("Maintainer"), "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
+    "members: a member reads the list without managing anyone but their own agents; the owner from the members");
   // A human's own agents are on Agents: the credentials and the owner's preferences switch, nothing that changes the membership.
-  expect(!btn(mRow("Agent A"), "Details") && !btn(mRow("Agent A"), "Manage") && chatOf("Agent A"), "members: without members:admin a row has its Chat only");
+  expect(!btn(mRow("Agent A"), "Details") && chatOf("Agent A") && main.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "") === "Manage Agent A"),
+    "members: without members:admin a row has its Chat, and one's own agent its Manage for what its owner sets");
   await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
   // agt-c carries the team's rulebook in the fixture.
   const ownCard = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-c");
@@ -2396,6 +2397,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.localStorage = cfLs;
   await go("#/maintainer/maity/inbox");
 
+  // The text catalog (js/i18n.js, i18n/en.json): one key per sentence, placeholders and plural forms, Intl for numbers and dates.
+  const tr = win.Maity.t;
+  const i18nEn = win.MAITY_I18N && win.MAITY_I18N.en;
+  expect(i18nEn && tr("chat.instance.label") === "Send to" && tr("no.such.key") === "no.such.key",
+    "i18n: a key reads its English text; a key the catalog lacks reads as itself");
+  const i18nLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
+  i18nEn["test.files"] = { one: "{count} file in {where}", other: "{count} files in {where}" };
+  expect(tr("test.files", { count: 1, where: "the chat" }) === "1 file in the chat" && tr("test.files", { count: 1200, where: "x" }) === "1,200 files in x"
+    && tr("test.files", { count: 0, where: "x" }) === "0 files in x" && tr("chat.instance.team", { unused: 1 }) === "The whole team",
+    "i18n: plural forms by count, a number in a placeholder formatted for the locale " + tr("test.files", { count: 1200, where: "x" }));
+  delete i18nEn["test.files"];
+  win.Maity.i18n.locale = "de-DE";
+  expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
+    "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
+  win.Maity.i18n.locale = i18nLocale;
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -3578,20 +3595,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "password: a wrong current one is put next to its field");
   win.Maity.api.post = realPost5;
 
-  // Meat proxy (docs/api.md §5.2): the human's own switch on the account, PATCH /me; the page says the one sentence agents read.
+  // Meat proxy (docs/api.md §5.2): the human's own switch on the account with its two parts under it, PATCH /me;
+  // the page shows the hub's note, the words agents read.
   const mpPatch = win.Maity.api.patch, mpSent = [];
   win.Maity.api.patch = (p, b) => { mpSent.push([p, b]); return mpPatch(p, b); };
+  const MP_LEAD = "Lead me step by step rather than expecting me to explain.", MP_HANDS = "When you need a human's hands, come to me first.";
+  const mpState = () => [byId("meat-proxy"), byId("meat-proxy-lead"), byId("meat-proxy-hands")].map((x) => (x.checked ? "1" : "0")).join("");
+  const mpNote = () => text(byId("meat-proxy-note"));
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy") && !byId("meat-proxy").checked && text(byId("meat-proxy-note")) === "This person says: I am a meat proxy. "
-    + "Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first.",
-    "meat proxy: the account offers the switch, off, and shows exactly the note agents read (§5.2)");
+  expect(byId("meat-proxy") && mpState() === "000" && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD + " " + MP_HANDS
+    && text(byId("meat-proxy-lead").parentNode).includes(MP_LEAD)
+    && text(byId("meat-proxy-hands").parentNode).includes(MP_HANDS) && text(byId("meat-proxy-hint")).includes("switched on, they would read:"),
+    "meat proxy: the switch off with its two parts under it, and the note switching on would send (§5.2)");
   byId("meat-proxy").checked = true; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && byId("meat-proxy").checked
-    && text(main).includes("Saved: your agents and the agents of your projects are told"), "meat proxy: switched on with PATCH /me, said so");
+  expect(JSON.stringify(mpSent[0]) === JSON.stringify(["/me", { meat_proxy: true }]) && mpState() === "111"
+    && text(main).includes("Saved: your agents and the agents of your projects are told the text above.") && text(byId("meat-proxy-hint")).includes("in these words:"),
+    "meat proxy: switched on, both parts ticked, said so");
+  byId("meat-proxy-hands").checked = false; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(mpSent[1]) === JSON.stringify(["/me", { meat_proxy_hands: false }]) && mpState() === "110"
+    && mpNote() === "This person says: I am a meat proxy. " + MP_LEAD, "meat proxy: a part cleared alone, the note as the hub now sends it");
+  byId("meat-proxy-lead").checked = false; byId("meat-proxy-lead").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(mpState() === "000" && text(main).includes("Saved: they are no longer told.") && mpNote().endsWith(MP_HANDS),
+    "meat proxy: the last part cleared turns the mode off");
+  byId("meat-proxy-hands").checked = true; byId("meat-proxy-hands").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(mpSent[3]) === JSON.stringify(["/me", { meat_proxy_hands: true }]) && mpState() === "101"
+    && mpNote() === "This person says: I am a meat proxy. " + MP_HANDS, "meat proxy: a part ticked while off turns the mode on with that part only");
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 500, "/me", "internal"));
   byId("meat-proxy").checked = false; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy").checked && text(main).includes("Not saved"), "meat proxy: a failed change is said and the switch goes back");
+  expect(mpState() === "101" && text(main).includes("Not saved"), "meat proxy: a failed change is said and the boxes go back");
   win.Maity.api.patch = mpPatch;
+  // The answer is /me itself (§5.1): the member under `member`, as GET /me has it.
+  const mpAnswer = await mpPatch("/me", { meat_proxy_lead: true });
+  expect(mpAnswer && mpAnswer.member && mpAnswer.member.meat_proxy === true && mpAnswer.member.meat_proxy_lead === true
+    && Array.isArray(mpAnswer.projects) && !("meat_proxy" in mpAnswer), "meat proxy: PATCH /me answers /me, the member under member");
+  const mpErr = async (b) => { try { await mpPatch("/me", b); return null; } catch (err) { return err.details && err.details.fields; } };
+  expect(JSON.stringify(await mpErr({})) === JSON.stringify({ meat_proxy: "required" })
+    && JSON.stringify(await mpErr({ meat_proxy_hands: "yes" })) === JSON.stringify({ meat_proxy_hands: "bool_type" }),
+    "meat proxy: the fixture hub refuses an empty body and a non-boolean as the hub does");
+  let mpRefused = null;
+  try { await mpPatch("/me", { meat_proxy: false, meat_proxy_lead: true }); } catch (err) { mpRefused = err; }
+  expect(mpRefused && mpRefused.status === 400 && JSON.stringify(mpRefused.details.fields) === JSON.stringify({ meat_proxy: "conflicts_with_parts" }),
+    "meat proxy: the fixture hub refuses the switch off with a part on, as §5.2 does");
   await mpPatch("/me", { meat_proxy: false });
   // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
   const mpGet = win.Maity.api.get;
@@ -4935,8 +4979,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pmTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Messages");
   const pmItems = () => main.querySelectorAll("ol.project-messages li.pmsg");
   const pmSeq = (seq) => pmItems().find((li) => li.attrs["data-seq"] === String(seq));
-  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6009,6005,6001"
+  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6013,6009,6005,6001"
     && Number(pmItems()[0].attrs["data-seq"]) > 9000, "messages: a tab with the project's messages, newest first");
+  // A review result (§8.4): the verdict, the subject, the short head linked to the commit on GitHub, and the places read
+  // with their quotes as text, a removed line said, folded after five.
+  const pmReview = pmSeq(6013).querySelector(".review");
+  const pmCites = () => pmReview.querySelectorAll("li.review-cite");
+  expect(pmReview && text(pmReview.querySelector(".review-verdict")) === "Approve" && text(pmReview.querySelector(".review-head")).includes("#743 at 7039a4b")
+    && pmReview.querySelector(".review-head a").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/commit/7039a4b6fd8b988d71a63338711da188fcd95fba"
+    && pmCites().length === 7 && pmReview.querySelectorAll("ul.review-cites")[0].childNodes.length === 5
+    && text(pmCites()[0]).startsWith("docs/api.md:11929") && text(pmCites()[0].querySelector(".review-quote")) === "the inbox item appears after the fourth line"
+    && text(pmCites()[1]).startsWith("web/js/landing.js removed") && text(pmCites()[1].querySelector(".review-quote")) === 'if (s.type === "demo") {'
+    && text(pmReview.querySelector("details.review-more summary")) === "2 more places",
+    "messages: a review result shows its verdict, subject, short head linked to the commit and the places read, folded after five");
+  // The fixture hub as §8.4: a review result needs its review, no other type takes one, each refusal at its path.
+  const rvPost = async (b) => { try { await win.Maity.api.post("/projects/maintainer/maity/events", b); return null; } catch (err) { return err.details && err.details.fields; } };
+  const rvGood = { subject: "#1", head: "a".repeat(40), verdict: "approve", cites: [{ path: "x.js", line: null, quote: "gone" }] };
+  expect(JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x" })) === JSON.stringify({ review: "required" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "notice", to: "all", body: "x", review: rvGood })) === JSON.stringify({ review: "not_allowed" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { head: "abc", cites: [{ path: "x", line: 0, quote: "a\nb" }] }) }))
+      === JSON.stringify({ "review.head": "format", "review.cites.0.quote": "format", "review.cites.0.line": "format" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { cites: [] }) })) === JSON.stringify({ "review.cites": "too_few" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x",
+      review: { head: rvGood.head, verdict: "approve", extra: 1, cites: [{ line: 3, quote: "a\u2028b", note: "x" }] } }))
+      === JSON.stringify({ "review.extra": "format", "review.subject": "required", "review.cites.0.note": "format", "review.cites.0.path": "required", "review.cites.0.quote": "format" }),
+    "messages: the fixture hub checks a review result's review as §8.4 says");
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
   const pmHand = pmSeq(6005);
@@ -6157,13 +6224,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("not-listening-mode").value = "off"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("not-listening-mode-error")) === "Not a choice of this hub.", "not listening: the hub's refusal of the mode is said at the field");
   win.Maity.api.patch = nlPatch;
-  // A project's My settings (§6.2): the personal default or a value for the project, with what applies now.
+  // A project's Settings, the Mine tab (§6.2, §16.11): the personal default or a value for the project, with what applies now.
   nlPatches.length = 0;
   win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
-  await go("#/maintainer/maity/inbox");
-  const msTab = header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("My settings"));
-  expect(msTab && msTab.getAttribute("href") === "#/maintainer/maity/my-settings", "my settings: a tab of every human member's");
-  await go("#/maintainer/maity/my-settings"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
+  const msTabs = () => main.querySelectorAll("nav.settings-tabs a").map((a) => text(a) + "=" + a.getAttribute("href") + (a.getAttribute("aria-current") ? "*" : "")).join();
+  expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("My settings"))
+    && msTabs() === "Project=#/maintainer/maity/settings*,Mine=#/maintainer/maity/settings/mine",
+    "settings: one Settings view, its Project tab shown, Mine beside it; no My settings tab");
+  await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
+  expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
+    "settings: settings/mine shows one's own settings, its tab marked, not the project's");
   const msForm = () => main.querySelector("form.my-settings");
   expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");
@@ -6609,6 +6680,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
   expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
+  // An agent's owner sets whom it reports to without members:admin (§2.3, tsk-0s3gztb6jba7): Manage on Members, and on Agents.
+  const orGet = win.Maity.api.get, orPatch = win.Maity.api.patch;
+  const orPatches = [];
+  win.Maity.api.get = (p) => (p === "/me" ? orGet(p).then((v) => Object.assign({}, v, { projects: v.projects.map((x) => (x.slug === "maity" ? Object.assign({}, x, { trust: "member", role: "coder" }) : x)) })) : orGet(p));
+  win.Maity.api.patch = (p, b) => { orPatches.push([p, b]); return orPatch(p, b); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const orManage = (id) => main.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "") === "Manage " + id);
+  const orPick = () => byId("owner-reports-agt-b");
+  expect(orManage("Agent B") && !main.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "") === "Manage Maintainer"),
+    "owner reports_to: without members:admin, Manage on one's own agents only");
+  orManage("Agent B").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(orPick() && orPick().value === "agt-a" && !byId("member-role-agt-b")
+    && orPick().querySelectorAll("option").map((o) => o.getAttribute("value")).join() === ",hum-maintainer,agt-a,agt-c,agt-d,agt-r",
+    "owner reports_to: nobody, oneself and one's other agents offered, the current boss chosen; no membership form without members:admin");
+  orPick().value = "agt-d";
+  main.querySelector("form.owner-reports").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-d" }]),
+    "owner reports_to: only reports_to is sent " + JSON.stringify(orPatches));
+  // A guest is never offered; a boss of another owner stays chosen and marked, so saving does not end it unasked.
+  const orAll = win.Maity.api.getAll, orGet2 = win.Maity.api.get;
+  const orShape = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" })
+    : x.id === "agt-r" ? Object.assign({}, x, { trust: "guest" }) : x)) });
+  win.Maity.api.getAll = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orAll(p).then(orShape) : orAll(p));
+  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/members") ? orGet2(p).then((r) => (r && r.items ? orShape(r) : r)) : orGet2(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  orManage("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
+  const orC = byId("owner-reports-agt-c");
+  expect(orC && orC.value === "hum-other" && text(orC.querySelectorAll("option").find((o) => o.getAttribute("value") === "hum-other")).includes("another owner's")
+    && !orC.querySelectorAll("option").some((o) => o.getAttribute("value") === "agt-r"),
+    "owner reports_to: another owner's boss stays chosen and marked; a guest is not offered");
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
+    "owner reports_to: the project's Agents has it beside the rulebook");
+  win.Maity.api.get = orGet; win.Maity.api.patch = orPatch; win.Maity.api.getAll = orAll;
+  await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
+  await go("#/maintainer/maity/inbox");
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };
@@ -6804,9 +6911,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (path) => languageGet(path).then((value) => path === "/me"
     ? Object.assign({}, value, { projects: value.projects.map((p) => Object.assign({}, p, { trust: "member", role: "coder" })) }) : value);
   await go("#/maintainer/maity/inbox"); await projectSettings();
-  expect(!byId("project-language") && text(main).includes("Project language: Deutsch") && !byId("state-select"), "language: member sees read-only language without admin controls");
-  expect(onSettings() && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("section.memory-panel")
-    && !main.querySelector("form.badge-form"), "settings: a member has the tab too, read only: the memory shown, no admin form");
+  expect(/settings\/mine$/.test(win.location.hash) && !byId("project-language") && !byId("state-select") && !main.querySelector("nav.settings-tabs")
+    && header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings") && main.querySelector("form.my-settings"),
+    "settings: a member without project:admin who opens Settings gets settings/mine, no project tab (§16.11)");
   win.Maity.api.get = languageGet;
   const oldNotification = win.Notification;
   delete win.Notification;

@@ -161,12 +161,13 @@ def test_the_script_is_loaded_with_defer_when_the_hub_has_one(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert "<script" not in page(owner, make_client)  # no landing.js in the package yet
     root = tmp_path / "assets"
     root.mkdir()
-    (root / "landing.js").write_text('"use strict";\n', encoding="utf-8")
     (root / "landing.css").write_text("body{}", encoding="utf-8")
     monkeypatch.setattr(landing_files, "ROOT", root)
+    landing_files.reset()
+    assert "<script" not in page(owner, make_client)  # a hub without landing.js links none
+    (root / "landing.js").write_text('"use strict";\n', encoding="utf-8")
     landing_files.reset()
     html = make_client().get("/").text
     assert re.search(

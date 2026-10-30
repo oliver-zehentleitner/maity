@@ -105,8 +105,10 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
-    # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
-    Column("meat_proxy", Boolean, nullable=False, server_default=false()),
+    # "I am a meat proxy" (docs/api.md §5.2): the two things the human says about themselves.
+    # The switch `meat_proxy` is derived: on while a part is.
+    Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
+    Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -584,6 +586,9 @@ project = Table(
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # The digest of the hub's generated text this project's `rules_version` last counted
+    # (§6.9): a start with another digest bumps the version once. Null: never counted.
+    Column("rules_text_digest", String(64)),
     # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),

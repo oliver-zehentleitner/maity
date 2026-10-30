@@ -189,15 +189,14 @@ window.Maity = window.Maity || {};
     return { el: box, heading };
   };
 
-  // A project's My settings (/<owner>/<slug>/my-settings, docs/api.md §6.2;
-  // the maintainer's decision of 2026-10-29): one's own settings for this
-  // project, each either one's personal default (null) or a value for here,
-  // with the value that applies now. Every human member, never the
-  // project's Settings, which its owner keeps.
-  M.views.mySettings = async function (ctx, root) {
-    const heading = h("h2", { id: "my-settings-heading", tabindex: "-1" }, "My settings");
-    append(root, heading, h("p", { class: "hint" }, "Your own settings for " + (ctx.project.name || ctx.slug)
-      + ". Each one uses your default from ", h("a", { href: "/account/notifications" }, "Your account"), " unless you set it here."));
+  // A project's Settings, the Mine tab (/<owner>/<slug>/settings/mine,
+  // docs/api.md §6.2, §16.11): one's own settings for this project, each
+  // either one's personal default (null) or a value for here, with the
+  // value that applies now. Every human member; the Project tab beside it
+  // is its admins'.
+  M.mySettings = async function (ctx, root) {
+    const heading = h("h3", { id: "my-settings-heading", tabindex: "-1" }, "Your settings for " + (ctx.project.name || ctx.slug));
+    append(root, heading, h("p", { class: "hint" }, "Each one uses your default from ", h("a", { href: "/account/notifications" }, "Your account"), " unless you set it here."));
     if (ctx.me.kind !== "human") { append(root, h("p", null, "These are settings of a human member.")); return; }
     const path = ctx.base + "/me/settings";
     let mine;
