@@ -2156,8 +2156,7 @@ window.Maity = window.Maity || {};
       "/api/v1/requests/{request_id}/withdraw": { post: {} },
       "/api/v1/projects/{owner}/{slug}/swarm": { get: {} },
       "/api/v1/swarm/{owner}/{slug}": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: { requestBody: { content: { "application/json": { schema: { properties: {
-        trust: {}, role: {}, address: {}, ttl_seconds: {}, note: {}, via: {} } } } } } } },
+      "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
       "/api/v1/invitations/{token}": { get: {} },
       "/api/v1/auth/register": { post: {} },
       "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "/components/schemas/ProjectCreate" } } } } } },
@@ -3244,6 +3243,9 @@ window.Maity = window.Maity || {};
   // The CSRF token from GET /auth/session; the readable maity_csrf cookie
   // carries the same value and is preferred when present.
   let sessionCsrf = null;
+  // The session as GET /auth/session last answered it (§2.6, its join_url among it),
+  // kept for a view that needs it again; cleared when the session ends.
+  let lastSession = null;
 
   function csrfToken() {
     for (const part of document.cookie.split(";")) {
@@ -3327,6 +3329,7 @@ window.Maity = window.Maity || {};
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         sessionCsrf = s.csrf_token || null;
+        lastSession = s;
         sessionBlocked = false;
         return s;
       });
@@ -3432,9 +3435,12 @@ window.Maity = window.Maity || {};
   const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
 
   M.api = {
+    // The session read last (null before the first read or after the end).
+    session: () => lastSession,
     endSession: () => {
       sessionBlocked = true;
       sessionCsrf = null;
+      lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
     },
     // Whether a 401 on this path says nothing about a session (above).
