@@ -5255,6 +5255,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }) : tkGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   expect(tkItems().length === 1 && text(tkSeq(9980)).includes("you are an owner, you are an admin"), "ticker: one item once; role reasons with their article");
+  {
+    const tk = win.Maity.ticker;
+    expect(tk.whyWords("role:ops") === "you work in ops" && tk.whyWords("trust:steward") === "you have steward trust"
+      && tk.whyWords("follow:type:contract") === "you follow contract changes" && tk.whyWords("follow:type:later") === "you follow later"
+      && tk.said({ code: "ticker_duplicate", details: { seq: 12345 } }).message === "this was posted already (item 12345)"
+      && tk.said({ code: "invalid", details: { fields: { text: "required", odd: "odd_reason" } } }).message === "The text is missing; The field odd was refused (odd_reason)",
+    "ticker: reasons and refusals from the catalog; a value the hub adds later still reads, an item number is never grouped");
+  }
   win.Maity.api.get = tkGet;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/ticker"); for (let k = 0; k < 4; k++) await tick();
   btn(main.querySelector(".ticker-tabs"), "Everything").click(); for (let k = 0; k < 4; k++) await tick();
