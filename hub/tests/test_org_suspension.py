@@ -227,3 +227,52 @@ def test_a_hide_of_the_project_does_not_hide_the_suspension_of_its_organisation(
     assert resolve(world, made.json()["id"], "suspend").status_code == 200
     held(boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"}))
     assert boss.get(f"/projects/{PROJECT}").json()["state"] == "archived"
+
+
+def test_nothing_moves_into_a_suspended_organisation(
+    world: dict[str, Any], migrated: Engine, make_client: ClientFactory
+) -> None:
+    second, boss = world["second"], world["boss"]
+    adm = flow.human(make_client, migrated, "adm")
+    add_member(migrated, world["org"]["id"], adm.id, "admin")
+    flow.project(second, "mine")
+    flow.project(adm, "theirs")
+    org_id = world["org"]["id"]
+    # an admin's request is open when the suspension comes: it is withdrawn with it
+    filed_by_admin = adm.post("/projects/adm/theirs/transfer", {"to": org_id})
+    assert filed_by_admin.status_code == 202, filed_by_admin.text
+    assert resolve(world, filed(world), "suspend").status_code == 200
+    held(second.post("/projects/second/mine/transfer", {"to": org_id}))
+    held(adm.post("/projects/adm/theirs/transfer", {"to": org_id}))
+    # a `go` on a request that is open nevertheless answers `forbidden`, and the request stays open
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.status == "withdrawn")
+            .values(status="open", withdrawn_at=None, withdraw_reason=None)
+        )
+    [open_one] = [
+        r for r in boss.get("/requests", params={"status": "open"}).json()["items"] if r["personal"]
+    ]
+    held(boss.post(f"/requests/{open_one['id']}/answer", {"reply_id": "go"}))
+    assert adm.get("/projects/adm/theirs").json()["owner"]["id"] != org_id
+
+
+def test_nothing_moves_out_of_a_suspended_organisation(
+    world: dict[str, Any], migrated: Engine
+) -> None:
+    boss, second = world["boss"], world["second"]
+    other = make_org(boss, "oz-other", "OZ Other")
+    # a transfer to another owner is filed before the suspension; their `go` comes after it
+    filed_out = boss.post(f"/projects/{PROJECT}/transfer", {"to": second.id})
+    assert filed_out.status_code == 202, filed_out.text
+    assert resolve(world, filed(world), "suspend").status_code == 200
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": boss.id}))
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": second.id}))
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": other["id"]}))
+    held(
+        second.post(
+            f"/projects/{PROJECT}/requests/{filed_out.json()['id']}/answer", {"reply_id": "go"}
+        )
+    )
+    assert boss.get(f"/projects/{PROJECT}").json()["owner"]["id"] == world["org"]["id"]

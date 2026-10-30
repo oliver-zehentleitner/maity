@@ -926,7 +926,12 @@ def answer(
     slug: str, request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, membership(conn, caller, slug))
+        found = membership(conn, caller, slug)
+        if found.project.owner_org_id is not None:  # a transfer out of it moves the owners'
+            orgs.lock(conn, found.project.owner_org_id)  # seats: the organisation's row first
+        mine = _locked(conn, found)
+        if mine.project.owner_org_id != found.project.owner_org_id:
+            raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         row = _project_request(conn, mine, request_id)
         if row.filed_by == "hub":
             raise not_found()  # no asker reads a hub notice through the project (§7)
@@ -1256,9 +1261,17 @@ def withdraw(
     slug: str, request_id: str, body: WithdrawIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked(conn, membership(conn, caller, slug))
+        found = membership(conn, caller, slug)
+        if found.project.owner_org_id is not None:
+            orgs.lock(conn, found.project.owner_org_id)
+        mine = _locked(conn, found)
+        if mine.project.owner_org_id != found.project.owner_org_id:
+            raise orgs.project_moved()
         row = _project_request(conn, mine, request_id)
-        if row.personal:  # only its human, or the hub, withdraws it (§7)
+        # Only its human, or the hub, withdraws a personal request (§7); the one who started a
+        # transfer into an organisation withdraws the requests that carry it (§6.26).
+        org_transfer = row.personal and row.org_id is not None and inbox.is_asker(row, mine)
+        if row.personal and not org_transfer:
             raise not_found()
         if not (inbox.is_asker(row, mine) or mine.may("requests:answer")):
             raise forbidden("requests:answer")
@@ -1609,6 +1622,36 @@ def file_to_human(
     )
 
 
+def file_org_consent(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    title_text: str,
+    summary: str,
+    proposal: dict[str, Any],
+    *,
+    to_human: str,
+    org_id: str,
+) -> str:
+    """A consent request to one owner of an organisation about a project (§6.26): personal,
+    with both the project and `org: {id, handle}`, the asker the project's member who started
+    the transfer. Returns its id."""
+    proposals.check_kind(proposal)
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=to_human,
+        proposal=proposal,
+        org_id=org_id,
+    )
+
+
 def _file_personal(
     conn: Connection,
     mine: Membership,
@@ -1623,6 +1666,7 @@ def _file_personal(
     options: list[dict[str, Any]] | None = None,
     task_id: str | None = None,
     proposal: dict[str, Any] | None = None,
+    org_id: str | None = None,
 ) -> str:
     request_id = new_id("request")
     conn.execute(
@@ -1630,6 +1674,7 @@ def _file_personal(
             {
                 "id": request_id,
                 "project_id": mine.project.id,
+                "org_id": org_id,
                 "class": class_,
                 "title": title_text,
                 "summary": summary,
@@ -1696,9 +1741,13 @@ def _locked_personal(conn: Connection, caller: Caller, request_id: str) -> Any:
     """`_personal` under its project's lock, read again after locking, as the project
     routes do: an answer and a withdrawal at once cannot both change it."""
     row = _personal(conn, caller, request_id)
-    if row.project_id is None:  # an organisation's: its row, as every change of it (§6.26)
-        orgs.lock(conn, row.org_id)
-    else:
+    # An organisation's row before any project's, in the order of their ids (§6.26): the
+    # request's own organisation, and the one that owns the project, which a transfer out of
+    # it frees.
+    wanted = {row.org_id, (row.proposal or {}).get("owner_id")}
+    for org_id in sorted(i for i in wanted if isinstance(i, str) and i.startswith("org-")):
+        orgs.lock(conn, org_id)
+    if row.project_id is not None:
         lock_project(conn, row.project_id)
     return _personal(conn, caller, request_id)
 

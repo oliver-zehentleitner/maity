@@ -213,3 +213,19 @@ def test_the_invited_owner_joins_the_projects_with_their_go(
     assert guest.post(f"/requests/{pending['id']}/answer", {"reply_id": "go"}).status_code == 200
     assert members(owner)["guest"]["trust"] == "owner"
     assert members(owner)["guest"]["org_owner"] is True
+
+
+def test_the_event_of_a_seat_that_ends_does_not_say_org_owner(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    _, people = team(make_client, migrated, owner)
+    assert create(owner).status_code in (200, 201)
+    second = people["owner2"]
+    assert owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "member"}).status_code == 200
+    ended = [
+        e
+        for e in owner.get("/projects/oz-team/shop/events", params={"limit": 200}).json()["items"]
+        if e["kind"] == "member_updated" and e["payload"].get("handle") == "team-owner2"
+    ]
+    assert ended and ended[-1]["payload"].get("removed_at")
+    assert ended[-1]["payload"]["org_owner"] is False
