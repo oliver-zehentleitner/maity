@@ -305,14 +305,16 @@ window.Maity = window.Maity || {};
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
 
-  // args[0]: a member to show (/<owner>/<slug>/members/<id>, a mention's link):
-  // its row is marked and takes the focus.
+  // args[0]: a member (/<owner>/<slug>/members/<id>[/<tab>], a mention's link):
+  // that member's page (js/member-page.js). ?manage=<id> (its Actions menu):
+  // the list with that member's Manage row open, for an admin.
   M.views.members = async function (ctx, root, args) {
-    const wanted = args && args[0];
+    if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1]); return; }
+    const wanted = ctx.canAdmin ? M.route.current().query.get("manage") : null;
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
-    // Rows open for managing stay open across a redraw.
-    const open = new Set();
+    // Rows open for managing stay open across a redraw; the one asked for opens at once.
+    const open = new Set(wanted ? [wanted] : []);
     // member id -> its presence cell, updated in place by the refresh.
     const presenceCells = new Map();
     // focus key -> the element drawn for it, so focus survives a redraw.
@@ -590,11 +592,12 @@ window.Maity = window.Maity || {};
         append(slot, h("p", { class: "send-status failed" }, "Could not show the invitations: " + err.message));
       });
     }
-    // A member asked for by the URL: its row takes the focus once the view is
-    // in the page; an id that is no member here is said.
+    // The member asked for (?manage=<id>): its row open, the focus on its
+    // first field; an id that is no member here is said.
     if (wanted) {
+      const first = () => focusables.get("role:" + wanted) || wantedHead();
       // Looked up when focused: the Chat redraw may have drawn the row again.
-      if (wantedHead()) window.setTimeout(() => { if (wantedHead()) wantedHead().focus(); }, 0);
+      if (wantedHead()) window.setTimeout(() => { if (first()) first().focus(); }, 0);
       else append(status.el, h("span", null, "No member with the id " + wanted + " in this project."));
     }
     ctx.every(PRESENCE_MS, async () => {

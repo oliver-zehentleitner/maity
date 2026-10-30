@@ -1987,6 +1987,34 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## A member's page is for reading; its Actions menu only leads to Members or Agents
+
+**Id:** dda6f237-ffeb-4b68-ba0a-844c77f269dd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover #6484 (the member page header with an Actions menu: Assign a card, Edit briefing, Change role or reports to, Pause, Revoke the session, Remove), 2026-10-27; the coordinator's ruling on the card tsk-rtb5vjrvbh34, 2026-10-30, with the maintainer's decision of #643 (each action in one place) as its reason
+**See:** views.md — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-29
+**Revisit when:** the maintainer moves the admin's actions out of the Manage row, or a member page of its own takes over what the Agents card does
+
+`/<owner>/<slug>/members/<id>` is a member's page: breadcrumb, header,
+and the tabs Activity, Cards, Briefing, Sessions & credentials, all read
+only. Its **Actions ▾** holds only links: **Manage on Members**
+(`?manage=<id>`, the list with that row open) for an admin, **Manage on
+Agents** (the agent's card) for its owner; without either there is no
+menu. Every member link leads to this page, not to a marked row.
+
+**Reason:** since #643 each action lives in one place: an admin's on the
+Manage row of Members, an owner's on Agents. A third place for the same
+forms would let them drift apart and leave the same change reachable
+from three screens with three sets of words.
+
+**Rejected alternative:** the Actions menu as the handover drew it, with
+the actions themselves (role, pause, briefing, revocation, removal):
+it would undo the one-place rule of #643. Taking the Manage row away
+from Members in its favour: that reverses the maintainer's own choice
+("finde ich super") for the row.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
