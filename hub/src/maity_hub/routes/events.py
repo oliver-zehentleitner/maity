@@ -27,6 +27,7 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    reviews,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -61,6 +62,8 @@ class MessageIn(Written):
     body: str = markdown()
     task_id: str | None = None
     conversation_id: str | None = None
+    to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
+    review: Any = None  # a `review_result`'s object (§8.4), checked in `post_message`
 
     @field_validator("body")
     @classmethod
@@ -273,6 +276,18 @@ def post_message(
         raise invalid({"type": "unknown"})
     me = mine.principal_id
     group: Any = None
+    review: dict[str, Any] | None = None
+    if body.type == "review_result":
+        review, problems = reviews.check(body.review)
+        if problems:
+            raise invalid(problems)
+    elif body.review is not None:
+        raise invalid({"review": "not_allowed"})
+    if body.to_instance is not None and (
+        body.type != "chat"
+        or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
+    ):
+        raise invalid({"to_instance": "direct_chat_only"}, "an instance is named in a direct chat")
     if body.type == "chat":
         if body.conversation_id is None:
             raise invalid({"conversation_id": "required_for_chat"})
@@ -297,6 +312,17 @@ def post_message(
             raise forbidden(message="only the two parties write in a conversation")
         to = parties[1] if me == parties[0] else parties[0]
         audience = [f"member:{p}" for p in parties]
+        if body.to_instance is not None:
+            # The human's message wakes exactly one instance of the agent, resolved as an
+            # address in a message's `to` is; the whole team still reads it (§9.1, §8.2).
+            if me != parties[1]:
+                raise invalid({"to_instance": "human_only"}, "only the human names an instance")
+            if not instances.INSTANCE_PATTERN.fullmatch(body.to_instance):
+                raise invalid({"to_instance": "not_an_instance"})
+            target = instances.addressed(
+                conn, agent.id, parties[0], body.to_instance, "to_instance"
+            )
+            audience = [target, f"member:{parties[1]}"]
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
@@ -317,10 +343,13 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            if instance is not None:
-                # One instance of a team: its token wakes only it, the team reads it (§8.2).
-                instances.require_active(conn, addressee, instance, "to")
-            target = instances.token(principal, instance)
+            # One instance of a team: its token wakes only it, the team reads it; a replaced
+            # instance's address reaches its successor (§8.2).
+            target = (
+                instances.token(principal, None)
+                if instance is None
+                else instances.addressed(conn, addressee.id, principal, instance, "to")
+            )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -337,6 +366,22 @@ def post_message(
         inside = {group_chats.principal(s) for s in current}
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
+        # An instance mention wakes the instance it comes down to, a successor when the one
+        # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
+        audience = list(
+            dict.fromkeys(
+                [
+                    *audience,
+                    *(
+                        mentions.instance_token(
+                            conn, mine.project.id, m["member_id"], m["instance"]
+                        )
+                        for m in mentioned
+                        if m["instance"] is not None
+                    ),
+                ]
+            )
+        )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
@@ -347,7 +392,7 @@ def post_message(
         # mention stays either way.
         pinged: dict[str, str] = {}  # token -> member
         for m in mentioned:
-            token = instances.token(m["member_id"], m["instance"])
+            token = mentions.instance_token(conn, mine.project.id, m["member_id"], m["instance"])
             if not (
                 "all" in audience
                 or token in audience
@@ -368,6 +413,10 @@ def post_message(
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
+    if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
+        payload["to_instance"] = body.to_instance
+    if review is not None:  # what a review result judged and read (§8.4)
+        payload["review"] = review
     seq = events.emit(
         conn,
         mine.project.id,

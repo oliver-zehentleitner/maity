@@ -56,8 +56,10 @@ Availability (`docs/api.md` §6.12): every member's computed
 runner's `rate_limited` report), the owner's absence (at most 90 days),
 the `availability_policy` per membership, leases held through a limit for
 at most a day, `member_availability_changed` and `member_limit_ended` from
-a background sweep, and the policy's `coordinator` seats are in; cover by
-a substitute and the coordinator gate follow.
+a background sweep, the policy's `coordinator` seats, cover by a
+substitute (held and assigned cards and requests moved visibly, answered
+on the covered member's behalf, what the substitute touched kept on
+return, area routing to the substitute) and the coordinator gate are in.
 Cards carry links, an edit history and notes (`docs/api.md` §6.13,
 §6.15, §6.16): forge links parsed by the hub and observed by the probe for
 the project's own repository only, in one GraphQL read per repository;
@@ -365,16 +367,31 @@ python3 -m venv /tmp/audit && /tmp/audit/bin/pip install --require-hashes -r req
 
 ### Migrations
 
-Schema changes are Alembic revisions in `src/maity_hub/migrations/versions/`,
-numbered `0001_…`, `0002_…`. To create the next one after changing the
-table definitions:
+Schema changes are Alembic revisions in `src/maity_hub/migrations/versions/`:
+the older ones numbered `0001_…`, every new one named by the UTC
+second it was made and its slug, `20261030102512_add_the_tasks.py`, so two
+pull requests made in parallel never take the same id. To create one after
+changing the table definitions:
 
 ```sh
-make revision m="add the task table"
+make revision m="add the tasks"
 ```
 
 It migrates a scratch SQLite file to the current head, compares it with the
-tables defined in `maity_hub` and writes `000N_add_the_task_table.py`.
+tables defined in `maity_hub` and writes the revision on that head.
+When `main` gets another migration before yours is merged, the branch has two
+heads after merging `main`, the hub refuses to start on them, and CI fails
+with a message naming the fix:
+
+```sh
+git fetch origin && git merge origin/main
+make rechain    # python3 tools/rechain.py from the repository root
+```
+
+`tools/rechain.py` finds the one migration the branch adds and sets its
+`down_revision` (and the `Revises:` line) to the head of `origin/main`; a
+branch with two new migrations, or one that lacks a migration of `main`, is
+refused with what to do.
 Run `make format` on it before `make check` (the template imports `op` and
 `sa` whether the revision uses them or not), and review the result:
 autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use

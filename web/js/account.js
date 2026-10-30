@@ -155,8 +155,8 @@ window.Maity = window.Maity || {};
   // once it is on — never a copy of the page's own; a hub that does not
   // send it shows none.
   const MEAT_PARTS = [
-    ["meat_proxy_lead", "meat-proxy-lead", "Lead me step by step rather than expecting me to explain."],
-    ["meat_proxy_hands", "meat-proxy-hands", "When you need a human's hands, come to me first."],
+    ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
+    ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],
   ];
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
@@ -172,14 +172,13 @@ window.Maity = window.Maity || {};
       box.checked = !!ctx.me.meat_proxy;
       parts.forEach(([field, input]) => { input.checked = !!ctx.me[field]; });
       const note = noteOf(ctx.me);
-      hint.textContent = "While this is on, your own agents and the agents of every project you are a member of are told so when they resume"
-        + (note ? (ctx.me.meat_proxy ? ", in these words:" : "; switched on, they would read:") : ".");
+      hint.textContent = !note ? M.t("meat.hint") : ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
       append(clear(quote), note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null);
       box.setAttribute("aria-describedby", note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint");
     }
     async function send(body) {
       inputs.forEach((x) => { x.disabled = true; });
-      status.busy("Saving…");
+      status.busy(M.t("meat.saving"));
       try {
         // The answer is /me itself (§5.1), its member as GET /me has it.
         const answer = await M.api.patch("/me", body);
@@ -190,11 +189,11 @@ window.Maity = window.Maity || {};
         show();
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? (noteOf(ctx.me) ? "Saved: your agents and the agents of your projects are told the text above." : "Saved: your agents and the agents of your projects are told.")
-          : "Saved: they are no longer told."));
+          ? (noteOf(ctx.me) ? M.t("meat.saved.on_note") : M.t("meat.saved.on"))
+          : M.t("meat.saved.off")));
       } catch (err) {
         show();
-        status.fail("Not saved: ", err);
+        status.fail(M.t("meat.not_saved"), err);
       } finally {
         inputs.forEach((x) => { x.disabled = false; });
       }
@@ -203,10 +202,10 @@ window.Maity = window.Maity || {};
     parts.forEach(([field, input]) => input.addEventListener("change", () => send({ [field]: input.checked })));
     show();
     return h("section", { class: "meat-proxy" },
-      h("h3", null, "Meat proxy"),
-      h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
-      h("fieldset", { class: "meat-proxy-parts" }, h("legend", { class: "visually-hidden" }, "What you say about yourself"),
-        MEAT_PARTS.map(([, id, sentence], i) => h("label", { class: "check", for: id }, parts[i][1], " " + sentence))),
+      h("h3", null, M.t("meat.title")),
+      h("label", { class: "check", for: "meat-proxy" }, box, " ", M.t("meat.switch")),
+      h("fieldset", { class: "meat-proxy-parts" }, h("legend", { class: "visually-hidden" }, M.t("meat.parts")),
+        MEAT_PARTS.map(([, id, sentence], i) => h("label", { class: "check", for: id }, parts[i][1], " ", sentence()))),
       hint, quote, status.el);
   }
 

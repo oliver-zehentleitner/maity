@@ -91,8 +91,9 @@ project lock, only if the ticker is still on, `merges_since` is the one
 the round started from, and the repository and branch are the same;
 otherwise the round ends. Without a patch, or for a file over 1 MiB, the
 sections are unknown and every implementer applies. A project that had
-the ticker on before this part arrived gets the upgrade's moment, from
-the migration and again from the next PATCH that switches it on.
+the ticker on before this part arrived got the upgrade's moment from the
+migration (0020); a project that is switched on afterwards gets its moment
+from the PATCH that switches it on, and there is no other way to be on.
 
 **Reason:** §17.4 announces nothing older than the switch, so the moment
 has to be stored; the dedupe key alone would announce the whole history

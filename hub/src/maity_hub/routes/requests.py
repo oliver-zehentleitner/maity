@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -17,6 +18,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     clock,
+    cover,
     events,
     idempotency,
     inbox,
@@ -164,9 +166,12 @@ def _inviter(conn: Connection, human_id: str) -> dict[str, Any]:
 def _asker(conn: Connection, row: Any) -> Any:
     """`asked_by` with the agent instance that asked (§7, §6.17): the instance of the
     credential whose session filed it; `null` for a human, and for a request the hub
-    files on an agent's behalf, which has no session."""
+    files on an agent's behalf, which has no session. The owner's digest (§5.3) has no
+    asker at all: `null`."""
     if row.asked_by is None and row.asked_by_human is not None:
         return _inviter(conn, row.asked_by_human)  # an organisation's invitation (§6.26)
+    if row.asked_by is None:
+        return None
     person = _person(conn, row.asked_by, row.asked_session_id)
     return {**person, "instance": _asking_instance(conn, row)}
 
@@ -229,6 +234,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "forwarding": row.forwarding or [],
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
+        "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -496,8 +502,6 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    from dataclasses import replace
-
     return replace(mine, project=lock_project(conn, mine.project.id))
 
 
@@ -623,7 +627,15 @@ def _filtered(
             return list(rows)
         return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
     target = _parse_to(conn, mine, to)
-    return [r for r in rows if inbox.addressee_of(r) == target and inbox.may_read(conn, r, mine)]
+    # A member id alone also names the instance addresses of its team: the team reads them.
+    whole_team = target.kind == "member" and target.instance is None
+    return [
+        r
+        for r in rows
+        if (replace(inbox.addressee_of(r), instance=None) if whole_team else inbox.addressee_of(r))
+        == target
+        and inbox.may_read(conn, r, mine)
+    ]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
@@ -995,6 +1007,8 @@ def answer(
         on_behalf = None
         if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
             on_behalf = addressee.text(conn)
+        elif not in_own_right and inbox.covers(row, mine):
+            on_behalf = row.cover["for"]  # the covered addressee (§6.12)
         elif not in_own_right and addressee.kind != "role":
             on_behalf = (
                 inbox.owner_membership(conn, mine.project.id).human_id
@@ -2020,6 +2034,40 @@ def file_hub_notice(
         _payload(row, request_view(conn, row)),
         subject=("request", request_id),
     )
+    return request_id
+
+
+def file_hub_digest(conn: Connection, human_id: str, title_text: str, summary: str) -> str:
+    """The owner's digest of agent instances that are not listening (§5.3): a personal
+    request to the human in person, `filed_by: hub`, class `info`, one option `seen`, with
+    no asker, no project and no organisation. Without a project it has no events; the
+    human hears of it through its record, as of an organisation's invitation."""
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": None,
+                "org_id": None,
+                "class": "info",
+                "title": title_text[: t.TITLE],
+                "summary": summary,
+                "options": SEEN,
+                "priority": "normal",
+                "to_kind": "human",
+                "to_human": human_id,
+                "personal": True,
+                "filed_by": "hub",
+                "asked_by": None,
+                "asked_by_human": None,
+                "asked_session_id": None,
+                "while_open": "wait",
+                "status": "open",
+                "created_at": clock.now(),
+            }
+        )
+    )
+    records.personal_request(conn, _row(conn, request_id))
     return request_id
 
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -209,15 +211,28 @@ def current_revision(engine: Engine) -> str | None:
         return MigrationContext.configure(connection).get_current_revision()
 
 
-def create_revision(engine: Engine, message: str, script_location: Path | None = None) -> Path:
-    """Autogenerate the next numbered revision against a database at head.
+# `alembic_version.version_num` is 32 characters wide on every engine.
+REVISION_ID_MAX = 32
+
+
+def revision_id(message: str, now: datetime) -> str:
+    """A revision id no parallel branch takes too: the UTC time to the second and the
+    message's slug, `20261030102512_add_the_task_table`, cut to the version column."""
+    slug = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_") or "revision"
+    return f"{now.astimezone(UTC):%Y%m%d%H%M%S}_{slug}"[:REVISION_ID_MAX].rstrip("_")
+
+
+def create_revision(
+    engine: Engine, message: str, script_location: Path | None = None, now: datetime | None = None
+) -> Path:
+    """Autogenerate a revision against a database at head, its id from `revision_id` and
+    its file named by the id alone. `tools/rechain.py` later hangs it on main's head.
 
     Development only: `make revision m="..."` runs it on a scratch SQLite file.
     """
     config = alembic_config(engine, script_location)
-    script = ScriptDirectory.from_config(config)
-    numbers = [int(rev.revision) for rev in script.walk_revisions() if rev.revision.isdigit()]
-    rev_id = f"{max(numbers, default=0) + 1:04d}"
+    config.set_main_option("file_template", "%%(rev)s")  # the id holds the slug
+    rev_id = revision_id(message, now or datetime.now(UTC))
     command.upgrade(config, "head")
     created = command.revision(config, message=message, autogenerate=True, rev_id=rev_id)
     if created is None or isinstance(created, list):

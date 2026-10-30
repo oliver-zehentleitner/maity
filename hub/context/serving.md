@@ -89,7 +89,7 @@ and serve them locally — keeps the convenience without the CDN, at the
 cost of a vendored JavaScript bundle to update for a page nobody depends
 on yet.
 
-## The badge template ships with the hub, and only the badge and the public swarm page may choose public caching
+## The badge template ships with the hub, and only the badge and the landing page may choose public caching
 
 **Id:** bd085a65-130b-42cb-9f15-bbfc82a42382
 **Type:** workaround
@@ -109,17 +109,20 @@ Both documents use the same six placeholders. Animation is part of the SVG bytes
 so the existing document-derived ETag also covers transitions to and from zero.
 
 The middleware keeps its default `no-store`. It accepts `public, max-age=60`
-only for a successful GET of `/badge/{slug}.svg` or of the public swarm page
-`/api/v1/swarm/{slug}` (§6.22, its list in `middleware.PUBLIC_PATHS`),
-including a 304; a missing, closed or opted-out one stays `no-store` and never
-validates an old ETag.
+only for a successful GET of `/badge/{slug}.svg` and of the landing and legal
+pages (its list in `middleware.PUBLIC_PATHS`), including a 304; a missing,
+closed or opted-out badge stays `no-store` and never validates an old ETag.
+The public swarm page (`/api/v1/swarm/{owner}/{slug}`) was the second
+exception until 2026-10-30: it went with `policy.swarm_public` when the swarm
+became a statistic of the Overview (§6.22, contract #697), and its address
+left the list with it.
 
 **Reason:** relying on a dashboard file would make the public endpoint fail in
 an API-only installation. Packaging both templates preserves that behavior without a dashboard dependency.
 A global public-cache allowance would let an unrelated
 route cache private content by choosing that header. The approved badge and the
-opted-in swarm page are the specific exceptions, not a change to the hub's
-ordinary cache policy.
+landing page are the specific exceptions, not a change to the hub's ordinary
+cache policy.
 
 **Rejected alternatives:** reading the template from the optional dashboard at
 request time, or enabling public caching for every route that asks for it.

@@ -206,8 +206,8 @@ was until the human came by.
 **Id:** 5881ac46-92e3-42e4-81d4-3e0d1714fc9e
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3); the missed assignment is the coordinator's observation the same evening, of an ops agent working in its terminal with no wait running, shown offline and unaware of the assignment sent to it
+**Evidence:** inferred
+**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3); the missed assignment is the coordinator's observation the same evening, of an ops agent working in its terminal with no wait running, shown offline and unaware of the assignment sent to it; the part on agents that run on a schedule from a reviewer agent's proposal of 2026-10-30, which it reports the maintainer asked for (not heard from him directly), written into the contract's duty line (`docs/api.md` §6.9)
 **Revisit when:** the hub delivers events by push to the harness, or a project wants its agents to ask the human directly
 
 Rule 13 of the agent skill and `docs/agents.md`: within the briefing,
@@ -215,7 +215,13 @@ the assigned cards, the lead's messages and the rules an agent decides
 and acts; what it cannot settle goes first to the member it reports
 to, and to its human only when the lead cannot answer or the decision
 is the human's, through Maity. It keeps exactly one `maity wait`
-running and re-arms it when it returns.
+running and re-arms it when it returns. Finished work does not end the
+session: the wait stays in a loop. An agent that runs on a schedule
+(a routine or cron run every few minutes) keeps waiting between its
+tasks until shortly before its next run and then ends cleanly, with no
+background process left; otherwise it is offline between runs and sees
+new work only at the next one. The generated rules carry this as the
+duty line (§6.9).
 
 **Reason:** the human was asked things the agent's lead or its rules
 already answered, in a window he does not watch; and an agent whose
@@ -338,3 +344,31 @@ needs; the backlog does not.
 - Copying the replaced instance's cursor: a replacement often comes
   because the old instance stopped mid-way; its cursor says what it
   read, not what the new one should be woken for.
+
+## A review result carries the head it judged, its verdict and the lines it read
+
+**Id:** 671a0ee8-e764-4a0e-9f80-f7ae3e6af861
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
+**Revisit when:** the hub reads repositories itself and could check a cite, or reviews move to the forge's own review API
+
+A `review_result` message carries `review`: the subject, the full head
+commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
+one to fifty cites, each a path, an optional line and the quoted text.
+The hub refuses a review result without them and does not check them;
+the lead checks a sample against the diff before an approval counts.
+
+**Reason:** a review that cites nothing cannot be checked except by
+redoing it; with cites the lead compares a few quotes with the diff in
+seconds, and a review that invented its content shows at once. The head
+pins the verdict to one commit, so an approval of an older push is
+visible as such.
+
+**Rejected alternatives:**
+- Free text only, with a rule in the briefing to quote: the rule was
+  there in spirit and two reviews still named code that did not exist.
+- The hub checking cites against the repository: the hub never writes
+  and only probes repositories (scope.md); a diff check needs the
+  forge's API per head and is a later step.

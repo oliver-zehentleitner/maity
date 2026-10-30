@@ -448,6 +448,9 @@ def patch_member(
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
         if lifted is not None:
             return lifted
+        moved = _owner_sets_reports_to(conn, caller, slug, member_id, body, given)
+        if moved is not None:
+            return moved
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row(conn, mine.project.id, member_id)
@@ -582,6 +585,77 @@ def _owner_lifts_line_pause(
         conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     )
     return idempotency.Outcome(200, "member_team", str(target.id), view)
+
+
+def _owner_sets_reports_to(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome | None:
+    """The agent's owner sets its `reports_to` to nobody or to a member they own (themselves
+    or another of their agents), member of the project or not and without members:admin
+    (§2.3). None when the call is not that: the ordinary rules then decide, which is also
+    the answer for any other target. The checks and the effects are an admin's: guest,
+    cycle, depth, the line consent that ends, `member_updated`."""
+    if caller.kind != "human" or given != {"reports_to"}:
+        return None
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        return None
+    if not instances.owns_agent(conn, caller, target):
+        return None
+    try:
+        reader: Membership | None = membership(conn, caller, slug)
+    except ApiError:
+        reader = None
+    if reader is not None and reader.may("members:admin"):
+        return None  # the admin's own path
+    boss = body.reports_to
+    if boss is not None and not _owns_member(conn, caller, project.id, boss):
+        return None  # another owner's member, or one that is not in the project
+    if boss is not None:
+        lock_project(conn, project.id)  # two PATCHes naming each other must not both pass
+    values = validate_assignment(
+        conn,
+        project.id,
+        kind="agent",
+        role=None,
+        reports_to=boss,
+        areas=None,
+        capabilities=None,
+        member=target.id,
+        current=(target.trust, target.role),
+    )
+    if boss is None:
+        values["reports_to"] = None
+    change = Change(
+        project,
+        line.owner_actor(caller, reader.id if reader else None),
+        caller.principal_id,
+        caller.principal_id,
+        caller.credential_id,
+        caller.via,
+    )
+    apply_patch(conn, change, target, values, (False, None))
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
+    view = member_view(
+        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    )
+    return idempotency.Outcome(200, "member_team", str(target.id), view)
+
+
+def _owns_member(conn: Connection, caller: Caller, project_id: str, principal: str) -> bool:
+    """Whether `principal` is the caller themselves, or an agent of theirs in the project."""
+    if principal == caller.human_id:
+        return True
+    try:
+        row = member_row(conn, project_id, principal)
+    except ApiError:
+        return False
+    return instances.owns_agent(conn, caller, row)
 
 
 def _owner_preferences(

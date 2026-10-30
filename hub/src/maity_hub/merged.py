@@ -21,13 +21,14 @@ from maity_hub import cards, clock, takeovers
 from maity_hub import tables as t
 from maity_hub.events import emit
 from maity_hub.instances import token
+from maity_hub.scopes import role_tokens
 from maity_hub.views import principal_id
 
 # Who moves a card to done (§6.4) as audience terms; `holder` is the holding instance.
 AUTHORITY = {
-    "reviewer": ["role:reviewer"],
-    "tester": ["role:tester"],
-    "reviewer_and_tester": ["role:reviewer", "role:tester"],
+    "reviewer": role_tokens("reviewer"),
+    "tester": role_tokens("tester"),
+    "reviewer_and_tester": [*role_tokens("reviewer"), *role_tokens("tester")],
     "admin": ["trust:admin"],
 }
 # Where a merge is the step the project asks for, and `auto` may close (§6.6).

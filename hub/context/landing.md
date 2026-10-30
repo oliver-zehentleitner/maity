@@ -83,22 +83,23 @@ puts a section without a required field in front of the renderer.
 - Filling the missing hero field with a placeholder: made-up words on the operator's public page.
 - Loosening the check for migrated pages: two rules of validity for one page.
 
-## The hub renders the landing page and the legal pages itself, as documents with no script, no image and a policy of their own
+## The hub renders the landing page and the legal pages itself, as documents with a policy of their own; the legal pages carry no script
 
 **Id:** 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.7 ("The page", "Content security"), §16.7.1; the implementation of tsk-2vv6h5jptvem, 2026-10-29
-**Revisit when:** a section needs a script or an image (the policy and the renderer change together), or public pages (§16.9) arrive and `profiles`, `explore` and `activity` get something to show
+**Revisit when:** a legal page needs a script or an image, or public pages (§16.9) arrive and `profiles`, `explore` and `activity` get something to show. The "no script, no image, one `<style>`" of the landing page held until landing V3 stage 1 (2026-10-30), which gave it the hub's own files, see the entry on its files below.
 
 `render.py` turns a page into one HTML string: a fixed header, the enabled sections in order,
-a fixed footer, one inline `<style>` element that follows `prefers-color-scheme`, and the
+a fixed footer, a style that follows `prefers-color-scheme` (for the landing page the hub's own
+stylesheet, below; for the legal pages one inline `<style>` element), and the
 operator's words only ever as escaped text. Markdown goes through a small renderer that knows
 exactly what the validator allows (headings, paragraphs, emphasis, lists, quotes, fenced code,
 links whose target passes the same check again at render time). The documents answer with
-`default-src 'none'; style-src 'unsafe-inline'` (the landing page adds `base-uri`, `form-action`
-and `frame-ancestors`), which is why there is no image and no logo file: the wordmark is text.
+`default-src 'none'; style-src 'unsafe-inline'` (the legal pages), which is why they have no image
+and no logo file: the wordmark is text. The landing page's policy is wider since V3 stage 1 (below).
 `/` shows the landing page to a visitor (no live `maity_session`; `has_live_session` reads, renews
 nothing and never raises) while it is enabled, to anyone with `?as=public`, and the app shell
 otherwise. The language is `?lang=`, else the best `Accept-Language` match among the languages
@@ -111,7 +112,7 @@ draft's own default language (the browser's `Accept-Language` is not read), with
 place of the API's. The `POST` answers the path under the API base, not an absolute address.
 
 **Reason:** a crawler and a visitor with a script blocker read the same words; a policy that
-forbids everything but one style element leaves no way for an operator's text to run anything,
+forbids everything but the hub's own files leaves no way for an operator's text to run anything,
 whatever it holds. The renderer repeats the validator's rules instead of trusting the stored
 value, since a row written by an older version or by hand is still shown to the public.
 
@@ -124,6 +125,62 @@ value, since a row written by an older version or by hand is still shown to the 
   `POST`; a row needs no sticky routing.
 - Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
   the page to load files and make the policy depend on what the dashboard ships.
+
+## The landing page's look is the hub's own files, served from the package under their digest; the page reads without them
+
+**Id:** 7c22ec9b-0c71-4079-998e-a0900d395ac1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7 ("Progressive enhancement", "Content security", "Search engines"; contract #737) and the coordinator's decisions on card tsk-m6ew67r1w3hc, 2026-10-30 (the files come from the hub package, a stale digest answers `no-cache`, `img-src 'self'` without `data:`); the designer's board "Landing V3 – volle Fassung"
+**See:** landing.md#the-hub-renders-the-landing-page-and-the-legal-pages-itself-as-documents-with-a-policy-of-their-own-the-legal-pages-carry-no-script — 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47 — as of 2026-10-30
+**Revisit when:** the hub serves a second public page of its own that wants the same files, an operator needs to restyle the page (today the look is code, the same for every instance), or the fonts' subset has to grow past Latin
+
+The landing page loads `/assets/landing/landing.css`, `landing.js` (D's, at most 10 KiB, `defer`) and
+nine `woff2` fonts (Space Grotesk 500/600/700, Inter 400/500/600/700, JetBrains Mono 400/500; the
+Latin subset of the `@fontsource` packages, which carry the same OFL fonts, with the OFL texts beside
+them). They live in the package (`hub/src/maity_hub/landing_assets/`) and `landing_files` answers them
+with its own route, before the dashboard's `/assets` mount, so a hub without `MAITY_WEB_DIR` serves
+the page complete. The page names each file with `?v=<digest>`, a 16-hex prefix of the file's SHA-256:
+asked under its digest a file is `public, max-age=31536000, immutable`, asked under another or none it
+answers the current file with `no-cache`, so a stale link repairs itself. The stylesheet holds
+`{font:<file>}` where it names a font, and the hub fills in the font's own versioned URL when it first
+reads the file, so the fonts are cached for good as well; the script is linked only when the file
+exists. The hero's rings, the call-to-action band's loader and the logo are inline SVG
+(`hero-rings.svg`, `band-loader.svg`, `mark.svg` beside the files, not served), coloured by the CSS
+variables. Everything is text in the HTML: the demo's lines are `d1`… with the inbox item as `d5`
+and the lines after the fourth following it. That is the designer's timeline (the question after the
+fourth line, or after the last when there are fewer), which the coordinator takes into §16.7 (2026-10-30); building the timeline for the
+inbox after any last line would mean generating it per number of lines. The steps are `s1`–`s3`, the
+scales three columns in `.scales-grid`, the FAQ `<details>`, the counters `<span data-lp-count>`,
+and the theme switch a `hidden` button in the page's language, so without the script the page
+follows `prefers-color-scheme` and shows every end state. If the stylesheet cannot be read the page
+carries the old inline style. The policy is `default-src 'none'; script-src 'self'; style-src 'self'
+'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
+'none'; frame-ancestors 'none'` (`'unsafe-inline'` is for the inline SVG's `style` attributes),
+on the page and on the preview. `robots.txt` allows `/assets/landing/` in both of its branches while
+the page is enabled. The middleware keeps the cache the route chose for these files.
+
+**Reason:** the designer's page needs a stylesheet, fonts and motion, and the contract keeps the
+words in the HTML so that nothing is needed to read it. The rings, the loader and the pulses turn by
+CSS alone, also without the script, and stop under `prefers-reduced-motion`; the script adds only the
+demo's start (`.demo-on`), the counters and the theme (the coordinator takes this into §16.7, 2026-10-30, after the review of #739). Files in the package are the same for every
+instance, need no dashboard directory and can be hashed when they are read; a digest in the URL
+makes them cacheable for a year without a stale file ever being served for good.
+
+**Rejected alternatives:**
+- Serving the files from the dashboard's `web/` directory (`MAITY_WEB_DIR`): a hub without it would
+  serve an unstyled page, and the hub could not know the digest of a file it does not own.
+- A nonce or the hash of an inline script and style: the policy would change with every deploy and
+  every page, and an operator's text could still be reached by a mistake in the template; a file of
+  the hub's own is one origin the policy names once.
+- Fonts from a CDN or from Google: a visitor's request would leave the hub, and `font-src 'self'`
+  and the policy's whole point would go.
+- `img-src 'self' data:` for the pictures: the pictures are inline SVG, which needs no image source;
+  `data:` would let any markup an operator's text reached load an image.
+- A `.lp-motion` class set by the script (D's first proposal): the designer's CSS already animates
+  by itself and stops under `prefers-reduced-motion`, so the script only toggles `.demo-on`, the theme
+  and the counters.
 
 ## The terms of a registration come from the legal pages only when neither the environment nor the admin gave any
 

@@ -37,9 +37,15 @@ PERSONAL = (
 )
 
 
+def lock_human(conn: Connection, human_id: str) -> None:
+    """The human's row, locked for the rest of the caller's transaction: the records are
+    appended under it."""
+    conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+
+
 def write(conn: Connection, human_id: str, kind: str, data: dict[str, Any]) -> int:
     """Append one record for `human_id` inside the caller's transaction; returns `n`."""
-    conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+    lock_human(conn, human_id)
     previous = conn.execute(
         select(func.max(t.account_record.c.at)).where(t.account_record.c.human_id == human_id)
     ).scalar()

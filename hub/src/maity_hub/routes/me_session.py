@@ -158,6 +158,8 @@ class MePatch(Strict):
 
     paused: PausedIn | None = None
     meat_proxy: StrictBool | None = None
+    meat_proxy_lead: StrictBool | None = None
+    meat_proxy_hands: StrictBool | None = None
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -342,18 +344,21 @@ def _packet(
         )
     ).all()
     meat_proxies = {
-        row.id: row.meat_proxy
+        row.id: (row.meat_proxy_lead, row.meat_proxy_hands)
         for row in conn.execute(
-            select(t.human.c.id, t.human.c.meat_proxy).where(
+            select(t.human.c.id, t.human.c.meat_proxy_lead, t.human.c.meat_proxy_hands).where(
                 t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
             )
         )
     }
     peers = []
     areas = []
+    own_view: dict[str, Any] = {"covering": []}
     for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
-        if row.id != mine.id:
+        if row.id == mine.id:
+            own_view = view
+        else:
             peers.append(
                 {
                     "member_id": view["id"],
@@ -370,7 +375,9 @@ def _packet(
                     # Write to a human in their language (§5.2, §6.2).
                     **({"language": view["language"]} if "language" in view else {}),
                     **(
-                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                        meat_proxy_view(*meat_proxies[view["id"]])
+                        if view["kind"] == "human"
+                        else {}
                     ),
                 }
             )
@@ -434,7 +441,11 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
+            "owner": {
+                "id": owner.id,
+                "handle": owner.handle,
+                **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+            },
             "git_identity": git_identity(agent),
         },
         "membership": {
@@ -450,7 +461,7 @@ def _packet(
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
-            "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "covering": own_view["covering"],  # whom it covers (§6.12)
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
@@ -668,20 +679,27 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def human_action(conn: Connection) -> idempotency.Outcome:
         if "paused" in given:
             raise invalid({"paused": "agents_only"})
-        if body.meat_proxy is None:
+        parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
+        if body.meat_proxy is None and all(v is None for v in parts.values()):
             raise invalid({"meat_proxy": "required"}, "nothing to change")
+        if body.meat_proxy is False and any(parts.values()):
+            raise invalid(
+                {"meat_proxy": "conflicts_with_parts"}, "off, and a part on, in one request"
+            )
         assert caller.human_id is not None
-        conn.execute(
-            update(t.human)
-            .where(t.human.c.id == caller.human_id)
-            .values(meat_proxy=body.meat_proxy)
-        )
+        # §5.2, "Meat proxy": the switch first (it sets both parts), then each part given.
+        row = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+        state = {"meat_proxy_lead": row.meat_proxy_lead, "meat_proxy_hands": row.meat_proxy_hands}
+        if body.meat_proxy is not None:
+            state = {name: body.meat_proxy for name in state}
+        state |= {name: value for name, value in parts.items() if value is not None}
+        conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**state))
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )
 
     def action(conn: Connection) -> idempotency.Outcome:
-        if "meat_proxy" in given:
+        if given & {"meat_proxy", "meat_proxy_lead", "meat_proxy_hands"}:
             raise humans_only("only a human sets their own profile")
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
