@@ -191,3 +191,21 @@ def test_hide_and_remove_notify_every_owner_of_the_organisation(
             ).all()
         )
     assert owners == sorted([world["boss"].id, world["second"].id])
+
+
+def test_while_suspended_its_archived_projects_cannot_be_reopened_or_made_public(
+    world: dict[str, Any], migrated: Engine
+) -> None:
+    boss = world["boss"]
+    id_ = filed(world)
+    assert resolve(world, id_, "suspend").status_code == 200
+    reopen = boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"})
+    held(reopen)
+    held(boss.patch(f"/projects/{PROJECT}", {"policy": {"swarm_public": "on"}, "reason": "show"}))
+    assert boss.get(f"/projects/{PROJECT}").json()["state"] == "archived"
+    # lifted, the owners change what they want: nothing was restored by the lifting
+    assert resolve(world, id_, "dismiss").status_code == 200
+    assert boss.get(f"/projects/{PROJECT}").json()["state"] == "archived"
+    again = boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"})
+    assert again.status_code == 200, again.text
+    assert boss.get(f"/projects/{PROJECT}").json()["state"] == "build"

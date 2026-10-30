@@ -957,6 +957,10 @@ def _refuse_against_a_hold(
     removed one stays archived, until an instance admin lifts the hold. Only what this
     PATCH turns on is refused: a surface left as it was blocks no other policy change."""
     found = moderation.hold(conn, "project", project.id)
+    if found is None and project.owner_org_id is not None:
+        # The suspension of the organisation that owns it holds its projects the way `remove`
+        # does (§16.8): archived, and nothing public turned on, until the hold is lifted.
+        found = moderation.hold(conn, "org", project.owner_org_id)
     if found is None:
         return
     current = policy.of(project)
@@ -964,7 +968,7 @@ def _refuse_against_a_hold(
         new_policy[k] != off and new_policy[k] != current[k] for k, off in PUBLIC_OFF.items()
     ):
         raise moderation.held()
-    if state_changes and found.action == "remove":
+    if state_changes and found.action in ("remove", "suspend"):
         raise moderation.held()
 
 
