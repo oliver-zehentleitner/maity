@@ -120,9 +120,12 @@ inbox, the answer with `go` and `no`, the position and read flag in the notifica
 export, the withdrawal on deletion), and each of these places had to learn only that a request
 may have no project.
 
-The title and summary of an invitation are stored in English, in the request, whatever language the invited human reads: they are the request's own text, written when the invitation is filed
-and then fixed like any request's, not a text the hub renders for the reader (a notification's title, which `notifications.md` has follow the human's language). Rendering them per reader would need the
-language of the invited human at read time and a template per kind of request, which the personal requests of agents do not have either.
+The title and summary of an invitation are stored in English, in the request, whatever language the
+invited human reads: they are the request's own text, written when the invitation is filed and then
+fixed like any request's, not a text the hub renders for the reader (a notification's title, which
+`notifications.md` has follow the human's language). Rendering them per reader would need the
+language of the invited human at read time and a template per kind of request, which the personal
+requests of agents do not have either.
 
 **Rejected alternatives:**
 - A table of its own for organisation requests with its own routes: it would repeat the answer,
@@ -224,3 +227,58 @@ what lets it undo exactly that and nothing a person did themselves.
   rules (trust, areas, the member list, `reports_to`) all work on memberships.
 - Ending every owner's membership when they stop being an owner: it would remove seats they held
   before, or kept for another reason.
+
+## A transfer into an organisation is a consent to each of its owners, and organisation rows are locked before the project's on every path
+
+**Id:** bb7a0295-8aa2-4ec8-abfb-85eefd18d5f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §6.25, §6.26 "Transfer into and out of an organisation"; the coordinator's ruling of 2026-10-29 on the card tsk-whe4wv1jpsae
+**Revisit when:** a transfer may name a person by a handle, or the project route and the personal route of requests become one
+
+`project_names.transfer` takes `to` as a human or an organisation. An owner of the project's
+organisation (or the namespace owner of a human's project) transfers; an `owner` of the receiving
+organisation speaks for it and the move happens in the call (`200` with the project, no request), as
+does an owner's hand-over of an organisation's project to themselves; an `admin` files a personal
+`consent` request with both `project` and `org` to each owner of the organisation (`routes.requests.
+file_org_consent`), and the first owner's `go` moves it (`project_names.settle`), withdrawing the
+others. The `go` is checked again in the move's transaction: the answerer still an owner, the one who
+started it still an owner or admin of the organisation, the organisation not deleted, else
+`transfer_stale`. The one who started it withdraws every request through the project route's
+withdrawal (the one case where it reaches a personal request); an owner's own withdrawal counts as
+their `no` and closes theirs alone. At the move `org_projects.moved` ends the seats the hub kept for
+the sending organisation's owners, except for an owner of both and for a receiving human (whose seat
+becomes an ordinary one), and makes the receiving organisation's owners owners.
+
+Every route that can end in such a move locks the organisation rows first, in the order of their
+ids, and the project after: the transfer route (the organisation that owns the project and the one it
+goes to), the personal answer (`_locked_personal`: the request's organisation and the one named in its
+proposal) and the project route's answer and withdrawal (the owning organisation).
+
+**Reason:** the contract makes the owners of an organisation the ones who speak for it, and an admin
+speaks only for themselves, so the owners are asked one by one and the first yes settles it; a
+single request to the organisation as a whole would need a rule for who may answer. The lock order is
+the one §6.26 fixes ("the organisation's row is always locked before any project's"), kept by every
+path so that a promotion, a transfer and an account deletion never wait on each other.
+
+Who has no role in the receiving organisation gets `400 to: unknown`, not `403 org_role`, as one who
+names an organisation that does not exist: otherwise the transfer would tell that an organisation with
+this id exists. Only a `member` of it, who knows it, gets `org_role`. `owner_org_id` is read before
+the locks (`membership()`), so after `lock_project` the routes check that the owning organisation is
+still the one they locked and stop with `409 project_moved` if it is not; the other order (the new
+organisation after the project) would break the organisation-then-project rule.
+
+**Rejected alternatives:**
+- `403 org_role` for every non-owner of the receiving organisation: a way to find which organisations exist.
+- Locking the organisation again after the project, or the project before the organisations: both
+  break the order that keeps a promotion, a transfer and a deletion from waiting on each other.
+- One consent request for the organisation, answered by any owner: the request would have no
+  addressee to count it in an inbox, and a refusal by one owner would close it for the others.
+- Letting the project route answer the personal requests: it is the personal inbox's route, and the
+  project must not tell anyone else that such a request exists (§7).
+
+**Known limit (until part 4):** the repository's confirmation (`POST …/repository/confirm`) and the
+forge grants of a project of an organisation, the project's public page and its About still need the
+namespace owner as a human, so for a project of an organisation they fail closed; the owners' own
+confirmation with `confirmed_by` (§11.4) comes with the instance's forge work.

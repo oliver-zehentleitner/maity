@@ -106,10 +106,10 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
     """`human_id` is no owner of the project's organisation any more: the membership the hub
     created ends as a removal does, one it raised returns to its earlier trust, and one
     that held trust `owner` of its own stays."""
+    lock_project(conn, project.id)  # first, then read, as `keep_owner` does
     found = _membership(conn, project.id, human_id)
     if found is None or found.org_keep is None:
         return
-    lock_project(conn, project.id)
     if found.org_keep == "created":
         from maity_hub.routes.members import Change, apply_remove
 
@@ -152,4 +152,35 @@ def release_in_all(conn: Connection, org_id: str, human_id: str) -> None:
 def keep_all_owners(conn: Connection, org_id: str, project: Any) -> None:
     """A project was created in or moved into the organisation: every owner of it."""
     for human_id in owners_of(conn, org_id):
+        keep_owner(conn, project, human_id)
+
+
+def moved(
+    conn: Connection,
+    project: Any,
+    sending: str | None,
+    receiving: str | None,
+    receiving_human: str | None,
+) -> None:
+    """A project moved from the namespace of `sending` (an organisation, or None for a human)
+    to `receiving` (an organisation) or to `receiving_human`: the memberships the hub kept
+    for the sending organisation's owners end, except for an owner of both organisations (only
+    the reason changes) and for the receiving human, whose membership becomes an ordinary one
+    that keeps trust `owner`; the receiving organisation's owners are made owners."""
+    lost = [h for h in (owners_of(conn, sending) if sending else []) if h != receiving_human]
+    gained = set(owners_of(conn, receiving)) if receiving else set()
+    for human_id in lost:
+        if human_id not in gained:
+            release_owner(conn, project, human_id)
+    if receiving_human is not None and sending is not None:
+        conn.execute(
+            update(t.membership)
+            .where(
+                t.membership.c.project_id == project.id,
+                t.membership.c.human_id == receiving_human,
+                t.membership.c.active.is_(True),
+            )
+            .values(org_keep=None, org_keep_trust=None)
+        )
+    for human_id in sorted(gained):
         keep_owner(conn, project, human_id)

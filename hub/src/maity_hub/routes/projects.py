@@ -886,8 +886,20 @@ def transfer_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        # The organisations' rows before the project's, in the order of their ids (§6.26): the
+        # one that owns it now, and the one it goes to.
+        wanted = {mine.project.owner_org_id, body.to if body.to.startswith("org-") else None}
+        for org_id in sorted(i for i in wanted if i is not None):
+            orgs.lock(conn, org_id)
         mine = replace(mine, project=lock_project(conn, mine.project.id))
+        if mine.project.owner_org_id != found_owner:  # moved meanwhile: its new owner is unlocked
+            raise orgs.project_moved()
         request_id = project_names.transfer(conn, mine, caller, body.to)
+        if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
+            return idempotency.Outcome(
+                200, "project", mine.project.id, load_project(conn, mine.project.id, request)
+            )
         return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
