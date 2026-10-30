@@ -9087,7 +9087,7 @@ are the same filter for a cursor.
 **The item.**
 
 ```json
-{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "to": "trust:admin",
+{ "id": "evt-4240", "seq": 4240, "type": "blocker", "from": "agt-b", "from_instance": "wqe2", "to": "trust:admin",
   "task_id": "tsk-0004", "body": "CI on main has been red since #212 …",
   "sent_at": "2026-10-21T13:41:20Z",
   "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
@@ -9096,7 +9096,10 @@ are the same filter for a cursor.
   "redacted": false, "redaction": null }
 ```
 
-`from` is the actor's member id, `sent_at` the event's `at`; `to`,
+`from` is the actor's member id, `from_instance` the id of the agent
+instance that wrote it (`actor.instance`, §6.17) — `null` for a human
+and for a message the hub wrote without an instance — as a conversation's
+messages carry it (§9); `sent_at` the event's `at`; `to`,
 `task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
