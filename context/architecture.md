@@ -108,20 +108,20 @@ no consumer.
 - Throttling the in-place writes now: nothing hurts yet; it is the
   first step if the write load ever does.
 
-## Production moves to OVHcloud Frankfurt; today's Vultr system becomes the test system
+## Production moves to OVHcloud Paris; today's Vultr system becomes the test system
 
 **Id:** c25a9dd5-38bf-4782-95c2-7be341221b6f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision, 2026-10-30, on card tsk-4ee6s3ch3kp3 (the plan and its details are the ops agent's proposal in `docs/ops/ovh-prod.md`, not yet approved)
-**Revisit when:** the plan's region check shows that Frankfurt lacks Managed PostgreSQL, or the maintainer chooses a Standard-plan region over Frankfurt
+**Source:** the maintainer's decisions, 2026-10-30, on card tsk-4ee6s3ch3kp3: OVHcloud for production, then Paris with the Standard plan instead of Frankfurt on the Free plan (the plan and its details are the ops agent's proposal in `docs/ops/ovh-prod.md`, not yet approved)
+**Revisit when:** the order form shows that Paris lacks Business-plan Managed PostgreSQL, or the 3-AZ region's volume and node-pool behaviour does not fit the single-pod hub
 **See:** architecture.md#runs-on-kubernetes-in-production-and-starts-locally-with-docker-or-plain-python — 4713ab88-72a2-408b-9625-87345628eb5a — as of 2026-10-30
 
 The single k3s VM on Vultr, which was the first dogfooding production,
 becomes the test system and deploys from `main` continuously. A new
-production on OVHcloud (Frankfurt, managed Kubernetes and managed
-PostgreSQL outside the cluster) is prepared for the launch and deploys
+production on OVHcloud (Paris, a 3-AZ region, Standard-plan managed
+Kubernetes and managed PostgreSQL outside the cluster) is prepared for the launch and deploys
 tagged releases, about once a day. The same Helm chart serves both; only
 the values differ.
 
@@ -131,6 +131,8 @@ that has run on test with the same chart and the same migrations before
 production sees it.
 
 **Alternatives:**
+- Frankfurt on the Free plan: no SLA (99.5 % SLO) and a single zone, which
+  the maintainer did not accept for the launch.
 - Keep one environment: every merge would reach real users, and the
   migrations would be tried first on production data.
 - Managed Kubernetes with PostgreSQL in the cluster: leaves the backups
