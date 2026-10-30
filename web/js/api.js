@@ -1011,6 +1011,12 @@ window.Maity = window.Maity || {};
     });
   }
 
+  // §16.5: the limits per human as the fixture hub holds them.
+  const limitsSetting = {
+    max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
+    max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
+  };
+
   const PRESETS = {
     hierarchical: {
       claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "trust:admin",
@@ -1596,6 +1602,28 @@ window.Maity = window.Maity || {};
       });
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
       return agent;
+    }],
+    // §16.5 Limits per human: the value and its source (§16.2), the humans at it;
+    // null restores the default, "unlimited" is no limit, an integer 1–10000.
+    ["GET", /^\/admin\/settings\/limits$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return JSON.parse(JSON.stringify(limitsSetting));
+    }],
+    ["PATCH", /^\/admin\/settings\/limits$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const fields = {};
+      const defaults = { max_agents_per_human: 100, max_orgs_per_human: 5 };
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "humans_at_limit" || k === "humans_at_org_limit") fields[k] = "read_only";
+        else if (!(k in defaults)) fields[k] = "extra_forbidden";
+        else if (limitsSetting[k].source === "env") fields[k] = "set_by_environment";
+        else if (!(v === null || v === "unlimited" || (Number.isInteger(v) && v >= 1 && v <= 10000))) fields[k] = "invalid";
+      });
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      Object.entries(body).forEach(([k, v]) => {
+        limitsSetting[k] = v === null ? { value: defaults[k], source: "default" } : { value: v, source: "admin" };
+      });
+      return JSON.parse(JSON.stringify(limitsSetting));
     }],
     // §16.4 Registration: the settings with their sources, what is missing, the
     // accounts that wait and lifting a block, for the instance admin.
