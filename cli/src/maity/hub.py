@@ -36,7 +36,6 @@ class HubError(Exception):
         self.status = status
         self.details: dict[str, Any] = {}
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
-        self.request: tuple[str, str, str] | None = None  # base, method, path of a signed call
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -303,7 +302,7 @@ class JoinResult:
     member_id: str | None
     project: str | None
     hub: str | None
-    instance: str | None = None  # `Maity-Instance` (§6.17); absent from a hub before instances
+    instance: str  # `Maity-Instance` (§6.17)
 
 
 def _exchange(
@@ -339,7 +338,9 @@ def exchange(url: str, code: str, timeout: float = 30.0, client: str = CLIENT) -
         member_id=facts.get("Maity-Member-Id"),
         project=facts.get("Maity-Project"),
         hub=facts.get("Maity-Hub"),
-        instance=facts.get("Maity-Instance"),
+        # Never a HubError here: the code is spent, so a missing header reaches the caller as
+        # "" and `_instance_dir` refuses it with the credential rescued.
+        instance=facts.get("Maity-Instance", ""),
     )
 
 
@@ -503,7 +504,6 @@ class Client:
                     return handle(response)
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
-                err.request = (self.base, method, full_path)
                 server = _parse_server_time(err.details.get("server_time"))
                 if err.code == "timestamp_skew" and attempt == 1 and server is not None:
                     self.clock_offset = server - time.time()
@@ -525,34 +525,3 @@ class _SinkFailed(Exception):
 def _json(response: Any) -> Any:
     answer: bytes = response.read()
     return json.loads(answer) if answer else None
-
-
-def _segments(path: str) -> list[str | None]:
-    """`path` without the API prefix, split at `/`; a `{parameter}` becomes None."""
-    path = path.partition("?")[0].removeprefix(API).strip("/")
-    return [None if p.startswith("{") and p.endswith("}") else p for p in path.split("/")]
-
-
-def offers(base: str, method: str, path: str, timeout: float = 30.0) -> bool | None:
-    """Whether the hub's `openapi.json` (§4) lists `method` on a route that `path` fits, a
-    concrete path such as `/projects/acme/tasks/tsk-1/notes` or a template. None when the
-    document cannot be read: a 404 alone does not tell a hub without the route from a
-    mistyped id, and without the document the 404 stands as it is."""
-    try:
-        spec = json.loads(get_text(f"{base}{API}/openapi.json", timeout=timeout))
-    except (HubError, ValueError):
-        return None
-    paths = spec.get("paths") if isinstance(spec, dict) else None
-    if not isinstance(paths, dict):
-        return None
-    wanted = _segments(path)
-    for route, operations in paths.items():
-        if not isinstance(route, str) or not isinstance(operations, dict):
-            continue
-        have = _segments(route)
-        fits = len(have) == len(wanted) and all(
-            a is None or b is None or a == b for a, b in zip(have, wanted, strict=True)
-        )
-        if fits and method.lower() in operations:
-            return True
-    return False

@@ -228,3 +228,33 @@ def test_between_two_organisations_an_owner_of_both_keeps_their_seat(
         "only-second",
     }  # only-first's seat ended, only-second joined
     assert all(m["org_owner"] for m in after.values())
+
+
+def test_deleting_the_organisation_withdraws_the_transfers_into_it(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    from tests.test_orgs import delete_org
+
+    boss = flow.human(make_client, migrated, "boss")
+    org = make_org(boss, "oz-team", "OZ Team")
+    add_member(migrated, org["id"], owner.id, "admin")
+    flow.project(owner, "shop")
+    assert transfer(owner, "maintainer/shop", org["id"]).status_code == 202
+    assert len(consents(boss)) == 1
+    assert delete_org(boss, "oz-team", "oz-team").status_code == 204
+    assert consents(boss) == []
+    with migrated.connect() as conn:
+        [closed] = conn.execute(select(t.request.c.status, t.request.c.withdraw_reason)).all()
+    assert tuple(closed) == ("withdrawn", "org_deleted")
+    assert owner.get("/projects/maintainer/shop").json()["owner"]["id"] == owner.id
+
+
+def test_a_project_of_an_organisation_is_renamed_under_the_organisations_lock(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    org, _ = team(make_client, migrated, owner)
+    flow.project(owner, "shop")
+    assert transfer(owner, "maintainer/shop", org["id"]).status_code == 200
+    renamed = owner.patch("/projects/oz-team/shop", {"slug": "store", "reason": "new name"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["full_name"] == "oz-team/store"

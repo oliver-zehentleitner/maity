@@ -855,7 +855,8 @@ sessions that simply work a while before each limit.
 
 **Id:** 2718b0d9-cf5b-4758-9fca-a143fafce1d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8d425d7d-6b2f-4af0-92e1-d1bc9b1a10cd
 **Evidence:** confirmed
 **Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23
 **Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
@@ -876,6 +877,34 @@ it would be told to `maity wait` under a runner that already wakes it.
 **Rejected alternatives:**
 - A `--supervisor` flag on `maity resume`, carried by the start prompt:
   it depends on the agent typing it, and a compaction loses it.
+
+## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
+
+**Id:** 8d425d7d-6b2f-4af0-92e1-d1bc9b1a10cd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23; the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
+**Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
+
+`adapters.launch` puts `MAITY_SUPERVISOR=maity-runner/<version>` into every
+session's environment, beside `MAITY_PLACEMENT` and `GIT_COMMON_DIR`.
+`maity resume` sends it as `supervisor` when it is set. A value that is
+not a runner's name is a usage error. A hub that refuses the field fails
+the resume (commands.md aba45d60).
+
+**Reason:** the agent runs its own `maity resume`, so the runner cannot
+put the field into that call itself. The environment reaches every
+command of the session without the agent having to do anything. A flag
+would be one more thing the agent has to type correctly in every
+session, and an agent that forgot it would be treated as unsupervised:
+it would be told to `maity wait` under a runner that already wakes it.
+
+**Rejected alternatives:**
+- A `--supervisor` flag on `maity resume`, carried by the start prompt:
+  it depends on the agent typing it, and a compaction loses it.
+- Resuming without the field when a hub refuses it (2718b0d9): it
+  served hubs from before §15.11, which no longer exist.
 
 ## The allowlists are no boundary in `single`; in `agent_user` the OS user separates the runner from the agents, not the agents from each other
 

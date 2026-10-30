@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sqlalchemy import Connection, delete, func, insert, select, update
+from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
 from maity_hub import avatars, clock, handle_register, namespace, paths
 from maity_hub import tables as t
@@ -125,6 +125,78 @@ def mine(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .order_by(t.org.c.created_at, t.org.c.id)
     ).all()
     return [view(conn, r, r.role) for r in rows]
+
+
+def admin_list(
+    conn: Connection, q: str | None, suspended: bool | None, after: str | None, limit: int
+) -> tuple[list[dict[str, Any]], bool]:
+    """The organisations of the instance for `GET /admin/orgs` (§16.10), by handle after
+    `after`: `limit` of them and whether more follow. A deleted one is not listed;
+    `suspended` is a hold of `suspend` standing on it."""
+    o = t.org.c
+    hold = (
+        select(t.moderation_hold.c.report_id)
+        .where(
+            t.moderation_hold.c.target_type == "org",
+            t.moderation_hold.c.target_id == o.id,
+            t.moderation_hold.c.action == "suspend",
+        )
+        .exists()
+    )
+    query = select(t.org).where(o.deleted_at.is_(None))
+    if q is not None:
+        query = query.where(
+            or_(
+                func.lower(o.handle).contains(q.lower(), autoescape=True),
+                func.lower(o.display_name).contains(q.lower(), autoescape=True),
+            )
+        )
+    if suspended is not None:
+        query = query.where(hold if suspended else ~hold)
+    if after is not None:
+        query = query.where(o.handle > after)
+    rows = conn.execute(query.order_by(o.handle).limit(limit + 1)).all()
+    page = rows[:limit]
+    ids = [r.id for r in page]
+    owners: dict[str, list[str]] = {i: [] for i in ids}
+    for row in conn.execute(
+        select(t.org_member.c.org_id, t.human.c.handle)
+        .join(t.human, t.human.c.id == t.org_member.c.human_id)
+        .where(t.org_member.c.org_id.in_(ids), t.org_member.c.role == "owner")
+        .order_by(t.human.c.handle)
+    ):
+        owners[row.org_id].append(row.handle)
+    projects = {
+        row.owner_org_id: int(row.n)
+        for row in conn.execute(
+            select(t.project.c.owner_org_id, func.count().label("n"))
+            .where(t.project.c.owner_org_id.in_(ids))
+            .group_by(t.project.c.owner_org_id)
+        )
+    }
+    held = {
+        row.target_id
+        for row in conn.execute(
+            select(t.moderation_hold.c.target_id).where(
+                t.moderation_hold.c.target_type == "org",
+                t.moderation_hold.c.target_id.in_(ids),
+                t.moderation_hold.c.action == "suspend",
+            )
+        )
+    }
+    items = [
+        {
+            "id": r.id,
+            "handle": r.handle,
+            "display_name": r.display_name,
+            "created_at": ts(r.created_at),
+            "owners": owners[r.id],
+            "projects": projects.get(r.id, 0),
+            "suspended": r.id in held,
+        }
+        for r in page
+    ]
+    return items, len(rows) > limit
 
 
 def members(conn: Connection, org_id: str) -> list[dict[str, Any]]:
@@ -352,7 +424,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
     with them, its open invitations are withdrawn, the row stays with `deleted_at` and its
     handle stays taken for good (§6.26). Only while it owns no project that is not archived:
     `namespace_owner`, naming them; an archived one stays archived under its name."""
-    from maity_hub import org_invitations, org_projects
+    from maity_hub import org_invitations, org_projects, project_names
 
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
@@ -365,6 +437,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
             {"projects": sorted(namespace.full_names(conn, open_projects).values())},
         )
     org_invitations.withdraw_all(conn, org.id, "org_deleted")
+    project_names.withdraw_into(conn, org.id, "org_deleted")  # nothing moves into a deleted one
     owners = org_projects.owners_of(conn, org.id)
     # The members go first: the `member_updated` of a seat that ends must not say `org_owner`.
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))

@@ -4953,7 +4953,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pmGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(text(main).includes("Only the messages among the project's latest 5000 events are shown") && text(main).includes("No project messages yet."),
+  expect(text(main).includes("Only messages within the hub's latest 5000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
   win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
@@ -6440,6 +6440,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(mpItems) === JSON.stringify([["Manage on Members", "#/maintainer/maity/members?manage=agt-b"], ["Manage on Agents", "#/maintainer/maity/agents/agt-b"]]),
     "member page: Actions only leads to where each action is done, Members for an admin, Agents for the owner " + JSON.stringify(mpItems));
   const mpTabs = main.querySelectorAll("nav.member-tabs a");
+  // Activity: their events in the window the project's messages read, newest first, the window said.
+  expect(text(main.querySelector(".member-section")).startsWith("What they did in this project, newest first"),
+    "member page: Activity says what it lists, without a count of the project's events it cannot know");
   expect(mpTabs.map((a) => text(a)).join() === "Activity,Cards,Briefing,Sessions & credentials" && mpTabs[0].getAttribute("aria-current") === "page"
     && mpTabs[1].getAttribute("href") === "#/maintainer/maity/members/agt-b/cards", "member page: four tabs, Activity first and current");
   await go("#/maintainer/maity/members/agt-b/cards"); for (let k = 0; k < 6; k++) await tick();
@@ -6961,13 +6964,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 413, p, "payload_too_large")) : leSize(p, b));
   await leSave();
   expect(text(main).includes("the draft is larger than the hub takes in one request (512 KiB)"), "landing editor: a draft over the request cap is said in words");
-  // A field's own limit: in its hint, and with the hub's too_long at it.
+  // A field's own limit: in its hint, and with the hub's invalid at it.
   const lmHint = byId("lp-pages-en-sections-3-markdown").parentNode.querySelector(".hint");
   expect(lmHint && text(lmHint).endsWith("At most 16 KiB."), "landing editor: a Markdown field says its limit");
-  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "pages.en.sections.3.markdown": "too_long" } })) : leSize(p, b));
-  await leSave();
-  expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "too long: at most 16 KiB", "landing editor: too long names the field's limit");
   win.Maity.api.patch = leSize;
+  byId("lp-pages-en-sections-3-markdown").value = "x".repeat(16385); byId("lp-pages-en-sections-3-markdown").dispatch("input");
+  await leSave();
+  expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "empty, or longer than allowed (at most 16 KiB)",
+    "landing editor: the hub's invalid at a landing field names the field's limit (the hub sends invalid, never too_long, §16.7)");
   byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
   // A second language, made the default, and the page shown to visitors.

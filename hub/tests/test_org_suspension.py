@@ -276,3 +276,24 @@ def test_nothing_moves_out_of_a_suspended_organisation(
         )
     )
     assert boss.get(f"/projects/{PROJECT}").json()["owner"]["id"] == world["org"]["id"]
+
+
+def test_the_admin_list_shows_a_suspension_and_filters_by_it(
+    world: dict[str, Any], migrated: Engine, make_client: ClientFactory
+) -> None:
+    admin = world["admin"]
+    make_org(flow.human(make_client, migrated, "other"), "calm-team", "Calm Team")
+
+    def listed(**query: Any) -> list[tuple[str, bool]]:
+        got = admin.get("/admin/orgs", params=query)
+        assert got.status_code == 200, got.text
+        return [(i["handle"], i["suspended"]) for i in got.json()["items"]]
+
+    assert listed() == [("calm-team", False), ("oz-team", False)]
+    id_ = filed(world)
+    assert resolve(world, id_, "suspend").status_code == 200
+    assert listed() == [("calm-team", False), ("oz-team", True)]
+    assert listed(suspended="true") == [("oz-team", True)]
+    assert listed(suspended="false") == [("calm-team", False)]
+    assert resolve(world, id_, "dismiss").status_code == 200
+    assert listed(suspended="true") == []
