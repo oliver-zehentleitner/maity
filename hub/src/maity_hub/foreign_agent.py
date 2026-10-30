@@ -25,7 +25,9 @@ from maity_hub.events import Actor, lock_project
 from maity_hub.views import principal_id
 
 KIND = "foreign_agent_change"
-FIELDS = ("trust", "role", "areas", "capabilities", "briefing", "availability_policy")
+# `role_base` goes with `role` (a role change sets both, §2.3): it waits for the owner too, but
+# the summary names the role only.
+FIELDS = ("trust", "role", "role_base", "areas", "capabilities", "briefing", "availability_policy")
 SHOWN = 300  # characters of one value in the request's summary
 
 
@@ -87,6 +89,8 @@ def _summary(
         f"to change your agent {handle}:"
     ]
     for field, proposed in wanted.items():
+        if field == "role_base":
+            continue
         if field == "paused":
             current = target.paused_reason if target.paused_since is not None else None
             current_text = "not paused" if target.paused_since is None else _shown(current)

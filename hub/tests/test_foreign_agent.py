@@ -74,21 +74,30 @@ def test_a_change_of_another_owners_agent_waits_for_its_owner(
     assert body["title"].startswith("Change ") and " in " in body["title"]
     assert "role:" in body["summary"] and "areas:" in body["summary"] and "→" in body["summary"]
     now = _row(migrated, lent)
-    assert (now.role, now.areas) == (before.role, before.areas)  # nothing on the call
+    # nothing on the call, the role's base included: no scope or audience moves before the go
+    assert (now.role, now.role_base, now.areas) == (before.role, before.role_base, before.areas)
+    with migrated.connect() as conn:
+        assert not [
+            e
+            for e in conn.execute(select(t.event).where(t.event.c.kind == "member_updated"))
+            if e.payload["id"] == lent
+        ]  # no member_updated either
     [pending] = _requests(migrated)
     assert pending.personal is True and pending.to_human == friend.id
     assert [r["id"] for r in friend.get("/requests").json()["items"]] == [pending.id]
     done = answer(friend, pending.id, "go")
     assert done.status_code == 200, done.text
     changed = _row(migrated, lent)
-    assert (changed.role, changed.areas) == ("reviewer", ["web/"])
+    assert (changed.role, changed.role_base, changed.areas) == ("reviewer", "reviewer", ["web/"])
     with migrated.connect() as conn:
         updates = [
             e
             for e in conn.execute(select(t.event).where(t.event.c.kind == "member_updated"))
-            if e.payload["id"] == lent and e.payload["role"] == "reviewer"
+            if e.payload["id"] == lent
         ]
-    assert len(updates) == 1  # one member_updated for the whole change
+    assert (
+        len(updates) == 1 and updates[0].payload["role"] == "reviewer"
+    )  # one for the whole change
 
 
 def test_a_no_or_a_withdrawal_changes_nothing(
@@ -98,7 +107,7 @@ def test_a_no_or_a_withdrawal_changes_nothing(
     lent = _lent(migrated, friend)
     first = put(owner, lent, role="reviewer").json()["id"]
     assert answer(friend, first, "no").status_code == 200
-    assert _row(migrated, lent).role != "reviewer"
+    assert (_row(migrated, lent).role, _row(migrated, lent).role_base) == ("coder", "coder")
     second = put(owner, lent, role="reviewer").json()["id"]
     withdrawn = owner.post(f"{PROJECT}/requests/{second}/withdraw", {"reason": "changed my mind"})
     assert withdrawn.status_code == 200, withdrawn.text
