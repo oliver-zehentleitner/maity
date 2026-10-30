@@ -66,8 +66,10 @@ window.MAITY_I18N["en"] = {
   "device.approval.approving": "Approving…",
   "device.approval.choices": "The number the device shows",
   "device.approval.claims": "Says it is {browser} on {os}",
+  "device.approval.claims_browser": "Says it is {browser} on an unknown system",
   "device.approval.claims_label": "Claims",
   "device.approval.claims_nothing": "Says nothing we could read about its browser",
+  "device.approval.claims_os": "Says it is an unknown browser on {os}",
   "device.approval.deny": "Deny",
   "device.approval.denying": "Denying…",
   "device.approval.entered": "Entered the code",
@@ -75,8 +77,6 @@ window.MAITY_I18N["en"] = {
   "device.approval.pick": "Pick the number it shows. None of these, or no number on it? Deny.",
   "device.approval.sent": "What it sent",
   "device.approval.title": "Approve this device?",
-  "device.approval.unknown_browser": "an unknown browser",
-  "device.approval.unknown_os": "an unknown system",
   "device.approval.warning": "Only approve a device you are holding now.",
   "device.approval.wrong_number": "That was not the number it shows, so the code is denied. If the device is yours, make a new code.",
   "device.approved.as": "Signing you in as {name} @{handle}",
@@ -90,14 +90,8 @@ window.MAITY_I18N["en"] = {
   "device.expires": "Expires in {time}.",
   "device.mail.address": "Your address",
   "device.mail.check": "Check your mail",
-  "device.mail.code": {
-    "one": "The one-digit code",
-    "other": "The six-digit code"
-  },
-  "device.mail.digits": {
-    "one": "the code in the mail has one digit",
-    "other": "the code in the mail has six digits"
-  },
+  "device.mail.code": "The {count}-digit code",
+  "device.mail.digits": "the code in the mail has {count} digits",
   "device.mail.no_match": "that code does not match",
   "device.mail.send": "Email me a sign-in link",
   "device.mail.sent": "If this address belongs to an account, a link is on its way. Open it here, or enter the code from the mail.",
