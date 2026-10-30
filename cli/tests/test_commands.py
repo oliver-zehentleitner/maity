@@ -757,6 +757,23 @@ def test_api_accepts_a_query_in_the_path(
     }
 
 
+def test_api_prints_an_answer_in_text_as_it_came(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rules = "# Rules for maity\n\nRules version 7.\n"
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/rules")] = lambda seen: (200, rules)
+    assert cli.main(["api", "GET", "/projects/oliver/maity/rules"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == rules
+
+
+def test_api_prints_nothing_for_an_empty_answer(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("DELETE", "/api/v1/orgs/acme")] = lambda seen: (204, b"")
+    assert cli.main(["api", "DELETE", "/orgs/acme"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == ""
+
+
 def test_api_refuses_a_fragment(joined: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["api", "GET", "/projects/oliver/maity/tasks#x"]) == cli.EXIT_ERROR
     assert "fragment" in capsys.readouterr().err

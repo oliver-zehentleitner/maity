@@ -113,11 +113,12 @@ class ProjectClient(hub.Client):
         timeout: float | None = None,
         raw: bytes | None = None,
         content_type: str | None = None,
+        text: bool = False,
     ) -> Any:
         path = _renamed(path, self.renamed)
         started = time.monotonic()
         try:
-            return super().call(method, path, query, body, timeout, raw, content_type)
+            return super().call(method, path, query, body, timeout, raw, content_type, text)
         except hub.HubError as exc:
             if exc.code != "not_found" or self.moved is None:
                 raise
@@ -126,7 +127,7 @@ class ProjectClient(hub.Client):
             left = None if timeout is None else timeout - (time.monotonic() - started)
             if moved is None or (left is not None and left <= 0):
                 raise
-            return super().call(method, moved, query, body, left, raw, content_type)
+            return super().call(method, moved, query, body, left, raw, content_type, text)
 
 
 def _renamed(path: str, renamed: dict[str, str]) -> str:
@@ -2724,11 +2725,19 @@ def cmd_api(args: argparse.Namespace) -> int:
         # The owner's go names the body by the hash of its bytes (§2.3): sent as read, never
         # re-serialised, so the bytes `maity ask --action-body` stored are the bytes sent.
         result = session.client.call(
-            args.method, args.path, query=query, raw=data, content_type="application/json"
+            args.method,
+            args.path,
+            query=query,
+            raw=data,
+            content_type="application/json",
+            text=True,
         )
     else:
-        result = session.client.call(args.method, args.path, query=query, body=body)
-    if result is not None:
+        result = session.client.call(args.method, args.path, query=query, body=body, text=True)
+    if isinstance(result, hub.Text):
+        # A route that answers Markdown or plain text (`…/rules`): printed as sent.
+        print(result.body, end="" if result.body.endswith("\n") else "\n")
+    elif result is not None:
         _print_json(result)
     return EXIT_OK
 
