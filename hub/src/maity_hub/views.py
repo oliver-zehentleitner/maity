@@ -713,7 +713,10 @@ def agent_view(
     shown = {
         "id": row.id,
         "handle": row.handle,
-        "aliases": handle_book.aliases(conn, [row.id])[row.id],  # §6.24
+        # §6.24; a tombstone keeps its aliases for the record, though they are free to take
+        "aliases": handle_book.aliases(conn, [row.id], include_retired=row.deleted_at is not None)[
+            row.id
+        ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this

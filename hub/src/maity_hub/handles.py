@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, delete, insert, select, update
+from sqlalchemy import Connection, delete, insert, select, true, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, mentions, paths
@@ -37,8 +37,12 @@ def scope_of(owner_id: str | None) -> str:
     return HUMANS if owner_id is None else owner_id
 
 
-def aliases(conn: Connection, ids: Iterable[str]) -> dict[str, list[str]]:
-    """Per id its aliases, oldest first (the order the handles were given up); `[]` for none."""
+def aliases(
+    conn: Connection, ids: Iterable[str], *, include_retired: bool = False
+) -> dict[str, list[str]]:
+    """Per id its aliases, oldest first (the order the handles were given up); `[]` for none.
+    A deleted profile's aliases are retired (`live` NULL, they left its owner's scope): only
+    the tombstone's own view asks for them, which keeps them for the record (§6.3, §6.24)."""
     wanted = set(ids)
     found: dict[str, list[str]] = {i: [] for i in wanted}
     if not wanted:
@@ -47,7 +51,7 @@ def aliases(conn: Connection, ids: Iterable[str]) -> dict[str, list[str]]:
         select(t.handle_alias.c.human_id, t.handle_alias.c.agent_id, t.handle_alias.c.handle)
         .where(
             (t.handle_alias.c.human_id.in_(wanted)) | (t.handle_alias.c.agent_id.in_(wanted)),
-            t.handle_alias.c.live.is_(True),
+            true() if include_retired else t.handle_alias.c.live.is_(True),
         )
         .order_by(t.handle_alias.c.id)
     )

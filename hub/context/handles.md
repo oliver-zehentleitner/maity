@@ -14,7 +14,8 @@
 profiles alike. Its `scope` is where the handle is unique: `human` for every
 human, the owner's id for an owner's profiles. A deleted profile's aliases get
 `live` NULL, as the profile itself does, so that the same owner may take the
-handle and its aliases again at once (§6.3). Whether a name is taken is one
+handle and its aliases again at once (§6.3); the tombstone's own view still lists
+them, for the record (§6.24). Whether a name is taken is one
 question for every path that gives a handle (`handles.ensure_free`): the
 current handle, an alias, or an active placement that will create a profile
 with it.
@@ -32,8 +33,8 @@ see inside it, so two ids could hold the same alias.
 **Id:** ddfd0481-7a0a-4ebd-8a33-fc5e5c2787e1
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** the plan reported to the coordinator for the card, 2026-10-28 (it named an instance-wide lock for humans and was approved); the implementation, same day
+**Evidence:** confirmed
+**Source:** the plan reported to the coordinator for the card, 2026-10-28 (it named an instance-wide lock for humans and was approved); the coordinator's answer to the changed grain, 2026-10-29 ("better, same guarantee")
 **Revisit when:** a database shows lock waits on `handle_lock`, or handles get a third scope
 
 `handles.lock` takes the row `(scope, handle)` in `handle_lock` (made when
@@ -41,7 +42,7 @@ first asked for), after the renamed id's own row. Two claims of one handle in
 one scope run one after the other; renames of other handles never wait, and
 nothing reads under it. The plan said "instance-wide lock for humans"; this is
 the same guarantee with a finer grain, so a registration never waits for an
-unrelated rename. The coordinator has not been asked about the change of grain.
+unrelated rename. The coordinator was told of the change of grain and agreed.
 
 **Reason:** a unique constraint cannot span the handle column and the alias
 table, so the check "taken" needs a lock that both a rename and a creation

@@ -396,3 +396,16 @@ def test_a_null_handle_renames_nothing(make_client: ClientFactory, migrated: Eng
     profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
     refused = owner.patch(f"/agents/{profile['id']}", {"handle": None})
     assert refused.status_code == 400 and _fields(refused) == {"handle": "required"}
+
+
+def test_a_tombstone_keeps_listing_its_aliases_though_they_are_free(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
+    assert owner.patch(f"/agents/{profile['id']}", {"handle": "wasp"}).status_code == 200
+    assert owner.delete(f"/agents/{profile['id']}").status_code in (200, 204)
+    tomb = owner.get(f"/agents/{profile['id']}")
+    assert tomb.status_code == 200 and tomb.json()["aliases"] == ["bee"]
+    # The names are free for a new profile of the owner all the same (§6.3).
+    assert owner.post("/agents", {"handle": "bee", "display_name": "New"}).status_code == 201
