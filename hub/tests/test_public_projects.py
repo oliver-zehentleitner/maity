@@ -116,6 +116,8 @@ def test_editing_the_text_renders_the_page_again(
         ("a <script>alert(1)</script>", "line 1"),
         ("fine\n![an image](https://example.org/i.png)", "line 2"),
         ("a [link](javascript:alert(1))", "line 1"),
+        ("a \x00 null", "control_character"),
+        ("a \x07 bell", "control_character"),
     ],
 )
 def test_a_text_the_markdown_rules_refuse_is_invalid(

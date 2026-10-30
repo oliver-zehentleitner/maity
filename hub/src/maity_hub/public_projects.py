@@ -26,10 +26,12 @@ ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
 
 
 def about_problem(value: str) -> str | None:
-    """Why a `public_about` may not be stored: `too_long`, or the `line N` of the first line
-    the landing page's Markdown rules (§16.7) refuse; None when it is fine."""
+    """Why a `public_about` may not be stored: `too_long`, `control_character`, or the `line N`
+    of the first line the landing page's Markdown rules (§16.7) refuse; None when it is fine."""
     if len(value.encode()) > ABOUT_MAX_BYTES:
         return "too_long"
+    if landing.CONTROL.search(value):
+        return "control_character"
     return landing.markdown_problem(value)
 
 
