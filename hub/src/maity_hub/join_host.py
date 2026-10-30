@@ -30,7 +30,7 @@ _DROPPED = {b"cookie", b"authorization"}
 
 
 # The crawlers' two files belong to the public host: the join host does not have them.
-SEO_FILES = frozenset({"/robots.txt", "/sitemap.xml"})
+SEO_FILES = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 
 
 def hostname(host: str) -> str:
@@ -75,7 +75,7 @@ def route(scope: Scope, settings: Settings) -> Response | None:
     invited = INVITE_PATH.match(scope.get("path", ""))
     if invited and method == "GET":
         return RedirectResponse(f"{settings.public_url}/invite/{invited.group(1)}", status_code=302)
-    if method == "GET" and scope.get("path") in SEO_FILES:
+    if method == "GET" and SEO_FILES.fullmatch(scope.get("path", "")):
         return error_response(404, "not_found", "no such resource")  # §16.7
     if method == "GET":
         return RedirectResponse(f"{settings.public_url}/", status_code=302)

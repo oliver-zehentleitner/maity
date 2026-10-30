@@ -1,8 +1,9 @@
 """The landing page and the legal pages as static HTML (docs/api.md §16.7, §16.7.1).
 
-The hub renders them itself: no script, no image, one `<style>` element, so that the
-Content-Security-Policy of these documents can be `default-src 'none'; style-src
-'unsafe-inline'`. Everything the operator wrote is text: it is escaped, and the Markdown is
+The hub renders them itself. The legal pages carry one `<style>` element and no script
+(`default-src 'none'; style-src 'unsafe-inline'`); the landing page adds the hub's own
+stylesheet, fonts and script (`landing_files`), all the same for every instance and none of
+them needed to read it. Everything the operator wrote is text: it is escaped, and the Markdown is
 turned into elements by the small renderer below, which knows exactly the constructs the
 validator allows (`landing.markdown_problem`): headings, paragraphs, emphasis, lists, quotes,
 fenced code and links whose target passes `landing.safe_target`.
@@ -13,9 +14,10 @@ fenced code and links whose target passes `landing.safe_target`.
 from __future__ import annotations
 
 import re
-from html import escape
+from html import escape, unescape
 from typing import Any
 
+from maity_hub import landing_files
 from maity_hub.landing import FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
@@ -61,14 +63,15 @@ _BULLET = re.compile(r"^ {0,3}[-*+]\s+(.*)$")
 _NUMBER = re.compile(r"^ {0,3}\d{1,9}[.)]\s+(.*)$")
 
 
-def _link(text: str, target: str, *, me: bool = False) -> str:
+def _link(text: str, target: str, *, me: bool = False, ugc: bool = False) -> str:
     if not safe_target(target):  # the validator refused these; a stored page never has one
         return escape(text)
-    rel = "noopener me" if me else "noopener"
+    # A public page's words are its owner's, not the operator's: no endorsement (§16.9).
+    rel = "nofollow ugc" if ugc else "noopener me" if me else "noopener"
     return f'<a href="{escape(target, quote=True)}" rel="{rel}">{escape(text)}</a>'
 
 
-def inline(text: str) -> str:
+def inline(text: str, *, ugc: bool = False) -> str:
     out: list[str] = []
     last = 0
     for found in _INLINE.finditer(text):
@@ -77,14 +80,14 @@ def inline(text: str) -> str:
         if found["code"] is not None:
             out.append(f"<code>{escape(found['code'])}</code>")
         elif found["target"] is not None:
-            out.append(_link(found["text"] or found["target"], found["target"]))
+            out.append(_link(found["text"] or found["target"], found["target"], ugc=ugc))
         elif found["bare"] is not None:
             url = found["bare"]
             trailing = ""
             while url and url[-1] in ".,;:!?'\"":
                 trailing = url[-1] + trailing
                 url = url[:-1]
-            out.append(_link(url, url) + escape(trailing))
+            out.append(_link(url, url, ugc=ugc) + escape(trailing))
         elif found["strong"] is not None:
             out.append(f"<strong>{escape(found['strong'])}</strong>")
         else:
@@ -93,8 +96,9 @@ def inline(text: str) -> str:
     return "".join(out)
 
 
-def markdown(source: str) -> str:
-    """The HTML of a Markdown text; fenced code is text, a block is one element."""
+def markdown(source: str, *, ugc: bool = False) -> str:
+    """The HTML of a Markdown text; fenced code is text, a block is one element. With `ugc`
+    every link is `rel="nofollow ugc"`, as on the public pages (§16.9)."""
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     paragraph: list[str] = []
@@ -102,7 +106,7 @@ def markdown(source: str) -> str:
 
     def flush() -> None:
         if paragraph:
-            out.append("<p>" + inline("\n".join(paragraph)).replace("\n", "<br>") + "</p>")
+            out.append("<p>" + inline("\n".join(paragraph), ugc=ugc).replace("\n", "<br>") + "</p>")
             paragraph.clear()
 
     while index < len(lines):
@@ -128,7 +132,7 @@ def markdown(source: str) -> str:
         if heading:
             flush()
             level = len(heading.group(1))
-            out.append(f"<h{level}>{inline(heading.group(2))}</h{level}>")
+            out.append(f"<h{level}>{inline(heading.group(2), ugc=ugc)}</h{level}>")
             index += 1
             continue
         if _QUOTE.match(line):
@@ -137,14 +141,14 @@ def markdown(source: str) -> str:
             while index < len(lines) and (quote := _QUOTE.match(lines[index])):
                 quoted.append(quote.group(1))
                 index += 1
-            out.append("<blockquote>" + markdown("\n".join(quoted)) + "</blockquote>")
+            out.append("<blockquote>" + markdown("\n".join(quoted), ugc=ugc) + "</blockquote>")
             continue
         for pattern, tag in ((_BULLET, "ul"), (_NUMBER, "ol")):
             if pattern.match(line):
                 flush()
                 items: list[str] = []
                 while index < len(lines) and (item := pattern.match(lines[index])):
-                    items.append(f"<li>{inline(item.group(1))}</li>")
+                    items.append(f"<li>{inline(item.group(1), ugc=ugc)}</li>")
                     index += 1
                 out.append(f"<{tag}>" + "".join(items) + f"</{tag}>")
                 break
@@ -177,6 +181,10 @@ WORDS: dict[str, dict[str, str]] = {
         "privacy": "Privacy",
         "terms": "Terms",
         "preview": "Preview of an unsaved draft",
+        "theme": "Switch between the light and the dark theme",
+        "rings": "People and agents in three rings: you, your team, the community",
+        "you": "you",
+        "approve": "Approve",
     },
     "de": {
         "sign_in": "Anmelden",
@@ -197,6 +205,10 @@ WORDS: dict[str, dict[str, str]] = {
         "privacy": "Datenschutz",
         "terms": "Nutzungsbedingungen",
         "preview": "Vorschau eines ungespeicherten Entwurfs",
+        "theme": "Zwischen hellem und dunklem Farbschema wechseln",
+        "rings": "Menschen und Agenten in drei Ringen: du, dein Team, die Community",
+        "you": "du",
+        "approve": "Freigeben",
     },
 }
 LEGAL_ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}
@@ -238,7 +250,14 @@ border-radius:.5rem;border:1px solid var(--line)}
 
 
 def _document(
-    *, lang: str, title: str, description: str, head: str, body: str, languages: list[str]
+    *,
+    lang: str,
+    title: str,
+    description: str,
+    head: str,
+    body: str,
+    languages: list[str],
+    style: str = STYLE,
 ) -> str:
     alternates = "".join(
         f'<link rel="alternate" hreflang="{escape(tag)}" href="?lang={escape(tag)}">'
@@ -250,7 +269,7 @@ def _document(
         f'<!doctype html><html lang="{escape(lang)}"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{escape(title)}</title>{meta if description else ''}{head}{alternates}"
-        f"<style>{STYLE}</style></head><body>{body}</body></html>"
+        f"{f'<style>{style}</style>' if style else ''}</head><body>{body}</body></html>"
     )
 
 
@@ -258,44 +277,72 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     if not stats or key not in stats:
         return None
     value = stats[key]
+    label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
         if key in ("people_online", "agents_online"):
-            return f'<div class="stat"><b>&lt; {int(stats.get("online_floor", 5))}</b><span>{escape(words[key])}</span></div>'
+            return f'<div class="stat"><b>&lt; {int(stats.get("online_floor", 5))}</b>{label}</div>'
         return None
-    return f'<div class="stat"><b>{int(value)}</b><span>{escape(words[key])}</span></div>'
+    return f'<div class="stat"><b><span data-lp-count>{int(value)}</span></b>{label}</div>'
+
+
+def _button(cta: dict[str, Any], kind: str) -> str:
+    return (
+        f'<a class="btn {kind}" href="{escape(cta["href"], quote=True)}">{escape(cta["label"])}</a>'
+    )
+
+
+def _wrap(index: int, classes: str, inner: str, extra: str = "") -> str:
+    return (
+        f'<section id="s{index}" class="{classes}"{extra}><div class="wrap">{inner}</div></section>'
+    )
+
+
+def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
+    """The terminal's lines are `d1`…, the inbox item follows the fourth, the rest after it
+    (`landing.css` times them); everything is in the HTML, so that without script the end
+    state shows (§16.7)."""
+    lines = section["terminal_lines"]
+    rows = []
+    for position, line in enumerate(lines):
+        step = position + 1 if position < 4 else position + 2  # `d5` is the inbox item
+        rows.append(
+            f'<li class="d{step} {escape(line["kind"])}" data-kind="{escape(line["kind"])}">'
+            f"{escape(line['text'])}</li>"
+        )
+    inbox = ""
+    if section.get("inbox"):
+        item = section["inbox"]
+        context = f'<p class="context">{escape(item["context"])}</p>' if item.get("context") else ""
+        inbox = (
+            '<div class="inbox-item card d5" data-lp-inbox>'
+            f'<div class="from">{escape(item["from"])}</div>'
+            f'<p class="question">{escape(item["question"])}</p>{context}'
+            f'<span class="yes" aria-hidden="true">{escape(words["approve"])}</span></div>'
+        )
+    steps = "".join(
+        f'<li class="step s{n}"><h3>{escape(step["title"])}</h3><p>{escape(step["text"])}</p></li>'
+        for n, step in enumerate(section["steps"], start=1)
+    )
+    lead = f'<p class="lead">{escape(section["subline"])}</p>' if section.get("subline") else ""
+    inner = (
+        f'<h2>{escape(section["title"])}</h2>{lead}<div class="demo-grid"><div>'
+        f'<ol class="term" data-lp-terminal>{"".join(rows)}</ol>{inbox}</div>'
+        f'<ol class="steps3">{steps}</ol></div>'
+    )
+    return _wrap(index, "section demo", inner, " data-lp-demo")
 
 
 def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: Any) -> str:
     kind = section["type"]
-    anchor = f' id="s{index}"'
     title = section.get("title")
     heading = f"<h2>{escape(title)}</h2>" if title else ""
     if kind == "hero":
-        parts = []
-        if section.get("eyebrow"):
-            parts.append(f'<p class="eyebrow">{escape(section["eyebrow"])}</p>')
-        parts.append(f"<h1>{escape(section['title'])}</h1>")
-        if section.get("subline"):
-            parts.append(f'<p class="sub">{escape(section["subline"])}</p>')
-        buttons = [("btn primary", section["cta_primary"])]
-        if section.get("cta_secondary"):
-            buttons.append(("btn", section["cta_secondary"]))
-        parts.append(
-            "<p>"
-            + " ".join(
-                f'<a class="{cls}" href="{escape(cta["href"], quote=True)}">{escape(cta["label"])}</a>'
-                for cls, cta in buttons
-            )
-            + "</p>"
-        )
-        if section.get("note"):
-            parts.append(f'<div class="note">{markdown(section["note"])}</div>')
-        return f"<section{anchor}><div class=\"wrap\">{''.join(parts)}</div></section>"
+        return ""  # drawn with the header, in the dark zone
     if kind == "stats":
         cells = [c for c in (_counter(stats, k, words) for k in section["items"]) if c]
         if not cells:
             return ""
-        return f'<section{anchor}><div class="wrap"><div class="stats">{"".join(cells)}</div></div></section>'
+        return _wrap(index, "section", f'<div class="stats">{"".join(cells)}</div>')
     if kind == "steps":
         items = "".join(
             '<li class="card"><h3>{}</h3><p>{}</p>{}</li>'.format(
@@ -305,10 +352,10 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             )
             for item in section["items"]
         )
-        return f'<section{anchor}><div class="wrap">{heading}<ol class="cards">{items}</ol></div></section>'
+        return _wrap(index, "section", f'{heading}<ol class="grid3">{items}</ol>')
     if kind == "scales":
         cards = "".join(
-            '<li class="card"><span class="tag">{}</span><h3>{}</h3><p>{}</p>{}</li>'.format(
+            '<article class="card"><span class="tag">{}</span><h3>{}</h3><p>{}</p>{}</article>'.format(
                 escape(item["tag"]),
                 escape(item["title"]),
                 escape(item["text"]),
@@ -320,24 +367,71 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             )
             for item in section["items"]
         )
-        return f'<section{anchor}><div class="wrap">{heading}<ul class="cards">{cards}</ul></div></section>'
+        return _wrap(
+            index, "section section-alt scales", f'{heading}<div class="scales-grid">{cards}</div>'
+        )
+    if kind == "demo":
+        return _demo(index, section, words)
+    if kind == "opensource":
+        lead = (
+            f'<div class="lead">{markdown(section["markdown"])}</div>'
+            if section.get("markdown")
+            else ""
+        )
+        tiles = "".join(
+            f'<div class="tile card"><h3>{escape(tile["title"])}</h3><p>{escape(tile["text"])}</p></div>'
+            for tile in section["tiles"]
+        )
+        links = "".join(
+            f'<a class="btn btn-secondary" href="{escape(link["href"], quote=True)}">{escape(link["label"])}</a>'
+            for link in section.get("links", [])
+        )
+        return _wrap(
+            index,
+            "section section-alt",
+            f'{heading}{lead}<div class="tiles">{tiles}</div>'
+            + (f'<div class="links">{links}</div>' if links else ""),
+        )
     if kind == "faq":
         rows = "".join(
             f"<details><summary>{escape(item['q'])}</summary>{markdown(item['a'])}</details>"
             for item in section["items"]
         )
-        return f'<section{anchor}><div class="wrap">{heading}{rows}</div></section>'
+        return _wrap(index, "section", f'{heading}<div class="faq">{rows}</div>')
     if kind == "cta_band":
         text = f"<p>{escape(section['text'])}</p>" if section.get("text") else ""
-        cta = section["cta"]
-        button = f'<a class="btn primary" href="{escape(cta["href"], quote=True)}">{escape(cta["label"])}</a>'
         return (
-            f'<section{anchor}><div class="wrap"><div class="band"><h2>{escape(section["title"])}</h2>'
-            f"{text}<p>{button}</p></div></div></section>"
+            f'<section id="s{index}" class="band dz"><div class="wrap cta-band">'
+            f'{landing_files.svg("band-loader.svg")}<div><h2>{escape(section["title"])}</h2>'
+            f'{text}{_button(section["cta"], "btn-primary")}</div></div></section>'
         )
     if kind == "text":
-        return f'<section{anchor}><div class="wrap">{heading}{markdown(section["markdown"])}</div></section>'
+        return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
+
+
+def _hero(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
+    parts = []
+    if section.get("eyebrow"):
+        parts.append(f'<p class="eyebrow">{escape(section["eyebrow"])}</p>')
+    parts.append(f"<h1>{escape(section['title'])}</h1>")
+    if section.get("subline"):
+        parts.append(f'<p class="sub">{escape(section["subline"])}</p>')
+    buttons = [_button(section["cta_primary"], "btn-primary")]
+    if section.get("cta_secondary"):
+        buttons.append(_button(section["cta_secondary"], "btn-secondary"))
+    parts.append(f'<div class="cta">{"".join(buttons)}</div>')
+    if section.get("note"):
+        parts.append(f'<div class="note">{markdown(section["note"])}</div>')
+    rings = (
+        landing_files.svg("hero-rings.svg")
+        .replace("{label}", escape(words["rings"], quote=True))
+        .replace("{you}", escape(words["you"]))
+    )
+    return (
+        f'<section id="s{index}" class="hero dz"><div class="wrap"><div>{"".join(parts)}</div>'
+        f'<div class="hide-m">{rings}</div></div></section>'
+    )
 
 
 def landing_document(
@@ -349,7 +443,12 @@ def landing_document(
     stats: dict[str, Any] | None,
     preview: bool = False,
 ) -> str:
-    """The landing page in `lang` (a missing field falls back to the default language's page)."""
+    """The landing page in `lang` (a missing field falls back to the default language's page).
+
+    Its look is the hub's own code (`landing_assets/`, §16.7, "Progressive enhancement"): the
+    stylesheet and the fonts it names, a script that only adds motion and the theme switch, and
+    the design's pictures inline. Every word of the operator's is escaped text; the page reads
+    completely without the script and without the stylesheet."""
     pages: dict[str, Any] = setting["pages"]
     default = pages.get(setting["default_language"]) or next(iter(pages.values()))
     page = pages.get(lang) or default
@@ -358,31 +457,83 @@ def landing_document(
     nav = "".join(
         f'<a href="#s{i}">{escape(s["title"])}</a>'
         for i, s in sections
-        if s["type"] in ("steps", "scales", "faq") and s.get("title")
+        if s["type"] in ("steps", "scales", "demo", "opensource", "faq") and s.get("title")
     )
-    hero = next((s for _, s in sections if s["type"] == "hero"), None)
-    cta = (
-        f'<a class="btn primary" href="{escape(hero["cta_primary"]["href"], quote=True)}">'
-        f'{escape(hero["cta_primary"]["label"])}</a>'
-        if hero
+    hero = next(((i, s) for i, s in sections if s["type"] == "hero"), None)
+    cta = _button(hero[1]["cta_primary"], "btn-primary") if hero else ""
+    banner = (
+        f'<div class="preview-note"><div class="wrap">{escape(words["preview"])}</div></div>'
+        if preview
         else ""
     )
-    banner = (
-        f'<div class="wrap"><p class="note">{escape(words["preview"])}</p></div>' if preview else ""
-    )
     header = (
-        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>'
-        f'<nav>{nav}</nav><a href="/login">{escape(words["sign_in"])}</a>{cta}</div></header>'
+        '<header class="site-header dz"><div class="wrap">'
+        f'<a class="brand" href="/">{landing_files.svg("mark.svg")}Maity</a>'
+        f'<nav class="site-nav">{nav}</nav>'
+        f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+        f'aria-label="{escape(words["theme"], quote=True)}">◐</button>'
+        f'<a class="signin" href="/login">{escape(words["sign_in"])}</a>{cta}</div></header>'
     )
-    main = "<main>" + "".join(_section(i, s, words, stats) for i, s in sections) + "</main>"
-    footer = _footer(setting, words, legal, lang, list(pages))
+    body = "".join(
+        _hero(i, s, words) if s["type"] == "hero" else _section(i, s, words, stats)
+        for i, s in sections
+    )
+    footer = _landing_footer(setting, words, legal, lang, list(pages))
+    sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
+    head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
+    if sheet:
+        head += f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">'
+    if script:
+        head += f'<script src="{escape(script, quote=True)}" defer></script>'
     return _document(
         lang=lang,
         title=page["title"],
         description=page.get("description") or "",
-        head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">',
-        body=banner + header + main + footer,
+        head=head,
+        body=banner + header + f"<main>{body}</main>" + footer,
         languages=list(pages),
+        style="" if sheet else STYLE,
+    )
+
+
+def _landing_footer(
+    setting: dict[str, Any],
+    words: dict[str, str],
+    legal: dict[str, Any],
+    lang: str,
+    tags: list[str],
+) -> str:
+    links = []
+    for key, address in LEGAL_ADDRESS.items():
+        if legal["pages"].get(key):
+            links.append(f'<a href="/{address}">{escape(words[key])}</a>')
+    footer = setting["footer"]
+    parts = []
+    if footer.get("operator"):
+        parts.append(f"<p>{escape(footer['operator'])}</p>")
+    social = "".join(
+        _link(
+            item["label"],
+            item["href"],
+            me="mastodon" in item["label"].lower() or "/@" in item["href"],
+        )
+        + " "
+        for item in footer.get("social", [])
+    )
+    switch = (
+        " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
+        if len(tags) > 1
+        else ""
+    )
+    row = (
+        "".join(links)
+        + f'<a href="/login">{escape(words["sign_in"])}</a>'
+        + f'<a href="/register">{escape(words["register"])}</a>'
+    )
+    return (
+        f'<footer class="site-footer"><div class="wrap"><p>{row}</p>{"".join(parts)}'
+        f'{"<p>" + social + "</p>" if social else ""}{"<p>" + switch + "</p>" if switch else ""}'
+        "</div></footer>"
     )
 
 
@@ -473,4 +624,30 @@ def legal_document(
         head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">',
         body=body,
         languages=languages,
+    )
+
+
+# --- a public page (§16.9) --------------------------------------------------------------------
+
+DESCRIPTION_MAX = 160
+_TAG = re.compile(r"<[^>]*>")
+
+
+def text_of(html: str) -> str:
+    """The text of rendered HTML, one space between its words."""
+    return " ".join(unescape(_TAG.sub(" ", html)).split())
+
+
+def page_document(*, lang: str, title: str, canonical: str, content: str) -> str:
+    """A public page: its own `<title>`, a `<meta name="description">` from the first 160
+    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9).
+    `content` is the HTML of the page's body, already made of escaped text and elements."""
+    description = text_of(content)[:DESCRIPTION_MAX]
+    return _document(
+        lang=lang,
+        title=title,
+        description=description,
+        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">',
+        body=f'<main class="wrap">{content}</main>',
+        languages=[],
     )

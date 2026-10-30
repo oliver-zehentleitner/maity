@@ -497,8 +497,8 @@ instance admin set, one row per name (`mail.host`, `sign_in.device_code`);
 no row means the environment's value or the default. Every name has an
 entry in the registry of `maity_hub.instance_settings`, which its section
 fills with a validator and a default; a write checks against it, and a
-stored row without an entry (left over after a downgrade or a rename) is
-ignored and logged, never served. Whether the environment wins is
+stored row without an entry is not read: every read names its fields, and a
+rename of a name is a migration of its row. Whether the environment wins is
 decided in one place, `instance_settings.effective`. A secret the admin
 may set (today only the SMTP password, §16.2) is never a setting: it has
 its own registry and lives sealed with `maity_hub.secretbox` in
@@ -527,6 +527,9 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+- Ignoring and logging a stored row that has no registry entry (left over after a
+  downgrade or a rename): removed with the alpha clean-up; no read asks for a
+  name it does not know, and a rename of a name is a migration of its row.
 
 ## A database error is logged with a category of its cause, never with the driver's text
 
@@ -723,3 +726,68 @@ stays is still dropped on its own, once no foreign key needs it.
 - Dropping the foreign key first, then the indexes, then the table:
   three steps for what `drop_table` does in one, and on SQLite a
   foreign key goes only through `batch_alter_table`.
+
+## A card is written in one shape by a migration, and no read branch carries the old one
+
+**Id:** 87be2d15-0c4d-4292-b9dd-e713b0df3de6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up of the card tsk-wgg2t8ngx9xg (the maintainer's alpha rule: no compatibility layers), migration `0101`
+**Revisit when:** a column is added that older rows cannot have, and a default is cheaper than a backfill
+
+Two shapes of older cards were read through a branch of their own: a card reported before `0022` had
+`report` but no `reported_instances`, and a contract made before §6.8 named a place had no `path` and
+`section`. Migration `0101` writes both once: the instance of the report becomes the one entry of the list,
+and a contract without a place gets `path: docs/api.md` and `section: null`. `_reporters`,
+`cards.refuse_same_team_review`, `views.view_contract`, the comparison in the card's `PATCH` and
+`contract_text.read_contract` read the stored value as it is. The downgrade is deliberately empty: the full
+shape is also readable by the older code, so there is nothing to undo. §6.8 fixes the default place for the
+input only, so storing it changes no answer and is neutral to the contract.
+
+**Reason:** a default applied while reading is a second way to the same value, which the next reader of
+the code takes for a rule and every new writer has to keep in step; a backfill moves the knowledge of what
+an old card looked like into one migration that can be deleted with the others.
+
+**Rejected alternatives:**
+- Keeping the read branches: each would stay as a way to get an old shape back, and the clean-up would have
+  to be found again by the next survey.
+- Filling the defaults in a database default or a view: the card's JSON is not a column with a default, and
+  three databases do not share a JSON default.
+
+## A new migration is named by its time, and its author re-chains it onto main's head
+
+**Id:** c711af32-3678-406c-ac57-7a4fb3b3179f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-0p4p41g163y8 (the maintainer's go: collision-free ids, a re-chain tool, a CI check; existing numbers stay); `maity_hub.db.revision_id`, `tools/rechain.py`, the `rechain.py --check` step in `.github/workflows/ci.yml`
+**Revisit when:** pull requests with migrations are merged one at a time by a merge queue that rebases them, so no branch ever sees main move under it
+**See:** https://github.com/oliver-zehentleitner/maity — 65a9b523-fa1f-4f1f-966c-4f49a2660343 — as of 2026-10-30
+
+Migrations were numbered `0001_…` by hand, and the lead kept the order of the open pull requests in a
+text file: every branch made while another migration was open had to take a number and a
+`down_revision` from that list, and re-chain by hand when the order changed. `make revision` now names a
+new migration by the UTC second and its slug (`20261030102512_add_the_tasks`, cut to the 32 characters of
+`alembic_version.version_num`), so two branches never take the same id. Their `down_revision` can still
+point at the same head; after merging `origin/main` the author runs `make rechain`, which sets the one new
+migration's `down_revision` to main's head, and CI fails on two heads with that instruction. The numbered
+files stay as they are: renaming them would rewrite `alembic_version` in every database.
+
+This replaces the rule in 65a9b523 (`context/process.md`): numbers reserved in advance and a merge order
+set by the coordinator.
+
+**Limits:** the tool chains exactly one new migration; a branch with two orders them by hand, the first on
+main's head and the second on the first, or is split. The CI check runs on the pull request's merge
+checkout at the time of its run: a pull request that was green before another migration reached main turns
+red only on its next run, so the check does not replace a fresh CI run before the merge.
+
+The choice is the maintainer's (confirmed); the reasons below against the alternatives are inferred from the
+work they would take, not stated.
+
+**Rejected alternatives:**
+- A reservation on the hub that hands out the next number: a migration would depend on a running hub and a
+  network call while writing it, and a reserved number abandoned with its branch would leave a gap or a
+  second release step; the order between two open branches is still only known at merge time.
+- Keeping the numbers and the hand-kept queue: it is the work this replaces — each reorder changed several
+  branches, and a number taken twice was found only when the second branch merged.

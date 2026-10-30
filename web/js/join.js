@@ -154,9 +154,9 @@ window.Maity = window.Maity || {};
     const fillRoles = () => {
       const wanted = role.value || "coder";
       const offered = own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      append(clear(role), offered.map((r) => h("option", { value: r }, r)));
-      role.value = offered.includes(wanted) ? wanted : "coder";
+      M.trust.fillRoles(role, offered, wanted, "coder");
     };
+    const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", fillRoles);
     fillRoles();
     const reportsTo = h("select", { id: "join-reports" },
@@ -342,7 +342,7 @@ window.Maity = window.Maity || {};
         newFields,
         instanceBox,
         membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, "Trust"), trust)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role, roleHelp)),
         own ? membershipField(h("p", { class: "hint field wide" }, "It reports to you. An admin gives it areas and capabilities later."))
           : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
             membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas))],

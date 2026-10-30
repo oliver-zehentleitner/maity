@@ -113,3 +113,37 @@ call on an old chain.
 **Rejected alternative:** pass the existing membership as `member` in a
 join, which also runs the cycle check and changed the answer of an
 existing test (`cycle` before `differs_from_membership`).
+
+## An agent's owner moves its `reports_to` on a path of their own, only to nobody or to a member they own
+
+**Id:** 4a7342a5-50d1-4d38-bc6b-daa38413efd1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 ("A human may always set the `reports_to` of an agent they own to null or to a member they own … whether or not they are a member of the project. Nothing else of the membership opens to them this way"); spq4's finding on #754 (seq 16437); the card tsk-fw3x5c13vq9g from the coordinator, 2026-10-30
+**Revisit when:** the contract settles a cross-owner target or the withdrawal of an open cross-owner `reports_to` request (§6.2), or the cross-owner consent flow exists in the hub
+**See:** manager.md#a-managers-pause-is-marked-by-a-column-not-by-paused_by — 8040236c-b8c0-41f2-b37c-47838835b447 — as of 2026-10-30
+
+`PATCH …/members/{id}` has the owner's path `_owner_sets_reports_to` before the ordinary rules, as
+`_owner_lifts_line_pause` has: the caller is a human who owns the agent profile of the target, the body
+is exactly `{reports_to}`, and the value is `null` or a member the caller owns (themselves, or another of
+their agents in the project). Anything else falls through to the ordinary rules, so another owner's member
+is `forbidden` (`members:admin`) for a member and `not_found` for someone outside the project, and a caller
+who holds `members:admin` is left to the admin's own path. What the path checks and does is an admin's:
+`not_a_member` (naming oneself while outside the project), `guest`, `cycle`, `too_deep`; the `line_consent`
+of the old edge ends; `member_updated`. A member of the project gets the member view, an owner outside it
+`204` and nothing of the project (§1.3).
+
+Withdrawing an open cross-owner request is not built: the hub has no such request yet (the
+consent flow of §6.2 is its own work; `line_consent` has no API), so there is nothing to withdraw.
+
+**Reason:** an owner should not need `members:admin` in a project to hang their own agent under
+themselves or another of theirs, and an owner outside the project has no membership to get it from;
+the contract opens exactly this and nothing else. A path of its own keeps the admin's rules untouched
+and makes "nothing else opens" a property of the shape of the body.
+
+**Rejected alternatives:**
+- Letting any owner name any member: that is the cross-owner edge, which needs the other side's consent
+  (§6.2); the contract keeps it out.
+- Widening the ordinary path (`members:admin` OR owns the agent): the same call would then carry role,
+  trust and areas too, and "nothing else opens" would depend on every field's check.

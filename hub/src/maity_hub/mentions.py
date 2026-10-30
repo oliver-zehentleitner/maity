@@ -20,7 +20,8 @@ from bisect import bisect_right
 from collections.abc import Iterable
 from typing import Any, NamedTuple
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, or_, select
+from sqlalchemy.orm import aliased
 
 from maity_hub import instances
 from maity_hub import tables as t
@@ -245,7 +246,7 @@ def resolve(
             "a short handle names more than one member: use the global name",
             {"fields": {field: "ambiguous_mention"}, "mentions": shared},
         )
-    live = _active_instances(conn, memberships, {c.instance for c in found if c.instance})
+    known = _known_instances(conn, memberships, {c.instance for c in found if c.instance})
     handle_of = {m.member_id: m.handle for m in members}
     mentions = []
     for c in found:
@@ -256,8 +257,8 @@ def resolve(
                 hit[0],
                 None if hit[0] in current_human.values() else hit[1],
             )  # a human has no global name
-        if named is not None and c.instance is not None and (named[0], c.instance) not in live:
-            named = None  # not an active instance of that member: the whole text stays text
+        if named is not None and c.instance is not None and (named[0], c.instance) not in known:
+            named = None  # never an instance of that member: the whole text stays text
         if named is not None:
             mentions.append(
                 {
@@ -286,35 +287,64 @@ class _Candidate(NamedTuple):
     owners: set[str]  # an agent's owner's handle and aliases: the first half of its long form
 
 
-def _active_instances(
+def _known_instances(
     conn: Connection, memberships: dict[str, int], wanted: set[str]
 ) -> set[tuple[str, str]]:
-    """(member id, instance id) of the wanted ids that are live instances of these agent
-    members: a credential not revoked (§6.17)."""
+    """(member id, instance id) of the wanted ids that name an instance of these agent
+    members: one with a credential not revoked, or a replaced one, whose mention pings its
+    successor (§6.17, §8.2). A revoked instance nobody replaced is no instance here."""
     if not wanted or not memberships:
         return set()
     by_row = {row_id: member_id for member_id, row_id in memberships.items()}
+    successor = aliased(t.credential)
+    replaced = (
+        select(successor.c.id)
+        .where(
+            successor.c.membership_id == t.credential.c.membership_id,
+            successor.c.replaces == t.credential.c.instance,
+        )
+        .exists()
+    )
     rows = conn.execute(
         select(t.credential.c.membership_id, t.credential.c.instance).where(
             t.credential.c.membership_id.in_(list(by_row)),
             t.credential.c.instance.in_(wanted),
-            t.credential.c.revoked_at.is_(None),
+            or_(t.credential.c.revoked_at.is_(None), replaced),
         )
     )
     return {(by_row[r.membership_id], r.instance) for r in rows}
 
 
-def tokens(mentions: list[dict[str, Any]], members: Iterable[str]) -> list[str]:
+def tokens(
+    conn: Connection, project_id: str, mentions: list[dict[str, Any]], members: Iterable[str]
+) -> list[str]:
     """The audience tokens that ping `members` as these mentions name them: an instance
-    mention pings that instance only (`instance:<member>#<id>`), a mention of the
-    handle alone the team (`member:<id>`, woken by its wake rule, §8.2)."""
+    mention pings that instance only (`instance:<member>#<id>`; the instance that replaced
+    it when it was replaced, §8.2), a mention of the handle alone the team (`member:<id>`,
+    woken by its wake rule, §8.2)."""
     wanted = set(members)
     found = [
-        instances.token(m["member_id"], m.get("instance"))
+        instance_token(conn, project_id, m["member_id"], m.get("instance"))
         for m in mentions
         if m["member_id"] in wanted
     ]
     return list(dict.fromkeys(found))
+
+
+def instance_token(conn: Connection, project_id: str, member_id: str, instance: str | None) -> str:
+    """The token one mention pings: the team's `member:<id>` when no instance is named,
+    else the named instance resolved as an address in a `to` is (`instances.addressed`)."""
+    if instance is None:
+        return instances.token(member_id, None)
+    row = conn.execute(
+        # The active row: a member who was removed and joined again has two (§6.2).
+        select(t.membership.c.id).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.agent_id == member_id,
+            t.membership.c.active.is_(True),
+        )
+    ).scalar_one()
+    return instances.addressed(conn, row, member_id, instance, "mentions")
 
 
 def members(mentions: list[dict[str, Any]]) -> list[str]:

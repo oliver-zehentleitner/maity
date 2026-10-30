@@ -102,4 +102,9 @@ The asking instance is not stored. `asked_by.instance` and the audience of `requ
 **Rejected alternatives:**
 - An `asked_instance` column (the card's first idea) — a second copy of what `asked_session_id` already derives, with nothing it could answer that the derivation cannot.
 - Storing the resolved token in `to_instance` — loses the address as written (§8.2 keeps `payload.to` as written) and fixes the successor at filing time.
-- Moving a message's and a mention's address onto the same chain resolution in this change — not part of the card; today `require_active` refuses a replaced instance's address in a message `to`, which §6.17 and §8.2 do not say. Left to a follow-up the contract owner decides.
+- Moving a message's and a mention's address onto the same chain resolution in the same change — not part of that card; it followed as tsk-q7p3sz8df62q (`hub/context/instances.md`, f1486a50-2c5b-4f56-b19a-e57e2ce6ce4e).
+
+The list filter `GET …/requests?to=<member id>` matches a request addressed to that member
+and also one addressed to an instance of its team: the team reads the instance addresses, so a
+plain member id names them too (the coordinator's decision, 2026-10-30, on spq4's review of
+the instance-address change). `to=<member>#<id>` matches that address only, as written.

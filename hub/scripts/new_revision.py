@@ -1,4 +1,4 @@
-"""Autogenerate the next numbered migration: `make revision m="add tasks"`.
+"""Autogenerate a migration on the current head: `make revision m="add tasks"`.
 
 Runs the existing migrations on a scratch SQLite file and compares the result
 with the tables defined in `maity_hub`; the new revision lands in

@@ -23,7 +23,15 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, handle_register, handles, invitations, paths, registration
+from maity_hub import (
+    clock,
+    handle_register,
+    handles,
+    invitations,
+    paths,
+    public_pages,
+    registration,
+)
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -325,6 +333,7 @@ def approve(conn: Connection, row: Any, by: str) -> None:
     conn.execute(
         update(t.human).where(t.human.c.id == row.human_id).values(account_status="active")
     )
+    public_pages.touch(conn, "person", row.human_id, removal=False)
     conn.execute(
         update(t.account_registration)
         .where(t.account_registration.c.human_id == row.human_id)

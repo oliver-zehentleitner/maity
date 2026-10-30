@@ -257,7 +257,7 @@ def announce(
     rename also `changed: ["name"]` and an item for each of their agents' memberships, whose
     global name changed with it. The actor is the renaming human's member in that project,
     none where they are not a member."""
-    from maity_hub import ticker
+    from maity_hub import public_pages, public_people, ticker
     from maity_hub.events import emit
     from maity_hub.views import member_view
 
@@ -302,6 +302,8 @@ def announce(
         )
 
     column = t.membership.c.human_id if owner_id is None else t.membership.c.agent_id
+    if owner_id is None:  # the person's page is addressed by the handle (§16.9): render it again
+        public_pages.touch(conn, public_people.KIND, subject_id)
     shown = (old, new)
     if owner_id is not None:  # an agent is named by its global name (§6.3)
         owner_handle = _owner_handle(conn, owner_id)

@@ -162,10 +162,16 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* A header that is the bar alone (sign-in, an invitation, registration,
+   the landing page, the loader): as much room below it as above, where the
+   full header's rows of tabs would otherwise give it. */
+#header > .bar:only-child { padding-bottom: 10px; }
 /* The page's one h1: the product name, at the size of the header line. */
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
 /* The lockup, 28 px tall; the dark file where the page is dark (as the tokens above decide). */
 .brand-lockup { display: block; height: 28px; width: auto; }
+/* The lockup is the way home (js/app.js brandTitle): a link without underline, its focus ring round the lockup. */
+.brand-home { display: block; text-decoration: none; border-radius: 4px; }
 .brand-lockup.brand-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .brand-lockup.brand-light { display: none; }
@@ -248,6 +254,11 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
 .switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
 .project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+/* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
+.header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
+.header-link:hover { border-color: var(--accent); }
+.header-link-mark { flex: none; }
 .state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
@@ -1147,23 +1158,24 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .owner-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
 .owner-preferences .hint { flex-basis: 100%; margin: 0; }
 
-/* The swarm (js/swarm.js, §6.22): who is at work, the window's table; the
-   public page with initials instead of pictures. */
+/* The swarm (js/swarm.js, §6.22), a section of the Overview: who is at
+   work, the window's table. */
 .swarm-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
 .swarm-window button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
 .swarm-live { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 8px; }
 .swarm-member { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
 .swarm-holding { flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
-.swarm-initials { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); font-size: 0.7rem; font-weight: 600; }
 .swarm-per-day { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
 .swarm-per-day .sparkline { color: var(--accent); }
 .swarm-per-day .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* A section of the Overview (a grid item) never grows past its column:
+   the table scrolls sideways in its own box on a phone. */
+.swarm-body { min-width: 0; }
+.swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }
 .swarm-total th, .swarm-total td { font-weight: 600; }
-.swarm-public { max-width: 60rem; margin: 24px auto; display: grid; gap: 8px; }
-.bar .swarm-onward { margin-left: 12px; font-size: 0.9rem; }
 /* Project memory and its setup options (js/new-project.js, §6.21); the
    memory and the README badge in Project settings (js/app.js, §6.20). */
 .project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
@@ -1390,6 +1402,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-here h4 { margin: 0 0 4px; }
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
+/* Agents that stop listening, on the account (js/notify-settings.js). */
+.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings h3 { margin: 0; }
+.not-listening-settings button { justify-self: start; }
+/* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
+.my-nl { display: grid; gap: 6px; }
+.my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.my-nl input[type="number"] { max-width: 8rem; }
 
 /* A member's page (js/member-page.js): the breadcrumb, the header, the tabs. */
 .breadcrumb { margin: 4px 0 12px; font-size: 0.9rem; }
@@ -1414,3 +1434,25 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
   .member-head-actions { flex-direction: column; align-items: stretch; }
   .member-head-actions > * { width: 100%; }
 }
+
+/* The instance a chat message wakes (js/chat.js, §9.1), beside the heading. */
+.chat-instance { display: inline-flex; align-items: center; gap: 6px; }
+.chat-instance select { min-height: 28px; }
+.msg-to { white-space: nowrap; }
+
+/* A review result's facts (js/messages.js, §8.4): verdict, head, the places read. */
+.review { display: grid; gap: 4px; margin: 4px 0; }
+.review-head { margin: 0; }
+.review-cites { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 0.85rem; }
+.review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
+.review-quote { white-space: pre-wrap; }
+@media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
+
+/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
+.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
+
+/* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
+.meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
+.meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }

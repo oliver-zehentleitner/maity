@@ -26,9 +26,12 @@ from maity_hub import (
     ktw_skill,
     memory,
     mentions,
+    moderation,
     namespace,
     onboarding,
     preferences,
+    public_pages,
+    public_people,
     ranks,
     rules,
     setup_cards,
@@ -155,11 +158,25 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
+    public page (`public_profile`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     meat_proxy: StrictBool | None = None
     handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
+    meat_proxy_lead: StrictBool | None = None
+    meat_proxy_hands: StrictBool | None = None
+    public_profile: StrictBool | None = None
+    public_bio: str | None = None
+
+
+HUMAN_FIELDS = (
+    "meat_proxy",
+    "meat_proxy_lead",
+    "meat_proxy_hands",
+    "public_profile",
+    "public_bio",
+)
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -344,18 +361,21 @@ def _packet(
         )
     ).all()
     meat_proxies = {
-        row.id: row.meat_proxy
+        row.id: (row.meat_proxy_lead, row.meat_proxy_hands)
         for row in conn.execute(
-            select(t.human.c.id, t.human.c.meat_proxy).where(
+            select(t.human.c.id, t.human.c.meat_proxy_lead, t.human.c.meat_proxy_hands).where(
                 t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
             )
         )
     }
     peers = []
     areas = []
+    own_view: dict[str, Any] = {"covering": []}
     for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
-        if row.id != mine.id:
+        if row.id == mine.id:
+            own_view = view
+        else:
             peers.append(
                 {
                     "member_id": view["id"],
@@ -372,7 +392,9 @@ def _packet(
                     # Write to a human in their language (§5.2, §6.2).
                     **({"language": view["language"]} if "language" in view else {}),
                     **(
-                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                        meat_proxy_view(*meat_proxies[view["id"]])
+                        if view["kind"] == "human"
+                        else {}
                     ),
                 }
             )
@@ -436,7 +458,11 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
+            "owner": {
+                "id": owner.id,
+                "handle": owner.handle,
+                **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+            },
             "git_identity": git_identity(agent),
         },
         "membership": {
@@ -452,7 +478,7 @@ def _packet(
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
-            "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "covering": own_view["covering"],  # whom it covers (§6.12)
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
@@ -670,25 +696,58 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def human_action(conn: Connection) -> idempotency.Outcome:
         if "paused" in given:
             raise invalid({"paused": "agents_only"})
-        if body.meat_proxy is None and body.handle is None:
+        parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
+        public = {"public_profile", "public_bio"} & given
+        if (
+            body.meat_proxy is None
+            and all(v is None for v in parts.values())
+            and not public
+            and body.handle is None
+        ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
+        if body.meat_proxy is False and any(parts.values()):
+            raise invalid(
+                {"meat_proxy": "conflicts_with_parts"}, "off, and a part on, in one request"
+            )
         assert caller.human_id is not None
         if body.handle is not None:  # a human renames themselves (§6.24)
             done = handles.rename(conn, caller.human_id, None, body.handle)
             if done is not None:
                 handles.announce(conn, caller, caller.human_id, None, *done)
-        if body.meat_proxy is not None:
-            conn.execute(
-                update(t.human)
-                .where(t.human.c.id == caller.human_id)
-                .values(meat_proxy=body.meat_proxy)
-            )
+        values: dict[str, Any] = {}
+        # §5.2, "Meat proxy": the switch first (it sets both parts), then each part given.
+        if body.meat_proxy is not None or any(v is not None for v in parts.values()):
+            row = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            values = {
+                "meat_proxy_lead": row.meat_proxy_lead,
+                "meat_proxy_hands": row.meat_proxy_hands,
+            }
+            if body.meat_proxy is not None:
+                values = {name: body.meat_proxy for name in values}
+            values |= {name: value for name, value in parts.items() if value is not None}
+        if "public_profile" in given:
+            if body.public_profile is None:
+                raise invalid({"public_profile": "required"})
+            values["public_profile"] = body.public_profile
+            if body.public_profile:
+                # A hidden or removed profile stays so until an admin lifts the hold (§16.8).
+                moderation.refuse_held(conn, "profile", caller.human_id)
+        if "public_bio" in given:
+            problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
+            if problem is not None:
+                raise invalid({"public_bio": problem})
+            values["public_bio"] = body.public_bio or None  # an empty text clears it
+        if values:
+            conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
+        if public:
+            # Turning the page off or editing its text takes something off it: at once (§16.9).
+            public_pages.touch(conn, public_people.KIND, caller.human_id)
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )
 
     def action(conn: Connection) -> idempotency.Outcome:
-        if "meat_proxy" in given:
+        if any(field in given for field in HUMAN_FIELDS):
             raise humans_only("only a human sets their own profile")
         if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
             raise humans_only("only the owner of an agent profile renames its handle")

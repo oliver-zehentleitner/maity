@@ -195,11 +195,11 @@ def test_login_and_the_owner_part_of_a_project_address_follow_aliases(
         old = owner.get(f"/projects/maintainer/maity{path}")
         new = owner.get(f"/projects/boss/maity{path}")
         assert old.status_code == new.status_code == 200, (path, old.text)
-    # The public badge and swarm page keep their old address as well.
-    policy = {"policy": {"badge": "members", "swarm_public": "on"}, "reason": "show"}
+    # The public badge keeps its old address as well.
+    policy = {"policy": {"badge": "members"}, "reason": "show"}
     assert owner.patch("/projects/boss/maity", policy).status_code == 200
     public = make_client()
-    for prefix in ("/badge/{}/maity.svg", "/api/v1/swarm/{}/maity"):
+    for prefix in ("/badge/{}/maity.svg",):
         assert public.get(prefix.format("boss")).status_code == 200
         assert public.get(prefix.format("maintainer")).status_code == 200, prefix
     # And signs in: a handle, or an alias of it.

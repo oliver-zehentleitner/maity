@@ -14,4 +14,4 @@
     global name `<owner>/<handle>`, an organisation invitation by handle, the admin search,
     `maity-hub second-factor reset` and `maity-hub account unsuspend`. `ambiguous_mention`
     counts them.
-  - A rename is `member_updated` and a ticker item `rename`. Migration 0106 (chained on 0101).
+  - A rename is `member_updated` and a ticker item `rename`. Migration 0106 (chained on 0105).

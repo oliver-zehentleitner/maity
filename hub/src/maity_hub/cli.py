@@ -24,6 +24,7 @@ from maity_hub import (
     moderation,
     namespace,
     paths,
+    public_pages,
 )
 from maity_hub import tables as t
 from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
@@ -223,6 +224,8 @@ def _unsuspend(settings: Settings, handle: str) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        # A process without the app renders the page it brings back (docs: public-pages.md).
+        public_pages.configure(settings)
         with engine.begin() as conn:
             human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
             if human_id is None:
