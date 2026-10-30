@@ -132,6 +132,28 @@ def test_the_sweep_looks_at_a_project_with_a_page(
     assert URL in page(make_client)
 
 
+def test_a_repository_that_turned_private_leaves_the_page_even_when_another_read_fails(
+    make_client: ClientFactory,
+    migrated: Engine,
+    public: flow.Human,
+    github: FakeGitHub,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    github.answers["/repos/acme/maity"] = {"private": False}
+    probe.sweep(migrated, READER)
+    assert URL in page(make_client)
+
+    def down(*args: Any) -> None:
+        raise forge.ForgeUnavailableError("rate limited")
+
+    monkeypatch.setattr("maity_hub.probe.observe_release", down)
+    monkeypatch.setattr("maity_hub.probe.observe_links", down)
+    github.answers["/repos/acme/maity"] = {"private": True}
+    probe.sweep(migrated, READER)  # the round ends at the failed read, after the visibility
+    assert stored(migrated) is False
+    assert URL not in page(make_client)
+
+
 def test_the_forge_reads_the_repository_public_only_on_private_false(
     github: FakeGitHub,  # noqa: F811
 ) -> None:

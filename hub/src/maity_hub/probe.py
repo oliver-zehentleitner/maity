@@ -382,10 +382,10 @@ def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None
 
 
 def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
-    """One round: every report without an observation on an open card or one closed
-    within REPORT_WINDOW, then every open release. The round ends at the first read
-    the forge does not answer (down or rate-limited: the rest would fail alike) and
-    when `stop` is set."""
+    """One round: the visibility of every public page's repository, then every report
+    without an observation on an open card or one closed within REPORT_WINDOW, then every
+    open release. The round ends at the first of those reads the forge does not answer
+    (down or rate-limited: the rest would fail alike) and when `stop` is set."""
     since = clock.now() - REPORT_WINDOW
     with engine.connect() as conn:
         projects = conn.execute(
@@ -410,7 +410,13 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     order = _rotated(sorted(observable), "sweep")
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
     work += [(observe_links, (engine, fg, project_id)) for project_id in order]
-    work += [(observe_visibility, (engine, fg, project_id)) for project_id in order]
+    # A repository that turned private comes off a public page whatever else the forge refuses
+    # this round (§16.9): the visibility reads go first and never end the round, since a read
+    # the forge does not answer is stored as private.
+    for project_id in order:
+        if stop is not None and stop.is_set():
+            return
+        _guarded(observe_visibility, engine, fg, project_id)
     for job, args in work:
         if stop is not None and stop.is_set():
             return
