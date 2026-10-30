@@ -392,7 +392,7 @@ hands out instructions and a path, and the settings stay in
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
-(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the public pages
 and every reference shown outside the project. The namespace owner is
 a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
 the creator or the organisation it names; a slug is unique within that

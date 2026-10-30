@@ -5301,6 +5301,7 @@ already read; the page adds no new right and no new stored field.
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
+| swarm statistics | `GET /projects/{owner}/{slug}/swarm` (§6.22) | a section of the page for members: who is at work and the window counters; there is no Swarm tab |
 
 **Who sets the two links.** Neither link is a new setting.
 
@@ -6628,7 +6629,7 @@ implementation:* `memory`, `setup` with its cards, the packet's
 
 The team at work: who is online, who holds what, and what the project
 got done lately, per member and in all. Members see them as a section
-of the project's Overview (§16.11); a public project's page shows a
+of the project's Overview (§6.11); a public project's page shows a
 reduced version to the world (below, §16.9). Everything on
 it is derived from rows the hub keeps for its own work — cards, their
 history and links, claims, takeovers and cover, presence — computed on
