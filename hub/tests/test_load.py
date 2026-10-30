@@ -120,11 +120,6 @@ def test_a_page_of_the_bell_sends_the_same_statements_whatever_the_history(
     assert count_statements(migrated, page) == small
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="tsk-r8f0jm3xs9y6: the page derives every non-chat item of the window, so its "
-    "time grows with the unread items (notifications/items.py `derive_page`)",
-)
 def test_a_page_of_the_bell_takes_the_same_time_whatever_the_history(
     owner: flow.Human, histories: Callable[[], None]  # noqa: F811
 ) -> None:
