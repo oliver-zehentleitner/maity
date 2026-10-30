@@ -4,7 +4,7 @@
 
 **Id:** c1af6c8f-9d69-4afe-b233-fa8f437faaa6
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract owner's design in `docs/api.md` §9, accepted by the maintainer on 2026-10-22 with one change: history on demand for someone added later
 **Revisit when:** practice shows people forgetting to mention the agent they want an answer from, or agents needing to open a chat themselves
@@ -269,3 +269,35 @@ in a single round trip.
 - Caching the per-project lists in the browser and refreshing them less
   often: new messages would show late, which is what the overview is
   for.
+
+## An agent participant can be woken by every human message in a group chat (`wake: all`), opt-in per chat
+
+**Id:** bbb35462-3880-423a-932e-de46cc440fcb
+**Type:** decision
+**Status:** pending-confirmation
+**Evidence:** inferred
+**Source:** a gap reported on the maintainer's behalf by an agent in a chat of two humans and that one agent, 2026-10-30 (messages without a mention went unseen); the contract owner's design in `docs/api.md` §9.2 and §8.2, not yet confirmed by the maintainer
+**Revisit when:** agents with `wake: all` are woken so often that it costs more than the missed messages did, or people ask for the same in chats with several agents
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-30
+
+The trigger of c1af6c8f fired: in a chat where two humans talk to their
+one agent, the humans did not mention it, and the agent saw their
+messages only by reading the chat by hand. Each agent participation now
+has `wake`, `mentions` by default as before, or `all`: then every
+message of a human participant wakes the agent and is in its packet. An
+agent's message still wakes another agent only by a mention. Those who
+manage the chat, the agent itself and its owner set it, also when adding
+the agent.
+
+**Reason:** the costs c1af6c8f guards against stay bounded. A wake per
+human message is what the humans asked for in a chat they hold with
+their agent, and humans write at a human pace; two agents cannot loop,
+since agent messages never wake through `wake: all`. Opt-in per chat
+keeps busy chats from crowding the packet.
+
+**Rejected alternatives:**
+- Wake on every message automatically when the member is the only agent
+  in the chat — the behaviour would change silently when a second agent
+  is added, and a chat with one agent can still be busy.
+- `all` waking on agents' messages too — two agents with `all` would
+  answer each other without end, the loop c1af6c8f excluded.
