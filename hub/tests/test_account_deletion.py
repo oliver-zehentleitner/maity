@@ -290,6 +290,29 @@ def test_an_owner_of_an_organisation_that_has_projects_may_delete_the_account(
         assert [r.human_id for r in conn.execute(select(t.org_member)).all()] == [other]
 
 
+def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """An admin of an organisation who asked its owners to take a project in is deleted: the
+    requests were theirs, and are withdrawn with the account (§2.9, §6.26)."""
+    admin_first(migrated, moment)
+    boss = person(make_client, migrated, moment, "boss")
+    org = boss.post("/orgs", {"handle": "boss-team", "display_name": "Boss Team"}).json()
+    pat = person(make_client, migrated, moment)
+    add_member(migrated, org["id"], pat.id, "admin")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop"})
+    assert made.status_code in (200, 201), made.text
+    filed = pat.post(f"/projects/{pat.handle}/shop/transfer", {"to": org["id"]})
+    assert filed.status_code == 202, filed.text
+    archived = pat.patch(f"/projects/{pat.handle}/shop", {"state": "archived", "reason": "done"})
+    assert archived.status_code == 200, archived.text  # an open project of theirs would refuse
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.request.c.status, t.request.c.withdraw_reason)).all()
+    assert [tuple(r) for r in rows] == [("withdrawn", "initiator_deleted")] * len(rows) != []
+
+
 def test_the_last_instance_admin_is_refused_both_times(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

@@ -397,9 +397,10 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     # Its memberships in organisations end (§2.9, §6.26); the check that it is nobody's last
     # owner is `blocker`, made under the organisations' locks. Before the project memberships
     # end: the `member_updated` of a seat the hub kept must not say `org_owner`.
-    from maity_hub import org_invitations
+    from maity_hub import org_invitations, project_names
 
     org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
+    project_names.withdraw_started_by(conn, human_id, "initiator_deleted")
     conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     _leave_projects(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
