@@ -8,4 +8,5 @@
 ### Changed
 
 - docs/api.md §5.2: the meat proxy note is spelled out with one space between its sentences.
+- docs/api.md §7: the `to` filter of `GET …/requests` names how a member id and an instance address match.
 - docs/api.md §6.22, §16.9: a public page is a stored page (a row in the hub's database), not a file.
