@@ -30,8 +30,7 @@ window.Maity = window.Maity || {};
     const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
     if (why) return { message: REFUSED[why] || why };
     if (err.code === "rate_limited") return { message: "too many changes of this picture in the last hour, or the hub is busy; try again later" };
-    // /me/avatar is not_found only on a hub that has no pictures yet.
-    if (err.code === "not_found") return { message: own ? "this hub does not take pictures yet" : "this profile is not yours, or this hub does not take pictures yet" };
+    if (err.code === "not_found" && !own) return { message: "this profile is not yours" };
     return err;
   }
 
@@ -154,16 +153,13 @@ window.Maity = window.Maity || {};
   // The hub's note (member.meat_proxy_note, §2) stands under the parts as
   // /me and each answer carry it — what agents read now, or would read
   // once it is on — never a copy of the page's own; a hub that does not
-  // send it shows none. Where the hub's machine form does not name the
-  // field there is no switch; a machine form that cannot be read keeps it.
+  // send it shows none.
   const MEAT_PARTS = [
     ["meat_proxy_lead", "meat-proxy-lead", "Lead me step by step rather than expecting me to explain."],
     ["meat_proxy_hands", "meat-proxy-hands", "When you need a human's hands, come to me first."],
   ];
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
-    const offered = await M.api.hubBody("PATCH", "/me").then((fields) => fields.has("meat_proxy"), () => true);
-    if (!offered) return null;
     const status = M.statusLine();
     const noteOf = (m) => (typeof m.meat_proxy_note === "string" && m.meat_proxy_note ? m.meat_proxy_note : null);
     const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });

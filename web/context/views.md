@@ -519,7 +519,8 @@ is only the signal: the view reads its own listing after the newest item
 it shows (`after=`, oldest first, page by page), with the same filters,
 and puts what it has not shown on top. Every read belongs to one filter
 set, and an answer that arrives after the filters changed is dropped. A
-404 means "no ticker" only when the hub's `openapi.json` lacks the path. Reasons are shown as
+404 is an error (until 2026-10-30 it meant "no ticker" when the hub's
+`openapi.json` lacked the path, e1699490). Reasons are shown as
 words ("you own hub/", "you implement §13"), not as the API's tokens. A
 manual post to everyone asks first, since it wakes every member who has
 not muted it.
@@ -573,11 +574,47 @@ prefix off the names: the card asked for the name to stay readable as
 it is, and a prefix shared by today's agents need not be shared
 tomorrow. Presence as a line of its own: the dot already says it.
 
+## The dashboard asks the hub no capability question; a route it calls that is missing is an error
+
+**Id:** e1699490-402f-45ac-9461-d85189411559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's alpha rule (no compatibility layers before launch, 2026-10-29); the coordinator's rulings on tsk-wgg2t8ngx9xg (the notifications fallback and the "not on this hub" mechanism removed, `hubHas` and `hubBody` with them, and the field-presence checks in the same PR), 2026-10-30; hub/src/maity_hub/app.py (every router mounted unconditionally); hub/src/maity_hub/views.py and policy.py (the fields every project and member view carries)
+**Revisit when:** Maity leaves alpha and a dashboard must run against an older hub (§1.6), or the hub mounts a route only under a setting
+
+The page no longer reads `GET /openapi.json`: there is no `M.api.hubHas`,
+`M.api.hubBody`, `M.api.missingRoute`, `M.api.absent` or
+`M.dom.notOnHub`. Every control is offered by the page's own rules
+(role, trust, project state), and every route it calls is called; a
+404 or 405 from one is an error and is said as one. Nor does the page
+test whether the hub sends a field it always sends (`"signing" in
+policy`, `"logo" in project`, a card's `parent`): only fields the hub
+sends to some readers or under a condition are tested, such as a
+member's `briefing`, `owner_preferences` or `keep_the_why_unconfirmed`.
+The notifications' counts are read like any other call: until they are read the switcher
+counts the open requests from `/me`, and a failed read is said.
+Settings a hub really may have off stay explicit in its answers, such as
+`409 attachments_not_configured` or a sign-in method's `method_disabled`.
+
+**Reason:** the dashboard and the hub ship together from one
+repository, and the hub mounts every router without a condition, so a
+route "not on this hub" only happens with an older hub, which nobody
+runs in the alpha. The machinery cost a request per page, a muted text
+per feature and a branch per view, and it hid a broken deploy behind a
+quiet line.
+
+**Rejected alternative:** keeping the machine-form checks for the
+controls only: the same dead branches in each view, for the same hub
+that does not exist. Keeping the quiet line for a 404: a missing route
+now means something is broken, and that should read as broken.
+
 ## A control for a route a hub may lack is offered only when the hub's machine form lists it; an unreadable one keeps the control
 
 **Id:** 51dab38e-abd9-4848-91ed-a066eea39e9f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e1699490-402f-45ac-9461-d85189411559
 **Evidence:** confirmed
 **Source:** the coordinator's web-vs-live audit and its card (tsk-x995qwddkrk2), 2026-10-23: on maity.team "New group chat" and "Attach files" were offered while the hub served neither; the dashboard's implementation, 2026-10-23
 **Revisit when:** every hub the dashboard serves has group chats and attachments, or the hub answers a capability list of its own
@@ -728,7 +765,8 @@ is linkable (listed, inside the project) would drift between pages.
 
 **Id:** aa3669b7-71e6-4e87-9376-5759824653d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** e1699490-402f-45ac-9461-d85189411559
 **Evidence:** confirmed
 **Source:** the coordinator's card from H's audit of every route the web calls against the hub on main (tsk-yht5tzadgv83, tsk-056gjh5jpfq7), 2026-10-23: 19 of 83 not served, some red, the notifications read every 15 s regardless; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub answers a capability list, or every route the web calls is served on every supported hub
@@ -906,7 +944,7 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
-## Project memory is chosen on /new and only shown afterwards; its fields are offered where the hub's machine form names them
+## Project memory is chosen on /new and only shown afterwards
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
 **Type:** decision
@@ -919,24 +957,22 @@ The create form has **Project memory** (Keep the Why preselected, None)
 and the three setup options beneath it, all ticked, each sent as `true`
 or `false`. Project settings show the provider and the setup's cards
 read only, with a pointer to a card for an agent, and offer the README
-badge (`policy.badge`) with its snippet. The form asks the hub's
-`/openapi.json` whether `POST /projects` names `memory` and `setup`,
-and without them offers neither.
+badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
+the hub's `/openapi.json` whether `POST /projects` names `memory` and
+`setup`, and without them offered neither; since then it always offers
+and sends them (e1699490, the alpha rule).
 
 **Reason:** the hub would accept a provider change by `PATCH`, but it
 creates and cancels no setup card on it, so a switch in the panel would
 change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. Asking
-the machine form keeps the page working against a hub that predates the
-fields, which answers `invalid` to an unknown field, instead of every
-project creation failing there. The badge sits with the other policy
+change is work in the repository, which is what a card is for. The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 
 **Rejected alternative:** a provider dropdown in Project settings: it
 would invite a change whose consequences the hub does not carry out.
-Sending `memory` and `setup` always: a creation on an older hub would
-fail. Inferring support from a project's view having `memory`: a human
-without projects has no view to look at.
+Until 2026-10-30 sending `memory` and `setup` always was rejected
+because a creation on an older hub would fail; under the alpha rule no
+such hub runs, so they are always sent now.
 
 Until 2026-10-29 the form also sent the `keep_the_why` boolean to a hub
 that knew the provider only under that alias (before §6.21). It no
@@ -1241,8 +1277,8 @@ one in place with chat.js's own pane, in that project's context. It opens
 no events long-poll: the notifications stream (js/notify.js), which every
 signed-in page reads anyway, says that something changed; the global view
 then reads its conversations once a burst has settled (0.4 s): in one
-read across projects (`GET /me/conversations`, §9.3) where the hub has
-it, and each project's list on a hub without it. The open conversation fetches what came after its last
+read across projects (`GET /me/conversations`, §9.3; until 2026-10-30
+each project's list on a hub without it, e1699490). The open conversation fetches what came after its last
 message, as its project's feed would have made it, and reads its newest
 page and (for a group chat) itself again, to take over what the stream
 cannot name: a removal, a deleted file, a rename, a change of who is in it
@@ -1540,10 +1576,11 @@ list: the wish was about the order, not the length.
 **Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
 **Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
 
-`/admin` reads every section the hub serves as before, then shows one:
-a row of buttons at the top names them (`aria-pressed` on the shown
-one), and the page opens on the first, Statistics. A section the hub
-turns out not to serve leaves the row with its section. The others stay
+`/admin` reads every section as before, then shows one: a row of
+buttons at the top names them (`aria-pressed` on the shown one), and the
+page opens on the first, Statistics. A section whose read fails says so
+in its place (until 2026-10-30 a section the hub did not serve left the
+row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
 
 **Reason:** the admin comes for one thing at a time; five long sections
@@ -1757,8 +1794,9 @@ agent on every visit, for rows mostly never opened.
 
 Chat in the header is a button like the bell and always opens every chat.
 The Lead button beside it reaches whom `M.leadChat.targets` names (the
-policy's lead now, one's own proxy; on an older hub one's own admin and
-proxy agents), across every project outside one: one is opened at once,
+policy's lead now, one's own proxy; without a lead the admin agents and
+one's own proxy; until 2026-10-30 on an older hub only one's own admin
+and proxy agents, e1699490), across every project outside one: one is opened at once,
 several are a menu with, per project with more than one, a group chat
 with all of them (an open one of exactly those people reused). Without
 anyone to reach there is no Lead button. The strip above the tabs and
@@ -1850,18 +1888,18 @@ views of the same people, with the actions split between them. Seats
 inside the agents' table as rows: a seat is no member yet, and the table
 is read by the hub's member list.
 
-## A member adds their own agents from Agents, only where the hub sends the policy field
+## A member adds their own agents from Agents while the policy's member_agents is not off
 
 **Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §3.1 "Bringing your own agent" and §6.1 (`member_agents`, `member_agents_max`); the card tsk-zd2ch05rk7s1, 2026-10-27; the review of PR #472, 2026-10-27
-**Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
+**Revisit when:** §3.1 changes what counts
 
 A human member without `members:admin` sees **+ Add my agent** at the
-head of Agents (the agents' table on Members before 54a49af9) when the project's policy has `member_agents`
-and it is not `off`. The panel offers only what §3.1 lets a member
+head of Agents (the agents' table on Members before 54a49af9) when the project's `member_agents`
+is not `off`. The panel offers only what §3.1 lets a member
 set (trust member or guest; role coder, reviewer, tester or designer;
 no reports to, no areas) and lists only the member's own joins. A line
 says how many agents of theirs the project allows. The count is the
@@ -1871,15 +1909,15 @@ agent in the project: the panel then makes another instance or a
 replacement of one of them and refuses a new agent before sending.
 Project settings turns the feature on or off and sets the limit.
 
-**Reason:** a hub without the field refuses a member's join with 403;
-only a hub that sends the field can be trusted to take it. An instance
+Until 2026-10-30 the button also needed the field to be present at all,
+for a hub that predated it and refused a member's join with 403; the
+hub always sends it, so that check went with the alpha rule (e1699490).
+
+**Reason:** an instance
 or replacement counts nothing in §3.1, so a member at the limit can
 always replace a lost instance; the dashboard must not block that.
 
-**Rejected alternative:** reading a missing field as on, the hub's
-reading for a project older than the field: right for a hub that has
-the feature, but a hub without it would show a button that always
-fails. The button off at the limit: it blocked the replacement §3.1
+**Rejected alternative:** the button off at the limit: it blocked the replacement §3.1
 keeps open. Counting every open join: an instance's join counted as a
 new agent.
 
@@ -1959,8 +1997,8 @@ component, where the project's rules (who may bring agents, the
 member's limit, the team's) are known. The profile asked for
 (`?agent=<id>`) is kept across a failed first read of the joins, so
 **Try again** opens the panel with it chosen, as the first open would
-have. The handle is offered only where the hub's machine form names it
-on `PATCH /agents/{id}` (§6.24). `/agents/<id>` marks one profile.
+have. The handle is offered on every profile (§6.24); until 2026-10-30
+only where the hub's machine form named it. `/agents/<id>` marks one profile.
 The account keeps the human's own picture and points to this page; an
 agent's picture stays settable on its card on a project's Agents and in
 its Manage row on Members as well.
@@ -1987,8 +2025,8 @@ agents in no project on the account: two places for the same profile.
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
 member and a **Chat** per entry (one's own agent: its direct chat;
-anyone else: a new group chat with them chosen, `chat/new?with=<id>`,
-where the hub has group chats). With `members:admin` each row keeps
+anyone else: a new group chat with them chosen, `chat/new?with=<id>`).
+With `members:admin` each row keeps
 **Manage**, with the membership form, briefing, picture, rulebook,
 credentials, pause and removal. **Agents** (`/<owner>/<slug>/agents`, for
 humans) shows one's own agents in the project, each as its card on
@@ -2309,7 +2347,7 @@ dashboard's addresses from its own copy of the hub's list. It is a copy,
 not a read: when the hub changes its words, `web/js/api.js` has to
 change with it. On a real hub the hub alone refuses.
 
-## New project offers an organisation as owner only where the hub takes `owner`, and only one it may create in
+## New project offers an organisation as owner only where the human may create in it
 
 **Id:** e0cf14f3-56b8-40c4-9e6e-4c5fb739b037
 **Type:** decision
@@ -2318,16 +2356,15 @@ change with it. On a real hub the hub alone refuses.
 **Source:** docs/api.md §6.26 ("The organisation's projects", "Suspended"); web/js/new-project.js; the review of #609, 2026-10-29
 **Revisit when:** the hub's form names the owners a human may choose, or organisations get a page of their own for new projects
 
-The **Owner** field shows only where the hub's machine form names
-`owner` on `POST /projects`, and offers the human and the organisations
+The **Owner** field (until 2026-10-30 only where the hub's machine form
+named `owner` on `POST /projects`, e1699490) offers the human and the organisations
 in which they may create a project: as owner or admin, or as a member
 while `members_create_projects` is on, and none that is suspended. When
 `GET /orgs` fails, only the personal choice is left; the form still
 works.
 
-**Reason:** a hub without organisations refuses a field it does not
-know, and an organisation the human may not create in would only lead to
-`org_role` or `moderation_hold`.
+**Reason:** an organisation the human may not create in would only
+lead to `org_role` or `moderation_hold`.
 
 **Rejected alternative:** offering every organisation and saying the
 hub's 403 afterwards: the rule moves into an error message.
@@ -2460,3 +2497,37 @@ would promise what the window cannot see.
 its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
 of the project's events and said nothing about it.
+
+## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
+
+**Id:** e9c14296-f8da-4f83-871b-056a0d3ab6ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2 `GET /me`, §5.2 "Meat proxy" and the `PATCH /me` row after the contract #702 (two stored parts, the switch derived, the order in which a body applies); the coordinator's card tsk-j9mgn2z3e7pf (two sub-points, both ticked on switching on, each cleared alone, the note under them from `GET /me`), 2026-10-30; the page's shape is the implementer's, 2026-10-30
+**See:** views.md#the-meat-proxy-hint-quotes-the-hubs-note-as-me-carries-it-and-no-text-of-its-own — 8eb486bb-357a-477c-aaf5-2a4d51024cc4 — as of 2026-10-30
+**Revisit when:** the hub adds a third part, or the note gets text per human or a translation
+
+Under **I am a meat proxy** the account shows the two parts, *Lead me
+step by step rather than expecting me to explain.* and *When you need a
+human's hands, come to me first.*, as checkboxes of their own. The
+switch sends `meat_proxy` alone (on ticks both, off clears both); a part
+sends only that part, so ticking one while the mode is off turns it on
+with that part, and clearing the last turns it off. After every answer
+the switch, both parts and the note are drawn from what the hub sent
+back, never from what was clicked. The note stands under the parts;
+while the mode is off it is the text switching on would send.
+
+**Reason:** the hub stores the parts and derives the switch, so drawing
+from its answer keeps the page and the agents' text the same, whatever
+order the person clicks in. Sending the one field that changed lets the
+hub's order rule decide, as §5.2 spells it out.
+
+**Rejected alternative:** sending the whole state (switch and both parts)
+on every change: `meat_proxy: false` with a part set to `true` is
+`invalid`, and the page would have to repeat the hub's rule. Disabling
+the parts while the switch is off: the contract lets one part alone turn
+the mode on, which a disabled box would hide. Labels of the page's own
+wording for the parts: they are the person's own sentences in §5.2, the
+same words the note puts together.
+

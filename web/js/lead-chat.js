@@ -18,16 +18,13 @@ window.Maity = window.Maity || {};
   function resolve(project, members) {
     const agents = ordered(members.filter((m) => m.kind === "agent" && !m.removed_at));
     const policy = project.policy || {};
-    // Older hubs cannot tell us which admin or substitute holds the seat now.
-    if (!("coordinator" in policy)) return null;
     let lead;
-    // trust:admin (role:admin on a hub before trust × role, §2.3): the admin agents, the proxy aside.
-    if (policy.coordinator === "trust:admin" || policy.coordinator === "role:admin") {
+    // trust:admin (§2.3): the admin agents, the proxy aside.
+    if (policy.coordinator === "trust:admin") {
       const admins = agents.filter(adminAgent);
-      if (admins.some((m) => !m.availability)) return null;
       lead = admins.find(available) || admins[0];
     } else lead = agents.find((m) => m.id === policy.coordinator);
-    if (!lead || !lead.availability) return null;
+    if (!lead) return null;
     if (available(lead)) return lead;
     const substitute = agents.find((m) => m.id === policy.coordinator_substitute);
     if (available(substitute)) return substitute;
@@ -36,8 +33,8 @@ window.Maity = window.Maity || {};
   }
 
   // Whom the header's Lead button reaches in one project (tsk-g2qe0fyqqmmq):
-  // the lead the policy names now and one's own proxy; on a hub that cannot
-  // say who leads, one's own admin and proxy agents. Agents get none.
+  // the lead the policy names now and one's own proxy; without one, the
+  // admin agents and one's own proxy. Agents get none.
   function targets(ctx) {
     if (!ctx.me || ctx.me.kind !== "human") return [];
     const members = ctx.members || [];
@@ -46,10 +43,7 @@ window.Maity = window.Maity || {};
     if (lead) {
       return [lead].concat(ordered(members.filter((m) => live(m) && m.role === "proxy" && m.owner_id === ctx.me.id && m.id !== lead.id)));
     }
-    const policy = ctx.project.policy || {};
-    const routingKnown = "coordinator" in policy && members.filter((m) => live(m) && adminAgent(m)).every((m) => !!m.availability);
-    return ordered(members.filter((m) => live(m) && (routingKnown || m.owner_id === ctx.me.id)
-      && (adminAgent(m) || (m.role === "proxy" && m.owner_id === ctx.me.id))));
+    return ordered(members.filter((m) => live(m) && (adminAgent(m) || (m.role === "proxy" && m.owner_id === ctx.me.id))));
   }
 
   // Into the chat with `member`: one's own agent's direct chat; another
@@ -58,7 +52,6 @@ window.Maity = window.Maity || {};
   // direct chat with someone else's agent.
   async function open(ctx, member) {
     if (member.owner_id === ctx.me.id) { M.route.go(ctx.link("chat", member.id)); return; }
-    if (M.groupChat && !(await M.groupChat.served())) throw new Error("This hub does not support group chats yet.");
     const page = await M.api.getAll(ctx.base + "/conversations");
     const existing = page.items.find((c) => c.kind === "group" && !c.closed_at && c.access === "participant"
       && Array.isArray(c.participants) && c.participants.length === 2
@@ -93,7 +86,6 @@ window.Maity = window.Maity || {};
   // A group chat of exactly the reader and these agents, an open one
   // reused, else made (§9.2); their owners can read along.
   async function openGroup(ctx, members) {
-    if (M.groupChat && !(await M.groupChat.served())) throw new Error("This hub does not support group chats yet.");
     const want = new Set([ctx.me.id].concat(members.map((m) => m.id)));
     const page = await M.api.getAll(ctx.base + "/conversations");
     const existing = page.items.find((c) => c.kind === "group" && !c.closed_at && c.access === "participant"
@@ -133,7 +125,7 @@ window.Maity = window.Maity || {};
     if (list.length === 1) {
       const t = list[0];
       const own = t.member.owner_id === ctx.me.id;
-      const a = h("a", { class: "bell lead-button", href: own ? t.ctx.link("chat", t.member.id) : "#",
+      const a = h("a", { class: "bell lead-button", href: own ? t.ctx.link("chat", t.member.id) : t.ctx.link("chat"),
         "aria-label": "Talk to the lead: " + name(t), title: "Talk to the lead: " + name(t) }, face);
       if (!own) a.addEventListener("click", (e) => { e.preventDefault(); once(() => open(t.ctx, t.member)); });
       return a;

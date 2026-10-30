@@ -13,7 +13,6 @@ from maity_hub import (
     avatars,
     clock,
     commitment,
-    contract_text,
     forge,
     forge_access,
     mentions,
@@ -908,7 +907,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": view_contract(row.contract) if row.contract is not None else None,
+                "contract": row.contract,
                 "imported_from": row.imported_from,
                 "links": linked[row.id],
                 "notes": noted[row.id],
@@ -1079,12 +1078,6 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if found is not None:  # only while a hold stands on the message (§16.8)
             view["moderation"] = found
     return views
-
-
-def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
-    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
-    it has the defaults."""
-    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}
 
 
 def _wakes(row: Any) -> dict[str, Any]:

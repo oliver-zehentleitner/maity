@@ -214,7 +214,8 @@ to a different project.
 
 **Id:** ab5aa0b9-37cf-4d45-abe4-96b1326747e4
 **Type:** workaround
-**Status:** open
+**Status:** superseded
+**Superseded by:** 5d5697b1-c05e-4e37-b0cf-91e7dceeadb4
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.25 and the endpoint table (the namespace owner transfers "human, with the step-up"); review of the rename and transfer pull request
 **Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
@@ -225,6 +226,38 @@ merges second adds `second_factor.require_step_up(conn, hub, caller)` to the
 transfer route before `transfer(...)`, plus a test. Until then a stolen
 session of a namespace owner can file a transfer, which still needs the
 receiver's `go`.
+
+**Closed:** the second factor is on `main`, and the transfer and its `go` ask for it; why, and what is
+asked, is the entry below (tsk-svg6mfthm7xv).
+
+## A transfer and the `go` that moves a project ask for the step-up
+
+**Id:** 5d5697b1-c05e-4e37-b0cf-91e7dceeadb4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §2.8.4 and §6.25 (#698 names the `go`); the card tsk-svg6mfthm7xv
+**Revisit when:** a transfer may be answered by something other than a human's session, or §2.8.4 lists another call that moves a project
+
+`transfer_project` checks the caller's authority (`project_names.authority`: a human, the namespace owner
+or an owner of the project's organisation) and then `second_factor.require_step_up`, before it files or
+moves anything. That covers the three ways the call itself moves a project: into an organisation by one of
+its owners, out of an organisation to a human who is an owner, and an owner's hand-over of an
+organisation's project to themselves. The `go` that moves a project is asked as well, on the project route
+and on the personal route of an organisation's consent (`routes.requests._step_up_for_a_transfer`, only for
+`reply_id: go` on a `project_transfer` request); a `no` and a withdrawal change nothing and are not asked.
+A caller who is not an owner gets `forbidden` and not `step_up_required`, because the authority comes
+first.
+
+**Reason:** the `go` is the call that changes the owner. A stolen session of the receiver would
+otherwise complete a transfer that the sender's own session could not even file.
+
+**Rejected alternatives:**
+- Step-up on the filing only: the receiver's `go` is the half that completes the move.
+- Step-up on every answer of a transfer request, a `no` included: it refuses nothing a thief could use and
+  would ask a human who is declining.
+- Step-up before the authority check: a non-owner would learn that a step-up exists for a call they may
+  not make.
 
 ## A human membership that ends checks the namespace owner
 
