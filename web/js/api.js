@@ -3140,7 +3140,9 @@ window.Maity = window.Maity || {};
       // §9.1: to_instance wakes that one instance (a replaced one reaches its
       // successor, which the hub does, not this fixture); an id the agent
       // never had is invalid. The message carries to_instance as written,
-      // null for the team.
+      // null for the team. The hub also refuses it from an agent and outside
+      // a direct chat; this fixture does not check, since only the direct
+      // chat's composer, a human's, sends it.
       let toInstance = null;
       if (body.to_instance !== undefined && body.to_instance !== null) {
         const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);

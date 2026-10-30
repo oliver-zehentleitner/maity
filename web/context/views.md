@@ -2564,4 +2564,3 @@ only online instances: an offline one still gets the message at its next
 resume, and its being offline is said in the option. Keeping the choice
 in browser storage: a stale instance id would outlive the session it
 named.
-
