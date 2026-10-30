@@ -3607,8 +3607,21 @@ def _explain(exc: Exception) -> str:
     that means."""
     isolated = _isolated(exc)
     if isolated is not None:
-        detail = _pause_text(isolated) if isolated else "by a human"
-        return f"refused: you are isolated in this project {detail}. {onboarding.ISOLATED_STOP}"
+        # The reason is people's text: quoted and last, so that nothing of ours follows it
+        # and an instruction in it cannot pass for the refusal's own (cli/context/commands.md).
+        who = onboarding.inline(isolated.get("by") or "a human")
+        since = isolated.get("since")
+        when = f" since {onboarding.inline(since)}" if since else ""
+        reason = isolated.get("reason")
+        quoted = (
+            f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(reason)}"'
+            if reason
+            else ""
+        )
+        return (
+            f"refused: you are isolated in this project by {who}{when}. "
+            f"{onboarding.ISOLATED_STOP}{quoted}"
+        )
     if isinstance(exc, hub.HubError) and exc.code == "paused":
         paused = exc.details.get("paused")
         detail = _pause_text(paused) if isinstance(paused, dict) else "by a human"

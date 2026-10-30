@@ -338,7 +338,8 @@ or "your pause was lifted". A pause of another member gets no line.
 **When a human isolates the agent** (§6.2), every call of its credentials
 into the project but `maity resume` answers `forbidden` with reason
 `isolated`. Every command, `maity wait` included, then prints one line,
-"refused: you are isolated in this project by … since …: <reason>", and
+"refused: you are isolated in this project by … since …", what lifts it
+and, last, the reason quoted as a human wrote it, and
 exits 5 without retrying: only a human of the project with
 `members:admin` can lift it. `maity resume` starts with ISOLATED, who,
 since when and the reason, and its next step is to stop. After the lift

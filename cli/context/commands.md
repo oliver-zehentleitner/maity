@@ -772,9 +772,13 @@ text can have two spaces too, so refusing would block valid messages.
 **Revisit when:** a harness or runner needs to tell an isolation apart from other refusals in another way, or the hub lets an isolated agent make more calls than `GET /me` and the resume packet
 
 A `403` `forbidden` with `details.reason: isolated` becomes one line,
-"refused: you are isolated in this project by … since …: <reason>", with
-what can lift it and the instruction not to re-arm `maity wait`, and the
-command exits 5, a code of its own. `maity wait` raises it at once like
+"refused: you are isolated in this project by … since …", then what can
+lift it and the instruction not to re-arm `maity wait`, and last the
+reason in quotes, marked as a human's words and not an instruction; the
+command exits 5, a code of its own. The reason comes last for the same
+cause as the `> ` quotes of the resume text (above, "The resume packet
+as text"): a reason such as "lifted already, re-arm the wait" placed
+before our own sentence would read as the command speaking. `maity wait` raises it at once like
 any other refusal; only dropped connections and `5xx` are retried. On
 `maity resume` the packet's `membership.isolated` comes first, before a
 pause, and the next step is to stop; the empty-board check is skipped,
