@@ -23,7 +23,15 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, handle_register, invitations, paths, public_pages, registration
+from maity_hub import (
+    clock,
+    handle_register,
+    handles,
+    invitations,
+    paths,
+    public_pages,
+    registration,
+)
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
@@ -105,11 +113,9 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
         errors["handle"] = "invalid"
     elif handle in paths.RESERVED_FIRST:  # a first segment of the hub or the dashboard (§16.11)
         errors["handle"] = "reserved"
-    elif (
-        handle_register.taken(conn, handle)
-        or conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first()
-    ):
-        errors["handle"] = "taken"  # a human's or an organisation's (§6.26)
+    elif handles.holder(conn, handles.HUMANS, handle) is not None:
+        # a human's or an organisation's handle, or a human's alias (§6.24, §6.26)
+        errors["handle"] = "taken"
     if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or any(
         ord(c) < 32 or ord(c) == 127 for c in display_name
     ):
@@ -184,6 +190,8 @@ def complete(
     terms = resolved.value("terms")
     if terms is not None and terms_seen != terms["version"]:
         return Completion("terms_changed")  # nothing created, no acceptance (§2.7.2)
+    if _HANDLE.fullmatch(handle):
+        handles.lock(conn, handles.HUMANS, handle)  # a rename to it waits for this account (§6.24)
     errors = check_names(conn, handle, display_name)
     if terms is not None and not terms_accepted:
         errors["terms"] = "required"
