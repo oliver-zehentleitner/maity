@@ -62,7 +62,7 @@ PUBLIC_PATHS = re.compile(
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
-SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml")
+SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 
 
 class HubMiddleware:
