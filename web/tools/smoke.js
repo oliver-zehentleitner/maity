@@ -6388,6 +6388,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No conversation of yours with the id agt-gone."), "chat: an unknown direct chat is an error");
   await go("#/maintainer/maity/inbox");
 
+  // The fixture hub takes every role and trust:owner/admin as an address, the security teams' tokens included (§2.3, §8.4, §17.6).
+  const rlTo = [];
+  for (const to of ["trust:admin", "role:red-team", "role:manager", "role:purple-team"]) {
+    rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to, body: "to " + to }).then(() => "ok", (err) => err.code));
+  }
+  rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
+  expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };

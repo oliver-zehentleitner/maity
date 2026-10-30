@@ -797,7 +797,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("h2", { class: "panel-title" }, "Members' own agents"),
-    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, as coder, reviewer, tester or designer, reporting to them. "
+    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, in every role but ops and proxy, reporting to them. "
       + "Turning it off stops new ones; joins already handed out stay usable."),
     h("label", { for: "member-agents-select" }, "Members add agents"), on,
     h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,

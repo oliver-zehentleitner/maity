@@ -251,7 +251,8 @@ window.Maity = window.Maity || {};
   // Trust owner or admin, never a proxy (§2.3, hub/scopes.py).
   const governing = (x) => !!x && ["owner", "admin"].includes(x.trust) && x.role !== "proxy";
   const tasksAdmin = (slug) => governing(mineIn(slug));
-  const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && mineIn(slug).role === "reviewer");
+  // tasks:review: a reviewer or the purple team (§2.3), or the governance scopes.
+  const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["reviewer", "purple-team"].includes(mineIn(slug).role));
 
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
@@ -421,7 +422,8 @@ window.Maity = window.Maity || {};
     if (who.kind !== "agent") return null;
     return { id: "req-c" + String(++consentSerial).padStart(3, "0"), class: "consent", status: "open", to: "owner", title, created_at: nowIso() };
   }
-  const guarded = (slug, target) => ["reviewer", "tester"].includes(target.role)
+  // A security team counts as its base here (§2.3): purple team as reviewer, red team as tester.
+  const guarded = (slug, target) => ["reviewer", "tester", "purple-team", "red-team"].includes(target.role)
     || [].concat((project(slug, "").policy || {}).contract_arbiter || []).some((a) => a === target.id || a === target.handle);
   // A member's avatar as §6.10 keeps it: one per account or profile, so
   // every object that names the member carries the same avatar_url.
@@ -2134,7 +2136,7 @@ window.Maity = window.Maity || {};
       const to = body.to === undefined ? "computed" : body.to;
       const members = file(m[1], "members.json", path).items;
       if (!(to === "computed" || to === "all" || (Array.isArray(to) && to.length >= 1 && to.length <= 20
-        && to.every((x) => /^(role|trust):[a-z]+$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
+        && to.every((x) => /^(role|trust):[a-z]+(-[a-z]+)*$/.test(x) || /^area:\S+$/.test(x) || (/^member:/.test(x) && members.some((mm) => "member:" + mm.id === x)))))) errors.to = "invalid";
       if ("areas" in body && type !== "note") errors.areas = "not_for_type";
       if (type === "note" && to === "computed" && !(Array.isArray(body.areas) && body.areas.length)) errors.areas = "required";
       if ("release_task_id" in body && type !== "release") errors.release_task_id = "not_for_type";
@@ -2217,8 +2219,10 @@ window.Maity = window.Maity || {};
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) errors.body = "missing";
       if ("mentions" in body) errors.mentions = "read_only";
       const members = file(m[1], "members.json", path).items;
-      const roles = ["owner", "admin", "reviewer", "member", "proxy"];
-      if (!(body.to === "all" || (/^role:/.test(body.to || "") && roles.includes(body.to.slice(5))) || members.some((x) => x.id === body.to))) errors.to = "not_a_member";
+      // §8.4: everyone, trust:owner or trust:admin, a role (§2.3) or a member.
+      const to = body.to || "";
+      if (!(to === "all" || ["trust:owner", "trust:admin"].includes(to) || (to.startsWith("role:") && HUB_ROLES.includes(to.slice(5)))
+        || members.some((x) => x.id === to))) errors.to = "not_a_member";
       // A chat names its conversation and goes to its two parties only (§8.4).
       if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
