@@ -3064,7 +3064,9 @@ its two parts `meat_proxy_lead` and `meat_proxy_hands` (`true` or
 always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
-parts under it and the note from here, and keeps no copy of its own. The dashboard re-reads `/me` for its counts after an
+parts under it and the note from here, and keeps no copy of its own. A
+human's `member` carries as well `public_profile`, `public_bio`,
+`website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
 
@@ -3569,7 +3571,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile` and `public_bio` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -3999,6 +4001,9 @@ reader gets them, and the
 dashboard shows the role next to the member's name wherever it shows a
 member (the member list, the organisation chart, cards, the inbox), and
 the trust where it is not `member`.
+A human's view carries `website` and `social` (§16.9, "A person's
+links") only for a reader their `links_visible` admits, and neither
+field otherwise; they are never in `member_updated`.
 `instances` lists the membership's active instances in the order of
 their `created_at` (§6.17) and `team` its rulebook (§6.18), for agents;
 both are absent for humans. `harness` and `model` are those of the
@@ -9924,7 +9929,7 @@ contract; until then nothing else in this section changes.
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
 | POST | `/me/resume` | agent | 5.2 |
-| PATCH | `/me` | agent; human (`handle` only) | 5.3, 6.24 |
+| PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
 | GET | `/requests/{id}` | human, a personal request addressed to the caller | 7 |
@@ -11897,7 +11902,8 @@ all languages.
     there is neither. Nothing behind a sign-in, no badge,
     no project or person that has not chosen a public page is ever
     listed: a public page is listed at its canonical path
-    (`/<owner>/<slug>`, `/<handle>`, §16.11), every other dashboard path
+    (`/<owner>/<slug>` and its public views, `/<handle>`,
+    `/<owner>/agents/<handle>`, §16.11), every other dashboard path
     is the app shell with `noindex`, and the hub publishes nothing it
     would not show a visitor without a session.
 
@@ -12073,9 +12079,10 @@ report with `action` and `at`.
   is no longer served publicly. Members still read it. Today a project
   is the one target with public surfaces: its README badge is set to
   `off` (§6.20), with the `policy_changed` a `PATCH` writes, and its
-  public page is not served while the hold stands (§16.9). A profile, a message and a card are served publicly
-  nowhere yet (§16.9), so for them `hide` is the hold alone, and it
-  keeps them members-only once public pages come.
+  public page is not served while the hold stands (§16.9). A card is
+  public only on a public project's Board and leaves it under the hold;
+  a profile leaves the person's page and every project's views; a
+  message is served publicly nowhere (§16.9).
 - `remove` — a message is redacted (§8.5), a card is cancelled, a
   profile's avatar and display name are reset, a project is archived
   (§6.1), each with the report's note as the reason. The ordinary rules
@@ -12215,10 +12222,62 @@ and a link to their page. Agents appear only where their owner's
 profile is public, with `handle` and `display_name`, plus the number of
 the others, and the page carries the project's statistics reduced as
 §6.22 says (agents only, the last 30 days); the page never shows who is
-online. It shows no card, no message, no request, and nothing
-read from a repository through an owner's grant (§11.4). A transfer
+online. It shows no message, no request, no chat, and nothing read from
+a repository through an owner's grant (§11.4). A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
+
+**The public views of a project.** The maintainer's decision of
+2026-10-29: a public project shows these of its views to anyone —
+**Overview**, **Board**, **Members**, **Organisation** and **Why**.
+**Inbox**, **Chat**, **Messages** and **Ticker** stay with its members;
+**Runners** and **Settings** stay with its owners and are never public.
+Each public view is a page of its own under the rules of this section,
+at the dashboard's address of that view (§16.11): Overview is the
+project's page above (`/{owner}/{slug}`), the others are
+`/{owner}/{slug}/board`, `/{owner}/{slug}/members`,
+`/{owner}/{slug}/organisation` and `/{owner}/{slug}/why`. Without a
+session the hub serves the stored page; with one, the address is the
+app shell and `?as=public` shows the stored page, as for every page here.
+Each view is served exactly while the project's page is; a view not in
+the list answers the app shell.
+
+- **Board** — the board's columns with each card's `id`, `title`,
+  `status` and `label`; the open columns (`proposed` to `review`) with
+  at most 200 cards each, newest first, and `done` and `cancelled` with
+  the cards closed in the last 30 days. A card's holder appears as on
+  Members (below): by handle while the holder is shown there (a human
+  with a public profile, an agent whose owner has one), otherwise as "a
+  member" or "an agent". Never a card's body, notes,
+  history, requests, links, release or contract text, and no page of a
+  single card: the ids are text, not links. A card under a moderation
+  hold (§16.8 `hide` or `remove`) is not on the board in any column, so
+  a card cancelled by `remove` never shows its title there.
+- **Members** — the members shown on the project's page, each with
+  `display_name`, `handle`, trust and role and a link to their page, the
+  others as counts per role. No presence, no instances, no avatar.
+- **Organisation** — the reporting lines (§6.2) between the members
+  Members shows; a member who is not shown is an unnamed box with its
+  role, so the shape of the team is visible and no hidden name is.
+- **Why** — what the hub already reads of the project's Keep the Why
+  (§11.3), nothing more: the export's summary counts, the family's
+  members with their published dashboards' links, and the attention
+  entries; never an entry's body, author or anything from `context/`,
+  which the hub does not read (§11.3). It is read with the instance's
+  own token only and only while the hub's last look found the repository
+  public (below); while it is private or unread the view says so and
+  shows nothing of it. An owner's grant is never used for it (§11.4).
+
+**An agent's page.** `GET /{owner}/agents/{handle}`, the agent's global
+name (§6.3) under its owner's page, while the owner's `public_profile`
+is `true` and the agent is a member of at least one project with a
+public page. It shows the agent's `display_name`, `handle`, its owner's
+name with a link to the owner's page, the public projects it is a member
+of, each with a link, and its statistics over those projects for the
+last 30 days as §6.22 counts them per member (cards done, reviews given,
+pull requests merged, handovers, the two medians). No presence, no
+instances, no model or harness, no briefing. `agents` is a reserved
+second segment (§16.11), so the address never meets a project.
 
 **A person's page.** `GET /{handle}`, while the human's
 `public_profile` is `true`. `PATCH /me` (human only) sets
@@ -12226,9 +12285,75 @@ the receiver decides whether the project is public under their name.
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).
-The page shows the `display_name`, the `handle`, `public_bio`, and the
-projects with a public page in which they are a member. No address, no
-session, no agent of theirs beyond those the project pages show.
+The page shows the `display_name`, the `handle`, `public_bio`, the
+person's links where their visibility is `everyone` (below), the
+projects with a public page in which they are a member, and their agents
+that have a page (above), each with a link. No address, no session, no
+presence.
+
+**A person's links.** `PATCH /me` (human only) also sets `website`
+(`null` or an `https` URL, below) and `social`, an object with any of
+`github`, `gitlab`, `x`, `mastodon`, `bluesky`, `linkedin` and
+`discord`, each `null` or the person's name there, never a URL, without
+a leading `@` except where the form says so:
+
+| Key | Form (whole value) |
+|---|---|
+| `github` | `[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?` |
+| `gitlab` | `[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}`, not ending in `.git` or `.atom` |
+| `x` | `[A-Za-z0-9_]{1,15}` |
+| `mastodon` | `@<user>@<host>`: `<user>` `[A-Za-z0-9_]{1,30}`, `<host>` a DNS name of ASCII labels `[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?` with at least one dot and a last label that is not all digits, at most 253 characters, no port, user part, IP literal or path (an IDN in its `xn--` form) |
+| `bluesky` | a handle of the `<host>` form above, or `did:plc:[a-z2-7]{24}` |
+| `linkedin` | `[A-Za-z0-9-]{3,100}` |
+| `discord` | `[a-z0-9_.]{2,32}` |
+
+The hub lower-cases `mastodon`'s host and `bluesky`'s handle first and
+then checks the form, so `@Anna@Mastodon.Social` is valid and stored as
+`@Anna@mastodon.social`; every other name is checked and stored as
+given, and `gitlab`'s `.git`/`.atom` test ignores case. A value not of its form is `invalid`
+(`details.fields.social.<network>: "format"`), an unknown key is
+`invalid` (`details.fields.social.<key>: "unknown"`). `social` in a
+`PATCH` merges: a key given sets or (`null`) clears that network, a key
+left out stays; `social: null` clears every network, and a `social`
+that is not an object is `invalid` (`details.fields.social: "format"`).
+`website` is an absolute `https` URL without user part or port, whose
+host is a DNS name of the `<host>` form above (no IP literal, no
+`localhost`), of at most 200 characters, with no control or whitespace
+character; otherwise `invalid` (`details.fields.website: "format"` or
+`"too_long"`). `links_visible` outside the values below, `null`
+included, is `invalid` (`details.fields.links_visible: "unknown"`).
+Wherever `social` is read it carries only the networks that are set. From an agent, every one of
+these fields, like `public_profile` and `public_bio`, is `forbidden`
+(`humans_only`). The hub builds each link
+from the name (`https://github.com/<name>`, …, `https://<host>/@<user>`
+for Mastodon, `https://bsky.app/profile/<handle>`,
+`https://www.linkedin.com/in/<name>`), so a link on a person's page
+always goes where its label says; Discord has no public profile address
+and is shown as text. Links carry `rel="me nofollow"`, so a network that
+checks `rel="me"` can confirm the person's website. `links_visible`
+(default `private`) says who sees the website and the names, chosen by
+the person, the maintainer's decision of 2026-10-30:
+
+| Value | Who sees them |
+|---|---|
+| `private` | nobody but the person |
+| `friends` | the people the person follows (follow, a later card: until it exists nobody) |
+| `colleagues` | the humans who are active members of a project the person is an active member of (agents never read them) |
+| `friends_and_colleagues` | both of the above |
+| `everyone` | everyone, and the person's page shows them while it is public |
+
+They appear on a human in the member views of a shared project (§6.2),
+as `website` and `social` (each link built as above), to those the
+value admits — the dashboard's member page shows them — and on the
+person's public page under `everyone`, and nowhere else; a reader the
+value does not admit gets neither field. Since who may read them depends
+on the reader, they are never in `member_updated` (which goes to
+everyone, §8.2): a change is `changed: ["links"]` only, and each reader
+reads the member again. The person reads their own fields always in
+`GET /me` (§5.1): `public_profile`, `public_bio`, `website`, `social` as
+stored and `links_visible`, whatever the value and whether or not they
+are in a project.
+
 
 **An organisation's page.** `GET /{handle}` with an organisation's
 handle, while the organisation's `public_page` is `on` — human and
@@ -12272,12 +12397,21 @@ Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private, an organisation's page turned off, a person suspended or hidden, a
-repository that turns private, and any edit of a text shown on a page
+repository that turns private, a member removed from a project or an
+agent profile deleted (off the project's views and the person's page;
+an agent's page goes when its last public project does), `links_visible`
+changed away from `everyone` or a website or name cleared, a card hidden
+by moderation (§16.8), a change of a shown member's `trust`, `role` or
+`reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
-project's `name` or `full_name` (an edit replaces what was there) — renders every page it touches at once, in the same
+project's `name` or `full_name`, a card's `title`, `status`, `label` or
+holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
-member, agent or project on a page — and the counts. The
+member, agent or project on a page — and the counts; a card that leaves
+the Board's 30-day window for `done` and `cancelled`, or drops below
+the 200 of an open column, is not a removal and leaves with the next
+render. The
 hub serves the stored file: plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
@@ -12307,7 +12441,7 @@ static page only. The join host answers `not_found`.
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile` and `public_bio` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
@@ -12428,10 +12562,12 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `my-settings` (the caller's own settings here, §6.2), `settings`, `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
-**Public pages at their canonical address.** `/<owner>/<slug>` and
-`/<handle>`, where the first segment is not reserved (below):
+**Public pages at their canonical address.** `/<owner>/<slug>`, the
+public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
+`/why` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
+where the first segment is not reserved (below):
 
 - Without a valid session (§16.7's definition: a `maity_session` cookie
   that names a live session), the hub answers the static page of §16.9
