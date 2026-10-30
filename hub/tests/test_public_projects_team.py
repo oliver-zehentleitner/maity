@@ -161,3 +161,36 @@ def test_an_agent_profile_under_a_hold_is_no_more_named_and_comes_back_with_the_
     assert f"({agent['handle']})" not in text and "and 1 more agent</p>" in text
     assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
     assert f"({agent['handle']})" in shown(world.anyone)
+
+
+def test_an_isolated_agent_is_neither_named_nor_counted_and_comes_back_when_it_is_lifted(
+    world: World,
+) -> None:
+    world.owner.patch("/me", {"public_profile": True})
+    agent = world.bot.get("/me").json()["member"]
+    assert f"({agent['handle']})" in shown(world.anyone)
+    path = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    isolated = world.owner.post(path, {"reason": "it rewrote the release notes"})
+    assert isolated.status_code == 200, isolated.text
+    text = shown(world.anyone)
+    assert f"({agent['handle']})" not in text and "more agent" not in text
+    assert "<h2>Agents</h2>" not in text
+    lifted = world.owner.delete(path)
+    assert lifted.status_code == 200, lifted.text
+    assert f"({agent['handle']})" in shown(world.anyone)
+
+
+def test_a_person_under_a_hold_or_a_suspension_leaves_the_project_page(world: World) -> None:
+    world.anna.patch("/me", {"public_profile": True})
+    assert "Human anna" in shown(world.anyone)
+    made = world.owner.post(
+        "/reports", {"target": {"type": "profile", "id": world.anna.id}, "reason": "spam"}
+    )
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    assert "Human anna" not in shown(world.anyone)
+    assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
+    assert "Human anna" in shown(world.anyone)
+    assert world.owner.post(path, {"action": "suspend"}).status_code == 200
+    assert "Human anna" not in shown(world.anyone)

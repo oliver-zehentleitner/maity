@@ -83,7 +83,8 @@ def served(conn: Connection, project: Any) -> bool:
 def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
     """Who the page shows (§16.9): the human members whose own profile is public, the agents
     whose owner's profile is public, and the number of the agents it does not show. Active
-    memberships only, in the order of the handles."""
+    memberships only, in the order of the handles; an isolated agent (§6.28) is neither shown
+    nor counted."""
     m = t.membership.c
     people = conn.execute(
         select(t.human)
@@ -95,7 +96,7 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
     agents = conn.execute(
         select(t.agent_profile)
         .join(t.membership, m.agent_id == t.agent_profile.c.id)
-        .where(m.project_id == project_id, m.active.is_(True))
+        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
         .order_by(t.agent_profile.c.handle)
     ).all()
     owners = (

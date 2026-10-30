@@ -290,7 +290,10 @@ person renders those project pages with the person (a profile going private or p
 deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
 `member_joined` (an addition: it waits for the run under `interval`) or a `member_updated` (a removal, an
 agent profile deleted among them) when the project's page is on, so the many places that add or remove a
-member need no call of their own. Two inputs are not a membership event: an agent's `display_name`
+member need no call of their own. Every `member_updated` counts as a possible removal and renders at once
+(a trust or role change included): telling apart what changed would be a second place that must know every
+field the page shows, and the render is cheap next to that. An isolated agent (`isolated_since`) is neither
+named nor counted. Two inputs are not a membership event: an agent's `display_name`
 (`PATCH /agents/{id}` calls `public_projects.touch_of_agent`) and a hold of moderation on the agent's own
 profile, which takes the agent off the page like the hold on a person; the hold's resolution reaches the page
 through the owner's profile, whose dependents are the projects of their agents.
