@@ -304,7 +304,9 @@ withdraws every open transfer into it (`project_names.withdraw_into`) and archiv
 that is not archived, as `remove` does; every owner gets the `moderation_applied` record, and so does
 an action of `hide` or `remove` on a project of an organisation. While the hold stands, a new project
 with the organisation as `owner`, a new invitation and `public_page: on` are `forbidden`
-(`moderation_hold`); settings, members and roles, avatar removal and deletion are not touched.
+(`moderation_hold`), and so are a transfer into it and a `go` on one still open (`project_names`;
+the request stays open for when the hold is lifted); settings, members and roles, avatar removal and
+deletion are not touched.
 The organisation's hold is read beside a hold of the project's own (`hide` from another report), not
 instead of it, so a hidden project of a suspended organisation stays archived too.
 

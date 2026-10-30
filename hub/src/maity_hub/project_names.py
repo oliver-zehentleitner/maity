@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import Connection, String, cast, select, update
 
-from maity_hub import events, inbox, namespace, org_projects, orgs, proposals, ticker
+from maity_hub import events, inbox, moderation, namespace, org_projects, orgs, proposals, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -203,6 +203,7 @@ def _transfer_to_org(conn: Connection, mine: Membership, caller: Caller, org_id:
         raise invalid({"to": "unknown"}, "no such organisation")
     if role == "member":
         raise orgs.org_role()
+    moderation.refuse_held(conn, "org", org_id, "suspend")  # §16.8: nothing moves into it
     namespace.check_change(conn, project, org_id, project.slug)
     actor = caller.actor(mine.id)
     withdraw_open(conn, project.id, actor, "a new transfer was filed")
@@ -325,6 +326,7 @@ def _check_org_go(conn: Connection, s: proposals.Settlement, org: Any) -> None:
     org_id = proposal["to"]
     if org is None:
         raise _stale(request.id, "the organisation was deleted")
+    moderation.refuse_held(conn, "org", org_id, "suspend")  # a `go` stays open, not stale
     if orgs.role_of(conn, org_id, s.approver or "") != "owner":
         raise _stale(request.id, "the answerer is no owner of the organisation any more")
     if orgs.role_of(conn, org_id, proposal.get("by", "")) not in ("owner", "admin"):
