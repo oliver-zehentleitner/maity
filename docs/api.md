@@ -7485,7 +7485,9 @@ names a human (`hum-…`) or an organisation (`org-…`).
   receiver must hold trust `owner` in the project and consents as in
   §6.25; an owner who transfers the project to themselves needs no
   request, since their call is their word. To another organisation, the
-  rule of the first point applies.
+  rule of the first point applies. While the organisation is suspended,
+  the transfer, and a `go` on one still open, is `forbidden`
+  (`details.reason: moderation_hold`, §16.8).
 - At the move the hub makes the receiving organisation's owners owners
   of the project (above) and ends the memberships it kept for the
   sending organisation's owners (above) — a receiving human's own
@@ -7863,7 +7865,7 @@ learns its content.
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
-| `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its team reads along, waking only that instance); `member:` of the asker when `asked_by.instance` is `null` (a human asker, or a request asked without a session); the `on_behalf_of` member. A hub notice (`filed_by: "hub"`) reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
+| `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its team reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
 | `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |

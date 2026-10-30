@@ -5,3 +5,5 @@
   is accepted and wakes nobody); `request_created` then goes to `instance:`, and
   `request_answered`/`request_withdrawn` go to the asking instance rather than its whole team,
   `member:` remaining for a human asker and a request the hub filed.
+- docs/api.md §6.26: the paragraph on transfers out of an organisation names the suspension rule
+  from §16.8 as well.
