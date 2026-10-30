@@ -3137,9 +3137,21 @@ window.Maity = window.Maity || {};
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
+      // §9.1: to_instance wakes that one instance; a replaced one reaches its
+      // successor, an id the agent never had is invalid. The message says
+      // whom it woke (to_instance, null for the team).
+      let toInstance = null;
+      if (body.to_instance !== undefined && body.to_instance !== null) {
+        const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
+        const all = (listed && listed.instances) || [];
+        const named = all.find((i) => i.id === body.to_instance);
+        if (!named) fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "unknown" } });
+        const next = named.revoked_at ? all.find((i) => !i.revoked_at && i.replaces === named.id) : named;
+        toInstance = next ? next.id : named.id;
+      }
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],
-        from: me().member.id, to: m[2], body: body.body || "", sent_at: nowIso(), delivered_at: null,
+        from: me().member.id, to: m[2], to_instance: toInstance, body: body.body || "", sent_at: nowIso(), delivered_at: null,
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));

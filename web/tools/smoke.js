@@ -2786,6 +2786,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, online, .+, agent · @agent-d · Claude Code: You: Keep the inbox/.test(text(conv("Agent D"))),
     "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
+  // The instance a message wakes (§9.1 to_instance, tsk-f0ctq47mw0f6): offered where the agent has more than one live
+  // instance, the whole team by default, kept per chat for the tab, said on the sent message.
+  expect(!byId("chat-instance"), "chat: one instance, no choice of instance");
+  const ciGet = win.Maity.api.get, ciPost = win.Maity.api.post, ciSent = [];
+  const ciInst = (id, presence, extra) => Object.assign({ id, address: "agt-a#" + id, label: "agent-a#" + id, presence, revoked_at: null, replaces: null }, extra || {});
+  win.Maity.api.get = (p) => ciGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r : Object.assign({}, r, { items: r.items.map((x) => (x.id !== "agt-a" ? x
+    : Object.assign({}, x, { instances: [ciInst("wq2e", "online"), ciInst("x7rq", "offline"), ciInst("m4tz", "offline", { revoked_at: "2026-10-29T10:00:00Z" })] }))) })));
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects/maintainer/maity/conversations/agt-a/messages") return ciPost(p, b);
+    // The hub's answer, kept out of the fixture conversation the later checks count.
+    ciSent.push(b);
+    return Promise.resolve({ id: "evt-" + (99990 + ciSent.length), seq: 99990 + ciSent.length, conversation_id: "agt-a", from: "hum-maintainer", to: "agt-a",
+      to_instance: b.to_instance || null, body: b.body, sent_at: new Date().toISOString(), delivered_at: null, mentions: [], attachments: [], redacted: false, redaction: null });
+  };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a");
+  const ciSel = byId("chat-instance");
+  expect(ciSel && ciSel.value === "" && ciSel.querySelectorAll("option").map((o) => o.attrs.value + "=" + text(o)).join()
+    === "=The whole team,wq2e=agent-a#wq2e · online,x7rq=agent-a#x7rq · offline" && text(main.querySelector(".chat-instance label")) === "Send to",
+    "chat: the live instances offered beside the heading, the whole team first and chosen, a revoked one left out");
+  const ciSend = async (words) => { main.querySelector("textarea").value = words; main.querySelector("textarea").dispatch("input"); main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  await ciSend("for the team");
+  ciSel.value = "x7rq"; ciSel.dispatch("change");
+  await ciSend("for one instance");
+  const ciOut = main.querySelectorAll("li.msg.out");
+  expect(JSON.stringify(ciSent) === JSON.stringify([{ body: "for the team" }, { body: "for one instance", to_instance: "x7rq" }])
+    && !ciOut[ciOut.length - 2].querySelector(".msg-to") && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).startsWith("to ")
+    && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).includes("#x7rq"),
+    "chat: the team by default with no to_instance, one instance sent as to_instance and said on the message");
+  await go("#/maintainer/maity/chat/agt-d"); await go("#/maintainer/maity/chat/agt-a");
+  expect(byId("chat-instance").value === "x7rq", "chat: the choice is kept for the chat in this tab");
+  win.Maity.api.get = ciGet; win.Maity.api.post = ciPost;
+  // The fixture hub as §9.1: an instance the agent has is woken, one it never had is invalid.
+  let ciBad = null;
+  try { await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "x", to_instance: "zzzz" }); } catch (err) { ciBad = err; }
+  const ciGood = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "y", to_instance: "k3pa" });
+  const ciTeam = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "z" });
+  expect(ciBad && ciBad.status === 400 && JSON.stringify(ciBad.details.fields) === JSON.stringify({ to_instance: "unknown" })
+    && ciGood.to_instance === "k3pa" && ciTeam.to_instance === null, "chat: the fixture hub takes to_instance as §9.1 and says it on the message");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maintainer/maity/conversations?observed=true" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c

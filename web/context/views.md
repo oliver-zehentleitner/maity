@@ -2531,3 +2531,35 @@ and the address was never shared outside the dashboard. Drawing the
 section anew with the Overview's counts: a swarm read per card event,
 and the window lost. Keeping the public page until public projects get
 their pages: the contract removed its route and its switch.
+
+## A chat with an agent sends to the whole team unless one instance is chosen beside its heading
+
+**Id:** 4236b804-8b55-4a94-a166-5fb4c010f127
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request relayed on the card tsk-f0ctq47mw0f6 (a selector of the agent's live instances beside the heading, the whole team by default, the choice kept per chat for the session, shown on the sent message, hidden with one instance), 2026-10-30; docs/api.md §9.1 (`to_instance` on a direct message wakes exactly one instance) and the coordinator's ruling that the message carries `to_instance` back (id or `null`), 2026-10-30; the hub side is the card tsk-p1df7ggm17bc
+**Revisit when:** group chats get a choice of instance, or the hub tells which instance the wake rule chose for a message to the team
+
+An agent with more than one instance that is not revoked gets **Send
+to** beside **Chat with <agent>**: **The whole team** first and chosen,
+then each live instance as `<handle>#<id> · <presence>`. A chosen
+instance goes as `to_instance` on `POST …/conversations/{agent}/messages`;
+the team is no field at all. The choice is kept per conversation in this
+tab, like a draft, and ends with signing out; one whose instance is gone
+falls back to the team. One's own message sent to an instance says "to
+<handle>#<id>" from the message's own `to_instance`, never from the
+selector. An offline instance is offered too, marked so.
+
+**Reason:** the team by default keeps the agent's own wake rule in
+charge; picking one instance is for the times the human knows which
+session holds the work. Reading the label from the answer keeps it true
+when the hub sends a replaced instance's message on to its successor.
+
+**Rejected alternative:** a mention `@handle#id` in the text: a direct
+chat never resolves mentions (§8.6), so it would wake nobody. Offering
+only online instances: an offline one still gets the message at its next
+resume, and its being offline is said in the option. Keeping the choice
+in browser storage: a stale instance id would outlive the session it
+named.
+

@@ -521,7 +521,13 @@ too.
    it and re-reads itself on chat events and every 30 s (presence). An
    unsent message is kept per chat while switching in this tab and shown
    in the list as a draft (not in the open chat's own row); drafts end
-   with signing out. The open chat fills the screen below the header
+   with signing out. Beside **Chat with <agent>**, an agent with more than one
+   live instance offers **Send to**: **The whole team** (the default; the
+   agent's `wake` rule picks the instance) or one instance as
+   `<handle>#<id> · <presence>`, sent as `to_instance` (§9.1); the whole
+   team still reads every message. The choice is kept per chat in this
+   tab, a message sent to one instance says "to <handle>#<id>", and an
+   agent with one instance gets no choice. The open chat fills the screen below the header
    (the visual viewport, so a phone's keyboard counts): its history
    scrolls, the composer stays at the bottom, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
