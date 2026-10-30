@@ -11846,8 +11846,8 @@ fixed and not sections. The types and their fields:
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
 | `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
-| `demo` | `title` (≤ 120), `subline` (≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment), `inbox` (optional `{from ≤ 80, question ≤ 300, context ≤ 300}`: the question an agent asks its human), `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line and the inbox item are shown at once, with script the lines are typed one after another |
-| `opensource` | `title` (≤ 120), `text` (Markdown ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: ≤ 4 × `{label ≤ 40, href}` | always |
+| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment), `inbox` (optional `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human), `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line and the inbox item are shown at once, with script the lines are typed one after another |
+| `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
@@ -11969,9 +11969,11 @@ all languages.
 - **Search engines.** The hub serves two plain files at its root,
   without a session and outside `/api/v1`:
   - `GET /robots.txt` (`text/plain`): while the landing page is
-    enabled, `User-agent: *`, then `Allow:` for the root (`/$`) and for
+    enabled, `User-agent: *`, then `Allow:` for the root (`/$`), for
     the legal pages that are set (`/impressum$`, `/privacy$`,
-    `/terms$`, §16.7.1), then `Disallow: /` and a `Sitemap:` line with
+    `/terms$`, §16.7.1) and for `/assets/landing/` (so a crawler that
+    renders the page may fetch its style, script and fonts), then
+    `Disallow: /` and a `Sitemap:` line with
     the absolute URL of `/sitemap.xml` built from `MAITY_PUBLIC_URL`.
     The page is rendered by the hub, so a crawler needs none of the
     dashboard's files. While the landing page is not enabled,
