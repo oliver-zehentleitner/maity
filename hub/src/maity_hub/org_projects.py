@@ -152,7 +152,9 @@ def release_in_all(conn: Connection, org_id: str, human_id: str) -> None:
 
 def forget_confirmation(conn: Connection, project: Any, human_id: str) -> None:
     """The repository confirmation of `human_id`, who stops being an owner of the project's
-    organisation, ends with their grants (§11.4): another owner confirms again."""
+    organisation, ends with their grants (§11.4): another owner confirms again. The `UPDATE`
+    names the owner again because `project` may be older than the row: a confirmation that
+    another owner made since is theirs and stays."""
     if project.repository_confirmed_by != human_id:
         return
     lock_project(conn, project.id)

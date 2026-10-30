@@ -223,3 +223,23 @@ def test_the_confirmation_ends_when_the_confirming_owner_leaves(
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     assert ForgeAccess(migrated, None, None)._facts(project_id).owner_id == ""  # nobody's grants
+
+
+def test_a_late_call_does_not_end_the_confirmation_another_owner_made_since(
+    org_project: tuple[flow.Human, flow.Human, flow.Human], migrated: Engine
+) -> None:
+    """`forget_confirmation` gets the project row as the caller read it: when another owner has
+    confirmed since, the `UPDATE` finds a different `repository_confirmed_by` and leaves it."""
+    from maity_hub import org_projects
+
+    owner, second, _ = org_project
+    name = "oz-team/maity"
+    url = f"/projects/{name}/repository/confirm"
+    assert second.post(url, {"url": URL}).status_code == 200
+    with migrated.connect() as conn:
+        stale = conn.execute(select(t.project)).one()  # `repository_confirmed_by` is `second`
+    assert owner.post(url, {"url": URL}).status_code == 200  # replaces them
+    with migrated.begin() as conn:
+        org_projects.forget_confirmation(conn, stale, second.id)
+    assert confirmed_by(owner, name) == {"id": owner.id, "handle": "maintainer"}
+    assert owner.get(f"/projects/{name}").json()["repository"]["owner_confirmed"] is True
