@@ -647,7 +647,12 @@ Settings that concern how a human works in a project, not how the
 project works, live in two places: the human's account holds the
 personal default, and the human's membership holds an override per
 project, `null` meaning "use my default". They are the member's own and
-apart from the project's settings, which the owner and admins keep. The
+apart from the project's settings, which the owner and admins keep. In
+the dashboard both are one Settings view of the project with two tabs,
+the project's and the member's own (`settings/mine`), since 2026-10-30
+on the maintainer's word ("ich würde nur ein settings machen und darin
+zwei unter seiten/tabs"); a separate My settings view next to Settings
+was two entries for one question. The
 first is the threshold after which the human hears of their agents that
 are not listening; the firewall for one's own agents (card
 tsk-5c6hw63ncq3m) follows the same shape.
