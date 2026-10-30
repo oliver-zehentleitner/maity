@@ -1538,13 +1538,19 @@ now no view at all.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §3.4 (`via`, "the dashboard's invite form shows 'link via <join host>', on by default, only when a join host is configured"), §1.1, §2.6 (`join_url` of `GET /auth/session`); the card tsk-053hsymxx1p8; the coordinator's ruling against a check of the machine form (the maintainer's alpha rule: no compatibility layer; the dashboard and the hub ship together, the hub's part #681 first), 2026-10-30
-**Revisit when:** joins (§3.1) get the same choice in the join panel
+**Revisit when:** joins (§3.1) get the same choice in the join panel, or the e2e gets a join host of its own
 
 The invite form reads `join_url` from `GET /auth/session`. Only when it
 is set does it show **Link via <join host>**, ticked; it then sends
 `via: "join"` or, unticked, `"public"`. Otherwise it sends no `via` and
 the hub picks the link (`public`). The list says which link went out,
-where a join host is named.
+where a join host is named. The form takes `join_url` from the session the
+page has read already (`M.api.session()`); that stays fresh because the
+app reads the session again for every page it draws. The browser e2e
+has no run with `MAITY_JOIN_URL`: the join URL must be https (§1.1), and
+with a join host every join line defaults to `via: join` (§3.1), so the
+e2e agent's `maity join` would go to a host that is not there; the join
+host is checked after each deploy instead (`join-host.sh verify`).
 
 **Reason:** the contract makes the choice exist only with a join host,
 and a link to a host that does not exist would lead nowhere.
