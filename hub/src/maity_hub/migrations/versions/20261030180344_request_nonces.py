@@ -56,7 +56,14 @@ def upgrade() -> None:
     # The epoch from now on: a hub that starts on this schema refuses nothing signed after it,
     # and the first signed request does not have to set it (auth.nonces.epoch).
     epoch = sa.table("nonce_epoch", sa.column("id", sa.Integer), sa.column("since", TIMESTAMP))
-    op.execute(epoch.insert().values(id=1, since=datetime.now(UTC).replace(tzinfo=None)))
+    # On PostgreSQL the database's clock, as `auth.nonces.epoch` takes it; elsewhere the epoch is
+    # not read (the window is in the process).
+    now = (
+        sa.func.timezone("UTC", sa.func.now())
+        if unlogged
+        else sa.literal(datetime.now(UTC).replace(tzinfo=None))
+    )
+    op.execute(epoch.insert().values(id=1, since=now))
 
 
 def downgrade() -> None:

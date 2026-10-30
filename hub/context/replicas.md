@@ -147,7 +147,18 @@ The migration writes it; each signed request reads it before the signature check
 missing, the first pod to notice inserts `now()` (`ON CONFLICT DO NOTHING`, then reads it back),
 and every request signed before `since`, in whole seconds as `PROCESS_STARTED` was, is refused
 (`timestamp_skew`), on every pod. The request that sets it may itself have been signed in the
-second before and is then refused once; the client signs again with the `server_time` it gets. A database restart or a failover
+second before and is then refused once; the client signs again with the `server_time` it gets.
+The epoch takes the database's clock (`timezone('UTC', now())`), not the replica's: a replica
+whose clock runs behind could otherwise put the boundary before nonces another replica spent
+just before the loss.
+
+Both the claim and the setting of the epoch rely on READ COMMITTED, the hub's isolation level
+(`db.make_engine`): `ON CONFLICT DO NOTHING` waits for a competing transaction that is still open,
+and the `SELECT` after it takes a new snapshot and sees the committed epoch. Under REPEATABLE
+READ that `SELECT` would not see it and the claim would fail with a serialisation error, so the
+authenticating transaction stays READ COMMITTED. A refusal that rolls the authenticating
+transaction back takes a freshly set epoch with it; the next request sets it later, which only
+refuses more, never less. A database restart or a failover
 thus closes the replay gap at once, and a newly started pod no longer refuses requests that
 another pod would take. Reading one row per request takes no lock and stays in the buffer cache.
 
@@ -159,6 +170,8 @@ is the cheapest shared check there is.
 **Rejected alternatives:**
 - **A logged table:** survives a crash and a failover, so it needs no epoch, but writes WAL for
   state that is worthless after ten minutes; the epoch row covers both cases for one read.
+- **Setting the epoch under an advisory lock:** one more round trip for the same effect as the
+  conflict-free insert.
 - **The database's start time (`pg_postmaster_start_time()`), read once per pod:** misses a
   database restart while the pods keep running (their cached time is old) and a failover (the
   promoted standby keeps its own, older start time), so a request signed in the last 300 s could

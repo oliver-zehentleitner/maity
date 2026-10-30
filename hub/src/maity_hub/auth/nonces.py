@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import Connection, delete, select
+from sqlalchemy import Connection, delete, func, select
 from sqlalchemy.dialects import postgresql
 
 from maity_hub import clock
@@ -40,9 +40,11 @@ def epoch(conn: Connection) -> datetime:
     since = found.scalar()
     if since is not None:
         return since  # type: ignore[no-any-return]
+    # The database's clock, not the replica's: a replica whose clock runs behind could put the
+    # boundary before nonces another replica spent just before the loss.
     conn.execute(
         postgresql.insert(t.nonce_epoch)
-        .values(id=EPOCH_ID, since=clock.now())
+        .values(id=EPOCH_ID, since=func.timezone("UTC", func.now()))
         .on_conflict_do_nothing()
     )
     return conn.execute(  # type: ignore[no-any-return]
