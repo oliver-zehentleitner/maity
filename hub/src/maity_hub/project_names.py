@@ -272,14 +272,17 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         return
     if s.outcome != "go":
         return
+    to = proposal["to"]
+    org = (
+        orgs.lock(conn, to) if to.startswith("org-") else None
+    )  # the organisation, then the project (§6.26)
     events.lock_project(conn, proposal["project_id"])
     project = conn.execute(select(t.project).where(t.project.c.id == proposal["project_id"])).one()
     full = namespace.full_name(conn, project)
     if project.owner_id != proposal["owner_id"] or full != proposal["full_name"]:
         raise _stale(request.id, "the project's owner or name changed since the transfer")
-    to = proposal["to"]
     if to.startswith("org-"):
-        _check_org_go(conn, s, project, to)
+        _check_org_go(conn, s, org)
     elif _receiver(conn, project.id, to) is None:
         raise _stale(request.id, "the receiver is no owner of the project any more")
     if namespace.taken(conn, to, project.slug, project.id):
@@ -291,11 +294,12 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         withdraw_open(conn, project.id, s.closer, "another owner of the organisation said go")
 
 
-def _check_org_go(conn: Connection, s: proposals.Settlement, project: Any, org_id: str) -> None:
+def _check_org_go(conn: Connection, s: proposals.Settlement, org: Any) -> None:
     """The `go` into an organisation holds only while it is not deleted, its answerer is still
-    an owner and the one who started the transfer still an owner or admin of it."""
+    an owner and the one who started the transfer still an owner or admin of it. `org` is the
+    row `settle` locked before the project's."""
     request, proposal = s.request, s.proposal
-    org = orgs.lock(conn, org_id)
+    org_id = proposal["to"]
     if org is None:
         raise _stale(request.id, "the organisation was deleted")
     if orgs.role_of(conn, org_id, s.approver or "") != "owner":

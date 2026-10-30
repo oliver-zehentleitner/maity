@@ -75,7 +75,9 @@ the account first, then every organisation it belongs to in the order of their i
 with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
 owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
 the deletion, and the invitations it sent that are still open are withdrawn; the organisations
-and their handles stay.
+and their handles stay. A `go` into an organisation (`project_names.settle`) takes the organisation's
+row before the project's, the order `suspend_org` has, so a `go` and a suspension that meet cannot
+wait on each other.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a
