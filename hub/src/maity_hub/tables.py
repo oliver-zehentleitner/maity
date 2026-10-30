@@ -881,6 +881,12 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # What the resume packet's `handover` needs (§5.2): the project's newest event when the
+    # exchange created this instance, and `events.after` and `events.cursor` of its first
+    # packet (set by its first resume).
+    Column("exchange_seq", Integer),
+    Column("first_after", Integer),
+    Column("first_cursor", Integer),
     _ref("join_id", "join_link.id"),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),

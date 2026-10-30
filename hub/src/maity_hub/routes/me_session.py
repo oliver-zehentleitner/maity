@@ -21,6 +21,7 @@ from maity_hub import (
     events,
     group_chats,
     handles,
+    handover,
     idempotency,
     instances,
     ktw_skill,
@@ -325,6 +326,27 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     return packet
 
 
+def _handover(
+    conn: Connection, mine: Membership, caller: Caller, after: int, cursor: int
+) -> dict[str, Any]:
+    """`{"handover": …}` for an instance that replaces another and has not yet acknowledged
+    its first packet (§5.2), else nothing: the key is not in the packet."""
+    found = handover.block(
+        conn,
+        mine,
+        caller.principal_id,
+        caller.credential_id or "",
+        after,
+        cursor,
+        group_chats.windows(conn, mine.id),
+    )
+    return (
+        {}
+        if found is None
+        else {"handover": {**found, "items": event_views(conn, found["items"], mine)}}
+    )
+
+
 def _isolated_packet(conn: Connection, mine: Membership, caller: Caller) -> dict[str, Any]:
     """What an isolated agent gets of a resume: who it is, why every other call is refused,
     and the project's head; nothing of the project's members, memory, work or events (§6.2)."""
@@ -568,6 +590,7 @@ def _packet(
             "cursor": events_cursor,
             "truncated": truncated,
         },
+        **_handover(conn, mine, caller, cursor, events_cursor),
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(
