@@ -34,7 +34,9 @@ class RevocationDue(Exception):
 
 
 def due(row: Any) -> bool:
-    """Whether a credential row's revocation after a runner's stop has fallen due."""
+    """Whether a credential row's revocation after a runner's stop has fallen due. The row is
+    an agent credential's or a runner credential's (`auth/caller.py`); only the first has
+    `revoke_due_at`, so the `getattr` is no fallback for an old schema."""
     when = getattr(row, "revoke_due_at", None)
     return row.revoked_at is None and when is not None and when <= clock.now()
 

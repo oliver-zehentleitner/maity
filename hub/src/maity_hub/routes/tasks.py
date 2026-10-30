@@ -54,7 +54,6 @@ from maity_hub.views import (
     principal_id,
     task_view,
     task_views,
-    view_contract,
 )
 
 router = APIRouter(route_class=ProjectRoute)
@@ -1103,8 +1102,7 @@ def patch_task(
             payload["release"] = view["release"]
             fields.append("release")
         if "contract" in changed:
-            # Compared as the card shows them: a card from before §6.8 has the defaults.
-            was, now = view_contract(before_card.contract), view["contract"] or {}
+            was, now = before_card.contract or {}, view["contract"] or {}
             for name in ("state", "path", "section"):
                 if was.get(name) != now.get(name):
                     extra.append((f"contract.{name}", was.get(name), now.get(name)))
@@ -1953,13 +1951,6 @@ GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_rea
 
 def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
     earlier: list[dict[str, Any]] = list(card.reported_instances or [])
-    if not earlier and card.report:  # a report from before the list was kept
-        earlier = [
-            {
-                "member_id": card.report.get("reported_by"),
-                "instance": card.report.get("reported_instance"),
-            }
-        ]
     me = {"member_id": mine.principal_id, "instance": mine.instance}
     return [*(r for r in earlier if r != me), me]
 
