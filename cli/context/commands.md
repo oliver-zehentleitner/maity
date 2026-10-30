@@ -722,6 +722,10 @@ read more.
   credential is bound to one project, so the one listed is the answer.
 - Repeating the whole command: a command with several writes could
   repeat the ones that had already gone through.
+- Guessing the project from a `/me` that lists several (by slug or by
+  owner): with a human's credential every match would be a guess, and
+  a wrong one would send writes into another project. Only a `/me`
+  with exactly one project is followed.
 
 ## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
 

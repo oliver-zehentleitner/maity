@@ -335,6 +335,19 @@ def test_messages_names_an_instance_address_by_its_handle(
     assert "blocker  agent-b -> agent-b#k7mq  tsk-0004" in capsys.readouterr().out
 
 
+def test_messages_names_the_sending_instance(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    by_instance = {**MESSAGE, "from_instance": "p3x9", "attachments": []}
+    by_human = {**MESSAGE, "seq": 4241, "from": "hum-m", "from_instance": None, "attachments": []}
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (200, {"items": [by_instance, by_human]})
+    fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "blocker  agent-b#p3x9 -> role:admin  tsk-0004" in out
+    assert "blocker  maint -> role:admin  tsk-0004" in out
+
+
 def test_messages_json_is_the_page_ascii_escaped(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
