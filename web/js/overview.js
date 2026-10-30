@@ -121,7 +121,7 @@ window.Maity = window.Maity || {};
       })),
       // A family cut at the hub's limit (§11.3) and a failed read of it are said.
       exp.family_truncated ? h("p", { class: "flag" }, M.t("overview.project.why_truncated")) : null,
-      exp.error ? h("p", { class: "flag" }, M.t("overview.project.why_failed", { reason: exp.error.reason || exp.error.code || "unknown" })) : null));
+      exp.error ? h("p", { class: "flag" }, M.t("overview.project.why_failed", { reason: exp.error.reason || exp.error.code || M.t("overview.project.why_unknown") })) : null));
     }
     return h("section", { class: "overview-part", "aria-labelledby": "overview-links" },
       head("overview-links", M.t("overview.project.title")), h("dl", { class: "facts" }, rows));
@@ -213,7 +213,7 @@ window.Maity = window.Maity || {};
     if (r.to_me) {
       main = h("div", { class: "overview-waiting" },
         h("a", { class: "overview-big", href: ctx.link("inbox"), "data-key": "mine" },
-          h("span", { class: "big" }, String(r.to_me)), " " + M.t("overview.requests.for_you", { count: r.to_me })),
+          M.tn("overview.requests.for_you", { count: r.to_me, number: h("span", { class: "big" }, String(r.to_me)) })),
         inbox);
     } else if (r.open) {
       main = h("div", { class: "overview-waiting" },

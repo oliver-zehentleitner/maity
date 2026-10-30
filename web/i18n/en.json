@@ -90,6 +90,114 @@
   "header.state_group": "State, absence and links",
   "header.views": "Views",
   "header.while_away": "While away: {scope}",
+  "join.agent.new": "A new agent profile…",
+  "join.agent.option": "{name} (@{handle})",
+  "join.agent.option_member": "{name} (@{handle}) · already a member",
+  "join.an_error": "an error",
+  "join.briefing.hint": "The agent reads it in its resume packet once it has joined, and on every resume after; it is never on the join page. You can change it later on the agent's card.",
+  "join.briefing.label": "Briefing (optional, Markdown; {keys} creates the link)",
+  "join.briefing.placeholder": "What this agent is for and its first assignment, e.g. \"You review the hub's pull requests. Start with the open ones under hub/ and tell me what blocks a merge.\"",
+  "join.cancel": "Cancel",
+  "join.close": "Close",
+  "join.copy.done": "Copied",
+  "join.copy.failed": "Copy failed — select the line",
+  "join.copy.label": "Copy",
+  "join.create": "Create join line",
+  "join.created_unread": "Join created; the list could not be re-read: ",
+  "join.creating": "Creating…",
+  "join.display.label": "Display name",
+  "join.display.placeholder": "display name",
+  "join.earlier": {
+    "one": "Earlier joins ({count}): used, expired or revoked",
+    "other": "Earlier joins ({count}): used, expired or revoked"
+  },
+  "join.earlier.row": "{name} as {words} · {state}",
+  "join.failed": "No join created: ",
+  "join.failed.briefing": "the briefing is longer than {max} characters",
+  "join.failed.full": "you hold as many agents in this project as it allows; choose one of yours that is a member to start another instance or replace one",
+  "join.failed.handle": "the handle: {rule}",
+  "join.failed.is_member": "this agent is already a member of the project. Choose whether the line starts another instance or replaces one, then create it.",
+  "join.failed.member_limit": "a member may not set this for their own agent: {field}",
+  "join.failed.member_max": "you hold as many agents in this project as it allows ({max})",
+  "join.failed.taken": "you already have an agent with the handle @{handle}",
+  "join.field.agent": "Agent",
+  "join.field.areas": "Areas (comma separated)",
+  "join.field.own_hint": "It reports to you. An admin gives it areas and capabilities later.",
+  "join.field.reports_to": "Reports to",
+  "join.field.role": "Role",
+  "join.field.trust": "Trust",
+  "join.field.ttl": "Valid for",
+  "join.handle.bad": "Not a handle yet: {rule}",
+  "join.handle.free": "@{handle} is free.",
+  "join.handle.label": "Handle",
+  "join.handle.placeholder": "handle, e.g. agent-e",
+  "join.handle.refused": "Taken: the hub says you already have an agent with @{handle}.",
+  "join.handle.taken": "Taken: your agent {name} has @{handle}. Choose it above, or another handle.",
+  "join.instance.another": "Start another instance",
+  "join.instance.cards": {
+    "one": "{count} card",
+    "other": "{count} cards"
+  },
+  "join.instance.hint": "The new line makes an instance of it: the same role, areas and briefing, which you change on its card. A different job is a different agent.",
+  "join.instance.legend": "This agent is already a member of the project",
+  "join.instance.online": "{label} · online · {cards}",
+  "join.instance.replace": "Replace instance",
+  "join.instance.replace_hint": "When the new line is used, the replaced instance's credential is revoked and its cards move to the new one.",
+  "join.instance.replaces_label": "The instance it replaces",
+  "join.instance.seen": "{label} · last seen {ago} · {cards}",
+  "join.intro": "The agent's session runs wherever you run it; it joins by the line you paste into it.",
+  "join.limit.a_field": "a field",
+  "join.limit.agent": "the agent (only one of your own, or a new one; or its membership was raised by an admin)",
+  "join.limit.areas": "its areas",
+  "join.limit.capabilities": "its capabilities",
+  "join.limit.reports_to": "whom it reports to",
+  "join.limit.role": "the role",
+  "join.limit.trust": "the trust",
+  "join.line.again": "Join another",
+  "join.line.done": "Done",
+  "join.line.hint": "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. You can also run it yourself in a terminal in that clone. Until then it waits below as an open seat.",
+  "join.line.paste": "Paste this into the agent's session. It is shown once and expires {time}.",
+  "join.quota.active": "{active} of {max} instances active.",
+  "join.quota.full": "{active} of {max} instances active; another one is over the team's limit.",
+  "join.quota.raise": "Raise it in the team's rulebook",
+  "join.quota.unlisted": "The hub has not listed its instances here.",
+  "join.read_failed": "The joins could not be read: ",
+  "join.read_failed_text": "The joins could not be read: {reason}",
+  "join.reports.nobody": "nobody",
+  "join.retry": "Try again",
+  "join.revoke": "Revoke",
+  "join.revoke.busy": "Revoking…",
+  "join.revoke.failed": "Not revoked: ",
+  "join.revoke.label": "Revoke the join for {name}",
+  "join.seat.join": "Join",
+  "join.seat.label": "Open seat: {name}",
+  "join.seat.open": "open seat",
+  "join.seat.reports_to": "reports to {name}",
+  "join.seat.trust_role": "Trust and role",
+  "join.seat.waiting": "Waiting for the agent to run its line.",
+  "join.state.burned": "burned",
+  "join.state.burned_text": "refused after three wrong codes",
+  "join.state.expired": "expired",
+  "join.state.expired_at": "expired {time}",
+  "join.state.open": "open",
+  "join.state.open_until": "open until {time}",
+  "join.state.revoked": "revoked",
+  "join.state.revoked_at": "revoked {time}",
+  "join.state.used": "used",
+  "join.state.used_at": "used {time}",
+  "join.state_dir.no_resume": "Do not run maity resume there to start it: in a directory that already holds a credential, resume takes over that instance, and two sessions then run as one.",
+  "join.state_dir.title": "Every instance needs a state directory of its own.",
+  "join.state_dir.where": "Outside a clone of the repository, maity join puts this one next to the first by itself. In a clone where @{handle} already joined, set this first, with a name for the instance:",
+  "join.title": "Add an agent",
+  "join.title.own": "Add my agent",
+  "join.ttl.hours": {
+    "one": "{count} hour",
+    "other": "{count} hours"
+  },
+  "join.ttl.minutes": {
+    "one": "{count} minute",
+    "other": "{count} minutes"
+  },
   "limits.agents.at": {
     "one": "{count} person is at or over this limit.",
     "other": "{count} people are at or over this limit."
@@ -210,13 +318,34 @@
   "overview.badge.snippet": "Badge snippet for the README",
   "overview.badge.states": "Badge",
   "overview.badge.title": "README badge",
-  "overview.bar.blocked": "{count} blocked",
-  "overview.bar.cancelled": "{count} cancelled",
-  "overview.bar.done": "{count} done",
-  "overview.bar.in_progress": "{count} in progress",
-  "overview.bar.open": "{count} open",
-  "overview.bar.proposed": "{count} proposed",
-  "overview.bar.review": "{count} review",
+  "overview.bar.blocked": {
+    "one": "{count} blocked",
+    "other": "{count} blocked"
+  },
+  "overview.bar.cancelled": {
+    "one": "{count} cancelled",
+    "other": "{count} cancelled"
+  },
+  "overview.bar.done": {
+    "one": "{count} done",
+    "other": "{count} done"
+  },
+  "overview.bar.in_progress": {
+    "one": "{count} in progress",
+    "other": "{count} in progress"
+  },
+  "overview.bar.open": {
+    "one": "{count} open",
+    "other": "{count} open"
+  },
+  "overview.bar.proposed": {
+    "one": "{count} proposed",
+    "other": "{count} proposed"
+  },
+  "overview.bar.review": {
+    "one": "{count} review",
+    "other": "{count} review"
+  },
   "overview.board.cards": {
     "one": "{count} card",
     "other": "{count} cards"
@@ -240,10 +369,22 @@
   "overview.pr.closed": "closed without merge",
   "overview.pr.merged": "merged",
   "overview.pr.open": "open",
-  "overview.prio.high": "{count} high",
-  "overview.prio.low": "{count} low",
-  "overview.prio.normal": "{count} normal",
-  "overview.prio.urgent": "{count} urgent",
+  "overview.prio.high": {
+    "one": "{count} high",
+    "other": "{count} high"
+  },
+  "overview.prio.low": {
+    "one": "{count} low",
+    "other": "{count} low"
+  },
+  "overview.prio.normal": {
+    "one": "{count} normal",
+    "other": "{count} normal"
+  },
+  "overview.prio.urgent": {
+    "one": "{count} urgent",
+    "other": "{count} urgent"
+  },
   "overview.project.contract": "Contract",
   "overview.project.no_repository": "No repository.",
   "overview.project.no_why": "No Keep the Why dashboard is published.",
@@ -262,16 +403,20 @@
   "overview.project.why_root": "the project",
   "overview.project.why_source": "The link comes from the dashboard-state line in the repository's .keep-the-why.",
   "overview.project.why_truncated": "Only part of the family is shown: it has more parts than the hub reads.",
+  "overview.project.why_unknown": "unknown",
   "overview.refresh_failed": "Could not refresh: ",
   "overview.reports.mismatch": "The pull request does not match what was reported.",
   "overview.reports.no_code": "no code",
   "overview.reports.none": "No card has been reported yet.",
   "overview.reports.pr": "PR #{number}",
   "overview.reports.title": "Latest reports",
-  "overview.requests.for_others": "{count} open for others",
+  "overview.requests.for_others": {
+    "one": "{count} open for others",
+    "other": "{count} open for others"
+  },
   "overview.requests.for_you": {
-    "one": "open request for you",
-    "other": "open requests for you"
+    "one": "{number} open request for you",
+    "other": "{number} open requests for you"
   },
   "overview.requests.inbox": "Open the inbox",
   "overview.requests.none": "Nothing waits for an answer.",
