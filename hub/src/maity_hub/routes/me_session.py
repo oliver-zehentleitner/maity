@@ -696,7 +696,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
         if not values:
-            raise invalid({"meat_proxy": "required"}, "nothing to change")
+            raise invalid({"body": "nothing_to_change"}, "name a field to change")
         assert caller.human_id is not None
         conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
         if "public_profile" in values or "public_bio" in values:

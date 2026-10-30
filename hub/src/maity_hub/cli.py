@@ -217,9 +217,8 @@ def _unsuspend(settings: Settings, handle: str) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
-        public_pages.configure(
-            settings
-        )  # a process without the app renders the page it brings back
+        # A process without the app renders the page it brings back (docs: public-pages.md).
+        public_pages.configure(settings)
         with engine.begin() as conn:
             human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
             if human_id is None:

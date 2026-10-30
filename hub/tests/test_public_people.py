@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, moderation, public_pages
+from maity_hub import clock, moderation, public_pages, public_people
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -155,13 +155,19 @@ def test_a_deleted_person_has_no_page(
     admin_first(migrated, moment)
     pat = person(pages(make_client), migrated, moment)
     anyone = visitor(make_client)
-    assert pat.patch("/me", {"public_profile": True}).status_code == 200
+    assert pat.patch("/me", {"public_profile": True, "public_bio": "hello"}).status_code == 200
     assert shown(anyone, "pat") is not None
     assert ask_deletion(pat).status_code == 202
     assert press(pat, token_of(migrated)).status_code == 200
     assert shown(anyone, "pat") is None
     with migrated.connect() as conn:
         assert conn.execute(select(t.public_page)).all() == []
+        row = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
+        assert (row.public_profile, row.public_bio) == (
+            False,
+            None,
+        )  # the text goes with the person
+        assert public_people.targets(conn) == []
 
 
 def test_a_person_waiting_for_approval_has_no_page(
@@ -191,8 +197,6 @@ def test_the_sitemap_lists_the_page_and_the_instance_switch_hides_it(
 
 
 def test_only_people_who_chose_are_targets(migrated: Engine) -> None:
-    from maity_hub import public_people
-
     factory.human(migrated, "alice")
     bob = factory.human(migrated, "bob")
     with migrated.begin() as conn:

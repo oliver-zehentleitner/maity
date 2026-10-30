@@ -82,14 +82,14 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 **Status:** active
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
-**Revisit when:** a person can be shown on the page of a project they are a member of (step 4), or a second place sets `public_profile`
+**Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
 
 The kind `person` renders `/{handle}` for a human with `public_profile` on, an active account, no
 suspension, not deleted and no hold of moderation on the profile (`public_people.served`); the page has the
 display name, the handle and the bio as text, escaped. `PATCH /me` (a human only, an agent is `humans_only`) sets
 `public_profile` and `public_bio` and touches the page in the same transaction; `public_bio` is plain text of
 at most 280 characters without a C0 control character or a bidirectional override (`control_character`,
-`too_long`), an empty text clears it. The paths that take a page away or bring one back call `touch` as well:
+`too_long`), an empty text clears it. The account deletion also clears `public_profile` and `public_bio` (§2.9: the profile is deleted with the person), so no personal text stays in the tombstone and `targets` no longer lists the person. The paths that take a page away or bring one back call `touch` as well:
 `moderation.apply` for the account it concerns (a hold, a suspension, a dismissal), `moderation.unsuspend`,
 the approval of a registration, and the account deletion. A process without the app (`maity-hub account unsuspend`) calls `public_pages.configure` first, for the
 reason in the entry below.

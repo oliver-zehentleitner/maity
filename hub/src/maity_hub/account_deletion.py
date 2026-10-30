@@ -565,9 +565,9 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     the account's own records and its declared limit; the row stays with `deleted_at`,
     its handle taken for good (§2.9). The row is written last: ordinary work locks it
     after project locks (account records), and so does the deletion; what the removals
-    wrote into events before it is shaped when read (`views.shape_deleted`). The hub has no
-    public profile or static pages of a human yet (§16.9), and no handle aliases
-    (§6.24)."""
+    wrote into events before it is shaped when read (`views.shape_deleted`). The public profile
+    goes with the row's other personal text and its page with `touch` after it (§16.9); the hub
+    has no handle aliases (§6.24)."""
     known = _addresses(conn, human_id)
     _forget_mail(conn, human_id, known)  # its pending registrations go here too
     addresses.forget_locks(conn, secret_key, known)
@@ -598,6 +598,8 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_since=None,
             limit_reason=None,
             limit_show_reason_in=None,
+            public_profile=False,  # the profile and its page are deleted with the person (§2.9)
+            public_bio=None,
             deleted_at=clock.now(),
         )
     )
