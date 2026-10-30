@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import clock, github_app, invitations, namespace, placements, write_guard
+from maity_hub import clock, github_app, invitations, namespace, orgs, placements, write_guard
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
@@ -102,6 +102,14 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
         namespace.namespace_owner_of(conn, human_id, open_projects)
     except ApiError as refusal:
         return refusal
+    alone = orgs.owned_alone(conn, human_id)
+    if alone:
+        return ApiError(
+            409,
+            "org_last_owner",
+            "the account is the last owner of an organisation",
+            {"orgs": alone},
+        )
     # The instance has one admin, the earliest account (`admin.instance_admin_id`): that
     # one is always the last.
     if is_instance_admin(conn, human_id):
@@ -277,6 +285,9 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     # The namespace's projects under their locks before the re-check: a state change
     # takes the same lock, so a reopen commits first (and this refuses) or waits.
+    # The organisations before any project, in the order of their ids (§6.26): a promotion or
+    # a transfer into an organisation takes the same order.
+    orgs.lock_all_of(conn, human.id)
     _lock_namespace(conn, human.id)
     refusal = blocker(conn, human.id)
     if refusal is not None:
@@ -384,6 +395,14 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
         conn.execute(delete(t.soul_version).where(t.soul_version.c.agent_id.in_(owned)))
         conn.execute(delete(t.soul).where(t.soul.c.agent_id.in_(owned)))
     _leave_projects(conn, human_id)
+    # Its memberships in organisations end (§2.9, §6.26); the check that it is nobody's last
+    # owner is `blocker`, made under the organisations' locks.
+    conn.execute(
+        update(t.org_invitation)
+        .where(t.org_invitation.c.invited_by == human_id, t.org_invitation.c.live.is_(True))
+        .values(live=None, closed_at=now, closed_by="inviter_deleted")
+    )
+    conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
     _end_access(conn, hub, human_id)

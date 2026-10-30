@@ -357,6 +357,8 @@ effect and the operator's command share one function so that the record, the ses
 **Evidence:** inferred
 **Source:** docs/api.md §6.5; tsk-dfatkddmt565; `hub/tests/test_human_lease.py` and the cost found while measuring `GET /me/conversations` (tsk-45vs1hdzswjs)
 **Revisit when:** a human's lease is to be renewed for something other than a claimed card, or a hold (`availability.hold_cap`) is to cover a membership with no claim
+**See:** availability.md#a-limit-only-ever-lengthens-a-lease — 98ea3f6d-dbc2-4163-92e2-e2717c794b9b — as of 2026-10-29
+**See:** auth.md#a-calls-side-effects-commit-before-the-endpoint-runs-in-their-own-transaction — d9800cc1-6d12-481a-a039-f389d758b11b — as of 2026-10-29
 
 `auth.caller._cookie` renewed, on every request of a human with a session, the leases of all the
 human's active memberships: per membership three reads in `availability.hold_cap` (the
@@ -366,6 +368,9 @@ Measured with 1 and with 7 projects and no claim: 11 and 35 statements for the s
 now 11 and 11. The membership query got an `EXISTS` on open cards whose `claim_holder` is the
 membership, and the loop runs over those memberships only, with the same `renewed_lease`, hold
 and 24-hour cap as before, so a claim that exists is renewed exactly as it was.
+The `EXISTS` and the `UPDATE` must keep the same predicate (the holder and an open status): if
+one gains a condition, such as an instance, the other needs it too, or a claim is skipped or a
+membership is read for nothing.
 
 **Reason:** the cost was linear in the human's projects on every dashboard poll and bought
 nothing, because a renewal with no card to update changes no row. Narrowing the set where it is

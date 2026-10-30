@@ -63,6 +63,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
             "recovery_codes_left": second_factor.recovery_codes_left(conn, human_id),
         },
         "forge_links": _forge_links(conn, human_id),
+        "organisations": _organisations(conn, human_id),
         "abuse_reports": _abuse_reports(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
@@ -272,6 +273,17 @@ def _sessions(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _organisations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The organisations the caller belongs to: handle, role, when they joined (§2.9, §6.26)."""
+    rows = conn.execute(
+        select(t.org.c.handle, t.org_member.c.role, t.org_member.c.joined_at)
+        .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
+        .where(t.org_member.c.human_id == human_id, t.org.c.deleted_at.is_(None))
+        .order_by(t.org_member.c.joined_at, t.org.c.id)
+    ).all()
+    return [{"handle": r.handle, "role": r.role, "joined": ts(r.joined_at)} for r in rows]
 
 
 def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
