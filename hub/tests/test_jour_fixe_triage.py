@@ -181,7 +181,7 @@ def test_without_a_report_in_time_the_hub_builds_one_from_the_statement(
 
 def test_a_closed_project_finishes_the_round_but_opens_no_card(reporting: Round) -> None:
     closed = reporting.owner.patch(
-        "/projects/maintainer/maity", {"state": "accepted", "reason": "done"}
+        "/projects/maintainer/maity", {"state": "archived", "reason": "done"}
     )
     assert closed.status_code == 200, closed.text
     body = report(reporting, proposals=[decided(reporting.owner)])

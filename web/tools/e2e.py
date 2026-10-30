@@ -288,16 +288,18 @@ def port_taken(port: int) -> bool:
 def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
     """Migrate, create the owner and serve; every output goes to logs/hub.log."""
     base = f"http://127.0.0.1:{port}"
-    # No store for attachments yet (§8.7): the hub starts with them off and the
-    # attachments step checks that case. The upload step waits for messages that
-    # name their attachments (E's #474); with it on main, set MAITY_ATTACHMENT_DIR
-    # here again (card tsk-8h6yzp4f8jqg).
+    # A local store for attachments (§8.7), so the attachments step uploads for real:
+    # messages name their attachments since E's #474, and the sent image is read back
+    # from the hub.
+    attachments = work / "attachments"
+    attachments.mkdir(exist_ok=True)
     env = dict(
         CLEAN_ENV,
         MAITY_DATABASE_URL=f"sqlite:///{work / 'hub.db'}",
         MAITY_BIND=f"127.0.0.1:{port}",
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
+        MAITY_ATTACHMENT_DIR=str(attachments),
     )
     log_path = logs / "hub.log"
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
@@ -1014,6 +1016,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "phone width")
 
     users_step(run, page)
+    registration_admin_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1096,42 +1099,22 @@ def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:
 def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    # start_hub gives the hub a local store (MAITY_ATTACHMENT_DIR), so the real upload is
+    # required: a hub that lists no uploads, has them off or refuses the file is a broken
+    # store wiring here, never a case to pass quietly. The off case is the smoke's
+    # (fixture mode, ?attachments=off).
     if not hub_serves(run, page, "POST", "/projects/{owner}/{slug}/attachments"):
-        # A hub without attachments: the composer offers no chooser at all.
-        run.step("attachments: the hub's openapi.json has no uploads; the composer offers no Attach files")
-        expect(page.locator("form.compose")).to_be_visible()
-        expect(page.locator("form.compose .attach")).to_be_hidden()
-        expect(page.locator("#chat-files")).to_be_disabled()
-        no_problems(run, "attachments")
-        return
-    # Configured but off (§8.7 "Attachments off"): the route exists, the hub has no
-    # store and answers every attachment call 409 attachments_not_configured. Then the
-    # composer offers no files and no Delete; only those answers, checked by their
-    # code, are no problem.
+        raise AssertionError("attachments: the hub runs with MAITY_ATTACHMENT_DIR but its openapi.json lists no uploads")
     probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/attachments?status=pending&limit=200")
-    if probe.status == 409 and (probe.json().get("error") or {}).get("code") == "attachments_not_configured":
-        run.step("attachments: the hub has them off; the composer offers no Attach files and no Delete")
-        expect(page.locator("form.compose")).to_be_visible()
-        expect(page.locator("form.compose .attach")).to_be_hidden()
-        expect(page.locator("#chat-files")).to_be_disabled()
-        expect(page.locator("li.attach-item button", has_text="Delete")).to_have_count(0)
-        no_problems(run, "attachments")
-        return
+    if probe.status != 200:
+        code = (probe.json().get("error") or {}).get("code") if probe.headers.get("content-type", "").startswith("application/json") else None
+        raise AssertionError(f"attachments: the hub runs with a store but answers its pending list {probe.status} {code}")
     page.locator("#chat-files").set_input_files(
         files=[{"name": "e2e-shot.png", "mimeType": "image/png", "buffer": tiny_png(32, 32, (40, 160, 90))}]
     )
     pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
-    # Settled: uploaded (its Remove is there once the hub answered) or refused.
-    # While it uploads, the chip and "Uploading …" both show the name.
-    uploaded = pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)
-    expect(uploaded.or_(page.locator(".attach .send-status", has_text="Not attached")).first).to_be_visible()
-    if pending.count() == 0:
-        # Only a hub without attachments is skipped, and the composer has to say so.
-        run.step("attachments: this hub keeps no files yet; the composer says the upload failed")
-        expect(page.locator(".attach .send-status")).to_contain_text("Not attached")
-        run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/owner/e2e-alpha/attachments\?\S* answered (404|405)$", p)]
-        no_problems(run, "attachments")
-        return
+    # Uploaded once its Remove is there (the hub answered); a refusal is a failure here.
+    expect(pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)).to_be_visible()
     run.step("attachments: the owner sends an image to the agent; it shows inline from the hub")
     page.locator("#chat-text").fill("a picture")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
@@ -1365,15 +1348,15 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
     briefing_step(run, page, alpha, agent_id)
 
-    run.step("state and absence: the owner freezes the project; the agent's resume shows it")
+    run.step("state and absence: the owner moves the project to review; the agent's resume shows it")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     project_settings(page)
-    page.locator("#state-select").select_option("freeze")
-    page.locator("#state-note").fill("e2e freeze: fixes only")
+    page.locator("#state-select").select_option("review")
+    page.locator("#state-note").fill("e2e review: fixes only")
     page.locator("#state-reason").fill("e2e: release candidate")
     page.get_by_role("button", name="Change state", exact=True).click()
-    expect(page.locator("header .state")).to_have_text("Freeze")
-    expect(page.locator("header .state-note")).to_have_text("e2e freeze: fixes only")
+    expect(page.locator("header .state")).to_have_text("Review")
+    expect(page.locator("header .state-note")).to_have_text("e2e review: fixes only")
     project_settings(page)
     # Availability caps an absence at 90 days. Choose next week in the browser's
     # local timezone so this scenario remains valid as the calendar moves on.
@@ -1417,20 +1400,20 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(menu).to_be_hidden()
     expect(profile).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
-    # The switcher's state dot: frozen Alpha differs from Beta, which builds.
+    # The switcher's state dot: Alpha in review differs from Beta, which builds.
     dots = page.evaluate("""() => ["E2E Alpha", "E2E Beta"].map(name => {
       const chip = Array.from(document.querySelectorAll("nav.switcher a")).find(a => a.textContent.includes(name));
       return getComputedStyle(chip.querySelector(".dot")).backgroundColor;
     })""")
-    assert dots[0] != dots[1], f"the switcher shows one colour for freeze and build: {dots}"
-    run.shot(page, "freeze-absence")
-    run.a11y(page, "header in freeze with absence")
+    assert dots[0] != dots[1], f"the switcher shows one colour for review and build: {dots}"
+    run.shot(page, "review-absence")
+    run.a11y(page, "header in review with absence")
     view_tab(page, "Overview").click()
     expect(page.locator("main section.view-overview .org-tree")).to_be_visible()
     run.a11y(page, "overview with the organisation")
     project = json.loads(run.maity(alpha, "resume", "--json"))["project"]
     print(f"   resume: state {project['state']}, absence {project['absence']}")
-    assert project["state"] == "freeze" and project["state_note"] == "e2e freeze: fixes only", (
+    assert project["state"] == "review" and project["state_note"] == "e2e review: fixes only", (
         project
     )
     assert (project.get("absence") or {}).get("scope") == "e2e: the admins decide merges", project
@@ -1441,7 +1424,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     payload = change["payload"]
     assert (payload["old"], payload["new"], payload["reason"]) == (
         "build",
-        "freeze",
+        "review",
         "e2e: release candidate",
     ), change
     project_settings(page)
@@ -2253,6 +2236,34 @@ def users_step(run: Run, page: Page) -> None:
     no_problems(run, "users")
 
 
+def registration_admin_step(run: Run, page: Page) -> None:
+    """Instance administration → Registration (docs/api.md §16.4): the mode needs mail."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("registration: the admin opens the settings; allowlist needs mail, a list is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Registration", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Registration']")
+    expect(section.locator(".reg-effective")).to_have_text("Registration now: closed.")
+    form = section.locator("form.reg-form")
+    # This hub has no mail: the hub refuses the mode, said at its field.
+    page.locator("#reg-mode").select_option("allowlist")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("#reg-mode-error")).to_have_text("needs complete, enabled mail (Mail settings)")
+    # That refusal is the expected answer here, not a problem of the page.
+    refused = "PATCH /api/v1/admin/settings/registration answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#reg-mode").select_option("closed")
+    page.locator("#reg-domains").fill("@example.com")
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(form).to_contain_text("Saved.")
+    expect(page.locator("#reg-domains")).to_have_value("@example.com")
+    run.shot(page, "registration-admin")
+    run.a11y(page, "registration admin")
+    no_problems(run, "registration admin")
+
+
 def join_expiry_step(run: Run, page: Page) -> None:
     """A join that expires while Agents is open leaves the seats for the record, without Revoke."""
     run.step("joins: a join expires while the view is open; it is listed as expired, without Revoke")
@@ -2299,6 +2310,11 @@ def invitations_step(run: Run, page: Page) -> None:
     expect(box).to_be_visible()
     page.locator("#invite-role").select_option("reviewer")
     page.locator("#invite-note").fill("Welcome to the e2e project.")
+    # This hub has no join host (no MAITY_JOIN_URL): no "Link via" choice, and the
+    # link is on the hub's own address (§3.4 `via` defaults to public).
+    session = page.request.get(f"{run.base}/api/v1/auth/session").json()
+    if not session.get("join_url"):
+        expect(page.locator("#invite-via-join")).to_have_count(0)
     box.get_by_role("button", name="Create the invitation", exact=True).click()
     shown = page.locator("#invite-url")
     expect(shown).to_have_value(re.compile(r"/invite/[A-Za-z0-9_-]{22}$"))
@@ -2356,6 +2372,21 @@ def members_step(run: Run, page: Page) -> None:
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
+    # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
+    row.locator("a.member-ref").first.click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))
+    head = page.locator(".member-head")
+    expect(head).to_contain_text("E2E Agent")
+    expect(head.locator(".member-pill", has_text="agent of")).to_have_count(1)
+    expect(page.locator("nav.member-tabs a")).to_have_count(4)
+    head.get_by_role("button", name="Actions for E2E Agent").click()
+    expect(head.get_by_role("menuitem", name="Manage on Members")).to_be_visible()
+    page.keyboard.press("Escape")
+    run.a11y(page, "member page")
+    page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
+    expect(page.locator(".member-section")).to_contain_text("Instances")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    expect(agents.locator("tr.member", has_text="E2E Agent")).to_be_visible()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
     manage.locator("select[id^=member-role-]").select_option("reviewer")

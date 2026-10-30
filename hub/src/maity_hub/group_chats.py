@@ -24,12 +24,12 @@ from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.mentions import global_name
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.views import ts
 
 PREFIX = "cnv-"
 MIN_PARTICIPANTS, MAX_PARTICIPANTS = 2, 12  # the creator included (§1.7)
 OPEN_PER_PROJECT = 200  # open group chats per project (§1.7)
-CLOSED_STATES = ("accepted", "archived")
 
 
 def is_group(conversation_id: str | None) -> bool:

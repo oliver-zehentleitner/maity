@@ -153,7 +153,7 @@ window.Maity = window.Maity || {};
   M.views.instanceAdmin = async (ctx, root) => {
     append(root, h("h2", null, "Instance administration"));
     if (!ctx.me.instance_admin) { append(root, h("p", null, "Only the instance admin can open this area.")); return; }
-    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.adminUsers.section(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/health", "Instance information", infoSection]];
+    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.adminUsers.section(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/registration", "Registration", (s) => M.adminRegistration.section(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/admin/settings/legal", "Legal pages", (s) => M.legal.section(ctx, s)], ["/health", "Instance information", infoSection]];
     // One section at a time, picked in a row of buttons at the top (the
     // designer's pass part 3: the page was one 5,000 px scroll); it opens
     // on the first, Statistics.

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-STATES = ("build", "freeze", "fixes-only", "accepted", "archived")
-CLOSED_STATES = ("accepted", "archived")
-REASON_STATES = ("freeze", "fixes-only")
+STATES = ("plan", "build", "review", "launch", "archived")
+CLOSED_STATES = ("archived",)
+REASON_STATES = ("plan", "review")
 
 PRESETS = ("hierarchical", "solo", "pool", "decentral", "hybrid")
 _HIERARCHICAL = {

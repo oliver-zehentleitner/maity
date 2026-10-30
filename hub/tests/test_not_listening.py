@@ -140,6 +140,50 @@ def test_a_session_that_called_for_events_lately_is_listening(setup: Setup) -> N
     assert s.session().not_listening_since is None and s.events() == []
 
 
+def test_a_resume_starts_the_ten_minutes_again(setup: Setup) -> None:
+    s = setup
+    s.message()
+    s.at(8)
+    assert s.agent.resume().status_code == 200
+    s.at(11)
+    s.sweep()  # the event is 11 minutes old, but the resume is 3 minutes ago
+    assert s.session().not_listening_since is None and s.events() == []
+    s.at(19)
+    s.sweep()  # 11 minutes after the resume
+    assert s.session().not_listening_since == s.now + timedelta(minutes=18)
+
+
+def test_the_cursor_a_resume_sends_counts_as_acknowledged(setup: Setup) -> None:
+    s = setup
+    s.message()
+    cursor = _cursor(s)
+    s.at(1)
+    assert s.agent.resume(cursor=cursor).status_code == 200
+    assert s.session().acknowledged_seq == cursor
+    s.at(30)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == []
+
+
+def test_a_resume_without_a_cursor_leaves_the_events_above_the_old_one_waiting(
+    setup: Setup,
+) -> None:
+    """The new session starts at the old one's acknowledged cursor, and the events its
+    packet delivers are acknowledged only by a later call for events. A session that
+    works from the packet and never calls again is not listening ten minutes after its
+    resume, which §5.3 accepts: the hub cannot tell "received and busy" from "never saw
+    it"."""
+    s = setup
+    s.message()
+    s.at(1)
+    assert s.agent.resume().status_code == 200
+    s.at(12)
+    s.sweep()
+    assert s.session().not_listening_since == s.now + timedelta(minutes=11)
+    [started] = s.events()
+    assert started.payload["ended"] is False
+
+
 def test_a_paused_agent_is_never_not_listening(setup: Setup) -> None:
     s = setup
     s.message()

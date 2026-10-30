@@ -18,13 +18,13 @@ the options it sees) and its answers (prepared replies, free text,
 "neither — let's talk"); answering moves on to the next. The chat with
 an agent the human owns is the channel beside the inbox, reachable from
 every inbox entry and every agent card, never the landing page. The
-project state (build, freeze, fixes-only, accepted, archived) sits in the
+project state (plan, build, review, launch, archived) sits in the
 header of every screen.
 
 **Reason:** the root decision makes the inbox the human's primary
 surface; the dashboard's order follows from it, and an entry has to carry
 its context because the point is that answering does not require a chat.
-The project state belongs on every screen because a freeze changes what
+The project state belongs on every screen because a review changes what
 any answer means.
 
 **Rejected alternative:** the board as the landing page, the default of
@@ -1290,6 +1290,37 @@ on a closed hub every visitor would fill it in for a mail that never
 comes. Only `GET /auth/methods`: an invited person on a closed hub could
 not register at all, which §3.4 allows.
 
+## The registration form names the instance's terms before the mail is sent
+
+**Id:** 48c34360-b586-4e82-b21a-737b922f1734
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.6.1, §2.7 and §2.7.2; the card tsk-46vft0764kve (the terms from `terms`), the review of #652, 2026-10-29; the coordinator's ruling on an empty allowlist, 2026-10-29
+**Revisit when:** acceptance moves from the link's page to the form, or terms gain more than a URL and a version (§16.4)
+
+Where `GET /auth/methods` answers `terms`, `/register` says that
+completing the account accepts this hub's terms, with their version. It
+links the terms only when `M.dom.safeUrl` passes the address (plain
+`https`, no user info); otherwise it names them without a link. The
+hub answers `registration: false` under `allowlist` while both lists
+are empty, so neither the login page nor `/register` offers a way in
+that nobody could finish; the instance admin sees the gap as
+`missing: ["allowlist"]` (§16.4).
+
+**Reason:** the terms are accepted on the link's page, where their
+version is signed with the registration token (§2.7.2). Without a word
+on the form, a person would meet them only after the mail, and might
+find out only there that they do not want to accept them.
+
+**Rejected alternative:** a checkbox on the form: it would record
+nothing, since acceptance and its version belong to the completion's
+`POST` (§2.7.2), and it would suggest a second acceptance. Linking any
+URL the hub returns: the hub checks `https`, but the dashboard does not
+rely on that alone. `registration: true` under an empty allowlist, as
+the contract first said: every address would get the form and the mail
+silence of a request that is dropped, a dead end for everyone.
+
 ## An agent is named with the instance that wrote or did it, as <handle>#<id>
 
 **Id:** 0b6d2a5f-32ba-4979-8c18-1567498ecbac
@@ -1499,6 +1530,90 @@ shorter. A route per section (`/admin/users`): links into a section
 were not asked for. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
+
+## An invitation's link via the join host is offered only where the hub names one
+
+**Id:** 35607b9c-4a72-4936-bcf8-63a429436ab9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §3.4 (`via`, "the dashboard's invite form shows 'link via <join host>', on by default, only when a join host is configured"), §1.1, §2.6 (`join_url` of `GET /auth/session`); the card tsk-053hsymxx1p8; the coordinator's ruling against a check of the machine form (the maintainer's alpha rule: no compatibility layer; the dashboard and the hub ship together, the hub's part #681 first), 2026-10-30
+**Revisit when:** joins (§3.1) get the same choice in the join panel, or the e2e gets a join host of its own
+
+The invite form reads `join_url` from `GET /auth/session`. Only when it
+is set does it show **Link via <join host>**, ticked; it then sends
+`via: "join"` or, unticked, `"public"`. Otherwise it sends no `via` and
+the hub picks the link (`public`). The list says which link went out,
+where a join host is named. The form takes `join_url` from the session the
+page has read already (`M.api.session()`); that stays fresh because the
+app reads the session again for every page it draws. The browser e2e
+has no run with `MAITY_JOIN_URL`: the join URL must be https (§1.1), and
+with a join host every join line defaults to `via: join` (§3.1), so the
+e2e agent's `maity join` would go to a host that is not there; the join
+host is checked after each deploy instead (`join-host.sh verify`).
+
+**Reason:** the contract makes the choice exist only with a join host,
+and a link to a host that does not exist would lead nowhere.
+
+**Rejected alternative:** also asking the hub's machine form whether it
+takes `via`, so a hub from before the field is not sent one: a
+compatibility layer, which the alpha rule leaves out; the dashboard and
+the hub ship together, the hub's part first. Always sending `via`,
+`"public"` without a join host: the same as sending none, one more
+field to keep right.
+
+## Registration in the admin area: missing beside the fields, a block lifted by its typed address
+
+**Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.4, §2.7, §2.7.5; the card tsk-64tktcnndzk3 (the maintainer found no registration setting, 2026-10-29); the dashboard's implementation, 2026-10-29
+**Revisit when:** the hub lists blocked addresses, or approval gets mails of its own (#280)
+
+The Registration section says first what the hub does now
+(`effective_mode`) and, beside the fields, in words what keeps
+registration from working (`missing`: mail, an empty allowlist). A value
+the environment sets, or terms that come from the legal pages, is shown
+with its source and not offered. Lifting a block takes a typed address,
+since the hub has `DELETE /admin/registrations/blocks/{address}` but no
+list of blocks.
+
+**Reason:** a mode that is set but not in effect (no mail) looks like
+open registration that does not work; saying the gap where the admin is
+looking avoids searching for it. A field the hub would refuse
+(`set_by_environment`) is no choice. Without a list, a typed address is
+the only way to the endpoint.
+
+**Rejected alternative:** the mode alone, with the hub's refusal on
+saving: the admin would learn of missing mail only by trying. A list of
+blocked addresses kept by the dashboard: it would show only what this
+browser lifted or saw rejected, not what the hub holds.
+
+## A decision on a waiting account refreshes the counts, not the registration form
+
+**Id:** 3f98cded-98a8-45d6-9cff-b92b3f531275
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the review of #660 (P3), web/js/admin-registration.js, docs/api.md §16.4, 2026-10-29
+**See:** views.md — 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0 — as of 2026-10-29
+**Revisit when:** the settings form and the pending list move to separate views, or the hub sends the counts with the decision's answer
+
+After Approve or Reject the Registration section reads
+`GET /admin/settings/registration` again for `pending` and the hour's
+counts, and redraws only those lines with the mode in effect and what is
+missing; the form under them keeps what the admin has typed and not
+saved.
+
+**Reason:** the form and the list share one section; redrawing the form
+from the hub's answer threw away unsaved edits without a word, while
+the only thing a decision changes there is the counts.
+
+**Rejected alternative:** redrawing the whole section after a decision,
+as first built: unsaved edits lost. Redrawing the form only when it is
+unchanged: it needs a comparison of every field with the hub's values
+for nothing the counts alone do not already give.
 
 ## On a phone an opened card is a page of its own; the panel is the card
 
@@ -1878,6 +1993,34 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## A member's page is for reading; its Actions menu only leads to Members or Agents
+
+**Id:** dda6f237-ffeb-4b68-ba0a-844c77f269dd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the designer's handover #6484 (the member page header with an Actions menu: Assign a card, Edit briefing, Change role or reports to, Pause, Revoke the session, Remove), 2026-10-27; the coordinator's ruling on the card tsk-rtb5vjrvbh34, 2026-10-30, with the maintainer's decision of #643 (each action in one place) as its reason
+**See:** views.md — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-29
+**Revisit when:** the maintainer moves the admin's actions out of the Manage row, or a member page of its own takes over what the Agents card does
+
+`/<owner>/<slug>/members/<id>` is a member's page: breadcrumb, header,
+and the tabs Activity, Cards, Briefing, Sessions & credentials, all read
+only. Its **Actions ▾** holds only links: **Manage on Members**
+(`?manage=<id>`, the list with that row open) for an admin, **Manage on
+Agents** (the agent's card) for its owner; without either there is no
+menu. Every member link leads to this page, not to a marked row.
+
+**Reason:** since #643 each action lives in one place: an admin's on the
+Manage row of Members, an owner's on Agents. A third place for the same
+forms would let them drift apart and leave the same change reachable
+from three screens with three sets of words.
+
+**Rejected alternative:** the Actions menu as the handover drew it, with
+the actions themselves (role, pause, briefing, revocation, removal):
+it would undo the one-place rule of #643. Taking the Manage row away
+from Members in its favour: that reverses the maintainer's own choice
+("finde ich super") for the row.
+
 ## A human's picture is set on the account, an agent's in its row on Members; the account keeps only agents no project shows
 
 **Id:** 59aaf51f-c63d-4cb6-966b-85eb8f2c682d
@@ -2236,3 +2379,30 @@ words the agents no longer read, the drift this avoids. The price is a
 hint without the words on a hub that does not send the note yet.
 Copying the text into the page: the same drift with every change of
 the wording.
+
+## Released is a mark beside the state, never a state; Project settings say it is never cleared
+
+**Id:** 27ca6bd9-6e83-4a85-8620-f5e9f428362f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the released mark in the dashboard (PR #659, 2026-10-29) and the Grok review of it; contract in `docs/api.md` §6.1 and §6.9
+**See:** https://github.com/oliver-zehentleitner/maity — de8abccf-94dc-4947-9926-463aa13edd8f — as of 2026-10-29
+**Revisit when:** §6.1 lets the mark be cleared, or the hub's released rules text changes
+
+The hub sets `released_at` once and keeps it through every state. The
+dashboard therefore shows "Released" beside the state badge, in the
+header and in the overview's State row, not as a sixth state. The
+tooltip carries the released rules in the hub's words, so a reader sees
+what the mark binds. Project settings say the mark holds "for good"
+and offer no control for it. A project without `released_at`, or a hub
+that does not send it, shows no mark.
+
+**Reason:** no call clears the mark, so a control in the settings would
+promise something the hub refuses. The overview is where a reader looks
+up the state, so the mark belongs there as well as in the header.
+
+**Rejected alternatives:**
+- A `released` entry in the state select: it would be lost on the next
+  move back to build, which the maintainer's decision rules out.
+- The mark in the header alone: the overview is where the state is read.

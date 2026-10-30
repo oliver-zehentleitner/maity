@@ -190,7 +190,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maintainer/maity/logo?v=%22f1%22"),
     "dom: an image is a local file or the hub's own image, never another origin, not even https");
   let cur = main.querySelector(".current");
-  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Freeze") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
+  expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Review") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
@@ -367,14 +367,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
   expect(!slowList.hidden, "mentions: once read, the list is there at once");
-  // A mention's link opens the member: Members with that row marked and focused.
+  // A mention's link opens the member's page (js/member-page.js), its heading focused.
   const mlProto = Object.getPrototypeOf(main);
   const mlFocus = mlProto.focus;
   mlProto.focus = function () { document.activeElement = this; };
   await go(triedLink.getAttribute("href")); await tick(); await new Promise((r) => setTimeout(r, 5));
-  const wantedRow = main.querySelector("tr.wanted");
-  expect(plainTitle() === "Members · Maity · Maity" && wantedRow && wantedRow.getAttribute("data-member") === "agt-b"
-    && main.querySelectorAll("tr.wanted").length === 1 && document.activeElement === wantedRow.childNodes[0], "mentions: the link opens Members with the member marked and focused");
+  const mpHead = byId("member-heading");
+  expect(plainTitle() === "Members · Maity · Maity" && mpHead && text(mpHead).startsWith("Agent B") && document.activeElement === mpHead,
+    "mentions: the link opens the member's page, its heading focused");
   await go("#/maintainer/maity/members/agt-nobody"); await tick();
   expect(text(main).includes("No member with the id agt-nobody in this project.") && !main.querySelector("tr.wanted"), "mentions: an unknown member is said");
   mlProto.focus = mlFocus; document.activeElement = undefined;
@@ -1695,12 +1695,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await bPost("/projects/maintainer/maity/tasks", { title: "x", ships_with: ["rel-0001"] }); } catch (err) { relShip = err; }
   expect(relShip && relShip.details.fields.ships_with === "release_card", "board: the mock refuses shipping with a release, as the hub does");
   win.Maity.api.patch = bPatch; win.Maity.api.post = bPost;
-  // A frozen project asks for a reason.
+  // A project in review asks for a reason.
   await go("#/maintainer/sample/board");
   btn(main, "New card").click(); await tick();
-  byId("new-card-title").value = "Something during the freeze";
+  byId("new-card-title").value = "Something during the review";
   main.querySelector("form.new-card").dispatch("submit"); await tick();
-  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in freeze"), "board: in freeze a new card needs a reason");
+  expect(byId("new-card-reason") && text(main).includes("Not created: the project is in review"), "board: in review a new card needs a reason");
+  // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
+  const relMark = () => header.querySelector(".project-state .released");
+  expect(relMark() && text(relMark()) === "Released" && relMark().getAttribute("title").startsWith("Released since ")
+    && relMark().getAttribute("title").includes("migrations stay backward compatible"), "released: the header marks a released project, the rules in its title");
+  await go("#/maintainer/sample/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".overview .released") && main.querySelector(".overview .state-review"), "released: the overview shows the state and the mark");
+  await projectSettings(); await tick();
+  expect(main.querySelector(".released-note") && text(main.querySelector(".released-note")).includes("for good"), "released: Project settings say it is never cleared");
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(!relMark(), "released: no mark on a project that is not released");
   await go("#/maintainer/maity/inbox");
   // Members (docs/api.md §6.2): humans and agents, managed by an admin.
   const membersTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Members");
@@ -3308,22 +3318,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // state and absence
   await projectSettings(); await tick();
-  const sel = byId("state-select"); sel.value = "freeze";
+  const sel = byId("state-select");
+  expect(sel.querySelectorAll("option").map((o) => o.getAttribute("value")).join(" ") === "plan build review launch archived"
+    && sel.querySelectorAll("option").find((o) => o.getAttribute("value") === "launch").getAttribute("disabled") == null,
+    "state: exactly the five states of §6.1; the owner may move to launch");
+  sel.value = "review";
   byId("state-reason").value = "release 0.1.0";
   // The 15-s count re-read replaces the switcher only; the open panel and what is typed stay.
   const switcherBefore = header.querySelector("nav.switcher");
   await fireIntervals(); await tick(); await tick();
-  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "freeze",
+  expect(byId("state-reason") && byId("state-reason").value === "release 0.1.0" && byId("state-select").value === "review",
     "the count re-read keeps the open Project settings panel and its input");
   expect(header.querySelector("nav.switcher") !== switcherBefore && header.querySelectorAll("nav.switcher").length === 1,
     "the count re-read replaces the switcher, once");
   byId("state-select").parentNode.dispatch("submit"); await tick(); await tick();
-  expect(text(header).includes("Freeze") && onSettings() && text(main).includes("State saved.")
+  expect(text(header).includes("Review") && onSettings() && text(main).includes("State saved.")
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
-    "state changed to freeze; the save stays on the Settings tab, says so, the tab marked current");
+    "state changed to review; the save stays on the Settings tab, says so, the tab marked current");
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
   byId("absence-until").parentNode.dispatch("submit"); await tick(); await tick();
   expect(text(header.querySelector(".project-state")).includes("Away until") && text(header.querySelector(".absence")).includes("While away: fixes only"), "absence set");
+  // An admin who is no owner: launch is offered disabled, until the project is in launch, which they may leave.
+  const lnGet = win.Maity.api.get;
+  let lnState = "build";
+  win.Maity.api.get = (p) => (p === "/me" ? lnGet(p).then((m) => { Object.assign(m.projects.find((x) => x.slug === "maity"), { trust: "admin", state: lnState }); return m; })
+    : p === "/projects/maintainer/maity" ? lnGet(p).then((x) => Object.assign({}, x, { state: lnState })) : lnGet(p));
+  const launchOption = () => byId("state-select").querySelectorAll("option").find((o) => o.getAttribute("value") === "launch");
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  const lnBuild = launchOption() && launchOption().getAttribute("disabled") != null;
+  lnState = "launch";
+  await go("#/maintainer/maity/inbox"); await projectSettings(); await tick();
+  expect(lnBuild && launchOption().getAttribute("disabled") == null && launchOption().getAttribute("selected") != null,
+    "state: an admin who is no owner sees launch disabled, and selectable once the project is in launch");
+  win.Maity.api.get = lnGet;
 
   // policy.signing: before required, the agents a bearer token would cut off.
   const sigPatches = [];
@@ -3830,54 +3857,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await thPick("System");
   expect(thHtml.attrs["data-theme"] === undefined && !("maity.theme" in thStore), "theme: signed out, System removes both");
   delete win.localStorage;
-  // The instance's landing page (js/landing.js, docs/api.md §16.7): at the root, for a visitor without a session.
-  const lpGet = win.Maity.api.get;
-  const lpPage = { enabled: true, title: "Bring your own coding agent.", updated_at: "2026-10-25T10:30:00Z",
-    markdown: "## A team\n\nRead the [contract](https://example.org/api) or [register](/register); not [this](javascript:alert(1)) nor <b>bold</b>.\n\n```\n<script>x</script>\n```",
-    cta: { label: "Get started", href: "/register" } };
-  let lpAnswer = () => Promise.resolve(lpPage);
-  // Signed out, the machine form is read afresh: the hub serves it without a session.
+  // At the root without a session the dashboard draws the login page: the landing page is the hub's own static
+  // page (§16.7), which the dashboard never asks for. The legal pages that are set are linked (§16.7.1).
+  const lpGet = win.Maity.api.get, lpReads = [];
   win.Maity.api.forgetRoutes();
-  const lpReads = [];
-  win.Maity.api.get = (p) => { if (p === "/landing") { lpReads.push(p); return lpAnswer(); } return lpGet(p); };
-  await go(""); await tick(); await tick();
-  const lp = main.querySelector("article.landing");
-  const lpLinks = lp ? lp.querySelectorAll("a") : [];
-  expect(lp && text(lp.querySelector(".landing-title")) === "Bring your own coding agent." && document.title === "Bring your own coding agent."
-    && lp.querySelectorAll(".landing-lockup img").length === 2 && text(lp.querySelector(".landing-body")).includes("A team"),
-    "landing: at the root without a session, the lockup, the title (also the tab's) and the operator's text");
-  expect(lpLinks.some((a) => text(a) === "contract" && a.getAttribute("href") === "https://example.org/api" && a.getAttribute("target") === "_blank")
-    && lpLinks.some((a) => text(a) === "register" && a.getAttribute("href") === "#/register" && !a.getAttribute("target"))
-    && !lpLinks.some((a) => text(a) === "this") && text(lp).includes("<b>bold</b>") && !lp.querySelector("b") && lp.querySelector("pre code").textContent === "<script>x</script>",
-    "landing: https links open apart, dashboard routes stay in the page, anything else and HTML stay text");
-  const lpCta = lpLinks.find((a) => a.classList.contains("landing-cta"));
-  const lpSign = header.querySelectorAll("a").find((a) => text(a) === "Sign in");
-  expect(lpCta && text(lpCta) === "Get started" && lpCta.getAttribute("href") === "#/register" && lpSign && lpSign.getAttribute("href") === "#/login",
-    "landing: the button, and Sign in in the header");
-  // The designer's pass part 1: one logo (the large lockup, the page's h1), the action before the text.
-  const lpKids = lp.childNodes.map((x) => x.className);
-  expect(thButton() && header.querySelector(".theme-menu") && !header.querySelector(".brand") && lp.querySelector(".landing-lockup").tagName === "H1"
-    && lp.querySelector(".landing-lockup img").getAttribute("alt") === "Maity"
-    && JSON.stringify(lpKids) === JSON.stringify(["landing-lockup", "landing-title", "landing-actions", "md landing-body"]),
-    "landing: the header holds the theme switch and Sign in; the large lockup is the one logo; lockup, title, action, text " + JSON.stringify(lpKids));
-  await go("#/login"); await tick();
-  expect(byId("login-handle") && !main.querySelector("article.landing") && plainTitle() === "Sign in · Maity", "landing: #/login always reaches the login page, its own title again");
-  lpAnswer = () => Promise.resolve({ enabled: false });
-  await go(""); await tick(); await tick();
-  expect(byId("login-handle") && !main.querySelector("article.landing"), "landing: disabled, the login page");
-  lpAnswer = () => Promise.reject(new win.Maity.api.ApiError("down", 503, "/landing", "unavailable"));
-  await go("#/all"); await go(""); await tick(); await tick();
-  expect(byId("login-handle") && !main.querySelector("article.landing") && !main.querySelector(".error"), "landing: a failed call, the login page and no error");
-  const lpBefore = lpReads.length;
-  await go("#/maintainer/maity/inbox"); await tick();
-  expect(lpReads.length === lpBefore && byId("login-handle"), "landing: only the root asks for it");
-  // A hub whose machine form does not list it is not asked.
-  lpAnswer = () => Promise.resolve(lpPage);
-  win.Maity.api.get = (p) => (p === "/openapi.json" ? Promise.resolve({ paths: {} }) : p === "/landing" ? (lpReads.push(p), lpAnswer()) : lpGet(p));
-  win.Maity.api.forgetRoutes();
-  const lpBefore2 = lpReads.length;
-  await go("#/all"); await go(""); await tick(); await tick();
-  expect(lpReads.length === lpBefore2 && byId("login-handle"), "landing: a hub without it is not asked; the login page");
+  win.Maity.api.get = (p) => { if (p === "/landing" || p === "/legal") lpReads.push(p); return lpGet(p); };
+  await go("#/all"); await go(""); for (let k = 0; k < 6; k++) await tick();
+  const lpLegal = main.querySelector(".legal-links");
+  expect(byId("login-handle") && !main.querySelector("article.landing") && !lpReads.includes("/landing") && lpReads.includes("/legal")
+    && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
+    "landing: the root without a session is the login page, the landing never read here; the legal pages set are linked");
   win.Maity.api.get = lpGet; win.Maity.api.forgetRoutes();
   // The public swarm page without a session (§6.22): the fixture serves /swarm/ signed out, as the hub does.
   await go("#/maintainer/maity/swarm"); for (let k = 0; k < 4; k++) await tick();
@@ -3923,6 +3912,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  // A hub that registers on request (§2.7, GET /auth/methods): the form, and its terms named with their version.
+  const rgGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "https://example.org/terms", version: "2026-10" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  const rgTerms = main.querySelector(".register-terms");
+  expect(rgForm() && rgTerms && text(rgTerms) === "When you complete your account you accept this hub's terms (version 2026-10)."
+    && rgTerms.querySelector("a").getAttribute("href") === "https://example.org/terms" && rgTerms.querySelector("a").getAttribute("rel") === "noopener noreferrer",
+    "register: where the hub registers, the form names its terms and their version, as a link");
+  win.Maity.api.get = (p) => (p === "/auth/methods"
+    ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
+  await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  win.Maity.api.get = rgGet;
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-handle").value = "maintainer"; byId("login-password").value = "a long new password";
@@ -4594,7 +4597,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // A closed project: no new group chat.
   const gcMe = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "accepted" })) : gcMe(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? gcMe(p).then((x) => Object.assign({}, x, { state: "archived" })) : gcMe(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat");
   expect(!main.querySelector("a.new-group"), "group chat: a closed project offers no new group chat");
   await go("#/maintainer/maity/chat/new");
@@ -5450,6 +5453,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aProxy = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-b", { trust: "admin", role: "proxy" }));
   const aHuman = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/hum-maintainer", { areas: ["x/"] }));
   const aSelf = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-a", { areas: ["x/"] }));
+  const aLaunch = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity", { state: "launch", reason: "go" }));
   const aAfter = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items;
   const humansOnly = (e) => e && e.code === "forbidden" && e.details.reason === "humans_only";
   expect(aRole.class === "consent" && aRole.to === "owner" && aRole.title === "Change reviewer to member · coder"
@@ -5459,6 +5463,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aMember.id === "agt-b" && aMember.paused && aMember.areas.join() === "web/", "mock as an admin agent: a member agent's areas and pause apply at once");
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
+  expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
@@ -5701,10 +5706,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   byId("invite-role").value = "reviewer"; byId("invite-address").value = "ben@example.org"; byId("invite-ttl").value = "604800"; byId("invite-note").value = "Welcome.";
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome." }])
-    && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
-    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open"),
-    "invite: created, the link shown once with Copy, the list grows");
+  expect(byId("invite-via-join") && byId("invite-via-join").checked && text(ivBox()).includes("Link via join.example.org"),
+    "invite: where the hub names a join host, Link via <join host> is offered, on by default (§3.4)");
+  expect(JSON.stringify(ivPosts[0]) === JSON.stringify(["/projects/maintainer/maity/invitations", { trust: "member", role: "reviewer", ttl_seconds: 604800, address: "ben@example.org", note: "Welcome.", via: "join" }])
+    && /^https:\/\/join\.example\.org\/i\/fx\d{20}$/.test(byId("invite-url").value) && text(ivBox().querySelector(".invite-issued")).includes("This link is shown only now")
+    && btn(ivBox(), "Copy") && ivItems().length === 5 && ivItems()[0].endsWith(":open") && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("via join.example.org"),
+    "invite: created via the join host, the link shown once with Copy, the list grows and says which link went out");
+  // Off: the link on this hub's own address.
+  byId("invite-via-join").checked = false;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(ivPosts[1] && ivPosts[1][1].via === "public" && /#\/invite\/fx\d{20}$/.test(byId("invite-url").value)
+    && text(ivBox().querySelectorAll("li.invite-item")[0]).includes("on this hub's address"),
+    "invite: Link via unticked sends via public, and the link is on the hub's own address");
+  byId("invite-via-join").checked = true;
+  // A hub without a join host (join_url null): no choice, no via sent.
+  // The form takes the session the page read already (M.api.session), no new read of it.
+  const ivSessionGets = [], ivGetAll = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p === "/auth/session") ivSessionGets.push(p); return ivGetAll(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  // The app reads the session once per page drawn (two here); the form adds none.
+  expect(byId("invite-via-join") && ivSessionGets.length === 2, "invite: the form uses the session the page read, without reading it again (" + ivSessionGets.length + ")");
+  win.Maity.api.get = ivGetAll;
+  const ivSession = win.Maity.api.session;
+  win.Maity.api.session = () => Object.assign({}, ivSession(), { join_url: null });
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivNoHost = ivPosts.length;
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
+    "invite: without a join host there is no choice and no via; the hub picks the link");
+  win.Maity.api.session = ivSession;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);
   const ivBefore = ivPosts.length;
@@ -5815,9 +5846,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // Which 401s say a session ended: the visitor's calls, with or without a query, never; the session's own always.
   const ppPublic = ["/auth/session", "/auth/login", "/auth/device-login?wait=0", "/auth/device-login/complete", "/auth/email-code", "/auth/methods",
-    "/landing", "/openapi.json", "/swarm/maintainer/maity?days=30", "/invitations/open-xxxxxxxxxxxxxxxx1"];
+    "/legal", "/openapi.json", "/swarm/maintainer/maity?days=30", "/invitations/open-xxxxxxxxxxxxxxxx1"];
   const ppSession = ["/auth/sessions", "/auth/sessions?ended=true", "/auth/password", "/auth/device-codes", "/auth/second-factor", "/me", "/me/notifications?limit=0",
-    "/landing/x", "/auth/login-other", "/invitations/abc/accept", "/projects/maintainer/maity/members"];
+    "/legal/x", "/auth/login-other", "/invitations/abc/accept", "/projects/maintainer/maity/members"];
   const ppWrong = ppPublic.filter((p) => !win.Maity.api.isPublicPath(p)).concat(ppSession.filter((p) => win.Maity.api.isPublicPath(p)));
   expect(!ppWrong.length, "session: a visitor's call is public with any query, a session's own call never " + JSON.stringify(ppWrong));
 
@@ -6386,14 +6417,76 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (!ref) return;
     const id = ref.getAttribute("data-member");
     await go(ref.getAttribute("href")); for (let k = 0; k < 4; k++) await tick();
-    const row = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id);
-    expect(row && row.classList.contains("wanted"), "member links: from " + label + " the link lands on that member's row");
+    const known = win.Maity && main.querySelector(".member-head");
+    expect(known && text(main.querySelector(".breadcrumb")).includes("@") && main.querySelector("nav.member-tabs"),
+      "member links: from " + label + " the link opens that member's page (" + id + ")");
   };
   await mrFollow("#/maintainer/maity/overview", "the overview");
   await mrFollow("#/maintainer/maity/chat/agt-a", "the chat");
   await mrFollow("#/maintainer/maity/messages", "the project messages");
   await mrFollow("#/maintainer/maity/members", "the members list");
   await mrFollow("#/maintainer/maity/board", "the board");
+  // A member's page (the designer's handover #6484, read only since #643): header, pills, line, Chat, Actions that only lead away, tabs.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  const mpBox = () => main.querySelector(".member-head");
+  const mpPills = () => mpBox().querySelectorAll(".member-pill").map((x) => text(x));
+  expect(mpBox() && text(main.querySelector(".breadcrumb")).replace(/\s+/g, " ").trim() === "Members / @agent-b"
+    && mpPills().some((t) => t.startsWith("agent of")) && text(mpBox().querySelector(".member-line")).includes("Claude Code")
+    && mpBox().querySelectorAll("a").some((a) => a.classList.contains("member-chat") && a.getAttribute("href") === "#/maintainer/maity/chat/agt-b"),
+    "member page: breadcrumb, pills (agent of the owner), the line with the harness, Chat to one's own agent");
+  const mpMenu = mpBox().querySelector(".member-actions-menu button");
+  mpMenu.click(); await tick();
+  const mpItems = mpBox().querySelectorAll(".member-actions-menu a").map((x) => [text(x), x.getAttribute("href")]);
+  expect(JSON.stringify(mpItems) === JSON.stringify([["Manage on Members", "#/maintainer/maity/members?manage=agt-b"], ["Manage on Agents", "#/maintainer/maity/agents/agt-b"]]),
+    "member page: Actions only leads to where each action is done, Members for an admin, Agents for the owner " + JSON.stringify(mpItems));
+  const mpTabs = main.querySelectorAll("nav.member-tabs a");
+  expect(mpTabs.map((a) => text(a)).join() === "Activity,Cards,Briefing,Sessions & credentials" && mpTabs[0].getAttribute("aria-current") === "page"
+    && mpTabs[1].getAttribute("href") === "#/maintainer/maity/members/agt-b/cards", "member page: four tabs, Activity first and current");
+  await go("#/maintainer/maity/members/agt-b/cards"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main.querySelector(".member-section")).includes("Holds (") && text(main.querySelector(".member-section")).includes("Assigned ("),
+    "member page: Cards lists what they hold and what is assigned to them");
+  await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".member-section .member-briefing") && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: Briefing shows an admin the agent's briefing from the member view, read only");
+  // An open session of an instance (§6.17): its id, since when, and not listening.
+  const mpsAll = win.Maity.api.getAll, mpsGet = win.Maity.api.get;
+  const mpsSession = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { instances: x.instances.map((i, n) => (n ? i
+    : Object.assign({}, i, { session: { id: "ses-b-0009", started_at: "2026-10-30T08:00:00Z", not_listening_since: "2026-10-30T09:00:00Z" } }))) }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAll(p).then(mpsSession) : mpsAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGet(p).then(mpsSession) : mpsGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/sessions"); for (let k = 0; k < 8; k++) await tick();
+  const mpsSess = main.querySelector(".member-section .member-session");
+  expect(text(main.querySelector(".member-section")).includes("Instances") && mpsSess && text(mpsSess).includes("ses-b-0009") && text(mpsSess).includes("since ")
+    && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
+    "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
+  win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
+  await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")
+    && mpBox().querySelector(".member-head-dot") && text(mpBox().querySelector(".member-line")).startsWith("Online")
+    && !main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing"),
+    "member page: one's own page has no Chat and no Actions; a human's presence shows; a human has no Briefing tab");
+  // Without members:admin: the owner reads its agent's briefing through its versions; another member gets no Briefing tab.
+  const mpsMe = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mpsMe(p).then((x) => Object.assign({}, x, { projects: x.projects.map((y) => Object.assign({}, y, { trust: "member", role: "coder" })) })) : mpsMe(p));
+  const mpsReads = [];
+  const mpsGetB = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.endsWith("/briefings")) mpsReads.push(p); return mpsGetB(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpsReads[0] === "/projects/maintainer/maity/members/agt-b/briefings" && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: the owner without members:admin reads the briefing through GET …/briefings");
+  const mpsOther = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { owner_id: "hum-other" }) : x)), next_cursor: null });
+  const mpsAllC = win.Maity.api.getAll, mpsGetC = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAllC(p).then(mpsOther) : mpsAllC(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGetC(p).then(mpsOther) : mpsGetC(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing") && main.querySelectorAll("nav.member-tabs a")[0].getAttribute("aria-current") === "page",
+    "member page: another member's agent has no Briefing tab for a member, and its address falls back to Activity");
+  win.Maity.api.getAll = mpsAllC; win.Maity.api.get = mpsMe;
+  await go("#/maintainer/maity/members/agt-nobody"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No member with the id agt-nobody in this project."), "member page: an unknown id is said");
+  // ?manage=<id>, where Actions leads: Members with that row open.
+  await go("#/maintainer/maity/members?manage=agt-c"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelectorAll("tr.member-manage").some((r) => r.id === "member-manage-agt-c"), "member page: Manage on Members opens that member's row");
   // The inbox: the entry's asker.
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");
@@ -6746,6 +6839,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(adNav(), "Users").click(); await tick();
   const adUsers = adSections().find((x) => x.getAttribute("aria-label") === "Users");
   expect(!adUsers.hidden && stBox().hidden && btn(adNav(), "Users").getAttribute("aria-pressed") === "true", "admin: a button shows its section alone");
+  // Registration (§16.4): the mode, the lists, approval, terms and the limit with their sources, missing beside them,
+  // the accounts that wait and lifting a block.
+  btn(adNav(), "Registration").click(); for (let k = 0; k < 4; k++) await tick();
+  const rgBox = () => adSections().find((x) => x.getAttribute("aria-label") === "Registration");
+  const rgSave = () => rgBox().querySelector("form.reg-form").dispatch("submit");
+  const rgPatches = [];
+  const rgPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/registration") rgPatches.push(b); return rgPatch(p, b); };
+  expect(rgBox() && !rgBox().hidden && text(rgBox().querySelector(".reg-effective")) === "Registration now: closed."
+    && byId("reg-mode").value === "closed" && byId("reg-terms-url").attrs.disabled !== undefined && text(rgBox()).includes("(set by the environment)")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("1 waiting for approval"),
+    "registration: the section shows the mode in effect, the terms the environment sets as not editable, and the counts");
+  expect(rgBox().querySelectorAll("li.reg-pending-item").length === 1 && text(rgBox().querySelector("li.reg-pending-item")).includes("new@example.org"),
+    "registration: an account waiting for approval is listed with its address");
+  byId("reg-mode").value = "allowlist"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[0]) === JSON.stringify({ mode: "allowlist" }) && rgBox().querySelector('[data-missing="allowlist"]')
+    && text(rgBox().querySelector(".reg-effective")) === "Registration now: allowlist." && text(rgBox()).includes("Saved."),
+    "registration: only the mode is sent; an empty allowlist is said beside the fields");
+  byId("reg-domains").value = "example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-domains-error")) === "entry 1 is not valid", "registration: the hub's refusal of a list entry is said at the list, by its number");
+  // The hub's own shape (registration.py): `addresses.<index>` for a bad entry, the second here.
+  const rgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/registration"
+    ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "addresses.1": "invalid" } })) : rgReal(p, b));
+  byId("reg-domains").value = ""; byId("reg-addresses").value = "ada@example.org\nnot an address"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("reg-addresses-error")) === "entry 2 is not valid" && text(rgBox().querySelector("form.reg-form")).includes("addresses: entry 2 is not valid"),
+    "registration: the hub's addresses.<index> is said at the addresses, by its number");
+  win.Maity.api.patch = rgReal;
+  byId("reg-addresses").value = "";
+  byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
+    "registration: a list is sent lower case without duplicates, and the gap is gone");
+  // Approve and reject; a decision redraws the counts only, so what is typed in the form and not saved stays.
+  byId("reg-domains").value = "@typed-not-saved.org";
+  const rgDomainsBefore = byId("reg-domains");
+  btn(rgBox().querySelector("li.reg-pending-item"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(text(rgBox().querySelector(".reg-pending-list")).includes("Nobody waits for approval") && text(rgBox()).includes("@newcomer is approved.")
+    && text(rgBox().querySelector(".reg-counts")).startsWith("0 waiting for approval"),
+    "registration: Approve decides the account, the list and counts follow");
+  expect(byId("reg-domains") === rgDomainsBefore && byId("reg-domains").value === "@typed-not-saved.org",
+    "registration: a decision keeps the settings form as typed, not saved");
+  byId("reg-domains").value = "@example.com";
+  byId("reg-block-address").value = "spam@example.org"; rgBox().querySelector("form.reg-block").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(rgBox().querySelector("form.reg-block")).includes("spam@example.org may register again"), "registration: a block is lifted by its address");
+  win.Maity.api.patch = rgPatch;
+  await win.Maity.api.patch("/admin/settings/registration", { mode: "closed", domains: [] });
   btn(adNav(), "Statistics").click(); await tick();
   expect(JSON.stringify(stTiles()) === JSON.stringify(["41Humans2 waiting for approval", "117Agent profiles", "12Projectsnot archived", "23Agent instances online", "29Humans with an agent"]),
     "statistics: the totals as tiles " + JSON.stringify(stTiles()));
@@ -6786,45 +6925,111 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(stBox() && text(stBox()).includes("Counting…") && main.querySelector("table.users") && byId("mail-host"),
     "statistics: while it counts, users, mail and the instance are there");
   win.Maity.api.get = stGet; win.Maity.api.forgetRoutes();
-  // The landing page's editor in the admin area (js/landing.js, §16.7): a preview by the same renderer, the hub's refusals at their field.
+  // The landing page's editor (js/landing.js, §16.7): per language the ordered sections of the contract's types,
+  // the footer; one PATCH of the whole draft, the hub's refusals at their field paths.
   const leGet = win.Maity.api.get, lePatch = win.Maity.api.patch;
   const lePatches = [];
-  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing" || p === "/admin/settings/legal") lePatches.push([p, JSON.parse(JSON.stringify(b))]); return lePatch(p, b); };
   win.Maity.api.forgetRoutes();
   await go("#/all"); await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
-  const leBox = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Landing page");
-  const lePreview = () => leBox().querySelector(".landing-preview");
-  const leSave = async () => { leBox().querySelector("form.landing-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
-  expect(leBox() && !byId("landing-enabled").checked && byId("landing-title").value === "Bring your own coding agent."
-    && byId("landing-markdown").value.startsWith("## A team of agents") && byId("landing-cta-href").value === "/register"
-    && text(leBox().querySelector(".landing-changed")).endsWith("by you.") && text(lePreview().querySelector(".landing-title")) === "Bring your own coding agent.",
-    "landing editor: the settings read, who changed them last, a preview by the visitor's renderer");
-  byId("landing-title").value = "Hello"; byId("landing-title").dispatch("input");
-  expect(text(lePreview().querySelector(".landing-title")) === "Hello", "landing editor: the preview follows the typing");
-  expect(!lePreview().querySelector("a") && lePreview().querySelectorAll(".inert-link").length >= 2,
-    "landing editor: the preview's links are text, so a click cannot leave unsaved work");
-  const leMd = byId("landing-markdown").value;
-  byId("landing-enabled").checked = true; byId("landing-markdown").value = "";
+  const leBox = () => main.querySelector(".lp-editor");
+  const leSections = () => leBox().querySelectorAll("li.lp-section");
+  const leSave = async () => { leBox().querySelector("form.lp-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); };
+  expect(leBox() && !byId("lp-enabled").checked && byId("lp-default-language").value === "en" && leSections().length === 3
+    && text(leSections()[0]).includes("1. Hero") && byId("lp-pages-en-sections-0-title").value === "Bring your agents. Share one project."
+    && byId("lp-pages-en-sections-0-cta-primary-href").value === "/register" && byId("lp-pages-en-sections-1-items-people").checked
+    && !byId("lp-en-2-enabled").checked && byId("lp-footer-operator").value === "Maintainer, Austria",
+    "landing editor: the page's sections in order with their fields, the counters ticked, a hidden one unticked, the footer");
+  // Reorder, a new section, an item, then the hub's refusal at the field it names.
+  btn(leSections()[2], "Up").click(); await tick();
+  expect(text(leSections()[1]).includes("2. Questions") && text(leSections()[2]).includes("3. Counters"), "landing editor: a section moves up");
+  byId("lp-add-type-en").value = "text"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  expect(leSections().length === 4 && text(leSections()[3]).includes("4. Text") && byId("lp-pages-en-sections-3-markdown"), "landing editor: a new section of a type, at the end");
+  btn(leSections()[1], "Add question").click(); await tick();
+  expect(leSections()[1].querySelectorAll("li.lp-item").length === 2, "landing editor: an item added to a section");
+  byId("lp-pages-en-sections-3-markdown").value = "A <b>bold</b> line"; byId("lp-pages-en-sections-3-markdown").dispatch("input");
   await leSave();
-  expect(!lePatches.length && text(byId("landing-markdown-error")) === "required while the page is on", "landing editor: on without text is refused before sending");
-  byId("landing-markdown").value = "Hello\n\nA <b>bad</b> line"; byId("landing-cta-href").value = "/register";
+  expect(lePatches.length === 1 && lePatches[0][1].pages.en.sections.map((x) => x.type).join() === "hero,faq,stats,text"
+    && text(byId("lp-pages-en-sections-3-markdown-error")) === "holds HTML outside fenced code"
+    && text(byId("lp-pages-en-sections-1-items-1-q-error")) === "required",
+    "landing editor: the whole draft sent in its order; each refusal said at the field its path names");
+  // The hub's size limits (§16.7): a stored page over 256 KiB at `pages`, a request over 512 KiB as 413, both in words.
+  const leSize = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pages: "too_large" } })) : leSize(p, b));
   await leSave();
-  expect(lePatches.length === 1 && text(byId("landing-markdown-error")).startsWith("Line 3 breaks the rules: “A <b>bad</b> line”."),
-    "landing editor: the hub's refused line is named and quoted at the text");
-  byId("landing-markdown").value = leMd; byId("landing-cta-href").value = "ftp://example.org";
+  expect(text(main).includes("pages: the page is too large: at most 256 KiB stored"), "landing editor: a page over the stored limit is said in words");
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 413, p, "payload_too_large")) : leSize(p, b));
   await leSave();
-  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "The link: not allowed here", "landing editor: a button link that is neither a route nor https is refused");
-  byId("landing-cta-href").value = "/register"; byId("landing-cta-label").value = "";
+  expect(text(main).includes("the draft is larger than the hub takes in one request (512 KiB)"), "landing editor: a draft over the request cap is said in words");
+  // A field's own limit: in its hint, and with the hub's too_long at it.
+  const lmHint = byId("lp-pages-en-sections-3-markdown").parentNode.querySelector(".hint");
+  expect(lmHint && text(lmHint).endsWith("At most 16 KiB."), "landing editor: a Markdown field says its limit");
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "pages.en.sections.3.markdown": "too_long" } })) : leSize(p, b));
   await leSave();
-  expect(lePatches.length === 1 && text(byId("landing-cta-error")) === "a button needs a label as well as a link", "landing editor: a button without a label is said so");
-  byId("landing-cta-label").value = "Get started";
-  win.Maity.api.patch = (p, b) => (p === "/admin/settings/landing" ? Promise.reject(new win.Maity.api.ApiError("too large", 413, p, "payload_too_large")) : lePatch(p, b));
+  expect(text(byId("lp-pages-en-sections-3-markdown-error")) === "too long: at most 16 KiB", "landing editor: too long names the field's limit");
+  win.Maity.api.patch = leSize;
+  byId("lp-pages-en-sections-3-markdown").value = "Plain **text**."; byId("lp-pages-en-sections-3-markdown").dispatch("input");
+  btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
+  // A second language, made the default, and the page shown to visitors.
+  byId("lp-new-language").value = "de"; btn(leBox(), "Add the language").click(); await tick();
+  expect(leBox().querySelectorAll(".lp-tabs button").map((b) => b.textContent + ":" + b.attrs["aria-pressed"]).join() === "en:false,de:true"
+    && byId("lp-pages-de-title") && !leBox().querySelector("li.lp-section"), "landing editor: a new language, empty, shown");
+  byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
+  byId("lp-enabled").checked = true; byId("lp-enabled").dispatch("change");
   await leSave();
-  expect(text(byId("landing-markdown-error")) === "larger than the hub accepts in one save; shorten the text", "landing editor: the hub's body cap is said at the text");
-  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") lePatches.push(JSON.parse(JSON.stringify(b))); return lePatch(p, b); };
-  await leSave();
-  expect(lePatches.length === 2 && JSON.stringify(lePatches[1]) === JSON.stringify({ enabled: true, title: "Hello", markdown: leMd, cta: { label: "Get started", href: "/register" } })
-    && text(leBox()).includes("Saved. Visitors see it within a minute."), "landing editor: saved as one PATCH of all fields");
+  const leLast = lePatches[lePatches.length - 1][1];
+  expect(text(main).includes("Saved. Visitors see it within a minute.") && leLast.enabled === true && Object.keys(leLast.pages).join() === "en,de"
+    && leLast.pages.de.title === "Maity — bring deine Agents" && leLast.pages.en.sections[1].items.length === 1
+    && leBox().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/?as=public&lang=de" && a.getAttribute("target") === "_blank"),
+    "landing editor: saved with both languages; View as a visitor opens the saved page in a tab of its own");
+  // A draft previewed (§16.7, #628): POSTed with the token, opened by the hub's url in a tab opened at the click.
+  const pvOpen = win.open, pvHref = win.location.href, pvOrigin = win.location.origin, pvTabs = [];
+  win.location.href = "file:///web/index.html"; win.location.origin = "null";
+  win.open = (url, target, features) => { const tab = { url, target, features, location: {}, close() { this.closed = true; } }; pvTabs.push(tab); return tab; };
+  const pvPosts = [];
+  const pvPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => { if (/\/preview/.test(p)) pvPosts.push([p, JSON.parse(JSON.stringify(b))]); return pvPost(p, b); };
+  btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvPosts.length === 1 && pvPosts[0][0] === "/admin/settings/landing/preview" && Object.keys(pvPosts[0][1]).join() === "default_language,pages,footer"
+    && pvTabs.length === 1 && pvTabs[0].url === "about:blank" && pvTabs[0].opener === null
+    && /^file:\/\/\/api\/v1\/admin\/settings\/landing\/preview\/[^?]+\?lang=de$/.test(pvTabs[0].location.href),
+    "landing editor: Preview the draft posts it and opens the hub's url in a tab opened at the click, in the language shown " + JSON.stringify(pvTabs[0] && pvTabs[0].location));
+  byId("lp-pages-de-title").value = ""; byId("lp-pages-de-title").dispatch("input");
+  btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvTabs.length === 2 && pvTabs[1].closed && text(byId("lp-pages-de-title-error")) === "required", "landing editor: a refused preview closes its tab and says why at the field");
+  byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
+  // The legal pages (§16.7.1): one page per save, a new version; taking one down.
+  const lgBox = () => main.querySelectorAll("section.lg-page");
+  const lgImprint = () => lgBox().find((x) => x.attrs["aria-label"] === "Imprint");
+  const lgPrivacy = () => lgBox().find((x) => x.attrs["aria-label"] === "Privacy");
+  expect(lgBox().length === 3 && text(lgImprint()).includes("Served at /impressum") && lgImprint().querySelectorAll("a").some((a) => a.getAttribute("href") === "/impressum")
+    && byId("lp-imprint-en-title").value === "Imprint" && text(lgPrivacy()).includes("Not set: /privacy answers not found"),
+    "legal: each page, served or not set, its earlier versions linked, the text per language");
+  byId("lg-privacy-new-language").value = "en"; btn(lgPrivacy(), "Add the language").click(); await tick();
+  byId("lp-privacy-en-markdown").value = "We keep <b>nothing</b>."; byId("lp-privacy-en-markdown").dispatch("input");
+  lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("lp-privacy-en-markdown-error")) === "holds HTML outside fenced code", "legal: the hub's refusal at the page's field");
+  // The hub folds an empty or too long legal text into invalid: said with the field's limit (64 KiB).
+  const lgReal = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => (p === "/admin/settings/legal" ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "privacy.en.markdown": "invalid" } })) : lgReal(p, b));
+  lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(byId("lp-privacy-en-markdown-error")) === "empty, or longer than allowed (at most 64 KiB)", "legal: an invalid text names the page's limit");
+  win.Maity.api.patch = lgReal;
+  byId("lp-privacy-en-markdown").value = "We keep what the service needs."; byId("lp-privacy-en-markdown").dispatch("input");
+  lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const lgLast = lePatches[lePatches.length - 1];
+  expect(lgLast[0] === "/admin/settings/legal" && Object.keys(lgLast[1]).join() === "privacy" && lgLast[1].privacy.en.title === "Privacy"
+    && text(main).includes("Saved as a new version of the privacy.") && text(lgPrivacy()).includes("Served at /privacy"),
+    "legal: one page sent as a whole, served at once");
+  btn(lgImprint(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pvPosts.slice(-1)[0][0] === "/admin/settings/legal/preview?page=imprint" && !("imprint" in pvPosts.slice(-1)[0][1])
+    && pvPosts.slice(-1)[0][1].en && "markdown" in pvPosts.slice(-1)[0][1].en && pvPosts.slice(-1)[0][1].de
+    && /\/api\/v1\/admin\/settings\/legal\/preview\/[^?]+\?lang=en$/.test(pvTabs.slice(-1)[0].location.href),
+    "legal: a page's draft previewed the same way, its languages as the body (not wrapped in the page's name), the page in ?page=");
+  win.open = pvOpen; win.location.href = pvHref; win.location.origin = pvOrigin; win.Maity.api.post = pvPost;
+  btn(lgImprint(), "Take the page down").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(lePatches[lePatches.length - 1][1]) === JSON.stringify({ imprint: null }) && text(lgImprint()).includes("Not set"),
+    "legal: taking a page down sends it as null");
   win.Maity.api.get = leGet; win.Maity.api.patch = lePatch; win.Maity.api.forgetRoutes();
   await go("#/all");
 

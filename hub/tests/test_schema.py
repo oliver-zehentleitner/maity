@@ -13,6 +13,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection, Engine, insert, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
 
+from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.db import metadata, migrate
 from maity_hub.ids import new_id
@@ -51,7 +52,7 @@ def _project(conn: Connection) -> str:
     conn.execute(
         insert(t.project).values(
             id=project_id,
-            owner_id=_human(conn),
+            **namespace.owner_values(_human(conn)),
             slug=project_id,
             name="Maity",
             state="build",

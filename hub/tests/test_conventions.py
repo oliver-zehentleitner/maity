@@ -190,7 +190,7 @@ def test_health_says_database_unavailable_without_driver_text(
     from maity_hub.db import make_engine
 
     client = make_client()
-    client.app.state.engine = make_engine(  # type: ignore[attr-defined]
+    client.app.state.health_engine = make_engine(  # type: ignore[attr-defined]
         f"sqlite:///{tmp_path / 'missing' / 'dir' / 'hub.db'}"
     )
     response = client.get("/api/v1/health")
@@ -266,7 +266,7 @@ def test_a_plus_in_the_query_is_a_literal_plus(make_client: ClientFactory) -> No
     }
 
 
-def test_the_request_log_has_method_path_status_and_nothing_else(
+def test_the_request_log_has_method_path_status_time_and_route_and_no_secret(
     make_client: ClientFactory, caplog: pytest.LogCaptureFixture
 ) -> None:
     import logging
@@ -276,9 +276,9 @@ def test_the_request_log_has_method_path_status_and_nothing_else(
         make_client().get("/join/SECRET-TOKEN")
         make_client().get("/invite/SECRET-TOKEN")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines[0] == "GET /api/v1/join/… 404"
+    assert re.fullmatch(r"GET /api/v1/join/… 404 ms=\d+ route=\S+", lines[0])
     assert lines[1].startswith("GET /join/… ")
-    assert lines[2] == "GET /invite/… 200"
+    assert re.fullmatch(r"GET /invite/… 200 ms=\d+ route=\S+", lines[2])
     assert not any("SECRET" in line or "Q7MD" in line or "hdr" in line for line in lines)
 
 

@@ -16,6 +16,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, MetaData, create_engine, event
 from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.pool import NullPool
 
 from maity_hub.errors import connection_cause
 
@@ -42,6 +43,16 @@ RESOLVE_PAUSE_SECONDS = 0.25
 # age of a connection, whatever sits between the hub and the server. A dead one is found by
 # `pool_pre_ping`, which tests every connection as it is taken.
 POOL_RECYCLE_SECONDS = 1800
+# What a PostgreSQL connection says it is in `pg_stat_activity.application_name`: the serving
+# hub, its readiness probe, and every other command (`migrate`, `owner create`, ...).
+APPLICATION_SERVING = "maity-hub"
+APPLICATION_HEALTH = "maity-hub-health"
+APPLICATION_COMMAND = "maity-hub-cli"
+# What the readiness probe may spend on the database: the connect timeout above and this long
+# for its one statement (PostgreSQL's `statement_timeout`, the driver's `read_timeout` on
+# MariaDB). It runs on a connection of its own, so a slow database answers 503 within about
+# this long and does not hold the probe's request thread for the pool's wait.
+HEALTH_STATEMENT_SECONDS = 5
 
 
 def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: Any) -> T:
@@ -57,11 +68,26 @@ def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: An
     return connect(*args, **kwargs)
 
 
+def postgres_options(*, statement: float = 0, idle_in_transaction: float = 0) -> str:
+    """The `options` startup parameter that sets the two session timeouts of a PostgreSQL
+    connection, in milliseconds; empty when both are 0 (off)."""
+    wanted = {
+        "statement_timeout": statement,
+        "idle_in_transaction_session_timeout": idle_in_transaction,
+    }
+    return " ".join(
+        f"-c {name}={round(seconds * 1000)}" for name, seconds in wanted.items() if seconds > 0
+    )
+
+
 def make_engine(
     url: str,
     pool_size: int = 16,
     max_overflow: int = 16,
     pool_recycle: int = POOL_RECYCLE_SECONDS,
+    statement_timeout: float = 0,
+    idle_in_transaction_timeout: float = 0,
+    application_name: str = APPLICATION_COMMAND,
 ) -> Engine:
     # hide_parameters: a failing statement's error never carries the values.
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "hide_parameters": True}
@@ -75,6 +101,15 @@ def make_engine(
         kwargs["isolation_level"] = "READ COMMITTED"
         # Fail fast on an unreachable server instead of waiting for TCP's own timeout.
         kwargs["connect_args"] = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
+        # Per connection, not per role: the hub sets them for its own sessions only, and
+        # `maity-hub migrate` and the CLI commands, which take no timeouts, run unbounded.
+        options = postgres_options(
+            statement=statement_timeout, idle_in_transaction=idle_in_transaction_timeout
+        )
+        if url.startswith("postgresql"):
+            kwargs["connect_args"]["application_name"] = application_name
+            if options:
+                kwargs["connect_args"]["options"] = options
         kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
         # Connections are kept and reused, the most recently used first, so that the few that
         # a quiet hub needs stay warm and the rest age out; a new connection is a name lookup
@@ -92,6 +127,32 @@ def make_engine(
         event.listen(engine, "connect", _sqlite_pragmas)
         event.listen(engine, "begin", _sqlite_begin_immediate)
     return engine
+
+
+def make_health_engine(engine: Engine) -> Engine | None:
+    """An engine for the readiness probe alone: the same database, no pool (a connection per
+    check, closed after it) and a short statement timeout. None for SQLite, where there is
+    no pool wait to escape and a second engine could be a second, empty database."""
+    if engine.dialect.name == "sqlite":
+        return None
+    kwargs: dict[str, Any] = {
+        "poolclass": NullPool,
+        "hide_parameters": True,
+        "connect_args": {"connect_timeout": CONNECT_TIMEOUT_SECONDS},
+    }
+    if engine.dialect.name == "postgresql":
+        kwargs["connect_args"]["options"] = postgres_options(statement=HEALTH_STATEMENT_SECONDS)
+        kwargs["connect_args"]["application_name"] = APPLICATION_HEALTH
+    elif engine.dialect.name in ("mysql", "mariadb"):
+        # No server-side statement timeout to set per session here: the driver stops waiting.
+        kwargs["connect_args"]["read_timeout"] = HEALTH_STATEMENT_SECONDS
+    health = create_engine(engine.url, **kwargs)
+
+    @event.listens_for(health, "do_connect")
+    def _connect(dialect: Any, _record: Any, cargs: Any, cparams: Any) -> Any:
+        return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams)
+
+    return health
 
 
 def _sqlite_begin_immediate(conn: Any) -> None:

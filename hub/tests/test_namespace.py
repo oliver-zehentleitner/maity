@@ -56,7 +56,10 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     with migrated.begin() as conn:
         conn.execute(
             insert(t.project_alias).values(
-                project_id=project["id"], owner_id=owner.id, slug="old", created_at=clock.now()
+                project_id=project["id"],
+                **namespace.owner_values(owner.id),
+                slug="old",
+                created_at=clock.now(),
             )
         )
     assert owner.get("/projects/maintainer/old").json()["full_name"] == "maintainer/maity"

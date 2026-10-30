@@ -20,7 +20,7 @@ The walkthrough, with the secrets and the order, is in
 | `attachments.yaml` | the volume of the hub's attachment store (10 GiB), mounted by the chart's `attachments.existingClaim` |
 | `backup.yaml` | daily `pg_dump` CronJob and a tar of the attachment volume, into the backup volume, the newest 14 kept |
 | `restore-attachments.yaml` | the Job that puts one night's attachment files back (not applied as it stands) |
-| `cert.yaml` | the Certificate for the apex and `www`, and the `www` → apex redirect |
+| `cert.yaml` | the Certificate for the apex, `www` and the join host, and the `www` → apex redirect |
 | `hub-values.yaml` | values for [`deploy/helm/maity-hub`](../helm/maity-hub/README.md) |
 
 Replace `maity.example.org` and the image digest before applying. No file

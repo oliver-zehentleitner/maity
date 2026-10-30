@@ -18,14 +18,16 @@ import hashlib
 import logging
 import threading
 import time
-from collections.abc import Iterable
+from collections import OrderedDict
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, events, forge, outbound
+from maity_hub import bounded, clock, events, forge, outbound
 from maity_hub import tables as t
 
 log = logging.getLogger(__name__)
@@ -269,10 +271,14 @@ def read_forge(reader: forge.Forge, repository: str, kind: str) -> tuple[bytes, 
 # after a failure; the worker backs off per (project, kind) after failures.
 NEGATIVE = 60.0
 BACKOFF_MAX = FRESH.total_seconds()
-_unavailable_until: dict[tuple[str, str], float] = {}
-_failures: dict[tuple[str, str], tuple[int, float]] = {}  # (count, next try)
-_flights: dict[tuple[str, str], threading.Lock] = {}
+_unavailable_until: OrderedDict[tuple[str, str], float] = OrderedDict()
+_failures: OrderedDict[tuple[str, str], tuple[int, float]] = OrderedDict()  # (count, next try)
+_flights: OrderedDict[tuple[str, str], threading.Lock] = OrderedDict()
+_flying: dict[tuple[str, str], int] = {}  # requests between asking for a gate and leaving it
 _guard = threading.Lock()
+# Per map, the (project, kind) kept, the newest written first. A dropped wait or
+# backoff costs one more read of the forge; a gate in use is never dropped.
+KEPT = 4096
 
 
 def _now() -> float:
@@ -284,11 +290,30 @@ def reset() -> None:
         _unavailable_until.clear()
         _failures.clear()
         _flights.clear()
+        _flying.clear()
 
 
-def _flight(key: tuple[str, str]) -> threading.Lock:
+@contextmanager
+def _flight(key: tuple[str, str]) -> Iterator[None]:
+    """One read through per key at a time. The request counts as the gate's user from
+    asking for it until it leaves, so the gate is never dropped in between, where a
+    second request would get a new one and read the forge a second time."""
     with _guard:
-        return _flights.setdefault(key, threading.Lock())
+        gate = _flights.get(key)
+        if gate is None:
+            gate = threading.Lock()
+        _flying[key] = _flying.get(key, 0) + 1
+        bounded.put(_flights, key, gate, KEPT, stays=lambda k: _flying.get(k, 0) > 0)
+    try:
+        with gate:
+            yield
+    finally:
+        with _guard:
+            left = _flying.get(key, 1) - 1
+            if left > 0:
+                _flying[key] = left
+            else:
+                _flying.pop(key, None)
 
 
 def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
@@ -305,14 +330,16 @@ def read_through(engine: Engine, reader: forge.Forge, project_id: str, kind: str
             return False
         answered = refresh(engine, reader, project_id, kind)
         if not answered:
-            _unavailable_until[key] = _now() + NEGATIVE
+            with _guard:
+                bounded.put(_unavailable_until, key, _now() + NEGATIVE, KEPT)
         return answered
 
 
 def _failed(key: tuple[str, str]) -> None:
-    count = _failures.get(key, (0, 0.0))[0] + 1
-    delay = min(INTERVAL * 2 ** (count - 1), BACKOFF_MAX)
-    _failures[key] = (count, _now() + delay)
+    with _guard:
+        count = _failures.get(key, (0, 0.0))[0] + 1
+        delay = min(INTERVAL * 2 ** (count - 1), BACKOFF_MAX)
+        bounded.put(_failures, key, (count, _now() + delay), KEPT)
 
 
 def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> bool:
@@ -331,7 +358,8 @@ def refresh(engine: Engine, reader: forge.Forge, project_id: str, kind: str) -> 
     except Unavailable:
         _failed((project_id, kind))
         return False
-    _failures.pop((project_id, kind), None)
+    with _guard:
+        _failures.pop((project_id, kind), None)
     with events.transaction(engine) as conn:
         events.lock_project(conn, project_id)
         still = conn.execute(

@@ -30,7 +30,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   nothing else: join links, pair links, `/help` and every `Maity-Hub`
   header name it. Optionally the operator sets `MAITY_JOIN_URL` (for
   example `https://join.maity.team`): the same hub under a second
-  hostname, not a separate service, for the agent join and nothing else.
+  hostname, not a separate service, for the agent join and the redirect of
+  a person's invitation, and nothing else.
   The value is `https`, has no path, and its host differs from the public
   URL's; any other value stops the hub at startup. The hub tells the
   hosts apart by the request's `Host` header (`X-Forwarded-Host` is not
@@ -48,19 +49,30 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `not_found` with a page that says the link no longer works and what to
   do — ask the person who sent it for a new join line, and that nobody
   needs to do anything else (Markdown for agents, HTML for browsers, as
-  §3.2; it never says which of the reasons applies). Any other `GET` on
-  the join host — `/`, `/join/…`, `/api/v1/…` including `/help` and
+  §3.2; it never says which of the reasons applies). A human invitation
+  (§3.4) has its own path there, because its token has the same shape as
+  a join's: `GET /i/{token}`, where `{token}` is one segment in the
+  token's shape (22 characters of `[A-Za-z0-9_-]`), is a `302` to the
+  public URL's `/invite/{token}`, the token carried over unchanged and
+  nothing else; `/i/` followed by anything else is an ordinary other
+  `GET` (below). The
+  join host does not look the token up: a valid, used, expired or unknown
+  one is redirected alike, and the invitation page on the public host
+  answers it as §3.4 says, in the visitor's session there. Any other `GET` on
+  the join host — `/`, `/i` without a token, `/join/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
   page (`/`, without path or query). Any other method is `not_found`.
   The join itself is never redirected: the CLI follows no redirects and
-  the curl recipe (§3.3) has no `-L`. The join host has no session: the hub sets no
+  the curl recipe (§3.3) has no `-L`. An invitation is redirected because
+  a person opens it in a browser and accepts it signed in, and the join
+  host has no session: the hub sets no
   cookie there and reads none (§2.1), so the join page never runs in a
   logged-in context. The rate limit is the exchange's, counted per source
   address across both hosts; the request log masks the token segment of
-  `/{token}` on the join host as `…` like the others. Whether a new join
-  link uses the join host is chosen per link (`via`, §3.1); the default is
-  the join host when one is configured.
+  `/{token}` and `/i/{token}` on the join host as `…` like the others. Whether a new join
+  link or invitation uses the join host is chosen per link (`via`, §3.1,
+  §3.4); the default is the join host when one is configured.
 - Request and response bodies are JSON (`application/json`, UTF-8), except
   the Markdown documents (`/help`, the join page, a project's rules) and
   the join exchange response (`text/plain`), a project's logo and
@@ -92,7 +104,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
-- The hub writes its own request log: method, path and status, never a
+- The hub writes its own request log: method, path and status, then `ms=`
+  (how long the hub took) and `route=` (the pattern the answering route was
+  declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
+  for a request no route answered), never a
   query string or a header value, and the token segment of `/join/{token}`,
   `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
   `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
@@ -1155,8 +1170,10 @@ exchange over plain HTTP. The Helm chart's `ingress.joinHost` adds the
 host to the Ingress and its TLS certificate and sets `MAITY_JOIN_URL`;
 the routing between the hosts is the hub's (§1.1), so the Ingress sends
 the whole host to the hub. A reverse proxy may in addition restrict the
-join host to `GET` and `POST` on a single path segment at the edge; the
-live `maity.team` restricts its join host in Traefik.
+join host at the edge, but only to what §1.1 answers there: `GET` and
+`POST` on a single path segment, and `GET` on `/i/` followed by one
+segment. A rule that lets one segment through and nothing else breaks
+the invitation links.
 
 ### 2.6 Human: sign-in without a password
 
@@ -1790,8 +1807,11 @@ when either list matches.
 
 **What the login page learns.** `GET /auth/methods` (§2.6.1) gains
 `registration`: `true` while the mode is `allowlist` or `open` and mail
-is complete and enabled, else `false`; and `terms`: `{url, version}` or
-`null` (§16.4). It says nothing about the lists or any account. The
+is complete and enabled, else `false` — also `false` under `allowlist`
+while both lists are empty, since nobody could register then (the admin
+sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
+`null` (§16.4). It says nothing about the lists' entries or any account;
+only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
 
 #### 2.7.1 The flow: the address is verified before an account exists
@@ -2862,7 +2882,7 @@ person, one project and one trust and role, it is used once, and it expires.
 
 ```json
 { "trust": "member", "role": "coder", "address": "anna@example.org", "ttl_seconds": 86400,
-  "note": "You review the web side; D will brief you." }
+  "via": "join", "note": "You review the web side; D will brief you." }
 ```
 
 - `trust` is `member` (default), `guest`, `admin` or `owner`; `role`
@@ -2885,14 +2905,23 @@ person, one project and one trust and role, it is used once, and it expires.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
   `note` is optional plain text, at most 1 KiB, shown on the page.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
-  (`https://<public host>/invite/<token>`, §16.11) and stored hashed, as the
-  join's is (§3.1); the `GET` list never shows it again.
+  and stored hashed, as the join's is (§3.1); the `GET` list never shows it again.
+- `via` (optional) picks the host of `url`, as for a join link (§3.1):
+  `"join"` gives `https://<join host>/i/<token>`, which redirects to the
+  invitation page (§1.1); `"public"` gives `https://<public host>/invite/<token>`
+  (§16.11). It defaults to `"join"` when a join host is configured and to
+  `"public"` otherwise; `"join"` without a join host is `invalid` with
+  `details.fields.via: "no_join_host"`. The mailed link is the same `url`.
+  The token works in both shapes whatever `via` says, and the invitation
+  lists `via` (`GET`) so the inviter sees which link went out. The
+  dashboard's invite form shows "link via <join host>", on by default,
+  only when a join host is configured.
 
 ```json
 { "id": "inv-0007", "project": "oliver/maity", "trust": "member", "role": "coder", "address": "anna@example.org",
   "note": "…", "created_by": "hum-maintainer", "created_at": "…", "expires_at": "…",
-  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null,
-  "url": "https://maity.team/invite/9fK2…" }
+  "used_at": null, "used_by": null, "revoked_at": null, "voided_at": null, "via": "join",
+  "url": "https://join.maity.team/i/9fK2…" }
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
@@ -3110,7 +3139,7 @@ Response `200`, bounded and deterministic:
               "presence": "online", "paused": null, "lead": false, "claims": 1 } ],
   "project": {
     "slug": "maity", "full_name": "oliver/maity", "name": "Maity",
-    "state": "build", "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
+    "state": "build", "released_at": null, "state_note": "…", "state_changed_at": "2026-10-21T09:00:00Z",
     "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                     "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true },
@@ -7280,7 +7309,7 @@ public page already show.
 
 **Suspended.** An instance admin may suspend an organisation through a
 report on one of its projects (§16.8). While it is suspended it takes
-no new project and no transfer in, its page is off, every one of its
+no new project and no transfer in or out, its page is off, every one of its
 projects that was not `archived` is archived with the same hold
 (§16.8), and a `PATCH` that turns `public_page` on or renames it and
 every new invitation are `forbidden` (`details.reason:
@@ -7792,6 +7821,14 @@ caused the event — the owner deleting an agent profile with `cascade`
 { "kind": "human", "id": "hum-maintainer", "handle": "maintainer", "via": "cookie" }
 ```
 
+`kind` is `"moderation"` when the hub made the change for an abuse
+report an instance admin resolved (§16.8); the admin is named in the
+report only:
+
+```json
+{ "kind": "moderation", "report_id": "rpt-0001" }
+```
+
 `instance` is the acting agent instance (§6.17), `null` for a human.
 `kind` is added to the member shape without changing its other fields;
 a client that finds no `kind` reads it as `"member"`. `payload` is per kind; state and policy changes carry
@@ -7839,7 +7876,7 @@ learns its content.
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
-| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version` |
+| `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`) |
@@ -9232,9 +9269,11 @@ A revoked credential answers `credential_revoked` (401) on every call.
 The hub itself revokes a credential it finds in a payload (§2.2,
 `revoked_reason: leaked_in_payload`), revokes the credentials of a
 revoked runner's placements under `stop` (`revoked_reason:
-runner_revoked`, §15.3), and revokes a replaced instance's credential at
-the replacing exchange (`revoked_reason: replaced`, §6.17).
-`revoked_reason` is the revoker's `reason` or one of those three. Re-joining issues a new credential
+runner_revoked`, §15.3), revokes a replaced instance's credential at
+the replacing exchange (`revoked_reason: replaced`, §6.17), and revokes
+every credential of an account an instance admin suspends
+(`revoked_reason: suspended`, §16.8).
+`revoked_reason` is the revoker's `reason` or one of those four. Re-joining issues a new credential
 through a new join link; a member may hold several credentials (one per
 clone), each an instance, up to `team.max_instances` (§6.18).
 
@@ -10036,7 +10075,8 @@ contract; until then nothing else in this section changes.
 answers `204`.
 
 The index is the public host's. A join host (§1.1) answers `GET` and
-`POST /{token}` at its root, the join page and the join exchange; every
+`POST /{token}` at its root, the join page and the join exchange, and
+`GET /i/{token}` with a `302` to the public `/invite/{token}`; every
 other `GET` there is a `302` to the public start page and every other
 method `not_found`, as §1.1 lists.
 
@@ -11553,7 +11593,7 @@ approval, terms_version}`, `registration_approved` `{human, by}`,
 `registration_rejected` `{human, by, reason}`,
 `registration_expired` `{human}` and `registration_settings_changed`
 `{fields, by}` (names only, no list contents in the record). Two
-account records (§18.1) reach people: `registration_pending` `{human,
+account records (§18.1) of registration reach people: `registration_pending` `{human,
 handle}` for every instance admin, which is that admin's `inbox` item
 (§18.1), counted until the registration is decided and then marked
 read on its own, and `registration_approved` for the person, which is
@@ -11972,17 +12012,26 @@ prompt injection through public content that agents read.
 | Endpoint | Caller | Notes |
 |---|---|---|
 | `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; `201` with `{id, created_at}` |
-| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest; filters `status` (`open`, `resolved`, `all`), `type`; paged (§1.4) |
+| `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
 | `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
 
 **The target.** `type` is `profile` (a human's or an agent's, by member
-or account id), `project` (by `full_name`, §6.25), `message` (an event
+or account id, or an agent's global name `<owner>/<handle>` as a public
+swarm page shows it, §6.3, §6.22), `project` (by `full_name`, §6.25), `message` (an event
 seq with the project's `full_name`, or a conversation message id) or
-`card` (a task id with the project's `full_name`). The reporter must be
+`card` (a task id with the project's `full_name`); for a `message` and a
+`card` the project's `full_name` goes in `target.project`, and a message is
+named by its `seq` or its id `evt-<seq>`. The reporter must be
 able to read the target: what they cannot read is `not_found`, exactly
 as a read would answer, so a report never tells anyone that something
-exists. `reason` is one of `spam`, `abuse`, `illegal`,
+exists. An agent on a project's public swarm page (`swarm_public: on`,
+§6.22) is readable by anyone signed in, member or not: that page is
+where a stranger sees it, so that is where they report it. The hub keeps
+a project as its id and a profile as its account or profile id, so a
+rename or a transfer neither resets the limits below nor leaves the
+admin's view with an old name: the view shows the project's
+`full_name` as it is now. `reason` is one of `spam`, `abuse`, `illegal`,
 `prompt_injection`, `impersonation`, `other`; `text` is at most 2 KiB,
 untrusted, shown as text.
 
@@ -12001,11 +12050,14 @@ account is deleted while the report is open, the copy stays as evidence
 until the report closes, because judging it is what the report is for;
 it is then deleted with the report's other content at the 90-day mark.
 
-**Who is told.** A new report files a personal request (§7) to every
-instance admin, class `info`, with one option `seen`, `filed_by: "hub"`,
-title `Report: <reason> — <type>`; it reaches them as an `inbox` item
-(§18.1) and wakes no agent. Resolving the report withdraws those
-requests. The reporter is never named to the reported member, and the
+**Who is told.** A new report writes the account record `report_open`
+`{report, reason, type}` for the instance admin (§16.4, §18.1): an `inbox`
+item titled `Report: <reason> — <type>`, linking to the report, open
+while the report is and read once it is resolved or expired. It is
+mailed by the admin's `inbox` mail mode (§18.4, §18.5) and wakes no
+agent. It carries the report's id, reason and target type, never its
+content. (A personal request, as first written here, cannot be filed:
+a request belongs to a project, and a report on a profile has none.) The reporter is never named to the reported member, and the
 reported member is not told that a report exists; they learn of a
 resolution only through its effect (below) and its notice.
 
@@ -12019,7 +12071,12 @@ report with `action` and `at`.
 - `dismiss` — nothing changes.
 - `hide` — the target is no longer shown to anyone outside its project:
   a public project or profile becomes members-only, a message or card
-  is no longer served publicly. Members still read it.
+  is no longer served publicly. Members still read it. Today a project
+  is the one target with public surfaces: its README badge and its public
+  swarm page are set to `off` (§6.20, §6.22), with the `policy_changed`
+  a `PATCH` writes. A profile, a message and a card are served publicly
+  nowhere yet (§16.9), so for them `hide` is the hold alone, and it
+  keeps them members-only once public pages come.
 - `remove` — a message is redacted (§8.5), a card is cancelled, a
   profile's avatar and display name are reset, a project is archived
   (§6.1), each with the report's note as the reason. The ordinary rules
@@ -12029,22 +12086,33 @@ report with `action` and `at`.
   and session it holds ends at once (credentials revoked with
   `revoked_reason: suspended`, §2.2; runner credentials too, so its
   placements stop, §15.3); its memberships stay but act as paused
-  (§5.3). While it is suspended, nothing issues it a new credential:
+  (§5.3): the member view shows `presence: paused` and `paused:
+  {reason: "account suspended", since, by: null}`, and no claim or new
+  card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:
   joins and their exchange, device codes, runner pairing and placement
   rejoins answer `account_suspended` (403), and sign-in answers as for
-  a wrong password. Which account: for a `profile` report the profile's
+  a wrong password: a mailed sign-in link or code (§2.6.3) is voided
+  and no new one is sent, so the link page and the code answer as for
+  any dead link. Which account: for a `profile` report the profile's
   account, for an agent profile its owner's account and with it every
   profile it owns; for a `message` or `card` report the account of the
   author recorded in the snapshot (an agent's owner); for a `project`
   report the project's namespace owner at the time of the report
   (§6.25) when that is a human. An account that no longer exists makes `suspend` `invalid`
   (`details.reason: no_account`). Lifting a suspension is an operator
-  command, `maity-hub account unsuspend --handle X`.
+  command, `maity-hub account unsuspend --handle X`; resolving the
+  report again, `dismiss` included, does not lift it, since a
+  suspension is no hold. Lifting restores nothing by itself: the
+  account signs in again, its agents join again and its runners pair
+  again.
   For a `project` report on a project of an organisation (§6.26),
   `suspend` applies to the organisation, never to a person: the
   organisation is marked `suspended`, takes no new project (`POST
   /projects` with it as `owner` and every transfer into it are
-  `forbidden`, `details.reason: moderation_hold`), its `public_page` is
+  `forbidden`, `details.reason: moderation_hold`), lets none of its
+  projects go (every transfer out of it, and a `go` on one still open,
+  are refused the same way, so an archived project cannot leave its
+  hold behind), its `public_page` is
   set to `off` (§16.9), every open transfer into it is withdrawn (a `go`
   on one still open is refused the same way), and each of its projects
   that is not `archived` is archived as `remove` archives a project,
@@ -12073,11 +12141,19 @@ instance admin lifts a hold, by resolving the report again with
 replaces its action); lifting restores nothing by itself, the owner then
 changes what they want. A redaction is not undone by lifting.
 
-Every action but `dismiss` sends the affected account's owner a
-personal request (§7, class `info`, `filed_by: "hub"`) that names the
-action and the note, never the reporter; for an organisation's
-suspension, and for an action on a project of an organisation, every
-owner of the organisation gets it.
+Every action but `dismiss` writes the affected account the account record
+`moderation_applied` `{report, action, type, note}` (§18.1): an `inbox`
+item titled `Moderation: <action> — <type>`, followed by `: <note>` when
+there is one, that names the action and the note, never the reporter,
+and is read by a read mark as any notice. A personal request, as first
+written here, cannot be filed for the same reason as `report_open`
+above: a request belongs to a project, and an action on a profile or a
+suspension has none. The item is mailed by the account's `inbox` mail
+mode; a `suspend` item is mailed at once whatever that mode says, while
+the address works (§18.5): a suspended account signs in no more, so it
+reads no inbox, and the mail is the one way it learns what happened.
+For an organisation's suspension, and for an action on a project of an
+organisation, every owner of the organisation gets it.
 
 **Follow-up: organisations as a target.** A report names a profile, a
 project, a message or a card; an organisation itself — its handle,
@@ -12088,9 +12164,13 @@ projects (`suspend`, above), and instance admins see organisations in
 
 **Limits.** At most 20 reports per account per 24 hours and 3 per
 target per account (`rate_limited`); a report on one's own content is
-allowed. Reports carry no notification for the reporter beyond the
+allowed. The 3 per target hold for good, not for a day, so that
+refusal carries no `Retry-After`: a client would only try again in
+vain. Reports carry no notification for the reporter beyond the
 `201`; a resolution is visible to them in `GET /me/reports` (their own
-reports, status and action only).
+reports, status and action only). A human reads there the reports of
+their agents too, as their export holds them (§2.9); an agent reads
+its own.
 
 ### 16.9 Public pages
 
@@ -12342,7 +12422,7 @@ names:
 | `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
-| `/invite/<token>` | an invitation (§3.4) |
+| `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
@@ -13090,7 +13170,8 @@ when it is read or sent, from two sources, plus a read flag per human:
   as `redacted: true` without a title.
 - **Account records** — the `security` items, the `inbox` items of
   personal requests (below), and the `inbox` items
-  `registration_pending` and `mail_disabled`. An account
+  `registration_pending`, `report_open`, `moderation_applied` and
+  `mail_disabled`. An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
   carry it. Its id is `acr-<n>` from a sequence of its own, never the
@@ -13109,7 +13190,9 @@ when it is read or sent, from two sources, plus a read flag per human:
 registration (§2.7.5, §16.4) `registration_pending`, written for every
 instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
-and by signing in; and with forge access per owner (§11.4)
+and by signing in; and with abuse reports (§16.8) `report_open`, written
+for the instance admin, and `moderation_applied`, written for the
+account an action concerns; and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
 no notification otherwise; and `agents_not_listening` `{instances}`
 (§5.3), written in place of the digest request under
@@ -13143,22 +13226,34 @@ null`, or, under `not_listening.mode: bell` (§18.4), the account record
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
-The `registration_pending` and `mail_disabled` items ask for an action
-as a request does — approve or reject the registration (§16.4), set
-the address again (§18.7) — and count in `inbox` until it is taken,
-whatever their read flag (§18.2), and are listed while it is open,
-however old (§18.2). Each is marked read on its own once
-the matter is closed: the registration decided (approved, rejected or
-expired), the address set again and verified, or removed. Neither is
-ever mailed, whatever the `inbox` mail mode says (§18.4, §18.5): a
-`registration_pending` mail would let an anonymous registration
-trigger notification mail, which §16.2 rules out, and a
-`mail_disabled` item has no working address to go to.
+The `registration_pending`, `report_open` and `mail_disabled` items ask
+for an action as a request does — approve or reject the registration
+(§16.4), resolve the report (§16.8), set the address again (§18.7) —
+and count in `inbox` until it is taken, whatever their read flag
+(§18.2), and are listed while it is open, however old (§18.2). Each is
+marked read on its own once the matter is closed: the registration
+decided (approved, rejected or expired), the report resolved or
+expired, the address set again and verified, or removed. Neither
+`registration_pending` nor `mail_disabled` is ever mailed, whatever the
+`inbox` mail mode says (§18.4, §18.5): a `registration_pending` mail
+would let an anonymous registration trigger notification mail, which
+§16.2 rules out, and a `mail_disabled` item has no working address to
+go to. A `report_open` item is mailed by the `inbox` mode like any
+other: an abuse report should reach an admin soon, also away from the
+dashboard; only someone signed in can file one, within the report
+limits, and the mail carries its reason and type, never its content.
+
+A `moderation_applied` item is no open matter: nothing in it is the
+account's to act on, since only an instance admin lifts a hold (§16.8).
+It is an ordinary notice, read by a read mark (§18.3), and counts in no
+`inbox` count. It is mailed by the `inbox` mode, except that a `suspend`
+item goes at once whatever the mode says (§18.5): the suspended account
+signs in no more, so the mail is its one way to learn of it.
 
 **No longer notifications (2026-10-26).** The kinds `card`, `ticker`,
 `jour_fixe`, `keep_the_why`, `agent`, `system` and `registration` are
@@ -13360,7 +13455,8 @@ rules that make a position safe to resume from:
   it
   falls when a request is answered or withdrawn, not when its
   notification is read; for an instance admin it also counts every
-  `registration_pending` item whose registration is not yet decided,
+  `registration_pending` item whose registration is not yet decided
+  and every `report_open` item whose report is still open,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
   read. `chat` is the sum of `unread` over the conversations the human takes
@@ -13392,14 +13488,14 @@ rules that make a position safe to resume from:
   the entries' `inbox`, plus the open personal requests with `project:
   null` (the not-listening digest §5.3, a preference proposal §19.4, an
   organisation's invitation §6.26) and the open `registration_pending`,
-  `mail_disabled` and `agents_not_listening` items, which belong to no
+  `report_open`, `mail_disabled` and `agents_not_listening` items, which belong to no
   project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
   them reads them (§18.3) or their record expires after 90 days, and
-  `registration_pending`, `mail_disabled` and `agents_not_listening`
+  `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. That
   age-based reading never counts as a marking: it grants no session the
@@ -13423,7 +13519,10 @@ rules that make a position safe to resume from:
   item links to — `request`, `task` (a mention in a card's thread),
   `conversation`, `project` (a mention in a
   project message), `registration` (a `registration_pending` record:
-  the waiting human's id, linking to Admin → Registration), and for
+  the waiting human's id, linking to Admin → Registration), `report` (a
+  `report_open` record: the report's id, linking to Admin → Reports),
+  `moderation` (a `moderation_applied` record: the report's id, which
+  the account cannot open, linking to the account page), and for
   the other account records `session` or `settings` (`mail_disabled`
   included), `project` `null`
   on those (a personal request's record targets its `request`, above)
@@ -13432,8 +13531,11 @@ rules that make a position safe to resume from:
   dashboard owns its routes, the hub builds the URL from the target.
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`
   and a `mention` in a chat, when the conversation has been read past its
-  `seq` (§9) — one read mark, the chat's own; a `registration_pending`
-  or `mail_disabled` item only when its matter is closed (§18.1, §18.3).
+  `seq` (§9) — one read mark, the chat's own; a `registration_pending`,
+  `report_open` or `mail_disabled` item only when its matter is closed
+  (§18.1, §18.3). A `moderation_applied` item is read by a read mark, as
+  any notice: it is no open matter, since nothing in it is the account's
+  to act on — only an instance admin lifts a hold (§16.8).
 
 ### 18.3 `POST /me/notifications/read`
 
@@ -13470,12 +13572,13 @@ such an item it is skipped through `ids` too (ignored as an unknown
 id), and the rest of the call applies. Answers `200` with the counts
 of §18.2. No event: reading is not news to anyone.
 
-The two `inbox` items of an open matter, `registration_pending` and
-`mail_disabled` (§18.1), are never marked read by a caller: `up_to`
-skips them and an `ids` entry naming one is ignored, as an id the
-human has no item for; each reads as read on its own once its matter
-is closed — the registration decided or expired, the address set
-again and verified, or removed (§18.7). So "mark all read" never hides an open matter from "Waiting
+The `inbox` items of an open matter, `registration_pending`,
+`report_open` and `mail_disabled` (§18.1), are never marked read by a
+caller: `up_to` skips them and an `ids` entry naming one is ignored, as
+an id the human has no item for; each reads as read on its own once its
+matter is closed — the registration decided or expired, the report
+resolved or expired (§16.8), the address set again and verified, or
+removed (§18.7). So "mark all read" never hides an open matter from "Waiting
 for you" while it still counts in `counts.inbox`.
 
 ### 18.4 `GET`, `PATCH /me/notification-settings`
@@ -13717,7 +13820,15 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   one per human. Security mail has its own budget and is never batched
   (§16.2).
 - **Never mailed:** a `registration_pending` or `mail_disabled` item,
-  whatever the `inbox` mode (§18.1); the dashboard shows them.
+  whatever the `inbox` mode (§18.1); the dashboard shows them. A
+  `report_open` item is mailed by the `inbox` mode like any other
+  (§18.1, §16.8).
+- **Mailed whatever the mode:** a `moderation_applied` item of a
+  `suspend` goes out as an immediate item even when the `inbox` mode is
+  `hourly`, `daily` or `off`, while the address is verified and not
+  disabled; quiet hours and the rate above still apply. The suspended
+  account signs in no more and reads no inbox (§16.8, §18.1). Its other
+  actions follow the `inbox` mode.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.

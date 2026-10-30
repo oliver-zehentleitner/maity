@@ -340,6 +340,21 @@ def test_concurrent_reads_ask_the_forge_once(monkeypatch: pytest.MonkeyPatch) ->
     assert calls == ["docs/api.md"] and len(results) == 2 and results[0] == results[1]
 
 
+def test_a_read_the_forge_does_not_answer_leaves_no_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The gate of a read that raised is gone too: a new commit is a new key, and every
+    failed read would otherwise leave its lock behind for good."""
+
+    def file_at(_self: Any, repository: str, path: str, ref: str, cap: int) -> bytes:
+        raise forge.ForgeUnavailableError("the forge did not answer: TimeoutError")
+
+    monkeypatch.setattr(forge.Forge, "branch", lambda *_a: {"head_sha": SHA, "found": True})
+    monkeypatch.setattr(forge.Forge, "file_at", file_at)
+    for _ in range(3):
+        with pytest.raises(forge.ForgeUnavailableError):
+            contract_text.read(forge.Forge(TOKEN), "acme/maity", "main", "docs/api.md", "6.2")
+    assert contract_text._pending == {}
+
+
 # --- the heading rules --------------------------------------------------------------------
 
 

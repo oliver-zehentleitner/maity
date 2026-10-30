@@ -59,6 +59,7 @@ window.Maity = window.Maity || {};
     const rows = [h("dt", null, "Repository"),
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : "No repository.",
         !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
+    rows.push(h("dt", null, "State"), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, "Policy"), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's
     // wish, tsk-yhbmz7mjng7n step 1); read inside Maity once the hub serves it.

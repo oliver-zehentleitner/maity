@@ -12,6 +12,7 @@ import contextlib
 import functools
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any
 from urllib.parse import unquote_to_bytes
@@ -22,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, landing, net
+from maity_hub import clock, events, forge_webhook, join_host, net, request_stats
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -48,6 +49,8 @@ LANDING_CAP = 512 * 1024
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
 _LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
+# The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
+_LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS).
@@ -56,6 +59,7 @@ ROUTE_CACHE = frozenset({b"private, max-age=21600", b"private, no-cache", b"no-c
 # instance's landing page (§16.7).
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/swarm/(?:[^/]+/)?[^/]+|/api/v1/landing|/api/v1/legal"
+    r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml")
@@ -67,39 +71,24 @@ class HubMiddleware:
         self.settings = settings
         self.engine = engine
 
-    def _landing_off(self) -> bool:
-        """Whether the landing page is not enabled; an unreadable setting counts as off."""
-        try:
-            with self.engine.connect() as conn:
-                return not landing.stored(conn)["enabled"]
-        except Exception:
-            return True
-
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         origin = net.resolve(scope, self.settings.trusted_proxies)
         scope.setdefault("state", {})["origin"] = origin
+        scope["state"]["began"] = time.monotonic()
         # Decided before anything is logged: the log masks every path there (§1.1).
         on_join_host = join_host.is_join_host(scope, self.settings)
         scope["state"]["on_join_host"] = on_join_host
         path = scope.get("path", "")
         public: bytes | None = None
-        if not on_join_host and scope.get("method") == "GET":
+        if not on_join_host and scope.get("method") in ("GET", "HEAD"):
             if PUBLIC_PATHS.fullmatch(path):
                 public = b"public, max-age=60"
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-        # While the landing page is not enabled, the root asks to be kept out of an index; a
-        # crawler can read it only because robots.txt lets it fetch the root (§16.7).
-        noindex = (
-            not on_join_host
-            and scope.get("method") in ("GET", "HEAD")
-            and path == "/"
-            and await run_in_threadpool(self._landing_off)
-        )
-        send = _with_headers(send, public=public, noindex=noindex)
+        send = _with_headers(send, public=public)
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -113,7 +102,7 @@ class HubMiddleware:
                 log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
                 await error_response(500, "internal", "an unexpected failure")(scope, receive, send)
             finally:
-                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+                _access(scope, status)
             return
 
         if not on_join_host and _unrouted(scope):
@@ -155,7 +144,7 @@ class HubMiddleware:
                 "the request contains a string in the hub's credential format",
             )
             await response(scope, receive, send)
-            access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
+            _access(scope, 400)
             return
 
         scope["state"]["body"] = body
@@ -188,7 +177,7 @@ class HubMiddleware:
             answer = join_host.route(scope, self.settings)
             if answer is not None:  # not the join: nothing else is served there (§1.1)
                 await answer(scope, replay, tracking)
-                access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+                _access(scope, status)
                 return
         try:
             await self.app(scope, replay, tracking)
@@ -201,7 +190,7 @@ class HubMiddleware:
             response = error_response(500, "internal", "an unexpected failure")
             await response(scope, receive, send)
         finally:
-            access.info("%s %s %s", scope.get("method"), _logged_path(scope), status)
+            _access(scope, status)
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:
@@ -223,18 +212,39 @@ _TOKEN_PATHS = (
 
 
 _FIRST_SEGMENT = re.compile(r"^(/)[^/]+")
+# An invitation's link on the join host, `/i/{token}` (§1.1): the second segment is the token.
+_JOIN_INVITE = re.compile(r"^(/i/)[^/]+")
+
+
+def _access(scope: Scope, status: int) -> None:
+    """The request log (§1.1): method, path and status, and how long the hub took (`ms=`,
+    from the middleware's first line to here) and the route's pattern (`route=`)."""
+    began = scope.get("state", {}).get("began")
+    ms = round((time.monotonic() - began) * 1000) if began is not None else 0
+    request_stats.WINDOW.record(status, ms)
+    access.info(
+        "%s %s %s ms=%d route=%s",
+        scope.get("method"),
+        _logged_path(scope),
+        status,
+        ms,
+        request_stats.route_of(scope),
+    )
 
 
 def _logged_path(scope: Scope) -> str:
     """The path for the log: never a query string, join and pairing tokens as `…` (§1.1).
     On the join host any path not rewritten to the join may still carry its token
-    (`HEAD /{token}`, `/{token}/`): its first segment is masked as well."""
+    (`HEAD /{token}`, `/{token}/`): its first segment is masked as well, and the segment
+    after `/i/`, an invitation's."""
     path = str(scope.get("path", ""))
     masked = path
     for pattern in _TOKEN_PATHS:
         masked = pattern.sub(r"\1…", masked)
     if masked == path and scope.get("state", {}).get("on_join_host"):
-        masked = _FIRST_SEGMENT.sub(r"\1…", path)
+        masked = _JOIN_INVITE.sub(r"\1…", path)
+        if masked == path:
+            masked = _FIRST_SEGMENT.sub(r"\1…", path)
     return masked
 
 
@@ -272,7 +282,7 @@ def _unrouted(scope: Scope) -> bool:
 async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
     response = error_response(404, "not_found", "no such resource")
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 404)
+    _access(scope, 404)
 
 
 def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Awaitable[None]]]:
@@ -282,7 +292,9 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
         return IMAGE_CAP, _image_too_large
     if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
         return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
-    if method == "PATCH" and path in _LANDING_SETTINGS:
+    if (method == "PATCH" and path in _LANDING_SETTINGS) or (
+        method == "POST" and path in _LANDING_PREVIEWS
+    ):
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
 
@@ -291,7 +303,7 @@ async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY
     size = f"{cap // 1024 // 1024} MiB" if cap >= 1024 * 1024 else f"{cap // 1024} KiB"
     response = error_response(413, "payload_too_large", f"the body is over {size}")
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 413)
+    _access(scope, 413)
 
 
 async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
@@ -299,17 +311,16 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
         400, "invalid", "the image is over 1 MiB", {"fields": {"body": "too_large"}}
     )
     await response(scope, receive, send)
-    access.info("%s %s %s", scope.get("method"), _logged_path(scope), 400)
+    _access(scope, 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None, noindex: bool = False) -> Send:
+def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
     """`public` is the one caching a successful answer of this path may choose."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
             given = message.get("headers", [])
-            dropped = _SET | {b"x-robots-tag"} if noindex else _SET
-            headers = [(k, v) for k, v in given if k.lower() not in dropped]
+            headers = [(k, v) for k, v in given if k.lower() not in _SET]
             content_type = next((v for k, v in given if k.lower() == b"content-type"), b"")
             # Every answer is no-store, except the caching a route may choose from
             # ROUTE_CACHE: the logo, banner and avatars, revalidated by ETag (§1.1, §11.2,
@@ -325,10 +336,10 @@ def _with_headers(send: Send, *, public: bytes | None = None, noindex: bool = Fa
                 (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
-            if content_type.startswith(b"text/html"):
+            if content_type.startswith(b"text/html") and not any(
+                k.lower() == b"content-security-policy" for k, _ in headers
+            ):  # the landing and legal pages bring a stricter one of their own (§16.7)
                 headers.append((b"content-security-policy", CSP.encode()))
-            if noindex:
-                headers.append((b"x-robots-tag", b"noindex"))
             message["headers"] = headers
         await send(message)
 

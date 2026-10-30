@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, export
+from maity_hub import account_deletion, avatars, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -32,6 +32,7 @@ LOOKS_LIKE_A_PERSON = re.compile(r"human|_by$|^owner_id$|^caller$|^address")
 # Whether each such column without a foreign key names a human (True), or is something
 # else that only looks like one (False): a reason, a time, a mode, a session's id.
 NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
+    ("abuse_report", "resolved_by"): True,  # the instance admin
     ("account_deletion", "withdrawn_by"): False,  # why: `replaced`, `password_change`, …
     ("account_record", "read_by"): True,
     ("account_registration", "address"): True,
@@ -48,6 +49,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("credential", "revoked_by"): True,
     ("email_sign_in", "address_epoch"): False,  # a counter
     ("event", "actor_human_id"): True,
+    ("handle_register", "owner_id"): True,  # a human's or an organisation's id
     ("human_session", "approved_by"): False,  # the approving session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
@@ -63,6 +65,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("notification_settings", "address_change"): True,
     ("notification_settings", "address_normalized"): True,
     ("notification_settings", "address_status"): False,  # `verified`, `pending`, …
+    ("org_invitation", "closed_by"): False,  # why: `accepted`, `revoked`, `expired`, …
     ("pending_registration", "address"): True,
     ("pending_registration", "address_normalized"): True,
     ("placement", "updated_by"): True,
@@ -70,7 +73,9 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("preferences", "proposed_by"): True,
     ("preferences_version", "confirmed_by"): True,
     ("preferences_version", "proposed_by"): True,
+    ("project", "owner_id"): True,  # a human's or an organisation's id; the FK is the pair
     ("project", "spawn_consent_by"): False,  # a mode: `human`, `role`
+    ("project_alias", "owner_id"): True,  # likewise: a former namespace owner
     ("registration_block", "address_normalized"): True,
     ("request", "filed_by"): False,  # who filed: `agent`, `hub`, …
     ("request", "humans_only"): False,
@@ -83,6 +88,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
     "membership": members,  # apply_remove
+    "org_invitation": org_invitations,  # withdraw_by_inviter_everywhere, withdraw_for_human
     "runner": runners,  # remove
 }
 
@@ -90,10 +96,13 @@ DELETION_THROUGH: dict[str, ModuleType] = {
 # stays, and every view shows it as `Deleted account` (§2.9).
 _RECORD = "the projects' or the instance's record, kept without the person (§2.9)"
 DELETION_KEEPS = {
+    "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
+    "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
+    "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
     "instance_landing": f"who edited the landing page: {_RECORD}",
     "instance_legal": f"who edited the legal pages: {_RECORD}",
@@ -139,6 +148,7 @@ EXPORT_LEAVES_OUT = {
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
     "forge_link_state": _SECRET,
+    "handle_register": f"the handle is in the account; {_UNLISTED}",
     "human_device": _SECRET,
     "idempotency_key": _BOOKKEEPING,
     "instance_landing": _INSTANCE,

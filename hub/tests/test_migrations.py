@@ -606,3 +606,73 @@ def test_a_carried_landing_passes_the_checks_of_the_setting(
     }
     checked = landing.check({"enabled": True, "pages": row.pages}, current)
     assert checked["pages"] == row.pages  # the editor can write it back unchanged
+
+
+def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
+    """0094 (§6.1): `freeze` and `fixes-only` become `review`, `accepted` becomes `archived`,
+    `build` and `archived` stay; downgrading maps `review` back to `freeze`."""
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0094"))
+    old = ("build", "freeze", "fixes-only", "accepted", "archived")
+    ids = {state: factory.project(engine, f"p-{state}", state=state) for state in old}
+
+    def states() -> dict[str, str]:
+        with engine.connect() as conn:
+            return dict(conn.execute(select(t.project.c.id, t.project.c.state)).all())
+
+    migrate(engine)
+    assert states() == {
+        ids["build"]: "build",
+        ids["freeze"]: "review",
+        ids["fixes-only"]: "review",
+        ids["accepted"]: "archived",
+        ids["archived"]: "archived",
+    }
+    downgrade(engine, _before(engine, "0094"))
+    assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"
+
+
+def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) -> None:
+    """0097 (§6.1): `released_at` from the earliest found tag of a release; a missing tag,
+    a tag of no release and a project without either stay `null`."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import insert, select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0097"))
+    ids = {name: factory.project(engine, name) for name in ("two", "missing", "other", "none")}
+    early, late = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 20, tzinfo=UTC)
+    tags = [
+        ("two", "0.1.0", "v0.1.0", True, late),
+        ("two", "0.2.0", "v0.2.0", True, early),
+        ("missing", "0.1.0", "v0.1.0", False, early),
+        ("other", "0.1.0", "v9.0.0", True, early),
+    ]
+    maker = factory.human(engine, "maker")
+    members = {name: factory.membership(engine, ids[name], human_id=maker) for name in ids}
+    for name, version, _ref, _found, _at in tags:
+        factory.card(
+            engine, ids[name], members[name], kind="release", title=version,
+            release_version=version,
+        )  # fmt: skip
+    with engine.begin() as conn:
+        for name, _version, ref, found, at in tags:
+            conn.execute(
+                insert(t.forge_observation).values(
+                    project_id=ids[name], kind="tag", ref=ref, observed_at=at,
+                    data={"name": ref, "sha": None, "found": found},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        released = dict(conn.execute(select(t.project.c.id, t.project.c.released_at)).all())
+    assert released[ids["two"]] == early
+    assert released[ids["missing"]] is None and released[ids["other"]] is None
+    assert released[ids["none"]] is None

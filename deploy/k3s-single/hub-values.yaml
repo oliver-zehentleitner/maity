@@ -13,6 +13,10 @@ ingress:
   enabled: true
   className: traefik
   host: maity.example.org
+  # Optional: the agent join on its own host name (docs/api.md §1.1). It needs
+  # its name in cert.yaml and a DNS record; the chart adds the Ingress rule, the
+  # TLS host and MAITY_JOIN_URL. Delete the line to run without one.
+  joinHost: join.maity.example.org
   # The chart's defaults are ingress-nginx annotations; Traefik ignores them.
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: null

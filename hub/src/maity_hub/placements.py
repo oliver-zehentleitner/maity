@@ -752,7 +752,9 @@ def detached(
         close_uniform(conn, row(conn, placement.id), "detached", actor, by)
 
 
-def project_archived(conn: Connection, project_id: str, actor: Actor | None, by: str) -> None:
+def project_archived(
+    conn: Connection, project_id: str, actor: Actor | None, by: str | None
+) -> None:
     for placement in active_rows(conn, t.placement.c.project_id == project_id):
         withdrawn = withdraw_open_request(conn, placement, "the project was archived", actor)
         if withdrawn and placement.approval_status != "approved":

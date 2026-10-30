@@ -51,12 +51,13 @@ window.Maity = window.Maity || {};
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
-  const STATES = ["build", "freeze", "fixes-only", "accepted", "archived"];
+  // docs/api.md §6.1; moving to launch is the owner's go.
+  const STATES = ["plan", "build", "review", "launch", "archived"];
   const STATE_LABELS = {
+    plan: "Plan",
     build: "Build",
-    freeze: "Freeze",
-    "fixes-only": "Fixes only",
-    accepted: "Accepted",
+    review: "Review",
+    launch: "Launch",
     archived: "Archived",
   };
 
@@ -179,6 +180,20 @@ window.Maity = window.Maity || {};
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
 
+  // The released mark (docs/api.md §6.1): set once with the first release
+  // tag, never cleared; shown beside the state wherever the state is.
+  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
+    + "migrations stay backward compatible, and the release checklist is required";
+  function releasedDay(project) {
+    const d = new Date(project.released_at);
+    return Number.isNaN(d.getTime()) ? project.released_at
+      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  function releasedMark(project) {
+    if (!project || !project.released_at) return null;
+    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
+  }
+
   // ---- sign-in ------------------------------------------------------------
 
   // Where a sign-in goes on (/login?next=…, docs/api.md §2.6.5, §16.11): a
@@ -223,7 +238,6 @@ window.Maity = window.Maity || {};
   };
 
   function renderLogin(main, note) {
-    // A landing page may have set the tab's title (§16.7).
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
@@ -256,7 +270,8 @@ window.Maity = window.Maity || {};
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
     append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      M.legal ? M.legal.links() : null);
   }
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
@@ -464,7 +479,12 @@ window.Maity = window.Maity || {};
 
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
-        STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
+        STATES.map((s) => h("option", {
+          value: s,
+          selected: s === ctx.project.state,
+          // Only the owner moves the project to launch; an admin may leave it.
+          disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
+        }, STATE_LABELS[s])));
       const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: "What this state means right now" });
       const reason = h("input", { id: "state-reason", required: true, placeholder: "Why it changes (logged)" });
       append(panel, h("form", {
@@ -476,6 +496,9 @@ window.Maity = window.Maity || {};
         },
       },
       h("h2", { class: "panel-title" }, "Project state"),
+      ctx.project.released_at
+        ? h("p", { class: "released-note" }, "Released since " + releasedDay(ctx.project) + ", for good: " + RELEASED_RULES + ".")
+        : null,
       h("label", { for: "state-select" }, "State"), state,
       h("label", { for: "state-note" }, "Note"), note,
       h("label", { for: "state-reason" }, "Reason"), reason,
@@ -1078,6 +1101,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
             stateBadge(ctx.project.state, ctx.project.state_note),
+            releasedMark(ctx.project),
             absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
@@ -1171,6 +1195,8 @@ window.Maity = window.Maity || {};
       scope: where.scope,
       projectLink,
       stateLabel: (state) => STATE_LABELS[state] || state,
+      stateBadge,
+      releasedMark,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
@@ -1417,15 +1443,9 @@ window.Maity = window.Maity || {};
         await M.api.get("/auth/session");
       } catch (err) {
         if (err.status === 401 && swarmHere) { await publicSwarm(); return; }
-        if (err.status === 401) {
-          // At the root, the instance's landing page where it has one
-          // (§16.7); anywhere else, and when it is off or fails, sign-in.
-          const landing = where.scope === null && M.landing ? await M.landing.read() : null;
-          if (seq !== renderSeq) return;
-          if (landing) M.landing.show(main, landing, document.getElementById("header"));
-          else renderLogin(main);
-          return;
-        }
+        // Without a session the login page; the landing page at the root
+        // is the hub's own static page (§16.7), never drawn here.
+        if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
       const me = await M.api.get("/me");

@@ -786,3 +786,80 @@ The name of a runner must be unique in the repository (the first registration of
 - Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
 - A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
 
+
+## Bugs are GitHub issues with a form; feature requests and contributions are directed to the project on Maity
+
+**Id:** 3265e81c-616e-4c6d-9d27-5261e10d4691
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-mj2arrc90pgj, 2026-10-29; the wording of the forms is the implementer's
+**Revisit when:** the public project page on Maity shows visitors more than the app shell, or outside contributors ask for a GitHub place for ideas
+
+`.github/ISSUE_TEMPLATE/` holds one issue form for bugs (component,
+version or commit, steps, expected, actual, logs with a reminder to strip
+secrets) and a `config.yml` that turns blank issues off. Its contact
+links send feature requests and contributions to the project on Maity
+(`maity.team/oliver-zehentleitner/maity`) and security problems to the
+private channel of `SECURITY.md`. Until the public project pages exist, a
+visitor who is not signed in sees the app shell there, not the project.
+
+**Reason:** Maity is built on Maity (see the entry on maity.team as the
+only platform for the work): ideas and plans are discussed where the
+project's agents and people are, and a bug is the one thing that is
+better tracked beside the code, with the version attached. Blank issues
+off keeps feature talk and vulnerability details out of the issue list.
+
+**Alternatives:**
+- Feature request and contribution forms on GitHub: a second place for
+  the same discussion that the project's agents do not read.
+- Leaving blank issues on: reports without a version or steps, and
+  vulnerabilities posted in public.
+
+## A load test runs on main and nightly, outside ci-ok; every review asks whether the load grows with history or with tabs
+
+**Id:** bb9d58df-f795-4b3d-9351-6fc847250a22
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's decisions on card tsk-ryas52q9k53z (2026-10-30, messages 13710 and 13722); the first run of `hub/tests/test_load.py` on SQLite and on PostgreSQL 17 (local, 2026-10-30); `.github/workflows/hub-load.yml`
+**See:** https://github.com/oliver-zehentleitner/maity — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-10-30
+**Revisit when:** the job's time on main is a problem or it goes red from noise rather than growth, `tsk-r8f0jm3xs9y6` is fixed (its `xfail` then fails by itself), or a pull request that changes the hot paths merges with no run behind it often enough to matter
+
+`hub/tests/test_load.py` seeds the bell of one human with `MAITY_LOAD_UNIT` unread requests
+(1000 in CI) spread over the 30-day window, asks the same of a history four times as large,
+and fails when a call sends more statements (exact) or takes more than twice as long (and a tenth of a second more)
+(soft: a CI runner is noisy). It covers a page of `GET /me/notifications`, marking a page
+read, and one to eight held long-polls, each as a test on its own. It is its own workflow,
+`hub-load`, on PostgreSQL: on every push to main, once a night, and by hand (`workflow_dispatch`)
+on a branch that touches the load. It is not in `ci-ok` and does not run on pull requests.
+
+The first run found that a page of the bell is linear in the unread requests: 0.12 s at 1000
+and 0.42 s at 4000 on PostgreSQL (0.08 s and 0.35 s on SQLite), with the same 52 statements
+at both sizes; the cost is the Python derivation of every non-chat item of the window. That
+test is `xfail(strict=True)` against `tsk-r8f0jm3xs9y6`, so it turns red by itself when the
+page is fixed and the marker has to go. A held long-poll sends 118 statements in three
+seconds whatever the history (1000 or 4000 unread) and whether one or eight tabs hold one:
+the stamp, not the derivation, is what a held poll repeats.
+
+The question every review of a change to a listing, a poll or a worker asks: does the load
+grow with the history, or with the number of tabs and sessions? An answer is a test that
+holds it, or the reason it cannot grow. There is no separate reviewer brief; this entry is
+where the question is kept.
+
+**Reason:** the card is step 2 of the follow-ups to the 2026-10-26 overload, and asks for a
+check that fails when time or queries per request grow with history or with tabs. A test can
+compare two sizes of history on every run; a review is where a new route or worker is asked
+the question before it ships.
+
+**Rejected alternatives:**
+- In the `hub-postgresql` job: it would add the seeding and the repeated timings to the run
+  every pull request waits for, and CI time is the bottleneck.
+- On every pull request, in `ci-ok`: a job that does not run on a pull request would block
+  those it skips, and a timing failure from a noisy runner would hold up unrelated merges.
+- Absolute limits in seconds: they depend on the runner and say nothing about growth; the
+  comparison of two sizes does.
+
+**Known limit:** the time check allows twice the time and at least a tenth of a second more, so a
+growth smaller than that is not seen (the page's 3.5 times is well past it); the statement count is the exact half. The seeded
+history is one human and one project with one kind of item (requests).

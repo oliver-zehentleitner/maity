@@ -672,3 +672,59 @@ def test_a_retry_after_from_an_earlier_window_still_holds() -> None:
     held = READER.retry_at()
     assert held is not None and 20 < held.timestamp() - time.time() <= 31
     assert forge._budgets[source].remaining == 4999
+
+
+# --- what the process keeps stays bounded --------------------------------------------------
+
+
+def test_budgets_that_say_nothing_go_beyond_the_kept_number(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installation tokens are minted every hour: the budgets of the old ones, their
+    window over and nothing in flight, go once more than BUDGETS_KEPT are known; one
+    still in flight, held, or with a count that still counts stays."""
+    monkeypatch.setattr(forge, "BUDGETS_KEPT", 8)
+    now = time.time()
+    for n in range(20):  # spent hours of tokens no longer minted
+        forge._budgets[f"old-{n}"] = forge._Budget(limit=5000, remaining=10, reset=now - 1)
+    forge._budgets["flying"] = forge._Budget(in_flight=1)
+    forge._budgets["held"] = forge._Budget(until=now + 600)
+    forge._budgets["counting"] = forge._Budget(limit=5000, remaining=4000, reset=now + 600)
+    forge._budgets["no-reset"] = forge._Budget(limit=5000, remaining=10)
+    assert forge._take("new") is None
+    assert set(forge._budgets) == {"flying", "held", "counting", "no-reset", "new"}
+
+
+def test_a_dropped_budget_answers_as_the_kept_one_would(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dropping changes no answer: a budget whose window is over reads on at once."""
+    monkeypatch.setattr(forge, "BUDGETS_KEPT", 0)
+    now = time.time()
+    forge._budgets["source"] = forge._Budget(limit=100, remaining=0, reset=now - 1)
+    assert forge._take("other") is None
+    assert "source" not in forge._budgets
+    assert forge._take("source") is None
+
+
+@pytest.mark.parametrize("name", ["_visible", "_public"])
+def test_a_visibility_cache_drops_stale_entries_and_keeps_at_most_the_bound(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setattr(forge, "CACHE_KEPT", 10)
+    cache: dict[Any, Any] = {}
+    monkeypatch.setattr(forge, name, cache)
+    seconds = forge.VISIBILITY_SECONDS if name == "_visible" else forge.PUBLIC_SECONDS
+
+    def value(at: float) -> Any:
+        return at if name == "_visible" else (at, None)
+
+    now = time.monotonic()
+    for n in range(5):  # tokens rotated away, their entries past their time
+        cache[(f"old-{n}", "a/b")] = value(now - seconds - 1)
+    for n in range(5):
+        cache[(f"live-{n}", "a/b")] = value(now)
+    forge._keep(cache, ("new", "a/b"), value(now), now, seconds)
+    assert len(cache) == 6 and not any(token.startswith("old") for token, _ in cache)
+    for n in range(30):  # all fresh: the oldest written go
+        forge._keep(cache, (f"more-{n}", "a/b"), value(now), now, seconds)
+    assert len(cache) == 10
+    assert set(cache) == {(f"more-{n}", "a/b") for n in range(20, 30)}

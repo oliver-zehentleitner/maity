@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
@@ -180,7 +181,11 @@ def test_the_access_log_masks_pairing_tokens(
         make_client().get("/r/SECRET-TOKEN")
         make_client().post("/api/v1/runners/pair/SECRET-TOKEN", json={"code": "x", "client": "x"})
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == ["GET /r/… 404", "POST /api/v1/runners/pair/… 404"]
+    assert [re.sub(r" ms=\d+", " ms=N", line) for line in lines] == [
+        "GET /r/… 404 ms=N route=/r/{token}",
+        "POST /api/v1/runners/pair/… 404 ms=N route=/api/v1/runners/pair/{token}",
+    ]
+    assert not any("SECRET" in line for line in lines)
 
 
 # --- enrollments -------------------------------------------------------------------------
