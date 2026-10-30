@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, StrictBool
 
-from maity_hub import org_invitations, orgs
+from maity_hub import events, org_invitations, orgs
 from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, not_found
@@ -64,7 +64,7 @@ def _locked_actor(conn: Any, org_id: str, human_id: str) -> tuple[Any, str]:
 @router.post("/orgs", status_code=201)
 def create_org(request: Request, caller: AnyCaller, body: CreateOrg) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         org, role = orgs.create(
             conn, human_id, body.handle, body.display_name, settings_of(request).max_orgs_per_human
         )
@@ -74,14 +74,14 @@ def create_org(request: Request, caller: AnyCaller, body: CreateOrg) -> JSONResp
 @router.get("/orgs")
 def list_orgs(request: Request, caller: AnyCaller) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         return JSONResponse({"items": orgs.mine(conn, human_id)})
 
 
 @router.get("/orgs/{org}")
 def get_org(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, role = orgs.find(conn, human_id, org)
         return JSONResponse(orgs.view(conn, row, role))
 
@@ -89,7 +89,7 @@ def get_org(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
 @router.patch("/orgs/{org}")
 def patch_org(request: Request, caller: AnyCaller, org: str, body: ChangeOrg) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, role = _locked_actor(conn, row.id, human_id)
         if role != "owner":
@@ -103,7 +103,7 @@ def delete_org(
     request: Request, caller: AnyCaller, org: str, body: Annotated[DeleteOrg, Body()]
 ) -> Response:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, found_role = orgs.find(conn, human_id, org)
         if found_role != "owner":
             raise orgs.org_role()
@@ -118,7 +118,7 @@ def delete_org(
 @router.get("/orgs/{org}/members")
 def list_members(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         return JSONResponse({"items": orgs.members(conn, row.id)})
 
@@ -128,7 +128,7 @@ def patch_member(
     request: Request, caller: AnyCaller, org: str, member: str, body: ChangeRole
 ) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, actor_role = _locked_actor(conn, row.id, human_id)
         item: dict[str, Any] = orgs.set_role(conn, locked, actor_role, member, body.role)
@@ -138,7 +138,7 @@ def patch_member(
 @router.delete("/orgs/{org}/members/{member}")
 def delete_member(request: Request, caller: AnyCaller, org: str, member: str) -> Response:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, actor_role = _locked_actor(conn, row.id, human_id)
         orgs.remove_member(conn, locked, human_id, actor_role, member)
@@ -154,7 +154,7 @@ class Invite(BaseModel):
 @router.get("/orgs/{org}/members/invitations")
 def list_invitations(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, role = orgs.find(conn, human_id, org)
         if role == "member":
             raise orgs.org_role()
@@ -165,7 +165,7 @@ def list_invitations(request: Request, caller: AnyCaller, org: str) -> JSONRespo
 @router.post("/orgs/{org}/members/invitations", status_code=202)
 def invite(request: Request, caller: AnyCaller, org: str, body: Invite) -> JSONResponse:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, role = _locked_actor(conn, row.id, human_id)
         item = org_invitations.create(conn, locked, human_id, role, body.handle, body.role)
@@ -175,7 +175,7 @@ def invite(request: Request, caller: AnyCaller, org: str, body: Invite) -> JSONR
 @router.delete("/orgs/{org}/members/invitations/{invitation}")
 def revoke_invitation(request: Request, caller: AnyCaller, org: str, invitation: str) -> Response:
     human_id = _human(caller)
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         row, _ = orgs.find(conn, human_id, org)
         locked, role = _locked_actor(conn, row.id, human_id)
         org_invitations.revoke(conn, locked, role, invitation)

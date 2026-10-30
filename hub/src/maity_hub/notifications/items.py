@@ -459,6 +459,10 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
     }
     requests_by_id = _by_id(conn, t.request, {r for r in asked if r is not None})
     names = _member_names(conn, {r.asked_by for r in requests_by_id.values() if r.asked_by})
+    inviters = _inviter_names(
+        conn,
+        {r.asked_by_human for r in requests_by_id.values() if not r.asked_by and r.asked_by_human},
+    )
     items = []
     for row in rows:
         data = row.data or {}
@@ -471,7 +475,7 @@ def _from_records(conn: Connection, where: Scope, now: datetime) -> list[Item]:
             asker = (
                 names.get(request.asked_by, "someone")
                 if request.asked_by
-                else _human_name(conn, request.asked_by_human)
+                else inviters.get(request.asked_by_human, "Maity")
             )
             items.append(
                 Item(
@@ -739,17 +743,21 @@ def _shared_actor(
     return None if found is None else dict(found)
 
 
-def _human_name(conn: Connection, human_id: str | None) -> str:
-    """The display name of the human who invites to an organisation, "Deleted account" once
-    they deleted theirs (§2.9); "Maity" for a request the hub files on nobody's behalf."""
-    if human_id is None:
-        return "Maity"
-    row = conn.execute(
-        select(t.human.c.display_name, t.human.c.deleted_at).where(t.human.c.id == human_id)
-    ).first()
-    if row is None:
-        return "Maity"
-    return str(deleted_person()["display_name"]) if deleted(row) else str(row.display_name)
+def _inviter_names(conn: Connection, human_ids: set[str]) -> dict[str, str]:
+    """The display names of the humans who invite to an organisation, in one statement:
+    "Deleted account" for one who deleted theirs (§2.9). A request the hub files on nobody's
+    behalf has no inviter, its caller says "Maity"."""
+    if not human_ids:
+        return {}
+    rows = conn.execute(
+        select(t.human.c.id, t.human.c.display_name, t.human.c.deleted_at).where(
+            t.human.c.id.in_(human_ids)
+        )
+    ).all()
+    return {
+        row.id: str(deleted_person()["display_name"]) if deleted(row) else str(row.display_name)
+        for row in rows
+    }
 
 
 def _actor(conn: Connection, membership_id: int | None) -> dict[str, Any] | None:
