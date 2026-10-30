@@ -296,7 +296,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     conn.execute(
         update(t.project)
         .where(t.project.c.id == project.id)
-        .values(repository_owner_confirmed=False)
+        .values(repository_owner_confirmed=False, repository_confirmed_by=None)
     )
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(

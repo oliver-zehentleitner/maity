@@ -52,6 +52,7 @@ from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
 from maity_hub.views import (
     absence,
+    confirmed_by_of,
     event_views,
     git_identity,
     meat_proxy_view,
@@ -463,7 +464,9 @@ def _packet(
             "released_at": ts(project.released_at),
             "state_note": project.state_note,
             "state_changed_at": ts(project.state_changed_at),
-            "repository": repository(project, settings),
+            "repository": repository(
+                project, settings, confirmed_by_of(conn, [project])[project.id]
+            ),
             "policy": policy_of(project),
             "absence": absence(project),
             "memory": memory_of(project),
