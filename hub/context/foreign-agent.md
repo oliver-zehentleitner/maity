@@ -35,5 +35,13 @@ and puts the rules where they already run, on the call.
   conflict with the project's state the way an edge can; a removed member is the only change that matters and
   withdraws the request.
 
-**Not covered:** the withdrawal of the request by anyone but the asker on the project route (the owner
-withdraws and answers under `/requests/{id}`); the contract gives no further rule.
+**Not covered, and decided so:**
+- The withdrawal of the request by anyone but the asker on the project route (the owner withdraws and
+  answers under `/requests/{id}`); the contract gives no further rule.
+- A caller with `members:admin` never takes the manager's path (`line_lead` is false for it), so a manager
+  who also holds `members:admin` asks the agent's owner even for a member of its reach; only a `line:lead`
+  caller without `members:admin` changes another owner's agent in its reach at once. Rejected: checking the
+  reach for an admin caller too; the admin and the line paths stay apart as in §2.3.
+- At `go` the asker's rights are not checked again, only that the asker and the agent are still members: the
+  agent's owner agrees to exactly the values shown, as in `cross_owner.settle`. Revisit when an asker who
+  lost `members:admin` while the request was open should lose the change.

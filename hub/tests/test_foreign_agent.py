@@ -192,3 +192,26 @@ def test_a_pause_of_another_owners_agent_waits_and_a_reports_to_follows_its_own_
     assert both.status_code == 202, both.text
     assert both.json()["title"].startswith("Change ")
     assert len(_requests(migrated)) == 3  # the pause, the field change, the edge's one request
+
+
+def test_a_manager_changes_another_owners_agent_in_its_reach_at_once_and_only_then(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The exception for "a manager acting inside its reach" (§6.2): part (b) of the reach
+    holds only while `line_consent` is true; a manager without `members:admin` then changes
+    the agent at once, without the owner."""
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    manager = flow.agent(make_client, owner, role="manager", reports_to=owner.id)
+    # Before any consent the agent is outside the manager's reach: nothing at all happens.
+    outside = put(manager, lent, areas=["web/"])
+    assert outside.status_code in (403, 404), outside.text
+    assert _row(migrated, lent).areas != ["web/"]
+    edge = put(owner, lent, reports_to=manager.id)
+    assert edge.status_code == 202, edge.text
+    assert answer(friend, edge.json()["id"], "go").status_code == 200
+    assert _row(migrated, lent).line_consent is True
+    inside = put(manager, lent, areas=["web/"])
+    assert inside.status_code == 200, inside.text  # at once, no request to the owner
+    assert _row(migrated, lent).areas == ["web/"]
+    assert [r.proposal["kind"] for r in _requests(migrated) if r.status == "open"] == []
