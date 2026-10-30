@@ -1868,24 +1868,36 @@ def _locked_personal(
 
 def _personal(conn: Connection, caller: Caller, request_id: str, *, asker: bool = False) -> Any:
     """A personal request addressed to the calling human; any other id is `not_found`. With
-    `asker`, also the cross-owner `reports_to` request that a human who is no member of its
-    project asked for, their own agent's boss (§6.2): they read and withdraw it, never
-    answer it."""
+    `asker`, also a cross-owner `reports_to` request of the pair the caller is an owner of
+    (§6.2): the one they asked as an owner outside the project, and the one addressed to the
+    other owner; they read and withdraw it, never answer it."""
     row = conn.execute(
-        select(t.request).where(
-            t.request.c.id == request_id,
-            t.request.c.personal.is_(True),
-            (t.request.c.to_human == caller.human_id)
-            | (
-                t.request.c.asked_by_human == caller.human_id if asker else t.request.c.id.is_(None)
-            ),
-        )
+        select(t.request).where(t.request.c.id == request_id, t.request.c.personal.is_(True))
     ).first()
-    if row is None:
-        raise not_found()
-    if row.to_human != caller.human_id and (row.proposal or {}).get("kind") != cross_owner.KIND:
-        raise not_found()
-    return row
+    if row is not None and row.to_human == caller.human_id:
+        return row
+    pair_owner = (
+        row is not None
+        and asker
+        and _is_cross_owner(row)
+        and (row.asked_by_human == caller.human_id or _addressed_in_pair(conn, row, caller))
+    )
+    if pair_owner:
+        return row
+    raise not_found()
+
+
+def _addressed_in_pair(conn: Connection, row: Any, caller: Caller) -> bool:
+    """The caller is the addressee of a request of the pair `row` belongs to."""
+    named = (row.proposal or {}).get("requests") or []
+    return (
+        conn.execute(
+            select(t.request.c.id).where(
+                t.request.c.id.in_(named), t.request.c.to_human == caller.human_id
+            )
+        ).first()
+        is not None
+    )
 
 
 def _scope_project(conn: Connection, row: Any) -> dict[str, Any] | None:

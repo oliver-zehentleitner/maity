@@ -272,6 +272,23 @@ def test_a_go_names_the_managers_rights_for_an_edge_that_is_already_there(
     assert _boss_of(migrated, lent) == boss.id and _row(migrated, lent).line_consent is True
 
 
+def test_either_owner_outside_the_project_reads_and_withdraws_both_requests_of_the_pair(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, other, lent, boss = _two_sides(owner, make_client, migrated)
+    first, second = (
+        _requests(migrated) if put(owner, lent, reports_to=boss).status_code == 202 else []
+    )
+    assert (first.to_human, second.to_human) == (other.id, friend.id)
+    # `friend` is addressed by the second request only; the first is the other owner's.
+    assert friend.get(f"/requests/{first.id}").status_code == 200
+    assert answer(friend, first.id, "go").status_code == 404  # never answered by the other side
+    assert friend.post(f"/requests/{first.id}/withdraw", {"reason": "no"}).status_code == 200
+    assert all(_status(migrated, r.id).status == "withdrawn" for r in (first, second))
+    stranger = flow.human(make_client, migrated, "stranger")
+    assert stranger.get(f"/requests/{first.id}").status_code == 404
+
+
 def test_the_inbox_lists_the_request_an_owner_outside_the_project_asked(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
