@@ -16,7 +16,17 @@ from typing import Any
 
 from sqlalchemy import Connection, String, cast, select, update
 
-from maity_hub import events, inbox, moderation, namespace, org_projects, orgs, proposals, ticker
+from maity_hub import (
+    events,
+    inbox,
+    moderation,
+    namespace,
+    org_projects,
+    orgs,
+    proposals,
+    public_pages,
+    ticker,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -272,7 +282,7 @@ def _summary(asker: str, full: str, repository_url: str | None) -> str:
             f" Its repository is {repository_url}; your forge access applies to it"
             " only once you confirm it."
         )
-    return text
+    return text + " The project's public page is turned off by the move."
 
 
 def _org_summary(asker: str, full: str, org: str, repository_url: str | None) -> str:
@@ -296,7 +306,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     conn.execute(
         update(t.project)
         .where(t.project.c.id == project.id)
-        .values(repository_owner_confirmed=False, repository_confirmed_by=None)
+        .values(repository_owner_confirmed=False, repository_confirmed_by=None, public_page="off")
     )
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(
@@ -304,6 +314,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     )
     owner = namespace.owner_of(conn, moved)
     _announce(conn, project.id, old_full, {"owner": owner}, actor, by)
+    public_pages.touch(conn, "project", project.id)  # the page is off under the new name (§6.25)
 
 
 def _stale(request_id: str, message: str) -> proposals.Stale:
