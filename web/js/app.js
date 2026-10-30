@@ -146,11 +146,16 @@ window.Maity = window.Maity || {};
 
   // The header lockup (web/brand/BRAND.md: 28 px, the small mark), one file
   // per theme; app.css shows the one the page's theme asks for, so a theme
-  // picked in the menu switches it too.
-  function brandTitle() {
+  // picked in the menu switches it too. It is the way home: signed in to
+  // everything waiting (/all), without a session to the instance's start
+  // page (/); the link carries the name, the pictures none of their own.
+  function brandTitle(signedIn) {
+    const home = signedIn === undefined ? !!M.api.session() : signedIn;
+    const label = home ? "Maity: everything waiting for you" : "Maity: home";
     return h("h1", { class: "brand" },
-      h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "Maity", width: "94", height: "28" }),
-      h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
+      h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
+        h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
+        h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "", width: "94", height: "28" })));
   }
 
   // Light, dark, or as the system has it; per browser (js/theme.js). The
@@ -245,7 +250,7 @@ window.Maity = window.Maity || {};
   function renderLogin(main, note) {
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      brandTitle(),
+      brandTitle(false),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
@@ -282,7 +287,7 @@ window.Maity = window.Maity || {};
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
     document.title = "Waiting for approval · Maity";
-    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(), themeMenu()));
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(true), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
       h("h2", null, "Your account waits for the operator's approval"),
       h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
@@ -1063,7 +1068,7 @@ window.Maity = window.Maity || {};
     });
     append(header,
       h("div", { class: "bar" },
-        brandTitle(),
+        brandTitle(true),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),

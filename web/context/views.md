@@ -1466,6 +1466,14 @@ what the header leaves of the screen: `body:has(> main >
 …)` becomes a column of the screen's height and `main` takes the rest.
 A browser without `:has` shows them at the top, as before.
 
+Since 2026-10-30 the lockup is a link home (the maintainer's wish, the
+card tsk-vqn9m1qt4rtt): signed in to everything waiting (`/all`),
+without a session to the instance's start page (`/`), the static
+header's link `/` as no session is known yet. The link carries the
+accessible name ("Maity: everything waiting for you", "Maity: home");
+the two pictures have empty `alt`, since only one of them shows and the
+name would otherwise be read twice or be the bare word.
+
 **Reason:** the first thing a person sees should say where they are, and
 a failure should not look like a broken page; plain HTML and CSS show
 before the scripts load, which on a slow phone is the longest wait. A

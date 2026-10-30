@@ -847,7 +847,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The brand (web/brand/BRAND.md): the 28 px header lockup in the page's theme, the favicons, the loader.
   const brImgs = header.querySelector(".brand").querySelectorAll("img");
   expect(brImgs.length === 2 && brImgs.map((i) => i.getAttribute("src")).join(" ") === "brand/maity-lockup.svg brand/maity-lockup-dark.svg"
-    && brImgs.every((i) => i.getAttribute("alt") === "Maity" && i.getAttribute("height") === "28"), "brand: the header's title is the lockup, one file per theme, named Maity");
+    && brImgs.every((i) => i.getAttribute("alt") === "" && i.getAttribute("height") === "28") && header.querySelector(".brand a.brand-home").getAttribute("aria-label").startsWith("Maity"),
+    "brand: the header's title is the lockup, one file per theme, named Maity by its link");
   expect(thCss.includes(".brand-lockup.brand-dark { display: none; }")
     && thCss.includes(':root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }')
     && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
@@ -857,9 +858,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
   expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
   // The header with the lockup is in the page itself, before any script or hub call (tsk-vb0dgwhrkvsn).
-  expect(/<header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand\/maity-lockup.svg" alt="Maity"[^>]*><img class="brand-lockup brand-dark" src="brand\/maity-lockup-dark.svg" alt="Maity"[^>]*><\/h1><\/div><\/header>/.test(html)
+  expect(/<header id="header"><div class="bar"><h1 class="brand"><a class="brand-home" href="\/" aria-label="Maity: home"[^>]*><img class="brand-lockup brand-light" src="brand\/maity-lockup.svg" alt=""[^>]*><img class="brand-lockup brand-dark" src="brand\/maity-lockup-dark.svg" alt=""[^>]*><\/a><\/h1><\/div><\/header>/.test(html)
     && !/ style=/.test(html.split('<header id="header">')[1].split("</header>")[0]),
     "loading: the header with the lockup is static in the page, before any script runs");
+  // The lockup is the way home (tsk-vqn9m1qt4rtt): signed in to everything waiting, with a name of its own; the pictures carry none.
+  const brHome = () => header.querySelector("a.brand-home");
+  expect(brHome() && brHome().getAttribute("href") === "#/all" && brHome().getAttribute("aria-label") === "Maity: everything waiting for you"
+    && brHome().querySelectorAll("img").every((i) => i.getAttribute("alt") === ""),
+    "brand: signed in, the logo links to everything waiting, named for a screen reader");
   expect(thCss.includes("body:has(> main > .page-loading, > main > .page-failed)") && thCss.includes("main:has(> .page-loading, > .page-failed) { flex: 1;")
     && thCss.includes(".page-loading { display: flex; flex-direction: column; align-items: center; justify-content: center;")
     && thCss.includes("animation: page-loading-shows 0s linear 300ms forwards") && thCss.includes(".page-loading .maity-loader { width: 48px; height: 48px; }"),
@@ -3927,6 +3933,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "invite: signing in with the invitation as next comes back to it, signed in");
   await win.Maity.api.post("/auth/logout");
   await go(""); await tick(); await tick();
+  expect(header.querySelector("a.brand-home") && header.querySelector("a.brand-home").getAttribute("href") === "#/"
+    && header.querySelector("a.brand-home").getAttribute("aria-label") === "Maity: home",
+    "brand: without a session, the logo links to the start page");
   byId("login-handle").value = "maintainer"; byId("login-password").value = "initial-generated";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(byId("login-handle") && text(main).includes("wrong"), "password: the old password no longer signs in");
