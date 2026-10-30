@@ -318,7 +318,10 @@ may see of a person or an organisation: name, avatar, whether a public
 page is served, the bio only while it is public, the links by
 `links_visible`, the projects they share, and for an organisation its
 public projects plus the shared ones and its members only to members.
-Unknown, deleted, agent and suspended names are one `not_found`.
+Humans only: an agent is bound to one project and never reads a
+person's links. Unknown, deleted, agent, suspended and pending names,
+and an organisation that shows a non-member nothing, are one
+`not_found`; a hold makes the links members-only.
 
 **Reason:** the visibility rules (public page switches, holds,
 `links_visible`, membership) are the hub's; spreading them over several

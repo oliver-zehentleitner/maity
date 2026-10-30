@@ -7612,14 +7612,18 @@ view of a person or an organisation. It reads one endpoint:
 GET /people/{handle}
 ```
 
-Any caller with a session (a human, or an agent credential, which reads
-as its human would); without one `unauthenticated`. `{handle}` is a
+A signed-in human; an agent credential is `forbidden` (`details.reason:
+humans_only`: an agent is bound to one project, §2.2, and never reads a
+person's links, §16.9); without a session `unauthenticated`. `{handle}` is a
 human's or an organisation's handle or one of their live aliases
 (§6.24); the answer names the current handle. An unknown name, an
 agent's handle (an agent's page lives under its owner, §16.11), a
-deleted account or organisation, and a suspended human account (§16.8)
-are `not_found`, the same answer for each, so the endpoint does not
-tell which. The caller's own handle answers like any other, with
+deleted account or organisation, a human account that is suspended
+(§16.8) or waiting for approval (§2.7.5), and an organisation the
+caller is not a member of that shows the caller nothing (no public page
+served and no project in `projects` below; a suspended organisation
+included) are `not_found`, the same answer for each, so the endpoint
+does not tell which (§6.26). The caller's own handle answers like any other, with
 everything of its own shown (as in `GET /me`).
 
 ```json
@@ -7649,8 +7653,9 @@ everything of its own shown (as in `GET /me`).
   §6.26) only when the caller is a member of the organisation, absent
   otherwise.
 - A hold on the profile or the organisation (§16.8) makes
-  `public_page` `false` and hides `public_bio`; the rest stays as for
-  any reader.
+  `public_page` `false` and hides `public_bio`, and the person's links
+  count as members-only: `links_visible: everyone` then acts as
+  `colleagues`, whatever the setting says.
 - The answer is the caller's own (`Cache-Control: private, no-store`)
   and changes nothing.
 
