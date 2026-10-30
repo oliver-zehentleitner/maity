@@ -7,7 +7,7 @@ row, in the transaction that changed the input.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 0104
-Revises: 0100
+Revises: 0101
 Create Date: 2026-10-30
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "0104"
-down_revision: str | None = "0100"
+down_revision: str | None = "0101"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
