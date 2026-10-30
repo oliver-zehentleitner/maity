@@ -154,6 +154,14 @@ carries the same `url`.
 - A different token shape for invitations so the root can tell them
   apart: a migration of every open invitation for a one-letter path that
   does the same.
+- `/invite/{token}` on the join host, the same path as on the public
+  host: the join host's links are meant to be short, and `/i/` is enough
+  to tell an invitation from a join.
+
+**Constraint:** a reverse proxy in front of the join host may narrow it
+only to what the hub answers there, the one-segment join and `GET /i/`
+with one segment; a rule that passes a single segment and nothing else
+breaks every invitation link (`docs/api.md` §2.5).
 
 ## Without a join host the join page lives at `/join/{token}`; `/j/{token}` stays as an alias
 

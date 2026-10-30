@@ -30,7 +30,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   nothing else: join links, pair links, `/help` and every `Maity-Hub`
   header name it. Optionally the operator sets `MAITY_JOIN_URL` (for
   example `https://join.maity.team`): the same hub under a second
-  hostname, not a separate service, for the agent join and nothing else.
+  hostname, not a separate service, for the agent join and the redirect of
+  a person's invitation, and nothing else.
   The value is `https`, has no path, and its host differs from the public
   URL's; any other value stops the hub at startup. The hub tells the
   hosts apart by the request's `Host` header (`X-Forwarded-Host` is not
@@ -50,8 +51,11 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   needs to do anything else (Markdown for agents, HTML for browsers, as
   §3.2; it never says which of the reasons applies). A human invitation
   (§3.4) has its own path there, because its token has the same shape as
-  a join's: `GET /i/{token}` is a `302` to the public URL's
-  `/invite/{token}`, the token carried over unchanged and nothing else. The
+  a join's: `GET /i/{token}`, where `{token}` is one segment in the
+  token's shape (22 characters of `[A-Za-z0-9_-]`), is a `302` to the
+  public URL's `/invite/{token}`, the token carried over unchanged and
+  nothing else; `/i/` followed by anything else is an ordinary other
+  `GET` (below). The
   join host does not look the token up: a valid, used, expired or unknown
   one is redirected alike, and the invitation page on the public host
   answers it as §3.4 says, in the visitor's session there. Any other `GET` on
@@ -1166,8 +1170,10 @@ exchange over plain HTTP. The Helm chart's `ingress.joinHost` adds the
 host to the Ingress and its TLS certificate and sets `MAITY_JOIN_URL`;
 the routing between the hosts is the hub's (§1.1), so the Ingress sends
 the whole host to the hub. A reverse proxy may in addition restrict the
-join host to `GET` and `POST` on a single path segment at the edge; the
-live `maity.team` restricts its join host in Traefik.
+join host at the edge, but only to what §1.1 answers there: `GET` and
+`POST` on a single path segment, and `GET` on `/i/` followed by one
+segment. A rule that lets one segment through and nothing else breaks
+the invitation links.
 
 ### 2.6 Human: sign-in without a password
 
@@ -10069,7 +10075,8 @@ contract; until then nothing else in this section changes.
 answers `204`.
 
 The index is the public host's. A join host (§1.1) answers `GET` and
-`POST /{token}` at its root, the join page and the join exchange; every
+`POST /{token}` at its root, the join page and the join exchange, and
+`GET /i/{token}` with a `302` to the public `/invite/{token}`; every
 other `GET` there is a `302` to the public start page and every other
 method `not_found`, as §1.1 lists.
 
