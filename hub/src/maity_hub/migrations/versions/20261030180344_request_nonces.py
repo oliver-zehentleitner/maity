@@ -7,7 +7,7 @@ failover empties them together, and the hub then refuses whatever was signed bef
 the window in the process. Nothing is copied: the process window held nothing worth keeping.
 
 Revision ID: 20261030180344_request_nonces
-Revises: 0112
+Revises: 20261030164936_handover_cursors
 Create Date: 2026-10-30
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261030180344_request_nonces"
-down_revision: str | None = "0112"
+down_revision: str | None = "20261030164936_handover_cursors"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
