@@ -25,6 +25,7 @@ from maity_hub import (
     ktw_skill,
     memory,
     mentions,
+    moderation,
     namespace,
     onboarding,
     preferences,
@@ -686,6 +687,9 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if body.public_profile is None:
                 raise invalid({"public_profile": "required"})
             values["public_profile"] = body.public_profile
+            if body.public_profile:
+                # A hidden or removed profile stays so until an admin lifts the hold (§16.8).
+                moderation.refuse_held(conn, "profile", caller.human_id or "")
         if "public_bio" in given:
             problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
             if problem is not None:

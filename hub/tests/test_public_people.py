@@ -13,6 +13,9 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_account_deletion import admin_first, ask_deletion, person, press, token_of
+from tests.test_moderation import resolve
+from tests.test_reports import report  # noqa: F401  (the fixture)
+from tests.test_reports import team as team
 from tests.test_two_factor import Clock
 from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
 
@@ -196,3 +199,21 @@ def test_only_people_who_chose_are_targets(migrated: Engine) -> None:
         conn.execute(update(t.human).where(t.human.c.id == bob).values(public_profile=True))
     with migrated.connect() as conn:
         assert public_people.targets(conn) == [bob]
+
+
+def test_a_hidden_profile_cannot_be_made_public_again_until_the_hold_is_lifted(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    pat = team["pat"]
+    assert pat.patch("/me", {"public_profile": True}).status_code == 200
+    made = report(team["owner"], {"type": "profile", "id": pat.id}, "impersonation").json()
+    assert resolve(team, made["id"], "hide").status_code == 200
+    assert pat.patch("/me", {"public_profile": False}).status_code == 200  # off is the person's
+    refused = pat.patch("/me", {"public_profile": True})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "moderation_hold"
+    assert (
+        pat.patch("/me", {"public_bio": "still mine"}).status_code == 200
+    )  # the text is not the switch
+    assert resolve(team, made["id"], "dismiss").status_code == 200
+    assert pat.patch("/me", {"public_profile": True}).status_code == 200
