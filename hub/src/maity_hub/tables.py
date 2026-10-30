@@ -584,6 +584,9 @@ project = Table(
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # The digest of the hub's generated text this project's `rules_version` last counted
+    # (§6.9): a start with another digest bumps the version once. Null: never counted.
+    Column("rules_text_digest", String(64)),
     # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),
