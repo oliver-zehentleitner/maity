@@ -107,6 +107,10 @@ human = Table(
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
     # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
     Column("meat_proxy", Boolean, nullable=False, server_default=false()),
+    # Whether the person has a public page, and the plain text on it (§16.9); a person is
+    # private until they choose.
+    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    Column("public_bio", String(280)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration

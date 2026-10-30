@@ -28,6 +28,8 @@ from maity_hub import (
     namespace,
     onboarding,
     preferences,
+    public_pages,
+    public_people,
     ranks,
     rules,
     setup_cards,
@@ -154,10 +156,16 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
+    public page (`public_profile`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     meat_proxy: StrictBool | None = None
+    public_profile: StrictBool | None = None
+    public_bio: str | None = None
+
+
+HUMAN_FIELDS = ("meat_proxy", "public_profile", "public_bio")
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -671,20 +679,31 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def human_action(conn: Connection) -> idempotency.Outcome:
         if "paused" in given:
             raise invalid({"paused": "agents_only"})
-        if body.meat_proxy is None:
+        values: dict[str, Any] = {}
+        if body.meat_proxy is not None:
+            values["meat_proxy"] = body.meat_proxy
+        if "public_profile" in given:
+            if body.public_profile is None:
+                raise invalid({"public_profile": "required"})
+            values["public_profile"] = body.public_profile
+        if "public_bio" in given:
+            problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
+            if problem is not None:
+                raise invalid({"public_bio": problem})
+            values["public_bio"] = body.public_bio or None  # an empty text clears it
+        if not values:
             raise invalid({"meat_proxy": "required"}, "nothing to change")
         assert caller.human_id is not None
-        conn.execute(
-            update(t.human)
-            .where(t.human.c.id == caller.human_id)
-            .values(meat_proxy=body.meat_proxy)
-        )
+        conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
+        if "public_profile" in values or "public_bio" in values:
+            # Turning the page off or editing its text takes something off it: at once (§16.9).
+            public_pages.touch(conn, public_people.KIND, caller.human_id)
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )
 
     def action(conn: Connection) -> idempotency.Outcome:
-        if "meat_proxy" in given:
+        if any(field in given for field in HUMAN_FIELDS):
             raise humans_only("only a human sets their own profile")
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")

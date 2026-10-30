@@ -59,6 +59,7 @@ def robots(
         return (
             "User-agent: *\n"
             + "".join(f"Disallow: /{first}/\nDisallow: /{first}$\n" for first in closed)
+            + "Allow: /\n"
             + sitemap_line
         )
     if not enabled:
@@ -171,11 +172,9 @@ def get_sitemap_part(part: str, request: Request) -> Response:
     """One part of a sitemap that is an index (§16.9); a hub whose sitemap is one file has none,
     and what is no number is `not_found` like any other unknown part."""
     files, _ = _entries(request)
-    if (
-        not (part.isascii() and part.isdigit())
-        or not len(files) >= 2
-        or not 1 <= int(part) <= len(files)
-    ):
+    if not (part.isascii() and part.isdigit()) or part != str(int(part)):
+        raise not_found()  # `01` would be a second address for the part `1`
+    if len(files) < 2 or not 1 <= int(part) <= len(files):
         raise not_found()
     return Response(
         urlset(files[int(part) - 1]), media_type="application/xml; charset=utf-8", headers=CACHE
