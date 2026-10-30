@@ -31,6 +31,7 @@ SECTION_MAX = 20
 STORED_MAX = 256 * 1024  # bytes of UTF-8 (§16.7)
 FIELDS = ("enabled", "default_language", "pages", "footer")
 STATS = ("people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online")
+DEMO_KINDS = ("cmd", "out", "note")  # the lines of the demo's terminal (§16.7)
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
 FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,30}/[a-z0-9][a-z0-9-]{1,62}")
 # C0 control characters other than tab, newline and carriage return (§16.7): no page has
@@ -113,8 +114,8 @@ def _control(value: object) -> bool:
 #
 # A field is `(kind, …, required)`: ("text", maximum, required), ("md", bytes, required),
 # ("link", required), ("int", low, high, required), ("object", {name: field}, required),
-# ("list", item, low, high, required), ("choice", options, low, high, required) and
-# ("names", pattern, high, required). An absent optional field is left out of the stored page.
+# ("list", item, low, high, required), ("choice", options, low, high, required),
+# ("enum", options, required) and ("names", pattern, high, required). An absent optional field is left out of the stored page.
 
 Spec = tuple[Any, ...]
 
@@ -183,6 +184,49 @@ SECTIONS: dict[str, dict[str, Spec]] = {
             20,
             True,
         ),
+    },
+    "demo": {
+        "title": ("text", 120, True),
+        "subline": ("text", 300, False),
+        "terminal_lines": (
+            "list",
+            (
+                "object",
+                {"kind": ("enum", DEMO_KINDS, True), "text": ("text", 200, True)},
+                True,
+            ),
+            1,
+            8,
+            True,
+        ),
+        "inbox": (
+            "object",
+            {
+                "from": ("text", 80, True),
+                "question": ("text", 300, True),
+                "context": ("text", 300, False),
+            },
+            False,
+        ),
+        "steps": (
+            "list",
+            ("object", {"title": ("text", 80, True), "text": ("text", 300, True)}, True),
+            3,
+            3,
+            True,
+        ),
+    },
+    "opensource": {
+        "title": ("text", 120, True),
+        "markdown": ("md", 600, False),
+        "tiles": (
+            "list",
+            ("object", {"title": ("text", 80, True), "text": ("text", 300, True)}, True),
+            1,
+            3,
+            True,
+        ),
+        "links": ("list", _link(), 0, 4, False),
     },
     "cta_band": {
         "title": ("text", 120, True),
@@ -271,6 +315,11 @@ def _field(value: Any, spec: Spec, path: str, found: Problems) -> Any:
         return _object(value, spec[1], path, found)
     if kind == "list":
         return _list(value, spec, path, found)
+    if kind == "enum":
+        if not isinstance(value, str) or value not in spec[1]:
+            found.add(path, "invalid")
+            return None
+        return value
     if kind == "choice":
         picked = value if isinstance(value, list) else None
         if (
