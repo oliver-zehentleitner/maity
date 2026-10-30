@@ -7,7 +7,8 @@ by, where they differ from what the product prescribes.
 
 **Id:** 0b12c29d-1539-4737-9bc3-e5e5815238ec
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 297a0ea7-ebd0-4007-8b12-f839d005d205
 **Evidence:** confirmed
 **Source:** the maintainer's statements, 2026-10-22, relayed by the coordinator
 **Revisit when:** the first-pass reviewer and the coordinator disagree often enough that the maintainer becomes the bottleneck, or the review cost becomes binding again
@@ -901,3 +902,35 @@ in-tree source definitions prevents subtle discrepancies for newcomers reading t
 - Generating `docs/agents.md` automatically from argparse: excessive tooling overhead for a
   single curated markdown guide that balances newcomer prose with command reference.
 
+## Every pull request needs two approvals, one from a Grok reviewer and one from an Antigravity reviewer, and a green `ci-ok` on the exact head
+
+**Id:** 297a0ea7-ebd0-4007-8b12-f839d005d205
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the hub chat, 2026-10-29 ("then let's rather have everything checked twice, by one Grok and one Antigravity"); the coordinator's merge practice since then
+**Revisit when:** a reviewer family is unavailable for long, the ChatGPT-based reviewers return and could stand in for one side, or two approvals turn out to miss what one more careful review would catch
+**See:** process.md#the-coordinating-agent-manages-merges-and-releases-it-does-not-code-review-or-test-and-it-routes-work-by-model — 11b7ed4d-100d-490f-ab34-c68ace8b5f80 — as of 2026-10-30
+
+Before the coordinator merges a pull request, one instance of the Grok
+reviewer and one instance of the Antigravity reviewer have each
+approved it, both models of other vendors than the coders'. After
+rework, the reviewers check the delta against their findings. The merge
+waits for the summary check `ci-ok` to pass on exactly the head that is
+merged. The coordinator compares a sample of each review's claims —
+names, files, quoted lines — with the diff; an approval built on facts
+the diff does not contain does not count until it is corrected.
+
+**Reason:** the ChatGPT-based reviewers had run out of usage. In the
+first morning with only Antigravity reviewing, one approval missed a
+finding that Grok then caught, and Grok once withdrew a wrong finding of
+its own; two independent model families catch what one misses. A
+reviewer that invents content is caught by the sample check, not by a
+second review alone.
+
+**Rejected alternatives:**
+- One review on another vendor's model (0b12c29d) — the morning of
+  2026-10-29 showed a single pass missing a real finding.
+- Merging when no check is red — the hub and end-to-end jobs report only
+  after the change detection, so a pull request can look clean with only
+  the quick checks run.

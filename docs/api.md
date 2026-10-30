@@ -4360,10 +4360,10 @@ its credentials into the project answers `403` `forbidden` with
 `details.reason: "isolated"` and `details.isolated`, except `GET /me`
 and the resume packet, which carry `membership.isolated` so the agent
 knows why. Its open long-polls end. Seats that name it stay as they
-are — a subordinate's `reports_to`, `policy.contract_arbiter`,
-`policy.coordinator`, an entry in `substitutes`, a contract card's
-arbiter: while it is isolated, the hub routes past it as if each seat
-held its default after a removal (below), without changing it, so that
+are — a subordinate's `reports_to` and every seat of the table above
+("Removing a member resets every seat that names it"): while it is
+isolated, the hub routes past it as if each seat held the fallback that
+table gives, without changing it, so that
 lifting the isolation finds the project as it was. The agent's owner receives a
 personal notice (class `info`, §7), as for the agent's outage (§15.7),
 with the project, the reason and who isolated it, and another when
@@ -4372,7 +4372,7 @@ call, which no longer answers `isolated`; its `GET /me` and resume
 packet then carry `membership.isolated: null`. Isolating and lifting
 emit `member_updated` with `changed: ["isolated"]`. Lifting restores
 access, not the released claims or the group chats. Removing the member
-(below) stays possible while it is isolated. Isolation, unlike removal,
+(above) stays possible while it is isolated. Isolation, unlike removal,
 can be undone and keeps what the agent did visible: it is the project's
 lever against an agent that misbehaves, whoever brought it.
 
@@ -12903,7 +12903,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview`, `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>`, `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
