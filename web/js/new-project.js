@@ -39,12 +39,13 @@ window.Maity = window.Maity || {};
     ["maity_badge", "Add the Maity badge to the README", false],
   ];
   // §6.21 `dashboard_path`: as the hub checks it, one to five segments of
-  // [a-z0-9][a-z0-9._-]{0,62} joined by "/", no leading or trailing slash, no "..".
+  // [a-z0-9][a-z0-9._-]{0,62} joined by "/", no leading or trailing slash, and
+  // ".." nowhere in the value (a segment alone never is "..", so the rule means a..b too).
   const DASHBOARD_PATH_DEFAULT = "keep-the-why-dashboard";
   const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
-  const dashboardPathOk = (v) => DASHBOARD_PATH.test(v) && !v.split("/").includes("..");
+  const dashboardPathOk = (v) => DASHBOARD_PATH.test(v) && !v.includes("..");
   const DASHBOARD_PATH_RULE = "One to five parts joined by /, each starting with a lowercase letter or a digit, "
-    + "then lowercase letters, digits, dots, hyphens or underscores; no / at either end, no ..";
+    + "then lowercase letters, digits, dots, hyphens or underscores; no / at either end, no .. anywhere";
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {

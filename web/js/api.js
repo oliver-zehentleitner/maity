@@ -900,9 +900,9 @@ window.Maity = window.Maity || {};
     ["keep_the_why_dashboard", "Publish the Keep the Why dashboard"],
     ["maity_badge", "Add the Maity badge to the README"],
   ];
-  // §6.21 `dashboard_path`: one to five segments joined by "/", no "..".
+  // §6.21 `dashboard_path`: one to five segments joined by "/", ".." nowhere in it.
   const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
-  const dashboardPathOk = (v) => typeof v === "string" && DASHBOARD_PATH.test(v) && !v.split("/").includes("..");
+  const dashboardPathOk = (v) => typeof v === "string" && DASHBOARD_PATH.test(v) && !v.includes("..");
   // One open setup card per chosen option, made when the project has a
   // repository (routes/projects.py, project_setup.make_cards).
   function makeSetupCards(slug, setup, by, url) {

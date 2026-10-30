@@ -4080,14 +4080,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(spPathShown(), "create: ticking it again shows the Path");
   // A path the hub would refuse is said at the field, nothing sent; so is the hub's own format refusal.
   const spBefore = posts.length;
-  for (const bad of ["/docs", "docs/", "docs/../x", "Docs", "a/b/c/d/e/f", ""]) {
+  for (const bad of ["/docs", "docs/", "docs/../x", "a..b", "Docs", "a/b/c/d/e/f", ""]) {
     spPath().value = bad;
     main.querySelector("form").dispatch("submit"); await tick(); await tick();
     if (posts.length !== spBefore || !text(byId("setup-dashboard-path-error")).startsWith("One to five parts") || spPath().getAttribute("aria-invalid") !== "true") {
       expect(false, "create: a malformed path is refused at its field, nothing sent: " + JSON.stringify(bad));
     }
   }
-  expect(posts.length === spBefore, "create: malformed paths (a leading or trailing /, .., capitals, six parts, none) are refused at the field, nothing sent");
+  expect(posts.length === spBefore, "create: malformed paths (a leading or trailing /, .. anywhere, capitals, six parts, none) are refused at the field, nothing sent");
   spPath().value = "docs/why";
   const spFmt = win.Maity.api.post;
   win.Maity.api.post = (p, b) => (p === "/projects" ? Promise.reject(new win.Maity.api.ApiError("does not validate", 400, p, "invalid", { fields: { "setup.dashboard_path": "format" } })) : spFmt(p, b));
