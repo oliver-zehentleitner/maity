@@ -176,7 +176,7 @@ do what or how cards move.
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** maintainer decision, 2026-10-25, extended by the maintainer's request of 2026-10-30 (CI linter, published dashboard with a chosen path); contract in `docs/api.md` §6.1, §6.21, §5.2, §6.4
 **Revisit when:** a second memory provider is added, or the setup needs more than a pull request
 **See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
@@ -192,7 +192,13 @@ the README (the last one offered under `none` as well), and since
 the Why dashboard where the repository publishes its documentation
 (GitHub Pages, GitLab Pages), under a path the creator may change
 (default `keep-the-why-dashboard`), with the `dashboard-state:` line set
-so the overview links it (the maintainer's request of 2026-10-30) — and for every
+so the overview links it (the maintainer's request of 2026-10-30). The
+path is a URL path below the published documentation site, and the line
+gets the URL of the dashboard's `state.json` below it, for the root and
+for every child with its own `.keep-the-why`. A repository without CI
+gets a workflow that runs only the lint step. These details are the
+contract's reading of that request, settled in the review of #715, not
+words of the maintainer. And for every
 ticked option the hub opens one card of kind `setup` at creation, or
 when the repository is set later: `open`, claimable under the claim
 policy, at the repository root, with a pull request against the default
@@ -220,6 +226,15 @@ second contract change.
   agent that arrives take it.
 - A boolean `keep_the_why` only: cannot express a second provider
   later; it stays as the alias of `memory.provider`.
+- `dashboard_path` as a directory in the repository: Pages sources
+  differ per forge and setting (`/docs`, a `gh-pages` branch, GitLab's
+  `public/`), so a directory says nothing about the URL. The URL is what
+  the creator sees and what the hub needs.
+- The page's URL in `dashboard-state:`: the hub reads JSON from that
+  line (§11.3); a page URL would leave every member at
+  `ktw_unavailable`.
+- A hub setting for the dashboard URL: the repository stays the one
+  source of the Keep the Why links (§6.1).
 
 ## The swarm is a statistic: a section of the project's Overview, shown to the world only on a public project's page
 

@@ -3762,7 +3762,7 @@ choice are §6.21.
 | Field | Values | Meaning |
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
-| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` or `null` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
@@ -6600,11 +6600,17 @@ unticks them: an absent `setup`, or an absent key, means `true` for
 them. `maity_badge` is `false` when absent: a bare API call never makes
 a project's counts public (§6.20); the dashboard pre-ticks all five, so
 a human's form sends `maity_badge: true` explicitly. `dashboard_path`
-(default `keep-the-why-dashboard`) is the path the Keep the Why
-dashboard is published under; one to five segments of
+(default `keep-the-why-dashboard`) is the URL path, below the root of
+the repository's published documentation site, that the Keep the Why
+dashboard is published under; where the files for it lie in the
+repository follows from the repository's Pages configuration and is the
+agent's to find. It is one to five segments of
 `[a-z0-9][a-z0-9._-]{0,62}` joined by `/`, no leading or trailing
-slash, no `..` (`details.fields["setup.dashboard_path"]: "format"`), and
-it is used only while `keep_the_why_dashboard` is `true`. Anything but
+slash, no `..`; anything else, a non-string and `null` included, is
+`invalid` (`details.fields["setup.dashboard_path"]: "format"`). It is
+used only while `keep_the_why_dashboard` is `true`: sent with the option
+`false` it is accepted and dropped, and `setup.dashboard_path` reads
+back `null`. Anything but
 a boolean for an option is `invalid`
 (`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
 `invalid` (`unknown_field`). `setup` is read back with the project
@@ -6614,8 +6620,8 @@ a boolean for an option is `invalid`
 |---|---|---|
 | `keep_the_why_init` | with `memory.provider: keep-the-why` only; under `none` it is taken as `false` whatever was sent | if the repository has no root `.keep-the-why`, set Keep the Why up with its default settings (the skill's project init; `context/`, `.keep-the-why`, the `AGENTS.md` pointer); if it already has one, nothing to change — the card is reported with `code: false` (§6.6) saying so |
 | `keep_the_why_badge` | with `memory.provider: keep-the-why` only; `false` under `none` | add the Keep the Why badge to the repository's `README.md` |
-| `keep_the_why_ci` | with `memory.provider: keep-the-why` only; `false` under `none` | run `ktw-lint` in the repository's CI for every directory with a `.keep-the-why`, so a pull request with a broken entry fails; the acceptance is a pull request whose run shows the lint step green |
-| `keep_the_why_dashboard` | with `memory.provider: keep-the-why` only; `false` under `none` | publish the Keep the Why dashboard where the repository publishes its documentation (GitHub Pages, GitLab Pages or the forge's equivalent), under `setup.dashboard_path` (filled into the card), and write the published URL into the `dashboard-state:` line of the root `.keep-the-why`, so the project's overview links it (§6.11, §11.3); a repository with no such publishing is reported with `code: false` (§6.6) saying what is missing |
+| `keep_the_why_ci` | with `memory.provider: keep-the-why` only; `false` under `none` | run `ktw-lint` in the repository's CI for every directory with a `.keep-the-why`, so a pull request with a broken entry fails; a repository without CI gets a new workflow on the forge's own CI (GitHub Actions, GitLab CI/CD) that runs only this step. The acceptance is a pull request whose run shows the lint step green |
+| `keep_the_why_dashboard` | with `memory.provider: keep-the-why` only; `false` under `none` | publish the Keep the Why dashboard where the repository publishes its documentation (GitHub Pages, GitLab Pages or the forge's equivalent), under `setup.dashboard_path` (filled into the card), for the root and every child with its own `.keep-the-why` (a child's below `<dashboard_path>/<child directory>/`). Into the `dashboard-state:` line of each of those `.keep-the-why` it writes the URL of that dashboard's `state.json`, `https://<site root>/<dashboard_path>[/<child directory>]/state.json`, not the page's URL: the hub reads JSON from that line (§11.3), and a page URL leaves the member at `ktw_unavailable`. The project's overview then links it (§6.11). The acceptance is that each written URL answers over HTTPS with the JSON after the merge. A repository with no such publishing is reported with `code: false` (§6.6) saying what is missing |
 | `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Sending it as `true` also sets the project's `policy.badge` to `members` at creation itself (also without a repository): the creating human's choice, written with the policy preset as `off` would be, no `policy_changed`, no `reason`; the badge serves from that moment, the card only puts the snippet into the README |
 
 **The cards.** For every option that is `true` the hub creates one card
