@@ -122,6 +122,32 @@ window.Maity = window.Maity || {};
     return { not_listening: { minutes: own.not_listening.minutes },
       effective: { not_listening: { minutes: own.not_listening.minutes === null ? personal.minutes : own.not_listening.minutes } } };
   }
+  // §16.4: the fixture hub's registration settings and the accounts that wait.
+  const registration = {
+    values: {
+      mode: { value: "closed", source: "default" },
+      domains: { value: [], source: "default" },
+      addresses: { value: [], source: "default" },
+      approval: { value: "operator", source: "default" },
+      terms: { value: { url: "https://example.org/terms", version: "2026-10" }, source: "env" },
+      max_new_accounts_per_hour: { value: 20, source: "default" },
+    },
+    pending: [
+      { id: "hum-newcomer", handle: "newcomer", display_name: "New Comer", address: "new@example.org", created_at: "2026-10-29T08:00:00Z",
+        expires_at: "2026-11-28T08:00:00Z", source_ip: "192.0.2.10", terms: { version: "2026-10" } },
+    ],
+  };
+  const registrationMailReady = () => { const m = fixtures()["admin-mail.json"]; return !!(m.complete && m.enabled); };
+  function registrationView() {
+    const v = registration.values;
+    const ready = registrationMailReady();
+    const effective = v.mode.value === "closed" || ready ? v.mode.value : "closed";
+    const missing = [];
+    if (v.mode.value !== "closed" && !ready) missing.push("mail");
+    if (v.mode.value === "allowlist" && !v.domains.value.length && !v.addresses.value.length) missing.push("allowlist");
+    return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
+      registered_last_hour: 1, requests_dropped_last_hour: 0 });
+  }
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -433,6 +459,91 @@ window.Maity = window.Maity || {};
       return setAvatar(id, uploaded[key], "uploaded");
     };
   }
+  // §16.7's checks of a landing page and its footer, each at its path.
+  const LANDING_TYPES = {
+    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
+    scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
+    activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
+    collab: ["title", "text", "items", "footnote"],
+  };
+  const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
+  function landingText(x, path, max, required, errors) {
+    if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
+    if (typeof x !== "string") errors[path] = "invalid";
+    else if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(x)) errors[path] = "control_character";
+    else if ([...x].length > max) errors[path] = "invalid";
+  }
+  function landingMarkdown(x, path, max, required, errors) {
+    landingText(x, path, max, required, errors);
+    if (errors[path] || typeof x !== "string") return;
+    let fence = null;
+    x.replace(/\r\n?/g, "\n").split("\n").some((line) => {
+      if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
+      const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+      if (f) { fence = f[1]; return false; }
+      if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line)) { errors[path] = "html"; return true; }
+      if ([...line.matchAll(/\]\(([^)\s]*)\)/g)].some((y) => !landingHref(y[1]))) { errors[path] = "invalid_href"; return true; }
+      return false;
+    });
+  }
+  function landingCta(x, path, required, errors) {
+    if (x === undefined || x === null) { if (required) errors[path] = "required"; return; }
+    landingText(x.label, path + ".label", 40, true, errors);
+    if (!landingHref(x.href)) errors[path + ".href"] = "invalid_href";
+  }
+  function landingPage(pg, at, errors) {
+    if (!pg || typeof pg !== "object") { errors[at] = "invalid"; return; }
+    landingText(pg.title, at + ".title", 120, true, errors);
+    landingText(pg.description, at + ".description", 300, false, errors);
+    const sections = pg.sections || [];
+    if (sections.length > 20) errors[at + ".sections"] = "too_many";
+    sections.forEach((s, i) => {
+      const sp = at + ".sections." + i;
+      const known = LANDING_TYPES[s.type];
+      if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
+      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      const items = s.items || [];
+      if (s.type === "hero") {
+        landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
+        landingText(s.subline, sp + ".subline", 300, false, errors); landingCta(s.cta_primary, sp + ".cta_primary", true, errors);
+        landingCta(s.cta_secondary, sp + ".cta_secondary", false, errors); landingMarkdown(s.note, sp + ".note", 500, false, errors);
+      } else if (s.type === "stats") {
+        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
+        if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
+      } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
+        landingText(s.title, sp + ".title", 120, true, errors);
+        const max = { steps: 6, scales: 4, faq: 20 }[s.type];
+        if (!items.length) errors[sp + ".items"] = "too_few";
+        if (items.length > max) errors[sp + ".items"] = "too_many";
+        items.forEach((x, k) => {
+          const ip = sp + ".items." + k;
+          if (s.type === "steps") { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); landingText(x.code, ip + ".code", 300, false, errors); }
+          if (s.type === "scales") {
+            landingText(x.tag, ip + ".tag", 40, true, errors); landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors);
+            if ((x.points || []).length > 5) errors[ip + ".points"] = "too_many";
+            (x.points || []).forEach((pt, n) => landingText(pt, ip + ".points." + n, 120, true, errors));
+          }
+          if (s.type === "faq") { landingText(x.q, ip + ".q", 200, true, errors); landingMarkdown(x.a, ip + ".a", 2000, true, errors); }
+        });
+      } else if (s.type === "cta_band") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingText(s.text, sp + ".text", 300, false, errors); landingCta(s.cta, sp + ".cta", true, errors);
+      } else if (s.type === "text") {
+        landingText(s.title, sp + ".title", 120, false, errors); landingMarkdown(s.markdown, sp + ".markdown", 16384, true, errors);
+      } else if (s.type === "profiles") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 2000, false, errors);
+        if ((s.handles || []).length > 2) errors[sp + ".handles"] = "too_many";
+      } else if (s.type === "explore") {
+        landingText(s.title, sp + ".title", 120, true, errors);
+        if ((s.projects || []).length > 3) errors[sp + ".projects"] = "too_many";
+      }
+    });
+  }
+  function landingFooter(ft, errors) {
+    landingText(ft.operator, "footer.operator", 120, false, errors);
+    const social = ft.social || [];
+    if (social.length > 8) errors["footer.social"] = "too_many";
+    social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));
+  }
   // A profile's handle and git identity as §6.3 and §6.24 check them.
   function agentFields(body, agent, list) {
     const fields = {};
@@ -587,7 +698,7 @@ window.Maity = window.Maity || {};
     if (!ids || !ids.length) return [];
     attachmentsOn(path);
     if (ids.length > 10) fail(400, "invalid", "at most 10 attachments", path, { fields: { attachments: "too_many" } });
-    if (["accepted", "archived"].includes(project(slug, path).state)) fail(409, "project_closed", "the project is closed", path);
+    if (project(slug, path).state === "archived") fail(409, "project_closed", "the project is closed", path);
     const list = attachmentsOf(slug);
     const bad = {};
     ids.forEach((id) => {
@@ -874,15 +985,21 @@ window.Maity = window.Maity || {};
       if (!(ttl >= 60 && ttl <= 604800)) fields.ttl_seconds = "out_of_range";
       if (body.address !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(body.address))) fields.address = "invalid";
       if (body.note !== undefined && utf8Bytes(String(body.note)) > 1024) fields.note = "too_long";
+      // §3.4 `via`: the join host's link by default where one is configured, else the public one.
+      const joinUrl = fixtures()["auth-session.json"].join_url || null;
+      const via = body.via === undefined ? (joinUrl ? "join" : "public") : body.via;
+      if (!["join", "public"].includes(via)) fields.via = "invalid";
+      else if (via === "join" && !joinUrl) fields.via = "no_join_host";
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const list = invitationsOf(m[1]);
       const token = "fx" + String(list.length + 1).padStart(20, "0");
       const at = nowIso();
       const made = { id: "inv-f" + String(list.length + 1).padStart(3, "0"), project: fullOf(m[1]), trust: wantTrust, role: want, address: body.address || null, note: body.note || null,
         created_by: me().member.id, created_at: at, expires_at: new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-        used_at: null, used_by: null, revoked_at: null, voided_at: null };
+        used_at: null, used_by: null, revoked_at: null, voided_at: null, via };
       list.push(made);
-      return Object.assign({}, made, { url: window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
+      return Object.assign({}, made, { url: via === "join" ? joinUrl.replace(/\/+$/, "") + "/i/" + token
+        : window.location.origin + window.location.pathname + M.route.href("/invite/" + token) });
     }],
     ["DELETE", /^\/projects\/([^/]+)\/invitations\/([^/]+)$/, (m, body, path) => {
       if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
@@ -1356,6 +1473,55 @@ window.Maity = window.Maity || {};
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null });
       return agent;
     }],
+    // §16.4 Registration: the settings with their sources, what is missing, the
+    // accounts that wait and lifting a block, for the instance admin.
+    ["GET", /^\/admin\/settings\/registration$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return registrationView();
+    }],
+    ["PATCH", /^\/admin\/settings\/registration$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const fields = {};
+      Object.keys(body).forEach((k) => {
+        if (!(k in registration.values)) fields[k] = "extra_forbidden";
+        else if (registration.values[k].source === "env") fields[k] = "set_by_environment";
+      });
+      if ("mode" in body && !["closed", "allowlist", "open"].includes(body.mode)) fields.mode = "invalid";
+      if (["allowlist", "open"].includes(body.mode) && !registrationMailReady()) fields.mode = "mail_required";
+      ["domains", "addresses"].forEach((k) => {
+        if (!(k in body)) return;
+        const shape = k === "domains" ? /^@[a-z0-9.-]+\.[a-z]{2,}$/i : /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
+        // As the hub: a list that is no list is `<field>`, a bad entry `<field>.<index>` (§16.4).
+        if (!Array.isArray(body[k])) { fields[k] = "invalid"; return; }
+        const bad = body[k].findIndex((x) => !shape.test(String(x)));
+        if (bad >= 0) fields[k + "." + bad] = "invalid";
+      });
+      if ("approval" in body && !["operator", "automatic"].includes(body.approval)) fields.approval = "invalid";
+      if ("terms" in body && body.terms !== null && !(body.terms && /^https:\/\/\S+$/.test(body.terms.url || "") && /^\S{1,64}$/.test(body.terms.version || ""))) fields.terms = "invalid";
+      if ("max_new_accounts_per_hour" in body && !(Number.isInteger(body.max_new_accounts_per_hour) && body.max_new_accounts_per_hour >= 1)) fields.max_new_accounts_per_hour = "invalid";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      Object.entries(body).forEach(([k, v]) => {
+        const value = k === "domains" || k === "addresses" ? [...new Set(v.map((x) => String(x).toLowerCase()))] : v;
+        registration.values[k] = { value, source: "admin" };
+      });
+      return registrationView();
+    }],
+    ["GET", /^\/admin\/registrations$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return { items: registration.pending.slice(), next_cursor: null };
+    }],
+    ["POST", /^\/admin\/registrations\/([^/]+)\/(approve|reject)$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const at = registration.pending.findIndex((r) => r.id === m[1]);
+      if (at < 0) fail(404, "not_found", "Not found", path);
+      if (m[2] === "reject" && !(body.reason && body.reason.length <= 1024)) fail(400, "invalid", "a reason is required", path, { fields: { reason: "invalid" } });
+      const item = registration.pending.splice(at, 1)[0];
+      return m[2] === "approve" ? Object.assign({}, item, { account_status: "active" }) : { id: item.id, status: "rejected" };
+    }],
+    ["DELETE", /^\/admin\/registrations\/blocks\/([^/]+)$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return null;
+    }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
@@ -1409,7 +1575,7 @@ window.Maity = window.Maity || {};
     ["PATCH", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
       const p = placementFor(m[1], m[2], path);
       if (!["running", "stopped"].includes(body.desired)) fail(400, "invalid", "desired is running or stopped", path, { fields: { desired: "unknown" } });
-      if (body.desired === "running" && ["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (body.desired === "running" && project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       p.desired = body.desired;
       p.updated_by = me().member.id; p.updated_at = nowIso();
       return p;
@@ -1691,7 +1857,12 @@ window.Maity = window.Maity || {};
         if (mine) mine.full_name = p.full_name;
       }
       if ("state" in body) {
+        // §6.1: the five states; moving to launch is a human owner's go.
+        if (!["plan", "build", "review", "launch", "archived"].includes(body.state)) fail(400, "invalid", "unknown state", path, { fields: { state: "unknown" } });
         if (!body.reason) fail(400, "invalid", "A state change needs a reason", path, { fields: { reason: "required" } });
+        const who = caller(m[1], path).member;
+        const owner = who.kind === "human" && (fixtureAs ? who.trust : trustIn(m[1])) === "owner";
+        if (body.state === "launch" && p.state !== "launch" && !owner) fail(403, "forbidden", "moving to launch is the owner's go", path);
         p.state = body.state;
         p.state_note = body.state_note || null;
         p.state_changed_at = nowIso();
@@ -1741,7 +1912,7 @@ window.Maity = window.Maity || {};
           : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && !["accepted", "archived"].includes(p.state)) makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
@@ -1843,15 +2014,8 @@ window.Maity = window.Maity || {};
       }
       return Object.assign({}, base, { window_days: n, days });
     }],
-    // §16.7: the public landing page — fixtures/landing.json, off as on
-    // every fresh instance; ?landing=on shows it, ?landing=fail fails; the admin's settings
-    // checked as the hub checks them (hub/src/maity_hub/landing.py).
-    ["GET", /^\/landing$/, (m, body, path) => {
-      if (params.get("landing") === "fail") fail(503, "unavailable", "the hub is unavailable", path);
-      const v = fixtures()["landing.json"];
-      if (!(v.enabled || params.get("landing") === "on")) return { enabled: false };
-      return { enabled: true, title: v.title, markdown: v.markdown, cta: v.cta, updated_at: v.updated_at };
-    }],
+    // §16.7: the landing page in sections per language, §16.7.1 the legal
+    // pages, checked as the hub checks them, each refusal at its field path.
     ["GET", /^\/admin\/settings\/landing$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return fixtures()["landing.json"];
@@ -1860,34 +2024,82 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      const target = (t) => (/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t) && M.route.isRoute(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t);
-      Object.entries(body).forEach(([k, x]) => {
-        if (!["enabled", "title", "markdown", "cta"].includes(k)) errors[k] = "extra_forbidden";
-        else if (k === "enabled") { if (typeof x === "boolean") v.enabled = x; else errors.enabled = "invalid"; }
-        else if (x === null) v[k] = null;
-        else if (k === "title") { if (typeof x === "string" && x.trim() && x.length <= 120) v.title = x.trim(); else errors.title = "invalid"; }
-        else if (k === "markdown") {
-          let fence = null, bad = null;
-          String(x).replace(/\r\n?/g, "\n").split("\n").some((line, i) => {
-            if (fence) { if (line.trim().startsWith(fence)) fence = null; return false; }
-            const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-            if (f) { fence = f[1]; return false; }
-            const links = [...line.matchAll(/\]\(([^)\s]*)\)/g)].map((y) => y[1]);
-            if (/<\/?[A-Za-z][^>]*>/.test(line) || /!\[/.test(line) || links.some((t) => !target(t))) { bad = "line " + (i + 1); return true; }
-            return false;
-          });
-          if (bad) errors.markdown = bad; else v.markdown = x;
-        } else if (k === "cta") {
-          if (!x.label || !String(x.label).trim()) errors.cta = "invalid";
-          else if (!target(x.href || "")) errors["cta.href"] = "invalid";
-          else v.cta = { label: String(x.label).trim(), href: x.href };
-        }
-      });
-      if (!Object.keys(errors).length && v.enabled && !v.markdown) errors.markdown = "required";
+      Object.keys(body).forEach((k) => { if (!["enabled", "default_language", "pages", "footer"].includes(k)) errors[k] = "extra_forbidden"; });
+      if ("enabled" in body && typeof body.enabled !== "boolean") errors.enabled = "invalid";
+      if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
+      if ("footer" in body) landingFooter(body.footer || {}, errors);
+      ["enabled", "default_language", "pages", "footer"].forEach((k) => { if (k in body) v[k] = body[k]; });
+      if (!Object.keys(errors).length && v.enabled && !(v.pages || {})[v.default_language]) errors.default_language = "default_language_missing";
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
-      fixtures()["landing.json"] = v;
+      fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/admin\/settings\/legal$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtures()["legal.json"];
+    }],
+    ["PATCH", /^\/admin\/settings\/legal$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const v = fixtures()["legal.json"];
+      const named = Object.keys(body).filter((k) => ["imprint", "privacy", "terms"].includes(k));
+      const errors = {};
+      Object.keys(body).forEach((k) => { if (!["imprint", "privacy", "terms", "default_language"].includes(k)) errors[k] = "extra_forbidden"; });
+      if (named.length > 1) errors[named[1]] = "one_page_per_call";
+      named.forEach((page) => {
+        if (body[page] === null) return;
+        const langs = Object.entries(body[page] || {});
+        if (langs.length > 8) errors[page] = "too_many";
+        langs.forEach(([lang, x]) => {
+          const at = page + "." + lang;
+          if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang)) errors[at] = "invalid";
+          landingText(x && x.title, at + ".title", 120, true, errors);
+          landingMarkdown(x && x.markdown, at + ".markdown", 65536, true, errors);
+        });
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      if ("default_language" in body) v.default_language = body.default_language;
+      named.forEach((page) => {
+        const was = v.pages[page];
+        v.pages[page] = body[page] === null ? null
+          : { version: nowIso(), languages: body[page], versions: was ? [was.version].concat(was.versions || []) : [] };
+      });
+      v.updated_at = nowIso(); v.updated_by = me().member.id;
+      return v;
+    }],
+    // A draft seen before it is saved (§16.7, §16.7.1): checked as a save is,
+    // kept 10 minutes, opened by its url in a tab of its own. The fixture
+    // hub serves no HTML: the url only says what the hub would open.
+    ["POST", /^\/admin\/settings\/landing\/preview$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const errors = {};
+      if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
+      if ("footer" in body) landingFooter(body.footer || {}, errors);
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const id = localId("lpv");
+      return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
+    ["POST", /^\/admin\/settings\/legal\/preview$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const page = query.get("page");
+      if (!["imprint", "privacy", "terms"].includes(page)) fail(400, "invalid", "the request does not validate", path, { fields: { page: "invalid" } });
+      const errors = {};
+      // The page's languages are the body, not wrapped in its name (§16.7.1), as the hub reads them.
+      if (!body || typeof body !== "object" || page in body) fail(400, "invalid", "the request does not validate", path, { fields: { [page]: "invalid" } });
+      Object.entries(body).forEach(([lang, x]) => {
+        landingText(x && x.title, page + "." + lang + ".title", 120, true, errors);
+        landingMarkdown(x && x.markdown, page + "." + lang + ".markdown", 65536, true, errors);
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const id = localId("lgv");
+      return { id, url: "/api/v1/admin/settings/legal/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
+    // Unauthenticated: which legal pages are set, for the dashboard's links.
+    ["GET", /^\/legal$/, () => {
+      const v = fixtures()["legal.json"];
+      const pages = {};
+      Object.entries(v.pages).forEach(([k, x]) => { if (x) pages[k] = { version: x.version, languages: Object.keys(x.languages) }; });
+      return { default_language: v.default_language, pages };
     }],
     // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
     // reduction where policy.swarm_public is on: agents only, no ids, no
@@ -1907,7 +2119,7 @@ window.Maity = window.Maity || {};
       const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
       const p = slug && fixtures()[slug + "/project.json"];
       const s = slug && fixtures()[slug + "/swarm.json"];
-      if (!p || !s || (p.policy || {}).swarm_public !== "on" || ["accepted", "archived"].includes(p.state)) fail(404, "not_found", "Not found", path);
+      if (!p || !s || (p.policy || {}).swarm_public !== "on" || p.state === "archived") fail(404, "not_found", "Not found", path);
       const agents = (list) => list.filter((x) => x.kind === "agent");
       const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
       const rows = agents(s.members).map((r) => ({ handle: r.handle, name: r.name, cards_done: r.cards_done, reviews_given: r.reviews_given,
@@ -1924,8 +2136,16 @@ window.Maity = window.Maity || {};
       "/api/v1/admin/users": { get: {} },
       "/api/v1/admin/statistics": { get: {} },
       "/api/v1/admin/settings/landing": { get: {}, patch: {} },
-      "/api/v1/landing": { get: {} },
+      "/api/v1/admin/settings/legal": { get: {}, patch: {} },
+      "/api/v1/admin/settings/landing/preview": { post: {} },
+      "/api/v1/admin/settings/legal/preview": { post: {} },
+      "/api/v1/legal": { get: {} },
       "/api/v1/admin/settings/mail": { get: {}, patch: {} },
+      "/api/v1/admin/settings/registration": { get: {}, patch: {} },
+      "/api/v1/admin/registrations": { get: {} },
+      "/api/v1/admin/registrations/{human_id}/approve": { post: {} },
+      "/api/v1/admin/registrations/{human_id}/reject": { post: {} },
+      "/api/v1/admin/registrations/blocks/{blocked}": { delete: {} },
       "/api/v1/admin/settings/mail/test": { post: {} },
       "/api/v1/health": { get: {} },
       "/api/v1/projects/{owner}/{slug}/ticker": { get: {}, post: {} },
@@ -2219,7 +2439,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes$/, (m, body, path) => {
       const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
       if (!card) fail(404, "not_found", "Not found", path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const text = String(body.body || "");
       if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
       if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
@@ -2292,16 +2512,16 @@ window.Maity = window.Maity || {};
       if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
       return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
-    // §6.4: a new card. assigned_to needs tasks:admin; freeze and fixes-only need a reason.
+    // §6.4: a new card. assigned_to needs tasks:admin; plan and review need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
       const proj = project(m[1], path);
-      if (["accepted", "archived"].includes(proj.state)) fail(409, "project_closed", "the project is closed", path);
+      if (proj.state === "archived") fail(409, "project_closed", "the project is closed", path);
       const list = file(m[1], "tasks.json", path).items;
       const errors = {};
       if (!body.title || !String(body.title).trim()) errors.title = "missing";
       if (body.label && !["fix", "feature", "chore"].includes(body.label)) errors.label = "unknown";
       if (body.status && !["proposed", "open"].includes(body.status)) errors.status = "unknown";
-      if (["freeze", "fixes-only"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
+      if (["plan", "review"].includes(proj.state) && !(body.reason && body.reason.trim())) errors.reason = "missing";
       if (body.assigned_to) {
         if (!tasksAdmin(m[1])) fail(403, "forbidden", "assigning needs tasks:admin", path, { scope: "tasks:admin" });
         if (!file(m[1], "members.json", path).items.some((x) => x.id === body.assigned_to)) errors.assigned_to = "not_a_member";
@@ -2343,7 +2563,7 @@ window.Maity = window.Maity || {};
     // hub may at any time.
     ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/move$/, (m, body, path) => {
       if (!tasksAdmin(m[1])) fail(403, "forbidden", "ordering needs tasks:admin", path, { scope: "tasks:admin" });
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const all = file(m[1], "tasks.json", path).items;
       const card = all.find((x) => x.id === m[2]);
       if (!card) fail(404, "not_found", "no such card", path);
@@ -2605,6 +2825,13 @@ window.Maity = window.Maity || {};
       list.removed.push(removed);
       return removed;
     }],
+    // §6.2: an agent's briefing versions, newest first, for its owner and members:admin.
+    ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/briefings$/, (m, body, path) => {
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === m[2]);
+      const mayRead = target && target.kind === "agent" && (target.owner_id === me().member.id || ["owner", "admin"].includes(trustIn(m[1])));
+      if (!mayRead) fail(404, "not_found", "Not found", path);
+      return { items: target.briefing ? [{ version: target.briefing_version || 1, text: target.briefing, by: target.briefing_by || null, at: target.briefing_updated_at || null }] : [], next_cursor: null };
+    }],
     ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/credentials$/,
       (m, body, path) => keyed(m[1], "credentials.json", m[2], path)],
     ["POST", /^\/projects\/([^/]+)\/credentials\/([^/]+)\/revoke$/, (m, body, path) => {
@@ -2717,7 +2944,7 @@ window.Maity = window.Maity || {};
     // §8.7 attachments: a raw upload, pending until a message names it.
     ["POST", /^\/projects\/([^/]+)\/attachments$/, (m, body, path, query) => {
       attachmentsOn(path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const name = query.get("name");
       if (!name) fail(400, "invalid", "a name is required", path, { fields: { name: "required" } });
       if (body.size > ATTACHMENT_MAX) fail(413, "payload_too_large", "larger than 10 MiB", path);
@@ -2832,7 +3059,7 @@ window.Maity = window.Maity || {};
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
       const chats = groupChats(m[1]);
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const members = file(m[1], "members.json", path).items;
       const ids = [...new Set([me().member.id].concat(body.participants || []))];
       if (ids.some((id) => !members.some((x) => x.id === id))) fail(400, "invalid", "not a member", path, { fields: { participants: "not_a_member" } });
@@ -2861,7 +3088,7 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/projects\/([^/]+)\/conversations\/(cnv-[^/]+)\/participants$/, (m, body, path) => {
       const c = managed(m[1], m[2], path);
-      if (["accepted", "archived"].includes(project(m[1], path).state)) fail(409, "project_closed", "the project is closed", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       const who = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id);
       if (!who) fail(400, "invalid", "not a member", path, { fields: { member_id: "not_a_member" } });
       if (!c.view.participants.some((x) => x.member_id === who.id)) {
@@ -3036,7 +3263,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/landing" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       path = namespaced(path, fullPath);
@@ -3055,6 +3282,9 @@ window.Maity = window.Maity || {};
   // The CSRF token from GET /auth/session; the readable maity_csrf cookie
   // carries the same value and is preferred when present.
   let sessionCsrf = null;
+  // The session as GET /auth/session last answered it (§2.6, its join_url among it),
+  // kept for a view that needs it again; cleared when the session ends.
+  let lastSession = null;
 
   function csrfToken() {
     for (const part of document.cookie.split(";")) {
@@ -3138,6 +3368,7 @@ window.Maity = window.Maity || {};
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         sessionCsrf = s.csrf_token || null;
+        lastSession = s;
         sessionBlocked = false;
         return s;
       });
@@ -3161,7 +3392,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|landing|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -3243,9 +3474,12 @@ window.Maity = window.Maity || {};
   const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
 
   M.api = {
+    // The session read last (null before the first read or after the end).
+    session: () => lastSession,
     endSession: () => {
       sessionBlocked = true;
       sessionCsrf = null;
+      lastSession = null;
       M.sessionEpoch = (M.sessionEpoch || 0) + 1;
     },
     // Whether a 401 on this path says nothing about a session (above).

@@ -205,12 +205,12 @@ def _answer(
             return not listing.behind(item, since, where)
         return older is None or item.order < older
 
-    # A page needs `limit` items and to know whether one more follows; the counts read no
-    # chat item. So the plain chat messages are derived only as far as the page reaches.
+    # A page needs `limit` items and to know whether one more follows, so every source is
+    # derived only as far as the page reaches; the counts read their own few items.
     found = items.derive_page(
-        conn, where, count=limit + 1, newest_first=since is None, wanted=wanted
+        conn, where, count=limit + 1, newest_first=since is None, wanted=wanted, since=since
     )
-    answer: dict[str, Any] = listing.counts(conn, where, found)
+    answer: dict[str, Any] = listing.counts(conn, where, items.count_items(conn, where))
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=unread)
     head = listing.head(conn, where)
     next_cursor = None
@@ -275,7 +275,7 @@ async def read_notifications(
             listing.mark(conn, where, found, chosen, session)
         with _snapshot(request) as conn:
             where = items.scope(conn, human_id, settings_of(request).public_url)
-            return listing.counts(conn, where, items.derive(conn, where))
+            return listing.counts(conn, where, items.count_items(conn, where))
 
     return JSONResponse(await _limited(request, mark))
 

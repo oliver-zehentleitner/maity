@@ -23,7 +23,8 @@ window.Maity = window.Maity || {};
     bar(header);
     document.title = "Create an account · Maity";
     const box = h("article", { class: "register door" });
-    append(clear(main), box);
+    // The legal pages that are set, under the form (§16.7.1).
+    append(clear(main), box, M.legal ? M.legal.links() : null);
     const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
     // May this person register here? The instance's mode (§2.6.1), or an
     // address-bound invitation that admits (§3.4) when they come from one.
@@ -86,7 +87,16 @@ window.Maity = window.Maity || {};
     h("label", { for: "register-repeat" }, "The password again"), repeat,
     submit, status.el,
     h("p", { class: "muted" }, "Have an account? ", h("a", { href: signIn }, "Sign in"), "."));
-    append(box, h("p", { class: "muted" }, "We send a link to your address; the account is made only once you follow it."), form);
+    // The instance's terms (§2.7.2, from GET /auth/methods): accepted on the
+    // link's page, where their version is signed; named here so nobody is
+    // surprised there. A link only when it is plain https.
+    const terms = methods && methods.terms;
+    const termsUrl = terms && M.dom.safeUrl(terms.url);
+    append(box, h("p", { class: "muted" }, "We send a link to your address; the account is made only once you follow it."),
+      terms ? h("p", { class: "hint register-terms" }, "When you complete your account you accept this hub's ",
+        termsUrl ? h("a", { href: termsUrl, target: "_blank", rel: "noopener noreferrer" }, "terms") : "terms",
+        terms.version ? " (version " + terms.version + ")" : "", ".") : null,
+      form);
   }
 
   function registerWords(err) {

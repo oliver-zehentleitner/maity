@@ -44,6 +44,33 @@ could use paths too: fixture mode is defined as the page opened from
 its own `#/` or path by mode: every call site would carry the
 distinction, and one forgotten would break only in one of the two modes.
 
+## The legal pages are the one kind of hub path the dashboard links to, by a fixed list
+
+**Id:** d4878714-49e9-4aba-81ea-5d91e9b3bdd4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7.1, §16.11 (the hub serves `/impressum`, `/privacy`, `/terms` and their versions itself); web/js/route.js `isHubPage`, web/js/dom.js; the landing editor (#632); the review of #632, 2026-10-30
+**Revisit when:** the hub serves another page a person should reach from the dashboard, or the legal pages move under a path of the dashboard
+
+`M.route.isHubPage` accepts exactly `/impressum`, `/privacy` and
+`/terms`, each optionally with one version segment, and only where
+`isRoute` refuses them as hub paths; `h()` writes such an `href` as it
+is, a plain page load, never through `M.route.href`. The legal links
+on the login and registration pages and the editor's "Served at" links
+are the only users.
+
+**Reason:** the legal pages are the hub's static HTML (§16.7.1), so a
+link to them leaves the app, as it must; every other hub path (`/api`,
+`/assets`, `/join`, `/mail`, `/badge`, `/r`) is no page for a person and
+stays refused by `h()`, the boundary the entry above keeps.
+
+**Rejected alternative:** letting `h()` link any hub path as a plain
+page load: one rule wider than needed would make a link to `/api/…` or
+`/mail/…` from data possible again. Building the legal links outside
+`h()`, as raw elements: the one place that checks every `href` would
+have an exception nobody sees.
+
 ## The repository's `index.html` names its files relatively; the hub serves the shell with `<base href="/assets/">`
 
 **Id:** bc798b68-fce9-41a6-a145-b4e25149b726

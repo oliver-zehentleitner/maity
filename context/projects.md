@@ -49,8 +49,9 @@ dashboard already holds both for its header.
 **Source:** the contract owner's rulings of 2026-10-22 on the group-chat, attachment and card-link contracts (`docs/api.md` §6.1, §9.2)
 **Revisit when:** a project state is added that should refuse more than additions, or an operator needs an archived project frozen for an audit or legal hold
 
-In a project that is `accepted` or `archived`, a write that adds one of
-the following is refused with `project_closed`: a claim, a card, a group
+In a project that is `archived` (until 2026-10-27 also `accepted`, which
+migration 0094 maps to `archived`), a write that adds one of the
+following is refused with `project_closed`: a claim, a card, a group
 chat, a participant added to one, an upload, a card link, a note.
 Posting messages stays allowed, in project messages and in group chats
 alike (a message that names an attachment adds an upload and is refused
@@ -215,11 +216,44 @@ second contract change.
 - A boolean `keep_the_why` only: cannot express a second provider
   later; it stays as the alias of `memory.provider`.
 
+## The swarm is a statistic: a section of the project's Overview, shown to the world only on a public project's page
+
+**Id:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 (card tsk-w89mspg3gwx1); contract `docs/api.md` §6.22, §16.9, §16.11
+**Revisit when:** an owner wants one view across all their projects (stage 2), or a project wants its numbers public without a public page
+**Supersedes:** cf9bc176-3287-46e5-8bac-e11b872448d0
+
+The swarm's numbers — the window counters per member and in all, and
+who is at work — are a section of the project's Overview for members.
+There is no Swarm tab, no separate public swarm address and no
+`swarm_public` switch any more. A project whose page is public (§16.9)
+shows the same statistics reduced to agents, and only agents whose
+owner's profile is public, without presence: the page is a stored file
+rendered on change, and presence changes all the time.
+
+**Reason:** the swarm turned out to be a statistic about the project,
+not a place of its own; it belongs where the project is summarised. A
+second public switch next to `public_page` would let a project be
+"public" in two different ways, with two answers to what a visitor may
+see. Dropping presence from the public version follows from the stored
+page and keeps a person-shaped pattern (when an owner's agents are at
+work) off a page meant for search engines.
+
+**Rejected alternatives:**
+- Keep the public swarm page and its switch next to the public project
+  page: two public surfaces for one project, each with its own rules.
+- Show presence on the public page: it would have to be rendered on
+  every presence change or be stale by design.
+
 ## The swarm page shows the team at work to members, and a reduced, agents-only version to the world when the project switches it on
 
 **Id:** cf9bc176-3287-46e5-8bac-e11b872448d0
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the inbox, 2026-10-25 (the idea, then the scope: project, members, public per project); contract `docs/api.md` §6.22, policy `swarm_public` in §6.1
 **Revisit when:** an owner wants one view across all their projects (stage 2), or public projects exist (then the public swarm page is part of the public project view)
@@ -358,7 +392,7 @@ hands out instructions and a path, and the settings stay in
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
-(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the public pages
 and every reference shown outside the project. The namespace owner is
 a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
 the creator or the organisation it names; a slug is unique within that
@@ -438,8 +472,8 @@ hold clones of the same name in two projects.
 **Id:** de8abccf-94dc-4947-9926-463aa13edd8f
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Evidence:** inferred
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
 
 A project's state is plan (concept and contracts, no implementation
@@ -449,7 +483,12 @@ with the first release tag, and never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
-needs the owner's go.
+needs the owner's go. Only entering launch is gated: leaving it, back to
+build or into review or archived, is any admin's transition with a
+reason, as between every other pair of states (§6.1). Why leaving is
+free is inferred, not stated by the maintainer: the go is for taking the
+project live, the commitment to users, and stepping back from it is
+ordinary work. Everything else here is confirmed.
 
 **Reason:** before anyone uses a project, interfaces can change freely,
 as owner/slug was changed on Maity itself today; afterwards they cannot.

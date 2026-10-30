@@ -205,7 +205,9 @@ def test_the_log_masks_the_join_hosts_token(
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         join_client(make_client).get(f"/{token}")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == ["GET /join/… 200"]
+    assert [re.sub(r" ms=\d+", " ms=N", line) for line in lines] == [
+        "GET /join/… 200 ms=N route=/join/{token}"
+    ]
     assert not any(token in line for line in lines)
 
 
@@ -224,7 +226,9 @@ def test_the_log_masks_a_token_that_was_not_rewritten(
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         join_client(make_client).request(method, f"/{token}{suffix}", follow_redirects=False)
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines == [f"{method} /…{suffix} {status}"]
+    assert len(lines) == 1
+    assert re.fullmatch(rf"{method} /…{suffix} {status} ms=\d+ route=\S+", lines[0])
+    assert token not in lines[0]
 
 
 @pytest.mark.parametrize(
@@ -292,3 +296,101 @@ def test_the_page_names_the_instances_install_line_and_the_state_directory(
     assert "pipx install maity\n" not in page
     help_text = make_client(cli_install="pipx install maity-fork").get("/api/v1/help").text
     assert "(`pipx install maity-fork`)" in help_text
+
+
+# --- a person's invitation (§1.1, §3.4) ---------------------------------------------------------
+
+INVITED = "9fK2" + "a" * 18  # a token's shape: 22 of [A-Za-z0-9_-]
+
+
+def test_an_invitation_link_redirects_to_the_invitation_page(make_client: ClientFactory) -> None:
+    response = join_client(make_client).get(f"/i/{INVITED}", follow_redirects=False)
+    assert (response.status_code, response.headers["location"]) == (
+        302,
+        f"{PUBLIC}/invite/{INVITED}",
+    )
+    assert "set-cookie" not in response.headers
+
+
+def test_the_redirect_looks_nothing_up_and_a_live_token_is_redirected_like_an_unknown_one(
+    make_client: ClientFactory, owner: flow.Human, migrated: Any
+) -> None:
+    """No oracle: a valid, an unknown and a revoked invitation answer alike, and the
+    redirect sends no statement to the database."""
+    from tests.statements import count_statements
+
+    invitation = owner.post(f"/projects/{owner.handle}/maity/invitations", {})
+    assert invitation.status_code == 201, invitation.text
+    live = invitation.json()["url"].rsplit("/", 1)[1]
+    client = join_client(make_client)
+    answers: list[tuple[int, str, str]] = []
+    statements = count_statements(
+        migrated,
+        lambda: answers.extend(
+            (r.status_code, r.headers["location"].rsplit("/", 1)[0], r.text)
+            for r in (
+                client.get(f"/i/{live}", follow_redirects=False),
+                client.get(f"/i/{INVITED}", follow_redirects=False),
+            )
+        ),
+    )
+    assert answers[0] == answers[1] == (302, f"{PUBLIC}/invite", "")
+    assert statements == 0
+
+
+def test_the_invitation_redirect_ignores_cookies_and_credentials(
+    make_client: ClientFactory,
+) -> None:
+    response = join_client(make_client).get(
+        f"/i/{INVITED}",
+        headers={"Cookie": "maity_session=abc", "Authorization": "Bearer nope"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302 and "set-cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/i",
+        "/i/",
+        f"/i/{INVITED[:-1]}",  # one character short
+        f"/i/{INVITED}x",  # one too long
+        f"/i/{INVITED}/",  # a second segment
+        f"/i/{INVITED}/accept",
+        f"/i/{INVITED}.",  # outside the alphabet
+        "/I/" + INVITED,
+    ],
+)
+def test_anything_else_under_i_is_an_ordinary_other_get(
+    make_client: ClientFactory, path: str
+) -> None:
+    response = join_client(make_client).get(path, follow_redirects=False)
+    assert (response.status_code, response.headers["location"]) == (302, f"{PUBLIC}/")
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "DELETE", "PATCH"])
+def test_an_invitation_link_answers_no_other_method(
+    make_client: ClientFactory, method: str
+) -> None:
+    response = join_client(make_client).request(method, f"/i/{INVITED}", json={})
+    assert (response.status_code, response.json()["error"]["code"]) == (404, "not_found")
+
+
+def test_the_log_masks_an_invitations_token_on_the_join_host(
+    make_client: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="maity_hub.access"):
+        join_client(make_client).get(f"/i/{INVITED}", follow_redirects=False)
+        join_client(make_client).request("HEAD", f"/i/{INVITED}", follow_redirects=False)
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
+    assert [re.sub(r" ms=\d+", " ms=N", line) for line in lines] == [
+        "GET /i/… 302 ms=N route=-",
+        "HEAD /i/… 404 ms=N route=-",
+    ]
+    assert not any(INVITED in line for line in lines)
+
+
+def test_the_public_host_has_no_invitation_redirect(make_client: ClientFactory) -> None:
+    response = make_client(join_url=JOIN).get(f"/i/{INVITED}", follow_redirects=False)
+    assert response.status_code != 302 or not response.headers["location"].endswith(INVITED)

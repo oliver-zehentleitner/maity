@@ -140,6 +140,50 @@ def test_a_session_that_called_for_events_lately_is_listening(setup: Setup) -> N
     assert s.session().not_listening_since is None and s.events() == []
 
 
+def test_a_resume_starts_the_ten_minutes_again(setup: Setup) -> None:
+    s = setup
+    s.message()
+    s.at(8)
+    assert s.agent.resume().status_code == 200
+    s.at(11)
+    s.sweep()  # the event is 11 minutes old, but the resume is 3 minutes ago
+    assert s.session().not_listening_since is None and s.events() == []
+    s.at(19)
+    s.sweep()  # 11 minutes after the resume
+    assert s.session().not_listening_since == s.now + timedelta(minutes=18)
+
+
+def test_the_cursor_a_resume_sends_counts_as_acknowledged(setup: Setup) -> None:
+    s = setup
+    s.message()
+    cursor = _cursor(s)
+    s.at(1)
+    assert s.agent.resume(cursor=cursor).status_code == 200
+    assert s.session().acknowledged_seq == cursor
+    s.at(30)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == []
+
+
+def test_a_resume_without_a_cursor_leaves_the_events_above_the_old_one_waiting(
+    setup: Setup,
+) -> None:
+    """The new session starts at the old one's acknowledged cursor, and the events its
+    packet delivers are acknowledged only by a later call for events. A session that
+    works from the packet and never calls again is not listening ten minutes after its
+    resume, which §5.3 accepts: the hub cannot tell "received and busy" from "never saw
+    it"."""
+    s = setup
+    s.message()
+    s.at(1)
+    assert s.agent.resume().status_code == 200
+    s.at(12)
+    s.sweep()
+    assert s.session().not_listening_since == s.now + timedelta(minutes=11)
+    [started] = s.events()
+    assert started.payload["ended"] is False
+
+
 def test_a_paused_agent_is_never_not_listening(setup: Setup) -> None:
     s = setup
     s.message()
@@ -313,3 +357,50 @@ def test_the_membership_is_read_again_under_the_projects_lock(
     monkeypatch.setattr(not_listening, "lock_project", paused_while_waiting)
     s.sweep()
     assert s.session().not_listening_since is None and s.events() == [] and s.notices() == []
+
+
+@pytest.mark.parametrize(("mode", "requests"), [("inbox", 1), ("bell", 0), ("off", 0)])
+def test_only_an_owner_under_inbox_gets_a_request_per_episode(
+    setup: Setup, mode: str, requests: int
+) -> None:
+    """§5.3, §18.4: `bell` hears of it through the digest's bell item, `off` not at all;
+    until the digest request comes, `inbox` keeps one request per episode."""
+    s = setup
+    changed = s.owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is not None  # the episode starts in every mode
+    assert len(s.events()) == 1  # and the member it reports to is told, whatever the mode
+    assert len(s.notices()) == requests
+
+
+@pytest.mark.parametrize("mode", ["bell", "off"])
+def test_leaving_inbox_mid_episode_withdraws_its_request_at_the_hour(
+    setup: Setup, mode: str
+) -> None:
+    """§5.3: the request of an episode that began under `inbox` is withdrawn at the first
+    digest hour after the mode left `inbox`; the episode goes on, and `bell` has only the
+    digest's bell item from then on."""
+    from maity_hub import not_listening_digest
+
+    s = setup
+    s.message()
+    s.at(11)
+    s.sweep()
+    changed = s.owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    assert [n["status"] for n in s.notices()] == ["open"]  # until the hour
+    s.at(200)
+    s.sweep()
+    not_listening_digest.run(s.engine)
+    assert [n["status"] for n in s.notices()] == ["withdrawn"]
+    assert s.session().not_listening_since is not None
+    assert s.session().not_listening_request_id is None
+    # What asks for the owner (§18.2): under `bell` the digest's item alone, under `off`
+    # nothing. The withdrawn request stays in the bell as a notice, as at an episode's end.
+    answer = s.owner.get("/me/notifications", params={"limit": 50}).json()
+    titles = [i["title"] for i in answer["items"]]
+    assert answer["counts"]["inbox"] == (1 if mode == "bell" else 0)
+    assert ("1 of your agent instances are not listening" in titles) == (mode == "bell")

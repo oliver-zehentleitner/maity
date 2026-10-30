@@ -3,6 +3,8 @@ answers for the paths from before it, and the words a slug or a handle may not b
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from sqlalchemy import Engine, insert, select
 
@@ -54,7 +56,10 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     with migrated.begin() as conn:
         conn.execute(
             insert(t.project_alias).values(
-                project_id=project["id"], owner_id=owner.id, slug="old", created_at=clock.now()
+                project_id=project["id"],
+                **namespace.owner_values(owner.id),
+                slug="old",
+                created_at=clock.now(),
             )
         )
     assert owner.get("/projects/maintainer/old").json()["full_name"] == "maintainer/maity"
@@ -62,11 +67,26 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     assert taken.json()["error"]["details"]["fields"] == {"slug": "taken"}
 
 
-@pytest.mark.parametrize("slug", ["tasks", "members", "forge", "logo", "keep-the-why", "transfer"])
+@pytest.mark.parametrize(
+    "slug", ["tasks", "members", "forge", "logo", "keep-the-why", "transfer", "me", "repository"]
+)
 def test_a_slug_is_never_a_route_word(owner: flow.Human, slug: str) -> None:
     refused = owner.post("/projects", {"slug": slug, "name": "X"})
     assert refused.status_code == 400
     assert refused.json()["error"]["details"]["fields"] == {"slug": "reserved"}
+
+
+def test_the_floor_holds_every_route_word_of_the_running_hub(owner: flow.Human) -> None:
+    """`reserved_holders` checks the floor at `migrate`, before any app runs: a word a
+    route brings must be in it, or an existing slug that holds it would pass unseen."""
+    from maity_hub import paths
+
+    app: Any = owner.client.app  # the hub's FastAPI app behind the test client
+    words = namespace.route_words(app.openapi().get("paths", {}))
+    assert words, "the schema lists the project routes"
+    assert words <= namespace.ROUTE_WORDS | paths.PROJECT_VIEWS, sorted(
+        words - namespace.ROUTE_WORDS - paths.PROJECT_VIEWS
+    )
 
 
 def test_the_route_words_come_from_the_routes() -> None:

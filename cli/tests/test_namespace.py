@@ -1,6 +1,6 @@
 """The project namespace on the CLI (§6.25): routes as /projects/{owner}/{slug}/…, the full
-name kept in state and refreshed by every resume, a state from before the namespace completed
-from GET /me, and `client_outdated` (426) said as an upgrade line."""
+name kept in state and refreshed by every resume, and `client_outdated` (426) said as an
+upgrade line."""
 
 from __future__ import annotations
 
@@ -27,29 +27,14 @@ def test_project_routes_carry_owner_and_slug(joined: Path, fake: fakehub.FakeHub
     assert fake.signed()[0].path == f"{P}/tasks/tsk-4"
 
 
-def test_a_state_with_the_slug_alone_reads_the_full_name_from_me(
-    joined: Path, fake: fakehub.FakeHub
-) -> None:
-    _state(hub=fake.url, project="maity")
-    me = {"projects": [{"slug": "maity", "full_name": "oliver/maity", "name": "Maity"}]}
-    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
-    fake.routes[("GET", f"{P}/tasks/tsk-4")] = lambda s: (200, CARD)
-    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK
-    assert [s.path for s in fake.signed()] == ["/api/v1/me", f"{P}/tasks/tsk-4"]
-    assert state.load_state(state.resolve_state_dir())["full_name"] == "oliver/maity"
-    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK  # kept: no second /me
-    assert [s.path for s in fake.signed()].count("/api/v1/me") == 1
-
-
-def test_me_without_the_project_is_an_error_not_a_guess(
+def test_a_state_with_the_slug_alone_asks_for_a_resume(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """No `GET /me` for a state without the full name: alpha, no state from before §6.25."""
     _state(hub=fake.url, project="maity")
-    me = {"projects": [{"slug": "other", "full_name": "oliver/other"}]}
-    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
     assert cli.main(["task", "show", "tsk-4"]) == cli.EXIT_ERROR
-    assert "does not name this clone's project maity with an owner" in capsys.readouterr().err
-    assert [s.path for s in fake.signed()] == ["/api/v1/me"]
+    assert "run `maity resume`" in capsys.readouterr().err
+    assert fake.signed() == []
 
 
 def test_a_join_answer_with_the_full_name_needs_no_lookup(
@@ -90,17 +75,13 @@ def test_client_outdated_says_how_to_upgrade(
     err = capsys.readouterr().err
     assert "is older than the hub needs (0.2.0)" in err
     assert "Upgrade with: pipx upgrade maity" in err
-    assert "openapi" not in err  # not taken for a missing route
 
 
 @pytest.mark.parametrize("bad", ["oliver/", "/maity", "Oliver/maity", "a/b/c", "oliver maity"])
 def test_a_malformed_full_name_is_not_used(joined: Path, fake: fakehub.FakeHub, bad: str) -> None:
     _state(hub=fake.url, project="maity", full_name=bad)
-    me = {"projects": [{"slug": "maity", "full_name": "oliver/maity"}]}
-    fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
-    fake.routes[("GET", f"{P}/tasks/tsk-4")] = lambda s: (200, CARD)
-    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK
-    assert fake.signed()[-1].path == f"{P}/tasks/tsk-4"
+    assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_ERROR
+    assert fake.signed() == []
 
 
 # --- a project with a new full name is followed (§6.25) ----------------------------------------
@@ -141,7 +122,7 @@ def test_a_missing_card_under_an_unchanged_name_stays_not_found(
     me = {"projects": [{"slug": "maity", "full_name": "oliver/maity"}]}
     fake.routes[("GET", "/api/v1/me")] = lambda s: (200, me)
     assert cli.main(["task", "show", "tsk-4"]) == cli.EXIT_ERROR
-    assert "GET /projects/oliver/maity/tasks/tsk-4" in capsys.readouterr().err
+    assert "GET /api/v1/projects/oliver/maity/tasks/tsk-4: not_found" in capsys.readouterr().err
     assert [s.path for s in fake.signed()] == [f"{P}/tasks/tsk-4", "/api/v1/me"]
     assert state.load_state(state.resolve_state_dir())["full_name"] == "oliver/maity"
 

@@ -77,6 +77,41 @@ or factored out, and every later route added to the main app would have to
 be kept off the join host deliberately; with the rewrite, nothing but the
 two token paths can be reached there by construction.
 
+## An invitation's link on the join host is answered by the join router with no lookup; its host is stored on the invitation
+
+**Id:** 63ff4653-7a66-4c81-a178-1d5f8ce6bda0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of card tsk-nq3fjd1x6qb1 against `docs/api.md` §1.1, §3.4 (#675), 2026-10-30; the contract entry is `context/join.md` cb26f4f4
+**See:** https://github.com/oliver-zehentleitner/maity — cb26f4f4-ac8a-4a65-889d-a45896810a0e — as of 2026-10-30
+**Revisit when:** a second path is added to the join host, or an invitation is to be shown on the join host itself
+
+`join_host.route` answers `GET /i/{token}` (`INVITE_PATH`, 22 characters of `[A-Za-z0-9_-]`) with
+a `302` to the public `/invite/{token}` before anything else, in the same place that answers
+every other join-host path, so the route is never reached and no statement is sent to the
+database: a live, a used and an unknown token get the same answer by construction. The
+request log masks the segment after `/i/` on the join host only (`_JOIN_INVITE` in
+`middleware._logged_path`), ahead of the first-segment mask, which would otherwise print
+`/…/{token}`. The invitation stores which host its link was built on (`invitation.via`,
+migration 0098, `join` or `public`, default `public` for the rows that exist), because the
+`GET` list is to tell the inviter which link went out and the `url` itself is not kept.
+
+**Reason:** the contract says the join host looks nothing up and the page on the public host
+keeps its one `not_found`; answering from the router that already decides what the join
+host serves keeps that in one place and makes "no lookup" a property of the code, not of a
+route that has to stay careful. The column is the same as `join_link.via`, for the same
+reason.
+
+**Rejected alternatives:**
+- Rewriting `/i/{token}` to the public invitation page, as the agent join is rewritten: the
+  page would then run on the join host, which has no session and is to set no cookie.
+- Masking `/i/` with the other token patterns (`_TOKEN_PATHS`, every host): on the public
+  host `/i/…` has no token to hide, and the join host's own patterns are the ones that
+  apply only there.
+- Deriving `via` from nothing and not listing it: the inviter could not see which link
+  went out, which §3.4 asks for.
+
 ## The join host is matched on the hostname alone, failing closed
 
 **Id:** 0db8ec23-5525-4884-9df4-369fcd3973c2
@@ -179,6 +214,43 @@ The voiding moment and the widened list row are written in the contract
 (confirmed). The mail condition on the page is derived from §3.4's "Mail
 must be complete and enabled as for every registration" and is not
 stated for the page itself (inferred).
+
+## An address-bound invitation is accepted by the account's verified or disabled address, never a pending one
+
+**Id:** 310da1ed-b6ae-44bc-b6f3-bfc649186794
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** fix of the stub `invitations.account_address` (#662), docs/api.md §3.4, §18.4, §18.7, 2026-10-29
+**See:** joins.md — 59c15f35-08fc-4bb9-abf6-ae0dc4ac8ea9 — as of 2026-10-29
+**Revisit when:** the contract says in so many words whether a disabled address still counts as the account's address, or the accounts design adds a state of the address beyond none, pending, verified and disabled
+
+`invitations.account_address` gives the account's `address_normalized`
+when `address_status` is `verified` or `disabled`, and nothing
+otherwise; accept compares it with the invitation's normalized address
+(`routes/invitations.py`, `invitation_address_mismatch`).
+
+**Reason:** §3.4 lets only the account whose verified address is the
+invited one accept. A `disabled` address is still that account's
+verified address: §18.7 only stops mail to it after hard failures, the
+address keeps its place in the one-account-per-address constraint, and
+setting and verifying it again enables it. The rest of the hub treats
+`disabled` as verified too (`notifications/preferences.py`). A `pending`
+address was never confirmed by its mailbox, so accepting with it would
+let anyone bind an invitation to an address they only typed.
+Both sides normalize with `strip().lower()` (`registration.normalized`
+and `mail.address.normalized`), the comparison §2.6.3 uses.
+
+**Rejected alternatives:** `verified` only, as e-mail sign-in and the
+mailer use: those decide whether mail may go out, while accept asks
+whose address it is, and a bounced mailbox would lock its owner out of
+an invitation made for them. Reading `address` or `pending_address`
+instead of `address_normalized`: the first is not normalized, the second
+is unconfirmed.
+
+**Workaround:** before this fix the stub returned `None`, so every
+address-bound invitation refused with `invitation_address_mismatch`;
+tests monkeypatched `account_address`. The monkeypatch is gone.
 
 ## A join remembers whether a member made it under "Bringing your own agent"
 

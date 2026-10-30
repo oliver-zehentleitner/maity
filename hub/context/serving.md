@@ -156,6 +156,12 @@ return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
 four-byte one), and 256 KiB holds every valid page.
 
+Changed on 2026-10-29 (the sections, §16.7; contract: 512 KiB): the landing page now holds up to
+256 KiB of stored text across its languages and sections, and the legal pages 64 KiB per text, so
+the cap of `PATCH /admin/settings/landing` and of `PATCH /admin/settings/legal` is 512 KiB, twice
+the stored limit for the same reason: JSON escaping triples the wire size of a valid text at most,
+and the route checks the stored size itself.
+
 ## uvicorn keeps idle connections 120 s, longer than a proxy's pool
 
 **Id:** ad270d7b-3905-487e-8046-8de7a2a775c4
@@ -197,12 +203,18 @@ open until the numbers change.
 included before the dashboard mount, outside `/api/v1`, like the badge. The middleware lets
 them choose `public, max-age=3600`, the one caching it permits besides the landing page's 60
 seconds: the exception is now the cache value a path may choose, and no longer a flag, so a
-path cannot ask for the other path's. The root's `X-Robots-Tag: noindex` while the landing
-page is not enabled is added by the middleware too, on `GET` and `HEAD` of `/` only, because
-the root is the app shell (since 2026-10-29 the `ShellRoute`, which leaves the root's header to
-the middleware; every other shell path carries `noindex` itself); the setting
-is read per request, and an unreadable setting counts as off. The join host answers both
-files `not_found`, in `join_host.route`, before its redirect.
+path cannot ask for the other path's. Changed on 2026-10-29 (the hub renders the landing page
+itself, §16.7): the middleware no longer adds `noindex` to the root; the app shell carries it on
+every path including `/`, and the landing page, which answers `/` to a visitor while it is
+enabled, carries none, so the root is indexable exactly when the hub shows its own page. The
+files now follow the landing setting and the legal pages (`routes/seo.py`): `Allow` for the root
+and the legal pages that are set, a sitemap with the root and those pages, none when there is
+neither. The join host answers both files `not_found`, in `join_host.route`, before its redirect.
+
+The rendered pages answer `HEAD` as well as `GET`, and the middleware gives a `HEAD` of a public
+path the same cache value: otherwise the app shell's route matches a `HEAD` of `/` and answers
+`noindex` for a page that is meant to be indexed. **Rejected alternative:** leaving `HEAD` to the
+shell. Its headers then differ from `GET`'s on the same address.
 
 **Reason:** the dashboard's mount would otherwise answer `/robots.txt` from the web
 directory (or with its 404), and the root's header must follow a setting an admin changes
@@ -254,3 +266,46 @@ create humans with handles such as `admin` without going through the CLI.
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
   owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.
+
+## The request log carries `ms=` and the route's pattern, and one `stats` line a minute says how loaded the hub is
+
+**Id:** 8c9025ea-d9d4-449e-a343-ecd802ddbdfd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ftnk7d1p5117, PR 1 of the plan the lead decided on 2026-10-29 (the plan is note nte-b5yq1r1xv4c4 on the card); the incident of 2026-10-26
+**Revisit when:** the cluster gets a log or metrics stack that scrapes or parses something better than `key=value` lines, or the pool line needs the number of callers waiting for a connection
+
+Each request is logged as `METHOD path status ms=<n> route=<pattern>` (`middleware._access`): how
+long the hub took from the middleware's first line, and the pattern the answering route was
+declared with (`request_stats.route_of`): the route's `path_format`, with the `/api/v1` prefix put
+back where the route's regular expression takes the rest of the path, because the route object's
+own `path` leaves the prefix out (FastAPI 0.159 keeps it in the included router). A request no
+route answered, or one whose route cannot be told from the path, logs `-`. A project route logs `{owner}/{slug}` as two parameters, as the OpenAPI path has
+them: `ProjectRoute` (`namespace.py`) joins them into one `slug` before the endpoint, but the
+declared pattern is read, not the parameters, and a test holds it for an answered request and for a
+405. Once a minute
+`maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
+pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
+the pool cannot be counted.
+
+**Reason:** in the incident the pool was used up at a low request rate and nothing in the log said
+how long requests took or how many connections were out; the diagnosis worked from Traefik's log.
+The cluster runs k3s with `kubectl logs` and no log stack, so the lines are plain `key=value`, to
+be read with `grep`, and an alarm built on them needs nothing from the hub. The pattern, not the
+path, so that a count by route is not one line per project slug or id, and so that nothing from the
+request reaches the log that the path masking (§1.1) does not already cover: the pattern is the
+route's own declared text.
+
+**Rejected alternatives:**
+- JSON lines: the lead decided against it; with `kubectl logs` and no parser it is harder to read.
+- A `/metrics` endpoint: no scraper is known in the cluster, and an endpoint is a new surface with
+  its own access rule; the log needs neither.
+- Rebuilding the pattern from the logged path and the router's `path_params`, which the first
+  version did: a value that is also a word of the prefix or of the pattern (`api`, `v1`, `badge`)
+  was found in the wrong place, so the pattern shifted and a real path or token value could stay
+  in the log; and `ProjectRoute` rewrites `owner` and `slug` into one parameter before the
+  endpoint, so the parameters did not match the pattern (found in review of #670).
+- The number of callers waiting for a pool connection: SQLAlchemy's `QueuePool` does not expose it,
+  so the line shows open and checked-out connections and the ceiling, from which a full pool reads.
+

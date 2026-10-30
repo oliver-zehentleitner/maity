@@ -1,14 +1,16 @@
-# The certificate for the apex and www, and the www → apex redirect.
-# Replace maity.example.org with your host name (three places, plus the
-# regex). The hub's own Ingress comes from the chart (hub-values.yaml) and
-# uses the same Secret.
+# The certificate for the apex, www and the join host, and the www → apex
+# redirect. Replace maity.example.org with your host name (every
+# occurrence, plus the regex). Drop join.maity.example.org if you do not
+# use ingress.joinHost.
+# The hub's own Ingress comes from the chart (hub-values.yaml) and uses the
+# same Secret.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata: {name: maity-tls, namespace: maity}
 spec:
   secretName: maity-tls
   issuerRef: {name: letsencrypt, kind: ClusterIssuer}
-  dnsNames: [maity.example.org, www.maity.example.org]
+  dnsNames: [maity.example.org, www.maity.example.org, join.maity.example.org]
 ---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware

@@ -59,6 +59,7 @@ window.Maity = window.Maity || {};
     const rows = [h("dt", null, "Repository"),
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : "No repository.",
         !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
+    rows.push(h("dt", null, "State"), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, "Policy"), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's
     // wish, tsk-yhbmz7mjng7n step 1); read inside Maity once the hub serves it.
@@ -127,7 +128,7 @@ window.Maity = window.Maity || {};
     const humans = list.filter((m) => m.kind === "human").length;
     const agents = list.filter((m) => m.kind === "agent").length;
     const online = list.filter((m) => m.presence === "online").length;
-    return h("section", { class: "overview-part overview-team", "aria-labelledby": "overview-members" },
+    return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", "Team", list.length ? plural(humans, "human", "humans") + ", " + plural(agents, "agent", "agents") + " · " + online + " online" : null,
         h("a", { href: ctx.link("members"), "data-key": "members" }, "All members")),
       list.length
@@ -211,12 +212,14 @@ window.Maity = window.Maity || {};
   }
 
   // The order (the designer's handover): what needs the reader, then the
-  // state, then the facts; one column on a phone in the same order.
+  // state, then the facts; one column on a phone in the same order. Project
+  // and README badge stand under Team, beside Latest reports, not after it:
+  // the list is long, and they were out of sight below it.
   function layout(ctx, parts) {
     return [
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
-      h("div", { class: "overview-row overview-row-2" }, members(ctx), parts.reports),
-      h("div", { class: "overview-row overview-row-3" }, project(ctx), badge(ctx)),
+      h("div", { class: "overview-row overview-row-2" },
+        h("div", { class: "overview-stack" }, members(ctx), project(ctx), badge(ctx)), parts.reports),
       // Who reports to whom (js/org.js), once the Organisation tab.
       M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
     ];

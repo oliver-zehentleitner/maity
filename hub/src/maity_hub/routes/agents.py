@@ -7,11 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import avatars, clock, events, idempotency
+from maity_hub import avatars, clock, events, idempotency, limits, moderation, namespace
 from maity_hub import tables as t
-from maity_hub.deps import HumanCaller, engine_of
+from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
@@ -57,9 +57,31 @@ def owned(
 
 
 def create_profile(
-    conn: Connection, owner_id: str, handle: str, display_name: str, git: GitIdentity | None
+    conn: Connection,
+    owner_id: str,
+    handle: str,
+    display_name: str,
+    git: GitIdentity | None,
+    limit: int | None = None,
 ) -> str:
-    """A new profile of `owner_id`; `invalid` when the handle is taken (unique per owner)."""
+    """A new profile of `owner_id`; `invalid` when the handle is taken (unique per owner),
+    `agent_limit` at `limit` profiles that are not deleted (§16.5, None for no limit). The
+    owner's row is locked for the count, so two creations at `limit − 1` give one profile
+    and one `agent_limit`, whichever endpoint they came by."""
+    if limit is not None:
+        conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
+        count = int(
+            conn.execute(
+                select(func.count())
+                .select_from(t.agent_profile)
+                .where(
+                    t.agent_profile.c.owner_id == owner_id,
+                    t.agent_profile.c.deleted_at.is_(None),
+                )
+            ).scalar_one()
+        )
+        if count >= limit:
+            raise limits.agent_limit(limit, count)
     taken = conn.execute(
         select(t.agent_profile.c.id).where(
             t.agent_profile.c.owner_id == owner_id,
@@ -103,8 +125,9 @@ def list_agents(request: Request, caller: HumanCaller) -> JSONResponse:
 @router.post("/agents")
 def create_agent(body: AgentCreate, request: Request, caller: HumanCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
+        limit = limits.of(conn, settings_of(request), "max_agents_per_human")
         agent_id = create_profile(
-            conn, caller.principal_id, body.handle, body.display_name, body.git_identity
+            conn, caller.principal_id, body.handle, body.display_name, body.git_identity, limit
         )
         return idempotency.Outcome(201, "agent", agent_id, load_agent(conn, agent_id))
 
@@ -129,6 +152,8 @@ def patch_agent(
         owned(conn, agent_id, caller.principal_id)
         values: dict[str, Any] = {}
         if "display_name" in given and body.display_name is not None:
+            # A name moderation reset stays so while its hold stands (§16.8).
+            moderation.refuse_held(conn, "profile", agent_id, "remove")
             values["display_name"] = body.display_name
         if "git_identity" in given:
             git = body.git_identity
@@ -155,9 +180,11 @@ class ProfileInUse(ApiError):
 def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
     """The profile's active memberships and the active placements that run them."""
     members = conn.execute(
-        select(t.membership, t.project.c.slug, t.human.c.handle.label("owner_handle"))
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        namespace.join_owner(
+            select(
+                t.membership, t.project.c.slug, namespace.owner_handle().label("owner_handle")
+            ).join(t.project, t.project.c.id == t.membership.c.project_id)
+        )
         .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()

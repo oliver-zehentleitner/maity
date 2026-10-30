@@ -53,8 +53,7 @@ class RegistrationConfigError(ValueError):
 
 def normalized(value: str) -> str:
     """The form one account per address compares: trimmed and lower-cased (§2.6.3,
-    §18.4). The same as `mail.address.normalized` of the notification settings (#280),
-    which takes its place once that lands."""
+    §18.4). The same as `mail.address.normalized` of the notification settings."""
     return value.strip().lower()
 
 
@@ -241,11 +240,24 @@ class Resolved:
         )
 
 
-def resolve(conn: Connection, env: RegistrationEnvironment, mail_ready: bool) -> Resolved:
+def resolve(
+    conn: Connection, env: RegistrationEnvironment, mail_ready: bool, public_url: str
+) -> Resolved:
     stored = store.stored(conn, SECTION)
     values = {
         name: store.effective(f"{SECTION}.{name}", env.value(name), stored) for name in FIELDS
     }
+    if values["terms"][1] == "default":  # none from the environment, none set by the admin
+        current = conn.execute(
+            select(t.legal_page.c.current).where(t.legal_page.c.page == "terms")
+        ).scalar()
+        if current is not None and public_url:
+            # The terms page, so that a person accepts exactly the version they could read
+            # (§16.7.1): the order is the environment, the admin's value, the legal pages.
+            values["terms"] = (
+                {"url": f"{public_url.rstrip('/')}/terms", "version": current},
+                "legal_pages",
+            )
     return Resolved(values, mail_ready)
 
 
@@ -328,14 +340,19 @@ class Dropped:
         self._lock = threading.Lock()
 
     def add(self) -> None:
+        now = time.monotonic()
         with self._lock:
-            self._at.append(time.monotonic())
+            self._drop_before(now - 3600)  # here too: nobody may read the count for days
+            self._at.append(now)
 
     def last_hour(self) -> int:
-        cutoff = time.monotonic() - 3600
         with self._lock:
-            self._at = [at for at in self._at if at >= cutoff]
+            self._drop_before(time.monotonic() - 3600)
             return len(self._at)
+
+    def _drop_before(self, cutoff: float) -> None:
+        if self._at and self._at[0] < cutoff:  # in order: the oldest is first
+            self._at = [at for at in self._at if at >= cutoff]
 
 
 class Breaker:

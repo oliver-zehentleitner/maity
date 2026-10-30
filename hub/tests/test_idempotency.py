@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, insert, update
 from starlette.routing import Mount
 
-from maity_hub import clock, idempotency
+from maity_hub import clock, idempotency, namespace
 from maity_hub import tables as t
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError
@@ -304,7 +304,10 @@ def test_an_old_name_of_the_project_replays_the_same_call(
     with migrated.begin() as conn:
         conn.execute(
             insert(t.project_alias).values(
-                project_id=project["id"], owner_id=owner.id, slug="old", created_at=clock.now()
+                project_id=project["id"],
+                **namespace.owner_values(owner.id),
+                slug="old",
+                created_at=clock.now(),
             )
         )
     first = _create(owner, "maintainer/maity")

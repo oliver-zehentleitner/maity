@@ -60,6 +60,7 @@ def view(row: Any, project_slug: str, url: str | None = None) -> dict[str, Any]:
         "used_by": row.used_by,
         "revoked_at": _ts(row.revoked_at),
         "voided_at": _ts(row.voided_at),
+        "via": row.via,
     }
     if url is not None:
         found["url"] = url
@@ -134,11 +135,16 @@ def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> 
 
 
 def account_address(conn: Connection, human_id: str) -> str | None:
-    """The account's verified address (§18.4), normalized, or None. Fails closed: with
-    None an address-bound invitation is `invitation_address_mismatch` for everyone."""
-    # TODO(#280): read the verified address the notification settings store.
-    del conn, human_id
-    return None
+    """The account's verified address (§18.4), normalized, or None. An address that is
+    only pending, or none at all, is None: with it an address-bound invitation is
+    `invitation_address_mismatch`. A `disabled` address was verified and stays the
+    account's."""
+    return conn.execute(
+        select(t.notification_settings.c.address_normalized).where(
+            t.notification_settings.c.human_id == human_id,
+            t.notification_settings.c.address_status.in_(("verified", "disabled")),
+        )
+    ).scalar()
 
 
 def audience(conn: Connection, project_id: str, *also: str) -> list[str]:

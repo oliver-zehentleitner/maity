@@ -25,7 +25,8 @@ def packet(**overrides: Any) -> dict[str, Any]:
             "owner": {"id": "hum-1", "handle": "maintainer"},
         },
         "membership": {
-            "role": "member",
+            "trust": "member",
+            "role": "coder",
             "reports_to": "agt-a",
             "areas": ["hub/"],
             "paused": None,
@@ -45,7 +46,13 @@ def packet(**overrides: Any) -> dict[str, Any]:
         "requests": {"mine_open": [], "answered_since_cursor": [], "to_answer": []},
         "events": {"after": 0, "items": [], "cursor": 4231, "truncated": False},
         "peers": [
-            {"member_id": "agt-a", "handle": "agent-a", "role": "admin", "presence": "online"}
+            {
+                "member_id": "agt-a",
+                "handle": "agent-a",
+                "trust": "admin",
+                "role": "coder",
+                "presence": "online",
+            }
         ],
     }
     data.update(overrides)
@@ -92,14 +99,22 @@ def test_a_team_of_one_shows_no_sibling_line() -> None:
 def test_identity_project_rules_and_next_step() -> None:
     text = onboarding.render(packet())
     assert "You are agent-b (Agent B), member id agt-b." in text
-    assert "Role: member, reporting to agent-a" in text
+    assert "Trust: member, role: coder, reporting to agent-a" in text
     assert "Areas you own: hub/" in text
     assert "Your human: maintainer" in text
     assert "Project: Maity (oliver/maity), state build" in text
     assert "Rules (version 7), read them before you work:\n> # Rules for Maity" in text
     assert "Keep the Why: Load the keep-the-why skill." in text
-    assert "Members: agent-a [agt-a] (admin, online)" in text
+    assert "Members: agent-a [agt-a] (admin coder, online)" in text
     assert text.rstrip().endswith("Next: `maity wait` until something is addressed to you.")
+
+
+def test_a_released_project_says_so_beside_its_state() -> None:
+    project = {**packet()["project"], "released_at": "2026-09-14T10:00:00Z"}
+    assert "Project: Maity (oliver/maity), state build, released\n" in onboarding.render(
+        {**packet(), "project": project}
+    )
+    assert ", released" not in onboarding.render(packet())
 
 
 def test_unchanged_rules_are_a_version_line() -> None:
@@ -402,9 +417,9 @@ def test_handles_that_only_look_different_count_as_shared(alias: str) -> None:
 
 
 def test_a_peer_without_a_member_id_has_no_empty_brackets() -> None:
-    peers = [{"handle": "ghost", "role": "member", "presence": "away"}]
+    peers = [{"handle": "ghost", "trust": "member", "role": "coder", "presence": "away"}]
     text = onboarding.render(packet(peers=peers))
-    assert "None" not in text and "Members: ghost (member, away)" in text
+    assert "None" not in text and "Members: ghost (member coder, away)" in text
 
 
 @pytest.mark.parametrize("kind", ["agent", "human"])

@@ -121,9 +121,13 @@ def share(conn: Connection, human_id: str) -> None:
 
 
 def hold(conn: Connection, human_id: str) -> None:
-    """Take the human's `account_lock` shared and refuse a deleted account. Called before
-    the transaction's first locking statement (`_before`), and by tests."""
+    """Take the human's `account_lock` shared and refuse a deleted or suspended account.
+    Called before the transaction's first locking statement (`_before`), and by tests."""
     share(conn, human_id)
-    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == human_id)).first()
-    if deleted is None or deleted.deleted_at is not None:
+    row = conn.execute(
+        select(t.human.c.deleted_at, t.human.c.suspended_at).where(t.human.c.id == human_id)
+    ).first()
+    # A suspension ends the sessions (§16.8): a request that got past them before it
+    # committed waits here for it, and then finds the account suspended.
+    if row is None or row.deleted_at is not None or row.suspended_at is not None:
         raise unauthenticated("the session has ended or expired")

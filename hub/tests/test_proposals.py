@@ -63,7 +63,9 @@ def _membership_id(migrated: Engine, agent: flow.Agent) -> int:
     return found
 
 
-def _file(migrated: Engine, agent: flow.Agent, kind: str = "test") -> str:
+def _file(
+    migrated: Engine, agent: flow.Agent, kind: str = "test", session_id: str | None = None
+) -> str:
     with transaction(migrated) as conn:
         row = conn.execute(select(t.membership).where(t.membership.c.agent_id == agent.id)).one()
         caller = Caller(
@@ -73,6 +75,7 @@ def _file(migrated: Engine, agent: flow.Agent, kind: str = "test") -> str:
             credential_id=agent.credential_id,
             membership_id=row.id,
             project_id=row.project_id,
+            session_id=session_id,
         )
         mine = membership(conn, caller, "maintainer/maity")
         return file_consent(
@@ -105,6 +108,17 @@ def test_a_go_settles_with_the_proposer_as_actor_and_the_human_as_approver(
     assert done.proposer.membership_id == _membership_id(migrated, admin)  # not the approver
     assert done.approver == owner.id
     assert done.closer is not None and done.closer.membership_id != done.proposer.membership_id
+
+
+def test_the_proposer_carries_the_instance_that_asked(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = flow.agent(make_client, owner, role="admin")
+    session = admin.resume().json()["session"]["id"]
+    request_id = _file(migrated, admin, session_id=session)
+    assert answer(owner, request_id, reply_id="go").status_code == 200
+    [done] = settled
+    assert (done.proposer.session_id, done.proposer.credential_id) == (session, admin.credential_id)
 
 
 @pytest.mark.parametrize("body", [{"reply_id": "no"}, {"text": "not like this"}])

@@ -1,0 +1,3 @@
+### Added
+
+- ci: a `hub-load` workflow (on pushes to main, nightly and by hand, not part of `ci-ok`) runs `hub/tests/test_load.py` on PostgreSQL: it seeds a bell with thousands of unread requests and fails when the statements or the time of a notifications call grow with the history, or when a held long-poll costs more with more open tabs. The ordinary test run leaves these tests out (`pytest -m load` runs them). Its first run found that `GET /me/notifications` takes time linear in the unread requests of the 30 days (0.12 s at 1000, 0.42 s at 4000 on PostgreSQL); that test is marked `xfail` until `tsk-r8f0jm3xs9y6` fixes it.
