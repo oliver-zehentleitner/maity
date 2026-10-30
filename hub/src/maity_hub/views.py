@@ -414,14 +414,19 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
 
 
 def member_view(
-    conn: Connection, row: Any, *, briefing: bool = False, details: bool = False
+    conn: Connection,
+    row: Any,
+    *,
+    briefing: bool = False,
+    details: bool = False,
+    links: Any = None,
 ) -> dict[str, Any]:
     """The member view of §6.2: the principal, the membership, the live session.
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
     an event that goes to everyone; the caller decides. `details` adds `owner` and
     `credentials`, for `members:admin` and an agent's owner, never in an event."""
-    return member_views(conn, [row], briefing=briefing, details=details)[0]
+    return member_views(conn, [row], briefing=briefing, details=details, links=links)[0]
 
 
 def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
@@ -473,9 +478,12 @@ def member_views(
     *,
     briefing: bool | Callable[[Any], bool] = False,
     details: bool | Callable[[Any], bool] = False,
+    links: Any = None,
 ) -> list[dict[str, Any]]:
     """`member_view` for several membership rows, with a fixed number of queries;
-    `briefing` for every row, or per row through a predicate."""
+    `briefing` for every row, or per row through a predicate. `links` is the reader
+    (`person_links.Reader`) of a human's `website` and `social`, which only the readers their
+    `links_visible` admits get (§16.9); without it a view has none, and no event does."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     agent_ids = {r.agent_id for r in rows if r.agent_id is not None}
@@ -533,6 +541,16 @@ def member_views(
     profile_holds = moderation.holds_of(
         conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
     )
+    seen_links: set[str] = set()
+    if links is not None:
+        from maity_hub import person_links  # person_links reads views' tables
+
+        seen_links = person_links.admitted(
+            conn,
+            {h.id: h.links_visible for h in humans.values()},
+            links,
+            {h for h in humans if h in profile_holds},
+        )
     views = []
     for row in rows:
         head = (
@@ -559,6 +577,10 @@ def member_views(
         }
         if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
             view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())
+            if row.human_id in seen_links:
+                from maity_hub import person_links
+
+                view.update(person_links.shown(humans[row.human_id]))
         session = None
         if row.agent_id is not None:
             session = live.get(row.id)
