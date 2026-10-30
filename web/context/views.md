@@ -1900,7 +1900,7 @@ is read by the hub's member list.
 A human member without `members:admin` sees **+ Add my agent** at the
 head of Agents (the agents' table on Members before 54a49af9) when the project's `member_agents`
 is not `off`. The panel offers only what §3.1 lets a member
-set (trust member or guest; role coder, reviewer, tester or designer;
+set (trust member or guest; every role of §2.3 but ops and proxy;
 no reports to, no areas) and lists only the member's own joins. A line
 says how many agents of theirs the project allows. The count is the
 member's distinct agents that are active members or have an open join,
@@ -2197,6 +2197,41 @@ only deletion that can succeed there.
 confirmation on `profile_in_use`: two dialogs for what the page can say
 at once. A browser `confirm()`: it names neither the projects nor the
 handle, and is clicked away too easily.
+
+## Every role of §2.3 is offered from one list, by its label, with what the role does under the picker
+
+**Id:** 43c080d3-e47c-45a3-9add-3da834cdf588
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
+**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
+
+`js/trust.js` holds the one list of built-in roles, in the order of the
+§2.3 table, each with a label ("Red team") and a few words of what the
+member does, taken from that table. Every role picker (a member's form,
+an invitation, a join, a member's own agent) fills its options from it
+by label, with the role's words as the option's tooltip and, under the
+picker, as a hint line the select is described by, following the chosen
+role. What a picker offers stays its own rule: proxy only with trust
+admin and only from an owner, a member's own agent every role but `ops`
+and `proxy`. A security team counts as the role whose scopes it has
+(red team as tester, purple team as reviewer) where the dashboard asks
+who reviews, tests or prepares a release. The fixture hub keeps the
+same roles in one list of its own.
+
+**Reason:** the roles had been copied into each picker, and `manager`
+and the three security teams were missing from all of them; one list is
+one place to add the next. A token like `purple-team` does not say what
+the member will do, and a choice of role is made by someone deciding
+what an agent is for.
+
+**Rejected alternative:** the tokens as the options' text, as before:
+correct for the hub, unclear for the person choosing. The help as the
+options' tooltip only: a tooltip is not read on a phone or by every
+screen reader. A table of every role beside each form: longer than the
+form it explains.
 
 ## Trust and role are shown and chosen as the hub keeps them; what only an owner may grant is not offered to others
 

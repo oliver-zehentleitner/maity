@@ -403,7 +403,11 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
+  // Every built-in role (§2.3), as the hub's one list; and what a member may
+  // give an agent of their own (§3.1: not ops, not proxy).
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team"];
+  const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
@@ -966,7 +970,7 @@ window.Maity = window.Maity || {};
       const wantTrust = body.trust || "member";
       const want = body.role || "coder";
       if (!["owner", "admin", "member", "guest"].includes(wantTrust)) fields.trust = "unknown";
-      if (!["coder", "reviewer", "tester", "designer", "writer", "ops", "manager", "proxy"].includes(want)) fields.role = "unknown";
+      if (!HUB_ROLES.includes(want)) fields.role = "unknown";
       else if (want === "proxy" && wantTrust !== "admin") fields.role = "proxy_needs_admin";
       if ((["admin", "owner"].includes(wantTrust) || want === "proxy") && trust !== "owner") {
         fail(403, "forbidden", "only an owner invites an owner, an admin or a proxy", path, { reason: "owner_only" });
@@ -2595,7 +2599,7 @@ window.Maity = window.Maity || {};
           fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
         }
       }
-      if ("role" in body && !["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager"].includes(body.role)) errors.role = "unknown";
+      if ("role" in body && !HUB_ROLES.includes(body.role)) errors.role = "unknown";
       if (!errors.trust && !errors.role && ("trust" in body || "role" in body) && newRole === "proxy" && newTrust !== "admin") errors.role = "proxy_needs_admin";
       if (who.member.kind === "human" && trustIn(m[1]) !== "owner" && ("trust" in body || "role" in body)
         && ((["owner", "admin"].includes(newTrust) && newTrust !== target.trust) || (newRole === "proxy" && target.role !== "proxy") || (target.trust === "owner" && newTrust !== "owner"))) {
@@ -2784,7 +2788,7 @@ window.Maity = window.Maity || {};
         const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
         if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
         if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
-        if (body.role && !["coder", "reviewer", "tester", "designer"].includes(body.role)) limit("role");
+        if (body.role && !MEMBER_ROLES.includes(body.role)) limit("role");
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");

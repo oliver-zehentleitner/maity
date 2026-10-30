@@ -39,7 +39,7 @@ window.Maity = window.Maity || {};
       h("option", { value: "all" }, "Everyone in the project"),
       // §8.4: trust:owner, trust:admin or a role (§2.3).
       h("optgroup", { label: "A trust" }, ["owner", "admin"].map((t) => h("option", { value: "trust:" + t }, "Every " + t))),
-      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + r))),
+      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + M.trust.roleLabel(r).toLowerCase()))),
       h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + M.dom.handleOf(ctx, m) + ")"))));
     to.value = "all";
     const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l)));

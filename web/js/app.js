@@ -407,7 +407,7 @@ window.Maity = window.Maity || {};
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
       // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
       .concat(["owner", "admin"].map((trust) => ({ value: "trust:" + trust, label: "Trust: every " + trust })))
-      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + role })))
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + M.trust.roleLabel(role).toLowerCase() })))
       .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
