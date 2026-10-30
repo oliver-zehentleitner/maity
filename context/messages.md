@@ -344,3 +344,31 @@ needs; the backlog does not.
 - Copying the replaced instance's cursor: a replacement often comes
   because the old instance stopped mid-way; its cursor says what it
   read, not what the new one should be woken for.
+
+## A review result carries the head it judged, its verdict and the lines it read
+
+**Id:** 671a0ee8-e764-4a0e-9f80-f7ae3e6af861
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
+**Revisit when:** the hub reads repositories itself and could check a cite, or reviews move to the forge's own review API
+
+A `review_result` message carries `review`: the subject, the full head
+commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
+one to fifty cites, each a path, an optional line and the quoted text.
+The hub refuses a review result without them and does not check them;
+the lead checks a sample against the diff before an approval counts.
+
+**Reason:** a review that cites nothing cannot be checked except by
+redoing it; with cites the lead compares a few quotes with the diff in
+seconds, and a review that invented its content shows at once. The head
+pins the verdict to one commit, so an approval of an older push is
+visible as such.
+
+**Rejected alternatives:**
+- Free text only, with a rule in the briefing to quote: the rule was
+  there in spirit and two reviews still named code that did not exist.
+- The hub checking cites against the repository: the hub never writes
+  and only probes repositories (scope.md); a diff check needs the
+  forge's API per head and is a later step.
