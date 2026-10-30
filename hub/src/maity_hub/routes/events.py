@@ -161,11 +161,16 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
 
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
         with engine.begin() as conn:
+            row = mine.row
+            if caller.kind == "agent":
+                # As of now, not as of the call's start: an isolation that committed since
+                # reads nothing more (§6.2, "Isolation").
+                row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
             if waking:
                 rows, examined = events.read_waking(
                     conn,
                     mine.project.id,
-                    mine.row,
+                    row,
                     mine.principal_id,
                     since,
                     limit,
@@ -175,7 +180,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 )
             else:
                 rows, examined, _ = events.read(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn, mine.project.id, row, mine.principal_id, since, limit
                 )
             if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
                 events.mark_delivered(conn, rows, mine.principal_id)

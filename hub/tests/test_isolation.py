@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import availability, events, longpoll, views
+from maity_hub import availability, clock, events, longpoll, views
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -353,10 +353,57 @@ def test_a_card_that_names_an_isolated_arbiter_is_arbitrated_by_the_default(
     isolate(owner, arbiter.id)
     with migrated.connect() as conn:
         project = conn.execute(select(t.project)).one()
-        # no admin agent is left, so the default after a removal is the owner (§6.2)
-        assert seats.routed_arbiter(conn, project, arbiter.id) == owner.id
+        # a card's isolated arbiter falls back to the policy's, here `trust:admin` (§6.2)
+        assert seats.routed_arbiter(conn, project, arbiter.id) == project.contract_arbiter
         assert seats.routed_arbiter(conn, project, "trust:admin") == "trust:admin"
         assert seats.routed_arbiter(conn, project) == project.contract_arbiter
     lift(owner, arbiter.id)
     with migrated.connect() as conn:
         assert seats.routed_arbiter(conn, project, arbiter.id) == arbiter.id
+
+
+def test_a_wait_that_started_before_the_isolation_reads_nothing_after_it(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The long-poll loaded the membership when the call started; an isolation that commits
+    before its first pass must still end what it reads (§6.2)."""
+    from sqlalchemy import update
+
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    assert say(owner, agent.id, "for you").status_code == 201
+    real = longpoll.registry.enter
+
+    def isolated_meanwhile(waiter: Any) -> None:
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent.id)
+                .values(isolated_since=clock.now(), isolated_reason="meanwhile", isolated_by="x")
+            )
+        real(waiter)
+
+    monkeypatch.setattr(longpoll.registry, "enter", isolated_meanwhile)
+    response = agent.get(f"{PROJECT}/events?after=0&wait=1")
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == []
+
+
+def test_an_isolated_admin_is_no_admin_left_for_the_arbiter_fallback(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import seats
+
+    admin = flow.agent(make_client, owner, role="admin")
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    isolate(owner, reviewer.id)
+    isolate(owner, admin.id)
+    isolated_reviewer = _row(migrated, reviewer.id)
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        # no admin agent is left to fall back to, so the owner holds the seat
+        assert seats.routed_arbiter(conn, project, reviewer.id) == project.contract_arbiter
+        assert seats._arbiter_fallback(conn, project.id, isolated_reviewer) == owner.id

@@ -64,7 +64,11 @@ def routed_arbiter(conn: Connection, project: Any, seat: str | None = None) -> s
             t.membership.c.isolated_since.isnot(None),
         )
     ).first()
-    return seat if isolated is None else _arbiter_fallback(conn, project.id, isolated)
+    if isolated is None:
+        return seat
+    if seat != project.contract_arbiter:  # a card's arbiter falls back to the policy's first
+        return routed_arbiter(conn, project)
+    return _arbiter_fallback(conn, project.id, isolated)
 
 
 def _deciders(conn: Connection, project_id: str) -> list[str]:
@@ -112,6 +116,7 @@ def _arbiter_fallback(conn: Connection, project_id: str, removed: Any) -> str:
                 t.membership.c.trust == "admin",
                 t.membership.c.role != "proxy",
                 t.membership.c.active.is_(True),
+                t.membership.c.isolated_since.is_(None),  # an isolated admin is none (§6.2)
             )
             .limit(1)
         ).first()
