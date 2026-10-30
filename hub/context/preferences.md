@@ -29,11 +29,39 @@ proposal keeps one settlement path for every proposal kind.
 - Apply preferences in the answer route itself, outside the registry: a
   second path for proposals, which the registry exists to avoid.
 
+## "I am a meat proxy" is one switch with two parts the person picks, and the note says only what they picked
+
+**Id:** 4fda73f7-c4ee-46a2-a02a-7b7e00e013cc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision in the chat, 2026-10-30 ("two sub-checkboxes that are switched on together when the switch is", confirmed: "perfekt, genau so will ich es"); contract in `docs/api.md` §5.1, §5.2 "Meat proxy", §5.3 table
+**Supersedes:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
+**Revisit when:** a third side of the mode comes up, or agents are meant to act on a part as a rule
+
+`meat_proxy` stays the switch. Under it are two parts, `meat_proxy_lead` ("Lead me step by step rather
+than expecting me to explain.") and `meat_proxy_hands` ("When you need a human's hands, come to me
+first."). Switching the mode on switches both parts on; each can then be switched off on its own; both
+off switch the mode off; switching the mode off keeps the parts for next time. The note is "This person
+says: I am a meat proxy." plus the sentence of each part that is on, so agents read only what the person
+chose, and the dashboard shows the same note.
+
+**Reason:** the owner sees one mode with two sides, but not everyone means both: some want to be led
+without offering their hands, or the other way round. One switch with both parts on by default keeps the
+one-click mode the owner wanted; the parts let a person say less without a second, separate setting.
+
+**Rejected alternatives:**
+- One fixed sentence with both sides (the previous decision): a person who means only one side has to
+  say the other too.
+- Two independent switches with no mode above them: splits what the owner sees as one mode, and loses
+  the one click that switches both on.
+
 ## The meat-proxy note says both sides of it, and the dashboard shows the same words
 
 **Id:** 7ac44bcb-278a-4a26-bc55-5857a8666ae5
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4fda73f7-c4ee-46a2-a02a-7b7e00e013cc
 **Evidence:** confirmed
 **Source:** the owner's decision in the team chat, 2026-10-29 (the two meanings, the wording, the hint in the dashboard); contract in `docs/api.md` §5.2 "Meat proxy"
 
