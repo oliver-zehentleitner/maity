@@ -94,9 +94,6 @@ class Run:
         self.a11y_findings: list[dict] = []
         # Set when the hub answers the notifications read with 404 (§18).
         self.no_notifications = False
-        # §8.7 "Attachments off": each 409 for the pending uploads as the page got
-        # it, judged one by one in no_problems() (a response handler reads no body).
-        self.off_answers: list = []
         # The page's latest API answers, read back when a step fails (report_failure()): what
         # the hub said is told apart from what the page drew of it.
         self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
@@ -386,21 +383,9 @@ def watch_page(run: Run, page: Page) -> None:
         # once per page load; the account page says so.
         if resp.status == 404 and path == "/api/v1/auth/sessions?ended=true":
             return
-        # A composer, and Project settings, ask once per page load for the
-        # uploads waiting to be sent (§8.7); a hub without attachments answers
-        # 404, and one with them off 409, which no_problems() accepts only with
-        # the code attachments_not_configured.
-        pending = PENDING_UPLOADS.match(path)
-        if resp.status == 409 and pending:
-            # The code from the Maity-Error header, read now: on paths a page.goto
-            # is a full load, after which the body of an earlier answer is gone.
-            run.off_answers.append((resp, resp.headers.get("maity-error")))
-            return
         # Signed out, the page asks /auth/session first and expects 401.
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
-        ) and not (
-            resp.status == 404 and pending
         ):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
@@ -430,22 +415,6 @@ def project_settings(page: Page) -> None:
     view_tab(page, "Settings").click()
     expect(page).to_have_url(re.compile(r"/[^/]+/[^/]+/settings$"))
     expect(page.locator("#project-panel")).to_be_visible()
-
-
-# The pending uploads a composer and Project settings ask for (§8.7).
-PENDING_UPLOADS = re.compile(r"/api/v1/projects/[^/]+/[^/]+/attachments\?status=pending(&uploaded_by=[^&]+)?&limit=200$")
-
-
-def off_problem(method: str, path: str, status: int, body: object) -> str | None:
-    """None for exactly a hub with attachments off answering the pending list:
-    GET, that path, 409, code attachments_not_configured (§8.7). Anything else
-    is the problem it is, said with its code. Each answer on its own: no flag
-    carries one answer's verdict to another."""
-    error = body.get("error") if isinstance(body, dict) else None
-    code = error.get("code") if isinstance(error, dict) else None
-    if method == "GET" and PENDING_UPLOADS.match(path) and status == 409 and code == "attachments_not_configured":
-        return None
-    return f"{method} {path} answered {status}" + (f" ({code})" if code else "")
 
 
 # What the trace of a failed step may show. It goes to a public artifact and to the Actions log, so
@@ -529,17 +498,6 @@ BEFORE_CHAT_LIST = re.compile(r"GET /api/v1/me/conversations\?\S* answered 404( 
 
 
 def no_problems(run: Run, where: str) -> None:
-    # Each 409 for the pending uploads, judged by its own body, read here
-    # outside the response handler.
-    answers, run.off_answers = run.off_answers, []
-    for resp, header_code in answers:
-        try:
-            body = resp.json()
-        except Exception:  # not JSON, or gone with a later page load: the header's code then
-            body = {"error": {"code": header_code}} if header_code else None
-        problem = off_problem(resp.request.method, resp.url.split(run.base, 1)[-1], resp.status, body)
-        if problem:
-            run.problems.append(problem)
     # A hub before the chat list across projects (§9.3) answers it 404 wherever
     # /chats is open; the page then reads each project's list, as before.
     run.problems = [p for p in run.problems if not BEFORE_CHAT_LIST.match(p)]
@@ -1100,11 +1058,8 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
     # start_hub gives the hub a local store (MAITY_ATTACHMENT_DIR), so the real upload is
-    # required: a hub that lists no uploads, has them off or refuses the file is a broken
-    # store wiring here, never a case to pass quietly. The off case is the smoke's
-    # (fixture mode, ?attachments=off).
-    if not hub_serves(run, page, "POST", "/projects/{owner}/{slug}/attachments"):
-        raise AssertionError("attachments: the hub runs with MAITY_ATTACHMENT_DIR but its openapi.json lists no uploads")
+    # required: a hub that has them off or refuses the file is a broken store wiring here,
+    # never a case to pass quietly. The off case is the smoke's (fixture mode, ?attachments=off).
     probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/attachments?status=pending&limit=200")
     if probe.status != 200:
         code = (probe.json().get("error") or {}).get("code") if probe.headers.get("content-type", "").startswith("application/json") else None
@@ -1618,17 +1573,6 @@ def runners_step(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Create the pairing line", exact=True).click()
     steps = page.locator(".pair-steps")
     expect(steps).to_contain_text("maity runner pair")
-    # A hub before attachments (§15.4) refuses `attach` with 400; the page pairs
-    # without it and says so. That refusal is then expected, not a failure.
-    note_shown = bool(
-        page.locator(".pair-panel")
-        .get_by_text("cannot allow the runner in projects while pairing yet")
-        .count()
-    )
-    if note_shown:
-        run.problems = [
-            p for p in run.problems if p != "POST /api/v1/runners/enrollments answered 400"
-        ]
     config = page.locator(".runner-config").inner_text()
     assert f'url = "{run.base}"' in config and '"owner/e2e-alpha"' in config and '"owner/e2e-beta"' in config, (
         config
@@ -1654,7 +1598,7 @@ def runners_step(run: Run, page: Page) -> None:
     card.get_by_role("button", name="Rename", exact=True).click()
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     expect(card).to_be_visible()
-    project_runners_step(run, page, "e2e-renamed", attached=not note_shown)
+    project_runners_step(run, page, "e2e-renamed")
     page.goto(f"{run.base}/runners")
     card = page.locator("article.runner", has=page.get_by_role("heading", name="e2e-renamed"))
     card.get_by_role("button", name="Re-pair", exact=True).click()
@@ -1883,7 +1827,7 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     no_problems(run, "message")
 
 
-def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> None:
+def project_runners_step(run: Run, page: Page, name: str) -> None:
     """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     view_tab(page, "Runners").click()
@@ -1900,9 +1844,9 @@ def project_runners_step(run: Run, page: Page, name: str, attached: bool) -> Non
         expect(card).to_have_count(0)
         assert asked == [f"Detach {name} from E2E Alpha? Nothing runs on it here."], asked
 
-    if attached:  # allowed while pairing
-        expect(card).to_contain_text("no agent running here")
-        detach()
+    # Allowed while pairing.
+    expect(card).to_contain_text("no agent running here")
+    detach()
     # An option is the runner's name alone (its presence changes, the form should not).
     option = page.locator("#allow-runner option", has_text=re.compile("^" + re.escape(name) + "$"))
     page.locator("#allow-runner").select_option(value=option.get_attribute("value"))

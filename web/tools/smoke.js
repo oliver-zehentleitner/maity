@@ -1216,20 +1216,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.runnerConfigCommand("x\n").includes("(set -C; umask 077; cat > ~/.config/maity-runner/runner.toml) <<'EOF'\nx\nEOF"),
     "runners: the command writes the configuration owner-only and never over an existing one");
   expect(text(main).includes("Open pairings") && text(main).includes("new-laptop"), "runners: the open pairing is listed, revocable");
-  // A hub before attachments refuses `attach`: paired without it, and said.
-  const rPost2 = win.Maity.api.post;
-  const attachTries = [];
-  win.Maity.api.post = (p, b) => {
-    attachTries.push(b);
-    return p === "/runners/enrollments" && b.attach && b.attach.length
-      ? Promise.reject(new win.Maity.api.ApiError("attachments are not available yet", 400, p, "invalid", { fields: { attach: "not_supported_yet" } }))
-      : rPost2(p, b);
-  };
-  byId("pair-name").value = "older-hub";
-  main.querySelector("form.pair-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(attachTries.length === 2 && !("attach" in attachTries[1]) && main.querySelector(".pair-steps")
-    && text(main).includes("cannot allow the runner in projects while pairing yet"), "runners: without attachments in the hub, paired without them and said so");
-  win.Maity.api.post = rPost2;
   await go("#/all"); await go("#/runners"); await tick();
   expect(!main.querySelector(".pair-steps") && !text(main).includes("FIXT-URE0-RUNR"), "runners: the pairing line is gone after leaving the view");
   // Re-pair keeps the runner and the configuration.

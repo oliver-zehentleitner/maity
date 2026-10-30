@@ -1,7 +1,7 @@
 """The e2e harness's own judgement of answers, without a browser or a hub.
 
 e2e.py imports Playwright at the top; this reads only the parts it tests out of
-the file's syntax tree (PENDING_UPLOADS, off_problem, no_problems, BEFORE_CHAT_LIST) and runs them
+the file's syntax tree (no_problems, BEFORE_CHAT_LIST, the trace) and runs them
 on stand-in answers. Python standard library only: python3 web/tools/test_e2e_harness.py
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).with_name("e2e.py")
 WANTED = {
-    "PENDING_UPLOADS", "off_problem", "no_problems", "BEFORE_CHAT_LIST",
+    "no_problems", "BEFORE_CHAT_LIST",
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
 }
@@ -39,7 +39,6 @@ def load() -> dict:
 
 
 BASE = "http://127.0.0.1:9"
-PENDING = "/api/v1/projects/owner/e2e-alpha/attachments?status=pending&uploaded_by=hum-1&limit=200"
 
 
 class Request:
@@ -47,36 +46,14 @@ class Request:
         self.method = method
 
 
-class Answer:
-    """A stand-in for Playwright's Response: method, url, status and a JSON body."""
-
-    def __init__(self, status: int, code: str | None, method: str = "GET", path: str = PENDING,
-                 header: str | None = None, gone: bool = False):
-        self.request = Request(method)
-        self.url = BASE + path
-        self.status = status
-        self.code = code
-        # The Maity-Error header as read in the handler, and a body gone with a later page load.
-        self.header = header
-        self.gone = gone
-
-    def json(self):
-        if self.gone:
-            raise RuntimeError("the body is gone with the page load")
-        if self.code is None:
-            raise ValueError("not JSON")
-        return {"error": {"code": self.code, "message": "…", "details": {}}}
-
-
 class FakeRun:
-    def __init__(self, answers):
+    def __init__(self, problems):
         self.base = BASE
-        self.problems = []
-        self.off_answers = [(a, a.header) for a in answers]
+        self.problems = list(problems)
 
 
-def problems(ns: dict, answers) -> list[str]:
-    run = FakeRun(answers)
+def problems(ns: dict, said) -> list[str]:
+    run = FakeRun(said)
     try:
         ns["no_problems"](run, "test")
     except AssertionError:
@@ -154,40 +131,19 @@ def trace_cases(ns: dict) -> int:
 
 def main() -> int:
     ns = load()
-    off = lambda: Answer(409, "attachments_not_configured")  # noqa: E731
-    other = lambda: Answer(409, "other_conflict")  # noqa: E731
+    chats = "GET /api/v1/me/conversations?observed=true&limit=200"
     cases = [
-        ("one answer of attachments off is no problem", [off()], 0),
-        ("off, then another conflict: the other one is a problem", [off(), other()], 1),
-        ("another conflict, then off: the other one is a problem", [other(), off()], 1),
-        ("a 409 without a JSON body is a problem", [Answer(409, None)], 1),
-        ("off, its body gone with a page load, by the header's code is no problem",
-         [Answer(409, None, header="attachments_not_configured", gone=True)], 0),
-        ("a body gone and no header is a problem", [Answer(409, None, gone=True)], 1),
-        ("a body gone and another code in the header is a problem", [Answer(409, None, header="other_conflict", gone=True)], 1),
-        ("the code on another method is a problem", [Answer(409, "attachments_not_configured", method="POST")], 1),
-        ("the code on another path is a problem",
-         [Answer(409, "attachments_not_configured", path="/api/v1/projects/owner/e2e-alpha/attachments?name=a.png")], 1),
-        ("the code with another status is a problem", [Answer(500, "attachments_not_configured")], 1),
-        ("a hub without the chat list across projects is no problem",
-         [Answer(404, "not_found", path="/api/v1/me/conversations?observed=true&limit=200")], 0),
-        ("another status of the chat list is a problem",
-         [Answer(500, "internal", path="/api/v1/me/conversations?observed=true&limit=200")], 1),
-        ("a 404 of another route is a problem", [Answer(404, "not_found", path="/api/v1/me/notifications?limit=0")], 1),
+        ("a hub without the chat list across projects is no problem", [chats + " answered 404"], 0),
+        ("the same with its code is no problem", [chats + " answered 404 (not_found)"], 0),
+        ("another status of the chat list is a problem", [chats + " answered 500"], 1),
+        ("a 404 of another route is a problem", ["GET /api/v1/me/notifications?limit=0 answered 404"], 1),
     ]
     failed = 0
-    for name, answers, want in cases:
-        got = problems(ns, answers)
+    for name, said, want in cases:
+        got = problems(ns, said)
         ok = len(got) == want
         failed += not ok
         print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {got}"))
-    # The problem says which answer it was, with its code.
-    said = problems(ns, [off(), other()])
-    if said != [f"GET {PENDING} answered 409 (other_conflict)"]:
-        failed += 1
-        print(f"FAIL the problem names the answer and its code: {said}")
-    else:
-        print("ok   the problem names the answer and its code")
     failed += trace_cases(ns)
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
