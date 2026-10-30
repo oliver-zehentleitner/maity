@@ -1601,7 +1601,7 @@ window.Maity = window.Maity || {};
     // first; one with its snapshot; resolved (again) with an action and a note.
     ["GET", /^\/admin\/reports$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
-      const status = query.get("status") || "open";
+      const status = query.get("status") || "all";
       const type = query.get("type");
       if (!["open", "resolved", "all"].includes(status)) fail(400, "invalid", "the request does not validate", path, { fields: { status: "unknown" } });
       if (type && !["profile", "project", "message", "card"].includes(type)) fail(400, "invalid", "the request does not validate", path, { fields: { type: "unknown" } });
@@ -1624,8 +1624,9 @@ window.Maity = window.Maity || {};
       if (!["dismiss", "hide", "remove", "suspend"].includes(body.action)) fail(400, "invalid", "the request does not validate", path, { fields: { action: "unknown" } });
       if ("note" in body && typeof body.note !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { note: "not_text" } });
       if (r.status === "expired") fail(409, "invalid_transition", "the report expired", path, { from: "expired", to: "resolved" });
-      Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: nowIso() });
-      const v = Object.assign({}, r); delete v.snapshot; return v;
+      // Resolved again, the report keeps when it first closed (§16.8); the answer carries the snapshot, as the hub's.
+      Object.assign(r, { status: "resolved", action: body.action, note: body.note || null, resolved_at: nowIso(), closed_at: r.closed_at || nowIso() });
+      return Object.assign({}, r);
     }],
     // §16.4 Registration: the settings with their sources, what is missing, the
     // accounts that wait and lifting a block, for the instance admin.

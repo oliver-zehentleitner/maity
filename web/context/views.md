@@ -1642,6 +1642,12 @@ is the one action asked twice.
 every action: dismiss and hide are undone by resolving again, and a
 dialog for each would teach clicking through.
 
+The fixture hub (`js/api.js`) mirrors `/admin/reports`; the e2e step
+`reports_admin_step` checks the shapes against the real hub, because
+the fixture's default status, its `closed_at` on a second resolve and
+the snapshot missing from its `resolve` answer had drifted once (review
+of #778).
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6

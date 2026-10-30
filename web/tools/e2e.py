@@ -956,6 +956,7 @@ def scenario(run: Run, page: Page) -> None:
 
     users_step(run, page)
     registration_admin_step(run, page)
+    reports_admin_step(run, page, alpha)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2099,6 +2100,42 @@ def registration_admin_step(run: Run, page: Page) -> None:
     run.shot(page, "registration-admin")
     run.a11y(page, "registration admin")
     no_problems(run, "registration admin")
+
+
+def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
+    """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
+    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("reports: an agent reports a card; the admin reads it as text and hides it with a note")
+    card = run.api(alpha, "POST", "/projects/owner/e2e-alpha/tasks", {"title": "e2e: a card to report", "body": "<b>not markup</b>"})
+    filed = run.api(
+        alpha,
+        "POST",
+        "/reports",
+        {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
+    )
+    assert filed.get("id"), filed
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Reports", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Reports']")
+    row = section.locator(f"li.report-item[data-report='{filed['id']}']")
+    expect(row).to_be_visible()
+    row.get_by_role("button").click()
+    opened = section.locator("section.report-open")
+    expect(opened).to_contain_text("e2e: a card to report")
+    # The reporter's text and the snapshot are text, never markup.
+    expect(opened.locator("pre.report-body").first).to_have_text("<i>e2e</i> report")
+    expect(opened.locator("i, b")).to_have_count(0)
+    page.locator("#report-action").select_option("hide")
+    page.locator("#report-note").fill("e2e: hidden on purpose")
+    opened.get_by_role("button", name="Resolve", exact=True).click()
+    expect(section).to_contain_text("Resolved: Hide.")
+    expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    run.shot(page, "reports-admin")
+    run.a11y(page, "reports admin")
+    no_problems(run, "reports admin")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:
