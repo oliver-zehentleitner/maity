@@ -2114,11 +2114,13 @@ names its target `agents`.
 and "the agent waits for the answer" would be false. The instances
 named in the digest can be resumed or ended only from one's agents.
 
-**Rejected alternative:** the item's `url` as the link: the dashboard
-builds every bell link from the target (the entries above), so one
-item built otherwise would be the exception. Reading the bell's item on open, like a request's item: the bell would
-go quiet while the instances are still away, and the next hour's record
-would bring it back.
+**Rejected alternatives:**
+- The item's `url` as the link: the dashboard builds every bell link
+  from the target (the entries above), so one item built otherwise would
+  be the exception.
+- Reading the bell's item on open, like a request's item: the bell would
+  go quiet while the instances are still away, and the next hour's
+  record would bring it back.
 
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
