@@ -621,7 +621,9 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. A count said with a word ("3 in
+or "an" in code, which only English has. Still the hub's words: an
+organisation's roles (`owner`, `admin`, `member`) in its sentences and
+options, until a second language gives them keys. A count said with a word ("3 in
 progress" in the board bar's name, "2 urgent") is one key per word with
 `{count}`, not the label lowercased after a number. A key that counts
 has its plural forms even where English writes them alike ("Earlier
