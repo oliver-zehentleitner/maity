@@ -1366,19 +1366,9 @@ def tiny_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
 
 
 def images_step(run: Run, page: Page, alpha: Path) -> None:
-    """The project's logo and banner (docs/api.md §11.2) where the hub has them."""
-    project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    """The project's logo and banner (docs/api.md §11.2)."""
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     chip = page.locator("nav.switcher a", has_text="E2E Alpha")
-    if "logo" not in project:
-        run.step("images: this hub has no logos yet, so the dashboard draws monograms")
-        expect(chip.locator(".project-mark.monogram")).to_have_text("EA")
-        expect(page.locator("header .bar .project-mark.monogram")).to_have_text("EA")
-        project_settings(page)
-        expect(page.locator("#state-select")).to_be_visible()
-        expect(page.locator("#upload-logo")).to_have_count(0)
-        project_settings(page)
-        return
     run.step("images: the owner uploads a logo and a banner, then removes the logo")
     expect(chip.locator(".project-mark.monogram")).to_have_text(
         "EA"
@@ -1824,14 +1814,10 @@ def notifications_step(run: Run, page: Page) -> None:
 
 
 def why_step(run: Run, page: Page, alpha: Path) -> None:
-    """The Keep the Why export (docs/api.md §11.3) where the hub has it."""
+    """The Keep the Why export (docs/api.md §11.3)."""
     project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     tab = view_tab(page, "Why")
-    if "keep_the_why_export" not in project:
-        run.step("why: this hub has no Keep the Why export, so there is no Why tab")
-        expect(tab).to_have_count(0)
-        return
     # The e2e project has no repository: the export is not configured.
     run.step("why: the project has no repository, so the Why view says what it needs")
     assert project["keep_the_why_export"] is None, project["keep_the_why_export"]
@@ -2018,17 +2004,7 @@ def bearer_get(run: Run, clone: Path, path: str) -> tuple[int, dict]:
 
 
 def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
-    """policy.signing (docs/api.md §2.2, §6.1) where the hub knows it."""
-    project = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
-    if "signing" not in (project.get("policy") or {}):
-        run.step("signing: this hub has no signing policy, so the dashboard offers no switch")
-        # Agents, not the inbox: the next step reaches the inbox through its tab.
-        page.goto(f"{run.base}/owner/e2e-alpha/members")
-        project_settings(page)
-        expect(page.locator("#state-select")).to_be_visible()
-        expect(page.locator("#signing-select")).to_have_count(0)
-        project_settings(page)
-        return
+    """policy.signing (docs/api.md §2.2, §6.1)."""
     run.step(
         "signing: an agent calls with a bearer token; the switch names it before requiring signing"
     )
@@ -2076,11 +2052,6 @@ def users_step(run: Run, page: Page) -> None:
     expect(page.locator("header .project")).to_have_text("Everything waiting for you")
     page.locator("header").get_by_role("button", name="Settings", exact=True).click()
     link = page.get_by_role("menuitem", name="Instance administration", exact=True)
-    if "instance_admin" not in me:
-        run.step("users: this hub names no instance admin yet, so there is no administration link")
-        expect(link).to_have_count(0)
-        page.keyboard.press("Escape")
-        return
     run.step("users: the instance admin lists the hub's humans")
     assert me["instance_admin"] is True, me  # the first human, made by maity-hub owner create
     link.click()
@@ -2367,19 +2338,13 @@ def change_password(run: Run, page: Page) -> None:
 
 
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
-    """The briefing (docs/api.md §3, §6.2) where the hub knows it; otherwise nothing offered."""
-    members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/members")["items"]
-    own = next(m for m in members if m["id"] == agent_id)
+    """The briefing (docs/api.md §3, §6.2)."""
     # The briefing is in the agent's row on Members (tsk-7v2snhk002ak).
     agents = page.locator("main .members-agents")
     page.reload()
     expect(agents).to_contain_text("@e2e-agent")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(agents.locator("tr.member-manage")).to_be_visible()
-    if "briefing" not in own:
-        run.step("briefing: this hub has none yet, so the dashboard offers none")
-        expect(agents.locator(".briefing")).to_have_count(0)
-        return
     run.step("briefing: the owner writes it in the agent's row; the agent's resume carries it")
     agents.locator(".briefing").get_by_role("button", name=re.compile("briefing$")).click()
     page.locator(f"#briefing-{agent_id}").fill("You test the dashboard. First: the e2e card.")

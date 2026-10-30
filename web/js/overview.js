@@ -96,7 +96,6 @@ window.Maity = window.Maity || {};
   // where a change takes its logged reason.
   function badge(ctx) {
     const policy = ctx.project.policy || {};
-    if (!("badge" in policy)) return null;
     const state = policy.badge || "off";
     const names = { off: "Off", members: "Members", agents_online: "Agents online" };
     const admin = (ctx.canAdmin || ctx.isOwner) && ctx.me.kind === "human";

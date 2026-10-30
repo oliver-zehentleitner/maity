@@ -152,7 +152,7 @@ does not know. There are no `#/` routes and no redirects from them.
 |---|---|
 | `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard; signed in, **View public page** opens it with `?as=public` where one is served |
 | `/<owner>/<slug>` | a project: without a session the hub's static public page where one is served, otherwise the dashboard (sign-in first); signed in, the project's inbox, with **View public page** (`?as=public`) where one is served |
-| `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, or one per project on a hub without it, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
+| `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `/chats` |
 | `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `/new` | create a project; also **+ New project** in the switcher. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>` |
@@ -692,8 +692,7 @@ too.
    without a reload; for a minute after it expired it keeps **Revoke**,
    and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
-8. **Why** (`/<owner>/<slug>/why`, where the hub has the Keep the Why export,
-   `docs/api.md` §11.3): the project's published Keep the Why dashboard
+8. **Why** (`/<owner>/<slug>/why`, `docs/api.md` §11.3): the project's published Keep the Why dashboard
    state as the hub read it, read-only. A headline says how many entries
    need attention (open, needs review, pending confirmation) out of how
    many, in how many parts of the family (the repository's root and the
@@ -1043,8 +1042,7 @@ is shown whole, with margins. In **Project settings** a human with
 the repository's forge), uploads a logo or a banner (PNG, JPEG or WebP,
 at most 1 MiB; the type is read from the file's first bytes, as the hub
 reads it, and sent as the raw body) and removes an upload, after which
-the forge's image applies again. A hub without the fields offers no
-upload and the dashboard draws monograms.
+the forge's image applies again.
 
 **Repository** (`docs/api.md` §6.1) is in the same panel, for an owner
 or a human admin (`project:admin` is held by humans only). It shows the
@@ -1362,19 +1360,18 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     owner and both typed PRs. Cancelled, the release moves to Cancelled as
     a frozen record without any editing, and the hub refuses an edit
     (`invalid_transition`);
-13. **Signing**, where the hub has `policy.signing`: the agent makes one
+13. **Signing**: the agent makes one
     call with its bare bearer credential; its row in Members shows it, and the
     switch to required lists the agent and refuses to send without the
     confirmation; once required, the bearer call answers 403
     `signature_required` while the CLI's signed calls go on; then back to
-    optional. Without the field, no switch is offered;
-14. **Logo and banner**, where the hub has them: the e2e project has no
+    optional;
+14. **Logo and banner**: the e2e project has no
     repository, so a monogram shows; a text file named as PNG is refused
     before sending; a generated PNG becomes the logo in the header, the
     switcher and the tab's icon (loaded from the hub at its real size); a
     banner heads the inbox; the hub's project view says both are
-    uploaded; removing the logo brings the monogram back. Without the
-    fields, monograms and no upload;
+    uploaded; removing the logo brings the monogram back;
 15. **Runners**: the empty view; a pairing for `e2e-runner` with the
     starter configuration (this hub, both projects) and the line; the
     line's exchange done as `maity runner pair` would (`POST
@@ -1386,9 +1383,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     then detached) is allowed in the project and
     detached again, each detach confirmed with "Nothing runs on it
     here.";
-16. **Why**, where the hub has the export: the e2e project has no
-    repository, so the view says it needs one (the hub's
-    `ktw_not_configured`); without the field, no Why tab;
+16. **Why**: the e2e project has no repository, so the view says it
+    needs one (the hub's `ktw_not_configured`);
 17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
     and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
@@ -1498,9 +1494,9 @@ web/
 
 The header's **Chat** button, a button like the bell, opens every chat.
 Beside it, the **Lead** button reaches the lead (`js/lead-chat.js`). In a
-project that is the lead the policy names now (with coordinator
-availability data: the current lead or substitute) and one's own proxy;
-on an older hub, one's own admin and proxy agents. Outside a project it
+project that is the lead the policy names now (the current lead or
+substitute) and one's own proxy; without a lead, the admin agents and
+one's own proxy. Outside a project it
 gathers them from every project, each named with its project. With one to
 reach, a click opens that chat. With several, a small menu lists them, and
 for each project with more than one, a **Group chat with all leads**.

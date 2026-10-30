@@ -579,15 +579,19 @@ tomorrow. Presence as a line of its own: the dot already says it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's alpha rule (no compatibility layers before launch, 2026-10-29); the coordinator's ruling on tsk-wgg2t8ngx9xg (the notifications fallback and the "not on this hub" mechanism removed, `hubHas` and `hubBody` with them), 2026-10-30; hub/src/maity_hub/app.py (every router mounted unconditionally)
+**Source:** the maintainer's alpha rule (no compatibility layers before launch, 2026-10-29); the coordinator's rulings on tsk-wgg2t8ngx9xg (the notifications fallback and the "not on this hub" mechanism removed, `hubHas` and `hubBody` with them, and the field-presence checks in the same PR), 2026-10-30; hub/src/maity_hub/app.py (every router mounted unconditionally); hub/src/maity_hub/views.py and policy.py (the fields every project and member view carries)
 **Revisit when:** Maity leaves alpha and a dashboard must run against an older hub (§1.6), or the hub mounts a route only under a setting
 
 The page no longer reads `GET /openapi.json`: there is no `M.api.hubHas`,
 `M.api.hubBody`, `M.api.missingRoute`, `M.api.absent` or
 `M.dom.notOnHub`. Every control is offered by the page's own rules
 (role, trust, project state), and every route it calls is called; a
-404 or 405 from one is an error and is said as one. The notifications'
-counts are read like any other call: until they are read the switcher
+404 or 405 from one is an error and is said as one. Nor does the page
+test whether the hub sends a field it always sends (`"signing" in
+policy`, `"logo" in project`, a card's `parent`): only fields the hub
+sends to some readers or under a condition are tested, such as a
+member's `briefing`, `owner_preferences` or `keep_the_why_unconfirmed`.
+The notifications' counts are read like any other call: until they are read the switcher
 counts the open requests from `/me`, and a failed read is said.
 Settings a hub really may have off stay explicit in its answers, such as
 `409 attachments_not_configured` or a sign-in method's `method_disabled`.
@@ -1789,8 +1793,9 @@ agent on every visit, for rows mostly never opened.
 
 Chat in the header is a button like the bell and always opens every chat.
 The Lead button beside it reaches whom `M.leadChat.targets` names (the
-policy's lead now, one's own proxy; on an older hub one's own admin and
-proxy agents), across every project outside one: one is opened at once,
+policy's lead now, one's own proxy; without a lead the admin agents and
+one's own proxy; until 2026-10-30 on an older hub only one's own admin
+and proxy agents, e1699490), across every project outside one: one is opened at once,
 several are a menu with, per project with more than one, a group chat
 with all of them (an open one of exactly those people reused). Without
 anyone to reach there is no Lead button. The strip above the tabs and
@@ -1882,18 +1887,18 @@ views of the same people, with the actions split between them. Seats
 inside the agents' table as rows: a seat is no member yet, and the table
 is read by the hub's member list.
 
-## A member adds their own agents from Agents, only where the hub sends the policy field
+## A member adds their own agents from Agents while the policy's member_agents is not off
 
 **Id:** 5cb62418-20f0-465f-b01e-be12e665a07e
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §3.1 "Bringing your own agent" and §6.1 (`member_agents`, `member_agents_max`); the card tsk-zd2ch05rk7s1, 2026-10-27; the review of PR #472, 2026-10-27
-**Revisit when:** the hub sends `member_agents` in every project's policy, or §3.1 changes what counts
+**Revisit when:** §3.1 changes what counts
 
 A human member without `members:admin` sees **+ Add my agent** at the
-head of Agents (the agents' table on Members before 54a49af9) when the project's policy has `member_agents`
-and it is not `off`. The panel offers only what §3.1 lets a member
+head of Agents (the agents' table on Members before 54a49af9) when the project's `member_agents`
+is not `off`. The panel offers only what §3.1 lets a member
 set (trust member or guest; role coder, reviewer, tester or designer;
 no reports to, no areas) and lists only the member's own joins. A line
 says how many agents of theirs the project allows. The count is the
@@ -1903,15 +1908,15 @@ agent in the project: the panel then makes another instance or a
 replacement of one of them and refuses a new agent before sending.
 Project settings turns the feature on or off and sets the limit.
 
-**Reason:** a hub without the field refuses a member's join with 403;
-only a hub that sends the field can be trusted to take it. An instance
+Until 2026-10-30 the button also needed the field to be present at all,
+for a hub that predated it and refused a member's join with 403; the
+hub always sends it, so that check went with the alpha rule (e1699490).
+
+**Reason:** an instance
 or replacement counts nothing in §3.1, so a member at the limit can
 always replace a lost instance; the dashboard must not block that.
 
-**Rejected alternative:** reading a missing field as on, the hub's
-reading for a project older than the field: right for a hub that has
-the feature, but a hub without it would show a button that always
-fails. The button off at the limit: it blocked the replacement §3.1
+**Rejected alternative:** the button off at the limit: it blocked the replacement §3.1
 keeps open. Counting every open join: an instance's join counted as a
 new agent.
 
@@ -2019,8 +2024,8 @@ agents in no project on the account: two places for the same profile.
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
 member and a **Chat** per entry (one's own agent: its direct chat;
-anyone else: a new group chat with them chosen, `chat/new?with=<id>`,
-where the hub has group chats). With `members:admin` each row keeps
+anyone else: a new group chat with them chosen, `chat/new?with=<id>`).
+With `members:admin` each row keeps
 **Manage**, with the membership form, briefing, picture, rulebook,
 credentials, pause and removal. **Agents** (`/<owner>/<slug>/agents`, for
 humans) shows one's own agents in the project, each as its card on

@@ -279,10 +279,9 @@ window.Maity = window.Maity || {};
     let J = null;
     // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
     // without members:admin adds agents of their own while the project
-    // allows it, up to member_agents_max. Only where the hub sends the
-    // field: a hub without it refuses a member's join.
+    // allows it, up to member_agents_max.
     const policy = ctx.project.policy || {};
-    const memberAdds = !ctx.canAdmin && !M.trust.guest(ctx) && "member_agents" in policy && policy.member_agents !== "off";
+    const memberAdds = !ctx.canAdmin && !M.trust.guest(ctx) && policy.member_agents !== "off";
     const mayAdd = (ctx.canAdmin || memberAdds) && !!M.join;
     const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
     // What §3.1 counts: one's distinct agents with an active membership or
@@ -355,7 +354,7 @@ window.Maity = window.Maity || {};
         else reload().then(() => redraw(), () => {});
       });
     }
-    // Where the agents run (js/placements.js), where the hub has placements;
+    // Where the agents run (js/placements.js);
     // the credentials (for a restart's new join) are read for one's own only.
     if (M.placements && M.agentParts) {
       const agentsNow = items.filter((m) => P.ownAgent(m) && !m.removed_at);

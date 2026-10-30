@@ -5,8 +5,7 @@
 // link when it is https, and for the viewer why it is theirs, in words.
 // The viewer's own follow and mute are edited here (§17.8); an owner or
 // admin posts a note, a deploy or a release (§17.6). New items come with
-// the project's feed. A hub without the ticker says so, asked once per
-// page load.
+// the project's feed.
 "use strict";
 
 window.Maity = window.Maity || {};

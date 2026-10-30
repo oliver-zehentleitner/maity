@@ -1414,11 +1414,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/sample/why");
   expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line") && btn(main, "Read again"),
     "why: not configured, said so with what the hub reads");
-  // A hub that does not know the export: no tab.
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? realGet6(p).then((v) => { delete v.keep_the_why_export; return v; }) : realGet6(p));
-  await go("#/maintainer/maity/inbox");
-  expect(!whyTab(), "why: no tab where the hub has no export field");
-  win.Maity.api.get = realGet6;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 4; k++) await tick();
   const tree = main.querySelector(".org-tree");
   expect(tree.childNodes.length === 1 && text(tree).includes("(by area)") && text(main).includes("Policy: hierarchical"), "org tree by areas, policy preset, in the Overview");
@@ -2005,10 +2000,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "own agents: at the limit an instance of one's member agent is still sent " + JSON.stringify(byoFullPosts[0]));
   win.Maity.api.post = byoFullPost;
   const byoGet = win.Maity.api.get;
-  // A hub whose policy has no member_agents does not know members' own agents: no button that would get 403.
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? byoGet(p).then((x) => { const pol = Object.assign({}, x.policy); delete pol.member_agents; return Object.assign({}, x, { policy: pol }); }) : byoGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
-  expect(!byoButton() || byoButton().hidden || text(byoButton()) !== "+ Add my agent", "own agents: no Add my agent where the hub sends no member_agents");
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? byoGet(p).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents_max: 10 }) })) : byoGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
@@ -3344,10 +3335,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("signing-select").parentNode.dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(sigPatches[1][1]) === JSON.stringify({ policy: { signing: "optional" }, reason: "back to optional" }), "signing: back to optional is sent");
   win.Maity.api.patch = realPatch4;
-  await go("#/maintainer/sample/inbox");
-  await projectSettings(); await tick();
-  expect(byId("state-select") && !byId("signing-select"), "signing: no switch where the hub has no signing policy");
-  await projectSettings(); await tick();
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   for (const id of ["agt-a", "agt-b", "agt-c", "agt-d"]) {
     main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id).querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click();
@@ -3398,14 +3385,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "images: removed, the forge's logo applies again");
   expect(text(main).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
   await projectSettings(); await tick();
-  // A hub before /me's logo: the switcher falls back to GET /projects.
-  const realGet7 = win.Maity.api.get;
-  const fallbackGets = [];
-  win.Maity.api.get = (p) => { fallbackGets.push(p); return p === "/me" ? realGet7(p).then((m) => { m.projects.forEach((x) => { delete x.logo; }); return m; }) : realGet7(p); };
-  await go("#/all"); await go("#/maintainer/maity/inbox");
-  expect(fallbackGets.includes("/projects") && chip("Maity").querySelector(".project-mark").tagName === "IMG",
-    "logo: without logos on /me, the project views are read and the logo still shows");
-  win.Maity.api.get = realGet7;
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
   // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the forge.
   const repoPatches = [];
@@ -4709,8 +4688,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let atForeign = null;
   try { win.Maity.dom.h("a", { href: "/api/v1/projects/maintainer/maity/attachments/../../me" }); } catch (err) { atForeign = err; }
   expect(atForeign && win.Maity.dom.h("img", { src: "/api/v1/projects/maintainer/maity/attachments/att-1/content" }), "attachments: only the attachment path itself is allowed");
-  // A hub with attachments off (409) is asked for the waiting uploads once per page load.
+  // A 404 on the waiting uploads is an error: said, and Attach files stays offered.
   const atAll2 = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
+    ? Promise.reject(new win.Maity.api.ApiError("Not found", 404, p, "not_found", {})) : atAll2(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".attach") && !main.querySelector(".attach").hidden && text(main.querySelector(".attach")).includes("Could not read your files waiting from before"),
+    "attachments: a 404 on the waiting uploads is an error, and Attach files stays offered");
+  win.Maity.api.getAll = atAll2;
+  win.Maity.attachments.forget();
+  // A hub with attachments off (409) is asked for the waiting uploads once per page load.
   let atAsked = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending&uploaded_by=/.test(p)
     ? (atAsked++, Promise.reject(new win.Maity.api.ApiError("n", 409, p, "attachments_not_configured", {}))) : atAll2(p));
@@ -5369,9 +5356,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
     && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
     "keep the why: under no memory provider the choice is disabled and says why");
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? ktGet(p).then((x) => { const pol = { ...x.policy }; delete pol.keep_the_why; return { ...x, policy: pol }; }) : ktGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
-  expect(!ktForm() && !main.querySelector(".error"), "keep the why: a hub without the policy shows no form");
   win.Maity.api.get = ktGet; win.Maity.api.patch = ktPatch;
   // The why on a code report: a link to the entry's file at the report's head; a reason when there is none; a bad path stays text.
   const ktHead = "d91e294c" + "0".repeat(32);
@@ -5515,9 +5499,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "subtasks: folding and unfolding keep the column filter, the search and the scroll");
   byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
   byId("board-search").value = ""; byId("board-search").dispatch("input"); await tick(); win.scrollY = 0;
-  // A hub without subtasks (no parent on its cards): no editor and no New subtask.
-  await go("#/maintainer/sample/tasks/tsk-0021"); for (let k = 0; k < 6; k++) await tick();
-  expect(stPanel() && !stPanel().querySelector("form.card-family-form") && !btn(stPanel(), "New subtask"), "subtasks: a hub without them offers no editor and no New subtask");
   // A new subtask from the opened card: the parent preset; under the proposed policy a member's starts as proposed.
   const stPosts = [];
   const stPost = win.Maity.api.post;
@@ -6402,8 +6383,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "lead: explicit available substitute precedes cover");
   const leadCtx = { me: { id: "hum-me", kind: "human" }, base: "/projects/maintainer/maity", project: { policy: { coordinator: leadA.id } },
     members: [leadA, leadB], memberById: { [leadA.id]: leadA, [leadB.id]: leadB }, link: (view, id) => "/maintainer/maity/" + view + "/" + id };
-  expect(JSON.stringify(win.Maity.leadChat.targets({ ...leadCtx, project: { policy: {} } }).map((m) => m.id)) === JSON.stringify([leadB.id]),
-    "lead: on an older hub the Lead button reaches only the caller's own admins and proxies");
+  expect(JSON.stringify(win.Maity.leadChat.targets({ ...leadCtx, project: { policy: {} } }).map((m) => m.id)) === JSON.stringify([leadA.id, leadB.id]),
+    "lead: without a lead the Lead button reaches the admin agents");
   expect(JSON.stringify(win.Maity.leadChat.targets(leadCtx).map((m) => m.id)) === JSON.stringify([leadA.id]), "lead: with a lead, the Lead button reaches that lead");
   const leadGetAll = win.Maity.api.getAll, leadPost = win.Maity.api.post;
   const leadWrites = [];
@@ -6602,10 +6583,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("onboarding-briefing").value = ""; byId("onboarding-target").value = "";
   main.querySelector("form.project-onboarding").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(onboardingWrites[1][1]) === JSON.stringify({ settings: { onboarding: {} } }), "onboarding: empty object disables check-in and clears default text");
-  win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maintainer/maity"
-    ? { ...v, settings: Object.fromEntries(Object.entries(v.settings).filter(([k]) => k !== "onboarding")) } : v);
-  await go("#/maintainer/maity/inbox"); await projectSettings();
-  expect(!byId("onboarding-briefing"), "onboarding: absent setting hides section on older hub");
   win.Maity.api.get = (path) => onboardingGet(path).then((v) => path === "/projects/maintainer/maity/members"
     ? { ...v, items: v.items.map((m) => ({ ...m, briefing: m.kind === "agent" ? "Own instructions" : null })) } : v);
   await go("#/maintainer/maity/members");

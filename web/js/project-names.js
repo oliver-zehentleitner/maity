@@ -29,11 +29,10 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // The section, for a human owner, where the hub knows names (its project
-  // view carries `aliases`); none otherwise.
+  // The section, for a human owner; none otherwise.
   function section(ctx) {
     const p = ctx.project;
-    if (ctx.me.kind !== "human" || !ctx.isOwner || !("aliases" in p)) return null;
+    if (ctx.me.kind !== "human" || !ctx.isOwner) return null;
     const box = h("div", { class: "project-names" }, h("h2", { class: "panel-title", id: "names-heading" }, "Project name"),
       h("p", null, "This project is ", h("code", null, p.full_name), "."),
       p.aliases.length

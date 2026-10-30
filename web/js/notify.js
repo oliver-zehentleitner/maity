@@ -1,8 +1,8 @@
 // Notifications for the human (docs/api.md §18, stage 1 and the browser
 // part): the counts behind the badges and the tab title, the bell with the
 // latest items, and browser notifications while a tab is open. Everything
-// comes from GET /me/notifications; a hub without it leaves the page as it
-// was (counts summed from /me, no bell). Links are built from an item's
+// comes from GET /me/notifications; until it is read the counts are summed
+// from /me. Links are built from an item's
 // target, never from its url: the dashboard owns its routes.
 "use strict";
 
@@ -34,7 +34,7 @@ window.Maity = window.Maity || {};
   // member of, to everything waiting, until the page has the personal
   // inbox (§18.2 names /requests/<id>). A security item of another target
   // goes to the sessions too, where it is confirmed.
-  // Of the kinds since 2026-10-26 (§18.1): an older hub's other items are no notification here.
+  // The kinds of §18.1: an item of any other kind is no notification here.
   const known = (x) => Object.prototype.hasOwnProperty.call(KIND_WORDS, x.kind);
   // Read only on purpose: a sign-in alert by This was me (§2.6.5), and an
   // item that asks for an action (a registration to decide, an address to

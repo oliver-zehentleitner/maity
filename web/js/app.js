@@ -44,7 +44,7 @@ window.Maity = window.Maity || {};
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
-    { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
+    { route: "why", label: "Why" },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     { route: "settings", label: "Settings" },
@@ -504,30 +504,27 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
-    if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
-    // Its name: rename and transfer, for a human owner where the hub has them (§6.25).
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx));
+    // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
-    // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
-    if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
-    if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
-    // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
-    if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
-    if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
+    // A policy field, humans only (§2.3 ʰ, §6.22).
+    if (humanAdmin && M.swarm) append(panel, M.swarm.settingsForm(ctx, save));
+    if (M.projectSetup) append(panel, memoryPanel(ctx));
+    // Humans only, as every policy field (§2.3 ʰ).
+    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {
       append(panel, h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)));
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
-    if (humanAdmin && ctx.project.policy && "member_agents" in ctx.project.policy) append(panel, memberAgentsForm(ctx, save));
+    if (humanAdmin) append(panel, memberAgentsForm(ctx, save));
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
-    // Offered where the hub knows the field (docs/api.md §6.1).
-    if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
-    if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
+    // docs/api.md §6.1.
+    if (ctx.canAdmin) append(panel, signingForm(ctx, save), imagesForm(ctx));
     if (ctx.isOwner) {
       const a = ctx.project.absence;
       const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
@@ -1136,23 +1133,11 @@ window.Maity = window.Maity || {};
     return ctx;
   }
 
-  // Each project's logo for the switcher: from /me's projects where the hub
-  // puts it there (docs/api.md §5.1), else from the full project views
-  // (GET /projects, §6.1); without either the switcher draws monograms.
+  // Each project's logo for the switcher, from /me's projects (docs/api.md §5.1).
   async function projectViews(me) {
-    if (me.projects.every((p) => "logo" in p)) {
-      const bySlug = {};
-      me.projects.forEach((p) => { bySlug[p.full_name] = p; });
-      return bySlug;
-    }
-    try {
-      const list = await M.api.get("/projects");
-      const bySlug = {};
-      (list.items || []).forEach((p) => { bySlug[p.full_name] = p; });
-      return bySlug;
-    } catch (err) {
-      return {};
-    }
+    const bySlug = {};
+    me.projects.forEach((p) => { bySlug[p.full_name] = p; });
+    return bySlug;
   }
 
   // §6.25: a full name that is no project of one's own may be an alias (a
@@ -1448,7 +1433,7 @@ window.Maity = window.Maity || {};
       // Not a member: a project's swarm is its public page.
       if (swarmHere && !me.projects.some((p) => p.full_name === where.slug)) { await publicSwarm(); return; }
       // Notifications never stop the page: a failed read is said in the
-      // notice (watch), and a hub without them leaves the counts as /me has them.
+      // notice (watch), and the counts stay as /me has them.
       const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
