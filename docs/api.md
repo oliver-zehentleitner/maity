@@ -3392,8 +3392,11 @@ Response `200`, bounded and deterministic:
   Nothing is kept from an earlier time the mode was on. While
   `meat_proxy` is `true` the same object carries both parts and
   `meat_proxy_note`: `"This person says: I am a meat proxy."` followed by
-  the sentence of each part that is `true`, in the order above, so an
-  agent reads exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
+  the sentence of each part that is `true`, in the order above, each
+  after one space — with both parts `"This person says: I am a meat
+  proxy. Lead me step by step rather than expecting me to explain. When
+  you need a human's hands, come to me first."` — so an agent reads
+  exactly the person's own words for what they chose. Beyond that the hub interprets nothing, and the dashboard shows
   the same note under the switch, so the person reads exactly what the
   agents read. It reaches the agents that deal with that human: their
   own agents (`me.owner`) and the agents of every project they are an
@@ -3647,8 +3650,10 @@ around.
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
-  "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": true,
-             "cards": ["tsk-0001", "tsk-0002", "tsk-0003"] },
+  "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true,
+             "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard",
+             "maity_badge": true,
+             "cards": ["tsk-0001", "tsk-0002", "tsk-0003", "tsk-0004", "tsk-0005"] },
   "keep_the_why_export": {
     "observed_at": "2026-10-22T11:40:00Z",
     "summary": { "members": 4, "failed": 0, "entries": 57,
@@ -3693,7 +3698,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -3757,7 +3762,7 @@ choice are §6.21.
 | Field | Values | Meaning |
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
-| `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` or `null` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
@@ -6589,12 +6594,24 @@ coordination data only — and reimplements no provider: with
 the published export (§11.3), nothing more. Other providers may come
 later; the export semantics of §11 are unchanged by this section.
 
-**The options.** `setup` on `POST /projects` holds three booleans. The
-two Keep the Why options are `true` unless the creator unticks them: an
-absent `setup`, or an absent key, means `true` for them. `maity_badge`
-is `false` when absent: a bare API call never makes a project's counts
-public (§6.20); the dashboard pre-ticks all three, so a human's form
-sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
+**The options.** `setup` on `POST /projects` holds five booleans and
+one text. The four Keep the Why options are `true` unless the creator
+unticks them: an absent `setup`, or an absent key, means `true` for
+them. `maity_badge` is `false` when absent: a bare API call never makes
+a project's counts public (§6.20); the dashboard pre-ticks all five, so
+a human's form sends `maity_badge: true` explicitly. `dashboard_path`
+(default `keep-the-why-dashboard`) is the URL path, below the root of
+the repository's published documentation site, that the Keep the Why
+dashboard is published under; where the files for it lie in the
+repository follows from the repository's Pages configuration and is the
+agent's to find. It is one to five segments of
+`[a-z0-9][a-z0-9._-]{0,62}` joined by `/`, no leading or trailing
+slash, no `..`; anything else, a non-string and `null` included, is
+`invalid` (`details.fields["setup.dashboard_path"]: "format"`). It is
+used only while `keep_the_why_dashboard` is `true`: sent with the option
+`false` it is accepted and dropped, and `setup.dashboard_path` reads
+back `null`. Anything but
+a boolean for an option is `invalid`
 (`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
 `invalid` (`unknown_field`). `setup` is read back with the project
 (§6.1) and is not accepted on `PATCH` (`invalid`, `read_only`).
@@ -6603,6 +6620,8 @@ sends `maity_badge: true` explicitly. Anything but a boolean is `invalid`
 |---|---|---|
 | `keep_the_why_init` | with `memory.provider: keep-the-why` only; under `none` it is taken as `false` whatever was sent | if the repository has no root `.keep-the-why`, set Keep the Why up with its default settings (the skill's project init; `context/`, `.keep-the-why`, the `AGENTS.md` pointer); if it already has one, nothing to change — the card is reported with `code: false` (§6.6) saying so |
 | `keep_the_why_badge` | with `memory.provider: keep-the-why` only; `false` under `none` | add the Keep the Why badge to the repository's `README.md` |
+| `keep_the_why_ci` | with `memory.provider: keep-the-why` only; `false` under `none` | run `ktw-lint` in the repository's CI for every directory with a `.keep-the-why`, so a pull request with a broken entry fails; a repository without CI gets a new workflow on the forge's own CI (GitHub Actions, GitLab CI/CD) that runs only this step. The acceptance is a pull request whose run shows the lint step green |
+| `keep_the_why_dashboard` | with `memory.provider: keep-the-why` only; `false` under `none` | publish the Keep the Why dashboard where the repository publishes its documentation (GitHub Pages, GitLab Pages or the forge's equivalent), under `setup.dashboard_path` (filled into the card), for the root and every child with its own `.keep-the-why` (a child's below `<dashboard_path>/<child directory>/`). Into the `dashboard-state:` line of each of those `.keep-the-why` it writes the URL of that dashboard's `state.json`, `https://<site root>/<dashboard_path>[/<child directory>]/state.json`, not the page's URL: the hub reads JSON from that line (§11.3), and a page URL leaves the member at `ktw_unavailable`. The project's overview then links it (§6.11). The acceptance is that each written URL answers over HTTPS with the JSON after the merge. A repository with no such publishing is reported with `code: false` (§6.6) saying what is missing |
 | `maity_badge` | with every provider | add the Maity badge snippet of §6.20 to the repository's `README.md`. Sending it as `true` also sets the project's `policy.badge` to `members` at creation itself (also without a repository): the creating human's choice, written with the policy preset as `off` would be, no `policy_changed`, no `reason`; the badge serves from that moment, the card only puts the snippet into the README |
 
 **The cards.** For every option that is `true` the hub creates one card
@@ -6614,7 +6633,7 @@ setup card, and `setup.cards` stays `null`). Each card:
 | Field | Value |
 |---|---|
 | `kind` | `setup` |
-| `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Add the Maity badge to the README` (`maity_badge`) |
+| `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Run the Keep the Why linter in CI` (`keep_the_why_ci`); `Publish the Keep the Why dashboard` (`keep_the_why_dashboard`, its body naming `setup.dashboard_path`); `Add the Maity badge to the README` (`maity_badge`) |
 | `body` | Markdown: what to do (the option's row above, with the repository URL and, for the Maity badge, the snippet of §6.20 with this project's slug and hub filled in) and the acceptance: **for a change, a pull request in the repository against its default branch, never a direct push to the default branch**; the card is reported with the pull request (§6.6) and goes to `review` as any card. When nothing needs changing (a root `.keep-the-why` already exists, a badge is already in the README), the card is reported with `code: false` and the reason, no empty pull request |
 | `status` | `open`: claimable under the project's `claim_policy` (self-claim: any agent member may take it; assign-only: the owner assigns it like any card) |
 | `label` | `chore` |
@@ -6643,11 +6662,13 @@ hint, not a gate: the hub refuses nothing while it is shown.
 
 **Dashboard (web/).** The create-project form shows **Project memory**
 as a dropdown — `none`, and **Keep the Why** preselected — and, while
-Keep the Why is selected, the three prefilled checkboxes beneath it
+Keep the Why is selected, the five prefilled checkboxes beneath it
 (**Set up Keep the Why in the repository**, **Add the Keep the Why
-badge to the README**, **Add the Maity badge to the README**), each of
-which may be unticked; under `none` only **Add the Maity badge to the
-README** is shown. The form sends them as `memory` and `setup`; the
+badge to the README**, **Run the Keep the Why linter in CI**, **Publish
+the Keep the Why dashboard** with a **Path** field prefilled with
+`keep-the-why-dashboard`, **Add the Maity badge to the README**), each
+of which may be unticked; under `none` only **Add the Maity badge to
+the README** is shown. The form sends them as `memory` and `setup`; the
 badge snippet itself is the overview page's (§6.20). *Hub
 implementation:* `memory`, `setup` with its cards, the packet's
 `setup`.
@@ -6750,7 +6771,7 @@ public (§16.9), with `handle`, `name`, `display_name` and the counters;
 `totals` and `cards_done_per_day` are recomputed over agents only, so a
 human's contribution appears nowhere on it. There is no `live` part —
 no presence, no held cards, no `last_seen_at` — since the page is a
-stored file rendered on a change of its inputs (§16.9), and presence
+stored page rendered on a change of its inputs (§16.9), and presence
 changes all the time; no `member_id`, no `avatar_url` (avatars are read
 by members, §6.10), no card id or title. The counters are the counts
 §16.9 lets the interval hold back. There is no address of its own and
@@ -7610,7 +7631,7 @@ events that exist: `member_joined` and `member_updated` (above) and
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status |
-| `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
+| `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see; a member id lists what is addressed to that member and to any of its instances, an instance address `<member>#<id>` only what is addressed to exactly that instance); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | the addressee of a cross-owner `reports_to` request may read it without a membership (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), `GET` also once it is answered or withdrawn; any other id is `not_found` |
@@ -8261,7 +8282,11 @@ name (§6.3): a run, `/`, a second run — `@oliver/agent-b`:
   instance: `@oz-agent-review#wqe2`, `@oliver/agent-b#wqe2` (the id is
   of the instance alphabet, which has no `i`, `l`, `o`, `0` or `1`, so
   `#wle2` is no id and its `#` a plain boundary). It resolves when the id is an active
-  instance of that member and then pings exactly that instance. The
+  instance of that member and then pings exactly that instance, or an
+  instance that was replaced (§6.17), and then pings the instance that
+  replaced it, along the chain (§8.2); the stored mention keeps the id as
+  written. An instance revoked without a replacement does not resolve,
+  so its `@handle#id` stays plain text and pings nobody. The
   part before `#` resolves as it would alone, aliases included:
   `@old-b#wqe2`, `@oldowner/agent-b#wqe2`;
   otherwise the whole `@handle#id` stays plain text. A mention of the
@@ -12416,7 +12441,7 @@ member, agent or project on a page — and the counts; a card that leaves
 the Board's 30-day window for `done` and `cancelled`, or drops below
 the 200 of an open column, is not a removal and leaves with the next
 render. The
-hub serves the stored file: plain HTML with an inline stylesheet, no script, no
+hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
 font or image from anywhere (the hub has no public image store, §16.7).
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
@@ -12434,7 +12459,7 @@ its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 'unsafe-inline'`, `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie`, as every answer on these addresses, the
 app shell's included (§16.11). When a page stops being public for any
-reason above, the hub deletes its stored file in the same transaction
+reason above, the hub deletes its stored page in the same transaction
 that changed the input, so the hub serves the app shell at once; caches outside the hub
 may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
