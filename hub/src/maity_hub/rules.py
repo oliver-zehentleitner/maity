@@ -121,9 +121,19 @@ SUPERVISED = (
 )
 
 
+DUTY_SELF = (
+    "Finished work does not end your session. Keep `maity wait` running in a loop, each call "
+    "with a timeout below your harness's limit (`hints.wait_timeout` in the resume packet), "
+    "and handle each event as it arrives. If you run on a schedule (a routine or a cron run), "
+    "keep waiting until shortly before your next run, then end cleanly and leave no "
+    "background process behind."
+)
+
+
 def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
-    runner supervises (§15.11)."""
+    runner supervises (§15.11). Its duty line follows `hints.duty` (§5.2, §6.9): the
+    supervised one, else the one for a session that waits for itself."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
@@ -156,6 +166,8 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
     ]
     if supervised:
         lines += ["", "## Supervised", "", SUPERVISED]
+    else:
+        lines += ["", "## On duty", "", DUTY_SELF]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     if project.rules_markdown:
