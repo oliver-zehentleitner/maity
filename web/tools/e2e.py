@@ -897,6 +897,7 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    isolate_step(run, page)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -2228,6 +2229,46 @@ def join_expiry_step(run: Run, page: Page) -> None:
     no_problems(run, "joins")
 
 
+def isolate_step(run: Run, page: Page) -> None:
+    """Isolation (docs/api.md §6.2) on the real hub. Last of the agent's steps: isolating
+    releases its claims, which the steps before rely on, and lifting does not bring them back."""
+    run.step("members: the owner isolates the agent with a reason, sees the badge, and lifts the isolation")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    agents = page.locator("table.members").nth(1)
+    row = agents.locator("tr.member", has_text="E2E Agent")
+    row.get_by_role("button", name="Manage E2E Agent").click()
+    manage = page.locator("tr.member-manage")
+    manage.locator("input[id^=member-isolate-]").fill("e2e: isolated on purpose")
+    asked = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    manage.get_by_role("button", name="Isolate", exact=True).click()
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text("E2E Agent is isolated.")
+    assert asked and asked[0].startswith("Isolate E2E Agent?"), asked
+    expect(row.locator(".badge.member-isolated")).to_have_text("Isolated")
+    expect(row.locator(".badge.member-isolated")).to_have_attribute("title", "Isolated: e2e: isolated on purpose")
+    expect(manage.locator(".member-isolate")).to_contain_text("e2e: isolated on purpose")
+    run.a11y(page, "members, an isolated agent")
+    run.shot(page, "member-isolated")
+    manage.get_by_role("button", name="Lift isolation", exact=True).click()
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text("The isolation of E2E Agent is lifted.")
+    expect(row.locator(".badge.member-isolated")).to_have_count(0)
+    expect(manage.locator("input[id^=member-isolate-]")).to_be_visible()
+    row.get_by_role("button", name="Done managing E2E Agent").click()
+    # The owner is told of both in their inbox (§6.2, a hub notice with one reply, Seen):
+    # read and marked seen here, so the steps after find their own requests first.
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    told = re.compile(r"e2e-agent was isolated|The isolation of e2e-agent was lifted")
+    seen = []
+    for _ in range(2):
+        entry = page.locator("li.entry.current")
+        expect(entry).to_contain_text(told)
+        seen.append(entry.locator(".title").first.inner_text())
+        entry.get_by_role("button", name="Seen", exact=True).click()
+        expect(page.locator("li.entry.current", has_text=seen[-1])).to_have_count(0)
+    assert any("was isolated" in x for x in seen) and any("was lifted" in x for x in seen), seen
+    no_problems(run, "isolation")
+
+
 def invitations_step(run: Run, page: Page) -> None:
     """Invitations (docs/api.md §3.4) on the real hub: the owner invites from Members; a browser
     without a session opens the link, signs in with it as next and comes back; joining is refused
@@ -2327,6 +2368,20 @@ def members_step(run: Run, page: Page) -> None:
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
+    run.step("members: Only my agents shows the owner's agents alone, and is kept on the next visit")
+    mine = page.get_by_role("checkbox", name="Only my agents", exact=True)
+    expect(mine).not_to_be_checked()
+    mine.check()
+    expect(page.locator("table.members")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_contain_text("E2E Agent")
+    expect(mine).to_be_focused()
+    run.a11y(page, "members, only my agents")
+    page.reload()
+    expect(page.get_by_role("checkbox", name="Only my agents", exact=True)).to_be_checked()
+    expect(page.locator("table.members")).to_have_count(1)
+    page.get_by_role("checkbox", name="Only my agents", exact=True).uncheck()
+    expect(page.locator("table.members")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))

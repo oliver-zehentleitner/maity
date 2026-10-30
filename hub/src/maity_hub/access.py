@@ -39,6 +39,12 @@ class Membership:
         return role
 
     @property
+    def role_base(self) -> str:
+        """The built-in role whose scopes `role` has (§2.3 "Project roles")."""
+        base: str = self.row.role_base
+        return base
+
+    @property
     def trust(self) -> str:
         trust: str = self.row.trust
         return trust
@@ -49,7 +55,7 @@ class Membership:
         return principal
 
     def may(self, scope: str) -> bool:
-        return has_scope(self.trust, self.role, self.kind, scope)
+        return has_scope(self.trust, self.role_base, self.kind, scope)
 
     def require(self, scope: str) -> None:
         if not self.may(scope):

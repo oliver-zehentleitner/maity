@@ -725,6 +725,14 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
         settle(conn, request, "withdrawn", actor, by)
 
 
+def membership_isolated(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
+    """An isolated agent's placements close at once, as for a removal; lifting the
+    isolation does not reopen them (§6.2, §15.5)."""
+    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+        withdraw_open_request(conn, placement, "the agent was isolated", actor)
+        close_now(conn, placement, "membership_isolated", actor, by)
+
+
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
     """Close every placement of a removed runner at once; returns those whose last report
     said they were still running (`still_running`, §15.3)."""

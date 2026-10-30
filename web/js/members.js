@@ -281,6 +281,41 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, words.effect));
     }
 
+    // Isolation (§6.2): a human with members:admin stops any agent member at
+    // once, whoever owns it, with a reason; lifted again by Lift isolation.
+    function isolatePart(m, memberPath) {
+      if (m.kind !== "agent" || ctx.me.kind !== "human" || !ctx.canAdmin) return null;
+      const isoPath = memberPath + "/isolate";
+      if (m.isolated) {
+        return h("div", { class: "member-isolate" },
+          h("p", null, h("span", { class: "badge member-isolated" }, M.t("members.isolated.badge")), " ",
+            M.tn("members.isolated.since", { by: M.dom.memberRef(ctx, m.isolated.by), ago: formatAgo(m.isolated.since), reason: m.isolated.reason })),
+          keyed("lift:" + m.id, h("button", {
+            type: "button",
+            onclick: () => act(M.t("members.isolate.lifting"), M.t("members.isolate.lifted", { name: m.display_name }),
+              () => M.api.del(isoPath), "isolate-reason:" + m.id),
+          }, M.t("members.isolate.lift"))));
+      }
+      const reasonId = "member-isolate-" + m.id;
+      const reason = keyed("isolate-reason:" + m.id, h("input", { id: reasonId, maxlength: "500", autocomplete: "off" }));
+      reason.value = (edits.get(m.id) || {}).isolate || "";
+      reason.addEventListener("input", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { isolate: reason.value })); });
+      return h("form", {
+        class: "inline-form member-isolate",
+        onsubmit: (e) => {
+          e.preventDefault();
+          const why = reason.value.trim();
+          if (!why) { reason.focus(); return; }
+          if (!window.confirm(M.t("members.isolate.confirm", { name: m.display_name }))) return;
+          act(M.t("members.isolate.isolating"), M.t("members.isolate.done", { name: m.display_name }),
+            () => M.api.post(isoPath, { reason: why }), "lift:" + m.id,
+            () => { const d = edits.get(m.id); if (d) delete d.isolate; });
+        },
+      }, h("label", { for: reasonId }, M.t("members.isolate.label")), reason,
+      h("button", { type: "submit", class: "danger" }, M.t("members.isolate.submit")),
+      h("p", { class: "hint" }, M.t("members.isolate.hint")));
+    }
+
     // after(removed): what follows a removal that went through.
     function removePart(m, memberPath, self, after) {
       // A member with trust owner is removed only by an owner (owner_only, §2.3).
@@ -347,7 +382,7 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("members.reports.hint")));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart, reportsToPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -425,7 +460,7 @@ window.Maity = window.Maity || {};
         // The briefing (§6.2), edited here; sent only to whom may see it.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
       return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
@@ -566,6 +601,8 @@ window.Maity = window.Maity || {};
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
+        m.kind === "agent" && m.isolated
+          ? h("span", { class: "badge member-isolated", title: M.t("members.isolated.title", { reason: m.isolated.reason }) }, M.t("members.isolated.badge")) : null,
         m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null);
     }
@@ -606,11 +643,30 @@ window.Maity = window.Maity || {};
             }))))];
     }
 
+    // Only my agents (the maintainer, 2026-10-30): the agents the viewer
+    // owns, without the humans; remembered per viewer in this browser.
+    const mineKey = "maity.members.mine." + ctx.me.id;
+    let mineOnly = false;
+    if (ctx.me.kind === "human") {
+      try { mineOnly = window.localStorage.getItem(mineKey) === "1"; } catch (err) { mineOnly = false; }
+    }
+    function mineFilter() {
+      if (ctx.me.kind !== "human") return null;
+      const box = keyed("mine", h("input", { type: "checkbox", id: "members-mine" }));
+      box.checked = mineOnly;
+      box.addEventListener("change", () => {
+        mineOnly = box.checked;
+        try { if (mineOnly) window.localStorage.setItem(mineKey, "1"); else window.localStorage.removeItem(mineKey); } catch (err) { /* this browser keeps nothing */ }
+        redraw("mine");
+      });
+      return h("div", { class: "members-filter" }, h("label", { class: "check", for: "members-mine" }, box, " " + M.t("members.filter.mine")));
+    }
+
     function draw() {
       presenceCells.clear();
       focusables.clear();
-      const humans = items.filter((m) => m.kind === "human");
-      const agents = items.filter((m) => m.kind === "agent");
+      const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
+      const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
       const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
       const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
@@ -618,9 +674,9 @@ window.Maity = window.Maity || {};
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
       const ktw = { title: "Keep the Why", cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), table("human", humans, [role, presence, joined]),
+      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
         h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
-          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
+          : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : "No agents yet.")]));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).

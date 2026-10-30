@@ -306,7 +306,12 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     conn.execute(
         update(t.project)
         .where(t.project.c.id == project.id)
-        .values(repository_owner_confirmed=False, repository_confirmed_by=None, public_page="off")
+        .values(
+            repository_owner_confirmed=False,
+            repository_confirmed_by=None,
+            public_page="off",
+            repository_public=None,  # the old owner's answer is not the new owner's page
+        )
     )
     moved = conn.execute(select(t.project).where(t.project.c.id == project.id)).one()
     org_projects.moved(

@@ -87,7 +87,7 @@ def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
 @pytest.fixture
 def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     fake = FakeGitHub()
-    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path, **_: fake(path))
     # The tests drive the probe themselves; the worker thread has its own test.
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)
     return fake
@@ -470,7 +470,7 @@ def test_the_worker_probes_right_after_a_report(
     make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeGitHub()
-    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path, **_: fake(path))
     fake.pull(7)
     fake.branch("agent-b/probe")
 

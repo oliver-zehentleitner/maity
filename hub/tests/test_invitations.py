@@ -47,7 +47,9 @@ def mailed(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     """What would be mailed: invitation links, and registration mails by kind."""
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        invitation_mail, "send", lambda conn, *, invitation_id, to, url: sent.append(("invite", to))
+        invitation_mail,
+        "send",
+        lambda conn, *, invitation_id, to, url, **_: sent.append(("invite", to)),
     )
     monkeypatch.setattr(
         registration_mail,
@@ -377,7 +379,7 @@ def test_the_mailed_link_is_the_one_in_the_url(
     monkeypatch.setattr(
         invitation_mail,
         "send",
-        lambda conn, *, invitation_id, to, url: links.append(url),
+        lambda conn, *, invitation_id, to, url, **_: links.append(url),
     )
     owner = hosted_human(make_client, migrated, "hosted")
     flow.project(owner)
@@ -772,3 +774,46 @@ def test_an_invitation_whose_issuer_lost_authority_admits_nobody_to_register(
         "/api/v1/auth/register", json={"address": "anna@example.org", "password": PASSWORD}
     )
     assert answer.status_code == 202 and mailed == [] and pending(migrated) == []
+
+
+# --- the invitation's mail (§3.4, §18.5) ----------------------------------------------------
+
+
+def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_notification_address import outbox_rows, with_mail
+
+    owner = with_mail(make_client, migrated)
+    flow.project(owner)
+    made = owner.post(
+        "/projects/maintainer/maity/invitations",
+        {
+            "address": "new@example.org",
+            "trust": "member",
+            "role": "reviewer",
+            "note": "Hi! See https://evil.example",
+        },
+    )
+    assert made.status_code == 201, made.text
+    [mail] = [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"]
+    assert mail.kind == "security"  # the recipient's security budget (§3.4)
+    assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
+    for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
+        assert shown in mail.body, shown
+    assert "https://evil.example" not in mail.body and "evil[.]example" in mail.body  # §18.5
+    unbound = owner.post("/projects/maintainer/maity/invitations", {})
+    assert unbound.status_code == 201
+    assert len([r for r in outbox_rows(migrated) if r.subject == mail.subject]) == 1
+
+
+def test_without_mail_nothing_is_queued_and_the_inviter_passes_the_link_on(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_notification_address import outbox_rows
+
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    made = owner.post("/projects/maintainer/maity/invitations", {"address": "new@example.org"})
+    assert made.status_code == 201 and made.json()["url"]
+    assert [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"] == []

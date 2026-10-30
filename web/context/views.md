@@ -3026,3 +3026,64 @@ read on every Overview visit, and the page still long. The organisation
 as a fourth Overview tab: the maintainer placed it with the team. A
 `members/organisation` address: `members/<id>` is a member's page, and
 a word there would have to be told apart from an id.
+
+## Members filters to one's own agents with Only my agents, kept per viewer in the browser
+
+**Id:** 7b08511c-7f7e-4af2-bd7e-df6f01476e0b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (a filter 'Only my agents' on the members list, the member's `owner` being the signed-in human, remembered per viewer); where it is kept is the implementer's
+**Revisit when:** the hub keeps per-viewer view settings, or the GUI round asks for the filter on other lists too
+
+A human viewer of Members gets the checkbox **Only my agents**. On, the
+list is the agents whose `owner_id` is the viewer, and the humans'
+table is not drawn; with none, it says so. The choice is kept in the
+browser's `localStorage` under one key per viewer
+(`maity.members.mine.<member id>`), for every project, and a browser
+that keeps nothing still filters for the visit. Agents never see the
+box: they own no agent. What an owner may change on their own agent's
+row without `members:admin` is unchanged (Manage with reports to,
+preferences and team, §2.3).
+
+**Reason:** the maintainer wants their own agents at a glance on a list
+that holds everyone's. A per-viewer key keeps one person's choice from
+another's on a shared browser, and the hub has no field for view
+settings.
+
+**Rejected alternative:** one key for every viewer: a second person
+signing in on the same browser would inherit the filter. A key per
+project: the maintainer asked for it per viewer, and switching projects
+would lose it. A setting on the hub: there is no such field, and a
+contract change for a list filter is out of proportion.
+
+## An agent is isolated from its Manage row on Members, with a reason and a confirmation; the row and the list show it
+
+**Id:** d2546b1d-4a69-4e89-9b98-d9b894c572ed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's
+**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), or another owner's agent gets Propose change beside it
+
+In an agent's **Manage** row, for a human with `members:admin`, after
+the pause: **Isolate with a reason** (1–500 characters), sent as
+`POST …/members/{id}/isolate` after a confirmation that names what
+happens at once; an isolated agent shows who isolated it, when and why,
+and **Lift isolation** (`DELETE` on the same path, no confirmation). The
+name cell carries an **Isolated** badge with the reason in its title, on
+every reader's list, since the member view carries `isolated` for all.
+An agent's own caller and a member without `members:admin` get no
+control. The fixture hub answers both routes as §6.2 describes.
+
+**Reason:** isolation is the project's lever against a misbehaving
+agent, beside the pause and the removal that already live in that row;
+it takes effect at once for an agent another human owns, so the
+confirmation says so before it is sent. Lifting gives access back and
+loses nothing more, so it needs no question.
+
+**Rejected alternative:** a separate Isolate button on the list row:
+the row holds Chat and Manage only (54a49af9), every other member action
+is in Manage. Isolating without a confirmation like the pause: the pause
+is a soft stop the owner may lift, isolation releases claims and closes
+placements of someone else's agent.

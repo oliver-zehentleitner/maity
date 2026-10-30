@@ -303,6 +303,18 @@ def principal_id(conn: Connection, membership_id: int | None) -> str | None:
     return principal_ids(conn, [membership_id])[membership_id]
 
 
+def routing_boss(conn: Connection, membership_id: int | None) -> str | None:
+    """The boss events and notices are routed to: `principal_id`, but an isolated boss is
+    routed past as if the edge held its default after a removal, nobody (§6.2), without
+    the edge changing."""
+    if membership_id is None:
+        return None
+    isolated_since = conn.execute(
+        select(t.membership.c.isolated_since).where(t.membership.c.id == membership_id)
+    ).scalar()
+    return None if isolated_since is not None else principal_id(conn, membership_id)
+
+
 def principal_ids(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int, str]:
     """The member ids of several membership row ids, in one query. Lists build
     their views through this and the other `*_views`, so a page costs a fixed
@@ -326,6 +338,13 @@ def paused(row: Any) -> dict[str, Any] | None:
     if row.paused_since is None:
         return None
     return {"reason": row.paused_reason, "since": ts(row.paused_since), "by": row.paused_by}
+
+
+def isolated(row: Any) -> dict[str, Any] | None:
+    """`isolated: {reason, since, by}` of an agent member a human isolated (§6.2)."""
+    if row.isolated_since is None:
+        return None
+    return {"reason": row.isolated_reason, "since": ts(row.isolated_since), "by": row.isolated_by}
 
 
 # Best first: a member's presence is the best of its instances' (§5.3); an instance
@@ -571,6 +590,7 @@ def member_views(
             "aliases": aliased[row.agent_id or row.human_id],
             "trust": row.trust,
             "role": row.role,
+            "role_base": row.role_base,  # the role itself for a built-in one (§2.3)
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
             # The edge's owners differ (§6.2 "The marker"); `owner_id` says whose it is.
             "cross_owner": row.reports_to is not None
@@ -611,11 +631,14 @@ def member_views(
         stopped = paused(row) or suspended.get(row.id)
         if stopped is not None:  # a suspended account's membership acts as paused (§16.8)
             shown_presence = "paused"
+        if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
+            shown_presence = "offline"
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
                 "presence": shown_presence,
                 "paused": stopped,
+                "isolated": isolated(row),
                 "availability": availability.view(
                     row,
                     shown_presence,
@@ -636,7 +659,7 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and stopped is None:
+            if view["instances"] and stopped is None and row.isolated_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index

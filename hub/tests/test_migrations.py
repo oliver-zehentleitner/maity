@@ -184,8 +184,8 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
     from maity_hub import tables as t
 
     return insert(t.membership).values(
-        project_id=project_id, human_id=human_id, trust="owner", role="coder", areas=["/"],
-        capabilities=[], joined_at=joined, active=active,
+        project_id=project_id, human_id=human_id, trust="owner", role="coder",
+        role_base="coder", areas=["/"], capabilities=[], joined_at=joined, active=active,
     )  # fmt: skip
 
 
@@ -770,6 +770,55 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}
     assert found[none] is None
+
+
+def test_project_roles_give_every_membership_its_base_and_go_back_to_it(engine: Engine) -> None:
+    """0112: every membership so far holds a built-in role and gets it as `role_base`; the
+    downgrade turns a project role into its base wherever it is named."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human = factory.human(engine, "a")
+    project_id = factory.project(engine, "shop", owner_id=human)
+    downgrade(engine, _before(engine, "0112"))
+    reviewer = factory.membership(
+        engine, project_id, role="reviewer", human_id=factory.human(engine, "b")
+    )
+    migrate(engine)
+    with engine.connect() as conn:
+        bases = dict(conn.execute(select(t.membership.c.id, t.membership.c.role_base)).all())
+    assert bases[reviewer] == "reviewer"
+    assert set(bases.values()) <= {"coder", "reviewer"}
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(
+                roles=[
+                    {
+                        "name": "legal",
+                        "base": "reviewer",
+                        "description": "",
+                        "guide": "",
+                        "guide_by": None,
+                    }
+                ]
+            )
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == reviewer)
+            .values(role="legal", role_base="reviewer")
+        )
+    downgrade(engine, _before(engine, "0112"))
+    with engine.connect() as conn:
+        role = conn.execute(
+            select(t.membership.c.role).where(t.membership.c.id == reviewer)
+        ).scalar_one()
+    assert role == "reviewer"
 
 
 def test_a_human_with_the_meat_proxy_switch_on_gets_both_parts_by_0103(engine: Engine) -> None:

@@ -74,9 +74,9 @@ def test_a_member_coder_has_the_resume_packets_four_scopes() -> None:
 
 
 def test_trust_admin_never_resolves_to_a_proxy() -> None:
-    assert tokens_of("admin", "coder") == {"role:coder", "trust:admin"}
-    assert tokens_of("admin", "proxy") == {"role:proxy"}
-    assert tokens_of("owner", "coder") == {"role:coder", "trust:owner"}
+    assert tokens_of("admin", "coder", "coder") == {"role:coder", "trust:admin"}
+    assert tokens_of("admin", "proxy", "proxy") == {"role:proxy"}
+    assert tokens_of("owner", "coder", "coder") == {"role:coder", "trust:owner"}
     assert not in_admin_team("admin", "proxy")
     assert in_admin_team("owner", "designer")
 

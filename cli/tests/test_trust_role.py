@@ -271,6 +271,11 @@ def test_resume_shows_trust_and_role() -> None:
     assert "maint [hum-1] (owner coder, away)" in text
 
 
+def test_a_trust_the_hub_left_out_shows_as_a_question_mark() -> None:
+    text = onboarding.render(_packet(membership={"role": "reviewer", "reports_to": "agt-a"}))
+    assert "Trust: ?, role: reviewer" in text and "None" not in text
+
+
 def test_resume_shows_the_role_memory() -> None:
     memory = {"role": {"role": "reviewer", "items": [ROLE_ENTRY], "total": 9, "truncated": True}}
     text = onboarding.render(_packet(memory=memory))

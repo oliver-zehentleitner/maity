@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import cross_owner, line, proposals
+from maity_hub import cross_owner, line, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -64,7 +64,9 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
         raise humans_only("capabilities are a human's to set")
     if body.trust is not None and body.trust not in AGENT_TRUSTS:
         raise humans_only("an admin agent moves trust between member and guest only")
-    if body.role is not None and body.role not in AGENT_ROLES:
+    # A project role counts as its base (§2.3); a role the project lacks is `invalid` later.
+    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    if base is not None and base not in AGENT_ROLES:
         raise humans_only("the proxy and the manager are a human's to give")
     if body.role is not None and body.role != target.role and target.role == "manager":
         raise humans_only("only a human removes the role manager")
@@ -124,7 +126,7 @@ def needs_consent(
     as for a role change (§6.12)."""
     del conn
     project = mine.project
-    sensitive = target.role in SENSITIVE_ROLES or _is_arbiter(project, target)
+    sensitive = target.role_base in SENSITIVE_ROLES or _is_arbiter(project, target)
     touches = (
         any(f in values and values[f] != getattr(target, f) for f in ("trust", "role")) or pause[0]
     )
@@ -203,6 +205,7 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     if (
         proposer is None
         or proposer.active is not True
+        or proposer.isolated_since is not None
         or not in_admin_team(proposer.trust, proposer.role)
     ):
         raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")

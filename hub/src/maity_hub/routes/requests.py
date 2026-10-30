@@ -29,6 +29,7 @@ from maity_hub import (
     orgs,
     placements,
     proposals,
+    seats,
     ticker,
 )
 from maity_hub import tables as t
@@ -303,7 +304,7 @@ def _resolve_to(
     """`to` as written, or its default (§7)."""
     if body.to is None:
         if body.class_ == "contract":
-            arbiter = mine.project.contract_arbiter  # contract requests go to the arbiter
+            arbiter = seats.routed_arbiter(conn, mine.project)  # contract requests go to it
             return _parse_to(conn, mine, arbiter)
         row = conn.execute(select(t.membership).where(t.membership.c.id == asker)).one()
         if row.agent_id is None:
@@ -324,16 +325,20 @@ def _parse_to(conn: Connection, mine: Membership, to: str) -> inbox.Addressee:
     if to == "owner":
         return inbox.Addressee("owner")
     if to.startswith(("role:", "trust:")):
-        if not inbox.valid_token(to):
+        if not inbox.valid_token(to, mine.project):
             raise invalid({"to": "unknown_role"})
         return inbox.Addressee("role", role=to)
     principal, instance = instances.split_address(to)
     addressee = _member_id(conn, mine, principal, "to")
-    trust = conn.execute(
-        select(t.membership.c.trust).where(t.membership.c.id == addressee)
-    ).scalar_one()
+    trust, isolated_since = conn.execute(
+        select(t.membership.c.trust, t.membership.c.isolated_since).where(
+            t.membership.c.id == addressee
+        )
+    ).one()
     if trust == "guest":  # a guest answers nothing, so nothing is asked of it (§2.3)
         raise invalid({"to": "guest"}, "a guest is never asked")
+    if isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
+        raise invalid({"to": "isolated"}, "the agent is isolated")
     if instance is not None:
         instances.addressed(conn, addressee, principal, instance, "to")  # `not_an_instance`
     return inbox.Addressee("member", member=addressee, instance=instance)
@@ -1150,7 +1155,10 @@ def _originally_for(row: Any, member: Any) -> bool:
         return bool(row.to_member == member.id)
     if row.to_kind == "owner":
         return bool(member.trust == "owner")
-    return bool(row.to_kind == "role" and row.to_role in tokens_of(member.trust, member.role))
+    return bool(
+        row.to_kind == "role"
+        and row.to_role in tokens_of(member.trust, member.role, member.role_base)
+    )
 
 
 def _pool_open() -> Any:
@@ -1197,13 +1205,18 @@ def forward(
                 target = member_row(conn, mine.project.id, body.to)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
+            if target.isolated_since is not None:
+                raise invalid({"to": "isolated"}, "the agent is isolated")
             if target.id in (mine.id, row.holder_member) or target.id in (
                 row.asked_by,
                 row.on_behalf_of,
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
             original = _originally_for(row, target)
-            if "trust:admin" not in tokens_of(target.trust, target.role) and not original:
+            if (
+                "trust:admin" not in tokens_of(target.trust, target.role, target.role_base)
+                and not original
+            ):
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
@@ -1244,7 +1257,7 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked_member(conn, caller, slug)
         row = _open_decision(conn, mine, request_id)
-        if "trust:admin" not in tokens_of(mine.trust, mine.role):
+        if "trust:admin" not in tokens_of(mine.trust, mine.role, mine.role_base):
             raise ApiError(
                 403, "forbidden", "only an admin claims from the pool", {"reason": "not_admin"}
             )

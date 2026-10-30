@@ -5,7 +5,7 @@
 packet. The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261030164936_handover_cursors
-Revises: 0106
+Revises: 20261030155716_repo_public
 Create Date: 2026-10-30
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261030164936_handover_cursors"
-down_revision: str | None = "0106"
+down_revision: str | None = "20261030155716_repo_public"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

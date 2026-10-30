@@ -419,6 +419,22 @@ window.Maity = window.Maity || {};
     return governing(mine);
   };
   // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  function isolate(m, body, path, on) {
+    const who = caller(m[1], path);
+    if (who.member.kind !== "human") fail(403, "forbidden", "a human's call", path, { reason: "humans_only" });
+    if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+    const target = member(m[1], m[2], path);
+    if (target.kind !== "agent") fail(400, "invalid", "only an agent is isolated", path, { fields: { member: "not_an_agent" } });
+    if (!on) { target.isolated = null; return Object.assign({}, target); }
+    const reason = typeof (body || {}).reason === "string" ? body.reason.trim() : "";
+    if (!reason || reason.length > 500) fail(400, "invalid", "a reason of 1 to 500 characters", path, { fields: { reason: reason ? "too_long" : "required" } });
+    if (!target.isolated) {
+      target.isolated = { reason, since: nowIso(), by: who.member.id };
+      file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+    }
+    return Object.assign({}, target);
+  }
+
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);
@@ -2993,6 +3009,10 @@ window.Maity = window.Maity || {};
       list.removed.push(removed);
       return removed;
     }],
+    // §6.2 "Isolation": a human with members:admin isolates an agent member
+    // with a reason, or lifts it; a repeat answers the member unchanged.
+    ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/isolate$/, (m, body, path) => isolate(m, body, path, true)],
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)\/isolate$/, (m, body, path) => isolate(m, body, path, false)],
     // §6.2: an agent's briefing versions, newest first, for its owner and members:admin.
     ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/briefings$/, (m, body, path) => {
       const target = file(m[1], "members.json", path).items.find((x) => x.id === m[2]);

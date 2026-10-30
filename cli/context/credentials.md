@@ -76,6 +76,8 @@ code still works. Deleting the file is offered only for this same
 instance after its session was revoked, never as the way to add one.
 It does not suggest `maity resume`. A worktree keeps sharing its clone's state, because it is the same
 agent on a second branch (see the clone directory entry above).
+The join page (`web/js/join.js`, `instanceNote`) and `docs/agents.md`
+say the same next to the join line; change them with it.
 
 **Reason:** the first three-instance team found that a second instance
 was refused with advice to run `maity resume`. That resume took over the
@@ -255,3 +257,42 @@ takes the field, so a refusal is a fault to see, not an older hub
   right.
 - Resending the resume without the field when a hub refuses it
   (f208d20c): it served hubs from before §5.3, which no longer exist.
+
+## A remote's URL is shown without its userinfo, and the token stays usable for git
+
+**Id:** 44c5155a-ae4d-4f18-ace9-1ac3a46f5a33
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-r31sb7ag0spv (2026-10-30): `maity report` on a deleted branch printed an upstream URL with an embedded token; `maity.redact.without_userinfo`, `gitfacts.collect`
+
+A branch pushed with `git push -u https://x-access-token:<token>@github.com/…` has that URL
+as its remote, and git and gh repeat a remote's URL as configured in their own errors. Every
+place that shows a remote, an upstream or a line of git's or gh's error output passes it
+through one helper, `redact.without_userinfo`, which takes `user:password@` out of each URL
+and keeps the rest. It cuts at the last `@` before the path, as git and `urlsplit` read a URL,
+so an `@` in a user or a password does not leave the rest of it behind. Only whitespace and
+the path end the userinfo; anything else up to the last `@` before them counts, quotes,
+backticks and brackets included, since an unencoded one may stand in a password
+(`` https://u:pa`ss@h/r ``) and stopping there left the whole password in the text. A URL
+without a path that runs straight into text with an `@` (`https://h,admin@x.com`, or a URL
+in backticks followed by `,me@x.com`) is then shown with the wrong host: accepted, because
+a message with too little in it leaks nothing. An unencoded `/` in a password stays in the
+text: git and `urlsplit` read it as the start of the path, so such a URL is broken before
+maity sees it. `gitfacts.collect` stores the remote already without it, since the facts go
+into the refusal messages and, as `upstream`, into the report the hub keeps; `ls-remote` is
+run before that with the remote as configured, so the token still does its work. The
+runner's `workspace claim` shows a clone's origin the same way, `runner gc` a `.git/config`
+section named by a URL (`[http "https://…"]`), and `hub.get_text` names an
+unreachable URL through `safe_url` like the other hub errors.
+
+**Rejected alternatives:**
+- Refusing a remote that carries a token: a URL with a token is how some CI and container
+  setups push, and the report would fail for a reason that has nothing to do with the work.
+- Leaving the remote out of the messages: "does not exist on <remote>" is what tells the
+  agent which remote it pushed to; without userinfo the URL still says that.
+- Ending the userinfo at a quote, backtick or bracket as well, so that a URL quoted in an
+  error stops at its closing mark: a password with that character then stayed in the text
+  whole (review of #792); a wrong host in a rare message is the smaller harm.
+- `safe_url` for remotes as well: it also drops the query and an scp-like `git@host:path`
+  is not a URL to it; a remote is shown as written, minus the credential.

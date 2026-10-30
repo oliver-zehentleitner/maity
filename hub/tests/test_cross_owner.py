@@ -504,7 +504,9 @@ def test_an_admin_agents_patch_waits_for_its_owner_and_then_asks_both_owners(
     lent_id = _row(migrated, lent).id
     with migrated.begin() as conn:  # a reviewer: its change needs the owner's go (§2.3 ᵃ)
         conn.execute(
-            update(t.membership).where(t.membership.c.id == lent_id).values(role="reviewer")
+            update(t.membership)
+            .where(t.membership.c.id == lent_id)
+            .values(role="reviewer", role_base="reviewer")
         )
     boss = flow.agent(make_client, owner)
     admin = flow.agent(make_client, owner, role="admin", reports_to=owner.id)

@@ -537,6 +537,10 @@ project = Table(
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),
     Column("public_about", MARKDOWN_TEXT),
+    # Whether the forge's last answer said the repository is public (§16.9, §11.4); null
+    # before the hub looked, which counts as private. Cleared when the page goes on or off, a
+    # transfer happens or the repository changes: the answer of an earlier page is never reused.
+    Column("repository_public", Boolean),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
@@ -593,6 +597,9 @@ project = Table(
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
+    # 12; null for none.
+    Column("roles", JSON_VALUE),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
@@ -678,6 +685,10 @@ membership = Table(
     _ref("agent_id", "agent_profile.id"),
     # A built-in role, or a project role of up to 24 characters (#506).
     Column("role", String(24), nullable=False),
+    # The built-in role whose scopes `role` has: `role` itself for a built-in one, the base
+    # for a project role (§2.3); written with every `role`, and by a `PUT …/roles` that
+    # moves a role to another base, so no reader looks the project's roles up.
+    Column("role_base", String(24), nullable=False),
     Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     # A membership the hub keeps for an owner of the organisation that owns the project
     # (§6.26): `created` (the hub made it: it ends with the ownership) or `raised` (it held
@@ -690,6 +701,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # An agent member a human with `members:admin` isolated (§6.2, "Isolation"): why, since
+    # when and by whom; null while free. The membership keeps its history either way.
+    Column("isolated_reason", String(500)),
+    Column("isolated_since", UtcDateTime),
+    Column("isolated_by", String(ID)),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -1632,7 +1648,7 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
     Column("here", Boolean, default=True),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
