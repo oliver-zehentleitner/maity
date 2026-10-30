@@ -1,8 +1,8 @@
 """The resume packet as text for the agent that reads it (docs/api.md §5.2).
 
 `maity join` and `maity resume` print this; `--json` prints the packet itself. The order is
-what an agent needs first: whether it is paused, the briefing a human wrote for it, who it is,
-the project, the rules, its work, what it missed, and the next step.
+what an agent needs first: whether it is isolated or paused, the briefing a human wrote for it,
+who it is, the project, the rules, its work, what it missed, and the next step.
 
 Nearly every string in the packet was written by someone: the briefing, messages and answers,
 but also card titles, checkpoints, reply labels and display names. Two rules keep that text
@@ -544,6 +544,14 @@ def _keep_the_why(packet: dict[str, Any]) -> list[str]:
     return ["Keep the Why:", line, ""]
 
 
+# What an isolated agent can do: nothing in the project until a human lifts it (§6.2). The
+# wait is refused as well, so re-arming it would only repeat the refusal.
+ISOLATED_STOP = (
+    "Every call into the project but `maity resume` is refused until a human of the project "
+    "with members:admin (its owner or an admin) lifts it; your owner has been told. Stop: do "
+    "not re-arm `maity wait`. A later `maity resume` shows whether it was lifted."
+)
+
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
@@ -556,6 +564,15 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     # The read-more hints name the API path, `<owner>/<slug>` since the namespace (§6.25).
     slug = inline(get(packet, "project", "full_name") or "<owner>/<slug>")
     out += _memory(packet)  # the soul first: what the agent loads before anything (§19.3)
+    isolated = ms.get("isolated")
+    if isinstance(isolated, dict):
+        out += [
+            f"ISOLATED by {_name(isolated.get('by'), names)} since "
+            f"{inline(isolated.get('since'))}. Your claims went back to the board and nothing "
+            f"reaches you. {ISOLATED_STOP} The reason:",
+            *quote(isolated.get("reason") or ""),
+            "",
+        ]
     paused = ms.get("paused")
     if isinstance(paused, dict):
         out += [
@@ -639,7 +656,10 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             for p in peers
         )
         out += ["", f"Members: {listed}"]
-    out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
+    if isinstance(isolated, dict):
+        out += ["", "Next: You are isolated: stop, and do not re-arm `maity wait`."]
+    else:
+        out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
     if first:
         out.append(pointer.HUMAN_CHANNEL)
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")

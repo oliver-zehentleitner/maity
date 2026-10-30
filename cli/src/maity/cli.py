@@ -31,6 +31,7 @@ EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_TIMEOUT = 3
 EXIT_REFUSED = 4
+EXIT_ISOLATED = 5
 EXIT_SUPERSEDED = 6
 EXIT_INTERRUPTED = 130
 
@@ -267,6 +268,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         and onboarding.is_admin(packet)
         and not field(packet, "membership", "briefing")
         and not field(packet, "membership", "paused")
+        and not field(packet, "membership", "isolated")  # the board would answer `isolated`
         and not packet.get("claims")
         and not packet.get("assigned")
     ):
@@ -2855,7 +2857,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Long-poll the project's events. Prints every pending event addressed to this agent "
         f"(at most {BATCH_MAX}) as one JSON array and exits {EXIT_OK}, so a burst costs one "
         f"wake and one request; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
-        f"{EXIT_SUPERSEDED} when another wait of this credential took over. Meant to run as a "
+        f"{EXIT_SUPERSEDED} when another wait of this credential took over, {EXIT_ISOLATED} when "
+        "a human isolated this agent (do not re-arm it then). Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two.",
     )
     p.add_argument(
@@ -3598,8 +3601,37 @@ def _pause_text(paused: dict[str, Any]) -> str:
     return f"by {who}{when}: {reason}"
 
 
+def _isolated(exc: Exception) -> dict[str, Any] | None:
+    """`details.isolated` of a refusal because a human isolated this agent (§6.2); None for
+    any other error. `{}` when the hub named the reason without the details."""
+    if not isinstance(exc, hub.HubError) or exc.code != "forbidden":
+        return None
+    if exc.details.get("reason") != "isolated":
+        return None
+    isolated = exc.details.get("isolated")
+    return isolated if isinstance(isolated, dict) else {}
+
+
 def _explain(exc: Exception) -> str:
-    """The error line; a refusal because a human paused this agent says what that means."""
+    """The error line; a refusal because a human paused or isolated this agent says what
+    that means."""
+    isolated = _isolated(exc)
+    if isolated is not None:
+        # The reason is people's text: quoted and last, so that nothing of ours follows it
+        # and an instruction in it cannot pass for the refusal's own (cli/context/commands.md).
+        who = onboarding.inline(isolated.get("by") or "a human")
+        since = isolated.get("since")
+        when = f" since {onboarding.inline(since)}" if since else ""
+        reason = isolated.get("reason")
+        quoted = (
+            f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(reason)}"'
+            if reason
+            else ""
+        )
+        return (
+            f"refused: you are isolated in this project by {who}{when}. "
+            f"{onboarding.ISOLATED_STOP}{quoted}"
+        )
     if isinstance(exc, hub.HubError) and exc.code == "paused":
         paused = exc.details.get("paused")
         detail = _pause_text(paused) if isinstance(paused, dict) else "by a human"
@@ -3749,7 +3781,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OSError,
     ) as exc:
         _err(_explain(exc))
-        return EXIT_ERROR
+        return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:
         for problem in exc.problems:
             _err(problem)

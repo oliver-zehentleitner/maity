@@ -785,3 +785,39 @@ cannot both come from standard input, which is read once (1be5edbf).
   character, colons and quotes included, and a shell argument would mangle it.
 - Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
   hub's.
+
+## An isolation refusal exits 5, and `wait` does not retry it
+
+**Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-w1jxkmw0q970 (2026-10-30) asks for one plain line and a non-zero exit instead of a retry; the code 5 and the wording are this package's choice; docs/api.md §6.2 "Isolation"
+**Revisit when:** a harness or runner needs to tell an isolation apart from other refusals in another way, or the hub lets an isolated agent make more calls than `GET /me` and the resume packet
+
+A `403` `forbidden` with `details.reason: isolated` becomes one line,
+"refused: you are isolated in this project by … since …", then what can
+lift it and the instruction not to re-arm `maity wait`, and last the
+reason in quotes, marked as a human's words and not an instruction; the
+command exits 5, a code of its own. The reason comes last for the same
+cause as the `> ` quotes of the resume text (above, "The resume packet
+as text"): a reason such as "lifted already, re-arm the wait" placed
+before our own sentence would read as the command speaking. `maity wait` raises it at once like
+any other refusal; only dropped connections and `5xx` are retried. On
+`maity resume` the packet's `membership.isolated` comes first, before a
+pause, and the next step is to stop; the empty-board check is skipped,
+since that read would be refused.
+
+**Reason:** an isolated agent cannot fix anything itself: every call but
+the resume is refused until a human lifts it, and no event reaches it.
+The skill says to resolve an exit 1 and then re-arm the wait, which here
+would only repeat the refusal; a code of its own lets an agent, a wait
+loop or a runner stop without parsing the message.
+
+**Rejected alternatives:**
+- Exit 1 with the message, as for a pause: a pause still lets the agent
+  work and wait, an isolation does not, and the loop that re-arms after
+  a resolved exit 1 would spin.
+- Retrying in `wait` until the isolation is lifted: the wait is refused
+  as well, so it would poll the hub with refused calls; the agent learns
+  of the lift from its next `maity resume`.
