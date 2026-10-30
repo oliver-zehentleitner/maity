@@ -3,10 +3,10 @@
   "slug": "maity",
   "owner": { "id": "hum-maintainer", "handle": "maintainer" },
   "full_name": "maintainer/maity",
-  "legacy_slug": "maity",
   "aliases": [],
   "name": "Maity",
   "state": "build",
+  "released_at": null,
   "state_note": "MVP skeletons in progress; contract in docs/api.md pending.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": {
@@ -18,7 +18,6 @@
   "memory": {
     "provider": "keep-the-why"
   },
-  "keep_the_why": true,
   "setup": null,
   "policy": {
     "preset": "hierarchical",

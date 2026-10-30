@@ -333,6 +333,8 @@ def _window(conn: Connection, group: Any, mine: Membership, found: str) -> int:
 
 
 def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[str]:
+    # Kept on purpose, though the lists use `conversation_list.owned_agents`: it is the
+    # independent reference `tests/test_conversation_list.py` compares them with.
     if caller.kind == "agent":
         return [caller.agent_id] if caller.agent_id else []
     return list(

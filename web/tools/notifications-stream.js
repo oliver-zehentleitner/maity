@@ -1,6 +1,6 @@
 const vm=require('vm'),fs=require('fs'),assert=require('assert');
 const timers=new Map();let id=0,pending=[],calls=[],afterFails=false;
-const api={absent:{has:()=>false,note:()=>{}},missingRoute:async()=>false,get:async(path)=>{
+const api={get:async(path)=>{
  calls.push(path);
  if(path.includes('limit=0'))return {next_after:'opaque-head',counts:{total:1},by_project:{}};
  if(afterFails){afterFails=false;throw {code:'invalid',details:{fields:{after:'position'}}};}
@@ -11,7 +11,7 @@ const window={Maity:{dom:{},api},Notification:N,setTimeout:(fn)=>{timers.set(++i
 vm.runInNewContext(fs.readFileSync(require('path').join(process.argv[2], 'js/notify.js'),'utf8'),{window,console,Date,Set,Promise,encodeURIComponent,AbortController});
 const flush=()=>new Promise(r=>setImmediate(r));
 (async()=>{
- const M=window.Maity;M.notify.state.available=true;
+ const M=window.Maity;
  let refreshed=0;const one=M.notify.subscribe(()=>refreshed++);await flush();
  const two=M.notify.subscribe(()=>refreshed++);await flush();
  assert.equal(pending.length,1,'two consumers must share one in-flight poll');
@@ -25,16 +25,6 @@ const flush=()=>new Promise(r=>setImmediate(r));
  assert(calls.filter(x=>x.includes('limit=0')).length>=3,'invalid after position must recover fresh head');
  assert(refreshed>0);one();two();M.notify.stopBrowser();pending.shift()({items:[],next_after:'end'});await flush();
  assert.equal(pending.length,0);
- const realGet=api.get;
- api.get=async(path)=>{ if(path.includes('after='))throw {status:404}; return {next_after:'new-head'}; };
- api.missingRoute=async()=>true;
- M.notify.startBrowser({me:{id:'human'}},{browser:{enabled:true,kinds:{}}});await flush();
- assert.equal(M.notify.state.available,false);
- assert.equal(M.notify.running(),false,'missing endpoint must not look like a live browser stream');
- api.get=realGet;api.missingRoute=async()=>false;M.notify.state.available=true;
- M.notify.startBrowser({me:{id:'human'}},{browser:{enabled:true,kinds:{}}});await flush();
- assert.equal(pending.length,1,'stream restarts after the endpoint returns');
- M.notify.stopBrowser();pending.shift()({items:[]});await flush();
  // A session ended on purpose (password change, sign-out): halt cancels the held poll,
  // nothing goes out until resume, and a 401 on the stream ends it instead of retrying.
  const aborted=[];pending.length=0;
@@ -66,5 +56,5 @@ const flush=()=>new Promise(r=>setImmediate(r));
  [...timers.values()].forEach(f=>f());timers.clear();await flush();
  assert.equal(calls.length-c401,1,'a 401 ends the stream, no retry');
  sub();
- console.log('Shared stream: single in-flight poll, settings restart, opaque-position recovery, disposal, endpoint recovery, halt and resume, 401 end PASS');
+ console.log('Shared stream: single in-flight poll, settings restart, opaque-position recovery, disposal, halt and resume, 401 end PASS');
 })().catch(e=>{console.error(e);process.exitCode=1});

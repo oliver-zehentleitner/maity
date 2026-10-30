@@ -62,23 +62,16 @@ window.Maity = window.Maity || {};
   M.projectSetup = { PROVIDERS, OPTIONS };
 
   M.views.newProject = async function (ctx, root) {
-    // Memory and setup where the hub takes them (§6.21); an older hub
-    // refuses a field it does not know, so then they are not offered.
-    let fieldsRead = true;
-    const fields = await M.api.hubBody("POST", "/projects").catch(() => { fieldsRead = false; return new Set(); });
-    const knowsMemory = fields.has("memory") && fields.has("setup");
     const field = (id, label, input, hint) => {
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
       input.setAttribute("aria-describedby", (hint ? id + "-hint " : "") + id + "-error");
       return { input, error, nodes: [h("label", { for: id }, label), input, hint ? h("p", { class: "hint", id: id + "-hint" }, hint) : null, error] };
     };
 
-    // §6.26: the owner, where the hub takes it and the human is in an
-    // organisation that lets them create projects; otherwise not offered.
-    const orgs = fields.has("owner")
-      // A suspended organisation takes no new project (§6.26).
-      ? await M.api.get("/orgs").then((r) => r.items.filter((o) => !o.moderation && (o.my_role !== "member" || o.members_create_projects))).catch(() => [])
-      : [];
+    // §6.26: the owner, where the human is in an organisation that lets
+    // them create projects; otherwise not offered. A suspended organisation
+    // takes no new project.
+    const orgs = await M.api.get("/orgs").then((r) => r.items.filter((o) => !o.moderation && (o.my_role !== "member" || o.members_create_projects))).catch(() => []);
     const owner = field("project-owner", "Owner",
       h("select", { id: "project-owner" },
         h("option", { value: "" }, "@" + ctx.me.handle + " (you)"),
@@ -178,12 +171,10 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
-        if (knowsMemory) {
-          body.memory = { provider: memory.input.value };
-          // §6.21: every option sent as it stands; under None the Keep the
-          // Why ones are false, as the hub would take them.
-          body.setup = Object.fromEntries(options.map((o) => [o.key, o.box.checked && !(o.ktwOnly && body.memory.provider !== "keep-the-why")]));
-        }
+        body.memory = { provider: memory.input.value };
+        // §6.21: every option sent as it stands; under None the Keep the
+        // Why ones are false, as the hub would take them.
+        body.setup = Object.fromEntries(options.map((o) => [o.key, o.box.checked && !(o.ktwOnly && body.memory.provider !== "keep-the-why")]));
         body.policy = { preset: preset.input.value };
         status.busy("Creating…");
         submit.disabled = true;
@@ -192,7 +183,7 @@ window.Maity = window.Maity || {};
           status.done();
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
-          window.location.hash = ctx.projectLink(created.full_name, "members");
+          M.route.go(ctx.projectLink(created.full_name, "agents"));
         } catch (err) {
           submit.disabled = false;
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;
@@ -212,10 +203,8 @@ window.Maity = window.Maity || {};
     },
     orgs.length ? owner.nodes : null,
     name.nodes, slug.nodes, repository.nodes,
-    knowsMemory ? memory.nodes : null,
-    knowsMemory ? setupBox : null,
-    // What the hub chooses is said where its machine form could not be read.
-    fieldsRead ? null : h("p", { class: "hint" }, "Project memory: this hub's machine form could not be read, so its defaults apply."),
+    memory.nodes,
+    setupBox,
     preset.nodes);
     const submit = h("button", { type: "submit", class: "primary" }, "Create project");
     append(form, submit, status.el);
@@ -231,6 +220,6 @@ window.Maity = window.Maity || {};
     append(clear(root), h("div", { class: "empty-state" },
       h("h2", null, "No projects yet"),
       h("p", null, "You are not a member of any project. Create one; you become its owner and can then join agents to it."),
-      h("p", null, h("a", { class: "button", href: "#/new" }, "Create a project"))));
+      h("p", null, h("a", { class: "button", href: "/new" }, "Create a project"))));
   };
 })(window.Maity);

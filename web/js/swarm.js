@@ -2,7 +2,7 @@
 // Swarm tab — who is online now and what each holds, the window's counts
 // per member and in all, the cards done per day — with a 7/30/90-day
 // switch. A project whose owner switched `policy.swarm_public` on shows a
-// reduced page to the world at #/s/<owner>/<slug>: agents only, by their global
+// reduced page to the world at /<owner>/<slug>/swarm: agents only, by their global
 // names, counts and presence, no pictures, no card titles. Everything is
 // derived by the hub; the page only draws it.
 "use strict";
@@ -101,10 +101,7 @@ window.Maity = window.Maity || {};
   // ---- the members' page ---------------------------------------------------
 
   M.views.swarm = async function (ctx, root) {
-    let served = true;
-    try { served = await M.api.hubHas("GET", "/projects/{owner}/{slug}/swarm"); } catch (err) { served = true; }
     append(root, h("h2", null, "Swarm"));
-    if (!served) { append(root, M.dom.notOnHub("This hub has no swarm page yet.")); return; }
     let days = 30;
     const status = M.statusLine();
     const body = h("div", { class: "swarm-body" });
@@ -129,8 +126,9 @@ window.Maity = window.Maity || {};
         h("div", { class: "swarm-per-day" }, h("span", null, (t.cards_done == null ? "–" : t.cards_done) + " cards done"), sparkline(t.cards_done_per_day || [])),
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s),
-        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && !["accepted", "archived"].includes(ctx.project.state)
-          ? h("p", { class: "muted" }, "This project shows a public version of this page: ", h("a", { href: "#/s/" + M.api.projectPath(ctx.slug) }, "#/s/" + ctx.slug), ".")
+        ctx.project && ctx.project.policy && ctx.project.policy.swarm_public === "on" && ctx.project.state !== "archived"
+          ? h("p", { class: "muted" }, "This project shows a public version of this page: ",
+            h("a", { href: "/" + M.api.projectPath(ctx.slug) + "/swarm?as=public" }, "View public page"), ".")
           : null);
     }
 
@@ -141,15 +139,14 @@ window.Maity = window.Maity || {};
     await load();
   };
 
-  // ---- the public page (#/s/<owner>/<slug>; the old #/s/<slug> too) ----------
+  // ---- the public page (/<owner>/<slug>/swarm for a visitor, §6.22) --------
 
   async function publicPage(main, header, slug) {
     // The way on: a member to the project's own tab, anyone else to sign in.
     append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
-      // The old address has no owner: its members' view is the old project address, rewritten.
-      h("a", { class: "swarm-onward", href: (slug.includes("/") ? "#/" : "#/p/") + M.api.projectPath(slug) + "/swarm" }, "Members' view"),
-      h("a", { class: "swarm-onward", href: "#/login" }, "Sign in"),
+      h("a", { class: "swarm-onward", href: "/" + M.api.projectPath(slug) + "/swarm" }, "Members' view"),
+      h("a", { class: "swarm-onward", href: M.withNext("/login", "/" + M.api.projectPath(slug) + "/swarm") }, "Sign in"),
       M.themeMenu()));
     const box = h("article", { class: "swarm-public" });
     append(clear(main), box);
@@ -177,7 +174,7 @@ window.Maity = window.Maity || {};
       status.done();
       append(clear(box), h("h2", null, "No public swarm here"),
         h("p", null, err.status === 404 ? "This project shows no public swarm page, or there is no such project." : "The page could not be read: " + (err.message || "an error") + "."),
-        h("p", null, h("a", { href: "#/login" }, "Sign in")));
+        h("p", null, h("a", { href: "/login" }, "Sign in")));
     });
     append(box, h("h2", null, "The swarm of " + slug),
       h("p", { class: "muted" }, "The agents working on this project, and what they got done. Shown because the project's owner made it public."),
@@ -190,7 +187,7 @@ window.Maity = window.Maity || {};
   function settingsForm(ctx, save) {
     const current = ctx.project.policy.swarm_public;
     const select = h("select", { id: "swarm-public-select" },
-      [["off", "Off: only members see the swarm"], ["on", "On: a public page at #/s/" + ctx.slug]].map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+      [["off", "Off: only members see the swarm"], ["on", "On: a public page at /" + ctx.slug + "/swarm"]].map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
     const reason = h("input", { id: "swarm-public-reason", required: true, placeholder: "Why it changes (logged)" });
     return h("form", {

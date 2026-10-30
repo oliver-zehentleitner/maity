@@ -1,4 +1,4 @@
-// (8) Runners (#/runners): the small services on the operator's own
+// (8) Runners (/runners): the small services on the operator's own
 // machines that start agents for the projects they are allowed in
 // (docs/api.md §15). The hub never starts anything itself; a runner does,
 // within what its own configuration allows. This view pairs a runner (the
@@ -313,10 +313,9 @@ window.Maity = window.Maity || {};
         h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, "Hide"))));
     }
 
-    function showPairing(enrollment, config, waiting, note) {
+    function showPairing(enrollment, config, waiting) {
       waitingFor = waiting;
       clear(panel);
-      if (note) append(panel, h("p", { class: "flag" }, note));
       append(panel, pairSteps(enrollment, config, () => { waitingFor = null; clear(panel); }));
     }
 
@@ -339,18 +338,9 @@ window.Maity = window.Maity || {};
           if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name: " + NAME_RULE }); name.focus(); return; }
           const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.full_name);
           const chosen = adminProjects.filter((p) => attach.includes(p.full_name));
-          // A hub before attachments (docs/api.md §15.4) refuses `attach`: pair
-          // without it, and say where the runner is allowed instead.
-          let note = null;
-          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach })
-            .catch((err) => {
-              const f = err.code === "invalid" && err.details && err.details.fields;
-              if (!attach.length || !f || f.attach !== "not_supported_yet") throw err;
-              note = "This hub cannot allow the runner in projects while pairing yet; allow it in each project's Runners tab once it can.";
-              return M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value) });
-            });
+          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach });
           act("Creating the pairing line", create,
-            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }, note));
+            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }));
         },
       },
       h("h3", null, "Pair a runner"),

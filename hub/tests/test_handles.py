@@ -343,3 +343,23 @@ def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_
     nothing = owner.patch("/me", {})
     assert nothing.status_code == 400
     assert _fields(nothing) == {"handle": "required", "meat_proxy": "required"}
+
+
+def test_the_register_follows_a_rename_and_organisations_share_the_namespace(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    org = owner.post("/orgs", {"handle": "oz-team", "display_name": "Team"})
+    assert org.status_code == 201, org.text
+    # A human cannot take an organisation's handle, as a rename or as a first handle.
+    assert _fields(owner.patch("/me", {"handle": "oz-team"})) == {"handle": "taken"}
+    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    with migrated.connect() as conn:
+        register = dict(
+            conn.execute(select(t.handle_register.c.owner_id, t.handle_register.c.handle)).all()
+        )
+    assert register[owner.id] == "boss"
+    # The handle given up is an alias: an organisation cannot be created under it either.
+    clash = owner.post("/orgs", {"handle": "maintainer", "display_name": "Old"})
+    assert clash.status_code == 400 and _fields(clash) == {"handle": "taken"}
+    assert _fields(owner.patch("/me", {"handle": "admin"})) == {"handle": "reserved"}

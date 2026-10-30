@@ -1,4 +1,4 @@
-// A card opened (#/<owner>/<slug>/tasks/<id>): a panel beside the board on a
+// A card opened (/<owner>/<slug>/tasks/<id>): a panel beside the board on a
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
@@ -90,7 +90,7 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
           h("div", { class: "md" }, M.markdown(n.body, where)))))
         : h("p", { class: "muted" }, "No open notes."));
-      const closed = ctx.project && ["accepted", "archived"].includes(ctx.project.state);
+      const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: "A finding, a missing case, a pointer (Markdown)" }));
       const status = M.statusLine();
@@ -136,10 +136,8 @@ window.Maity = window.Maity || {};
       }
     }
 
-    // The parts the hub may not serve yet are left out quietly (§1.6).
-    const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
-    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
-    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
+    notes();
+    history();
 
     return {
       el: box,

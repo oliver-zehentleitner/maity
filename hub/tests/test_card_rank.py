@@ -103,11 +103,11 @@ def test_who_may_move(owner: flow.Human, make_client: ClientFactory) -> None:
     )
 
 
-def test_a_closed_project_refuses_and_a_freeze_does_not(owner: flow.Human) -> None:
+def test_a_closed_project_refuses_and_a_review_does_not(owner: flow.Human) -> None:
     a, b = task(owner)["id"], task(owner)["id"]
-    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     assert move(owner, b, to="top").status_code == 200  # no reason needed: no status changes
-    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     answer = move(owner, a, to="top")
     assert (answer.status_code, answer.headers["Maity-Error"]) == (409, "project_closed")
 

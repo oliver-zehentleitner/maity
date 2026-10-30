@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import (
     clock,
     paging,
+    paths,
     registration,
     registration_accounts,
     registration_mail,
@@ -64,7 +65,7 @@ def _environment(request: Request) -> registration.RegistrationEnvironment:
 def _resolved(conn: Connection, hub: Any) -> registration.Resolved:
     found = hub.registration if hub.registration is not None else None
     env = found or registration.RegistrationEnvironment()
-    return registration.resolve(conn, env, registration.mail_ready(conn, hub))
+    return registration.resolve(conn, env, registration.mail_ready(conn, hub), hub.public_url)
 
 
 def _closed() -> ApiError:
@@ -133,7 +134,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         origin.address,
         request.headers.get("user-agent"),
         request.headers.get("accept-language"),
-        registration.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
+        paths.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 

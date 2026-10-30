@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, mentions, namespace
+from maity_hub import clock, mentions, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 
@@ -85,10 +85,17 @@ def lock(conn: Connection, scope: str, handle: str) -> None:
 
 
 def holder(conn: Connection, scope: str, handle: str) -> str | None:
-    """The id that has `handle` in `scope` as its handle or as an alias; `"placement"` while
+    """The id that has `handle` in `scope` as its handle or as an alias (for the humans' scope
+    an organisation's id too: they share it, §6.26); `"placement"` while
     an active placement will create a profile of the owner with it (§15.5); else `None`."""
     if scope == HUMANS:
-        current = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+        # The register holds the current handle of every human and organisation, a deleted
+        # one's included (§6.26); the account row covers a human the register lacks.
+        current = conn.execute(
+            select(t.handle_register.c.owner_id).where(t.handle_register.c.handle == handle)
+        ).scalar()
+        if current is None:
+            current = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
     else:
         current = conn.execute(
             select(t.agent_profile.c.id).where(
@@ -131,10 +138,11 @@ def ensure_free(
     field: str = "handle",
 ) -> None:
     """`invalid` / `taken` when `handle` is the handle or an alias of another id in the scope
-    (or a human handle the dashboard keeps, `reserved`). Takes the handle's lock first, so the
-    answer holds until the transaction ends. `exclude`: the id that may have it (itself)."""
+    (or a human handle the hub or the dashboard keeps, `reserved`, §16.11). Takes the handle's
+    lock first, so the answer holds until the transaction ends. `exclude`: the id that may have
+    it (itself)."""
     scope = scope_of(owner_id)
-    if owner_id is None and handle in namespace.DASHBOARD_WORDS:
+    if owner_id is None and handle in paths.RESERVED_FIRST:
         raise invalid({field: "reserved"})
     lock(conn, scope, handle)
     taken = holder(conn, scope, handle)
@@ -209,6 +217,16 @@ def rename(
             )
         )
     conn.execute(update(table).where(table.c.id == subject_id).values(handle=handle))
+    if owner_id is None:  # the register follows the account's current handle (§6.26)
+        try:
+            with conn.begin_nested():
+                conn.execute(
+                    update(t.handle_register)
+                    .where(t.handle_register.c.owner_id == subject_id)
+                    .values(handle=handle)
+                )
+        except IntegrityError:  # an organisation or an account took it between check and update
+            raise invalid({"handle": "taken"}) from None
     conn.execute(
         insert(t.handle_alias).values(
             human_id=subject_id if owner_id is None else None,

@@ -3,8 +3,8 @@
 `handle_alias` keeps the handles an id gave up, `handle_change` counts the renames for the limit
 of three in 24 hours, `handle_lock` is the per-handle lock a rename or a creation takes.
 
-Revision ID: 0072
-Revises: 0081
+Revision ID: 0106
+Revises: 0101
 Create Date: 2026-10-28
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "0072"
-down_revision: str | None = "0081"
+revision: str = "0106"
+down_revision: str | None = "0101"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -117,15 +117,13 @@ window.Maity = window.Maity || {};
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
-  function conversations(ctx, currentId, groupsServed) {
+  function conversations(ctx, currentId) {
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
     let groups = [];
-    const none = h("p", { class: "muted" }, groupsServed
-      ? "You own no agents in this project, and are in no group chat."
-      : "You own no agents in this project.");
+    const none = h("p", { class: "muted" }, "You own no agents in this project, and are in no group chat.");
     const draw = () => {
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
@@ -150,8 +148,7 @@ window.Maity = window.Maity || {};
     ]).then(([list, members]) => {
       byAgent = {};
       groups = [];
-      // A hub before group chats lists direct items without a kind.
-      list.items.forEach((c) => { if ((c.kind || "direct") === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
+      list.items.forEach((c) => { if (c.kind === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
       if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
       draw();
       status.done();
@@ -172,18 +169,15 @@ window.Maity = window.Maity || {};
     };
     // A closed project takes no new group chat (§9.2).
     // nor one read along from outside the project.
-    const closedProject = ctx.outsider || ["accepted", "archived"].includes(ctx.project.state);
+    const closedProject = ctx.outsider || ctx.project.state === "archived";
     const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
       h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
         // A human guest creates no group chat (§2.3, §9.2).
-        closedProject || !groupsServed || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
+        closedProject || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
         ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, "Message the project")),
-      none, ul,
-      // Not an empty-looking list: a hub before group chats lists none.
-      groupsServed ? null : h("p", { class: "muted no-groups" }, "This hub has no group chats yet."),
-      status.el);
+      none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
   }
@@ -410,8 +404,7 @@ window.Maity = window.Maity || {};
   M.views.chat = async function (ctx, root, args, given) {
     const mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
-    const groupsServed = await M.groupChat.served();
-    const list = (given && given.list) || conversations(ctx, args[0] || null, groupsServed);
+    const list = (given && given.list) || conversations(ctx, args[0] || null);
     const layout = h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
     append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
@@ -422,8 +415,7 @@ window.Maity = window.Maity || {};
     }
     // A new group chat, or a group chat the hub lists (§9.2, js/group-chat.js).
     if (args[0] === "new") {
-      if (groupsServed) M.groupChat.create(ctx, layout, list);
-      else append(layout, h("p", { class: "chat-none muted" }, "This hub has no group chats yet: there is none to create."));
+      M.groupChat.create(ctx, layout, list);
       await list.refresh(false);
       return;
     }
@@ -433,9 +425,7 @@ window.Maity = window.Maity || {};
       if (group) { await M.groupChat.open(ctx, root, layout, list, group, M.chatParts); return; }
     }
     if (!agent) {
-      // A group chat's link on a hub without group chats is no error of the reader's.
-      if (args[0] && !groupsServed && /^cnv-/.test(args[0])) append(layout, M.dom.notOnHub("This hub has no group chats yet, so this link cannot open here."));
-      else if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
+      if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
       else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
       await list.refresh(false);
       return;

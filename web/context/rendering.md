@@ -105,12 +105,12 @@ picture from a third-party avatar service — it would send member ids out.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** messages need tables, images or nested lists, or another view wants Markdown beyond what the renderer covers
+**Revisit when:** messages need tables or images, or another view wants Markdown beyond what the renderer covers
 
 A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
 with their line breaks, headings (a line of strong text, not a page
-heading), lists (a numbered one keeps its first number; nested lists are
-flattened), quotes (nested at most eight deep, deeper shown as written,
+heading), lists (a numbered one keeps its first number; nested by
+indentation, bc7078b0), quotes (nested at most eight deep, deeper shown as written,
 so a message of thousands of `>` cannot exhaust the stack), fenced code
 (backticks or tildes, up to three spaces in, any info string whose first
 word is the language) with a Copy button and a warning when the code
@@ -131,6 +131,36 @@ sanitiser has to be trusted.
 sanitiser — a dependency from a CDN, and the safety of the page would
 rest on the sanitiser's completeness. Plain text with `pre` wrapping, as
 before — code and lists from agents were unreadable.
+
+## Inline code copies itself on a click; no copy icon beside it
+
+**Id:** e544d587-2aa0-4658-8771-c75e57b29422
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-rdx6gaqveygx, 2026-10-29 (code from chat messages copied with one click: blocks with a button, inline code by a click or an icon, "Copied" as feedback); the dashboard's implementation, 2026-10-29
+**Revisit when:** people report copying inline code they only meant to select, or a view needs inline code that is not copied
+
+Inline code in rendered Markdown is a button (`role="button"`, focusable,
+named "Copy <code>"): a click, Enter or Space puts its text on the
+clipboard, and "Copied" stands beside it for two seconds as a status. A
+click that ends a selection of text inside the code copies nothing, so
+selecting part of it still works. Only a selection inside the code
+itself stops the copy, and only on a click: a selection elsewhere on the
+page must not swallow Enter or Space on a focused code span, which would
+copy nothing and say nothing. Fenced blocks keep their Copy button, which says
+"Copied" the same way. Both use one clipboard helper with one fallback
+("Copy failed — select the text").
+
+**Reason:** inline code in an agent's message is mostly a command, a
+path or an id, the things one copies; a click on the code itself is the
+shortest way, and it adds nothing to the line.
+
+**Rejected alternative:** a copy icon after every inline code: a button
+per span, which crowds a sentence with several commands and doubles what
+a screen reader reads. Copying on a double click: it is the browser's own gesture for
+selecting a word, so selecting part of a command and copying it would
+fight each other.
 
 ## A picture is uploaded on the account, checked as the hub checks it, with no preview of the chosen file
 
@@ -249,14 +279,14 @@ back to following the system once a choice was made.
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
 exact shape, and `#n`, into links in every text the dashboard renders
-outside code: the card on the board (`#/p/<slug>/tasks/<id>`, a route
+outside code (a code span that is one id alone excepted, 50234f88): the card on the board (`/<owner>/<slug>/tasks/<id>`, a route
 that is the board with the card marked), the request in the inbox
-(`#/p/<slug>/inbox/<id>`), the member in Members, and the repository's
+(`/<owner>/<slug>/inbox/<id>`), the member in Members, and the repository's
 `/issues/<n>` on GitHub. Nothing is looked up; the page an id opens says
 when it holds no such thing. An inbox entry's title sits inside its
 button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
-project the human is not in, a chat read along from outside, `#/observe`)
+project the human is not in, a chat read along from outside, `/observe`)
 links none. Known false positive, accepted: a three-digit hex colour
 (`#123`) links as a number.
 
@@ -273,6 +303,70 @@ the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
 button: it is the entry's name for the keyboard and for the list.
+
+## Nested lists nest by indentation: further in than the item before opens a list inside it
+
+**Id:** bc7078b0-df41-4068-a4e5-2fb2efeae898
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's report that nested lists in a chat stood at their parent's level (tsk-gx88t3myb81q), relayed by the coordinator, 2026-10-30; the rule's details are the implementer's, 2026-10-30
+**Revisit when:** a list item needs more than its one line (a paragraph or code inside an item), or people report lists nesting where they did not mean them to
+
+`js/markdown.js` reads a list item's indent (a tab counts four spaces).
+An item indented further than its list's first opens a list inside the
+item before it, numbered or not, whatever the outer one is; an item
+indented no further than the list around ends the inner list; in between
+it is one more item of the inner list. An item of the other kind at the
+list's own indent ends the list, as before. Lists nest at most eight
+deep, as quotes do; deeper items stay in the eighth list, so no message
+can exhaust the stack.
+
+**Reason:** a list with sub-points is how agents structure a report; drawn
+flat, the sub-points read as points of their own.
+
+**Rejected alternative:** CommonMark's rule that a child starts at its
+parent's text column: two spaces under `1. ` is how many people and
+agents indent, and it would stay flat there. Keeping lists flat (the
+entry above, until now): the maintainer reported it as a fault.
+
+## A code span that is one id alone links like the id in text; a project's full name before an id links into that project
+
+**Id:** 50234f88-3120-47e7-8d20-8548d7ebe087
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's card tsk-9zqb4c3pxyac (a card id in text should open the card, not be copied), 2026-10-30; the coordinator's proposal on it (a code span of only an id links, code with more stays code), 2026-10-30; the review of #701 (a reserved first word as owner built a hub path and stopped the view), 2026-10-30; docs/api.md §6.25 (`<owner>/<slug>/<id>`); the implementer's choices for other projects and unknown ids, 2026-10-30
+**Revisit when:** the hub serves a card by its id alone, without its project, or readers report a lone-id code span they meant to copy
+
+Agents write ids in backticks. A code span whose whole text, spaces
+trimmed, is one id with somewhere to open becomes the id's link, drawn
+in the code face (`js/ids.js`, `only()`); a span with anything more,
+such as a command naming a card, stays code that copies itself, and
+fenced code never links. A card or request written with a project's full
+name before it (`owner/slug/tsk-…`) links into that project, its text as
+written; a bare id links into the text's own project, as before. A
+prefix is a project only where its owner has a handle's shape and is
+none of the first words the dashboard or the hub keeps for itself
+(`api`, `join`, `impressum`, `admin`, … — `OWN_WORDS` in `js/app.js`),
+and the link is only ever a path of the dashboard (`M.route.isRoute`);
+otherwise the id stays text, so a title like `api/v1/tsk-…` can never
+build a hub path that stops the view. A lone `#12` in backticks stays
+code. Like every id, one with a full name links only where the text has
+a project of its own; read along from outside, nothing does. Nothing
+is looked up for any of them (3274d199): an id of another project or
+none opens a page that says so.
+
+**Reason:** a code span of only an id is meant as a reference almost
+always; the reader wants the card. The full name is the one form that
+says which project a card is in, and the hub keeps every project at its
+full name's path.
+
+**Rejected alternative:** linking ids inside any code span: a command to
+copy would break into a link and pieces. Leaving every code span plain:
+the card asks for the link. Looking an id up to find its project: there
+is no route for a card by id alone, and one read per id would multiply
+with the text.
 
 ## A contract's section is read when its card's panel is opened, shown as untrusted text, and never kept past a failed read
 
@@ -306,16 +400,17 @@ already turns every piece into a text node.
 
 **Id:** b70e4ab6-5c55-47ba-96d7-d1b941157f63
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 528af98b-4c9b-44a5-98c8-ababb59e7ab9
 **Evidence:** inferred
 **Source:** docs/api.md §16.7 (the landing page can never stand between a person and sign-in; the card-body renderer extended by the dashboard-route link alone; title and cta label as text), the card tsk-gqcq7kwkxpgx; the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub serves images to visitors, or the designer reworks the page
 
 Only the root without a session asks `GET /landing`; every other route
-without a session, and `#/login` always, is the login page. An answer
+without a session, and `/login` always, is the login page. An answer
 that is off, absent or a failure shows the login page and no error. The
 Markdown goes through the chat's renderer, in which a module flag set by
-`M.markdown.withRoutes` lets `[text](/#/…)` become an in-page link for
+`M.markdown.withRoutes` lets `[text](/…)` become an in-page link for
 this one call; the chat itself still shows such a link as written.
 
 **Reason:** a visitor who came to sign in must never meet an error or a
@@ -329,13 +424,70 @@ the one place the contract allows it.
 renderers would drift from the list the hub validates. Showing an error
 on a failed landing read: it would stand between the person and sign-in.
 
-## A hub whose attachment store is off is treated like a hub without attachments
+## The landing page and the legal pages are edited in the admin area and rendered by the hub alone
+
+**Id:** 528af98b-4c9b-44a5-98c8-ababb59e7ab9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29; the coordinator's review of #680 (the hub never sends `too_long`), 2026-10-30
+**Revisit when:** an instance wants the landing page drawn by the dashboard again, or a draft needs a preview without a tab of its own
+
+The dashboard draws neither page for a visitor: without a session the
+root is the hub's static page or, with the page off, the login page, and
+the dashboard never asks `GET /landing`. The login and registration
+pages link to the legal pages that are set, from `GET /legal`. In the
+admin area **Landing page** edits the setting per language: the page's
+title and description, its sections of the contract's types in their
+order (add, move, show or hide, remove; items within a section the same
+way; `activity` and `collab` kept as they are, never offered), and the
+footer for all languages. A save sends the whole draft in one `PATCH`;
+the hub's refusal names fields by their path
+(`pages.de.sections.2.items.0.title`), and each is said at the field of
+that path, a path without a field in the status line. A field the
+hub refuses as `invalid` with a limit reads "empty, or longer than
+allowed (…)": the hub answers `invalid` for both, never `too_long`, so
+the editor cannot tell them apart; naming only the limit was rejected
+because it misleads at an empty field, and a title with a tab or a line
+break is `invalid` too, which the wording does not name. **Legal pages**
+edits each page per language and saves one page per call, which the hub
+keeps as a new version; a page is taken down with `null`. **View as a
+visitor** opens the saved landing page at `/?as=public` in a tab of its
+own, offered only while the page is on. **Preview the draft** posts the
+draft (`POST …/landing/preview`, `…/legal/preview?page=`), which the hub
+checks as a save and keeps for 10 minutes, and opens the `url` it answers
+in a new tab, opened at the click so no pop-up blocker stops it; the
+address is taken only when it is the hub's own preview path.
+The renderer's mode for path links (`M.markdown.withRoutes`) went with
+the dashboard's landing page.
+
+**Reason:** one renderer for visitors, the hub's, so what the editor
+saves is what a crawler and a person see, without a script; the field
+paths let the editor say a refusal where it belongs, however deep in a
+section.
+
+**Rejected alternative:** a preview drawn by the dashboard's own
+renderer: it would look like the hub's page and drift from it. The
+hub's HTML fetched and shown in a frame (`srcdoc`) or from a blob URL:
+it would run under the dashboard's policy, not the page's, the reason
+pictures are never previewed either (3ec853f0). Saving a
+section or a language at a time: the contract replaces the fields it
+names, and one draft keeps the order and the default language
+consistent across a save. Keeping the Markdown editor beside the
+sections: two forms of the same page (the alpha rule).
+
+The editor depends on the hub's sections shape and legal pages (#631)
+and on the preview routes and the root's `?as=public` (#628's contract
+and its hub change); until those are on main, its saves are refused
+and its preview has no address, so it is merged after them.
+
+## A hub whose attachment store is off hides Attach files and is not asked again
 
 **Id:** 831e6402-6484-42a6-971a-0cafd0e7ecb4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's
+**Source:** implementation session, 2026-10-27 (the contract change #464: without `MAITY_ATTACHMENT_DIR` every attachment call answers `409 attachments_not_configured`); the dashboard's reading of it is the implementer's; the coordinator's ruling on tsk-gn9w6mwazfyd (alpha rule: the 404/405 branch removed), 2026-10-30
 **Revisit when:** an operator can switch the store on without reloading the page, or the hub tells the dashboard which parts it has before it asks
 **See:** rendering.md#attachments-an-image-is-shown-from-the-hubs-own-path-every-other-file-is-only-ever-a-download-link-and-nothing-is-previewed-before-it-is-sent — 52e88bfb-69a5-4f6d-95e8-a2a3dd8acdd7 — as of 2026-10-27
 
@@ -345,9 +497,39 @@ routes but no store answers `409` with the code `attachments_not_configured`
 to the same calls, and the e2e run counted that as a problem on a page that
 does nothing wrong. The same check now covers that code, so the Attach files
 part is hidden and the listing of waiting files is not asked for again.
+Since 2026-10-30 only that `409` counts: the `404`/`405` reading for a hub
+without the routes was a compatibility branch for hubs before #464, which
+the alpha rule removes, and such an answer is now an error like anywhere
+else.
 
 **Reason:** to the person at the page the two hubs are the same: no files can
 be sent. The dashboard should not report an operator's choice as a fault.
 
 **Rejected alternative:** switching the store on in the e2e run only: the page
 would still treat an unconfigured hub as broken in production.
+
+## A link in one's own chat bubble takes the text's colour, underlined
+
+**Id:** bf8a5722-3f5f-4265-a89b-5ed34622aded
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the e2e's accessibility check (axe-core, color-contrast) on the first real attachment upload, card tsk-8h6yzp4f8jqg, 2026-10-30: the accent #1a66d9 on `--out-bg` #dbe9ff at 4.33:1, below 4.5:1, and below it in the dark scheme too; the review of #673
+**Revisit when:** `--accent` or `--out-bg` change, or own messages get a background of their own per scheme
+
+`.msg.out a` takes `var(--text)` and stays underlined: any link in one's
+own bubble — an attachment's, a Markdown link, an id's link — reads
+13.2:1 on `--out-bg` in the light scheme and 10.9:1 in the dark one.
+Links everywhere else keep the accent.
+
+**Reason:** the bubble's tint is what makes one's own messages stand
+apart, and the accent fell under WCAG AA on it in both schemes. The
+underline keeps a link recognisable without its colour.
+
+**Rejected alternative:** a darker accent for every link: it would
+change every link and button of the dashboard for one background, and
+the accent's own ratios on `--bg` and `--surface` were measured and
+documented. A link colour of the bubble's own per scheme: another token
+to keep in step with both backgrounds, for what the text's colour
+already does with room to spare.
+

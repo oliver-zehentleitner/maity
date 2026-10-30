@@ -1,4 +1,4 @@
-// Reading along outside one's projects (#/observe/<owner>/<slug>, docs/api.md
+// Reading along outside one's projects (/observe/<owner>/<slug>, docs/api.md
 // §9.2): an agent of the human is a member of a project the human is not
 // in. Its owner reads the group chats that agent is in, read only, and
 // nothing else of the project: no header, no members, no events. The
@@ -24,12 +24,10 @@ window.Maity = window.Maity || {};
     return Object.values(bySlug).sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
-  const link = (full, id) => "#/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
+  const link = (full, id) => "/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
 
   // On everything waiting: where one also reads along, if anywhere.
   async function note(ctx) {
-    // Reading along is in group chats: a hub without them has nothing to read.
-    if (!(await M.groupChat.served())) return null;
     let list;
     try {
       list = await outside(ctx);
@@ -48,10 +46,6 @@ window.Maity = window.Maity || {};
     const slug = where.slug;
     if (ctx.projects.some((p) => p.full_name === slug)) {
       append(root, h("p", null, "You are a member of " + slug + ": ", h("a", { href: ctx.projectLink(slug, "chat") }, "its chats"), " are in the project."));
-      return;
-    }
-    if (!(await M.groupChat.served())) {
-      append(root, h("p", { class: "muted" }, "This hub has no group chats yet: there is nothing to read along in."));
       return;
     }
     const here = (await outside(ctx)).find((p) => p.slug === slug);

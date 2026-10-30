@@ -14,7 +14,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError, invalid
 
-KINDS = ("task", "maintenance_round", "release", "contract")
+KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 CLOSED = ("done", "cancelled")
@@ -88,10 +88,7 @@ def refuse_same_team_review(mine: Membership, card: Any) -> None:
     the reporting team's other instances do not move it out of review (§6.18)."""
     if mine.instance is None or mine.row.review_within_team:
         return
-    report = card.report or {}
-    reporters = card.reported_instances or [
-        {"member_id": report.get("reported_by"), "instance": report.get("reported_instance")}
-    ]
+    reporters = card.reported_instances or []
     # Any other instance of the caller's team that ever reported the card (§6.18).
     others = [
         r["instance"]

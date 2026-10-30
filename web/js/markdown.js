@@ -13,6 +13,37 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, safeUrl } = M.dom;
 
+  // The clipboard, and what is said after it: "Copied", or how to copy by hand.
+  async function copied(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return "Copied";
+    } catch (err) {
+      return "Copy failed — select the text";
+    }
+  }
+
+  // Inline code copies itself on a click, or Enter or Space (the maintainer,
+  // tsk-rdx6gaqveygx); a click that ends a selection inside it copies nothing.
+  // "Copied" stands beside it for two seconds, a status for a screen reader.
+  function inlineCode(text) {
+    const said = h("span", { class: "md-copied", role: "status" });
+    const copy = async () => {
+      said.textContent = await copied(text);
+      window.setTimeout(() => { said.textContent = ""; }, 2000);
+    };
+    // Only a click that ends a selection inside this code is a selection,
+    // not a copy; one elsewhere on the page never swallows a key.
+    const selectedHere = () => {
+      const sel = window.getSelection ? window.getSelection() : null;
+      return !!sel && !sel.isCollapsed && String(sel) !== "" && typeof sel.containsNode === "function" && sel.containsNode(code, true);
+    };
+    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: "Click to copy", "aria-label": "Copy " + text,
+      onclick: () => { if (!selectedHere()) copy(); },
+      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } } }, text);
+    return [code, said];
+  }
+
   // Inline: code spans first (a run of n backticks to the next run of
   // exactly n), then links, autolinks and emphasis in the text between.
   function inline(text, at) {
@@ -25,7 +56,10 @@ window.Maity = window.Maity || {};
       if (close < 0) continue;
       out.push(...spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
-      out.push(h("code", null, inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner));
+      const code = inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner;
+      const linked = at && M.ids.only(code, at);
+      if (linked) out.push(linked);
+      else out.push(...inlineCode(code));
       from = runs[close].index + runs[close][0].length;
       k = close;
     }
@@ -33,15 +67,10 @@ window.Maity = window.Maity || {};
     return out;
   }
 
-  // A dashboard route as a link target (/#/…), for the landing page only
-  // (docs/api.md §16.7: the card-body renderer extended by that alone);
-  // set while M.markdown.withRoutes renders.
-  let routes = false;
-  const ROUTE = /^\/#\/[A-Za-z0-9._~%\/?=&-]*$/;
-  const routeHref = (target) => (routes && ROUTE.test(target) ? target.slice(1) : null);
-
   // [text](https://…), a bare https://… and **strong**, *em* or _em_.
-  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+|\/#\/[^\s)]*)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
+  // A path as a link target was the dashboard's landing page's alone; the
+  // hub renders that page now (§16.7), so here it stays text.
+  const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text, where) {
     const out = [];
     const plain = (s) => (where ? M.ids.link(s, where) : [s]);
@@ -49,12 +78,11 @@ window.Maity = window.Maity || {};
     for (const m of text.matchAll(TOKEN)) {
       if (m.index > at) out.push(...plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
-        const url = safeUrl(m[2]) || routeHref(m[2]);
+        const url = safeUrl(m[2]);
         // A text that looks like another address says where the link goes.
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
-        // A route stays in the page; an https link opens apart, without an opener.
-        out.push(!url ? m[0] : url.startsWith("#") ? h("a", { href: url }, m[1])
-          : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
+        // An https link opens apart, without an opener.
+        out.push(!url ? m[0] : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
         if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
@@ -91,12 +119,7 @@ window.Maity = window.Maity || {};
       class: "small md-copy",
       "aria-label": "Copy " + name,
       onclick: async () => {
-        try {
-          await navigator.clipboard.writeText(code);
-          copy.textContent = "Copied";
-        } catch (err) {
-          copy.textContent = "Copy failed — select the text";
-        }
+        copy.textContent = await copied(code);
         window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
       },
     }, "Copy");
@@ -111,6 +134,41 @@ window.Maity = window.Maity || {};
 
   // Quotes nest at most this deep; deeper is shown as written.
   const MAX_DEPTH = 8;
+
+  // A list item: its indent, its marker, its text.
+  const ITEM = /^([ \t]*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+  const indentOf = (s) => s.replace(/\t/g, "    ").length;
+
+  // A list from line `i`, and the line after it. An item indented further
+  // than the list's first opens a list inside the item before it, of
+  // either kind; one indented no further than the list around this one
+  // ends it, as does an item of the other kind not indented further. In
+  // between it is one more item here, as in CommonMark. Lists nest at most
+  // MAX_DEPTH deep; deeper items stay in the deepest list.
+  function list(all, i, at, level, outer) {
+    const head = ITEM.exec(all[i]);
+    const base = indentOf(head[1]);
+    const ordered = /\d/.test(head[2]);
+    const items = [];
+    while (i < all.length) {
+      const m = ITEM.exec(all[i]);
+      if (!m) break;
+      const indent = indentOf(m[1]);
+      if (indent <= outer) break;
+      if (indent > base && items.length && level + 1 < MAX_DEPTH) {
+        const [inner, next] = list(all, i, at, level + 1, base);
+        items[items.length - 1].push(inner);
+        i = next;
+        continue;
+      }
+      if (indent <= base && /\d/.test(m[2]) !== ordered) break;
+      items.push(inline(m[3], at));
+      i += 1;
+    }
+    // A numbered list starts where its first item does.
+    const first = ordered ? parseInt(head[2], 10) : 1;
+    return [h(ordered ? "ol" : "ul", ordered && first !== 1 ? { start: String(first) } : null, items.map((x) => h("li", null, x))), i];
+  }
 
   // Blocks, line by line. `at`: the project the text belongs to
   // ({slug, repository}, M.ids.where), for its ids as links; none, none.
@@ -155,20 +213,11 @@ window.Maity = window.Maity || {};
           : h("p", { class: "md-deep" }, lines(quoted, at)));
         continue;
       }
-      const item = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(line);
-      if (item) {
+      if (ITEM.test(line)) {
         flush();
-        const ordered = /\d/.test(item[2]);
-        const items = [];
-        while (i < all.length) {
-          const m = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/.exec(all[i]);
-          if (!m || /\d/.test(m[2]) !== ordered) break;
-          items.push(h("li", null, inline(m[3], at)));
-          i += 1;
-        }
-        // A numbered list starts where its first item does.
-        const first = ordered ? parseInt(item[2], 10) : 1;
-        out.push(h(ordered ? "ol" : "ul", ordered && first !== 1 ? { start: String(first) } : null, items));
+        const [node, next] = list(all, i, at, 0, -1);
+        out.push(node);
+        i = next;
         continue;
       }
       if (!line.trim()) { flush(); i += 1; continue; }
@@ -177,18 +226,5 @@ window.Maity = window.Maity || {};
     }
     flush();
     return out;
-  };
-
-  // The same, with dashboard routes as links: the landing page's renderer.
-  // The one rule for a dashboard route as a link target, for the landing
-  // page's button too (js/landing.js).
-  M.markdown.ROUTE = ROUTE;
-  M.markdown.withRoutes = function (source) {
-    routes = true;
-    try {
-      return M.markdown(source);
-    } finally {
-      routes = false;
-    }
   };
 })(window.Maity);

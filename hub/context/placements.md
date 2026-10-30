@@ -134,6 +134,27 @@ tell the owner the truth at any time.
   The agent could not park its work: its next call, the checkpoint
   included, would already be refused.
 
+## `runner_revoke.due` reads two kinds of credential row, so its `getattr` stays
+
+**Id:** 8fc1bde8-a4d6-48ce-8da5-5339f81f6e5c
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up survey of the card tsk-wgg2t8ngx9xg and its review; `test_runner_revoke.py`
+**Revisit when:** a runner credential gets its own check of a due revocation, or `revoke_due_at` moves to a table both kinds share
+
+`runner_revoke.due(row)` is called with an agent credential's row (`revoke_agent`'s path) and with a
+runner credential's row (`auth/caller.py`, on every call a runner makes). Only the first has the
+column `revoke_due_at`, so `getattr(row, "revoke_due_at", None)` is not a fallback for an old schema
+and is not dead defensive code; it is the one way the two callers share the check.
+
+**Reason:** a survey for leftovers of older schemas found the `getattr`, and a first attempt to read the
+attribute directly broke the runner's hello with a 500, which `test_runner_revoke.py` caught.
+
+**Rejected alternatives:**
+- Reading `row.revoke_due_at` directly: the runner credential's row has no such attribute.
+- Two functions, one per row type: it would repeat the same three-line check for no gain.
+
 ## A pickup's join creates a new profile at the exchange, and the pickup stores nothing to replay
 
 **Id:** cf956bec-8b32-4ae3-8ba6-73e3afe33e89

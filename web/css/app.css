@@ -14,7 +14,8 @@
   --high: #b42318;
   --normal: #8a5a00;
   --low: #4a5a6a;
-  --ok: #1a7f37;
+  --ok: #177633; /* 5.33:1 on --bg, 5.71:1 on --surface, 5.0:1 on --surface-2 (WCAG AA, a panel's status line) */
+  --plan: #7a45d6; /* the plan state: 5.36:1 on --bg, 5.75:1 on --surface (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
   --flag-bg: #fff6dd;
@@ -50,6 +51,7 @@
     --normal: #e3b341;
     --low: #9aa4ae;
     --ok: #3fb950;
+    --plan: #b392f0;
     --warn: #d29922;
     --bad: #ff7b72;
     --flag-bg: #2d2610;
@@ -75,6 +77,7 @@
   --normal: #e3b341;
   --low: #9aa4ae;
   --ok: #3fb950;
+  --plan: #b392f0;
   --warn: #d29922;
   --bad: #ff7b72;
   --flag-bg: #2d2610;
@@ -210,10 +213,12 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
   white-space: nowrap;
 }
 
+.state-plan { color: var(--plan); }
 .state-build { color: var(--accent); }
-.state-freeze, .state-fixes-only { color: var(--warn); }
-.state-accepted { color: var(--ok); }
+.state-review { color: var(--warn); }
+.state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
+.state.released { color: var(--text); border-style: double; border-width: 3px; }
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -259,9 +264,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
 
+.dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
-.dot.state-dot-freeze, .dot.state-dot-fixes-only { background: var(--warn); }
-.dot.state-dot-accepted { background: var(--ok); }
+.dot.state-dot-review { background: var(--warn); }
+.dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
@@ -726,6 +732,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md ul, .md ol { margin: 4px 0 6px; padding-inline-start: 20px; }
 .md blockquote { margin: 4px 0 6px; padding-inline-start: 10px; border-inline-start: 3px solid var(--border); color: var(--muted); }
 .md code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
+.md code.md-inline-copy { cursor: copy; }
+.md code.md-inline-copy:hover { outline: 1px solid var(--border); }
+.md-copied:not(:empty) { margin-inline-start: 4px; font-size: 0.75rem; color: var(--ok); }
 .md .md-h { margin: 6px 0 4px; }
 .md .md-h1 { font-size: 1.05rem; }
 .md .md-h2 { font-size: 1rem; }
@@ -758,6 +767,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
 .jump-latest[hidden] { display: none; }
 .msg.out { justify-self: end; background: var(--out-bg); }
+/* A link in one's own bubble: the accent falls under 4.5:1 on --out-bg (4.33 light),
+   so it takes the text's colour, underlined to stay a link. */
+.msg.out a { color: var(--text); text-decoration: underline; }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
@@ -891,13 +903,14 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
 /* The project at a glance (js/overview.js), as the designer laid it out
-   (#6484): what needs you, then the state, then the facts, in three rows;
+   (#6484): what needs you, then the state, then the facts, in two rows
+   (Project and README badge under Team, beside Latest reports);
    on a phone one column in the same order. */
 .overview { display: grid; gap: 16px; }
 .overview-row { display: grid; gap: 16px; min-width: 0; }
-.overview-row-1, .overview-row-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.overview-row-1 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
-.overview-team { flex: 2 1 480px; }
+.overview-stack { flex: 2 1 480px; display: grid; gap: 16px; min-width: 0; }
 .overview-latest { flex: 1 1 300px; }
 .overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
 .overview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
@@ -1347,3 +1360,57 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Another instance's state directory, said before its join line (js/join.js). */
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }
+
+/* The landing page and legal pages editor (js/landing.js). */
+.lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
+.lp-section.kept { opacity: 0.8; }
+.lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lp-section-title { margin: 0; flex: 1 1 auto; }
+.lp-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.lp-tabs button[aria-pressed="true"] { border-color: var(--accent); }
+.lp-field { margin: 6px 0; }
+.lg-page { margin-top: 16px; }
+.legal-links { margin-top: 16px; text-align: center; }
+/* All notifications: unread in bold with a dot, as on the bell. */
+.waiting-items li.unread a { font-weight: 600; }
+.waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
+
+/* Your agents (js/agents-page.js). */
+.agent-cards, .agent-memberships { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.agent-memberships { gap: 4px; margin: 8px 0; }
+.agent-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow-wrap: anywhere; }
+.agent-card.wanted { border-color: var(--accent); }
+.agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.agent-card-head h3 { margin: 0; }
+.agent-settings { margin-top: 8px; }
+.agent-new { margin-top: 20px; }
+/* A project's Agents: what belongs to the membership, under the card. */
+.agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-here h4 { margin: 0 0 4px; }
+.member-actions { white-space: nowrap; }
+.member-actions .member-chat + button { margin-left: 6px; }
+
+/* A member's page (js/member-page.js): the breadcrumb, the header, the tabs. */
+.breadcrumb { margin: 4px 0 12px; font-size: 0.9rem; }
+.member-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: start;
+  padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.member-head-face { position: relative; width: 64px; height: 64px; }
+/* The presence dot at the avatar's bottom right, ringed in the header's background. */
+.member-head-dot { position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; box-shadow: 0 0 0 2px var(--surface); }
+.member-head-text h2 { margin: 0; overflow-wrap: anywhere; }
+.member-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.member-pill-paused { border-color: var(--warn); }
+.member-line { margin: 0; }
+.member-head-actions { display: flex; gap: 8px; align-items: center; }
+.member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
+.member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+.member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
+/* Phone: avatar, text, then the buttons at full width (the handover). */
+@media (max-width: 600px) {
+  .member-head { grid-template-columns: minmax(0, 1fr); }
+  .member-head-actions { flex-direction: column; align-items: stretch; }
+  .member-head-actions > * { width: 100%; }
+}

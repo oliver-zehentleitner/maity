@@ -4,9 +4,9 @@ secrets beside them.
 `instance_setting` holds one row per name an admin set; no row means the environment's
 value or the default. Every name comes from the registry here, filled by the section
 that owns it (`mail.*`, `sign_in.*`) when its module is imported: a write of a name
-without an entry is a programming error, and a stored row without one (left over after a
-downgrade or a rename) is ignored and logged, never served. Whether the environment wins
-is decided in `effective`, nowhere else.
+without an entry is a programming error. A rename of a name is a migration of its row, and
+every read names the fields it wants, so no row is served by accident. Whether the
+environment wins is decided in `effective`, nowhere else.
 
 No secret is ever a setting. A secret an admin may set (today the SMTP password, §16.2)
 has an entry in `SECRETS` and lives sealed in `instance_secret`, so nothing that reads
@@ -61,9 +61,6 @@ def stored(conn: Connection, section: str) -> dict[str, Any]:
     found: dict[str, Any] = {}
     for row in conn.execute(select(t.instance_setting)).all():
         if not row.name.startswith(prefix):
-            continue
-        if row.name not in SETTINGS:
-            log.warning("instance setting %s has no registry entry; ignored", row.name)
             continue
         found[row.name] = row.value
     return found

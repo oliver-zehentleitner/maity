@@ -124,6 +124,19 @@ class _Budget:
 
 _budgets: dict[str, _Budget] = {}
 _budgets_lock = threading.Lock()
+# Past this many sources, a read drops those that say nothing any more. Installation
+# tokens are minted anew every hour, so their digests would otherwise pile up.
+BUDGETS_KEPT = 256
+
+
+def _says_nothing(budget: _Budget, now: float) -> bool:
+    """A budget that a new `_Budget()` would answer exactly as: nothing in flight, no
+    hold, and no `remaining` that still counts (none, or its window over)."""
+    return (
+        budget.in_flight == 0
+        and budget.until <= now
+        and (budget.remaining is None or (budget.reset is not None and budget.reset <= now))
+    )
 
 
 def _source(token: str | None) -> str:
@@ -149,6 +162,9 @@ def _take(source: str) -> datetime | None:
     Returns when the source may be read again, or None with the read counted."""
     now = time.time()
     with _budgets_lock:
+        if len(_budgets) > BUDGETS_KEPT:
+            for idle in [s for s, b in _budgets.items() if s != source and _says_nothing(b, now)]:
+                del _budgets[idle]
         budget = _budgets.setdefault(source, _Budget())
         if budget.reset is not None and budget.reset <= now:
             # The window is over: what was left in it says nothing about the new one.
@@ -232,6 +248,29 @@ _visible: dict[tuple[str, str], float] = {}
 PUBLIC_SECONDS = 600  # §11.4: the visibility is read again at most every 10 minutes
 # (token digest, repository) -> (when it was read, None when public or the reason not)
 _public: dict[tuple[str, str], tuple[float, str | None]] = {}
+
+# Both maps are keyed by a token's digest, and installation tokens are minted anew every
+# hour: an entry past its time is dropped when one is written, and the oldest go beyond
+# CACHE_KEPT. A dropped entry costs one more read of the repository, nothing else.
+CACHE_KEPT = 4096
+_caches_lock = threading.Lock()
+
+
+def _keep(cache: dict[Any, Any], key: Any, value: Any, at: float, seconds: float) -> None:
+    """`cache[key] = value`, read at `at` (monotonic); the entries older than `seconds`
+    go first, and beyond `CACHE_KEPT` the oldest written."""
+    with _caches_lock:
+        cache.pop(key, None)  # written again: it moves to the end, the newest
+        if len(cache) >= CACHE_KEPT:
+            for old in [k for k, v in cache.items() if at - _read_at(v) >= seconds]:
+                del cache[old]
+            while len(cache) >= CACHE_KEPT:
+                del cache[next(iter(cache))]
+        cache[key] = value
+
+
+def _read_at(value: float | tuple[float, str | None]) -> float:
+    return value[0] if isinstance(value, tuple) else value
 
 
 def _graphql_refused(found: Any) -> bool:
@@ -374,7 +413,8 @@ class Forge:
     def _forget(self, repository: str) -> None:
         """A refused read (§11.4): the next one asks again whether the repository is public."""
         key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
-        _public.pop(key, None)
+        with _caches_lock:
+            _public.pop(key, None)
 
     def _require_public(self, repository: str) -> None:
         """Raises `NotCoveredError` unless the forge reported the repository public within
@@ -399,7 +439,7 @@ class Forge:
             else:
                 raise ForgeUnavailableError("the forge did not say whether it is public")
             known = (time.monotonic(), reason)
-            _public[key] = known
+            _keep(_public, key, known, known[0], PUBLIC_SECONDS)
         if known[1] is not None:
             raise NotCoveredError(known[1])
 
@@ -468,7 +508,8 @@ class Forge:
             return
         if self._get(f"/repos/{repository}") is None:
             raise ForgeUnavailableError("the repository is not visible to the forge token")
-        _visible[key] = time.monotonic()
+        now = time.monotonic()
+        _keep(_visible, key, now, now, VISIBILITY_SECONDS)
 
     def _check_runs(self, repository: str, sha: str) -> list[dict[str, str]] | None:
         """Every check run on the commit; None when there are more than MAX_PAGES pages."""
@@ -719,6 +760,29 @@ class Forge:
             return None
         url = repo.get("openGraphImageUrl")
         return url if isinstance(url, str) else None
+
+    def issue(self, repository: str, number: int) -> dict[str, Any] | None:
+        """One issue for an import (§6.14): `{number, title, body, author_login, created_at,
+        is_pull_request, state}`, or None when the forge has no such item."""
+        found = self._get(f"/repos/{repository}/issues/{number}")
+        if found is None:
+            self._missing(repository)
+            return None
+        title, body, created = found.get("title"), found.get("body"), found.get("created_at")
+        login = (found.get("user") or {}).get("login")
+        # A card needs a title: an empty one is an answer the hub cannot use.
+        if not isinstance(title, str) or not title.strip() or not isinstance(created, str):
+            raise ForgeUnavailableError("the forge answered in an unexpected shape")
+        return {
+            "number": number,
+            "title": title,
+            "body": body if isinstance(body, str) else "",
+            "author_login": login if isinstance(login, str) else None,
+            "created_at": created,
+            "state": str(found.get("state", "")).lower(),
+            # GitHub's issue endpoint answers for pull requests too, with this key.
+            "is_pull_request": "pull_request" in found,
+        }
 
     def items(
         self, repository: str, numbers: list[int]

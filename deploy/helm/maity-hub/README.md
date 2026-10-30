@@ -189,6 +189,7 @@ silently ignored. These are the values that matter:
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
+| `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub and the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`; empty claim: attachments off. The files are not in the database: back the volume up with it |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
@@ -281,7 +282,7 @@ not ship yet (`hub/context/kubernetes.md`).
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
-  `DUMP_CRONJOB=<cronjob>` takes a dump job first, and
+  `DUMP_CRONJOB=<cronjob>` takes a dump job first (waiting up to `DUMP_TIMEOUT` seconds, 300 by default; `DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark), and
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl` and `helm`. A release whose migration touches no busy table can
   use plain `helm upgrade`.

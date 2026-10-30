@@ -22,8 +22,10 @@ from maity_hub import (
     contract_text,
     idempotency,
     instances,
+    line,
     mentions,
     merged,
+    moderation,
     namespace,
     paging,
     ranks,
@@ -38,7 +40,7 @@ from maity_hub.board import history
 from maity_hub.board import links as card_links
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.events import emit, lock_project
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown, title
@@ -52,7 +54,6 @@ from maity_hub.views import (
     principal_id,
     task_view,
     task_views,
-    view_contract,
 )
 
 router = APIRouter(route_class=ProjectRoute)
@@ -215,6 +216,20 @@ def _target_id(conn: Connection, mine: Membership, principal: str, field: str) -
     return membership_id
 
 
+def _line_lead(mine: Membership) -> bool:
+    return not mine.may("tasks:admin") and mine.may("line:lead")
+
+
+def _require_assigner(conn: Connection, mine: Membership, *touched: int | None) -> None:
+    """`tasks:admin`, or `line:lead` with every member the move touches the caller or in
+    its reach (`not_in_line` otherwise, §2.3 "The manager"). The caller holds the
+    project lock, so the reach is the one the write lands on."""
+    if _line_lead(mine):
+        line.require_reach(conn, mine, *touched)
+        return
+    mine.require("tasks:admin")
+
+
 def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
@@ -367,6 +382,14 @@ def _refuse_paused(conn: Connection, membership_id: int, instance: str | None = 
     does an instance a human paused, while its siblings carry on. An agent's own pause
     is a declaration and refuses nothing."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    suspension = moderation.suspension_of(conn, row)
+    if suspension is not None:  # a suspended account's memberships act as paused (§16.8)
+        raise ApiError(
+            409,
+            "paused",
+            "this member's account is suspended; it takes no new work",
+            {"paused": suspension},
+        )
     if human_paused(row):
         raise ApiError(
             409,
@@ -480,7 +503,7 @@ def _check_label(label: str | None) -> None:
 
 
 def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any]:
-    """`project_closed` in accepted/archived; a reason in freeze/fixes-only (§6.1)."""
+    """`project_closed` in archived; a reason in plan and review (§6.1)."""
     state = mine.project.state
     if state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {state}")
@@ -736,6 +759,7 @@ CREATED = (
     "ktw_ref",
     "contract",
     "links",
+    "imported_from",
 )
 
 
@@ -744,117 +768,7 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
     fg = reader_of(request)
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
-        mine.require("tasks:write")
-        if body.kind not in cards.KINDS:
-            raise invalid({"kind": "unknown"})
-        if body.status not in cards.CREATE_STATUSES:
-            raise invalid({"status": "proposed_or_open"})
-        if body.release is not None and body.kind != "release":
-            raise invalid({"release": "releases_only"})
-        if body.contract is not None and body.kind != "contract":
-            raise invalid({"contract": "contracts_only"})
-        _check_label(body.label)
-        _check_area(body.area)
-        mine = _locked(conn, mine)
-        state = _require_open_project(mine, body.reason)
-        _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
-        extra: dict[str, Any] = {}
-        if body.kind == "release":
-            extra = _new_release(conn, mine, body.release)
-        elif body.kind == "contract":
-            extra = {"contract": _new_contract(conn, mine, body.contract or ContractIn())}
-        assigned: int | None
-        if body.assigned_to is not None:
-            mine.require("tasks:admin")
-            assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
-        else:
-            # Findings and hand-outs go to the owner of the narrowest area (§6.2).
-            assigned = cards.area_owner(conn, mine.project.id, body.area)
-        assigned_instance = _assigned_instance(conn, assigned)
-        found = mentions.resolve(conn, mine.project.id, body.body, "body")
-        now = clock.now()
-        card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
-        status = body.status
-        if (
-            body.parent is not None
-            and mine.project.subtasks == "proposed"
-            and not mine.may("tasks:admin")
-        ):
-            if "status" in body.model_fields_set and status == "open":
-                raise _subtasks_proposed()
-            status = "proposed"
-        cards.check_subtask_graph(
-            conn,
-            mine.project.id,
-            card_id,
-            kind=body.kind,
-            parent=body.parent,
-            depends_on=body.depends_on,
-            fields={"parent"} if body.parent is not None else {"depends_on"},
-        )
-        try:
-            # The pre-checks hold under the project lock; the constraints are the backstop.
-            with conn.begin_nested():
-                conn.execute(
-                    insert(t.card).values(
-                        **extra,
-                        id=card_id,
-                        project_id=mine.project.id,
-                        kind=body.kind,
-                        title=body.title,
-                        body=body.body,
-                        mentions=found,
-                        label=body.label,
-                        status=status,
-                        parent=body.parent,
-                        area=body.area,
-                        created_by=mine.id,
-                        assigned_to=assigned,
-                        assigned_instance=assigned_instance,
-                        ktw_ref=body.ktw_ref,
-                        changed_by_credential=caller.credential_id,
-                        changed_via=caller.via,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                )
-        except IntegrityError as error:
-            raise _release_conflict(error, body.release) from None
-        cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
-        partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
-        _touch_partners(conn, mine, caller, partners, fg)
-        related = cards.set_symmetric(conn, mine.project.id, card_id, body.related, "related")
-        _touch_partners(conn, mine, caller, related, fg, "related")
-        card = _card(conn, card_id)
-        for link in body.links:
-            card_links.add(conn, card, link, mine.project.repository_url, mine.id)
-        view = task_view(conn, card, fg)
-        # One history entry for the creation, with the card's fields as created (§6.15).
-        fields = [name for name in CREATED if name in view and view[name] not in (None, [])]
-        entry = history.created(
-            conn, card_id, {name: view[name] for name in fields}, caller.actor(mine.id)
-        )
-        seq = emit(
-            conn,
-            mine.project.id,
-            "task_created",
-            audience(conn, card),
-            {
-                **{k: v for k, v in view.items() if k != "body"},  # never in an event
-                "fields": fields,
-                "history": [entry],
-                **state,
-            },
-            actor=caller.actor(mine.id),
-            subject=("task", card_id),
-        )
-        history.stamp(conn, [entry], seq)
-        if body.parent is not None:
-            _touch_parents(conn, mine, caller, {body.parent}, fg)
-        _ping(conn, mine, caller, card, found, "body", before=[])
-        releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-        return idempotency.Outcome(201, "task", card_id, {**view, "watching": False})
+        return create_card(conn, caller, slug, body, fg)
 
     response = idempotency.run(engine_of(request), request, caller, action)
     if body.links:
@@ -862,6 +776,159 @@ def create_task(slug: str, body: TaskCreate, request: Request, caller: AnyCaller
 
         observe_soon(request, slug, response)
     return response
+
+
+def create_card(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    body: TaskCreate,
+    fg: Forge,
+    *,
+    imported_from: dict[str, Any] | None = None,
+    observed: dict[str, Any] | None = None,
+) -> idempotency.Outcome:
+    """`POST …/tasks` and the import (§6.14): one card with its links, its creation's
+    history entry and `task_created`. An import passes `imported_from` and the
+    observation of its one link, read before the transaction."""
+    mine = membership(conn, caller, slug)
+    mine.require("tasks:write")
+    if body.kind not in cards.KINDS:
+        raise invalid({"kind": "unknown"})
+    if body.kind == "setup":
+        raise invalid({"kind": "hub_only"}, "only the hub creates a setup card (§6.21)")
+    if body.status not in cards.CREATE_STATUSES:
+        raise invalid({"status": "proposed_or_open"})
+    if body.release is not None and body.kind != "release":
+        raise invalid({"release": "releases_only"})
+    if body.contract is not None and body.kind != "contract":
+        raise invalid({"contract": "contracts_only"})
+    _check_label(body.label)
+    _check_area(body.area)
+    mine = _locked(conn, mine)
+    state = _require_open_project(mine, body.reason)
+    _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
+    if imported_from is not None:
+        _refuse_imported_twice(conn, mine, imported_from["forge_url"])
+    extra: dict[str, Any] = {}
+    if body.kind == "release":
+        extra = _new_release(conn, mine, body.release)
+    elif body.kind == "contract":
+        extra = {"contract": _new_contract(conn, mine, body.contract or ContractIn())}
+    assigned: int | None
+    if body.assigned_to is not None:
+        assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
+        _require_assigner(conn, mine, assigned)
+    else:
+        # Findings and hand-outs go to the owner of the narrowest area (§6.2).
+        assigned = cards.area_owner(conn, mine.project.id, body.area)
+    assigned_instance = _assigned_instance(conn, assigned)
+    found = mentions.resolve(conn, mine.project.id, body.body, "body")
+    now = clock.now()
+    card_id = new_id({"release": "release", "contract": "contract"}.get(body.kind, "task"))
+    status = body.status
+    if (
+        body.parent is not None
+        and mine.project.subtasks == "proposed"
+        and not mine.may("tasks:admin")
+    ):
+        if "status" in body.model_fields_set and status == "open":
+            raise _subtasks_proposed()
+        status = "proposed"
+    cards.check_subtask_graph(
+        conn,
+        mine.project.id,
+        card_id,
+        kind=body.kind,
+        parent=body.parent,
+        depends_on=body.depends_on,
+        fields={"parent"} if body.parent is not None else {"depends_on"},
+    )
+    try:
+        # The pre-checks hold under the project lock; the constraints are the backstop.
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.card).values(
+                    **extra,
+                    id=card_id,
+                    project_id=mine.project.id,
+                    kind=body.kind,
+                    title=body.title,
+                    body=body.body,
+                    mentions=found,
+                    label=body.label,
+                    status=status,
+                    parent=body.parent,
+                    area=body.area,
+                    created_by=mine.id,
+                    assigned_to=assigned,
+                    assigned_instance=assigned_instance,
+                    ktw_ref=body.ktw_ref,
+                    imported_from=imported_from,
+                    changed_by_credential=caller.credential_id,
+                    changed_via=caller.via,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+    except IntegrityError as error:
+        raise _release_conflict(error, body.release) from None
+    cards.set_depends_on(conn, mine.project.id, card_id, body.depends_on)
+    partners = cards.set_ships_with(conn, mine.project.id, card_id, body.ships_with)
+    _touch_partners(conn, mine, caller, partners, fg)
+    related = cards.set_symmetric(conn, mine.project.id, card_id, body.related, "related")
+    _touch_partners(conn, mine, caller, related, fg, "related")
+    card = _card(conn, card_id)
+    for link in body.links:
+        card_links.add(conn, card, link, mine.project.repository_url, mine.id)
+    if observed is not None:  # the import's one link, observed from the same read
+        conn.execute(
+            update(t.card_link).where(t.card_link.c.card_id == card_id).values(observed=observed)
+        )
+    view = task_view(conn, card, fg)
+    # One history entry for the creation, with the card's fields as created (§6.15).
+    fields = [name for name in CREATED if name in view and view[name] not in (None, [])]
+    entry = history.created(
+        conn, card_id, {name: view[name] for name in fields}, caller.actor(mine.id)
+    )
+    seq = emit(
+        conn,
+        mine.project.id,
+        "task_created",
+        audience(conn, card),
+        {
+            **{k: v for k, v in view.items() if k != "body"},  # never in an event
+            "fields": fields,
+            "history": [entry],
+            **state,
+        },
+        actor=caller.actor(mine.id),
+        subject=("task", card_id),
+    )
+    history.stamp(conn, [entry], seq)
+    if body.parent is not None:
+        _touch_parents(conn, mine, caller, {body.parent}, fg)
+    _ping(conn, mine, caller, card, found, "body", before=[])
+    releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
+    return idempotency.Outcome(201, "task", card_id, {**view, "watching": False})
+
+
+def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -> None:
+    """An issue a card not done or cancelled was imported from is `already_linked`
+    (§6.14); after that card closes, a new import is allowed."""
+    rows = conn.execute(
+        select(t.card.c.id, t.card.c.imported_from).where(
+            t.card.c.project_id == mine.project.id,
+            t.card.c.imported_from.isnot(None),
+            t.card.c.status.notin_(cards.CLOSED),
+        )
+    ).all()
+    for row in rows:
+        # GitHub's owner and repository names ignore case: one issue, one URL.
+        if str(row.imported_from.get("forge_url", "")).lower() == forge_url.lower():
+            raise ApiError(
+                409, "already_linked", "a card was imported from this issue", {"task": row.id}
+            )
 
 
 @router.patch("/projects/{owner}/{slug}/tasks/{card_id}")
@@ -907,8 +974,11 @@ def patch_task(
             given == {"release"} and card.kind == "release" and mine.may("releases:write")
         )
         editor = cards.holds(mine, card) or card.created_by == mine.id or mine.may("tasks:admin")
+        # `assigned_to` alone is also a manager's within its reach (§2.3 "The manager").
+        line_assign = given == {"assigned_to"} and _line_lead(mine)
         if (
             not editor
+            and not line_assign
             and not arbiter_move
             and not release_edit
             and not (review_move and cards.has_done_authority(mine, card))
@@ -957,7 +1027,7 @@ def patch_task(
             _check_area(body.area)
             values["area"] = body.area
         if "assigned_to" in given:
-            mine.require("tasks:admin")
+            _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = new_assignee
@@ -989,6 +1059,8 @@ def patch_task(
         if "status" in given and body.status is not None and body.status != card.status:
             if body.status not in cards.STATUSES:
                 raise invalid({"status": "unknown"})
+            if card.status == "cancelled":  # a card moderation cancelled stays so (§16.8)
+                moderation.refuse_held(conn, "card", card.id, "remove")
             cards.check_transition(mine, card, body.status)
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
@@ -1030,8 +1102,7 @@ def patch_task(
             payload["release"] = view["release"]
             fields.append("release")
         if "contract" in changed:
-            # Compared as the card shows them: a card from before §6.8 has the defaults.
-            was, now = view_contract(before_card.contract), view["contract"] or {}
+            was, now = before_card.contract or {}, view["contract"] or {}
             for name in ("state", "path", "section"):
                 if was.get(name) != now.get(name):
                     extra.append((f"contract.{name}", was.get(name), now.get(name)))
@@ -1095,6 +1166,64 @@ def patch_task(
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def cancel_by_moderation(conn: Connection, card_id: str, actor: Actor, fg: Forge) -> None:
+    """`remove` on a card (§16.8): cancelled as a `PATCH {status: cancelled}` would cancel
+    it, whoever holds it; a closed card stays as it is."""
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
+    if card is None or card.status in cards.CLOSED:
+        return
+    project = lock_project(conn, card.project_id)
+    changed = {"status": "cancelled", **_closing(card)}
+    conn.execute(
+        update(t.card)
+        .where(t.card.c.id == card.id)
+        .values(**changed, updated_at=clock.now(), changed_by_credential=None, changed_via=None)
+    )
+    after = _card(conn, card.id)
+    view = task_view(conn, after, fg)
+    entries = history.record(conn, card, changed, actor)
+    seq = emit(
+        conn,
+        project.id,
+        "task_updated",
+        audience(conn, after),
+        {
+            **{k: view[k] for k in changed if k in view},
+            "id": card.id,
+            "fields": sorted(k for k in changed if k in view),
+            "history": entries,
+            "project_state": project.state,
+        },
+        actor=actor,
+        subject=("task", card.id),
+    )
+    history.stamp(conn, entries, seq)
+    if card.parent is not None:
+        conn.execute(
+            update(t.card).where(t.card.c.id == card.parent).values(updated_at=clock.now())
+        )
+        parent = _card(conn, card.parent)
+        emit(
+            conn,
+            project.id,
+            "task_updated",
+            audience(conn, parent),
+            {
+                "id": parent.id,
+                "fields": ["children"],
+                "children": task_view(conn, parent, fg)["children"],
+                "history": [],
+                "project_state": project.state,
+            },
+            actor=actor,
+            subject=("task", parent.id),
+        )
+    takeovers.reconcile(conn, card.id, actor, decided=False)
+    if card.kind == "release":
+        releases.close(conn, card.id, fg)
+    releases.recheck(conn, project.id, fg)
 
 
 def _ping(
@@ -1302,7 +1431,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             if cards.sibling_holds(mine, card) and not (mine.may("tasks:admin") or lead):
                 raise _not_holder(card)
             if not lead:
-                mine.require("tasks:admin")
+                # A manager releases an expired claim held in its reach (§2.3).
+                _require_assigner(conn, mine, card.claim_holder)
             # An agent takes a card only through a takeover while the lease runs (§6.19).
             takeovers.guard_move(conn, mine, card)
             if not _lease_expired(card):
@@ -1442,13 +1572,17 @@ def assign(
         if card.claim_holder not in (None, assignee):
             # Before the scope: no agent, whatever its role, assigns it away (§2.3).
             _refuse_against_a_human(conn, mine, card)
-        if not mine.may("tasks:admin"):
-            if not _leads_within_team(mine, card, body.assignee):
-                mine.require("tasks:admin")
+        if mine.may("tasks:admin"):
+            pass
+        elif _leads_within_team(mine, card, body.assignee):
             # The lead hands out its team's cards nobody holds; a held card moves only
             # through a takeover (§6.18, §6.19), a human's never (§2.3).
             if card.claim_holder is not None:
                 raise _held(conn, card)
+        else:
+            # A manager moves a card among itself and its reach, an expired claim
+            # included (§2.3 "The manager"): every member it touches in the reach.
+            _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
@@ -1817,13 +1951,6 @@ GIT_FIELDS = ("head", "branch", "upstream", "remote_head", "pr", "pr_unknown_rea
 
 def _reporters(card: Any, mine: Membership) -> list[dict[str, Any]]:
     earlier: list[dict[str, Any]] = list(card.reported_instances or [])
-    if not earlier and card.report:  # a report from before the list was kept
-        earlier = [
-            {
-                "member_id": card.report.get("reported_by"),
-                "instance": card.report.get("reported_instance"),
-            }
-        ]
     me = {"member_id": mine.principal_id, "instance": mine.instance}
     return [*(r for r in earlier if r != me), me]
 

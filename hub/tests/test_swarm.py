@@ -317,7 +317,7 @@ def test_the_policy_is_checked_before_any_etag(
     clock.set_source(lambda: later)
     assert public(visitor).headers["etag"] == on.headers["etag"]  # stable within the minute
     assert public(visitor, **{"If-None-Match": on.headers["etag"]}).status_code == 304
-    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     closed = public(visitor, **{"If-None-Match": on.headers["etag"]})
     assert closed.status_code == 404 and "etag" not in closed.headers
 
@@ -363,7 +363,9 @@ def test_the_badge_and_the_swarm_share_one_budget(
     monkeypatch.setattr(badge_routes, "BY_ADDRESS", Limiter(2, 60))
     monkeypatch.setattr(badge_routes, "NOT_SERVED", Limiter(1, 60))
     visitor = make_client()
-    assert visitor.get("/badge/nope.svg").status_code == 404  # takes the shared unknown budget
+    assert (
+        visitor.get("/badge/maintainer/nope.svg").status_code == 404
+    )  # takes the shared unknown budget
     assert public(visitor, "other").status_code == 429  # the same budget, another slug
     assert public(visitor).status_code == 429  # the source's two are spent
 
@@ -419,7 +421,7 @@ def test_the_three_not_served_answers_are_one(
     off = public(visitor)
     owner.post("/projects", {"slug": "closed", "name": "Closed"})
     owner.patch("/projects/maintainer/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
-    owner.patch("/projects/maintainer/closed", {"state": "accepted", "reason": "done"})
+    owner.patch("/projects/maintainer/closed", {"state": "archived", "reason": "done"})
     closed = public(visitor, "closed")
     assert unknown.status_code == off.status_code == closed.status_code == 404
     assert unknown.content == off.content == closed.content
@@ -452,21 +454,12 @@ def test_nothing_of_a_human_or_a_card_reaches_the_public_page(
     assert all(e["name"].endswith("/" + e["handle"]) for e in body["live"] + body["members"])
 
 
-def test_the_old_public_address_moves_to_the_full_name_while_public(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+def test_the_one_segment_public_address_is_gone(
+    owner: flow.Human, make_client: ClientFactory, project_id: str
 ) -> None:
-    # A project from before the namespace keeps `/swarm/<legacy_slug>` as a redirect
-    # (§6.25), its query kept; while the page is not public, the old address answers as
-    # any page not served, so it tells nobody whether the project exists.
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.project).where(t.project.c.id == project_id).values(legacy_slug="maity")
-        )
+    """`/swarm/<slug>` from before the namespace is not kept, not even as a redirect while the
+    page is public (§16.11)."""
+    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
     visitor = make_client()
     assert visitor.get("/api/v1/swarm/maity", follow_redirects=False).status_code == 404
-    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    moved = visitor.get("/api/v1/swarm/maity?days=7", follow_redirects=False)
-    assert moved.status_code == 301
-    assert moved.headers["location"] == "/api/v1/swarm/maintainer/maity?days=7"
-    assert visitor.get("/api/v1/swarm/maity").status_code == 200  # followed
-    assert visitor.get("/api/v1/swarm/never-was", follow_redirects=False).status_code == 404
+    assert visitor.get("/api/v1/swarm/maintainer/maity").status_code == 200

@@ -178,8 +178,8 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
 
 
 def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
-    """0060: the creator left, so the next oldest active owner holds the namespace; the
-    slug is kept as `legacy_slug`; a limit's `show_reason_in` names full names."""
+    """0060: the creator left, so the next oldest active owner holds the namespace; a
+    limit's `show_reason_in` names full names."""
     from sqlalchemy import select
 
     from maity_hub import tables as t
@@ -191,7 +191,7 @@ def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
         shown = conn.execute(
             select(t.human.c.limit_show_reason_in).where(t.human.c.id == ids["b"])
         ).scalar()
-    assert (project.owner_id, project.legacy_slug) == (ids["b"], "shop")
+    assert project.owner_id == ids["b"]
     assert shown == ["b/shop"]
 
 
@@ -468,3 +468,254 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
         "email": {"kinds": {"inbox": {"mode": "daily"}}, "language": "de"},
     }
     assert rows[owners["clean"]] == clean
+
+
+def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Engine) -> None:
+    """0090 (§16.7): the title, call to action and Markdown of the one-body landing become
+    the `en` page, a `hero` and a `text` section; a landing that held nothing stays off,
+    and going back restores the old columns from that page."""
+    import sqlalchemy as sa
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    from maity_hub import clock
+
+    cta = {"label": "Sign in", "href": "/login"}
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title="Bring your agent",
+                markdown="# Hi",
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing",
+        sa.column("enabled", sa.Boolean),
+        sa.column("default_language", sa.String),
+        sa.column("pages", sa.JSON),
+        sa.column("footer", sa.JSON),
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    assert (row.enabled, row.default_language, row.footer) == (True, "en", None)
+    assert row.pages == {
+        "en": {
+            "title": "Bring your agent",
+            "description": "",
+            "sections": [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "Bring your agent",
+                    "cta_primary": cta,
+                },
+                {"type": "text", "enabled": True, "markdown": "# Hi"},
+            ],
+        }
+    }
+    downgrade(engine, _before(engine, "0090"))
+    with engine.connect() as conn:
+        back = conn.execute(sa.select(old.c.enabled, old.c.title, old.c.markdown, old.c.cta)).one()
+    assert tuple(back) == (True, "Bring your agent", "# Hi", cta)
+
+
+def test_a_landing_that_held_nothing_stays_off_and_empty(engine: Engine) -> None:
+    import sqlalchemy as sa
+
+    migrate(engine)
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("select count(*) from instance_landing")).scalar() == 0
+        assert conn.execute(sa.text("select count(*) from legal_page")).scalar() == 0
+
+
+@pytest.mark.parametrize(
+    ("title", "markdown", "cta", "kinds", "page_title"),
+    [
+        ("Hello", "Body", None, ["text"], "Hello"),  # a title alone is the page's title
+        (None, "Body", {"label": "Go", "href": "/login"}, ["text"], "Maity"),  # no title: no hero
+        ("Hello", None, {"label": "Go", "href": "/login"}, ["hero"], "Hello"),
+        ("Hello", "Body", {"label": "Go", "href": "/login"}, ["hero", "text"], "Hello"),
+        (None, "Body", None, ["text"], "Maity"),
+    ],
+)
+def test_a_carried_landing_passes_the_checks_of_the_setting(
+    engine: Engine,
+    title: str | None,
+    markdown: str | None,
+    cta: dict[str, str] | None,
+    kinds: list[str],
+    page_title: str,
+) -> None:
+    """0090 must never make a hero the setting itself would refuse: a hero needs a title and
+    a call to action, and the old schema allowed either to be null (§16.7)."""
+    import sqlalchemy as sa
+
+    from maity_hub import clock, landing
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title=title,
+                markdown=markdown,
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing", sa.column("pages", sa.JSON), sa.column("enabled", sa.Boolean)
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    page = row.pages["en"]
+    assert page["title"] == page_title and [s["type"] for s in page["sections"]] == kinds
+    current = {
+        "enabled": False,
+        "default_language": "en",
+        "pages": {},
+        "footer": {"operator": None, "social": []},
+    }
+    checked = landing.check({"enabled": True, "pages": row.pages}, current)
+    assert checked["pages"] == row.pages  # the editor can write it back unchanged
+
+
+def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
+    """0094 (§6.1): `freeze` and `fixes-only` become `review`, `accepted` becomes `archived`,
+    `build` and `archived` stay; downgrading maps `review` back to `freeze`."""
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0094"))
+    old = ("build", "freeze", "fixes-only", "accepted", "archived")
+    ids = {state: factory.project(engine, f"p-{state}", state=state) for state in old}
+
+    def states() -> dict[str, str]:
+        with engine.connect() as conn:
+            return dict(conn.execute(select(t.project.c.id, t.project.c.state)).all())
+
+    migrate(engine)
+    assert states() == {
+        ids["build"]: "build",
+        ids["freeze"]: "review",
+        ids["fixes-only"]: "review",
+        ids["accepted"]: "archived",
+        ids["archived"]: "archived",
+    }
+    downgrade(engine, _before(engine, "0094"))
+    assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"
+
+
+def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) -> None:
+    """0097 (§6.1): `released_at` from the earliest found tag of a release; a missing tag,
+    a tag of no release and a project without either stay `null`."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import insert, select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0097"))
+    ids = {name: factory.project(engine, name) for name in ("two", "missing", "other", "none")}
+    early, late = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 20, tzinfo=UTC)
+    tags = [
+        ("two", "0.1.0", "v0.1.0", True, late),
+        ("two", "0.2.0", "v0.2.0", True, early),
+        ("missing", "0.1.0", "v0.1.0", False, early),
+        ("other", "0.1.0", "v9.0.0", True, early),
+    ]
+    maker = factory.human(engine, "maker")
+    members = {name: factory.membership(engine, ids[name], human_id=maker) for name in ids}
+    for name, version, _ref, _found, _at in tags:
+        factory.card(
+            engine, ids[name], members[name], kind="release", title=version,
+            release_version=version,
+        )  # fmt: skip
+    with engine.begin() as conn:
+        for name, _version, ref, found, at in tags:
+            conn.execute(
+                insert(t.forge_observation).values(
+                    project_id=ids[name], kind="tag", ref=ref, observed_at=at,
+                    data={"name": ref, "sha": None, "found": found},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        released = dict(conn.execute(select(t.project.c.id, t.project.c.released_at)).all())
+    assert released[ids["two"]] == early
+    assert released[ids["missing"]] is None and released[ids["other"]] is None
+    assert released[ids["none"]] is None
+
+
+def test_cards_are_written_in_the_one_shape_the_code_reads(engine: Engine) -> None:
+    """0101: a reported card without `reported_instances` gets the instance of its report,
+    a contract without a place gets the default place; nothing else is touched."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human_id = factory.human(engine, "a")
+    project_id = factory.project(engine, "shop", owner_id=human_id)
+    membership_id = factory.membership(engine, project_id, "owner", human_id=human_id)
+    report = {"reported_by": "agt-x", "reported_instance": "ab12"}
+    old_report = factory.card(engine, project_id, membership_id, report=report)
+    new_report = factory.card(
+        engine,
+        project_id,
+        membership_id,
+        report=report,
+        reported_instances=[{"member_id": "agt-y", "instance": "cd34"}],
+    )
+    unreported = factory.card(engine, project_id, membership_id)
+    bare = {"arbiter": "trust:admin", "state": "proposed", "watchers": []}
+    old_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=bare)
+    placed = {**bare, "path": "docs/other.md", "section": "2.1"}
+    new_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=placed)
+    downgrade(engine, "0100")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == old_report).values(reported_instances=None)
+        )
+    migrate(engine)
+    with engine.connect() as conn:
+        found = {
+            r.id: r for r in conn.execute(select(t.card).where(t.card.c.project_id == project_id))
+        }
+    assert found[old_report].reported_instances == [{"member_id": "agt-x", "instance": "ab12"}]
+    assert found[new_report].reported_instances == [{"member_id": "agt-y", "instance": "cd34"}]
+    assert found[unreported].reported_instances is None
+    assert found[old_contract].contract == {**bare, "path": "docs/api.md", "section": None}
+    assert found[new_contract].contract == placed

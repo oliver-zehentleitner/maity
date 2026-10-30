@@ -1,9 +1,9 @@
-// Organisations (docs/api.md §6.26) under the account: #/account/orgs lists
-// the ones the human is a member of and creates one; #/account/orgs/<handle>
+// Organisations (docs/api.md §6.26) under the account: /account/orgs lists
+// the ones the human is a member of and creates one; /account/orgs/<handle>
 // is one organisation: its members and their roles, the open invitations,
 // its settings, picture and deletion. Every route is the humans' business
 // alone; a caller who is not a member is told not_found, as for a handle
-// that names nothing. Why under #/account and not #/orgs: web/context/views.md.
+// that names nothing. Why under /account and not /orgs: web/context/views.md.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -18,7 +18,7 @@ window.Maity = window.Maity || {};
     member: "Member: creates projects in it only where the owners allow it",
   };
   const orgPath = (org) => "/orgs/" + encodeURIComponent(org);
-  const orgLink = (org) => "#/account/orgs/" + encodeURIComponent(org);
+  const orgLink = (org) => "/account/orgs/" + encodeURIComponent(org);
 
   // The hub's refusals (§6.26), in words.
   const FIELD_WORDS = {
@@ -64,7 +64,7 @@ window.Maity = window.Maity || {};
         h("a", { href: orgLink(o.handle) }, o.display_name),
         h("span", { class: "muted" }, " @" + o.handle + " · " + o.my_role))))
       : h("p", { class: "muted" }, "You are in no organisation yet."));
-    if (await M.api.hubHas("POST", "/orgs").catch(() => true)) append(root, createForm());
+    append(root, createForm());
   }
 
   function createForm() {
@@ -80,7 +80,7 @@ window.Maity = window.Maity || {};
         status.busy("Creating…");
         try {
           const org = await M.api.post("/orgs", { handle: handle.value.trim().replace(/^@/, ""), display_name: name.value.trim() });
-          window.location.hash = orgLink(org.handle);
+          M.route.go(orgLink(org.handle));
         } catch (err) {
           status.fail("Not created: ", said(err));
           go.disabled = false;
@@ -132,7 +132,7 @@ window.Maity = window.Maity || {};
         status.busy(self ? "Leaving…" : "Removing…");
         try {
           await M.api.del(orgPath(org.handle) + "/members/" + encodeURIComponent(m.id));
-          if (self) window.location.hash = "#/account/orgs";
+          if (self) M.route.go("/account/orgs");
           else redraw("@" + m.handle + " was removed.");
         } catch (err) {
           remove.disabled = false;
@@ -230,7 +230,7 @@ window.Maity = window.Maity || {};
         status.busy("Saving…");
         try {
           const now = await M.api.patch(orgPath(org.handle), body);
-          if (now.handle !== org.handle) window.location.hash = orgLink(now.handle);
+          if (now.handle !== org.handle) M.route.go(orgLink(now.handle));
           else redraw("Saved.");
         } catch (err) {
           go.disabled = false;
@@ -273,7 +273,7 @@ window.Maity = window.Maity || {};
         status.busy("Deleting…");
         try {
           await M.stepUp.run(() => M.api.del(orgPath(org.handle), { confirm: org.handle }), ask, "Deleting @" + org.handle);
-          window.location.hash = "#/account/orgs";
+          M.route.go("/account/orgs");
         } catch (err) {
           busy = false;
           typed.disabled = false;
@@ -291,7 +291,7 @@ window.Maity = window.Maity || {};
 
   async function orgPage(ctx, root, handle) {
     const body = h("div", { class: "org-page" });
-    append(root, h("p", null, h("a", { href: "#/account/orgs" }, "All your organisations")), body);
+    append(root, h("p", null, h("a", { href: "/account/orgs" }, "All your organisations")), body);
     const draw = async (words) => {
       let org;
       try {
@@ -344,10 +344,6 @@ window.Maity = window.Maity || {};
   M.views.orgs = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
       append(root, h("p", null, "Organisations are for humans only."));
-      return;
-    }
-    if (!(await M.api.hubHas("GET", "/orgs").catch(() => true))) {
-      append(root, h("h2", null, "Organisations"), M.dom.notOnHub("This hub has no organisations yet."));
       return;
     }
     if (args && args[0]) await orgPage(ctx, root, handleOf(args[0]));

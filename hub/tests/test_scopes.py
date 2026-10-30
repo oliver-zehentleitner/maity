@@ -24,6 +24,7 @@ ROLE_TABLE = {
     "ops": CODER | {"releases:write", "agents:propose", "ticker:post"},
     "writer": CODER,
     "proxy": CODER,
+    "manager": CODER | {"line:lead"},  # §2.3 "The manager"
 }
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
 

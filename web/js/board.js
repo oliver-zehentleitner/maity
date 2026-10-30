@@ -154,8 +154,7 @@ window.Maity = window.Maity || {};
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    // A hub without subtasks (§6.4) sends no parent on its cards.
-    if (!manage || !manage.reload || !("parent" in c)) return null;
+    if (!manage || !manage.reload) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
     const parts = [];
@@ -588,8 +587,8 @@ window.Maity = window.Maity || {};
           (c.contract.watchers || []).length
             ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
-      // Its section from the repository, where the hub knows path and section (§6.8).
-      c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
+      // Its section from the repository (§6.8).
+      c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -607,7 +606,7 @@ window.Maity = window.Maity || {};
   // them; a title opening its card keeps them too.
   let lastBoard = null;
 
-  // args[0]: a card to open (#/<owner>/<slug>/tasks/<id>, a title's or an id's
+  // args[0]: a card to open (/<owner>/<slug>/tasks/<id>, a title's or an id's
   // link, js/ids.js): its panel, and the card marked on the board; one the
   // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {
@@ -723,18 +722,9 @@ window.Maity = window.Maity || {};
     const place = (c, how, focusKey) => write("Reordering",
       c.id + (how.to ? " is now at the " + how.to : " is now " + PLACED[Object.keys(how)[0]] + " " + Object.values(how)[0]) + ".",
       () => M.api.post(cardPath(c) + "/move", how), focusKey || "order:" + c.id,
-      (err) => {
-        if (err.code !== "not_found" && err.code !== "invalid") return null;
-        // A not_found with the card and its neighbour still where they were
-        // is a hub without the endpoint, not a race.
-        const near = how.before || how.after;
-        return (fresh) => {
-          const here = (id) => fresh.some((t) => t.id === id && t.status === c.status);
-          return err.code === "not_found" && here(c.id) && (!near || here(near))
-            ? "this hub does not order cards yet."
-            : "the card next to it moved or changed meanwhile; the board shows the order as it is now.";
-        };
-      });
+      (err) => (err.code === "not_found" || err.code === "invalid"
+        ? () => "the card next to it moved or changed meanwhile; the board shows the order as it is now."
+        : null));
     const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 
@@ -840,7 +830,7 @@ window.Maity = window.Maity || {};
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => window.location.replace(ctx.link("board")));
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);
@@ -1030,8 +1020,7 @@ window.Maity = window.Maity || {};
     ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
-        ctx.members = fresh;
-        ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+        M.withMembers(ctx, fresh);
         if (filter.silent) draw();
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);

@@ -44,20 +44,21 @@ what clients read: the CLI matches its routes against `openapi.json`.
 **Source:** `docs/api.md` §6.25 "Old routes"; FastAPI 0.159 keeps included routers behind `_IncludedRouter` objects, found while building this
 **Revisit when:** a project route is left out of the schema, or the hub serves the old routes as `v1` next to a `v2`
 
-The middleware answers a project path from before the namespace
+Until 2026-10-29 the middleware answered a project path from before the namespace
 (`/projects/<slug>` alone, or `/projects/<slug>/<word>/…`) before the body
-is read, before authentication and without a lookup: `client_outdated`
+was read, before authentication and without a lookup: `client_outdated`
 (426) to a `maity-cli/…` User-Agent, `project_path_outdated` (410) to
-everyone else. The words are the literal segments that follow `{owner}/{slug}`
-in the app's schema paths, joined with the set at this change as a floor.
-The same set refuses a slug at `POST /projects` (`reserved`). The
-dashboard's top-level route words are refused as human handles, at
-registration and in `owner create`. The forge webhook keeps a
-pre-migration project's old address through `legacy_slug`. The old badge
-and public swarm addresses answer `301` to the new ones while they are
-served, and otherwise the same `not_found` from the same shared bucket.
-Any CLI that calls an old path is older than the release by construction,
-so no version is compared.
+everyone else; the forge webhook kept a pre-migration project's old address and the old badge
+and public swarm addresses answered `301` (all through `legacy_slug`). That answer, those
+addresses and the column itself (migration 0086) are removed: the maintainer's alpha rule is to
+keep no compatibility layer, so an old path is `not_found` like any path, see
+261f1ce2-819b-4aac-ae4a-387bb83d0907.
+
+What stays is the slug check. The words are the literal segments that follow `{owner}/{slug}`
+in the app's schema paths, joined with the set at this change as a floor and, since the same
+date, the dashboard's project views (`paths.PROJECT_VIEWS`); that set refuses a slug at
+`POST /projects` (`reserved`). The first segments the hub and the dashboard use are refused as
+human handles, at registration and in `owner create` (`paths.RESERVED_FIRST`, §16.11).
 
 **Reason:** an old path always has a route word where a new path has a
 slug, so recognising it needs no database, and the answer cannot say
@@ -112,7 +113,7 @@ ties by id. The creator's membership is the first of every project, so
 while the creator is still an active owner it is the creator. A project
 without such a human, a slug that is a route word, or a human handle that
 is a dashboard word stops the migration. The message names each one for
-the operator. Every existing project keeps its slug as `legacy_slug`. A
+the operator. Every existing project keeps its slug as `legacy_slug` (the column was dropped by 0086). A
 limit's `show_reason_in` is rewritten to full names. The downgrade appends
 the project id to slugs that two owners share (all but the oldest), as
 0032's downgrade does for handles, so that the old instance-wide key holds
@@ -214,7 +215,8 @@ to a different project.
 
 **Id:** ab5aa0b9-37cf-4d45-abe4-96b1326747e4
 **Type:** workaround
-**Status:** open
+**Status:** superseded
+**Superseded by:** 5d5697b1-c05e-4e37-b0cf-91e7dceeadb4
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.25 and the endpoint table (the namespace owner transfers "human, with the step-up"); review of the rename and transfer pull request
 **Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
@@ -225,6 +227,38 @@ merges second adds `second_factor.require_step_up(conn, hub, caller)` to the
 transfer route before `transfer(...)`, plus a test. Until then a stolen
 session of a namespace owner can file a transfer, which still needs the
 receiver's `go`.
+
+**Closed:** the second factor is on `main`, and the transfer and its `go` ask for it; why, and what is
+asked, is the entry below (tsk-svg6mfthm7xv).
+
+## A transfer and the `go` that moves a project ask for the step-up
+
+**Id:** 5d5697b1-c05e-4e37-b0cf-91e7dceeadb4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §2.8.4 and §6.25 (#698 names the `go`); the card tsk-svg6mfthm7xv
+**Revisit when:** a transfer may be answered by something other than a human's session, or §2.8.4 lists another call that moves a project
+
+`transfer_project` checks the caller's authority (`project_names.authority`: a human, the namespace owner
+or an owner of the project's organisation) and then `second_factor.require_step_up`, before it files or
+moves anything. That covers the three ways the call itself moves a project: into an organisation by one of
+its owners, out of an organisation to a human who is an owner, and an owner's hand-over of an
+organisation's project to themselves. The `go` that moves a project is asked as well, on the project route
+and on the personal route of an organisation's consent (`routes.requests._step_up_for_a_transfer`, only for
+`reply_id: go` on a `project_transfer` request); a `no` and a withdrawal change nothing and are not asked.
+A caller who is not an owner gets `forbidden` and not `step_up_required`, because the authority comes
+first.
+
+**Reason:** the `go` is the call that changes the owner. A stolen session of the receiver would
+otherwise complete a transfer that the sender's own session could not even file.
+
+**Rejected alternatives:**
+- Step-up on the filing only: the receiver's `go` is the half that completes the move.
+- Step-up on every answer of a transfer request, a `no` included: it refuses nothing a thief could use and
+  would ask a human who is declining.
+- Step-up before the authority check: a non-owner would learn that a step-up exists for a call they may
+  not make.
 
 ## A human membership that ends checks the namespace owner
 

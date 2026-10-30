@@ -1,7 +1,7 @@
-// Joining an agent, inside the Members view (js/members.js): a panel that
+// Joining an agent, inside a project's Agents view (js/agents-page.js): a panel that
 // creates a join for one of the human's agent profiles (or a new one) and
-// shows the paste line once (docs/api.md §3.1); the open joins as seats at
-// the front of the agents' grid; the others folded at the view's end. The
+// shows the paste line once (docs/api.md §3.1); the open joins as seats under
+// the cards; the others folded at the view's end. The
 // line carries a single-use code; it is held in the view only, never
 // stored, and gone when the view is left. Each join's state is derived from
 // its fields, expiry against the clock while the view is open; only an open
@@ -44,12 +44,12 @@ window.Maity = window.Maity || {};
   function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
     let profiles = profilesRead;
     let joins = joinsRead;
-    // The project's members as last read: an agent among them joins as an
-    // instance. Agents the hub said are members count as such even when
-    // the list on screen does not show them yet.
-    let members = ctx.members;
+    // The project's members as last read (ctx.members, which Agents keeps
+    // current after each save): an agent among them joins as an instance.
+    // Agents the hub said are members count as such even when the list on
+    // screen does not show them yet.
     const saidMember = new Set();
-    const memberOf = (id) => members.find((m) => m.id === id)
+    const memberOf = (id) => ctx.members.find((m) => m.id === id)
       || (saidMember.has(id) ? { id, instances: null, team: null } : null);
     const profileName = (id) => {
       const p = profiles.items.find((x) => x.id === id);
@@ -141,7 +141,7 @@ window.Maity = window.Maity || {};
     replaced.addEventListener("change", () => { replaceOne.checked = true; another.checked = false; });
     // The project's members read again, for the instances a choice offers.
     async function rereadMembers() {
-      try { members = (await M.api.getAll(ctx.base + "/members")).items; } catch (ignored) { /* the refusal shown says enough */ }
+      try { M.withMembers(ctx, (await M.api.getAll(ctx.base + "/members")).items); } catch (ignored) { /* the refusal shown says enough */ }
     }
 
     const own = !!hooks.member;
@@ -283,9 +283,9 @@ window.Maity = window.Maity || {};
             : d.reason === "member_join_limit" ? { message: "a member may not set this for their own agent: " + (LIMIT_WORDS[d.field] || d.field || "a field") }
             : d.reason === "member_agents_max" ? { message: "you hold as many agents in this project as it allows (" + d.max + ")" }
             : err);
-          // The limit is the agent owner's rulebook, in the agent's row on Members (§6.18).
+          // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (err.code === "instance_quota" && agent.id) {
-            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("members", agent.id, "rulebook") },
+            append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
               "Raise it in the team's rulebook"));
           }
           // A member the list on screen did not show, a first join the list
@@ -300,7 +300,7 @@ window.Maity = window.Maity || {};
             if (saysMember) saidMember.add(agent.id);
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
-            if (notMember) members = members.filter((m) => m.id !== agent.id);
+            if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
             showAgent();
             if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
               + "Choose whether the line starts another instance or replaces one, then create it." });
@@ -363,11 +363,20 @@ window.Maity = window.Maity || {};
     append(clear(panel), panelHead(() => close(true), own), body);
 
     let opener = null;
-    function open(from) {
+    // Opened, it reads the members again: an agent's instances and its team's
+    // limit may have changed since the view was drawn (a rulebook saved, an
+    // instance revoked), and the choice must offer what the hub has now.
+    // agentId: a profile to start from (the Agents page's Add to a project).
+    function open(from, agentId) {
       opener = from || null;
       panel.hidden = false;
       if (hooks.opened) hooks.opened(true);
+      if (agentId && Array.from(agentSelect.querySelectorAll("option")).some((o) => o.getAttribute("value") === agentId)) {
+        agentSelect.value = agentId;
+        showAgent();
+      }
       focusSoon(agentSelect);
+      rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
     function close(refocus) {
       panel.hidden = true;
@@ -458,10 +467,13 @@ window.Maity = window.Maity || {};
     // A join that expires while the view is open moves on without a reload.
     ctx.every(EXPIRY_MS, () => { if (keyOf(joins, M.api.now()) !== shownKey) changed(); });
 
-    return { open, close, seats, earlier, openCount, openAgents, reread };
+    // The members changed under an open panel (a rulebook saved on Agents):
+    // the choice drawn again from them, the chosen agent and instance kept.
+    const refresh = () => { if (!panel.hidden) showAgent(); };
+    return { open, close, seats, earlier, openCount, openAgents, reread, refresh };
   }
 
-  // On a page the router has not attached yet (a direct #/agents/join), the
+  // On a page the router has not attached yet (a direct /<owner>/<slug>/agents/join), the
   // focus waits until it is in the document.
   function focusSoon(el) {
     if (el.isConnected === false) window.setTimeout(() => { if (el.isConnected !== false) el.focus(); }, 0);
@@ -487,6 +499,8 @@ window.Maity = window.Maity || {};
     const listStatus = M.statusLine();
     let impl = null;
     let opener = null;
+    // The profile asked for (?agent=<id>), kept for a Try again after a failed first read.
+    let asked = null;
     const failedClose = () => {
       panel.hidden = true;
       if (hooks.opened) hooks.opened(false);
@@ -508,7 +522,7 @@ window.Maity = window.Maity || {};
             retry.disabled = true;
             if (await load()) {
               hooks.changed();
-              if (!panel.hidden) impl.open(opener);
+              if (!panel.hidden) impl.open(opener, asked);
             } else retry.disabled = false;
           },
         }, "Try again");
@@ -522,9 +536,10 @@ window.Maity = window.Maity || {};
     return {
       panel,
       listStatus,
-      open: (from) => {
+      open: (from, agentId) => {
         opener = from || null;
-        if (impl) { impl.open(from); return; }
+        asked = agentId || null;
+        if (impl) { impl.open(from, agentId); return; }
         panel.hidden = false;
         if (hooks.opened) hooks.opened(true);
         const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Try again") : null;
@@ -537,6 +552,7 @@ window.Maity = window.Maity || {};
       openAgents: () => (impl ? impl.openAgents() : []),
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
+      refresh: () => { if (impl) impl.refresh(); },
       // An open panel holds a form being filled in or a line shown once: a
       // redraw of the view would lose either.
       busy: () => !panel.hidden,
@@ -544,9 +560,4 @@ window.Maity = window.Maity || {};
   }
 
   M.join = { mount };
-  // #/<owner>/<slug>/join, from before joining moved: Members, the panel open.
-  M.views.join = async function (ctx, root) {
-    if (window.history && window.history.replaceState) window.history.replaceState(null, "", ctx.link("members", "join"));
-    await M.views.members(ctx, root, ["join"]);
-  };
 })(window.Maity);

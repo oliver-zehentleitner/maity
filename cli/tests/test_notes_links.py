@@ -177,57 +177,13 @@ def test_release_list_stops_on_a_cursor_that_comes_back(
     assert len(calls) == 2 and "same page cursor twice" in capsys.readouterr().err
 
 
-def test_link_list_refuses_an_answer_without_links(
-    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
-) -> None:
-    fake.routes[("GET", BASE)] = lambda s: (200, {"id": "tsk-0004", "title": "x"})
-    assert cli.main(["link", "list", "tsk-0004"]) == cli.EXIT_ERROR
-    out = capsys.readouterr()
-    assert "no links" not in out.out  # absent is not an empty list
-    assert "this hub does not have card links yet" in out.err
-
-
 NOT_FOUND = (404, {"error": {"code": "not_found", "message": "no such card", "details": {}}})
 
 
-@pytest.mark.parametrize(
-    ("openapi", "said"),
-    [
-        ({"paths": {}}, "this hub does not have card notes yet"),
-        ({"paths": {"/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": {"post": {}}}},
-         "not_found: no such card"),
-        ("not json", "not_found: no such card"),
-    ],
-)  # fmt: skip
-def test_a_404_names_a_feature_the_hub_lacks(
-    openapi: Any, said: str, joined: Path, fake: fakehub.FakeHub,
-    capsys: pytest.CaptureFixture[str],
-) -> None:  # fmt: skip
-    fake.openapi = openapi
+def test_a_404_is_the_hubs_not_found(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
     fake.routes[("POST", f"{BASE}/notes")] = lambda s: NOT_FOUND
     assert cli.main(["note", "add", "tsk-0004", "x"]) == cli.EXIT_ERROR
-    err = capsys.readouterr().err
-    assert said in err
-    if "does not have" in said:
-        assert "POST /projects/oliver/maity/tasks/tsk-0004/notes" in err
-
-
-@pytest.mark.parametrize(
-    ("argv", "method", "path", "feature"),
-    [
-        (["limit", "--until", "3h"], "POST", "/api/v1/me/limit", "usage limits"),
-        (["link", "remove", "tsk-0004", "lnk-0007"], "DELETE", f"{BASE}/links/lnk-0007",
-         "card links"),
-        (["messages"], "GET", "/api/v1/projects/oliver/maity/messages", "project messages"),
-        (["takeover", "list"], "GET", "/api/v1/projects/oliver/maity/takeovers", "takeovers"),
-        (["files", "get", "att-0001"], "GET", "/api/v1/projects/oliver/maity/attachments/att-0001",
-         "attachments"),
-    ],
-)  # fmt: skip
-def test_commands_on_routes_the_hub_lacks(
-    argv: list[str], method: str, path: str, feature: str, joined: Path, fake: fakehub.FakeHub,
-    capsys: pytest.CaptureFixture[str],
-) -> None:  # fmt: skip
-    fake.routes[(method, path)] = lambda s: NOT_FOUND
-    assert cli.main(argv) == cli.EXIT_ERROR
-    assert f"this hub does not have {feature} yet" in capsys.readouterr().err
+    assert "not_found: no such card" in capsys.readouterr().err
+    assert not [s for s in fake.seen if "openapi" in s.path]  # never asked what the hub has

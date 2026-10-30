@@ -38,7 +38,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
 ) -> None:
     owner = factory.human(migrated, "maintainer")
     maity = factory.project(migrated, "maity", name="Maity")
-    sample = factory.project(migrated, "sample", name="Sample shop", state="freeze")
+    sample = factory.project(migrated, "sample", name="Sample shop", state="review")
     other = factory.project(migrated, "other")  # not a member: never listed or counted
     me_maity = factory.membership(migrated, maity, "owner", human_id=owner)
     factory.membership(migrated, sample, "proxy", human_id=owner)
@@ -88,7 +88,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "slug": "sample",
             "full_name": "maintainer/sample",
             "name": "Sample shop",
-            "state": "freeze",
+            "state": "review",
             "trust": "admin",
             "role": "proxy",
             "logo": {"available": False, "etag": None},

@@ -448,29 +448,19 @@ def test_a_join_that_fails_is_join_failed(
     assert sup.records["plc-0003"].detail == detail
 
 
-@pytest.mark.parametrize(("offered", "detail"), [(False, "not_found"), (True, None), (None, None)])
-def test_a_hub_without_the_pickup_route_is_named(
-    world: Any, monkeypatch: pytest.MonkeyPatch, offered: bool | None, detail: str | None
+def test_a_pickup_not_found_fails_the_join_without_a_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sup, backend, _, _, logs = world
+    sup, backend, _, _, _ = world
     sup.client = Pickups(hub.HubError("404 Not Found", code="not_found", status=404))
-    sup.client.base = "https://hub.example"
-    asked: list[tuple[str, str, str]] = []
-
-    def offers(base: str, method: str, path: str) -> bool | None:
-        asked.append((base, method, path))
-        return offered
-
-    monkeypatch.setattr(hub, "offers", offers)
     joining(monkeypatch)
     new_clone(sup.cfg)
     sup.update([placement(agent=NEW)])
     settle(sup)
     assert backend.started == []
-    assert asked == [("https://hub.example", "post", "/runner/placements/{id}/join")]
-    assert sup.records["plc-0003"].detail == detail
-    named = [line for line in logs if "has no runner pickup" in line]
-    assert bool(named) is (offered is False)
+    assert (sup.records["plc-0003"].reason, sup.records["plc-0003"].detail) == (
+        "join_failed", None
+    )  # fmt: skip
 
 
 def test_a_rejoin_removes_the_old_credential_first(

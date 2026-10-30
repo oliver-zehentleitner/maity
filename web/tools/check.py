@@ -17,6 +17,8 @@ What is checked:
 - js: "use strict"; balanced brackets outside strings, comments and
   regular expressions; none of the HTML-parsing or code-evaluating calls
   (context/rendering.md); no native append/prepend outside js/dom.js;
+  no fragment route (#/), location.hash or History API outside
+  js/route.js (context/routing.md);
   no var, console or debugger; plus
   `node --check` per file when a node binary happens to be on the PATH
   (it is not required, and its absence is reported, not hidden).
@@ -367,6 +369,15 @@ def check_js(node):
                     finding(path, lineno, "forbidden: %s" % what)
             if not path.endswith("dom.js") and re.search(NATIVE_INSERT, text):
                 finding(path, lineno, "native append/prepend: use Maity.dom.append")
+        # The address is a path (docs/api.md §16.11): js/route.js alone knows how
+        # the address bar holds it; nowhere else a fragment route, the hash or
+        # the History API, in code, strings or comments (context/routing.md).
+        if not path.endswith(os.sep + "route.js"):
+            for lineno, text in enumerate(src.split("\n"), 1):
+                if "#/" in text:
+                    finding(path, lineno, "a fragment route (#/): routes are paths, js/route.js")
+                if re.search(r"location\.hash|history\.(pushState|replaceState)", text):
+                    finding(path, lineno, "the address outside js/route.js: use Maity.route")
         check_brackets(path, code)
     if node:
         for path in files + [BUNDLE]:

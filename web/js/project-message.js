@@ -1,4 +1,4 @@
-// Message the project (#/<owner>/<slug>/message): a message to everyone, a role
+// Message the project (/<owner>/<slug>/message): a message to everyone, a role
 // or one member (docs/api.md §8.4), of one of the hub's types, optionally
 // about a card. Its body is scanned by the hub: a mention draws the member
 // into the message's audience and pings them (§8.6); the dashboard never

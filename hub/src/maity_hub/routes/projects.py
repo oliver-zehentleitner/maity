@@ -21,13 +21,17 @@ from maity_hub import (
     idempotency,
     images,
     ktw,
+    moderation,
     namespace,
     onboarding,
+    org_projects,
+    orgs,
     placements,
     policy,
     project_names,
     releases,
     rules,
+    setup_cards,
     ticker,
 )
 from maity_hub import tables as t
@@ -35,13 +39,13 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import emit, lock_project
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
-from maity_hub.views import forge_of, member_view, principal_id, project_view
+from maity_hub.views import confirmed_by_of, forge_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -156,8 +160,12 @@ def _provider(memory: MemoryIn | None) -> bool | None:
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
+    # The handle of an organisation to create the project in (§6.26); the caller's own
+    # handle or nothing is the default of §6.1.
+    owner: str | None = Field(default=None, max_length=64)
     repository: RepositoryIn | None = None
     memory: MemoryIn | None = None
+    setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
 
 
@@ -166,6 +174,7 @@ class ProjectPatch(Strict):
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
     memory: MemoryIn | None = None
+    setup: Any = None
     state: str | None = None
     state_note: str | None = markdown(default=None)
     policy: PolicyIn | None = None
@@ -177,6 +186,52 @@ class ProjectPatch(Strict):
 
 def _load(conn: Connection, project_id: str) -> Any:
     return conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+
+
+# What a public project shows outside it (§6.20, §16.8): `hide` turns these off.
+PUBLIC_OFF = {"badge": "off", "swarm_public": "off"}
+
+
+def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
+    """`hide` on a project (§16.8): members-only, its README badge and public swarm page
+    off, with the `policy_changed` a `PATCH` would write."""
+    project = lock_project(conn, project_id)
+    current = policy.of(project)
+    new = {**current, **PUBLIC_OFF}
+    if new == current:
+        return
+    conn.execute(
+        update(t.project).where(t.project.c.id == project_id).values(**policy.columns(new))
+    )
+    rules.bump(
+        conn,
+        project,
+        "policy_changed",
+        BROADCAST,
+        {"old": current, "new": new, "reason": reason},
+        actor=actor,
+    )
+
+
+def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
+    """`remove` on a project (§16.8): archived as a `PATCH {state: archived}` archives it."""
+    project = lock_project(conn, project_id)
+    if project.state == "archived":
+        return
+    conn.execute(
+        update(t.project)
+        .where(t.project.c.id == project_id)
+        .values(state="archived", state_changed_at=clock.now())
+    )
+    rules.bump(
+        conn,
+        project,
+        "state_changed",
+        BROADCAST,
+        {"old": project.state, "new": "archived", "reason": reason},
+        actor=actor,
+    )
+    placements.project_archived(conn, project_id, actor, None)
 
 
 def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
@@ -338,7 +393,7 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
     aliases = namespace.aliases_of(conn, project.id)
-    return project_view(
+    view = project_view(
         project,
         settings_of(request),
         owner,
@@ -346,7 +401,12 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
         _export(project, request),
         aliases,
         _stored(conn, project, request),
+        confirmed_by_of(conn, [project])[project.id],
     )
+    held = moderation.view(moderation.hold(conn, "project", project.id))
+    if held is not None:  # only while a hold stands (§16.8)
+        view["moderation"] = held
+    return view
 
 
 def load_project(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
@@ -371,6 +431,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         shown = images.views(conn, [r.id for r in rows])
         names = namespace.full_names(conn, [r.id for r in rows])
         aliases = namespace.aliases_by(conn, [r.id for r in rows])
+        confirmed = confirmed_by_of(conn, rows)
         return JSONResponse(
             {
                 "items": [
@@ -382,6 +443,7 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
                         _export(r, request),
                         aliases[r.id],
                         _stored(conn, r, request),
+                        confirmed[r.id],
                     )
                     for r in rows
                 ],
@@ -390,35 +452,74 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         )
 
 
+def _creation_owner(
+    conn: Connection, caller: Any, owner: str | None
+) -> tuple[str, Any, str | None]:
+    """The namespace owner a new project is created in, the organisation and the caller's
+    role in it (None for the caller's own namespace). An organisation the caller is no member
+    of is `invalid` (`owner: unknown`), the same for every such handle; a member whom
+    `members_create_projects` does not allow is `forbidden` (`org_role`) (§6.26). The
+    organisation's row is locked, and the role read under the lock, before any project's."""
+    assert caller.human_id is not None
+    own = conn.execute(select(t.human.c.handle).where(t.human.c.id == caller.human_id)).scalar()
+    if owner is None or owner == own:
+        return str(caller.human_id), None, None
+    found = conn.execute(
+        select(t.org.c.id)
+        .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
+        .where(
+            t.org.c.handle == owner,
+            t.org.c.deleted_at.is_(None),
+            t.org_member.c.human_id == caller.human_id,
+        )
+    ).scalar()
+    if found is None:
+        raise invalid({"owner": "unknown"})
+    org = orgs.lock(conn, found)
+    role = orgs.role_of(conn, found, caller.human_id) if org is not None else None
+    if org is None or role is None:
+        raise invalid({"owner": "unknown"})
+    if role == "member" and not org.members_create_projects:
+        raise orgs.org_role()
+    moderation.refuse_held(conn, "org", str(org.id), "suspend")  # no new project while suspended
+    return str(org.id), org, role
+
+
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
     named = _provider(body.memory)
     memory_on = True if named is None else named  # the default provider is keep-the-why (§6.1)
+    setup = setup_cards.parse(body.setup, memory_on)
+    if body.repository is not None:  # refuse a bad repository before anything is written
+        _repository_columns(body.repository)
     words = namespace.app_words(request.app)
-    owner_id = caller.human_id
-    assert owner_id is not None  # a human caller
+    assert caller.human_id is not None  # a human caller
 
     def action(conn: Connection) -> idempotency.Outcome:
-        # The creator is the namespace owner: `<handle>/<slug>`, the slug free among the
-        # owner's projects and their aliases, and never a word that follows a project in a
-        # route (§6.25).
+        # The creator is the namespace owner, or an organisation they may create in:
+        # `<handle>/<slug>`, the slug free among the owner's projects and their aliases, and
+        # never a word that follows a project in a route (§6.25, §6.26).
         if body.slug in words:
             raise invalid({"slug": "reserved"}, "this slug is a word of the API's routes")
+        owner_id, org, org_role = _creation_owner(conn, caller, body.owner)
         if namespace.taken(conn, owner_id, body.slug):
-            raise invalid({"slug": "taken"}, "you have a project with this slug")
+            raise invalid({"slug": "taken"}, "this namespace has a project with this slug")
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
+        if setup["maity_badge"]:  # the creating human's choice, no policy_changed (§6.21)
+            filled["badge"] = "members"
         conn.execute(
             insert(t.project).values(
                 id=project_id,
-                owner_id=owner_id,
+                **namespace.owner_values(owner_id),
                 slug=body.slug,
                 name=body.name,
                 state="build",
                 state_changed_at=now,
                 keep_the_why=memory_on,
+                setup=setup_cards.stored(setup),
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -437,6 +538,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 joined_at=now,
                 last_seen_at=now,
                 changed_via=caller.via,
+                # an owner of the organisation holds a membership the hub keeps (§6.26)
+                org_keep="created" if org_role == "owner" else None,
             )
         )
         key = result.inserted_primary_key
@@ -467,7 +570,23 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             actor=caller.actor(owner),
             subject=("member", caller.principal_id),
         )
+        if org is not None:  # every other owner of the organisation is an owner here (§6.26)
+            org_projects.keep_all_owners(
+                conn,
+                org.id,
+                conn.execute(select(t.project).where(t.project.c.id == project_id)).one(),
+            )
         project = _load(conn, project_id)
+        if project.repository_url is not None:
+            setup_cards.create(
+                conn,
+                project,
+                settings_of(request).public_url,
+                owner,
+                caller.actor(owner),
+                reader_of(request),
+            )
+            project = _load(conn, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -489,10 +608,19 @@ def patch_project(
     words = namespace.app_words(request.app)
 
     def action(conn: Connection) -> idempotency.Outcome:
+        if "setup" in given:
+            raise invalid({"setup": "read_only"}, "the setup options are set at creation only")
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        if "slug" in given and found_owner is not None:
+            # A rename reads the namespace, and so the organisation's row (§6.26): that row
+            # before the project's.
+            orgs.lock(conn, found_owner)
         # Membership's project snapshot may precede another writer's commit. Merge settings
         # and make policy/event decisions from the current row under the shared project lock.
         mine = replace(mine, project=lock_project(conn, mine.project.id))
+        if "slug" in given and mine.project.owner_org_id != found_owner:
+            raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
         project = mine.project
@@ -515,6 +643,7 @@ def patch_project(
             if columns["repository_url"] != project.repository_url:
                 # The owner confirmed the old URL, not this one, whoever changes it (§11.4).
                 values["repository_owner_confirmed"] = False
+                values["repository_confirmed_by"] = None
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -550,9 +679,7 @@ def patch_project(
                 values["settings"] = merged
             was_on = ticker.settings(project)["enabled"]
             now_on = bool((merged.get("ticker") or {}).get("enabled"))
-            # Switched on now, or on from before the merges were announced (an install
-            # upgraded with the ticker on has no start yet): merges count from now.
-            if now_on and (not was_on or ticker.merges_since(conn, project.id) is None):
+            if now_on and not was_on:  # merges count from the moment it is switched on
                 ticker.switched_on(conn, project.id)
         provider = _provider(body.memory)
         memory_on = project.keep_the_why if provider is None else provider
@@ -578,8 +705,18 @@ def patch_project(
         state_changes = "state" in given and body.state != project.state
         if state_changes and body.state not in policy.STATES:
             raise invalid({"state": "unknown"})
-        if (state_changes or new_policy is not None or explicit_changes) and not body.reason:
+        # The README badge alone is a display choice: it needs no reason (§6.20), and its
+        # policy_changed carries `reason: null` then. Every other policy field keeps it.
+        current = policy.of(project)
+        badge_only = new_policy is not None and {
+            name for name in new_policy if new_policy[name] != current.get(name)
+        } == {"badge"}
+        needs_reason = (
+            state_changes or (new_policy is not None and not badge_only) or explicit_changes
+        )
+        if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
+        _refuse_against_a_hold(conn, project, state_changes, new_policy)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
         if settings_changed:
@@ -630,6 +767,20 @@ def patch_project(
                 .values(state_note=body.state_note)
             )
             rules_inputs_changed = True
+        if "repository" in given and project.repository_url is None:
+            # The first repository opens the setup cards (§6.21), judged by the state this
+            # PATCH leaves: a body that also archives opens none, one that also brings the
+            # project back opens them, and they come after its state_changed.
+            fresh = _load(conn, project.id)
+            if (
+                fresh.repository_url is not None
+                and fresh.state != "archived"
+                and isinstance(fresh.setup, dict)
+                and fresh.setup.get("cards") is None
+            ):
+                setup_cards.create(
+                    conn, fresh, settings_of(request).public_url, mine.id, actor, reader_of(request)
+                )
         if new_policy is None and explicit_changes:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**explicit))
             # The view may not move (`optional` under a provider that is off reads the
@@ -745,8 +896,24 @@ def transfer_project(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        # The organisations' rows before the project's, in the order of their ids (§6.26): the
+        # one that owns it now, and the one it goes to.
+        wanted = {mine.project.owner_org_id, body.to if body.to.startswith("org-") else None}
+        for org_id in sorted(i for i in wanted if i is not None):
+            orgs.lock(conn, org_id)
         mine = replace(mine, project=lock_project(conn, mine.project.id))
+        if mine.project.owner_org_id != found_owner:  # moved meanwhile: its new owner is unlocked
+            raise orgs.project_moved()
+        # The authority first, so that a caller who may not transfer is `forbidden`, not asked for
+        # the second factor; `transfer` checks it again for its other callers.
+        project_names.authority(conn, mine)
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         request_id = project_names.transfer(conn, mine, caller, body.to)
+        if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
+            return idempotency.Outcome(
+                200, "project", mine.project.id, load_project(conn, mine.project.id, request)
+            )
         return idempotency.Outcome(202, "request", request_id, load_request(conn, request_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -756,16 +923,25 @@ def transfer_project(
 def confirm_repository(
     slug: str, body: RepositoryConfirmIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
-    """The namespace owner confirms the project's repository for their own forge grants
-    (§11.4): only the URL they saw, and only while the project still carries it."""
+    """The namespace owner confirms the project's repository for their own forge grants, for a
+    project of an organisation any owner of it does (§11.4): only the URL they saw, and only
+    while the project still carries it."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        if found_owner is not None:  # the organisation's row before the project's (§6.26)
+            orgs.lock(conn, found_owner)
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         project = mine.project
+        if project.owner_org_id != found_owner:
+            raise orgs.project_moved()
         if mine.kind != "human":
             raise humans_only("only the namespace owner confirms the repository")
-        if mine.row.human_id != project.owner_id:
+        if project.owner_org_id is not None:
+            if orgs.role_of(conn, project.owner_org_id, mine.row.human_id) != "owner":
+                raise orgs.org_role()
+        elif mine.row.human_id != project.owner_id:
             raise forbidden(message="only the project's namespace owner confirms its repository")
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         if project.repository_url is None or body.url.rstrip("/") != project.repository_url:
@@ -780,7 +956,7 @@ def confirm_repository(
         conn.execute(
             update(t.project)
             .where(t.project.c.id == project.id)
-            .values(repository_owner_confirmed=True)
+            .values(repository_owner_confirmed=True, repository_confirmed_by=mine.row.human_id)
         )
         return idempotency.Outcome(
             200, "project", project.id, _view(conn, _load(conn, project.id), request)
@@ -803,6 +979,33 @@ HUMANS_ONLY_POLICY = {
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }
+
+
+def _refuse_against_a_hold(
+    conn: Connection,
+    project: Any,
+    state_changes: bool,
+    new_policy: dict[str, Any] | None,
+) -> None:
+    """A moderation hold (§16.8): a hidden or removed project stays members-only, and a
+    removed one stays archived, until an instance admin lifts the hold. Only what this
+    PATCH turns on is refused: a surface left as it was blocks no other policy change."""
+    found = [moderation.hold(conn, "project", project.id)]
+    if project.owner_org_id is not None:
+        # The suspension of the organisation that owns it holds its projects the way `remove`
+        # does (§16.8): archived, and nothing public turned on, until the hold is lifted. It
+        # stands beside a hold of the project's own, whichever that is.
+        found.append(moderation.hold(conn, "org", project.owner_org_id))
+    holds = [h for h in found if h is not None]
+    if not holds:
+        return
+    current = policy.of(project)
+    if new_policy is not None and any(
+        new_policy[k] != off and new_policy[k] != current[k] for k, off in PUBLIC_OFF.items()
+    ):
+        raise moderation.held()
+    if state_changes and any(h.action in ("remove", "suspend") for h in holds):
+        raise moderation.held()
 
 
 def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
@@ -832,6 +1035,10 @@ def _authorise_patch(mine: Membership, body: ProjectPatch, given: set[str]) -> N
         raise forbidden(message="the absence is set by the owner only")
     if given - {"absence", "reason"}:
         mine.require("project:admin")
+    # Launch is the owner's go (§6.1): an admin human is refused too.
+    moves_to_launch = body.state == "launch" and mine.project.state != "launch"
+    if moves_to_launch and (mine.trust != "owner" or mine.kind != "human"):
+        raise forbidden(message="moving to launch is the owner's go")
 
 
 def _absence(project: Any) -> dict[str, Any] | None:

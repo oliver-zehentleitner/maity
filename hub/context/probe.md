@@ -132,6 +132,51 @@ the time instead of silently stale data. A budget per project: the limit
 is the source's, and every project of an owner reads with it. Other
 alternatives: unknown.
 
+## The forge's per-token maps drop what says nothing, and keep at most a bound
+
+**Id:** 305001eb-e4bf-4170-aea9-011bec960cef
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-7865c6c2gszb (the hub's in-process structures without a bound), the lead's ruling, 2026-10-29; the review of #671 (the gate's trade-off, the scan's cost); `hub/tests/test_forge.py` (`test_budgets_that_say_nothing_go_beyond_the_kept_number`, `test_a_visibility_cache_drops_stale_entries_and_keeps_at_most_the_bound`)
+**Revisit when:** the load test (tsk-ryas52q9k53z) or prod's memory curve shows the bounds (256 budgets, 4096 visibility entries) too small or too large
+
+The budgets (`forge._budgets`), the visibility of a repository to a
+token (`_visible`) and its publicness (`_public`) are keyed by a token's
+digest. Installation tokens are minted anew every hour, so these maps
+gained keys for as long as the process ran, and nothing removed them.
+
+- **Budgets:** once more than `BUDGETS_KEPT` (256) sources are known, a
+  read drops every budget that says nothing any more. That is one with
+  nothing in flight, no hold, and no `remaining` that still counts
+  (none, or its window over). Such a budget answers exactly as a new
+  `_Budget()` would, so dropping it changes no answer. A budget still
+  in use is never dropped, whatever the count.
+- **Visibility and publicness:** a write first drops the entries past
+  their time (300 s and 600 s), then the oldest written beyond
+  `CACHE_KEPT` (4096). A dropped entry costs one more read of
+  `/repos/{repository}`, nothing else. The writes and the `_forget` of
+  `_public` go under one lock, since the probe's worker and the requests
+  write them from different threads.
+- **A contract text read's gate** (`contract_text._pending`) goes in a
+  `finally`, also when the forge did not answer. Every new commit is a
+  new key, so a gate kept after a failure would stay for good. Accepted
+  in return: after a failed read, a request still waiting on the old
+  gate and a new one with a new gate may both read the forge at once.
+
+The numbers are a first estimate: far above what a single instance uses
+today, and small enough to stay a few MB at most. Above `BUDGETS_KEPT`,
+while every budget is in use, each read scans the whole map under
+`_budgets_lock` (O(n) per read). That is negligible at today's counts,
+and part of what the revisit weighs.
+
+**Rejected alternatives:**
+- A plain LRU for the budgets: it could drop a budget that still holds
+  its source until the reset, and the next read would then go out into a
+  spent limit.
+- A sweeping thread on a timer: one more thread for what the write
+  itself can do.
+
 ## Confirming the repository asks for no step-up until the second factor lands
 
 **Id:** 0b375b9b-2098-4e55-a461-cccdad6a62d1

@@ -1,7 +1,7 @@
 // Signing in without a password (docs/api.md §2.6). On the login page, as
 // GET /auth/methods offers them: "Have a code?" for the new device (§2.6.2)
 // and "Email me a sign-in link" (§2.6.3). On a signed-in device, "Sign in
-// another device" (#/account/sign-in-device): the code, its QR, a countdown
+// another device" (/account/sign-in-device): the code, its QR, a countdown
 // and then the approval, which leads with what the hub observed, labels
 // what the device claims, and has the human pick the number the device
 // shows; Deny is the default and there is no plain Approve (§2.6.7).
@@ -54,9 +54,9 @@ window.Maity = window.Maity || {};
   }
 
   // Where to go once signed in: the `next` the hub kept, if it is one of
-  // the dashboard's own routes.
+  // the dashboard's own paths (§2.6.5).
   function goNext(next) {
-    window.location.hash = typeof next === "string" && next.startsWith("/#/") ? next.slice(1) : "";
+    M.route.go((M.safeNext && M.safeNext(next)) || "/", { replace: true });
   }
 
   // ---- the login page ------------------------------------------------------
@@ -65,30 +65,32 @@ window.Maity = window.Maity || {};
   // `signedIn` draws the dashboard once a session exists.
   function loginOptions(every, signedIn) {
     const box = h("div", { class: "sign-in-options" });
-    // Asked only of a hub whose machine form lists it; one without the
-    // methods offers the password alone.
-    M.api.hubHas("GET", "/auth/methods")
-      .then((has) => (has ? M.api.get("/auth/methods") : null))
+    M.api.get("/auth/methods")
       .then((methods) => {
-        if (!methods) return;
-        const prefilled = codeFromHash();
+        const prefilled = codeFromAddress();
         const next = M.signInNext ? M.signInNext() : null;
         append(box,
           methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
           methods.email_link ? mailLink(signedIn) : null,
           // §2.7: offered only where the instance registers.
           methods.registration ? h("p", { class: "register-link" }, "No account yet? ",
-            h("a", { href: "#/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, "Create an account")) : null);
+            h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, "Create an account")) : null);
       }, () => {});
     return box;
   }
 
-  // #/sign-in/code?c=K7QM4XPR9D2F, the QR's URL: the field filled in, sent only
-  // on the human's tap (§2.6.2).
-  function codeFromHash() {
-    const m = /^#\/sign-in\/code\?(.*)$/.exec(window.location.hash || "");
-    if (!m) return null;
-    const c = new URLSearchParams(m[1]).get("c");
+  // /sign-in/code#c=K7QM4XPR9D2F, the QR's URL (§2.6.2, §16.11): the code in
+  // the fragment, never sent to the hub; the field filled in, sent only on
+  // the human's tap. Read once, then gone from the address: a later drawing
+  // of the login box finds no code and leaves the field empty, by design (a
+  // code in the address bar or the history is one more place to read it
+  // from). In fixture mode the fragment holds the route, so the code is its
+  // query there.
+  function codeFromAddress() {
+    const at = M.route.current();
+    if (at.path !== "/sign-in/code") return null;
+    const c = M.route.fixture ? at.query.get("c") : new URLSearchParams(at.fragment).get("c");
+    M.route.dropFragment();
     return c ? normalCode(c) : null;
   }
 
@@ -236,7 +238,7 @@ window.Maity = window.Maity || {};
     return panel;
   }
 
-  // ---- the signed-in device: #/account/sign-in-device ----------------------
+  // ---- the signed-in device: /account/sign-in-device ----------------------
 
   async function anotherDevice(ctx, root) {
     const heading = h("h2", { tabindex: "-1" }, "Sign in another device");
@@ -266,8 +268,7 @@ window.Maity = window.Maity || {};
     try {
       made = await M.api.post("/auth/device-codes", {});
     } catch (err) {
-      if (await M.api.missingRoute(err, "POST", "/auth/device-codes")) { append(clear(stage), M.dom.notOnHub("This hub has no sign-in by code yet.")); return; }
-      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), M.dom.notOnHub("This hub does not offer sign-in by code.")); return; }
+      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), h("p", { class: "muted" }, "This hub does not offer sign-in by code.")); return; }
       status.fail("No code: ", said(err));
       return;
     }

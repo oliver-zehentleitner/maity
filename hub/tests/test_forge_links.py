@@ -248,7 +248,7 @@ def setup(who: flow.Human, installation_id: int, state: str, code: str = "c0de")
     return location
 
 
-DONE = "https://hub.example/#/settings/forge"
+DONE = "https://hub.example/settings/forge"
 
 
 def links(who: flow.Human) -> list[dict[str, Any]]:
@@ -607,3 +607,13 @@ def test_a_token_set_and_removed_are_account_records(
     assert changes == [("owner_token", "token_set"), ("owner_token", "token_removed")]
     assert FINE not in str(_records(migrated, human.id))
     assert _security_titles(human) == ["Forge access added: maintainer-gh (owner_token)"]
+
+
+def test_the_forge_notification_reads_in_the_humans_language(
+    human: flow.Human, migrated: Engine, sealing: None, user_api: list[str]
+) -> None:
+    assert (
+        human.patch("/me/notification-settings", {"email": {"language": "de"}}).status_code == 200
+    )
+    put_token(human, FINE)
+    assert _security_titles(human) == ["Forge-Zugang hinzugefügt: maintainer-gh (owner_token)"]

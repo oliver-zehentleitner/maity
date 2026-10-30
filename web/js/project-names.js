@@ -29,11 +29,10 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // The section, for a human owner, where the hub knows names (its project
-  // view carries `aliases`); none otherwise.
+  // The section, for a human owner; none otherwise.
   function section(ctx) {
     const p = ctx.project;
-    if (ctx.me.kind !== "human" || !ctx.isOwner || !("aliases" in p)) return null;
+    if (ctx.me.kind !== "human" || !ctx.isOwner) return null;
     const box = h("div", { class: "project-names" }, h("h2", { class: "panel-title", id: "names-heading" }, "Project name"),
       h("p", null, "This project is ", h("code", null, p.full_name), "."),
       p.aliases.length
@@ -72,7 +71,7 @@ window.Maity = window.Maity || {};
         status.busy("Renaming…");
         try {
           const updated = await M.api.patch(ctx.base, { slug });
-          window.location.hash = ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings");
+          M.route.go(ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings"));
         } catch (err) {
           const why = said(err);
           if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.slug) { status.done(); fail(why.message); }
@@ -134,7 +133,7 @@ window.Maity = window.Maity || {};
             const answer = await M.stepUp.run(() => M.api.post(ctx.base + "/transfer", { to: to.id }), ask, "Transferring " + p.full_name);
             status.done();
             // Moved in the call: the project answers under its new name.
-            if (answer && answer.full_name) { window.location.hash = ctx.projectLink(answer.full_name, "settings"); return; }
+            if (answer && answer.full_name) { M.route.go(ctx.projectLink(answer.full_name, "settings")); return; }
             append(M.dom.clear(result), h("p", { class: "ok" }, (to.org ? "Asked the owners of @" + to.handle + ". The project moves when one of them accepts"
               : "Asked " + to.name + ". The project moves when they accept") + " in their inbox; a rename or another transfer withdraws this one."),
             // Into an organisation the owners' requests are personal (§6.26): withdrawn on /requests.
@@ -157,8 +156,7 @@ window.Maity = window.Maity || {};
     const once = (to) => (to.org ? to.org.my_role === "owner" : to.id === ctx.me.id);
     fill([]);
     if (ctx.me.kind === "human") {
-      M.api.hubHas("GET", "/orgs")
-        .then((yes) => (yes ? M.api.get("/orgs") : { items: [] }))
+      M.api.get("/orgs")
         .then((r) => {
           // A suspended organisation takes no transfer in (§6.26).
           const orgs = r.items.filter((o) => ["owner", "admin"].includes(o.my_role) && o.id !== p.owner.id && !o.moderation);
