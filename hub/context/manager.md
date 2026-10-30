@@ -175,12 +175,19 @@ own reason it was withdrawn for); a failed check leaves the request open for a `
 
 The paths that start it: a `PATCH` with `members:admin` (202, the other fields at once, the boss side's
 request the answer); the owner of the subordinate without `members:admin`, member or not (`_owner_sets_reports_to`,
-for a foreign boss, `asked_by_human` when they are no member: they read and withdraw it under
-`/requests/{id}`, never answer it); an admin agent's patch after its owner's go (§2.3 ᵃ), which asks both;
+for a foreign boss, `asked_by_human` when they are no member); an admin agent's patch after its owner's go (§2.3 ᵃ), which asks both;
 and a join, which starts the membership with `reports_to: null` and asks the boss's side at the exchange
 with the join's creator as asker. A further `PATCH` of the member's `reports_to` withdraws the open
 requests (`superseded`), an agent that did not ask is refused (`pending_consent`), the removal of either
 member withdraws them (`member_removed`).
+
+Who reads and withdraws: either owner of the edge, member of the project or not, reads and withdraws
+**both** requests of the pair, also the one addressed to the other owner, under `/requests/{id}` (and on
+the project route as a member without any scope), and answers only the one addressed to them; a request
+asked from outside the project is also in the asker's `GET /requests` (`asked_by=me` included), and only
+that kind: other requests with `asked_by_human` (an organisation's) are not. A `go` on an edge that
+already exists (an older edge, or the same boss named again after it became a manager) still sets
+`line_consent`, though `reports_to` does not change.
 
 **Reason:** an agent reports across owners only with a human's consent, and a human who owns one side
 need not be a member of the project. A personal request already reaches such a human, is answered where
@@ -192,6 +199,9 @@ every personal request is, and opens no call into the project.
   requests the hub already has; the contract was changed to the personal route instead.
 - One request for the pair with two answers: each owner answers their own request (`addressee_only`), and
   a `no` on either must be visible as a refusal by that owner.
+- Letting an owner see only the request addressed to or asked by them: the contract gives both owners
+  the withdrawal of both requests (§6.2 "Pending"), and a withdrawal one cannot read would be blind; the
+  reviewer's finding on #772 (the owner outside the project could not reach the sibling).
 - A column naming the pair: the proposal carries its sibling ids, and nothing queries by them but the
   hub's own withdrawals.
 
