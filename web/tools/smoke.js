@@ -6686,6 +6686,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(waitWrites.length === 1 && "up_to" in waitWrites[0] && !("ids" in waitWrites[0])
     && !waitItems().some((li) => li.classList.contains("unread") && !/sign-in|address/i.test(text(li))),
     "notifications: Mark all read marks up to the first page's head; the list is read again " + JSON.stringify(waitWrites));
+  // Mark all read stays in place, off with nothing left to mark; sign-in alerts said to stay (tsk-bt2p3rem8tbj).
+  expect(btn(main, "Mark all read") && btn(main, "Mark all read").disabled && text(main).includes("Mark all read leaves sign-in and address alerts unread"),
+    "notifications: Mark all read stays, off while nothing it marks is unread; sign-in and address alerts said to stay unread");
+  // Mark read per item, without opening it: the chat item unread again here; a security item only where this session may confirm it.
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50") && waitWrites.length === 1
+    ? waitGet(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "ntf-4237" ? Object.assign({}, x, { read: false }) : x)) })) : waitGet(p));
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  const waitRow = (id) => waitItems().find((li) => li.getAttribute("data-notification") === id);
+  const waitMark = (id) => waitRow(id) && waitRow(id).querySelector("button.mark-read");
+  const waitSessions = (await waitGet("/auth/sessions?ended=true")).items;
+  const waitSec = (await waitGet("/me/notifications?limit=50")).items.find((x) => x.id === "ntf-acr-7");
+  const waitSecOk = !waitSec.read && win.Maity.sessions.mayConfirm(waitSessions.find((x) => x.current) || null, waitSec, waitSessions.find((x) => x.id === waitSec.target.id) || null);
+  expect(waitMark("ntf-4237") && waitMark("ntf-4237").getAttribute("aria-label").startsWith("Mark read: ") && !btn(main, "Mark all read").disabled
+    && !!waitMark("ntf-acr-7") === waitSecOk && !waitMark("ntf-acr-8"),
+    "notifications: Mark read on an unread item; on a sign-in alert only where this session may confirm it; none on an open matter");
+  waitMark("ntf-4237").click(); for (let k = 0; k < 16; k++) await tick();
+  expect(waitWrites.length === 2 && JSON.stringify(waitWrites[1]) === JSON.stringify({ ids: ["ntf-4237"] }) && !waitMark("ntf-4237"),
+    "notifications: Mark read sends that one id and the list is read again " + JSON.stringify(waitWrites));
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // Languages: project writes are human-admin only; personal language is not mail-gated.
