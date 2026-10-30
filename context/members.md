@@ -320,7 +320,7 @@ page is served, the bio only while it is public, the links by
 public projects plus the shared ones and its members only to members.
 Humans only: an agent is bound to one project and never reads a
 person's links. Unknown, deleted, agent, suspended and pending names,
-and an organisation that shows a non-member nothing, are one
+and a person or an organisation that shows the reader nothing, are one
 `not_found`; a hold makes the links members-only.
 
 **Reason:** the visibility rules (public page switches, holds,
@@ -338,3 +338,9 @@ all. One read keeps the rule in one place.
   colleague may see.
 - Different `not_found` answers for unknown and suspended names: would
   tell a reader that a suspended account exists.
+- Answering every live human by handle with name and avatar, and
+  `not_found` only for unknown, suspended, pending and deleted names:
+  would tell any signed-in human who has an account and hand out an
+  avatar §6.10 denies them, which the invitation (§6.26) and the avatar
+  read (§6.10) were built not to do. A person who shows the reader
+  nothing is `not_found`, like an organisation.
