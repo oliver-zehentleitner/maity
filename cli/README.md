@@ -314,7 +314,7 @@ minimum version and the upgrade line from the answer.
 | `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `plan` and `review` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
+| `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
 | text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
@@ -621,7 +621,8 @@ refusal for `objection_open` says so. Why the checks:
 covers the endpoints that have no command of their own: creating and
 editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
 conversation history. It sends one signed request to `/api/v1<path>` and
-prints the JSON answer. A proxy adds `--on-request` with the owner's
+prints the JSON answer; an answer the hub sends as text (`…/rules` is
+Markdown) is printed as it came. A proxy adds `--on-request` with the owner's
 answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
 exact call, body bytes included,
 [`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
