@@ -144,13 +144,19 @@ def file(
 
 
 def _still_allowed(asker: Any) -> None:
-    """The asker may still ask: not isolated, and still holding `members:admin` (a human) or
-    still an admin agent. Otherwise the `go` is refused and the request stays open, for a
-    `no` or a withdrawal, as every other refusal at a `go` (§6.2)."""
-    allowed = asker.isolated_since is None and (
-        in_admin_team(asker.trust, asker.role)
-        if asker.agent_id is not None
-        else has_scope(asker.trust, asker.role, "human", "members:admin")
+    """The asker may still ask: still an active member, not isolated, and still holding
+    `members:admin` (a human) or still an admin agent, by the role's base (a project's own
+    role holds the scopes of its base). Otherwise the `go` is refused and the request stays
+    open, for a `no` or a withdrawal, as every other refusal at a `go` (§6.2)."""
+    allowed = (
+        asker is not None
+        and asker.active is True
+        and asker.isolated_since is None
+        and (
+            in_admin_team(asker.trust, asker.role_base)
+            if asker.agent_id is not None
+            else has_scope(asker.trust, asker.role_base, "human", "members:admin")
+        )
     )
     if not allowed:
         raise ApiError(
@@ -174,9 +180,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     if target is None or target.active is None:  # removed meanwhile: nothing left to change
         return
     asker = conn.execute(select(t.membership).where(t.membership.c.id == request.asked_by)).first()
-    if asker is None or asker.active is None:
-        return  # the one who asked left: nobody proposes this now
     _still_allowed(asker)
+    assert asker is not None  # `_still_allowed` refuses a missing asker
     by = principal_id(conn, asker.id)
     assert by is not None
     change = members.Change(project, s.proposer, by, s.approver, None, None)

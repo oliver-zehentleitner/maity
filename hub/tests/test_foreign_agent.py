@@ -237,3 +237,20 @@ def test_a_go_is_refused_when_the_asker_may_not_ask_any_more(
     assert refused.json()["error"]["code"] == "asker_not_allowed"
     assert _row(migrated, lent).role == "coder"
     assert answer(friend, asked.json()["id"], "no").status_code == 200  # still open for a no
+
+
+def test_the_request_of_an_asker_who_left_the_project_is_withdrawn_with_them(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The removal withdraws a member's open proposals (`proposals`): no `go` can apply what
+    nobody asks for any more, so `_still_allowed` never meets a removed asker."""
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    deputy = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, _project(migrated), "admin", human_id=deputy.id)
+    asked = put(deputy, lent, role="reviewer")
+    assert owner.delete(f"{PROJECT}/members/{deputy.id}").status_code == 200
+    [row] = [r for r in _requests(migrated) if r.id == asked.json()["id"]]
+    assert row.status == "withdrawn"
+    assert answer(friend, row.id, "go").status_code == 409
+    assert _row(migrated, lent).role == "coder"

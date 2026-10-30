@@ -51,6 +51,10 @@ ever rewritten and nothing can drift.
 - Reusing the pause: the contract gives isolation its own field, routes and effects (released claims, closed
   placements, no audience), none of which a pause has.
 
+The isolation reason is trimmed before its length check: a reason of blanks is none, and the stored reason
+is what a reader sees without padding. Rejected: rejecting padded reasons outright; trimming keeps a client's
+stray whitespace from being an error.
+
 **Not covered:**
 - The audiences of card events that name an isolated arbiter or assignee are not rewritten. They are no
   leak: `events.readable_by` answers before every audience rule, so the agent reads none of them, and a lift
