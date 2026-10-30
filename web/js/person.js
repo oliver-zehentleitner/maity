@@ -1,11 +1,12 @@
 // A person or an organisation at /<handle> (docs/api.md §6.27, §16.11), for
-// a signed-in reader: one read, GET /people/{handle}, shown as the hub
-// answers it for this reader. Name, handle and picture; for a person the
-// bio while the public page is served, the links as far as the person's
-// links_visible admits this reader, and the projects both are in; for an
-// organisation its public projects and the reader's own in it, and its
-// members with their roles for a member. **View public page** only where
-// the hub serves one, opened at ?as=public (§16.9).
+// a signed-in human: one read, GET /people/{handle}, shown as the hub
+// answers it for this reader. Name, handle and picture (a neutral
+// placeholder where the hub gives none); for a person the bio while the
+// public page is served and the links as far as the person's
+// links_visible admits this reader; the projects the hub lists, the
+// shared ones marked; for an organisation its members with their roles
+// for a member. **View public page** only where the hub serves one,
+// opened at ?as=public (§16.9).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -44,13 +45,33 @@ window.Maity = window.Maity || {};
     return items.length ? h("ul", { class: "person-links" }, items) : null;
   }
 
-  const projectList = (ctx, list, none) => (list && list.length
-    ? h("ul", { class: "person-projects" }, list.map((p) => h("li", null,
-      ctx.projects.some((x) => x.full_name === p.full_name)
-        ? h("a", { href: "/" + M.api.projectPath(p.full_name) + "/overview" }, p.name || p.full_name)
-        : h("a", { href: "/" + M.api.projectPath(p.full_name) + "?as=public", target: "_blank", rel: "noopener" }, p.name || p.full_name),
-      h("span", { class: "muted" }, " " + p.full_name))))
-    : h("p", { class: "muted" }, none));
+  // The picture where the hub gives its address; otherwise, and when it
+  // does not load, a neutral placeholder: the answer carries no account id
+  // for §6.10's generated avatar (§6.27).
+  function picture(x, px) {
+    const none = () => h("span", { class: "person-picture-none size-" + px, "aria-hidden": "true" });
+    if (!x.avatar_url) return none();
+    try {
+      const img = h("img", { class: "avatar-img", src: x.avatar_url, alt: "", width: String(px), height: String(px) });
+      img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(none(), img); });
+      return img;
+    } catch (refused) {
+      return none();
+    }
+  }
+
+  // The projects the hub lists: one's own (shared) to its overview, any
+  // other to its public page; a cut list said with its total.
+  function projectList(p, none) {
+    const list = p.projects || [];
+    if (!list.length) return h("p", { class: "muted" }, none);
+    return [h("ul", { class: "person-projects" }, list.map((x) => h("li", null,
+      x.shared
+        ? h("a", { href: "/" + M.api.projectPath(x.full_name) + "/overview" }, x.name || x.full_name)
+        : h("a", { href: "/" + M.api.projectPath(x.full_name) + "?as=public", target: "_blank", rel: "noopener" }, x.name || x.full_name),
+      h("span", { class: "muted" }, " " + x.full_name + (x.shared ? " · yours too" : " · public page"))))),
+    p.projects_total > list.length ? h("p", { class: "muted" }, list.length + " of " + p.projects_total + " shown.") : null];
+  }
 
   const ROLE_WORDS = { owner: "owner", admin: "admin", member: "member" };
 
@@ -69,25 +90,20 @@ window.Maity = window.Maity || {};
     const own = !org && ctx.me && ctx.me.handle === p.handle;
     append(root,
       h("div", { class: "person-head" },
-        M.avatar ? M.avatar(Object.assign({ kind: org ? "organisation" : "human" }, p), 64) : null,
+        picture(p, 64),
         h("div", null,
-          h("h2", null, p.display_name || p.handle),
+          h("h2", { class: "person-name" }, p.display_name || p.handle),
           h("p", { class: "muted" }, "@" + p.handle + (org ? " · organisation" : own ? " · you" : "")))),
-      p.public_page ? h("p", null, h("a", { class: "button-link", href: "/" + encodeURIComponent(p.handle) + "?as=public", target: "_blank", rel: "noopener" }, "View public page")) : null,
+      p.page_served ? h("p", null, h("a", { class: "button-link", href: "/" + encodeURIComponent(p.handle) + "?as=public", target: "_blank", rel: "noopener" }, "View public page")) : null,
       typeof p.public_bio === "string" && p.public_bio ? h("p", { class: "person-bio" }, p.public_bio) : null,
       org ? null : links(p.website, p.social));
-    if (org) {
-      append(root, h("h3", null, "Projects"),
-        projectList(ctx, p.projects, "No public project, and none of yours in it."));
-      if (Array.isArray(p.members)) {
-        append(root, h("h3", null, "Members"),
-          h("ul", { class: "person-members" }, p.members.map((m) => h("li", null,
-            M.avatar ? M.avatar(Object.assign({ kind: "human" }, m), 20) : null, " ",
-            m.display_name || m.handle, h("span", { class: "muted" }, " @" + m.handle + " · " + (ROLE_WORDS[m.role] || m.role))))));
-      }
-    } else if (!own) {
-      append(root, h("h3", null, "Projects you share"),
-        projectList(ctx, p.shared_projects, "You are in no project together."));
+    append(root, h("h3", null, own ? "Your projects" : "Projects"),
+      projectList(p, org ? "No public project, and none of yours in it." : own ? "You are in no project." : "No project you share, and no public one."));
+    if (org && Array.isArray(p.members)) {
+      append(root, h("h3", null, "Members"),
+        h("ul", { class: "person-members" }, p.members.map((m) => h("li", null,
+          picture(m, 20), " ",
+          m.display_name || m.handle, h("span", { class: "muted" }, " @" + m.handle + " · " + (ROLE_WORDS[m.role] || m.role))))));
     }
   };
 

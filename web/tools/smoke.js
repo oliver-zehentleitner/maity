@@ -6592,35 +6592,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => { if (p.startsWith("/people/")) pvAsked.push(p); return pvGet(p); };
   await go("#/wolfgang"); for (let k = 0; k < 4; k++) await tick();
   const pvView = () => main.querySelector("section.view-person");
+  const pvName = () => text(pvView().querySelector(".person-name"));
   const pvLinks = () => (pvView().querySelector("ul.person-links") || { querySelectorAll: () => [] }).querySelectorAll("a");
   const pvPublic = () => pvView().querySelectorAll("a").find((a) => text(a) === "View public page");
-  expect(pvView() && pvAsked[0] === "/people/wolfgang" && text(pvView().querySelector("h2")) === "Wolfgang" && text(pvView()).includes("@wolfgang")
+  const pvProjects = () => pvView().querySelectorAll("ul.person-projects li");
+  expect(pvView() && pvAsked[0] === "/people/wolfgang" && pvName() === "Wolfgang" && text(pvView()).includes("@wolfgang")
     && text(pvView().querySelector(".person-bio")) === "Builds trading tools."
-    && pvPublic() && pvPublic().getAttribute("href") === "/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
+    && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
     "person: name, handle, bio and View public page where the hub serves one, opened at ?as=public");
+  expect(pvView().querySelector(".person-picture-none.size-64") && !pvView().querySelector(".person-head img"),
+    "person: without an avatar_url a neutral placeholder, never a generated avatar");
   expect(JSON.stringify(pvLinks().map((a) => a.getAttribute("href"))) === JSON.stringify(["https://example.org", "https://github.com/wolfgang", "https://mastodon.social/@wolfgang"])
     && pvLinks().every((a) => a.getAttribute("rel") === "me nofollow noopener") && text(pvView().querySelector("ul.person-links")).includes("Discord: wolfgang_01")
-    && !pvView().querySelector("ul.person-links").querySelectorAll("a").some((a) => text(a) === "wolfgang_01"),
+    && !pvLinks().some((a) => text(a) === "wolfgang_01"),
     "person: the links built from the names as the hub's page builds them, rel me; Discord as text");
-  const pvShared = pvView().querySelector("ul.person-projects a");
-  expect(text(pvView()).includes("Projects you share") && pvShared && pvShared.getAttribute("href") === "#/maintainer/maity/overview",
-    "person: the projects both are in, each a link to its overview");
+  expect(pvProjects().length === 2 && pvProjects()[0].querySelector("a").getAttribute("href") === "#/maintainer/maity/overview" && text(pvProjects()[0]).includes("yours too")
+    && pvProjects()[1].querySelector("a").getAttribute("href") === "#/wolfgang/traderjoe?as=public" && text(pvProjects()[1]).includes("public page")
+    && text(pvView()).includes("2 of 3 shown."),
+    "person: a shared project to its overview, a public one to its page, a cut list said with its total");
   expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
   await go("#/wolf"); for (let k = 0; k < 4; k++) await tick();
-  expect(win.location.hash === "#/wolfgang" && text(main.querySelector("section.view-person h2")) === "Wolfgang", "person: an alias goes to the current handle");
+  expect(win.location.hash === "#/wolfgang" && pvName() === "Wolfgang", "person: an alias goes to the current handle");
   await go("#/anna"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(pvView().querySelector("h2")) === "Anna" && !pvPublic() && !pvView().querySelector(".person-bio") && !pvView().querySelector("ul.person-links")
-    && text(pvView()).includes("You are in no project together."),
-    "person: without a public page, a bio or links for this reader, none of them; no shared project said so");
+  expect(pvName() === "Anna" && !pvPublic() && !pvView().querySelector(".person-bio") && !pvView().querySelector("ul.person-links") && pvProjects().length === 1,
+    "person: without a served page or links for this reader, none of them; the shared project listed");
   await go("#/oz-team"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(pvView().querySelector("h2")) === "OZ Team" && text(pvView()).includes("@oz-team · organisation") && !pvPublic()
-    && pvView().querySelectorAll("ul.person-members li").length === 2 && text(pvView().querySelector("ul.person-members")).includes("@anna · admin"),
-    "organisation: its name, no public page while it is off, its members with their roles for a member");
+  expect(pvName() === "OZ Team" && text(pvView()).includes("@oz-team · organisation") && !pvPublic()
+    && pvView().querySelectorAll("ul.person-members li").length === 2 && text(pvView().querySelector("ul.person-members")).includes("@anna · admin")
+    && pvView().querySelectorAll("ul.person-members .person-picture-none.size-20").length === 2,
+    "organisation: its name, no public page while it is off, its members with their roles for a member, their pictures as placeholders");
   await go("#/nobody-here"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("There is no person or organisation @nobody-here that you can see.") && !main.querySelector(".error"),
     "person: not_found said as such, never an error box");
   await go("#/maintainer"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(pvView()).includes("@maintainer · you") && !text(pvView()).includes("Projects you share"), "person: one's own handle is oneself, no shared projects listed");
+  expect(text(pvView()).includes("@maintainer · you") && text(pvView()).includes("Your projects") && pvProjects().length >= 1,
+    "person: one's own handle is oneself, with one's projects");
   win.Maity.api.get = pvGet;
   await go("#/maintainer/maity/inbox");
   // Lead routing and the direct/group boundary.

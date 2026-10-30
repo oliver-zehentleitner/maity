@@ -4595,14 +4595,21 @@ window.MAITY_FIXTURES = {
         "display_name": "Wolfgang",
         "handle": "wolfgang",
         "kind": "human",
-        "public_bio": "Builds trading tools.",
-        "public_page": true,
-        "shared_projects": [
+        "page_served": true,
+        "projects": [
           {
             "full_name": "maintainer/maity",
-            "name": "Maity"
+            "name": "Maity",
+            "shared": true
+          },
+          {
+            "full_name": "wolfgang/traderjoe",
+            "name": "TraderJoe",
+            "shared": false
           }
         ],
+        "projects_total": 3,
+        "public_bio": "Builds trading tools.",
         "social": {
           "discord": "wolfgang_01",
           "github": "wolfgang",
@@ -4616,8 +4623,15 @@ window.MAITY_FIXTURES = {
         "display_name": "Anna",
         "handle": "anna",
         "kind": "human",
-        "public_page": false,
-        "shared_projects": []
+        "page_served": false,
+        "projects": [
+          {
+            "full_name": "maintainer/sample",
+            "name": "Sample shop",
+            "shared": true
+          }
+        ],
+        "projects_total": 1
       }
     ]
   },

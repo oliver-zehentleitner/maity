@@ -955,27 +955,31 @@ window.Maity = window.Maity || {};
   // endpoint the views use; the patterns match the path below /api/v1
   // without the query string.
   const routes = [
-    // §6.27: a person or an organisation as this reader may see them; an
-    // alias answers with the current handle; anyone else not_found.
+    // §6.27: a person or an organisation as this signed-in human may see
+    // them; an alias answers with the current handle; whoever shows the
+    // caller nothing, like an unknown name, not_found.
     ["GET", /^\/people\/([^/?]+)$/, (m, body, path) => {
       const name = decodeURIComponent(m[1]);
       const self = me().member;
-      const view = (x) => { const v = Object.assign({}, x); delete v.aliases; return v; };
+      if (self.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const listed = (list) => ({ projects: list.slice(0, 100), projects_total: list.length });
       const person = ((fixtures()["people.json"] || { items: [] }).items).find((x) => x.handle === name || (x.aliases || []).includes(name));
-      if (person) return view(person);
-      if (self.kind === "human" && self.handle === name) {
-        return { kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
-          public_page: !!self.public_profile, public_bio: self.public_bio || null,
-          website: self.website || null, social: self.social || {}, shared_projects: [] };
+      if (person) { const v = Object.assign({}, person); delete v.aliases; return v; }
+      if (self.handle === name) {
+        const own = me().projects.map((x) => ({ full_name: x.full_name, name: x.name, shared: true }));
+        return Object.assign({ kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
+          page_served: !!self.public_profile, public_bio: self.public_bio || null,
+          website: self.website || null, social: self.social || {} }, listed(own));
       }
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
       if (!org) fail(404, "not_found", "no such person or organisation", path);
-      const mine = me().projects.filter((x) => x.full_name.startsWith(org.handle + "/")).map((x) => ({ full_name: x.full_name, name: x.name }));
-      const out = { kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: org.avatar_url || null,
-        public_page: org.public_page === "on", projects: mine };
-      if (orgRole(org)) {
-        out.members = (orgsData().members[org.id] || []).map((x) => ({ handle: x.handle, display_name: x.display_name, avatar_url: x.avatar_url || null, role: x.role }));
-      }
+      const mine = me().projects.filter((x) => x.full_name.startsWith(org.handle + "/")).map((x) => ({ full_name: x.full_name, name: x.name, shared: true }));
+      const member = !!orgRole(org);
+      if (!member && org.public_page !== "on" && !mine.length) fail(404, "not_found", "no such person or organisation", path);
+      const out = Object.assign({ kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: member ? org.avatar_url || null : null,
+        page_served: org.public_page === "on" }, listed(mine));
+      // Members read each other's names, not each other's pictures (§6.10).
+      if (member) out.members = (orgsData().members[org.id] || []).map((x) => ({ handle: x.handle, display_name: x.display_name, avatar_url: null, role: x.role }));
       return out;
     }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated

@@ -1,15 +1,50 @@
 {
   "items": [
     {
-      "kind": "human", "handle": "wolfgang", "aliases": ["wolf"], "display_name": "Wolfgang", "avatar_url": null,
-      "public_page": true, "public_bio": "Builds trading tools.",
-      "website": "https://example.org", "social": { "github": "wolfgang", "mastodon": "@wolfgang@mastodon.social", "discord": "wolfgang_01" },
-      "shared_projects": [ { "full_name": "maintainer/maity", "name": "Maity" } ]
+      "kind": "human",
+      "handle": "wolfgang",
+      "aliases": [
+        "wolf"
+      ],
+      "display_name": "Wolfgang",
+      "avatar_url": null,
+      "public_bio": "Builds trading tools.",
+      "website": "https://example.org",
+      "social": {
+        "github": "wolfgang",
+        "mastodon": "@wolfgang@mastodon.social",
+        "discord": "wolfgang_01"
+      },
+      "page_served": true,
+      "projects": [
+        {
+          "full_name": "maintainer/maity",
+          "name": "Maity",
+          "shared": true
+        },
+        {
+          "full_name": "wolfgang/traderjoe",
+          "name": "TraderJoe",
+          "shared": false
+        }
+      ],
+      "projects_total": 3
     },
     {
-      "kind": "human", "handle": "anna", "aliases": [], "display_name": "Anna", "avatar_url": null,
-      "public_page": false,
-      "shared_projects": []
+      "kind": "human",
+      "handle": "anna",
+      "aliases": [],
+      "display_name": "Anna",
+      "avatar_url": null,
+      "page_served": false,
+      "projects": [
+        {
+          "full_name": "maintainer/sample",
+          "name": "Sample shop",
+          "shared": true
+        }
+      ],
+      "projects_total": 1
     }
   ]
 }

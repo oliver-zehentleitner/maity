@@ -1434,3 +1434,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .chat-instance { display: inline-flex; align-items: center; gap: 6px; }
 .chat-instance select { min-height: 28px; }
 .msg-to { white-space: nowrap; }
+
+/* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
+.person-head { display: flex; align-items: center; gap: 14px; }
+.person-head h2 { margin: 0; }
+.person-head p { margin: 2px 0 0; }
+/* No picture the reader may see: a neutral placeholder, not a generated avatar. */
+.person-picture-none { display: inline-block; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); vertical-align: middle; }
+.person-picture-none.size-64 { width: 64px; height: 64px; }
+.person-picture-none.size-20 { width: 20px; height: 20px; }
+.person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
