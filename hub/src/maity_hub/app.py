@@ -21,6 +21,7 @@ from maity_hub import (
     attachments,
     availability,
     commitment,
+    cross_owner,  # noqa: F401  (registers the cross-owner consent proposal)
     errors,
     forge,
     forge_access,

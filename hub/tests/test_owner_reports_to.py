@@ -141,19 +141,19 @@ def test_a_cycle_is_refused(
     assert _boss_of(migrated, lent) is None
 
 
-def test_another_owners_member_is_not_opened_by_this_path(
+def test_another_owners_member_is_a_cross_owner_edge_that_asks_the_boss_side(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """A target the caller does not own is the ordinary rules' case: members:admin."""
+    """§2.3 and §6.2 "Own consent": the owner's action is their consent, the boss's side is
+    asked; nothing changes until its go. Where this lives: `tests/test_cross_owner.py`."""
     friend = flow.human(make_client, migrated, "friend")
     [lent] = _agents(migrated, friend.id, 1)
     theirs = flow.agent(make_client, owner)
-    outside = move(friend, lent, reports_to=theirs.id)
-    assert outside.status_code == 404, outside.text  # not a member of the project (§1.3)
-    factory.membership(migrated, _project(migrated), "member", human_id=friend.id)
-    inside = move(friend, lent, reports_to=theirs.id)
-    assert inside.status_code == 403, inside.text
+    asked = move(friend, lent, reports_to=theirs.id)
+    assert asked.status_code == 202, asked.text
     assert _boss_of(migrated, lent) is None
+    assert asked.json()["to"] == f"human:{owner.id}"
+    assert move(friend, lent, reports_to="agt-nobody").status_code == 400  # not a member
 
 
 def test_it_opens_nothing_else_of_the_membership(

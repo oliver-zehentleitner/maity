@@ -1561,8 +1561,8 @@ alone: it is not seen without a mouse resting on the button.
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
 Waiting for you and Board come first, then Team and Latest reports;
-where Project and README badge stand is d7ee1073 below (three rows, the
-facts last, until 2026-10-30). A member in a list is a chip
+Project and README badge stood under Team (d7ee1073 below) and are the
+Overview's Project tab since 2026-10-30 (58c58a28-d6b1-453f-99dc-7f21179b3ee2). A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1588,7 +1588,8 @@ any forge: a wrong path shape would be a dead link that looks right.
 
 **Id:** d7ee1073-1752-4134-9e51-878c5c28f2c2
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 58c58a28-d6b1-453f-99dc-7f21179b3ee2
 **Evidence:** inferred
 **Source:** the maintainer's screenshot and wish on tsk-b67chbx96n29 ("move the two blocks in front of Latest reports"), as the coordinator passed it on, 2026-10-30: on a wide desktop Project and README badge were a row of their own below the whole report list, with empty space under Team; the place under Team is the implementation's choice from the two the coordinator named
 **Revisit when:** the maintainer asks for another place, or the overview gets a panel that competes for the space under Team
@@ -1612,6 +1613,32 @@ before the reports: on a wide screen it leaves the empty space under
 Team and pushes the reports, the second thing a reader looks for,
 further down. Keeping the three rows and only shortening the report
 list: the wish was about the order, not the length.
+
+## The limits per person are chosen as a number, no limit or the default, the environment's shown locked
+
+**Id:** 28adb478-d5fa-450b-9bbd-e985d93405c4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation
+**Revisit when:** plans set the limits per plan (§2.7, part two), or the hub adds a limit
+
+The **Limits** section (`js/admin-limits.js`) shows each value with a
+choice of how it is set — a number, no limit, or the default — the
+number field only for the first, the value's source in words and the
+people at or over it. A value from the environment is shown, its
+controls disabled. Only changed values are sent: a number, `unlimited`,
+or `null` for the default; the call goes through `M.stepUp.run`, so a
+missing second factor or password is asked where it stands.
+
+**Reason:** the contract gives three different meanings — a number,
+"no limit" stored by the admin, and the default restored by `null` —
+and one number field cannot say the last two apart; an empty field read
+as the default would be guessing.
+
+**Rejected alternative:** a single number field with "0 means no
+limit": the hub refuses 0 (`invalid`), and the default would still need
+a gesture of its own.
 
 ## The instance admin area shows one section at a time
 
@@ -2101,7 +2128,7 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
-## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation in the Overview
+## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation on the Team page
 
 **Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Type:** decision
@@ -2126,8 +2153,9 @@ placements and the earlier joins are there; `…/agents/join[?agent=<id>]`
 opens the panel, `…/agents/<id>/rulebook` the limit, and a new project
 lands on Agents. The parts the Members row and the Agents card share
 (rulebook, credentials, picture, pause, removal) are one code,
-`M.memberParts`. The organisation tree is a section of the Overview and
-is redrawn there when a member event arrives. The join panel and the
+`M.memberParts`. The organisation tree was a section of the Overview,
+redrawn there when a member event arrived; since 2026-10-30 it is the
+Team page's Organisation tab (58c58a28-d6b1-453f-99dc-7f21179b3ee2). The join panel and the
 placements belong to Agents because both are about one's own agents:
 a join makes one, and where they run is managed by their owner or the
 runner's; a list everybody reads is no place for either.
@@ -2730,7 +2758,7 @@ its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
 of the project's events and said nothing about it.
 
-## The swarm statistics are a section of the Overview, read on their own and kept across its redraws; no tab, no public page, no switch
+## The swarm statistics are the Overview's Swarm tab, read on their own; no project tab, no public page, no switch
 
 **Id:** 8a528eb5-8dd6-4fec-996e-79c5b57abb51
 **Type:** decision
@@ -2739,14 +2767,15 @@ of the project's events and said nothing about it.
 **Source:** the maintainer's decision of 2026-10-29 that the swarm is a statistic (root context/projects.md, bfe4c4a6, card tsk-w89mspg3gwx1); docs/api.md §6.11, §6.22, §16.11 after the contract #697; the card tsk-b8ndat73wttr; how the section reads and redraws is the implementer's, 2026-10-30
 **Revisit when:** a public project's page draws the reduced numbers in the dashboard (§16.9), or the Overview gets a refresh of its own for the swarm
 
-The project's Overview carries a **Swarm** section after the team,
-project and reports rows and before the organisation: who is at work
+The project's Overview carries the **Swarm** section: who is at work
 now, what each holds, and the window's counters with the 7/30/90-day
-switch, as the Swarm tab had them (`js/swarm.js`, `M.swarm.section`).
-The section is built once per Overview and reads `GET …/swarm` itself,
-once and on a window change; the Overview's redraws on card, request
-and probe events place the same node again. There is no Swarm tab, no
-`/<owner>/<slug>/swarm` view, no public swarm page or `?as=public`, and
+switch, as the old Swarm tab had them (`js/swarm.js`, `M.swarm.section`).
+Since 2026-10-30 it is the Overview's own Swarm tab
+(`/<owner>/<slug>/overview/swarm`, 58c58a28-d6b1-453f-99dc-7f21179b3ee2), no longer a row under
+the counts. The section is built once per visit of that tab and reads
+`GET …/swarm` itself, once and on a window change; a card, request or
+probe event draws nothing there. There is no Swarm tab in the
+project's row of tabs, no `/<owner>/<slug>/swarm` view, no public swarm page or `?as=public`, and
 no `swarm_public` switch in Project settings; the fixture hub no longer
 serves `/swarm/{owner}/{slug}`.
 
@@ -2924,3 +2953,41 @@ same words the note puts together. Reading the fields at the top of the
 answer with the clicked value as fallback (the earlier code): against the
 hub it never read the answer at all, and the fixture's flat answer hid it.
 
+## The Overview has three tabs, Summary, Swarm and Project; the organisation is a tab of the Team page
+
+**Id:** 58c58a28-d6b1-453f-99dc-7f21179b3ee2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer, 2026-10-30, as the card tsk-n2r6t7jnzm2d passes it on (the Overview too full, split into tabs; the org chart on the Team/Members page as its own tab, not on the Overview; the swarm may stay or become a tab, the implementer's proposal); docs/api.md §16.11 (`organisation` is a project view); the split of the panels into the three tabs is the implementer's
+**Supersedes:** d7ee1073-1752-4134-9e51-878c5c28f2c2
+**Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
+
+The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
+**Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
+links with the shown one marked. Summary is what needs the reader and
+the state: Waiting for you and Board, then Team beside Latest reports;
+only it reads `GET …/overview` and re-reads it on card, request and
+probe events and, for a narrow viewer, on its timer. Swarm is the swarm
+section, read on its own. Project holds the facts (repository, state,
+policy, contract, Keep the Why) and the README badge, read from what
+the header already has. A tab the page does not know shows Summary.
+The organisation tree left the Overview: it is the Team page's
+**Organisation** tab at `/<owner>/<slug>/organisation`, a project view
+the contract already lists, beside **Members** at `members`; both
+pages carry the same two links (`M.teamTabs`), and the project's row
+of tabs marks Members for either. The tree is drawn again when a member
+event arrives.
+
+**Reason:** one page with every panel had grown past what is read at a
+glance; what needs the reader belongs on the first screen, and the
+facts and the statistics are looked up, not watched. The swarm as a tab
+keeps its own read out of every visit to the Overview. The org chart
+describes the team, so it belongs with the team's list, as f0ca2279
+planned the Team page.
+
+**Rejected alternative:** the swarm kept as a row of Summary: a swarm
+read on every Overview visit, and the page still long. The organisation
+as a fourth Overview tab: the maintainer placed it with the team. A
+`members/organisation` address: `members/<id>` is a member's page, and
+a word there would have to be told apart from an id.

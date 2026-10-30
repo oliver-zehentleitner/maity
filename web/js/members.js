@@ -355,6 +355,12 @@ window.Maity = window.Maity || {};
   // args[0]: a member (/<owner>/<slug>/members/<id>[/<tab>], a mention's link):
   // that member's page (js/member-page.js). ?manage=<id> (its Actions menu):
   // the list with that member's Manage row open, for an admin.
+  // The Team page's tabs (context/members.md f0ca2279): Members, this
+  // list, and Organisation (js/org.js), each at its own project view.
+  M.teamTabs = (ctx, chosen) => h("nav", { class: "view-tabs team-tabs", "aria-label": M.t("team.tabs.label") },
+    [["members", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
+      h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
+
   M.views.members = async function (ctx, root, args) {
     if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1]); return; }
     const wanted = ctx.canAdmin ? M.route.current().query.get("manage") : null;
@@ -620,7 +626,7 @@ window.Maity = window.Maity || {};
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
-    append(root, h("h2", null, "Members"),
+    append(root, M.teamTabs(ctx, "members"), h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
         + (ctx.canAdmin ? " Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member." : ""),
       // A guest brings no agent (§3.1): no way there said to them.

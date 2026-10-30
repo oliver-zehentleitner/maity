@@ -104,6 +104,8 @@ DELETION_KEEPS = {
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
     "handle_register": "the handle of a deleted account stays taken for good (§2.9, §6.24)",
     "idempotency_key": "a key expires after 24 hours (§1.5) and holds no personal data",
+    "handle_alias": "a deleted account keeps its handle taken, and so its aliases (§2.9, §6.24); "
+    "a deleted profile's go with it, in `delete_profile`",
     "instance_landing": f"who edited the landing page: {_RECORD}",
     "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
@@ -148,6 +150,7 @@ EXPORT_LEAVES_OUT = {
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
     "forge_link_state": _SECRET,
+    "handle_alias": _UNLISTED,
     "handle_register": f"the handle is in the account; {_UNLISTED}",
     "human_device": _SECRET,
     "idempotency_key": _BOOKKEEPING,
