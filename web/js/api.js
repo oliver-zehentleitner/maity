@@ -3137,17 +3137,17 @@ window.Maity = window.Maity || {};
       const conv = keyed(m[1], "conversations.json", m[2], path);
       const last = conv.items.length ? conv.items[conv.items.length - 1].seq : 5000;
       if ((!body.body || !String(body.body).trim()) && !(body.attachments || []).length) fail(400, "invalid", "the message is empty", path, { fields: { body: "missing" } });
-      // §9.1: to_instance wakes that one instance; a replaced one reaches its
-      // successor, an id the agent never had is invalid. The message says
-      // whom it woke (to_instance, null for the team).
+      // §9.1: to_instance wakes that one instance (a replaced one reaches its
+      // successor, which the hub does, not this fixture); an id the agent
+      // never had is invalid. The message carries to_instance as written,
+      // null for the team.
       let toInstance = null;
       if (body.to_instance !== undefined && body.to_instance !== null) {
         const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
-        const all = (listed && listed.instances) || [];
-        const named = all.find((i) => i.id === body.to_instance);
-        if (!named) fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
-        const next = named.revoked_at ? all.find((i) => !i.revoked_at && i.replaces === named.id) : named;
-        toInstance = next ? next.id : named.id;
+        if (!((listed && listed.instances) || []).some((i) => i.id === body.to_instance)) {
+          fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
+        }
+        toInstance = body.to_instance;
       }
       const msg = {
         id: "evt-" + (last + 1), seq: last + 1, conversation_id: m[2],

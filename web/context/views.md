@@ -2553,8 +2553,10 @@ selector. An offline instance is offered too, marked so.
 
 **Reason:** the team by default keeps the agent's own wake rule in
 charge; picking one instance is for the times the human knows which
-session holds the work. Reading the label from the answer keeps it true
-when the hub sends a replaced instance's message on to its successor.
+session holds the work. The label is read from the answer, which carries
+`to_instance` as written (a replaced instance's message reaches its
+successor, but the message still names the instance the human chose), so
+it says what was sent, whatever the selector shows by then.
 
 **Rejected alternative:** a mention `@handle#id` in the text: a direct
 chat never resolves mentions (§8.6), so it would wake nobody. Offering
