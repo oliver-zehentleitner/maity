@@ -9105,18 +9105,18 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 `review` (the object of §8.4 for a `review_result`, `null` for every
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
-keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
+keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
-`attachments`, `redacted` and `redaction`; it drops `conversation_id`
-and `delivered_at` (a project message has no single recipient whose
+`attachments`, `redacted` and `redaction`; it drops `conversation_id`,
+`to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
 
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
 "reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
-`task_id` and `review` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
-stay on the event. A tombstone has no type, so it is listed only without
+`task_id` and `review` are `null` too; `from`, `from_instance` and
+`sent_at` stay, as `actor` and `at` stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
 
