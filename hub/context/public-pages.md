@@ -164,3 +164,38 @@ and the reader-dependent visibility cannot go into an event that goes to all.
 - The links in `member_updated`: every project member would receive links their reader may not see.
 - Cumulative levels (colleagues including friends): the maintainer chose independent values, `friends_and_colleagues`
   being its own.
+
+## The dashboard's view of a person reads `page_served` from the store, and hides every unseen case behind one `not_found`
+
+**Id:** 4423561d-6f8e-4ad5-8729-0b896fb37e3c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.27 (contract #738), §6.10 ("Who may read an image"), §6.26; implementation of `GET /people/{handle}` (tsk-4ar8vw61fvj0), 2026-10-30
+**See:** public-pages.md — 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f — as of 2026-10-30
+**Revisit when:** the organisation's and the project's page kinds are rendered, `website`, `social` and `links_visible` are built (§16.9, "A person's links"), or handle aliases resolve (§6.24)
+
+`routes/people.py` answers `GET /people/{handle}` for a signed-in human. `page_served` is `true`
+when public pages are on and the store holds the page (a `public_page` row of the kind and target);
+for a person `public_people.served` must hold as well, so a hold or a suspension counts at once. A
+project with a served page is one with a `project` row in the store. Reading the store, not the
+switches, is what "the hub serves the page now" means: today no organisation or project page kind
+is rendered, so neither is served whatever its switch says, and the answer never offers a page the
+visitor would not get. An unknown name, an agent's handle (they never resolve as an owner), a
+deleted, suspended or pending account, a deleted organisation, and a person or an organisation
+that shows the caller nothing are the same `not_found`. `avatar_url` comes only where
+`avatars.may_read` lets the caller read the image; the organisation's picture got its rule there
+(its members and the members of its projects, §6.10), which the image route had lacked. The answer
+is `private, no-store`, a value `middleware.ROUTE_CACHE` now admits. `website`, `social` and
+`links_visible` are left out until the fields exist, with no stand-in.
+
+**Reason:** the store is the one place that knows what a visitor gets; the switches say what
+someone chose, not what is rendered. One `not_found` keeps the endpoint from telling which
+accounts and organisations exist (§6.26).
+
+**Rejected alternatives:**
+- `page_served` from the switches (`public_profile`, the organisation's `public_page`): right only
+  once every kind renders, and it would offer "View public page" for an organisation the hub does
+  not serve yet.
+- Answering a hidden account with its own error (`suspended`, `pending`): tells a stranger the
+  account exists.

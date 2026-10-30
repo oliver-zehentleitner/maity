@@ -113,6 +113,7 @@ from maity_hub.routes import (
 )
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import orgs as orgs_routes
+from maity_hub.routes import people as people_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
@@ -287,6 +288,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)
     app.include_router(orgs_routes.router, prefix=prefix)
+    app.include_router(people_routes.router, prefix=prefix)  # a person or an organisation
     app.include_router(legal_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
