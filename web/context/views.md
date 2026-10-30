@@ -2674,3 +2674,31 @@ only online instances: an offline one still gets the message at its next
 resume, and its being offline is said in the option. Keeping the choice
 in browser storage: a stale instance id would outlive the session it
 named.
+
+## The project's repository and Keep the Why dashboard are links beside its state, from what the project view already holds
+
+**Id:** bdb4632c-1047-4a88-9249-f09f8c50d1e8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on the card tsk-n161gf6h8feb (two buttons top right beside the state, the repository with its forge's icon, the Keep the Why dashboard, both in a new tab), 2026-10-29; the coordinator's note that the project view already carries `repository` and `keep_the_why_export.members[]` with the root at `path: ""` and its `dashboard_url`, so no contract change, 2026-10-30
+**Revisit when:** a project needs a dashboard address other than its export's, or the hub derives more forges
+
+In a project the header shows, after the state, the absence and the
+released mark, a link to the repository (`repository.url`, labelled by
+`repository.forge`: GitHub, GitLab or Gitea with their mark, else
+"Repository" with a branch mark) and **Why**, the dashboard of the Keep
+the Why family's root member. Either is left out where the project has
+none or its address is not plain `https`; both open in a tab of their
+own and are named for a screen reader with where they go.
+
+**Reason:** these are the two places one leaves the dashboard for most
+often; the data is in the project view already, so the links cost no
+request and no new setting.
+
+**Rejected alternative:** a new project field for the dashboard's
+address, as the card first proposed: the export already names it, and a
+second address could drift from the one the family publishes. Only the
+Overview's Project panel, where both links already are: one click
+further, on one view only.
+
