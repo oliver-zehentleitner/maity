@@ -721,6 +721,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sampleAgent = main.querySelectorAll(".members-agents tr.member")[0];
   sampleAgent.querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector("tr.member-manage") && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
+  // Only my agents (tsk-n2r6t7jnzm2d): the viewer's own agents, no humans; remembered per viewer, and said when there are none.
+  {
+    const mineStore = {};
+    const mineLs = win.localStorage;
+    win.localStorage = { getItem: (k) => (k in mineStore ? mineStore[k] : null), setItem: (k, v) => { mineStore[k] = String(v); }, removeItem: (k) => { delete mineStore[k]; } };
+    const sm = (await win.Maity.api.getAll("/projects/maintainer/sample/members")).items;
+    const mineIds = sm.filter((m) => m.kind === "agent" && m.owner_id === "hum-maintainer").map((m) => m.id).sort().join();
+    const shownAgents = () => main.querySelectorAll(".members-agents tr.member").map((tr) => tr.attrs["data-member"]).sort().join();
+    await go("#/maintainer/sample/inbox"); await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
+    expect(byId("members-mine") && !byId("members-mine").checked && sm.some((m) => m.kind === "agent" && m.owner_id !== "hum-maintainer")
+      && shownAgents().split(",").length === sm.filter((m) => m.kind === "agent").length && byId("members-human"),
+      "members: Only my agents offered, off: every agent, the humans too");
+    const mineProto = Object.getPrototypeOf(byId("members-mine"));
+    const mineFocus = mineProto.focus;
+    mineProto.focus = function () { document.activeElement = this; };
+    byId("members-mine").checked = true; byId("members-mine").dispatch("change"); await tick();
+    mineProto.focus = mineFocus;
+    expect(shownAgents() === mineIds && !byId("members-human") && document.activeElement === byId("members-mine")
+      && mineStore["maity.members.mine.hum-maintainer"] === "1", "members: Only my agents shows the viewer's own agents alone, the focus kept, remembered");
+    document.activeElement = undefined;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
+    expect(byId("members-mine").checked && shownAgents() === mineIds, "members: the filter is kept on the next visit");
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
+    byId("members-mine").checked = true; byId("members-mine").dispatch("change"); await tick();
+    expect(byId("members-mine").checked && shownAgents() === mineIds, "members: a browser that keeps nothing still filters");
+    win.localStorage = mineLs;
+  }
   await go("#/maintainer/sample/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
   // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
