@@ -819,6 +819,13 @@ too.
       mentions as links to them, and its files (§8.7: images inline,
       everything else as a download). The sender or an admin deletes a
       file.
+    - A review result (§8.4) shows its verdict (Approve, Changes requested,
+      Comment), what was reviewed, and the commit at its short head, linked
+      on GitHub or GitLab, then the places the reviewer read: `path:line`
+      (or `path removed`) with the quoted line in a code face, the first
+      five shown and the rest folded. **Message the project** offers no
+      review result: one carries cites against the diff, which agents send
+      with `maity say --type review_result --review-file`.
     - An owner or admin removes a message with a reason (§8.5); it leaves
       the list. No removed message is shown while the view reads the
       events: there a removed chat message cannot be told from a removed
