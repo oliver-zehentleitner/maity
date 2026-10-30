@@ -255,10 +255,12 @@ Cards and requests that already carry `cover` are not in the next cover
 set (`cover.is_(None)` in `_cover_set`). When a substitute goes out
 itself, its own policy applies to its own work only; the covered
 member's items wait with it until one of the two is back. A member's
-`covering` lists every member of whom it holds an item as cover
-(`cover.by`), with the earliest `cover.since`, so a second entry that
-took what the first could not sees the member as well; `covered_by`
-still names the run's first substitute.
+`covering` lists every member of whom it still holds an item as cover
+(`cover.by`): a card by the rule `cover.end` uses for the return
+(`cover.still_with`), a request while it is open. `since` is the
+earliest `cover.since`. A second entry that took what the first could
+not sees the member as well; one that released or lost every item no
+longer does; `covered_by` still names the run's first substitute.
 
 **Reason:** a chain would move the same card through several hands, the
 returning member would not know where its work went, and `cover_ended`

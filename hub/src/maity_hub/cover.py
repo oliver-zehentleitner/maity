@@ -349,6 +349,15 @@ def _audience(conn: Connection, covered: Any, sub: Any) -> list[str]:
     return list(dict.fromkeys(audience))
 
 
+def still_with(card: Any, sub_id: int | None) -> bool:
+    """Whether the substitute named in `card.cover` still holds the card: a moved claim
+    while it holds the claim, a moved assignment while it is assigned and nobody else
+    claimed the card. Reassigned or taken over since, the cover relation ended there."""
+    if card.cover.get("moved") == "claim":
+        return bool(card.claim_holder == sub_id)
+    return bool(card.assigned_to == sub_id and card.claim_holder in (None, sub_id))
+
+
 def _set_state(
     conn: Connection, row: Any, state: str | None, by: int | None, since: datetime | None
 ) -> None:
@@ -394,15 +403,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             continue
         kept, returned = cards_of.setdefault(cover["by"], ([], []))
         values: dict[str, Any] = {"cover": None}
-        sub_id = members_by_principal.get(cover["by"])
-        moved = cover.get("moved")
-        # An assignment is still the substitute's only while nobody else claimed the card.
-        still_with_sub = (
-            card.claim_holder == sub_id
-            if moved == "claim"
-            else card.assigned_to == sub_id and card.claim_holder in (None, sub_id)
-        )
-        if not still_with_sub:
+        if not still_with(card, members_by_principal.get(cover["by"])):
             # Reassigned or taken over since: the cover relation ended there, and a third
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))

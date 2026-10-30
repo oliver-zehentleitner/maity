@@ -383,6 +383,12 @@ def test_a_card_moved_on_to_a_third_member_is_never_taken_back(
     )
     policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
     limit(covered, now[0] + timedelta(hours=2))
+
+    def covering(who: flow.Agent) -> list[Any]:
+        view = owner.get(f"/projects/maintainer/maity/members/{who.id}").json()
+        return [c["member_id"] for c in view["covering"]]
+
+    assert covering(sub) == [covered.id]
     # The substitute gives the held card back to the board and a third member claims it;
     # a human hands the assigned one to the third member, who claims it too.
     assert sub.post(f"/projects/maintainer/maity/tasks/{held['id']}/release").status_code == 200
@@ -392,6 +398,9 @@ def test_a_card_moved_on_to_a_third_member_is_never_taken_back(
         third.post(f"/projects/maintainer/maity/tasks/{assigned['id']}/claim", {}).status_code
         == 200
     )
+    # The substitute holds nothing of the covered member any more: it covers nobody,
+    # and the third member never became a substitute (§6.12 "holds").
+    assert covering(sub) == [] and covering(third) == []
     covered.resume()
     for card in (held, assigned):
         shown = card_of(owner, card["id"])

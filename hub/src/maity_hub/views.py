@@ -24,6 +24,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
 
 ONLINE = timedelta(seconds=120)
@@ -613,7 +614,8 @@ def _covers(
 ) -> tuple[dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
     """`covered_by` and `covering` of the rows (§6.12): `covering` from the items each
     member holds as cover (`cover.by`), so every substitute of a run sees whom it
-    covers, not only the one the run started with."""
+    covers, not only the one the run started with. A card counts while the substitute
+    still holds it (`cover.still_with`), a request while it is open."""
     covered_by: dict[int, dict[str, Any]] = {}
     by_ids = {r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by is not None}
     principals = principal_ids(conn, by_ids)
@@ -627,16 +629,26 @@ def _covers(
     projects = list({r.project_id for r in rows})
     found: dict[int, dict[str, str]] = {}  # the substitute's row -> covered member -> since
     if projects:
-        for table in (t.card, t.request):
-            for project_id, cover in conn.execute(
-                select(table.c.project_id, table.c.cover).where(
-                    table.c.project_id.in_(projects), table.c.cover.is_not(None)
-                )
-            ):
-                row_id = by_principal.get((project_id, cover["by"]))
-                if row_id is not None:
-                    of = found.setdefault(row_id, {})
-                    of[cover["for"]] = min(of.get(cover["for"], cover["since"]), cover["since"])
+        held = [
+            item
+            for item in conn.execute(
+                select(t.card).where(t.card.c.project_id.in_(projects), t.card.c.cover.is_not(None))
+            )
+            if cover_still_with(item, by_principal.get((item.project_id, item.cover["by"])))
+        ]
+        held += conn.execute(
+            select(t.request).where(
+                t.request.c.project_id.in_(projects),
+                t.request.c.cover.is_not(None),
+                t.request.c.status == "open",
+            )
+        ).all()
+        for item in held:
+            row_id = by_principal.get((item.project_id, item.cover["by"]))
+            if row_id is not None:
+                of = found.setdefault(row_id, {})
+                since = item.cover["since"]
+                of[item.cover["for"]] = min(of.get(item.cover["for"], since), since)
     covering = {
         row_id: [
             {"member_id": member_id, "since": since}
