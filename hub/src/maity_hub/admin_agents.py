@@ -59,22 +59,44 @@ def _pause_of_another_agent(target: Any, agent_id: str) -> bool:
 
 
 def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> None:
+    check_change(
+        mine,
+        target,
+        trust=body.trust,
+        role=body.role,
+        capabilities="capabilities" in given,
+        pause=("paused" in given, body.paused is None),
+    )
+
+
+def check_change(
+    mine: Membership,
+    target: Any,
+    *,
+    trust: str | None,
+    role: str | None,
+    capabilities: bool,
+    pause: tuple[bool, bool],
+) -> None:
+    """What an admin agent may change of a member (§2.3 ᵃ), on the values of one change;
+    `pause` is (given, lifting). A call and the `go` of another owner's consent
+    (`foreign_agent`) ask exactly this."""
     check_target(mine, target)
-    if "capabilities" in given:
+    if capabilities:
         raise humans_only("capabilities are a human's to set")
-    if body.trust is not None and body.trust not in AGENT_TRUSTS:
+    if trust is not None and trust not in AGENT_TRUSTS:
         raise humans_only("an admin agent moves trust between member and guest only")
     # A project role counts as its base (§2.3); a role the project lacks is `invalid` later.
-    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    base = project_roles.base_of(mine.project, role) if role is not None else None
     if base is not None and base not in AGENT_ROLES:
         raise humans_only("the proxy and the manager are a human's to give")
-    if body.role is not None and body.role != target.role and target.role == "manager":
+    if role is not None and role != target.role and target.role == "manager":
         raise humans_only("only a human removes the role manager")
-    if body.trust == "guest" and target.trust != "guest" and target.role == "manager":
+    if trust == "guest" and target.trust != "guest" and target.role == "manager":
         # Trust guest ends a manager's rights as the role removal does (§6.2).
         raise humans_only("only a human lowers a manager to guest")
-    if "paused" in given:
-        _check_pause(target, mine.principal_id, body.paused is None)
+    if pause[0]:
+        _check_pause(target, mine.principal_id, pause[1])
 
 
 def _check_pause(target: Any, agent_id: str, lifting: bool = False) -> None:

@@ -340,3 +340,27 @@ def test_a_project_role_is_read_again_at_the_go(
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "role_unknown"
     assert answer(friend, asked_legal.json()["id"], "no").status_code == 200
+
+
+def test_a_go_asks_the_admin_agents_own_rules_of_the_target_as_it_is_now(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The same `admin_agents.check_change` as the call: a target raised to admin meanwhile is
+    no member or guest any more, so an admin agent may not change it."""
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    admin = flow.agent(make_client, owner, role="admin")
+    asked = put(admin, lent, areas=["web/"])
+    assert asked.status_code == 202, asked.text
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == lent).values(trust="admin")
+        )
+    direct = put(admin, lent, areas=["api/"])
+    assert direct.status_code == 403, direct.text  # the call refuses it now
+    refused = answer(friend, asked.json()["id"], "go")
+    assert refused.status_code == 409, refused.text  # and so does the go
+    assert refused.json()["error"]["code"] == "asker_not_allowed"
+    assert _row(migrated, lent).areas != ["web/"]
