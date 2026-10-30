@@ -209,3 +209,21 @@ def test_while_suspended_its_archived_projects_cannot_be_reopened_or_made_public
     again = boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"})
     assert again.status_code == 200, again.text
     assert boss.get(f"/projects/{PROJECT}").json()["state"] == "build"
+
+
+def test_a_hide_of_the_project_does_not_hide_the_suspension_of_its_organisation(
+    world: dict[str, Any], migrated: Engine
+) -> None:
+    boss = world["boss"]
+    hidden = filed(world)
+    assert resolve(world, hidden, "hide").status_code == 200
+    assert boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "up"}).status_code == 200
+    assert (
+        boss.patch(f"/projects/{PROJECT}", {"state": "archived", "reason": "down"}).status_code
+        == 200
+    )
+    made = report(world["pat"], {"type": "project", "id": PROJECT}, "abuse")
+    assert made.status_code == 201, made.text
+    assert resolve(world, made.json()["id"], "suspend").status_code == 200
+    held(boss.patch(f"/projects/{PROJECT}", {"state": "build", "reason": "back again"}))
+    assert boss.get(f"/projects/{PROJECT}").json()["state"] == "archived"

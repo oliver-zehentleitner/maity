@@ -245,6 +245,17 @@ that is not archived, as `remove` does; every owner gets the `moderation_applied
 an action of `hide` or `remove` on a project of an organisation. While the hold stands, a new project
 with the organisation as `owner`, a new invitation and `public_page: on` are `forbidden`
 (`moderation_hold`); settings, members and roles, avatar removal and deletion are not touched.
+The organisation's hold is read beside a hold of the project's own (`hide` from another report), not
+instead of it, so a hidden project of a suspended organisation stays archived too.
+
+`withdraw_into` finds the open transfers into the organisation by a text match on the stored
+proposal (`cast(proposal, String).contains(org_id)`) and checks the exact `to` in Python: the hub runs
+on three databases and has no JSON operator they share, and the match only narrows the rows.
+
+Every owner is told of a `hide` or `remove` on a project of the organisation, not only of a
+suspension, because the organisation is the project's owner and the owners are the ones the action
+binds; telling only the namespace owner (a single handle with several owners behind it) or nobody
+would leave the people who can act on it without the record.
 
 **Reason:** the table of holds already says what a hold is, who lifts it and what it shows, and a
 suspension of an organisation is a hold in the contract's own words; a second mark would be a second

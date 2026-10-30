@@ -956,19 +956,21 @@ def _refuse_against_a_hold(
     """A moderation hold (§16.8): a hidden or removed project stays members-only, and a
     removed one stays archived, until an instance admin lifts the hold. Only what this
     PATCH turns on is refused: a surface left as it was blocks no other policy change."""
-    found = moderation.hold(conn, "project", project.id)
-    if found is None and project.owner_org_id is not None:
+    found = [moderation.hold(conn, "project", project.id)]
+    if project.owner_org_id is not None:
         # The suspension of the organisation that owns it holds its projects the way `remove`
-        # does (§16.8): archived, and nothing public turned on, until the hold is lifted.
-        found = moderation.hold(conn, "org", project.owner_org_id)
-    if found is None:
+        # does (§16.8): archived, and nothing public turned on, until the hold is lifted. It
+        # stands beside a hold of the project's own, whichever that is.
+        found.append(moderation.hold(conn, "org", project.owner_org_id))
+    holds = [h for h in found if h is not None]
+    if not holds:
         return
     current = policy.of(project)
     if new_policy is not None and any(
         new_policy[k] != off and new_policy[k] != current[k] for k, off in PUBLIC_OFF.items()
     ):
         raise moderation.held()
-    if state_changes and found.action in ("remove", "suspend"):
+    if state_changes and any(h.action in ("remove", "suspend") for h in holds):
         raise moderation.held()
 
 
