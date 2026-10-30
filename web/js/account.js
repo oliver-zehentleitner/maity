@@ -181,9 +181,11 @@ window.Maity = window.Maity || {};
       inputs.forEach((x) => { x.disabled = true; });
       status.busy("Saving…");
       try {
+        // The answer is /me itself (§5.1), its member as GET /me has it.
         const answer = await M.api.patch("/me", body);
+        const member = answer && answer.member;
         ["meat_proxy", "meat_proxy_note"].concat(MEAT_PARTS.map(([field]) => field)).forEach((k) => {
-          if (answer && k in answer) ctx.me[k] = answer[k];
+          if (member && k in member) ctx.me[k] = member[k];
         });
         show();
         status.done();

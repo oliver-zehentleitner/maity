@@ -3497,6 +3497,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("meat-proxy").checked = false; byId("meat-proxy").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(mpState() === "101" && text(main).includes("Not saved"), "meat proxy: a failed change is said and the boxes go back");
   win.Maity.api.patch = mpPatch;
+  // The answer is /me itself (§5.1): the member under `member`, as GET /me has it.
+  const mpAnswer = await mpPatch("/me", { meat_proxy_lead: true });
+  expect(mpAnswer && mpAnswer.member && mpAnswer.member.meat_proxy === true && mpAnswer.member.meat_proxy_lead === true
+    && Array.isArray(mpAnswer.projects) && !("meat_proxy" in mpAnswer), "meat proxy: PATCH /me answers /me, the member under member");
+  const mpErr = async (b) => { try { await mpPatch("/me", b); return null; } catch (err) { return err.details && err.details.fields; } };
+  expect(JSON.stringify(await mpErr({})) === JSON.stringify({ meat_proxy: "required" })
+    && JSON.stringify(await mpErr({ meat_proxy_hands: "yes" })) === JSON.stringify({ meat_proxy_hands: "bool_type" }),
+    "meat proxy: the fixture hub refuses an empty body and a non-boolean as the hub does");
   let mpRefused = null;
   try { await mpPatch("/me", { meat_proxy: false, meat_proxy_lead: true }); } catch (err) { mpRefused = err; }
   expect(mpRefused && mpRefused.status === 400 && JSON.stringify(mpRefused.details.fields) === JSON.stringify({ meat_proxy: "conflicts_with_parts" }),

@@ -208,6 +208,20 @@ window.Maity = window.Maity || {};
   function me() {
     return fixtures()["me.json"];
   }
+  // GET /me as the hub sends it; PATCH /me answers the same (§5.1).
+  function meView() {
+    const data = me();
+    data.projects.forEach((p) => {
+      p.open_requests = openFor(p.slug).length;
+      p.state = project(p.slug, "").state;
+      // §5.1: the logo as the project view has it, without its source.
+      const logo = project(p.slug, "").logo;
+      if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
+    });
+    data.server_time = nowIso();
+    // A renamed project: its directory stays, its slug is the project's now (§6.25).
+    return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
+  }
 
   function openFor(slug) {
     return file(slug, "requests.json", "").items.filter((r) => r.status === "open");
@@ -1126,19 +1140,7 @@ window.Maity = window.Maity || {};
     }],
     // open_requests is derived from the request fixtures, so that answers
     // given in this tab show in the counts.
-    ["GET", /^\/me$/, () => {
-      const data = me();
-      data.projects.forEach((p) => {
-        p.open_requests = openFor(p.slug).length;
-        p.state = project(p.slug, "").state;
-        // §5.1: the logo as the project view has it, without its source.
-        const logo = project(p.slug, "").logo;
-        if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
-      });
-      data.server_time = nowIso();
-      // A renamed project: its directory stays, its slug is the project's now (§6.25).
-      return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
-    }],
+    ["GET", /^\/me$/, () => meView()],
     // §18.2: the human's notifications. inbox counts the open requests as
     // /me does; chat and the rest count the unread items of their kind
     // (the hub's chat count is the conversations' unread, which the
@@ -1236,14 +1238,16 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
     // §5.2 "Meat proxy": the human's own switch and its two parts; nobody
-    // sets them for another. The switch sets or clears both parts, then the
+    // sets them for another; the answer is /me (§5.1). The switch sets or clears both parts, then the
     // parts the body names apply; it is on while one part is. The note names
     // the parts set while on, both while off (what switching on would send).
     ["PATCH", /^\/me$/, (m, body, path) => {
       const mm = me().member;
       if (mm.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
       const fields = {};
-      ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"].forEach((k) => { if (k in body && typeof body[k] !== "boolean") fields[k] = "type"; });
+      const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
+      if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";
+      MEAT.forEach((k) => { if (k in body && body[k] !== null && typeof body[k] !== "boolean") fields[k] = "bool_type"; });
       if (body.meat_proxy === false && (body.meat_proxy_lead === true || body.meat_proxy_hands === true)) fields.meat_proxy = "conflicts_with_parts";
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       if ("meat_proxy" in body) { mm.meat_proxy_lead = body.meat_proxy; mm.meat_proxy_hands = body.meat_proxy; }
@@ -1253,7 +1257,7 @@ window.Maity = window.Maity || {};
       mm.meat_proxy_note = ["This person says: I am a meat proxy."]
         .concat(parts[0] ? ["Lead me step by step rather than expecting me to explain."] : [])
         .concat(parts[1] ? ["When you need a human's hands, come to me first."] : []).join(" ");
-      return Object.assign({}, mm);
+      return meView();
     }],
     // §6.26 Organisations: humans only; a caller who is not a member gets not_found,
     // one whose role does not allow the call forbidden (org_role).
