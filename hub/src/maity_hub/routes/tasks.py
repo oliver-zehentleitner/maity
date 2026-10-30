@@ -16,10 +16,12 @@ from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    availability,
     card_search,
     cards,
     clock,
     contract_text,
+    cover,
     idempotency,
     instances,
     line,
@@ -819,9 +821,15 @@ def create_card(
     if body.assigned_to is not None:
         assigned = _target_id(conn, mine, body.assigned_to, "assigned_to")
         _require_assigner(conn, mine, assigned)
+        availability.refuse_coordinator_out(conn, mine, "new assignments")
     else:
-        # Findings and hand-outs go to the owner of the narrowest area (§6.2).
+        # Findings and hand-outs go to the owner of the narrowest area (§6.2), and while
+        # that owner is covered to its substitute (§6.12): the hub's routing, not an
+        # agent's assignment, so the coordinator gate does not apply.
         assigned = cards.area_owner(conn, mine.project.id, body.area)
+        assigned, routed_cover = cover.routed(conn, assigned)
+        if routed_cover is not None:
+            extra = {**extra, "cover": routed_cover}
     assigned_instance = _assigned_instance(conn, assigned)
     found = mentions.resolve(conn, mine.project.id, body.body, "body")
     now = clock.now()
@@ -1028,6 +1036,7 @@ def patch_task(
             values["area"] = body.area
         if "assigned_to" in given:
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
+            availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
                 takeovers.guard_move(conn, mine, card)
             values["assigned_to"] = new_assignee
@@ -1084,6 +1093,8 @@ def patch_task(
             )
         )
         before_card = card
+        if "status" in changed:
+            cover.touch(conn, before_card, mine.principal_id)
         card = _card(conn, card.id)
         view = task_view(conn, card, fg)
         payload = {k: view[k] for k in changed if k in view and k != "body"}  # never body
@@ -1247,7 +1258,9 @@ def _ping(
         conn,
         mine.project.id,
         "mentioned",
-        mentions.tokens(found, new),  # an instance mention pings that instance (§8.6)
+        mentions.tokens(
+            conn, mine.project.id, found, new
+        ),  # an instance mention pings that instance (§8.6)
         {
             "task": {"id": card.id, "title": card.title, "status": card.status},
             "field": field,
@@ -1281,6 +1294,7 @@ def claim(
             instances.address(mine.principal_id, mine.instance or ""),
         ):
             mine.require("tasks:admin")
+            availability.refuse_coordinator_out(conn, mine, "new assignments")
             principal, named = instances.split_address(body.holder)
             holder_id = _target_id(conn, mine, principal, "holder")  # never a guest (§2.3)
             holder_row = conn.execute(
@@ -1320,6 +1334,7 @@ def claim(
         ).rowcount
         if won != 1:
             raise _already_claimed(conn, _card(conn, card.id))
+        cover.touch(conn, card, mine.principal_id)  # a substitute claimed what it was handed
         card = _card(conn, card.id)
         emit(
             conn,
@@ -1583,6 +1598,7 @@ def assign(
             # A manager moves a card among itself and its reach, an expired claim
             # included (§2.3 "The manager"): every member it touches in the reach.
             _require_assigner(conn, mine, assignee, card.assigned_to, card.claim_holder)
+        availability.refuse_coordinator_out(conn, mine, "new assignments")  # after the right
         assignee_row = conn.execute(select(t.membership).where(t.membership.c.id == assignee)).one()
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
@@ -1781,6 +1797,7 @@ def checkpoint(
         mine = membership(conn, caller, slug)
         mine = _locked(conn, mine)
         card = _holder_card(conn, mine, card_id)
+        cover.touch(conn, card, mine.principal_id)
         now = clock.now()
         point = {
             "last_step": body.last_step,
@@ -1846,6 +1863,7 @@ def report(
             raise cards.invalid_transition(card.status, "review")
         else:
             card = _holder_card(conn, mine, card_id)
+            cover.touch(conn, card, mine.principal_id)
             if card.status not in ("in_progress", "blocked", "review"):
                 raise cards.invalid_transition(card.status, "review")
         closing = body.done and not already_done

@@ -28,7 +28,7 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     if card.kind != "contract":
         raise invalid({"contract": "contracts_only"})
     contract = card.contract or {}
-    path = contract.get("path") or contract_text.DEFAULT_PATH
+    path = contract["path"]  # every stored contract names its place (0101)
     section = contract.get("section")
     if section is None:
         raise _nothing("contract.section", "unset", "the card names no section")
