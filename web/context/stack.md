@@ -201,8 +201,14 @@ depended on which came first. The step now routes the second tab's
 calls to the hub and moves each answer's `Maity-Server-Time` by the same
 16 minutes as the browser's clock, so both clocks the page reads agree
 and nothing waits for real time. The route handler stays quiet only about a
-tab closed while an answer was held; any other error is recorded as a
-problem of the run where it happens, not seen later as a timeout.
+tab ending while an answer was held; any other error is recorded as a
+problem of the run where it happens, not seen later as a timeout. A tab
+ends in two ways: closed, or its context taken down after the step with
+a poll still held ("Request context disposed", red on #768). So the step
+marks the end before it closes the context and removes the route
+(`unroute_all`, ignoring errors), and the handler stays quiet from then on
+whatever the error says. Rejected: matching one more message text, which
+a Playwright release can word differently again.
 
 **Reason:** the page is right to follow the hub's clock, so the test has
 to move that clock too; a browser-only clock change contradicts every
