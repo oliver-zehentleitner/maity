@@ -974,6 +974,11 @@ window.Maity = window.Maity || {};
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
       if (!org) fail(404, "not_found", "no such person or organisation", path);
       const mine = me().projects.filter((x) => x.full_name.startsWith(org.handle + "/")).map((x) => ({ full_name: x.full_name, name: x.name, shared: true }));
+      // Its projects whose public page is on as well, each once (§6.27).
+      Object.keys(fixtures()).filter((k) => k.endsWith("/project.json")).map((k) => fixtures()[k])
+        .filter((x) => x && x.owner && x.owner.handle === org.handle && x.public_page === "on" && !mine.some((y) => y.full_name === x.full_name))
+        .forEach((x) => mine.push({ full_name: x.full_name, name: x.name, shared: false }));
+      mine.sort((a, b) => (a.full_name < b.full_name ? -1 : 1));
       const member = !!orgRole(org);
       if (!member && org.public_page !== "on" && !mine.length) fail(404, "not_found", "no such person or organisation", path);
       const out = Object.assign({ kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: member ? org.avatar_url || null : null,

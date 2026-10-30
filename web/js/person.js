@@ -84,8 +84,9 @@ window.Maity = window.Maity || {};
       append(root, h("h2", null, "@" + handle), h("p", null, "There is no person or organisation @" + handle + " that you can see."));
       return;
     }
-    // An alias answers with the current handle: the address follows it.
-    if (p.handle && p.handle !== handle) M.route.go("/" + encodeURIComponent(p.handle), { replace: true });
+    // An alias answers with the current handle: the address follows it, and
+    // the view drawn there reads it; this one stops.
+    if (p.handle && p.handle !== handle) { M.route.go("/" + encodeURIComponent(p.handle), { replace: true }); return; }
     const org = p.kind === "organisation";
     const own = !org && ctx.me && ctx.me.handle === p.handle;
     append(root,

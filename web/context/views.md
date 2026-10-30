@@ -2184,7 +2184,8 @@ purpose.
 the shared projects: no bio, no public page, nothing for a person one
 shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
-other view draws for the same person.
+other view draws for the same person, and change with a rename. Hiding
+the picture's place: the layout would jump from one person to the next.
 
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
