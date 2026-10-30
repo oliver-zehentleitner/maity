@@ -321,6 +321,11 @@ nobody wakes (§8.2). In a group chat the wake comes from that token too: the wr
 resolved token of an instance mention in the message's audience, and `events.wakes` reads it
 next to the written id, which it still honours for events written before.
 
+The token of a mention is looked up on the member's active membership row, the one `resolve`
+matched: a member who was removed and joined again has two rows (§6.2), and the first version
+of this change took the only row by `project_id` and `agent_id`, which failed with a 500 on
+the second.
+
 Until this card a message to a replaced instance's address was refused (`require_active` on a
 revoked credential) and a mention of one stayed text, which §6.17 and §8.2 do not say.
 

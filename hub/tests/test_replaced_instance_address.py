@@ -143,3 +143,26 @@ def test_a_chain_that_ends_in_a_revoked_instance_wakes_nobody(
     sent = say(writer, to=f"{old.id}#{old.instance}", body="Anyone?")
     assert sent.status_code == 201, sent.text  # accepted (§8.2)
     assert _token(old, middle.instance) in sent.json()["audience"]  # the dead end's token
+
+
+def test_an_instance_mention_after_a_rejoin_pings_the_instance_of_the_active_membership(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine  # noqa: F811
+) -> None:
+    """A removed member keeps its row and joins again with a second one: the mention
+    must find the active one, not fail on two (§6.2)."""
+    first = agent_named(make_client, owner, "agent-b")
+    assert owner.delete(f"/projects/maintainer/maity/members/{first.id}").status_code == 200
+    again = flow.agent(make_client, owner, agent={"id": first.id})
+    writer = agent_named(make_client, owner, "agent-a")
+    sent = say(writer, to=owner.id, body=f"@agent-b#{again.instance} please")
+    assert sent.status_code == 201, sent.text
+    assert _token(first, again.instance) in sent.json()["audience"]
+    created = owner.post(
+        "/projects/maintainer/maity/tasks", {"title": "x", "body": f"@agent-b#{again.instance}"}
+    )
+    assert created.status_code == 201, created.text
+    with migrated.connect() as conn:
+        event = conn.execute(
+            select(t.event).where(t.event.c.kind == "mentioned").order_by(t.event.c.seq.desc())
+        ).first()
+    assert event is not None and event.audience == [_token(first, again.instance)]

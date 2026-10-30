@@ -301,9 +301,11 @@ def instance_token(conn: Connection, project_id: str, member_id: str, instance: 
     if instance is None:
         return instances.token(member_id, None)
     row = conn.execute(
+        # The active row: a member who was removed and joined again has two (§6.2).
         select(t.membership.c.id).where(
             t.membership.c.project_id == project_id,
             t.membership.c.agent_id == member_id,
+            t.membership.c.active.is_(True),
         )
     ).scalar_one()
     return instances.addressed(conn, row, member_id, instance, "mentions")
