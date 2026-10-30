@@ -1978,7 +1978,6 @@ window.Maity = window.Maity || {};
       const next = items.length > limit ? page[page.length - 1].seq + "~" + filterKey : null;
       return { items: page.map(clean), next_cursor: next };
     }],
-    // The hub's machine form (§4): here only what the views ask of it.
     // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
     // instance; a window beyond the fixture's days reads zero days, with
     // reviews unknown before the hub kept history, as the hub answers.
@@ -3353,73 +3352,6 @@ window.Maity = window.Maity || {};
     return { items, next_cursor: null };
   }
 
-  // What the hub serves, from its machine form (GET /openapi.json), read
-  // once per page: a view offers a control only for a route the hub lists.
-  // The hub lists its paths under its prefix (/api/v1/…); either form
-  // counts, as in the CLI, and parameter names are not compared. A failed
-  // read is not kept: the next ask reads again.
-  let hubDoc = null;
-  let hubPaths = null;
-  const routeKey = (method, path) => method.toUpperCase() + " "
-    + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
-  function machineForm() {
-    if (!hubDoc) {
-      hubDoc = M.api.get("/openapi.json");
-      hubDoc.catch(() => { hubDoc = null; });
-    }
-    return hubDoc;
-  }
-  function hubRoutes() {
-    if (!hubPaths) {
-      hubPaths = machineForm().then((doc) => {
-        const found = new Set();
-        Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
-          Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
-        return found;
-      });
-      hubPaths.catch(() => { hubPaths = null; });
-    }
-    return hubPaths;
-  }
-
-  // The fields the hub's machine form names for the JSON body of `method
-  // path` (path as in docs/api.md), one $ref followed: what a form may
-  // send to this hub. Rejects when the machine form cannot be read.
-  function bodyFields(method, path) {
-    return machineForm().then((doc) => {
-      const paths = (doc && doc.paths) || {};
-      const op = (paths["/api/v1" + path] || paths[path] || {})[method.toLowerCase()];
-      const json = op && op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
-      let schema = json && json.schema;
-      if (schema && schema.$ref) schema = schema.$ref.split("/").slice(1).reduce((o, k) => (o ? o[k] : null), doc);
-      return new Set(Object.keys((schema && schema.properties) || {}));
-    });
-  }
-
-  // Whether the hub's machine form lists a route for this method and this
-  // concrete path (its parameters matched as path segments); null when the
-  // machine form cannot be read.
-  const escapeRe = (t) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
-  function routeListed(method, path) {
-    const want = method.toUpperCase();
-    const at = String(path).split("?")[0];
-    return hubRoutes().then((found) => Array.from(found).some((key) => {
-      const [m, template] = key.split(" ");
-      return m === want && new RegExp("^" + template.split("{}").map(escapeRe).join("[^/]+") + "$").test(at);
-    }), () => null);
-  }
-
-  // A route this hub does not serve: a 404 or 405 for a method and path its
-  // machine form does not list. Where a view's feature needs one, that is a
-  // fact of this hub, said quietly in its place (M.dom.notOnHub), never as
-  // an error, and the view does not ask it again until the next navigation,
-  // so no timer keeps knocking. A 404 on a route the hub lists is the
-  // resource's (a project left, a card gone) and stays an error, as does an
-  // answer when the machine form cannot be read, and any 5xx, network
-  // failure, 401 or 403.
-  const absentRoutes = new Set();
-  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
-
   M.api = {
     // The session read last (null before the first read or after the end).
     session: () => lastSession,
@@ -3431,22 +3363,6 @@ window.Maity = window.Maity || {};
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),
-    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
-    // A promise: true when err says the route itself is missing (see above).
-    missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
-      ? routeListed(method, path).then((yes) => yes === false) : Promise.resolve(false)),
-    absent: {
-      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
-      has: (method, path) => absentRoutes.has(routeOf(method, path)),
-      // On every navigation (js/app.js): a hub deployed meanwhile is asked again.
-      clear: () => { absentRoutes.clear(); },
-    },
-    // Whether the hub serves `method path` (path as in docs/api.md, without
-    // the prefix); rejects when its machine form cannot be read.
-    hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
-    hubBody: bodyFields,
-    // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubDoc = null; hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

@@ -65,12 +65,8 @@ window.Maity = window.Maity || {};
   // `signedIn` draws the dashboard once a session exists.
   function loginOptions(every, signedIn) {
     const box = h("div", { class: "sign-in-options" });
-    // Asked only of a hub whose machine form lists it; one without the
-    // methods offers the password alone.
-    M.api.hubHas("GET", "/auth/methods")
-      .then((has) => (has ? M.api.get("/auth/methods") : null))
+    M.api.get("/auth/methods")
       .then((methods) => {
-        if (!methods) return;
         const prefilled = codeFromAddress();
         const next = M.signInNext ? M.signInNext() : null;
         append(box,
@@ -272,8 +268,7 @@ window.Maity = window.Maity || {};
     try {
       made = await M.api.post("/auth/device-codes", {});
     } catch (err) {
-      if (await M.api.missingRoute(err, "POST", "/auth/device-codes")) { append(clear(stage), M.dom.notOnHub("This hub has no sign-in by code yet.")); return; }
-      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), M.dom.notOnHub("This hub does not offer sign-in by code.")); return; }
+      if (err.details && err.details.reason === "method_disabled") { append(clear(stage), h("p", { class: "muted" }, "This hub does not offer sign-in by code.")); return; }
       status.fail("No code: ", said(err));
       return;
     }

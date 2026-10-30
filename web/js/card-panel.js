@@ -136,10 +136,8 @@ window.Maity = window.Maity || {};
       }
     }
 
-    // The parts the hub may not serve yet are left out quietly (§1.6).
-    const has = (method, path) => M.api.hubHas(method, path).catch(() => true);
-    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/notes").then((ok) => { if (ok) notes(); else append(notesBox, M.dom.notOnHub("This hub has no notes yet.")); });
-    has("GET", "/projects/{owner}/{slug}/tasks/{task_id}/history").then((ok) => { if (ok) history(); else append(historyBox, M.dom.notOnHub("This hub has no card history yet.")); });
+    notes();
+    history();
 
     return {
       el: box,
