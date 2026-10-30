@@ -55,14 +55,14 @@ def test_the_human_names_one_instance_and_only_it_wakes(
     assert [m["to_instance"] for m in listed["items"]] == [second.instance]
 
 
-def test_without_it_the_message_still_wakes_every_instance_until_tsk_p49b0kverrph(
+def test_without_it_the_message_wakes_the_team_by_its_rule_here_every_instance(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
 ) -> None:
     first, second = _pair(make_client, owner)
     sent = send(owner, first.id)
     assert sent.status_code == 201 and sent.json()["to_instance"] is None
-    # Known deviation from §9.1 and §6.18 (the team's wake rule should decide), older than
-    # to_instance: this pins what the hub does until tsk-p49b0kverrph fixes it.
+    # The team's wake rule decides (§9.1, §6.18); `all`, the default, wakes every instance.
+    # tests/test_chat_team_wake.py has the narrowing rules.
     row = _last(migrated)
     member = _member(migrated, first)
     assert events.wakes(row, member, first.id, first.instance)
