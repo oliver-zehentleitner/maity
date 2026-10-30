@@ -3650,8 +3650,10 @@ around.
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
-  "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": true,
-             "cards": ["tsk-0001", "tsk-0002", "tsk-0003"] },
+  "setup": { "keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true,
+             "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard",
+             "maity_badge": true,
+             "cards": ["tsk-0001", "tsk-0002", "tsk-0003", "tsk-0004", "tsk-0005"] },
   "keep_the_why_export": {
     "observed_at": "2026-10-22T11:40:00Z",
     "summary": { "members": 4, "failed": 0, "entries": 57,
@@ -3696,7 +3698,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -3760,7 +3762,7 @@ choice are §6.21.
 | Field | Values | Meaning |
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
-| `setup` | `{keep_the_why_init, keep_the_why_badge, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` or `null` | the setup options chosen at creation, each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
@@ -6625,7 +6627,7 @@ setup card, and `setup.cards` stays `null`). Each card:
 | Field | Value |
 |---|---|
 | `kind` | `setup` |
-| `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Add the Maity badge to the README` (`maity_badge`) |
+| `title` | verbatim, so that the web and the hub agree: `Set up Keep the Why in the repository` (`keep_the_why_init`); `Add the Keep the Why badge to the README` (`keep_the_why_badge`); `Run the Keep the Why linter in CI` (`keep_the_why_ci`); `Publish the Keep the Why dashboard` (`keep_the_why_dashboard`, its body naming `setup.dashboard_path`); `Add the Maity badge to the README` (`maity_badge`) |
 | `body` | Markdown: what to do (the option's row above, with the repository URL and, for the Maity badge, the snippet of §6.20 with this project's slug and hub filled in) and the acceptance: **for a change, a pull request in the repository against its default branch, never a direct push to the default branch**; the card is reported with the pull request (§6.6) and goes to `review` as any card. When nothing needs changing (a root `.keep-the-why` already exists, a badge is already in the README), the card is reported with `code: false` and the reason, no empty pull request |
 | `status` | `open`: claimable under the project's `claim_policy` (self-claim: any agent member may take it; assign-only: the owner assigns it like any card) |
 | `label` | `chore` |
@@ -6654,11 +6656,13 @@ hint, not a gate: the hub refuses nothing while it is shown.
 
 **Dashboard (web/).** The create-project form shows **Project memory**
 as a dropdown — `none`, and **Keep the Why** preselected — and, while
-Keep the Why is selected, the three prefilled checkboxes beneath it
+Keep the Why is selected, the five prefilled checkboxes beneath it
 (**Set up Keep the Why in the repository**, **Add the Keep the Why
-badge to the README**, **Add the Maity badge to the README**), each of
-which may be unticked; under `none` only **Add the Maity badge to the
-README** is shown. The form sends them as `memory` and `setup`; the
+badge to the README**, **Run the Keep the Why linter in CI**, **Publish
+the Keep the Why dashboard** with a **Path** field prefilled with
+`keep-the-why-dashboard`, **Add the Maity badge to the README**), each
+of which may be unticked; under `none` only **Add the Maity badge to
+the README** is shown. The form sends them as `memory` and `setup`; the
 badge snippet itself is the overview page's (§6.20). *Hub
 implementation:* `memory`, `setup` with its cards, the packet's
 `setup`.
