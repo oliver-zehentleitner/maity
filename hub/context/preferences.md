@@ -41,8 +41,10 @@ proposal keeps one settlement path for every proposal kind.
 
 `meat_proxy` stays the switch. Under it are two parts, `meat_proxy_lead` ("Lead me step by step rather
 than expecting me to explain.") and `meat_proxy_hands` ("When you need a human's hands, come to me
-first."). Switching the mode on switches both parts on; each can then be switched off on its own; both
-off switch the mode off; switching the mode off keeps the parts for next time. The note is "This person
+first."). The hub stores the parts; the switch is derived (on while a part is). Switching the mode on
+switches both parts on, switching it off switches both off, and parts given in the same request apply
+after that; nothing is remembered from an earlier time the mode was on, so there is one state and no
+hidden one. The note is "This person
 says: I am a meat proxy." plus the sentence of each part that is on, so agents read only what the person
 chose, and the dashboard shows the same note.
 
