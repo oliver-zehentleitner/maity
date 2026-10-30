@@ -15,6 +15,7 @@ from maity_hub import (
     clock,
     events,
     export,
+    handles,
     images,
     moderation,
     namespace,
@@ -53,6 +54,7 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                         avatar_url=None,
                         owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
                     ),
+                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
                 },
                 "projects": _agent_project(conn, caller),
@@ -67,6 +69,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
     return {
         "member": {
             **human_member(human, avatar_url=None),
+            "aliases": handles.aliases(conn, [human.id])[human.id],
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
             **meat_proxy_member(human.meat_proxy_lead, human.meat_proxy_hands),

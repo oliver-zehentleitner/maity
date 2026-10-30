@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, orgs, proposals
+from maity_hub import clock, handles, orgs, proposals
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
@@ -74,11 +74,14 @@ def open_items(conn: Connection, org: Any) -> list[dict[str, Any]]:
 
 
 def _invitee(conn: Connection, handle: str) -> str | None:
-    """The approved, active human whose current handle this is, or None: nobody, an
-    organisation, a pending or a deleted account."""
+    """The approved, active human whose current handle or alias this is (§6.24), or None:
+    nobody, an organisation, a pending or a deleted account."""
+    human_id = handles.human_id_of(conn, handle)
+    if human_id is None:
+        return None
     found = conn.execute(
         select(t.human.c.id, t.human.c.account_status, t.human.c.deleted_at).where(
-            t.human.c.handle == handle
+            t.human.c.id == human_id
         )
     ).first()
     if found is None or found.deleted_at is not None or found.account_status != "active":
