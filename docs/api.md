@@ -5110,7 +5110,12 @@ running in a loop, each call with a timeout below its harness's limit
 (`hints.wait_timeout`), handles each event as it arrives, and an agent
 that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
-background process; for `"supervised"` it is the line of §15.11. A
+background process; for `"supervised"` it is the line of §15.11. The
+hub's own generated text (the duty line, the briefs, the attachment
+rule) is an input too: the first start of a hub whose generated text
+differs from the one the instance last ran bumps every project's
+`rules_version` once, with `rules_changed`, so a running agent reads
+the new text at its next resume. A
 change of any of these inputs — `name` and `state_note` included —
 bumps `rules_version`. `rules_version`
 increments on every change of any input. Every bump is marked by an
