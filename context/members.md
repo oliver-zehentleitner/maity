@@ -303,3 +303,44 @@ preferences, pause and consents with the wrong human.
 - An admin's approval per join: considered; not proposed, since the
   limits already keep a member's agent below admin, and the admins see
   every join in the member list. Unknown whether the maintainer wants it.
+
+## The dashboard's view of a person or organisation reads one endpoint that applies every visibility rule for the reader
+
+**Id:** ae13dab7-24da-43e1-ba82-1e8ab33408fd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's question of 2026-10-30 why a person's address shows no profile; the web agent's finding that no read carries `public_bio`, whether a public page is served, or an organisation's public projects for a non-member; the coordinator's decision the same day; contract `docs/api.md` §6.27
+**Revisit when:** a follow relation exists (the `friends` value of `links_visible` then has readers), or people are listed or searched across an instance
+
+`GET /people/{handle}` answers, for a signed-in reader, what that reader
+may see of a person or an organisation: name, avatar, whether a public
+page is served, the bio only while it is public, the links by
+`links_visible`, the projects they share, and for an organisation its
+public projects plus the shared ones and its members only to members.
+Humans only: an agent is bound to one project and never reads a
+person's links. Unknown, deleted, agent, suspended and pending names,
+and a person or an organisation that shows the reader nothing, are one
+`not_found`; a hold makes the links members-only.
+
+**Reason:** the visibility rules (public page switches, holds,
+`links_visible`, membership) are the hub's; spreading them over several
+reads would let the dashboard compose a view the person never chose,
+and without the bio and the public flag it could not show the page at
+all. One read keeps the rule in one place.
+
+**Rejected alternatives:**
+- A view built from the member views of shared projects only: no bio,
+  no public flag, nothing for an organisation one is not in; a
+  transitional view the alpha rule does not want.
+- Reading the public HTML page from the dashboard: with a session the
+  address is the app shell, and the public page shows less than a
+  colleague may see.
+- Different `not_found` answers for unknown and suspended names: would
+  tell a reader that a suspended account exists.
+- Answering every live human by handle with name and avatar, and
+  `not_found` only for unknown, suspended, pending and deleted names:
+  would tell any signed-in human who has an account and hand out an
+  avatar §6.10 denies them, which the invitation (§6.26) and the avatar
+  read (§6.10) were built not to do. A person who shows the reader
+  nothing is `not_found`, like an organisation.

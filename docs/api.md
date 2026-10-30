@@ -7603,6 +7603,84 @@ organisation change does to its projects shows there with the project
 events that exist: `member_joined` and `member_updated` (above) and
 `project_updated` (rename, transfer). Nothing else notifies anyone.
 
+### 6.27 A person or an organisation, as the dashboard shows them
+
+`/<handle>` (§16.11) is, for a signed-in reader, the dashboard's own
+view of a person or an organisation. It reads one endpoint:
+
+```
+GET /people/{handle}
+```
+
+A signed-in human; an agent credential is `forbidden` (`details.reason:
+humans_only`: an agent is bound to one project, §2.2, and never reads a
+person's links, §16.9); without a session `unauthenticated`. `{handle}` is a
+human's or an organisation's handle or one of their live aliases
+(§6.24); the answer names the current handle. An unknown name, an
+agent's handle (an agent's page lives under its owner, §16.11), a
+deleted account or organisation, a human account that is suspended
+(§16.8) or waiting for approval (§2.7.5), a human who shows the caller
+nothing (no public page served, no project in `projects` below, and no
+link `links_visible` admits for the caller), and an organisation the
+caller is not a member of that shows the caller nothing (no public page
+served and no project in `projects`; a suspended organisation included)
+are `not_found`, the same answer for each, so the endpoint
+does not tell which (§6.26). The caller's own handle answers like any other, with
+everything of its own shown (as in `GET /me`).
+
+```json
+{ "kind": "human", "handle": "wolfgang", "display_name": "Wolfgang", "avatar_url": "/api/v1/avatars/hum-…?v=…",
+  "page_served": true, "public_bio": "Builds trading tools.",
+  "website": "https://example.org", "social": { "github": "wolfgang" },
+  "projects": [ { "full_name": "wolfgang/traderjoe", "name": "TraderJoe", "shared": true } ],
+  "projects_total": 1 }
+```
+
+```json
+{ "kind": "organisation", "handle": "acme", "display_name": "Acme", "avatar_url": "/api/v1/avatars/org-…?v=…",
+  "page_served": false,
+  "projects": [ { "full_name": "acme/site", "name": "Site", "shared": true } ], "projects_total": 1,
+  "members": [ { "handle": "anna", "display_name": "Anna", "avatar_url": "…", "role": "owner" } ] }
+```
+
+`avatar_url` follows §6.10 ("Who may read an image"): it is the
+image's address only where the caller may read it (a shared project,
+the organisation's own members and its projects' members, the caller's
+own); otherwise `null`, and the dashboard draws a neutral placeholder
+(not §6.10's generated avatar, which needs the account id this answer
+does not give). A public page grants no image (§16.9).
+
+- **`page_served`** (a boolean, not the organisation's `public_page`
+  switch of §6.26) is `true` exactly when the hub serves the public page
+  at `/<handle>` now (§16.9: public pages on, `public_profile` or the
+  organisation's `public_page` on, no hold); the dashboard offers
+  **View public page** only then. **`public_bio`** is there only while
+  `page_served` is `true` (for the reader's own handle always), and
+  never for an organisation: a bio that is not public is the person's
+  alone.
+- **`website`** and **`social`** follow `links_visible` for this reader
+  exactly as in the member views (§6.2, §16.9, "A person's links"),
+  and are absent otherwise; an organisation has neither.
+- **`projects`**: for a human, the projects in which both the caller
+  and the person are active members, and those with a served public
+  page in which the person is an active member (as the public page
+  shows them, §16.9); for an organisation, its projects whose public
+  page is served and those the caller is an active member of. Each
+  once, `shared: true` where the caller is a member too, archived
+  projects included only where the caller is a member, ordered by
+  `full_name`, at most 100; `projects_total` is the full count, so the
+  dashboard can say the list is cut. For the caller's own handle,
+  `projects` are all of their own active memberships.
+- **`members`** (`[{handle, display_name, avatar_url, role}]`, the
+  organisation's roles of §6.26) only for an organisation and only when
+  the caller is a member of it, absent otherwise.
+- A hold on the profile or the organisation (§16.8) makes
+  `page_served` `false` and hides `public_bio`, and the person's links
+  count as members-only: `links_visible: everyone` then acts as
+  `colleagues`, whatever the setting says.
+- The answer is the caller's own (`Cache-Control: private, no-store`)
+  and changes nothing.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
