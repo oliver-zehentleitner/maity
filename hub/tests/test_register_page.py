@@ -438,3 +438,25 @@ def test_terms_set_while_the_page_was_open_ask_first(
     asked = answer(with_terms, link, page, handle="x")  # a bad handle as well
     assert asked.status_code == 409 and "2026-10" in asked.text
     assert humans(migrated) == []
+
+
+def test_the_page_links_the_legal_pages_the_instance_serves(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub())
+    page = client.get(link)
+    assert 'href="/privacy"' not in page.text and 'href="/terms"' not in page.text  # none set
+    with migrated.begin() as conn:
+        conn.execute(
+            t.legal_page.insert(),
+            [
+                {"page": "privacy", "current": "v1"},
+                {"page": "terms", "current": "v2"},
+                {"page": "imprint", "current": None},
+            ],
+        )
+    page = client.get(link)
+    # The privacy notice and the terms, as the dashboard's registration form links them
+    # (§16.7.1); a page that is not set is no link.
+    assert '<a href="/privacy">Privacy notice</a> · <a href="/terms">Terms of use</a>' in page.text
+    assert 'href="/impressum"' not in page.text

@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, handles
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.config import Settings
@@ -219,7 +219,7 @@ def take_effect(conn: Connection, hub: Settings, token: str) -> bool:
 def operator_reset(conn: Connection, handle: str) -> bool:
     """`maity-hub second-factor reset --handle`: at once, by the operator of the server
     (§2.8.3). False when the human is not enrolled; None-handle humans do not exist."""
-    human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
     if human_id is None:
         raise not_found()
     if not second_factor.enrolled(second_factor.factor_of(conn, human_id, lock=True)):

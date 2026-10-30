@@ -181,7 +181,12 @@ def reader_row(mine: Any) -> Any:
     if row is not None:
         return row
     return SimpleNamespace(
-        id=-1, trust=None, role="outsider", agent_id=None, human_id=mine.principal_id
+        id=-1,
+        trust=None,
+        role="outsider",
+        role_base="outsider",
+        agent_id=None,
+        human_id=mine.principal_id,
     )
 
 

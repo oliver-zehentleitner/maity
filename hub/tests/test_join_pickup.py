@@ -109,11 +109,11 @@ def test_a_handle_taken_during_the_exchange_is_not_found(
     picked = pick_up(setup, placement).json()
     real = agents.create_profile
 
-    def racing(conn: Any, *args: Any) -> str:  # a POST /agents lands after the check
+    def racing(conn: Any, *args: Any, **kwargs: Any) -> str:  # a POST /agents lands after the check
         if late == "unique":
             raise IntegrityError("INSERT", {}, Exception("duplicate handle"))
-        real(conn, *args)  # the competing profile
-        return real(conn, *args)
+        real(conn, *args, **kwargs)  # the competing profile
+        return real(conn, *args, **kwargs)
 
     monkeypatch.setattr(joins, "create_profile", racing)
     refused = exchange(make_client(), picked)
@@ -413,7 +413,9 @@ def test_a_pending_placement_is_not_picked_up(setup: Setup) -> None:
 
 def test_a_taken_handle_is_refused_at_the_pickup(setup: Setup, make_client: ClientFactory) -> None:
     placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
-    flow.agent(make_client, setup.owner, agent={"handle": "agent-f", "display_name": "F"})
+    # The placement reserves the handle (§6.24): a profile can only land by a race, as here.
+    with setup.engine.begin() as conn:
+        agents.create_profile(conn, setup.owner.id, "agent-f", "F", None, placement=True)
     refused = pick_up(setup, placement)
     assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
     assert refused.json()["error"]["details"] == {"why": "handle_taken"}
@@ -494,7 +496,7 @@ def _row(kind: str, audience: list[str]) -> Any:
 
 
 def test_a_supervised_session_wakes_on_less() -> None:
-    me = SimpleNamespace(id=7, trust="member", role="coder", agent_id="agt-b")
+    me = SimpleNamespace(id=7, trust="member", role="coder", role_base="coder", agent_id="agt-b")
     for kind, audience, plain, supervised in (
         ("task_created", ["all"], True, False),
         ("state_changed", ["all"], True, True),

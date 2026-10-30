@@ -15,6 +15,7 @@ from maity_hub import (
     clock,
     events,
     export,
+    handles,
     images,
     moderation,
     namespace,
@@ -27,7 +28,7 @@ from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticated
 from maity_hub.models import Strict
 from maity_hub.ratelimit import Limiter
-from maity_hub.views import agent_member, human_member, meat_proxy_member, owner_handles
+from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
 
 router = APIRouter()
 
@@ -53,9 +54,11 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                         avatar_url=None,
                         owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
                     ),
+                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
                 },
                 "projects": _agent_project(conn, caller),
+                "membership": {"isolated": _isolated(conn, caller)},
             }
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
@@ -67,6 +70,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
     return {
         "member": {
             **human_member(human, avatar_url=None),
+            "aliases": handles.aliases(conn, [human.id])[human.id],
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
             **meat_proxy_member(human.meat_proxy_lead, human.meat_proxy_hands),
@@ -182,6 +186,12 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def _isolated(conn: Connection, caller: Caller) -> dict[str, Any] | None:
+    """An isolated agent's way to learn why its calls are refused (§6.2)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
+    return isolated(row)
 
 
 def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:

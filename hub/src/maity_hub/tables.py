@@ -597,6 +597,9 @@ project = Table(
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
+    # 12; null for none.
+    Column("roles", JSON_VALUE),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
@@ -612,6 +615,46 @@ project = Table(
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
     CheckConstraint(OWNER_SHAPE, name="owner_shape"),
+    **MYSQL_TABLE,
+)
+
+# A handle a human or an agent profile gave up by a rename (§6.24): it stays with the id, oldest
+# first, and nobody else can take it. `scope` is where handles are unique: "human" for all
+# humans, the owner's id for an owner's agent profiles; a deleted profile's aliases leave the
+# scope with it (`live` NULL), as its handle does.
+handle_alias = Table(
+    "handle_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id"),
+    _ref("agent_id", "agent_profile.id"),
+    Column("scope", String(ID), nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("live", Boolean, server_default=true()),
+    UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
+    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per rename (a no-op leaves none), for the limit of 3 in 24 hours (§1.7, §6.24).
+handle_change = Table(
+    "handle_change",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("subject_id", String(ID), nullable=False, index=True),
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The lock a rename or a creation takes on the handle it wants, so that two of them for one
+# handle in one scope run one after the other (§6.24); rows are made when first asked for.
+handle_lock = Table(
+    "handle_lock",
+    metadata,
+    Column("scope", String(ID), primary_key=True),
+    Column("handle", String(HANDLE), primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -642,6 +685,10 @@ membership = Table(
     _ref("agent_id", "agent_profile.id"),
     # A built-in role, or a project role of up to 24 characters (#506).
     Column("role", String(24), nullable=False),
+    # The built-in role whose scopes `role` has: `role` itself for a built-in one, the base
+    # for a project role (§2.3); written with every `role`, and by a `PUT …/roles` that
+    # moves a role to another base, so no reader looks the project's roles up.
+    Column("role_base", String(24), nullable=False),
     Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
     # A membership the hub keeps for an owner of the organisation that owns the project
     # (§6.26): `created` (the hub made it: it ends with the ownership) or `raised` (it held
@@ -654,6 +701,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # An agent member a human with `members:admin` isolated (§6.2, "Isolation"): why, since
+    # when and by whom; null while free. The membership keeps its history either way.
+    Column("isolated_reason", String(500)),
+    Column("isolated_since", UtcDateTime),
+    Column("isolated_by", String(ID)),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -1590,7 +1642,7 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
     Column("here", Boolean, default=True),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"

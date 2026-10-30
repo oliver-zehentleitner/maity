@@ -173,7 +173,8 @@ def resolve(
     found = candidates(text)
     if not found:
         return []
-    handles = {c.handle for c in found}
+    from maity_hub import handles as handle_book  # a module of its own; not at import
+
     owner = t.human.alias("owner")
     rows = conn.execute(
         select(
@@ -181,6 +182,7 @@ def resolve(
             t.membership.c.agent_id,
             t.membership.c.human_id,
             t.agent_profile.c.handle.label("agent_handle"),
+            t.agent_profile.c.owner_id.label("owner_id"),
             t.human.c.handle.label("human_handle"),
             owner.c.handle.label("owner_handle"),
         )
@@ -188,33 +190,55 @@ def resolve(
         .outerjoin(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
         .outerjoin(owner, owner.c.id == t.agent_profile.c.owner_id)
         .outerjoin(t.human, t.human.c.id == t.membership.c.human_id)
-        .where(
-            t.membership.c.project_id == project_id,
-            t.membership.c.active.is_(True),
-            (t.agent_profile.c.handle.in_(handles)) | (t.human.c.handle.in_(handles)),
-        )
+        .where(t.membership.c.project_id == project_id, t.membership.c.active.is_(True))
     ).all()
-    humans: dict[str, str] = {}  # handle -> member id; human handles are unique
+    rows = [r for r in rows if among is None or (r.agent_id or r.human_id) in among]
+    # A member answers to its current handle and its aliases (§6.24, §8.6); an agent's long
+    # form takes its owner's the same way.
+    aliased = handle_book.aliases(
+        conn, [r.agent_id or r.human_id for r in rows] + [r.owner_id for r in rows if r.owner_id]
+    )
     memberships: dict[str, int] = {}  # agent member id -> membership row id
-    agents: dict[str, list[tuple[str, str]]] = {}  # handle -> (member id, global name)
-    long: dict[tuple[str, str], tuple[str, str]] = {}  # (owner, handle) -> (member id, name)
+    members: list[_Candidate] = []
+    current_human: dict[str, str] = {}  # a human's current handle -> member id
     for row in rows:
         member_id = row.agent_id or row.human_id
-        if among is not None and member_id not in among:
-            continue
         if row.agent_id:
             memberships[row.agent_id] = row.id
-            name = global_name(row.owner_handle, row.agent_handle)
-            agents.setdefault(row.agent_handle, []).append((member_id, name))
-            long[(row.owner_handle, row.agent_handle)] = (member_id, name)
+            shown = global_name(row.owner_handle, row.agent_handle)
+            owners = {row.owner_handle, *aliased[row.owner_id]}
+            names = {row.agent_handle, *aliased[member_id]}
+            members.append(_Candidate(member_id, False, row.agent_handle, shown, names, owners))
         else:
-            humans[row.human_handle] = member_id
-    # A human comes first: humans have no long form, the agent has (§8.6).
-    shared = {
-        c.handle: sorted(name for _, name in agents[c.handle])
-        for c in sorted(found, key=lambda c: c.handle)
-        if c.owner is None and c.handle not in humans and len(agents.get(c.handle, [])) > 1
-    }
+            current_human[row.human_handle] = member_id
+            names = {row.human_handle, *aliased[member_id]}
+            members.append(
+                _Candidate(member_id, True, row.human_handle, row.human_handle, names, set())
+            )
+
+    def matches(c: Any) -> list[tuple[str, bool, str]]:
+        """(member id, is human, shown name) of the members the candidate could mean."""
+        return [
+            (m.member_id, m.human, m.shown)
+            for m in members
+            if c.handle in m.names and (c.owner is None or (not m.human and c.owner in m.owners))
+        ]
+
+    resolved: dict[tuple[str | None, str], tuple[str, str] | None] = {}
+    shared: dict[str, list[str]] = {}
+    for c in sorted(found, key=lambda c: c.handle):
+        candidates_of = matches(c)
+        # Several candidates are refused, unless exactly one is a human whose current handle
+        # it is: then that human comes first (§8.6).
+        first = [m for m in candidates_of if m[1] and current_human.get(c.handle) == m[0]]
+        pick = candidates_of if len(candidates_of) <= 1 else (first if len(first) == 1 else None)
+        if pick is None:
+            if c.owner is None:
+                shared[c.handle] = sorted(name for _, _, name in candidates_of)
+            else:
+                shared[f"{c.owner}/{c.handle}"] = sorted(name for _, _, name in candidates_of)
+            continue
+        resolved[(c.owner, c.handle)] = (pick[0][0], pick[0][2]) if pick else None
     if shared:
         raise ApiError(
             400,
@@ -223,22 +247,23 @@ def resolve(
             {"fields": {field: "ambiguous_mention"}, "mentions": shared},
         )
     known = _known_instances(conn, memberships, {c.instance for c in found if c.instance})
+    handle_of = {m.member_id: m.handle for m in members}
     mentions = []
     for c in found:
-        named: tuple[str, str | None] | None
-        if c.owner is not None:
-            named = long.get((c.owner, c.handle))
-        elif c.handle in humans:
-            named = (humans[c.handle], None)  # a human's handle is the name
-        else:
-            named = agents[c.handle][0] if c.handle in agents else None
+        named: tuple[str, str | None] | None = None
+        hit = resolved.get((c.owner, c.handle))
+        if hit is not None:
+            named = (
+                hit[0],
+                None if hit[0] in current_human.values() else hit[1],
+            )  # a human has no global name
         if named is not None and c.instance is not None and (named[0], c.instance) not in known:
             named = None  # never an instance of that member: the whole text stays text
         if named is not None:
             mentions.append(
                 {
                     "member_id": named[0],
-                    "handle": c.handle,
+                    "handle": handle_of[named[0]],  # now, also where the text names an alias
                     "name": named[1],
                     "instance": c.instance,  # null: the team (§8.6)
                     "field": field,
@@ -249,6 +274,17 @@ def resolve(
     if len({m["member_id"] for m in mentions}) > MAX_MEMBERS or len(mentions) > MAX_OCCURRENCES:
         raise invalid({field: "too_many_mentions"}, "too many mentions in one text")
     return mentions
+
+
+class _Candidate(NamedTuple):
+    """A member of the project a mention could mean (§8.6)."""
+
+    member_id: str
+    human: bool
+    handle: str  # its current handle
+    shown: str  # a human's handle, an agent's global name
+    names: set[str]  # the handle and the aliases it answers to
+    owners: set[str]  # an agent's owner's handle and aliases: the first half of its long form
 
 
 def _known_instances(

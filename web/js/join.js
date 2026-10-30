@@ -25,18 +25,25 @@ window.Maity = window.Maity || {};
   // A member bringing their own agent (§3.1): M.trust.MEMBER_TRUSTS and
   // MEMBER_ROLES and nothing else; an admin assigns areas and capabilities
   // later, and the agent reports to them.
-  const LIMIT_WORDS = { agent: "the agent (only one of your own, or a new one; or its membership was raised by an admin)", trust: "the trust",
-    role: "the role", reports_to: "whom it reports to", areas: "its areas", capabilities: "its capabilities" };
+  // Getters: the words are the catalog's when said.
+  const LIMIT_WORDS = {
+    get agent() { return M.t("join.limit.agent"); },
+    get trust() { return M.t("join.limit.trust"); },
+    get role() { return M.t("join.limit.role"); },
+    get reports_to() { return M.t("join.limit.reports_to"); },
+    get areas() { return M.t("join.limit.areas"); },
+    get capabilities() { return M.t("join.limit.capabilities"); },
+  };
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
   // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
   // revoked, used, burned, then the clock.
   function joinState(j, now) {
-    if (j.revoked_at) return { key: "revoked", label: "revoked", text: "revoked " + formatTime(j.revoked_at) };
-    if (j.used_at) return { key: "used", label: "used", text: "used " + formatTime(j.used_at) };
-    if (j.burned) return { key: "burned", label: "burned", text: "refused after three wrong codes" };
-    if (Date.parse(j.expires_at) <= now) return { key: "expired", label: "expired", text: "expired " + formatTime(j.expires_at) };
-    return { key: "open", label: "open", text: "open until " + formatTime(j.expires_at) };
+    if (j.revoked_at) return { key: "revoked", label: M.t("join.state.revoked"), text: M.t("join.state.revoked_at", { time: formatTime(j.revoked_at) }) };
+    if (j.used_at) return { key: "used", label: M.t("join.state.used"), text: M.t("join.state.used_at", { time: formatTime(j.used_at) }) };
+    if (j.burned) return { key: "burned", label: M.t("join.state.burned"), text: M.t("join.state.burned_text") };
+    if (Date.parse(j.expires_at) <= now) return { key: "expired", label: M.t("join.state.expired"), text: M.t("join.state.expired_at", { time: formatTime(j.expires_at) }) };
+    return { key: "open", label: M.t("join.state.open"), text: M.t("join.state.open_until", { time: formatTime(j.expires_at) }) };
   }
 
   // The panel, the seats and the record, from the profiles and joins read;
@@ -61,14 +68,15 @@ window.Maity = window.Maity || {};
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.display_name + " (@" + profileHandle(p) + ")"
-        + (p.memberships.some((x) => x.project === ctx.slug) ? " · already a member" : ""))),
-      h("option", { value: "" }, "A new agent profile…"));
+      profiles.items.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+        ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
+        : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
+      h("option", { value: "" }, M.t("join.agent.new")));
     profileOptions();
     const HANDLE = M.dom.NAME_RULES.handle;
-    const handle = h("input", { id: "join-handle", placeholder: "handle, e.g. agent-e", pattern: HANDLE.pattern,
+    const handle = h("input", { id: "join-handle", placeholder: M.t("join.handle.placeholder"), pattern: HANDLE.pattern,
       maxlength: "31", autocomplete: "off", spellcheck: "false", "aria-describedby": "join-handle-rule join-handle-state" });
-    const display = h("input", { id: "join-display", placeholder: "display name" });
+    const display = h("input", { id: "join-display", placeholder: M.t("join.display.placeholder") });
     // Free or taken while it is typed (docs/api.md §6.3: unique among one's
     // profiles that are not deleted, and GET /agents lists exactly those).
     // A hint only: the hub's answer to the join is the final word.
@@ -82,16 +90,16 @@ window.Maity = window.Maity || {};
       const bad = !HANDLE.test.test(v);
       handleState.className = "hint handle-state" + (!v ? "" : bad || taken || refused.has(v) ? " field-error" : " ok");
       handleState.textContent = !v ? ""
-        : bad ? "Not a handle yet: " + HANDLE.text
-        : taken ? "Taken: your agent " + taken.display_name + " has @" + v + ". Choose it above, or another handle."
-        : refused.has(v) ? "Taken: the hub says you already have an agent with @" + v + "."
-        : "@" + v + " is free.";
+        : bad ? M.t("join.handle.bad", { rule: HANDLE.text })
+        : taken ? M.t("join.handle.taken", { name: taken.display_name, handle: v })
+        : refused.has(v) ? M.t("join.handle.refused", { handle: v })
+        : M.t("join.handle.free", { handle: v });
     };
     handle.addEventListener("input", checkHandle);
     const newFields = h("div", { class: "new-agent", hidden: true },
-      h("label", { for: "join-handle" }, "Handle"), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
+      h("label", { for: "join-handle" }, M.t("join.handle.label")), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
-      h("label", { for: "join-display" }, "Display name"), display);
+      h("label", { for: "join-display" }, M.t("join.display.label")), display);
     if (!profiles.items.length) newFields.hidden = false;
 
     // An agent that is already a member: the new line starts another
@@ -100,19 +108,21 @@ window.Maity = window.Maity || {};
     // leaves them out, as a change there goes through its card.
     const replaceOne = h("input", { type: "radio", name: "join-instance", id: "join-replace", value: "replace" });
     const another = h("input", { type: "radio", name: "join-instance", id: "join-new-instance", value: "new" });
-    const replaced = h("select", { id: "join-replaces", "aria-label": "The instance it replaces" });
+    const replaced = h("select", { id: "join-replaces", "aria-label": M.t("join.instance.replaces_label") });
     const quota = h("p", { class: "hint", id: "join-quota" });
     const instanceBox = h("fieldset", { class: "join-instance wide", hidden: true },
-      h("legend", null, "This agent is already a member of the project"),
-      h("p", { class: "hint" }, "The new line makes an instance of it: the same role, areas and briefing, "
-        + "which you change on its card. A different job is a different agent."),
-      h("div", { class: "instance-choice" }, replaceOne, h("label", { for: "join-replace" }, "Replace instance"), replaced),
-      h("p", { class: "hint" }, "When the new line is used, the replaced instance's credential is revoked and its cards move to the new one."),
-      h("div", { class: "instance-choice" }, another, h("label", { for: "join-new-instance" }, "Start another instance")),
+      h("legend", null, M.t("join.instance.legend")),
+      h("p", { class: "hint" }, M.t("join.instance.hint")),
+      h("div", { class: "instance-choice" }, replaceOne, h("label", { for: "join-replace" }, M.t("join.instance.replace")), replaced),
+      h("p", { class: "hint" }, M.t("join.instance.replace_hint")),
+      h("div", { class: "instance-choice" }, another, h("label", { for: "join-new-instance" }, M.t("join.instance.another"))),
       quota);
     const activeOf = (m) => (m.instances || []).filter((i) => !i.revoked_at);
-    const instanceText = (i) => (i.label || i.id) + " · " + (i.presence === "online" ? "online" : "last seen " + formatAgo(i.last_seen_at, M.api.now()))
-      + " · " + (i.claims === 1 ? "1 card" : (i.claims || 0) + " cards");
+    const instanceText = (i) => {
+      const cards = M.t("join.instance.cards", { count: i.claims || 0 });
+      return i.presence === "online" ? M.t("join.instance.online", { label: i.label || i.id, cards })
+        : M.t("join.instance.seen", { label: i.label || i.id, ago: formatAgo(i.last_seen_at, M.api.now()), cards });
+    };
     // The fields a member's join leaves out.
     const membershipFields = [];
     const membershipField = (el) => { membershipFields.push(el); return el; };
@@ -133,8 +143,8 @@ window.Maity = window.Maity || {};
       replaceOne.disabled = replaced.disabled = !active.length;
       if (fresh || !active.length) { replaceOne.checked = active.length > 0; another.checked = !active.length; }
       const max = m.team && m.team.max_instances;
-      quota.textContent = max ? active.length + " of " + max + " instances active" + (active.length >= max ? "; another one is over the team's limit." : ".")
-        : m.instances ? "" : "The hub has not listed its instances here.";
+      quota.textContent = max ? (active.length >= max ? M.t("join.quota.full", { active: active.length, max }) : M.t("join.quota.active", { active: active.length, max }))
+        : m.instances ? "" : M.t("join.quota.unlisted");
     }
     agentSelect.addEventListener("change", showAgent);
     // Choosing an instance is choosing to replace it.
@@ -160,7 +170,7 @@ window.Maity = window.Maity || {};
     trust.addEventListener("change", fillRoles);
     fillRoles();
     const reportsTo = h("select", { id: "join-reports" },
-      h("option", { value: "" }, "nobody"),
+      h("option", { value: "" }, M.t("join.reports.nobody")),
       // A guest is never reported to (§2.3).
       ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)));
     const areas = h("input", { id: "join-areas", placeholder: "hub/, docs/" });
@@ -169,11 +179,11 @@ window.Maity = window.Maity || {};
     const briefing = M.dom.sendOnCtrlEnter(h("textarea", {
       id: "join-briefing",
       rows: "5",
-      placeholder: "What this agent is for and its first assignment, e.g. \"You review the hub's pull requests. "
-        + "Start with the open ones under hub/ and tell me what blocks a merge.\"",
+      placeholder: M.t("join.briefing.placeholder"),
     }));
     const ttl = h("select", { id: "join-ttl" },
-      [[900, "15 minutes"], [1800, "30 minutes"], [3600, "1 hour"]].map(([v, l]) => h("option", { value: String(v) }, l)));
+      [900, 1800, 3600].map((v) => h("option", { value: String(v) },
+        v < 3600 ? M.t("join.ttl.minutes", { count: v / 60 }) : M.t("join.ttl.hours", { count: v / 3600 }))));
 
     const status = M.statusLine();
     // The panel's body: the form, or once a join is made the line in its place.
@@ -187,12 +197,10 @@ window.Maity = window.Maity || {};
     function instanceNote(member) {
       const dir = "export MAITY_STATE_DIR=\"$HOME/.local/state/maity/" + member.handle + "-<name>\"";
       return h("div", { class: "instance-note", role: "note" },
-        h("p", null, h("strong", null, "Every instance needs a state directory of its own.")),
-        h("p", null, "Outside a clone of the repository, maity join puts this one next to the first by itself. "
-          + "In a clone where @" + member.handle + " already joined, set this first, with a name for the instance:"),
+        h("p", null, h("strong", null, M.t("join.state_dir.title"))),
+        h("p", null, M.t("join.state_dir.where", { handle: member.handle })),
         h("code", { class: "paste-line state-dir-line" }, dir),
-        h("p", null, "Do not run maity resume there to start it: in a directory that already holds a credential, "
-          + "resume takes over that instance, and two sessions then run as one."));
+        h("p", null, M.t("join.state_dir.no_resume")));
     }
 
     function showLine(j, member) {
@@ -202,26 +210,24 @@ window.Maity = window.Maity || {};
         onclick: async () => {
           try {
             await navigator.clipboard.writeText(j.paste_line);
-            copy.textContent = "Copied";
+            copy.textContent = M.t("join.copy.done");
           } catch (err) {
-            copy.textContent = "Copy failed — select the line";
+            copy.textContent = M.t("join.copy.failed");
           }
         },
-      }, "Copy");
-      const again = h("button", { type: "button", onclick: () => { showForm(); agentSelect.focus(); } }, "Join another");
+      }, M.t("join.copy.label"));
+      const again = h("button", { type: "button", onclick: () => { showForm(); agentSelect.focus(); } }, M.t("join.line.again"));
       append(clear(body), h("div", { class: "join-result" },
-        h("p", null, h("strong", null, "Paste this into the agent's session. It is shown once and expires " + formatTime(j.expires_at) + ".")),
+        h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
         h("div", { class: "paste-row" }, line, copy),
-        h("p", { class: "first-hint" }, "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the "
-          + "repository; the agent runs it. An agent without the maity CLI opens the link and follows the join page. "
-          + "You can also run it yourself in a terminal in that clone. Until then it waits below as an open seat."),
-        h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, "Done"))));
+        h("p", { class: "first-hint" }, M.t("join.line.hint")),
+        h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
       copy.focus();
     }
 
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
-    const create = h("button", { type: "submit", class: "primary" }, "Create join line");
+    const create = h("button", { type: "submit", class: "primary" }, M.t("join.create"));
     const form = h("form", {
       class: "join-form",
       onsubmit: async (e) => {
@@ -233,7 +239,7 @@ window.Maity = window.Maity || {};
         } else {
           if (!handle.value.trim()) { handle.focus(); return; }
           if (!HANDLE.test.test(handle.value.trim())) {
-            status.fail("No join created: ", { message: "the handle: " + HANDLE.text });
+            status.fail(M.t("join.failed"), { message: M.t("join.failed.handle", { rule: HANDLE.text }) });
             handle.focus();
             return;
           }
@@ -243,14 +249,13 @@ window.Maity = window.Maity || {};
         // At the member's limit (§3.1) only an instance of an agent already
         // in the project is made: that counts nothing.
         if (!member && hooks.full && hooks.full()) {
-          status.fail("No join created: ", { message: "you hold as many agents in this project as it allows; "
-            + "choose one of yours that is a member to start another instance or replace one" });
+          status.fail(M.t("join.failed"), { message: M.t("join.failed.full") });
           agentSelect.focus();
           return;
         }
         const text = member ? "" : briefing.value.trim();
         if ([...text].length > BRIEFING_CHARS) {
-          status.fail("No join created: ", { message: "the briefing is longer than 16,384 characters" });
+          status.fail(M.t("join.failed"), { message: M.t("join.failed.briefing", { max: BRIEFING_CHARS }) });
           briefing.focus();
           return;
         }
@@ -269,7 +274,7 @@ window.Maity = window.Maity || {};
             ttl_seconds: Number(ttl.value),
           };
         if (text) req.briefing = text;
-        status.busy("Creating…");
+        status.busy(M.t("join.creating"));
         create.disabled = true;
         let j;
         try {
@@ -278,15 +283,16 @@ window.Maity = window.Maity || {};
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
           const d = err.details || {};
-          status.fail("No join created: ", why === "taken" ? { message: "you already have an agent with the handle @" + agent.handle }
+          status.fail(M.t("join.failed"), why === "taken" ? { message: M.t("join.failed.taken", { handle: agent.handle }) }
             // §3.1's limits for a member, in words, the field named.
-            : d.reason === "member_join_limit" ? { message: "a member may not set this for their own agent: " + (LIMIT_WORDS[d.field] || d.field || "a field") }
-            : d.reason === "member_agents_max" ? { message: "you hold as many agents in this project as it allows (" + d.max + ")" }
+            : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
+              field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
+            : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
             : err);
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
           if (err.code === "instance_quota" && agent.id) {
             append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
-              "Raise it in the team's rulebook"));
+              M.t("join.quota.raise")));
           }
           // A member the list on screen did not show, a first join the list
           // took for a member's, or an instance revoked meanwhile: read the
@@ -302,8 +308,7 @@ window.Maity = window.Maity || {};
             await rereadMembers();
             if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
             showAgent();
-            if (saysMember) status.fail("No join created: ", { message: "this agent is already a member of the project. "
-              + "Choose whether the line starts another instance or replaces one, then create it." });
+            if (saysMember) status.fail(M.t("join.failed"), { message: M.t("join.failed.is_member") });
             (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
           }
           if (why) {
@@ -325,7 +330,7 @@ window.Maity = window.Maity || {};
         try {
           [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
-          listStatus.fail("Join created; the list could not be re-read: ", err);
+          listStatus.fail(M.t("join.created_unread"), err);
           return;
         }
         profileOptions();
@@ -338,23 +343,22 @@ window.Maity = window.Maity || {};
     },
     h("div", { class: "join-columns" },
       h("div", { class: "join-fields" },
-        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, "Agent"), agentSelect),
+        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect),
         newFields,
         instanceBox,
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, "Trust"), trust)),
-        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, "Role"), role, roleHelp)),
-        own ? membershipField(h("p", { class: "hint field wide" }, "It reports to you. An admin gives it areas and capabilities later."))
-          : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, "Reports to"), reportsTo)),
-            membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, "Areas (comma separated)"), areas))],
-        h("div", { class: "field" }, h("label", { for: "join-ttl" }, "Valid for"), ttl)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
+        membershipField(h("div", { class: "field" }, h("label", { for: "join-role" }, M.t("join.field.role")), role, roleHelp)),
+        own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
+          : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
+            membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas))],
+        h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
       // Offered when the hub knows briefings: its member view then has the key.
       ctx.members.some((x) => "briefing" in x)
         ? membershipField(h("div", { class: "join-briefing" },
-          h("label", { for: "join-briefing" }, "Briefing (optional, Markdown; " + M.dom.SEND_KEYS + " creates the link)"), briefing,
-          h("p", { class: "hint" }, "The agent reads it in its resume packet once it has joined, and on every resume "
-            + "after; it is never on the join page. You can change it later on the agent's card.")))
+          h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
+          h("p", { class: "hint" }, M.t("join.briefing.hint"))))
         : null),
-    h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, "Cancel"), create),
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
     function showForm() { append(clear(body), form); }
@@ -403,7 +407,7 @@ window.Maity = window.Maity || {};
       try {
         joins = await M.api.getAll(ctx.base + "/joins");
       } catch (err) {
-        listStatus.fail("The joins could not be read: ", err);
+        listStatus.fail(M.t("join.read_failed"), err);
         return;
       }
       changed();
@@ -413,20 +417,20 @@ window.Maity = window.Maity || {};
       return h("button", {
         type: "button",
         class: "danger",
-        "aria-label": "Revoke the join for " + profileName(j.agent_id),
+        "aria-label": M.t("join.revoke.label", { name: profileName(j.agent_id) }),
         onclick: async () => {
-          listStatus.busy("Revoking…");
+          listStatus.busy(M.t("join.revoke.busy"));
           try {
             await M.api.del(ctx.base + "/joins/" + encodeURIComponent(j.id));
             listStatus.done();
             await reread();
           } catch (err) {
-            listStatus.fail("Not revoked: ", err);
+            listStatus.fail(M.t("join.revoke.failed"), err);
             // Used, burned or expired meanwhile: show it as the hub has it.
             if (err.code === "invalid_transition") await reread();
           }
         },
-      }, "Revoke");
+      }, M.t("join.revoke"));
     }
     // An open join is a member who has not arrived yet: a seat in the grid.
     function seats() {
@@ -435,16 +439,16 @@ window.Maity = window.Maity || {};
         .filter(({ j, state }) => revocable(j, state, now))
         .map(({ j, state }) => {
           const p = profileOf(j.agent_id);
-          return h("article", { class: "profile seat join-" + state.key, "aria-label": "Open seat: " + profileName(j.agent_id), "data-join": j.id },
+          return h("article", { class: "profile seat join-" + state.key, "aria-label": M.t("join.seat.label", { name: profileName(j.agent_id) }), "data-join": j.id },
             h("header", null,
               h("span", { class: "seat-mark", "aria-hidden": "true" }),
               h("h3", null, profileName(j.agent_id)),
               p ? h("span", { class: "handle" }, "@" + profileHandle(p)) : null,
-              h("span", { class: "seat-label" }, state.key === "open" ? "open seat" : "expired")),
+              h("span", { class: "seat-label" }, state.key === "open" ? M.t("join.seat.open") : M.t("join.state.expired"))),
             h("dl", { class: "facts" },
-              h("dt", null, "Trust and role"), h("dd", null, M.trust.words(j), j.reports_to ? " · reports to " + ctx.nameOf(j.reports_to) : null),
-              h("dt", null, "Join"), h("dd", null, state.text + " · ", h("code", null, j.id))),
-            h("p", { class: "muted" }, "Waiting for the agent to run its line."),
+              h("dt", null, M.t("join.seat.trust_role")), h("dd", null, M.trust.words(j), j.reports_to ? " · " + M.t("join.seat.reports_to", { name: ctx.nameOf(j.reports_to) }) : null),
+              h("dt", null, M.t("join.seat.join")), h("dd", null, state.text + " · ", h("code", null, j.id))),
+            h("p", { class: "muted" }, M.t("join.seat.waiting")),
             h("div", { class: "seat-actions" }, revoke(j)));
         });
     }
@@ -454,10 +458,10 @@ window.Maity = window.Maity || {};
       const rows = joins.items.map((j) => ({ j, state: joinState(j, now) })).filter(({ j, state }) => !revocable(j, state, now));
       if (!rows.length) return null;
       return h("details", { class: "earlier-joins" },
-        h("summary", null, "Earlier joins (" + rows.length + "): used, expired or revoked"),
+        h("summary", null, M.t("join.earlier", { count: rows.length })),
         h("ul", { class: "joins closed-joins" }, rows.map(({ j, state }) => h("li", { class: "join-" + state.key },
           h("span", { class: "badge join-state" }, state.label), " ",
-          h("code", null, j.id), " " + profileName(j.agent_id) + " as " + M.trust.words(j) + " · " + state.text))));
+          h("code", null, j.id), " " + M.t("join.earlier.row", { name: profileName(j.agent_id), words: M.trust.words(j), state: state.text })))));
     }
     const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
     // The agents open joins are for: with the active memberships, what §3.1 counts per profile.
@@ -483,9 +487,9 @@ window.Maity = window.Maity || {};
   function panelHead(onClose, own) {
     return [
       h("div", { class: "join-head" },
-        h("h3", { id: "join-title" }, own ? "Add my agent" : "Add an agent"),
-        h("button", { type: "button", class: "icon-button join-close", "aria-label": "Close", title: "Close", onclick: onClose }, "×")),
-      h("p", { class: "muted" }, "The agent's session runs wherever you run it; it joins by the line you paste into it."),
+        h("h3", { id: "join-title" }, own ? M.t("join.title.own") : M.t("join.title")),
+        h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, "×")),
+      h("p", { class: "muted" }, M.t("join.intro")),
     ];
   }
 
@@ -525,10 +529,10 @@ window.Maity = window.Maity || {};
               if (!panel.hidden) impl.open(opener, asked);
             } else retry.disabled = false;
           },
-        }, "Try again");
+        }, M.t("join.retry"));
         append(clear(panel), panelHead(failedClose, !!hooks.member),
-          h("p", { class: "error", role: "alert" }, "The joins could not be read: " + (err.message || err.code || "an error")), retry);
-        listStatus.fail("The joins could not be read: ", err);
+          h("p", { class: "error", role: "alert" }, M.t("join.read_failed_text", { reason: err.message || err.code || M.t("join.an_error") })), retry);
+        listStatus.fail(M.t("join.read_failed"), err);
         return false;
       }
     }
@@ -542,7 +546,7 @@ window.Maity = window.Maity || {};
         if (impl) { impl.open(from, agentId); return; }
         panel.hidden = false;
         if (hooks.opened) hooks.opened(true);
-        const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === "Try again") : null;
+        const retry = panel.querySelector ? Array.from(panel.querySelectorAll("button")).find((b) => b.textContent === M.t("join.retry")) : null;
         if (retry) focusSoon(retry);
       },
       close: (refocus) => (impl ? impl.close(refocus) : failedClose()),

@@ -23,7 +23,7 @@ def may_read_request(request: Any, member: Any) -> bool:
     the member asked for, the addressee (a member, the owner, every holder of the role),
     and whoever holds `requests:answer`."""
     membership_id = getattr(member, "membership_id", None) or member.id
-    trust, role = member.trust, member.role
+    trust, role, base = member.trust, member.role, member.role_base
     kind = getattr(member, "kind", None)
     if kind not in ("human", "agent"):
         kind = "agent" if member.agent_id else "human"
@@ -33,9 +33,9 @@ def may_read_request(request: Any, member: Any) -> bool:
         return True
     if request.to_kind == "owner" and trust == "owner":
         return True
-    if request.to_kind == "role" and request.to_role in tokens_of(trust, role):
+    if request.to_kind == "role" and request.to_role in tokens_of(trust, role, base):
         return True
-    return has_scope(trust, role, kind, "requests:answer")
+    return has_scope(trust, base, kind, "requests:answer")
 
 
 def _decision_request(row: Any) -> str | None:

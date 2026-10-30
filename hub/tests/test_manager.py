@@ -52,6 +52,8 @@ def _set(engine: Engine, principal: str, **values: Any) -> None:
     cross-owner consent flow is its own card), and long chains are quicker so."""
     if "reports_to" in values and isinstance(values["reports_to"], str):
         values["reports_to"] = _mid(engine, values["reports_to"])
+    if "role" in values:  # a built-in role is its own base (§2.3)
+        values["role_base"] = values["role"]
     membership_id = _mid(engine, principal)
     with engine.begin() as conn:
         conn.execute(update(t.membership).where(t.membership.c.id == membership_id).values(values))

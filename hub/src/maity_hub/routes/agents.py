@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import avatars, clock, events, idempotency, limits, moderation, namespace
+from maity_hub import avatars, clock, events, handles, idempotency, limits, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
@@ -28,6 +28,7 @@ class AgentCreate(Strict):
 
 
 class AgentPatch(Strict):
+    handle: str | None = None  # checked by handles.rename: format, taken, aliases (§6.24)
     display_name: str | None = title(default=None)
     git_identity: GitIdentity | None = None
 
@@ -63,11 +64,15 @@ def create_profile(
     display_name: str,
     git: GitIdentity | None,
     limit: int | None = None,
+    *,
+    placement: bool = False,
 ) -> str:
-    """A new profile of `owner_id`; `invalid` when the handle is taken (unique per owner),
-    `agent_limit` at `limit` profiles that are not deleted (§16.5, None for no limit). The
-    owner's row is locked for the count, so two creations at `limit − 1` give one profile
-    and one `agent_limit`, whichever endpoint they came by."""
+    """A new profile of `owner_id`; `agent_limit` at `limit` profiles that are not deleted
+    (§16.5, None for no limit). The owner's row is locked for the count, so two creations
+    at `limit − 1` give one profile and one `agent_limit`, whichever endpoint they came by.
+    `invalid` when the handle is the handle or an alias of another of their profiles (a
+    deleted profile's are free, §6.3), or an active placement will create one with it
+    (§6.24) unless `placement`: this is that placement's pickup."""
     if limit is not None:
         conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
         count = int(
@@ -82,15 +87,7 @@ def create_profile(
         )
         if count >= limit:
             raise limits.agent_limit(limit, count)
-    taken = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == owner_id,
-            t.agent_profile.c.handle == handle,
-            t.agent_profile.c.live.is_(True),  # a deleted profile's handle is free (§6.3)
-        )
-    ).first()
-    if taken:
-        raise invalid({"handle": "taken"}, "you already have an agent with this handle")
+    handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
     agent_id = new_id("agent")
     conn.execute(
         insert(t.agent_profile).values(
@@ -150,6 +147,12 @@ def patch_agent(
 
     def action(conn: Connection) -> idempotency.Outcome:
         owned(conn, agent_id, caller.principal_id)
+        if "handle" in given:
+            if body.handle is None:  # as in `PATCH /me`: null renames nothing
+                raise invalid({"handle": "required"})
+            done = handles.rename(conn, agent_id, caller.principal_id, body.handle)
+            if done is not None:
+                handles.announce(conn, caller, agent_id, caller.principal_id, *done)
         values: dict[str, Any] = {}
         if "display_name" in given and body.display_name is not None:
             # A name moderation reset stays so while its hold stands (§16.8).
@@ -254,6 +257,7 @@ def delete_agent(
             credential_id=caller.credential_id,
             via=caller.via,
         )
+        handles.retire(conn, agent_id)  # its aliases leave the owner's scope with its handle
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)
