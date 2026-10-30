@@ -24,7 +24,10 @@ window.Maity = window.Maity || {};
   ];
   const TYPE_WORDS = Object.fromEntries(TYPES);
   const PAGE = 200;
-  // How far back the view reads: the project's latest events, said when cut.
+  // How far back the view reads, said when cut: a window of the hub's event
+  // numbers (`seq` counts across every project, §8.3), so it holds fewer of
+  // this project's events the busier the rest of the hub is; the hub has no
+  // reading backwards by project, and no filter by kind or actor.
   const WINDOW = 5000;
   const MAX_PAGES = Math.ceil(WINDOW / PAGE) + 1;
 
@@ -37,9 +40,10 @@ window.Maity = window.Maity || {};
     return M.dom.memberRef(ctx, to);
   }
 
-  // The latest WINDOW events from the head, oldest first; stops when the
-  // view was left, and fails loud on a cursor that does not move.
-  async function scan(ctx, stillHere) {
+  // The project's events within the hub's latest WINDOW numbers, oldest
+  // first, those `keep` takes; stops when the view was left, and fails loud
+  // on a cursor that does not move. Shared with a member's Activity.
+  async function scan(ctx, stillHere, keep) {
     const head = (await M.api.get(ctx.base + "/events?after=latest&wait=0")).cursor;
     const start = Math.max(0, head - WINDOW);
     const kept = [];
@@ -47,7 +51,7 @@ window.Maity = window.Maity || {};
     for (let n = 0; n < MAX_PAGES; n++) {
       if (!stillHere()) return null;
       const page = await M.api.get(ctx.base + "/events?after=" + after + "&wait=0&limit=" + PAGE);
-      kept.push(...page.items.filter(isMessage));
+      kept.push(...page.items.filter(keep || isMessage));
       if (page.items.length < PAGE) return { kept, cut: start > 0 };
       const next = page.items[page.items.length - 1].seq;
       if (!(next > after)) throw new Error("the hub's event cursor did not move past " + after);
@@ -55,6 +59,10 @@ window.Maity = window.Maity || {};
     }
     return { kept, cut: true };
   }
+
+  // Read by a member's Activity (js/member-page.js) with its own filter.
+  M.recentEvents = (ctx, keep, stillHere) => scan(ctx, stillHere || (() => true), keep);
+  M.recentEvents.WINDOW = WINDOW;
 
   M.views.messages = async function (ctx, root) {
     const here = M.route.current().path;
@@ -155,7 +163,7 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" }, h("h2", null, "Messages"), h("a", { class: "button small", href: ctx.link("message") }, "Message the project")),
       h("p", { class: "muted" }, "The project's messages you can read, newest first. Chats are in Chat."),
-      read.cut ? h("p", { class: "muted pmsg-cut" }, "Only the messages among the project's latest " + WINDOW + " events are shown; older ones are not read here.") : null,
+      read.cut ? h("p", { class: "muted pmsg-cut" }, "Only messages within the hub's latest " + WINDOW + " events (all projects counted) are shown; older ones are not read here.") : null,
       h("form", { class: "board-filter", role: "search", onsubmit: (ev) => ev.preventDefault() },
         h("label", { for: "messages-type" }, "Type"), pick),
       status.el, list);

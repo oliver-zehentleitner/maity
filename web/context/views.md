@@ -2406,3 +2406,30 @@ up the state, so the mark belongs there as well as in the header.
 - A `released` entry in the state select: it would be lost on the next
   move back to build, which the maintainer's decision rules out.
 - The mark in the header alone: the overview is where the state is read.
+
+## A member's Activity and the project's Messages read the hub's latest 5000 events and say so
+
+**Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
+**Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
+
+The hub cannot be asked for one member's events, nor for a project's
+latest events counted in that project. The member page's Activity
+therefore pages through the project's feed from the hub's latest 5000
+`seq` forward, as the Messages view always did (one shared scan,
+`M.recentEvents`), keeps the member's own events that are not redacted,
+and shows the newest 50. Where the window cut something, both views say
+it counts the hub's latest 5000 events, all projects counted, so a quiet
+member in a busy hub reads as cut, not as idle.
+
+**Reason:** what the client can afford to read is bounded by the hub's
+numbering, not the project's; a sentence that names the project's events
+would promise what the window cannot see.
+
+**Rejected alternative:** reading the whole feed from the first event:
+its cost grows with the hub's history, which the 2026-10-26 rule rules
+out. A window of 200 for the Activity: in a busy hub it held few or none
+of the project's events and said nothing about it.

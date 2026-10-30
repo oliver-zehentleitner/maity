@@ -366,7 +366,7 @@ on a failed landing read: it would stand between the person and sign-in.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29
+**Source:** docs/api.md §16.7, §16.7.1, §16.11 (the hub renders the landing page at the root and the legal pages as static HTML, no script); the maintainer on the card tsk-ez7hpndp95bx, 2026-10-29 (the old Markdown editor goes); the coordinator's ruling on the preview and the contract for it (#628: a short-lived draft opened in its own tab), 2026-10-29; the hub owner's confirmation of the setting's shapes, 2026-10-29; the coordinator's review of #680 (the hub never sends `too_long`), 2026-10-30
 **Revisit when:** an instance wants the landing page drawn by the dashboard again, or a draft needs a preview without a tab of its own
 
 The dashboard draws neither page for a visitor: without a session the
@@ -380,7 +380,12 @@ way; `activity` and `collab` kept as they are, never offered), and the
 footer for all languages. A save sends the whole draft in one `PATCH`;
 the hub's refusal names fields by their path
 (`pages.de.sections.2.items.0.title`), and each is said at the field of
-that path, a path without a field in the status line. **Legal pages**
+that path, a path without a field in the status line. A field the
+hub refuses as `invalid` with a limit reads "empty, or longer than
+allowed (…)": the hub answers `invalid` for both, never `too_long`, so
+the editor cannot tell them apart; naming only the limit was rejected
+because it misleads at an empty field, and a title with a tab or a line
+break is `invalid` too, which the wording does not name. **Legal pages**
 edits each page per language and saves one page per call, which the hub
 keeps as a new version; a page is taken down with `null`. **View as a
 visitor** opens the saved landing page at `/?as=public` in a tab of its
