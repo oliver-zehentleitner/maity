@@ -214,7 +214,8 @@ to a different project.
 
 **Id:** ab5aa0b9-37cf-4d45-abe4-96b1326747e4
 **Type:** workaround
-**Status:** open
+**Status:** superseded
+**Superseded by:** none — the gap is closed in code (tsk-svg6mfthm7xv), no decision replaced it
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.25 and the endpoint table (the namespace owner transfers "human, with the step-up"); review of the rename and transfer pull request
 **Revisit when:** the second-factor pull request #471 (`second_factor.require_step_up`) is on `main`; card tsk-svg6mfthm7xv
@@ -225,6 +226,16 @@ merges second adds `second_factor.require_step_up(conn, hub, caller)` to the
 transfer route before `transfer(...)`, plus a test. Until then a stolen
 session of a namespace owner can file a transfer, which still needs the
 receiver's `go`.
+
+**Closed:** the second factor is on `main`. `transfer_project` now checks the caller's authority
+(`project_names.authority`) and then `second_factor.require_step_up`, before it files or moves
+anything, so the move into an organisation that happens in the call and an owner's hand-over of an
+organisation's project to themselves are asked too. The `go` that moves a project is asked as well
+(`routes.requests._step_up_for_a_transfer`, on the project route and on the personal route of an
+organisation's consent): it is the call that changes the owner, and a stolen session of the
+receiver would otherwise complete a transfer the owner's session could not file. A `no` changes
+nothing and is not asked. §2.8.4 names the transfer, not its `go`; the `go` follows the transfer's
+reason.
 
 ## A human membership that ends checks the namespace owner
 

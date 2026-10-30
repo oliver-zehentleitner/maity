@@ -896,6 +896,8 @@ def transfer_project(
         mine = replace(mine, project=lock_project(conn, mine.project.id))
         if mine.project.owner_org_id != found_owner:  # moved meanwhile: its new owner is unlocked
             raise orgs.project_moved()
+        project_names.authority(conn, mine)
+        second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         request_id = project_names.transfer(conn, mine, caller, body.to)
         if request_id is None:  # the move happened in the call: the project as it is now (§6.26)
             return idempotency.Outcome(
