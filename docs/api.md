@@ -11846,7 +11846,7 @@ fixed and not sections. The types and their fields:
 | `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
 | `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
-| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment), `inbox` (optional `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human), `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line and the inbox item are shown at once, with script the lines are typed one after another |
+| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the last line, and the steps are shown at once |
 | `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (≤ 300), `cta` (`{label ≤ 40, href}`) | always |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
@@ -11949,17 +11949,22 @@ all languages.
   shows its end state, and the FAQ opens without it. The script only
   adds motion (ring rotation, the demo's typing, counters), the
   theme switch (`data-theme` on the root, remembered in the visitor's
-  browser, never sent to the hub) and nothing else: it reads only the
+  browser, never sent to the hub; the switch is in the HTML with its
+  label in the page's language and `hidden` until the script shows it,
+  and without script the page follows `prefers-color-scheme`) and
+  nothing else: it reads only the
   page's own DOM, makes no request, and never turns database content
   into HTML or script. Under `prefers-reduced-motion: reduce` there is
   no motion and every animated element shows its end state.
 - **Content security.** The landing page answers
   with `Content-Security-Policy: default-src 'none'; script-src
-  'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+  'self'; style-src 'self' 'unsafe-inline'; img-src 'self';
   font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
-  'none'; frame-ancestors 'none'`, so it runs no script but the hub's
-  own file and loads nothing from elsewhere; the preview of a draft
-  (below) answers with the same policy. The legal pages (§16.7.1) carry no script either and
+  'none'; frame-ancestors 'none'`, so it runs only scripts from the
+  hub's own origin and loads nothing from elsewhere; `img-src 'self'`
+  covers the instance's logo and favicon, the design's pictures are
+  inline SVG. The preview of a draft (below) answers with the same
+  policy. The legal pages (§16.7.1) carry no script and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
   documents only.
@@ -12634,7 +12639,13 @@ default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
-is the web owner's to settle in `web/`. Only the built files under
+is the web owner's to settle in `web/`. `/assets/landing/` holds the
+landing page's own files (§16.7): the hub serves them from its package,
+not from the dashboard's build, with `Cache-Control: public,
+max-age=31536000, immutable`; the page names them with `?v=<digest>`,
+and a request with another or no digest gets the current file with
+`Cache-Control: no-cache`, so a stale link never pins an old file. Only
+the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
 (`web/fixtures/`, `web/tools/`) are never reachable — such a path gets

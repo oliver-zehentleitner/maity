@@ -729,7 +729,10 @@ While the landing page is enabled, `robots.txt` allows the root and the
 legal pages that are set, and the sitemap lists them (plus the public
 pages while those are on); while it is not, only the root with
 `noindex`, as before. The dashboard's scripts and the public reads no
-longer need to be allowed, because the hub renders the page.
+longer need to be allowed, because the hub renders the page. Since
+2026-10-30 `/assets/landing/` is allowed again, but only so a crawler
+that renders the page gets its style, script and fonts; every word stays
+in the HTML (e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37).
 
 **Reason:** the page a crawler should read is now plain HTML; allowing
 script files was only ever a workaround for a page drawn by script.
@@ -747,6 +750,8 @@ script files was only ever a workaround for a page drawn by script.
 **Evidence:** confirmed
 **Source:** the maintainer's go for the full landing V3, 2026-10-29 (through the designer, card tsk-3hn1xcgf168j), and his wish of 2026-10-30 to ship a first stage early; contract `docs/api.md` §16.7
 **See:** scope.md#the-landing-and-legal-pages-are-instance-content-in-sections-rendered-by-the-hub-as-static-html — cd44707b-7b79-47ae-a78d-586195d465dc — as of 2026-10-30
+**See:** scope.md#search-engines-may-read-the-landing-and-legal-pages-the-rest-stays-as-before — 3cec0403-a358-440c-81aa-a2be45abf3a4 — as of 2026-10-30
+**See:** https://github.com/oliver-zehentleitner/maity — 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47 — as of 2026-10-30
 
 The landing page keeps its content in the database and its whole text
 in the HTML the hub renders. Its design is code, the same on every
@@ -756,8 +761,11 @@ with a digest in the URL. The script adds motion, the demo's typing and
 a theme switch, reads only the page itself and makes no request; under
 reduced motion everything shows its end state. The policy allows
 script, style, fonts and images from the hub only, and no connection.
-The first stage adds the `demo` and `opensource` sections and shows the
-FAQ as `<details>`; a public activity feed and agents among the
+The hub's own entry on the landing documents (7b1e4c52 in
+`hub/context/landing.md`, a page with no script) has its `Revisit
+when` met by this decision and is updated with the build (card
+tsk-m6ew67r1w3hc). The first stage adds the `demo` and `opensource`
+sections and shows the FAQ as `<details>`; a public activity feed and agents among the
 profiles come later with their own contract change.
 
 **Reason:** the designed page lives from motion (the rings, the typed
