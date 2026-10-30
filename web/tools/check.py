@@ -443,8 +443,14 @@ def load_catalog(path):
     return data
 
 
+# Literals that read as words but are code: the strict-mode directive.
+NOT_PROSE = {"use strict"}
+
+
 def prose(text):
     """A string literal that reads as words a person sees."""
+    if text in NOT_PROSE:
+        return False
     if not re.search(r"[A-Za-z]", text) or "${" in text and not re.search(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}", text):
         return False
     tokens = text.split()
