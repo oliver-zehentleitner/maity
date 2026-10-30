@@ -603,7 +603,14 @@ first raises its file's count, so a ratchet PR merges main last and
 raises those counts by hand with the reason. Rejected: computing the
 baseline in CI from main, which would accept every new string and hold
 nothing back. English is the only catalog; the first
-keys are the chat's instance choice.
+keys are the chat's instance choice. A sentence that holds a link or a member
+is `M.tn(key, values)`: the same text as pieces, each node placed where
+the language puts its placeholder, never a sentence cut around a link.
+A list inside a sentence is joined with `Intl.ListFormat` in the
+catalog's language, so from three names on English reads "@a, @b, or
+@c", not "@a or @b or @c": the order and the commas of a list differ
+between languages. Still hand-built: the time in an agent's silence
+(`silent since`, `en-GB`), for a later part of stage 2.
 
 **Reason:** translating later is then filling a file, not finding and
 splitting sentences in code. A per-file ceiling stops new text in code
