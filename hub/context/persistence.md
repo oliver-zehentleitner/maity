@@ -763,6 +763,7 @@ an old card looked like into one migration that can be deleted with the others.
 **Evidence:** inferred
 **Source:** the card tsk-0p4p41g163y8 (the maintainer's go: collision-free ids, a re-chain tool, a CI check; existing numbers stay); `maity_hub.db.revision_id`, `tools/rechain.py`, the `rechain.py --check` step in `.github/workflows/ci.yml`
 **Revisit when:** pull requests with migrations are merged one at a time by a merge queue that rebases them, so no branch ever sees main move under it
+**See:** https://github.com/oliver-zehentleitner/maity — 65a9b523-fa1f-4f1f-966c-4f49a2660343 — as of 2026-10-30
 
 Migrations were numbered `0001_…` by hand, and the lead kept the order of the open pull requests in a
 text file: every branch made while another migration was open had to take a number and a
@@ -772,6 +773,14 @@ new migration by the UTC second and its slug (`20261030102512_add_the_tasks`, cu
 point at the same head; after merging `origin/main` the author runs `make rechain`, which sets the one new
 migration's `down_revision` to main's head, and CI fails on two heads with that instruction. The numbered
 files stay as they are: renaming them would rewrite `alembic_version` in every database.
+
+This replaces the rule in 65a9b523 (`context/process.md`): numbers reserved in advance and a merge order
+set by the coordinator.
+
+**Limits:** the tool chains exactly one new migration; a branch with two orders them by hand, the first on
+main's head and the second on the first, or is split. The CI check runs on the pull request's merge
+checkout at the time of its run: a pull request that was green before another migration reached main turns
+red only on its next run, so the check does not replace a fresh CI run before the merge.
 
 The choice is the maintainer's (confirmed); the reasons below against the alternatives are inferred from the
 work they would take, not stated.
