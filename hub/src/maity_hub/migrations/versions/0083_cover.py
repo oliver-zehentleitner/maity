@@ -2,7 +2,7 @@
 and the cover a membership is under.
 
 Revision ID: 0083
-Revises: 0099
+Revises: 0101
 Create Date: 2026-10-29
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "0083"
-down_revision: str | None = "0099"
+down_revision: str | None = "0101"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
