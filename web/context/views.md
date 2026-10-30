@@ -1079,8 +1079,8 @@ save: it fixes the jump but not the place the maintainer found odd.
 **Revisit when:** the theme is kept on the hub per human, or the signed-in header gets room to spare again
 
 The theme menu (System, Light, Dark) shows in the header only on the
-pages one sees signed out: the sign-in page, the landing page, the
-public swarm page. Signed in, the header has none; Your account has a
+pages one sees signed out: the sign-in page and the landing page (the
+public swarm page went with the contract #697). Signed in, the header has none; Your account has a
 Theme section (`/account/theme`, also in the profile menu) with the
 same three choices as radio buttons and a line that the choice is kept
 in this browser only. It is the same per-browser value either way, so a
@@ -2498,3 +2498,36 @@ would promise what the window cannot see.
 its cost grows with the hub's history, which the 2026-10-26 rule rules
 out. A window of 200 for the Activity: in a busy hub it held few or none
 of the project's events and said nothing about it.
+
+## The swarm statistics are a section of the Overview, read on their own and kept across its redraws; no tab, no public page, no switch
+
+**Id:** 8a528eb5-8dd6-4fec-996e-79c5b57abb51
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 that the swarm is a statistic (root context/projects.md, bfe4c4a6, card tsk-w89mspg3gwx1); docs/api.md §6.11, §6.22, §16.11 after the contract #697; the card tsk-b8ndat73wttr; how the section reads and redraws is the implementer's, 2026-10-30
+**Revisit when:** a public project's page draws the reduced numbers in the dashboard (§16.9), or the Overview gets a refresh of its own for the swarm
+
+The project's Overview carries a **Swarm** section after the team,
+project and reports rows and before the organisation: who is at work
+now, what each holds, and the window's counters with the 7/30/90-day
+switch, as the Swarm tab had them (`js/swarm.js`, `M.swarm.section`).
+The section is built once per Overview and reads `GET …/swarm` itself,
+once and on a window change; the Overview's redraws on card, request
+and probe events place the same node again. There is no Swarm tab, no
+`/<owner>/<slug>/swarm` view, no public swarm page or `?as=public`, and
+no `swarm_public` switch in Project settings; the fixture hub no longer
+serves `/swarm/{owner}/{slug}`.
+
+**Reason:** the maintainer made the swarm a statistic of the project,
+not a place of its own. Read with the counts, every card event would
+read the swarm again and reset the window the reader chose; the live
+part has no event of its own to follow either, so it is as fresh as the
+last read, as the tab was.
+
+**Rejected alternative:** keeping `/<owner>/<slug>/swarm` as a redirect
+to the Overview: the alpha rule, nothing old is kept for compatibility,
+and the address was never shared outside the dashboard. Drawing the
+section anew with the Overview's counts: a swarm read per card event,
+and the window lost. Keeping the public page until public projects get
+their pages: the contract removed its route and its switch.
