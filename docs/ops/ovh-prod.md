@@ -52,16 +52,21 @@ pins one pool per zone, and a pool across zones is to be confirmed on the cluste
 
 ## 3. Cluster and sizing
 
-What we measured on Vultr, in `/workspace/tmp/a/hub-mem.csv` (every 5 minutes): the hub pod's working set stays
-between about 120 and 200 MiB over days; a fresh pod starts near 120 MiB. The chart asks for `800m` CPU and `768Mi`
-and limits memory to `2Gi`. PostgreSQL moves out of the cluster, so the cluster runs the hub, Traefik, cert-manager
-and the monitoring below.
+What we measured on Vultr (the hub pod's working set from the metrics server, every 5 minutes, 2026-10-28 to
+2026-10-30): on the image before the evening of 2026-10-28, 76 samples between 136 and 408 MiB; on the image since,
+119 samples between 121 and 216 MiB, a fresh pod near 120 MiB. The chart asks for `800m` CPU and `768Mi` and limits
+memory to `2Gi`. PostgreSQL moves out of the cluster, so the cluster runs the hub, Traefik, cert-manager and the
+monitoring below. The series is a few days on one pod with a handful of users; it sizes the start, the load test of
+section 12 sizes the rest.
 
-Proposal: **two worker nodes of a `D2` or `B2` flavor with at least 4 GB, in different zones** (two, so a node update or failure does
-not take the hub down while it is rescheduled), the hub as one replica with the `Recreate` strategy it has today. The
-exact flavor name and the price are read off the order form; I did not take either from a search result. The
-attachment store is a `ReadWriteOnce` volume on `csi-cinder-high-speed-gen2`, 10 Gi as now, which is why the hub
-stays at one replica.
+Proposal: **two worker nodes of a `D2` or `B2` flavor with at least 4 GB, both in the zone of the attachment
+volume** (one node pool pinned to that zone). Two nodes there let a node update or failure reschedule the hub without
+waiting for the same node to return; a node in another zone would not help the hub, because the pod can only start next
+to its `ReadWriteOnce` volume. Traefik and the monitoring may run in the other zones. A failure of the volume's zone
+therefore stays a known outage until the attachment store is shared storage (section 12): the recovery is a restore of
+the attachment tar into a volume in another zone. The hub runs as one replica with the `Recreate` strategy it has today.
+The exact flavor name and the price are read off the order form; I did not take either from a search result. The
+attachment store is `csi-cinder-high-speed-gen2`, 10 Gi as now, which is why the hub stays at one replica.
 
 ## 4. Ingress, load balancer, TLS, DNS
 
@@ -97,7 +102,8 @@ stays at one replica.
   guide lists the old load balancer's defaults as `timeout-client-data` and `timeout-member-data` of 180 000 ms and
   `timeout-member-connect` of 20 000 ms, and does not state the Octavia defaults. So the plan **sets them explicitly**
   on the Service (`loadbalancer.openstack.org/timeout-client-data` and `...-member-data` at 120 000 ms, above the 55 s
-  with room) and tests it: `maity wait` with the maximum wait, ten times, through the load balancer, none cut early.
+  with room) and tests it: `maity wait` with the maximum wait, ten times, through the load balancer, none cut early (`.github/workflows/hub-load.yml` measures the cost of notifications against history, not connection
+  timeouts, so the wait test is separate and is added to the load test of section 12).
   If a proxy such as Cloudflare is put in front later, its idle limit is the next thing to check (the long-poll is
   well under common limits of 100 s, but the numbers are the proxy's to confirm).
 - **TLS**: cert-manager with Let's Encrypt (DNS-01 for the prod names before the switch, section 9; HTTP-01 for the test domain), one Certificate for the apex, `www` and
@@ -146,8 +152,10 @@ The managed database's own metrics and alerts in the OVH console are added to th
 
 1. A change merges to `main`; test deploys it automatically (migrations run on test first, so they have run on every
    release's schema before prod sees it).
-2. A release is a tag. The tag builds the image (the `publish-image` workflow, by digest), rolls the changelog
-   fragments into the release section, and creates the release notes.
+2. A release is made by hand in this order: `tools/changelog.py release <version>` rolls the changelog fragments into
+   the release section (a commit on `main`), then the `v*` tag is pushed and `publish-image.yml` builds the image,
+   which is then deployed by digest. No workflow creates release notes today; if they are wanted, that is a step to add
+   (open point, section 11).
 3. Prod: the maintainer says go; the ops agent prepares the package for the tag (`check`, `pre`, `rehearse` on a copy
    of the newest dump, then `upgrade`) and the maintainer runs it. `helm upgrade` is always preceded by the dump.
 4. After the upgrade, `post-upgrade-checks.sh` and `join-host.sh verify`.
@@ -199,6 +207,11 @@ Then Vultr becomes test: new domain and certificate, the mail sink, a values fil
 - The in-cluster `NetworkPolicy` of the chart (it admits only Traefik) needs the cluster's CNI to enforce it; checked on
   the staging step.
 - The container image is pulled from `ghcr.io`; if the package is not public, the cluster needs a pull Secret.
+- `post-upgrade-checks.sh` and `join-host.sh` (used in sections 8 and 9) are not in the repository: the ops agent
+  keeps them outside it, with the Vultr address written into them. They move into the repository as parameterised
+  scripts (host and address as arguments) before the first OVH release; until then the steps that name them cannot be
+  repeated by anyone but the ops agent.
+- Release notes are not created by any workflow (section 8).
 - Costs are not in this plan: they come from the order form, not from me.
 
 ## 12. Growth: simple scaling toward about 200 000 users in two weeks
