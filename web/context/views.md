@@ -1649,6 +1649,32 @@ the fixture's default status, its `closed_at` on a second resolve and
 the snapshot missing from its `resolve` answer had drifted once (review
 of #778).
 
+## The limits per person are chosen as a number, no limit or the default, the environment's shown locked
+
+**Id:** 28adb478-d5fa-450b-9bbd-e985d93405c4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's launch card tsk-d4ppa9jsj0d7 (the hub had `GET`/`PATCH /admin/settings/limits`, the dashboard no screen), 2026-10-30; docs/api.md §16.5 (the values, `unlimited`, `null` restores the default), §16.2 (sources), §2.8.4 (step-up); the dashboard's implementation
+**Revisit when:** plans set the limits per plan (§2.7, part two), or the hub adds a limit
+
+The **Limits** section (`js/admin-limits.js`) shows each value with a
+choice of how it is set — a number, no limit, or the default — the
+number field only for the first, the value's source in words and the
+people at or over it. A value from the environment is shown, its
+controls disabled. Only changed values are sent: a number, `unlimited`,
+or `null` for the default; the call goes through `M.stepUp.run`, so a
+missing second factor or password is asked where it stands.
+
+**Reason:** the contract gives three different meanings — a number,
+"no limit" stored by the admin, and the default restored by `null` —
+and one number field cannot say the last two apart; an empty field read
+as the default would be guessing.
+
+**Rejected alternative:** a single number field with "0 means no
+limit": the hub refuses 0 (`invalid`), and the default would still need
+a gesture of its own.
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
