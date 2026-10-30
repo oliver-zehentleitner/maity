@@ -4971,7 +4971,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(await rvPost({ kind: "message", type: "notice", to: "all", body: "x", review: rvGood })) === JSON.stringify({ review: "not_allowed" })
     && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { head: "abc", cites: [{ path: "x", line: 0, quote: "a\nb" }] }) }))
       === JSON.stringify({ "review.head": "format", "review.cites.0.quote": "format", "review.cites.0.line": "format" })
-    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { cites: [] }) })) === JSON.stringify({ "review.cites": "too_few" }),
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { cites: [] }) })) === JSON.stringify({ "review.cites": "too_few" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x",
+      review: { head: rvGood.head, verdict: "approve", extra: 1, cites: [{ line: 3, quote: "a\u2028b", note: "x" }] } }))
+      === JSON.stringify({ "review.extra": "format", "review.subject": "required", "review.cites.0.note": "format", "review.cites.0.path": "required", "review.cites.0.quote": "format" }),
     "messages: the fixture hub checks a review result's review as §8.4 says");
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");

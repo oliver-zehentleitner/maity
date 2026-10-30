@@ -2762,7 +2762,10 @@ messages are drawn; chats carry only `chat` messages, and a card's
 thread its notes. **Message the project** no longer offers "A review's
 result": the hub refuses one without `review`, and a review's cites are
 quoted from the diff by the reviewer's tools (`maity say
---review-file`).
+--review-file`). The fixture hub's check of `review` is a copy by hand of
+`hub/src/maity_hub/reviews.py`, not a second source for §8.4: where
+they differ (reasons, unknown keys, which characters break a line), the
+hub is right.
 
 **Reason:** the lead checks the cites against the diff before an
 approval counts; showing them under the verdict lets a human do the
