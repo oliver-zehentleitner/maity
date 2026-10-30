@@ -523,6 +523,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 **policy.columns(filled),
                 settings={"release_checklist": []},
                 rules_version=1,
+                rules_text_digest=rules.text_digest(),
                 created_at=now,
             )
         )
@@ -1066,7 +1067,23 @@ def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        text = rules.generate(mine.project, mine.trust, mine.role, arbiter_text(conn, mine.project))
+        # The duty line follows the caller's session: a supervised one gets §15.11's (§6.9).
+        supervised = (
+            caller.kind == "agent"
+            and conn.execute(
+                select(t.agent_session.c.supervisor).where(
+                    t.agent_session.c.id == caller.session_id
+                )
+            ).scalar()
+            is not None
+        )
+        text = rules.generate(
+            mine.project,
+            mine.trust,
+            mine.role,
+            arbiter_text(conn, mine.project),
+            supervised=supervised,
+        )
     return Response(
         text,
         media_type="text/markdown; charset=utf-8",

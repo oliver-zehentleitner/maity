@@ -1439,3 +1439,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .chat-instance { display: inline-flex; align-items: center; gap: 6px; }
 .chat-instance select { min-height: 28px; }
 .msg-to { white-space: nowrap; }
+
+/* A review result's facts (js/messages.js, §8.4): verdict, head, the places read. */
+.review { display: grid; gap: 4px; margin: 4px 0; }
+.review-head { margin: 0; }
+.review-cites { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 0.85rem; }
+.review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
+.review-quote { white-space: pre-wrap; }
+@media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
+
+/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
+.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
+

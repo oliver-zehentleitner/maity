@@ -322,27 +322,29 @@ window.Maity = window.Maity || {};
       };
       // Never a guest (§2.3), never one that would close a circle.
       const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !M.trust.guest(x) && !circle(x.id));
-      const options = [["", "nobody"]].concat(mine.map((x) => [x.id, x.id === ctx.me.id ? "you (" + x.display_name + ")" : x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")"]));
+      const options = [["", M.t("members.reports.nobody")]].concat(mine.map((x) => [x.id, x.id === ctx.me.id
+        ? M.t("members.reports.you", { name: x.display_name })
+        : M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) })]));
       if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
-        options.push([m.reports_to, ctx.nameOf(m.reports_to) + " (another owner's; kept unless you choose here)"]);
+        options.push([m.reports_to, M.t("members.reports.other_owner", { name: ctx.nameOf(m.reports_to) })]);
       }
       const pick = keyed("owner-reports:" + m.id, h("select", { id }, options.map(([v, l]) => h("option", { value: v }, l))));
       pick.value = m.reports_to || "";
-      const save = h("button", { type: "submit", class: "small" }, "Save");
+      const save = h("button", { type: "submit", class: "small" }, M.t("members.reports.save"));
       return h("form", {
         class: "inline-form owner-reports",
         onsubmit: async (e) => {
           e.preventDefault();
           const to = pick.value || null;
-          if (to === (m.reports_to || null)) { status.done(); append(status.el, h("span", null, "Nothing changed.")); return; }
+          if (to === (m.reports_to || null)) { status.done(); append(status.el, h("span", null, M.t("members.reports.unchanged"))); return; }
           save.disabled = true;
-          await act("Saving", m.display_name + " now reports to " + (to ? ctx.nameOf(to) : "nobody") + ".",
+          await act(M.t("members.reports.saving"), to ? M.t("members.reports.saved", { name: m.display_name, boss: ctx.nameOf(to) })
+            : M.t("members.reports.saved_nobody", { name: m.display_name }),
             () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id);
           save.disabled = false;
         },
-      }, h("label", { for: id }, "Reports to"), pick, save,
-      h("p", { class: "hint" }, "Your own agent: you choose whom it reports to here, you or another of your agents. "
-        + "Reporting to someone else's member needs their consent and is set by the project's admins."));
+      }, h("label", { for: id }, M.t("members.reports.label")), pick, save,
+      h("p", { class: "hint" }, M.t("members.reports.hint")));
     }
 
     return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart, reportsToPart };

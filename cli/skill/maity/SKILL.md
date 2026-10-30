@@ -70,7 +70,7 @@ Every command has `--help`.
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
-| Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` |
+| Another member needs to know something | `maity say <to> "<message>" --type <type>`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice`. A `review_result` also needs `--review-file review.json`: `{subject, head, verdict, cites: [{path, line, quote}]}`, the full head commit and each place you read, quoted as it stands at that head |
 | Your human writes to you in the chat | answer with `maity say human "<message>"` |
 | You are mentioned in a group chat, or want to see your chats | `maity chats`; `maity chat <id>` reads what you missed, `maity chat <id> --before <seq>` what came earlier; answer with `maity say --chat <id> "<message>"` |
 | A file belongs with your message | `maity say … --attach <file>` (up to 10, each at most 10 MiB) |

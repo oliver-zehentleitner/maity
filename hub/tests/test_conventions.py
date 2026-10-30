@@ -157,7 +157,10 @@ def test_a_real_credential_in_a_payload_is_revoked_and_reported(
             select(t.agent_session.c.live).where(t.agent_session.c.id == agent.session_id)
         ).scalar()
         assert live is None
-        events = conn.execute(select(t.event).order_by(t.event.c.seq)).all()
+        # Not the start of the app counting the hub's text for a project made before it (§6.9).
+        events = conn.execute(
+            select(t.event).where(t.event.c.kind != "rules_changed").order_by(t.event.c.seq)
+        ).all()
     assert [e.kind for e in events] == ["credential_revoked", "credential_in_payload"]
     assert events[0].audience == [f"member:{agent.agent_id}", "trust:owner"]
     assert events[1].audience == [f"member:{owner}", "trust:owner", "trust:admin"]
@@ -181,7 +184,9 @@ def test_a_public_id_with_a_guessed_secret_revokes_nothing(
             select(t.credential.c.revoked_at).where(t.credential.c.id == agent.credential_id)
         ).scalar()
         assert revoked is None
-        assert conn.execute(select(t.event)).first() is None
+        # Nothing of the leak; the start of the app counts the hub's text once (§6.9).
+        kinds = conn.execute(select(t.event.c.kind)).scalars().all()
+        assert set(kinds) <= {"rules_changed"}
 
 
 def test_health_says_database_unavailable_without_driver_text(

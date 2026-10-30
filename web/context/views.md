@@ -1808,7 +1808,7 @@ not hold a token that names nobody yet, which the hub accepts.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's report (seq 16183) that a member who owns an agent found no field for whom it reports to, and the card tsk-0s3gztb6jba7, 2026-10-30; docs/api.md §2.3 ("A human may always set the reports_to of an agent they own to null or to a member they own …, whatever their trust and role"), §6.2 ("Across owners", "Pending"); the coordinator's ruling on the withdrawal button, 2026-10-30
-**Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g) lands
+**Revisit when:** the contract settles whether the owner may start a cross-owner edge, or gives the member view the pending edge (`reports_to_pending`); the hub's owner path (tsk-fw3x5c13vq9g, #759) lands
 
 Without `members:admin`, one's own agent's row on Members has
 **Manage**, holding only what its owner sets: **Reports to**, the
@@ -1827,7 +1827,7 @@ on cross-owner edges (a field such as `reports_to_pending` for the two
 owners).
 
 The page and the fixture hub went ahead of the hub: until its owner
-path for §2.3 (tsk-fw3x5c13vq9g) is merged, the hub answers this
+path for §2.3 (tsk-fw3x5c13vq9g, #759) is merged, the hub answers this
 `PATCH` from an owner without `members:admin` with 403, so the two are
 merged together. Showing the form only with `members:admin` until then
 was rejected: the owner would still have no lever, and the page would
@@ -2148,7 +2148,8 @@ to the Overview: the alpha rule, no compatibility routes.
 
 **Id:** df54f284-212c-4eab-995d-778dce37f7fb
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29; the coordinator's ruling in the review of #649 (no fallback), 2026-10-30
 **Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
@@ -2768,8 +2769,8 @@ named.
 
 In a project the header shows, after the state, the absence and the
 released mark, a link to the repository (`repository.url`, labelled by
-`repository.forge`: GitHub, GitLab or Gitea with their mark, else
-"Repository" with a branch mark) and **Why**, the dashboard of the Keep
+`repository.forge`: GitHub and GitLab with their marks, Gitea by its
+name with a branch mark, any other as "Repository" with a branch mark) and **Why**, the dashboard of the Keep
 the Why family's root member. Either is left out where the project has
 none or its address is not plain `https`; both open in a tab of their
 own and are named for a screen reader with where they go.
@@ -2783,4 +2784,65 @@ address, as the card first proposed: the export already names it, and a
 second address could drift from the one the family publishes. Only the
 Overview's Project panel, where both links already are: one click
 further, on one view only.
+
+## A review result shows its verdict, head and cites in the Messages view; the dashboard does not compose one
+
+**Id:** 2ca8d25f-79db-47ea-9108-3397ad03296e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §8.4 "A review result cites what it judged" (contract #745: `review` with subject, head, verdict and cites, required on `review_result`, shown by the dashboard under the verdict); the card tsk-c4dez2qc7dd0 (verdict badge, subject, short head linking to the commit, cites as path:line or removed with the quote in monospace, folded after five), 2026-10-30; the coordinator's ruling to take review_result out of the composer, 2026-10-30
+**Revisit when:** humans write review results in the dashboard, or a chat or a card's thread shows project messages
+
+In **Messages** a `review_result` shows above its text the verdict as a
+pill, the subject, and the head's first seven characters, linked to the
+commit on GitHub or GitLab (title: the whole head); then the cites, each
+`path:line`, or the path and "removed" where `line` is `null`, with its
+quote as code text, the first five shown and the rest in a fold. Every
+part is text, never markup. The Messages view is the one place project
+messages are drawn; chats carry only `chat` messages, and a card's
+thread its notes. **Message the project** no longer offers "A review's
+result": the hub refuses one without `review`, and a review's cites are
+quoted from the diff by the reviewer's tools (`maity say
+--review-file`).
+
+**Reason:** the lead checks the cites against the diff before an
+approval counts; showing them under the verdict lets a human do the
+same without the CLI.
+
+**Rejected alternative:** a form for verdict, head and cites in **Message
+the project**: a reviewer quotes lines from the diff at its head, which
+a browser form would have them copy by hand, for a message humans do
+not send. Leaving the type in the composer: every send would be refused
+for want of `review`.
+
+## A project has one Settings view: Project for its admins, Mine at settings/mine for every human member
+
+**Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
+**Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
+**See:** views.md#a-members-own-settings-in-a-project-are-a-tab-of-their-own-my-settings-at-my-settings — df54f284-212c-4eab-995d-778dce37f7fb — as of 2026-10-30
+
+The project's tabs end in one **Settings**, offered to its admins and to
+every human member. Inside it two tabs, as links: **Project**
+(`/<owner>/<slug>/settings`) for a member with `project:admin`, and
+**Mine** (`/<owner>/<slug>/settings/mine`) for a human, one's own settings
+for the project with one's default from the account. A member without
+`project:admin` who opens `settings` is sent on to `settings/mine` and
+sees no tab bar, having one tab. `/<owner>/<slug>/my-settings` is gone,
+without a redirect.
+
+**Reason:** two tabs called Settings and My settings side by side read as
+one thing twice; one place with a part for the project and a part for
+oneself is where a member looks for either.
+
+**Rejected alternative:** keeping **My settings** as a tab of its own
+(df54f284): the maintainer asked for one Settings. Showing a member the
+Project tab read only, as before: the contract shows it to admins only,
+and what a member may read of it (language, memory) is on the overview
+or in the project's files. A redirect from `my-settings`: the alpha
+rule, no route kept for an old address.
 
