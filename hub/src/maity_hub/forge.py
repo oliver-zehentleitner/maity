@@ -341,12 +341,16 @@ class Forge:
         """Whether the hub can observe this repository: a known forge and a source for it."""
         return kind_of(url) == "github" and self.token is not None and self.refused is None
 
-    def _get(self, path: str) -> Any | None:
-        """GET on the forge API; `None` for 404, `ForgeUnavailableError` for anything else."""
+    def _get(self, path: str, *, uncached: bool = False) -> Any | None:
+        """GET on the forge API; `None` for 404, `ForgeUnavailableError` for anything else.
+        `uncached` asks the forge itself even with the hub's own token, skipping the cached
+        visibility check that guards its reads."""
         if self.refused is not None:
             raise NotCoveredError(self.refused)
         if self.token is None:
             raise ForgeUnavailableError("no forge token")
+        if uncached and self.granted is None:
+            return self._send(path)
         return self._call(path)
 
     def retry_at(self) -> datetime | None:
@@ -783,6 +787,22 @@ class Forge:
             # GitHub's issue endpoint answers for pull requests too, with this key.
             "is_pull_request": "pull_request" in found,
         }
+
+    def repository_public(self, repository: str) -> bool:
+        """Whether the forge reports the repository public, whatever grant reads it (§16.9).
+        A repository it has not looked at, or whose answer it could not read, counts as
+        private: anything but an answer that says `private: false` is False. The hub's own
+        token asks the forge itself, not the ten-minute cache of the visibility check that
+        guards its other reads (a second identical request, and an answer up to ten
+        minutes old); an answer that is not public drops that cache entry."""
+        try:
+            found = self._get(f"/repos/{repository}", uncached=True)
+        except ForgeUnavailableError:  # a refusal, a private repository, a spent budget
+            found = None
+        public = isinstance(found, dict) and found.get("private") is False
+        if not public and self.granted is None:
+            self._forget(repository)  # the next read asks again whether it is public
+        return public
 
     def items(
         self, repository: str, numbers: list[int]

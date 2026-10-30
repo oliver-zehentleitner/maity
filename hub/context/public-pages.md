@@ -235,3 +235,41 @@ accounts and organisations exist (§6.26).
   not serve yet.
 - Answering a hidden account with its own error (`suspended`, `pending`): tells a stranger the
   account exists.
+
+## The repository is on a public page only while the forge's last answer said it is public
+
+**Id:** 915033f2-a416-41e1-b75a-2eb6dec9d9ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("Repository visibility"), §11.4; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** the forge reports visibility on an event the hub already receives (a webhook), or another forge than GitHub is read
+
+`project.repository_public` is null until the hub looked, true when the forge's last answer said
+`private: false`, false for anything else. The probe's sweep asks first, before every other read and for
+every project that has a public page and a GitHub repository, also one the hub can no longer read
+(`probe.observe_visibility`, `Forge.repository_public`), through whatever grant reads the project (the
+instance's token, an installation or the owner's token), and a read the forge does not answer never ends the
+round. The hub's own token asks the forge itself, not the ten-minute cache of the visibility check that guards
+its other reads, and an answer that is not public drops that cache entry. The answer is stored under the
+project's lock and only while the page is on and the repository is the one that was asked: a `PATCH` of the
+repository while the forge answered clears the value and is not overwritten. A change calls `touch`, at
+once when the repository turned private. An answer the forge does not give (a 404, no `private` field, a
+refusal, a spent budget) is stored as private: the contract says a repository the hub could not read counts as
+private, so a short outage takes the URL off the page until the next round. A new repository URL clears the
+value, and so do the page going on or off and a transfer: an old `true` rendered when the page comes back
+would show a URL that turned private meanwhile until the next round, and after a transfer one the old owner's
+look found. The page prints the URL as a `nofollow ugc` link only while the value is true.
+
+**Reason:** the page is public, the repository may be private, and only the forge knows; showing a private
+repository's URL is a leak that cannot be taken back from a crawler.
+
+**Rejected alternatives:**
+- Deriving it from the grant that reads the repository: a private repository read through an owner's grant would
+  look public to the page.
+- Asking the forge on every render: the renders run in the writers' transactions, which hold no connection to
+  the forge (§11.4).
+- Keeping the last known answer through an outage: the contract names the unreadable case private, and an
+  outage on the instance's side would otherwise leave a URL on the page that turned private meanwhile.
+- The visibility read last in the sweep, like the other reads: the sweep ends at the first read the forge does
+  not answer, so a repository that turned private could stay on the page for as long as any other read failed.

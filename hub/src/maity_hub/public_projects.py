@@ -82,9 +82,17 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         if project.public_about
         else ""
     )
+    # The repository only while the forge's last answer said it is public (§16.9).
+    shown_url = project.repository_url if project.repository_public is True else None
+    repository = ""
+    if shown_url and landing.safe_target(shown_url):
+        link = (
+            f'<a href="{escape(shown_url, quote=True)}" rel="nofollow ugc">{escape(shown_url)}</a>'
+        )
+        repository = f"<p>{link}</p>"
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
-        f'<p class="tag">{escape(project.state)}</p>{about}'
+        f'<p class="tag">{escape(project.state)}</p>{about}{repository}'
     )
     path = f"/{full}"
     body = render.page_document(
@@ -94,7 +102,9 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         content=content,
     )
     digest = hashlib.sha256(
-        "\x00".join((full, project.name, project.state, project.public_about or "")).encode()
+        "\x00".join(
+            (full, project.name, project.state, project.public_about or "", shown_url or "")
+        ).encode()
     )
     return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
 
