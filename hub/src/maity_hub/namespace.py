@@ -127,11 +127,14 @@ def owner_handle() -> Any:
 
 def resolve_owner(conn: Connection, handle: str) -> str | None:
     """The id a namespace owner's handle names (§6.25): a human's or an organisation's
-    (§6.26), by the current handle; a deleted one's still names its archived projects. The
-    hook for handle aliases (§6.24): when the hub keeps aliases, an alias resolves here too."""
-    human = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    (§6.26), by the current handle or, for a human, an alias (§6.24), so that `<old
+    handle>/<slug>` keeps reaching the project after a rename; a deleted one's still names
+    its archived projects."""
+    from maity_hub import handles
+
+    human = handles.human_id_of(conn, handle)
     if human is not None:
-        return str(human)
+        return human
     org = conn.execute(select(t.org.c.id).where(t.org.c.handle == handle)).scalar()
     return None if org is None else str(org)
 

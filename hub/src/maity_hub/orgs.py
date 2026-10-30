@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
-from maity_hub import avatars, clock, handle_register, namespace, paths
+from maity_hub import avatars, clock, handle_register, handles, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -323,6 +323,10 @@ def create(
         if owned >= limit:
             raise org_limit(limit, owned)
     org_id = new_id("org")
+    # A handle a human gave up stays theirs (§6.24): the register does not know aliases.
+    handles.lock(conn, handles.HUMANS, handle)
+    if handles.holder(conn, handles.HUMANS, handle) is not None:
+        raise invalid({"handle": "taken"})
     if not handle_register.claim(conn, handle, handle_register.ORG, org_id):
         raise invalid({"handle": "taken"})
     now = clock.now()
