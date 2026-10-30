@@ -27,7 +27,7 @@ window.Maity = window.Maity || {};
 
   function fill(template, values) {
     return template.replace(/\{([a-z][a-z0-9_]*)\}/g, (whole, name) => {
-      if (!values || !(name in values)) return whole;
+      if (!values || !Object.hasOwn(values, name)) return whole;
       const v = values[name];
       return typeof v === "number" ? number(v) : String(v);
     });
