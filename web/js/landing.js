@@ -70,12 +70,17 @@ window.Maity = window.Maity || {};
     too_large: "the page is too large: at most 256 KiB stored, all languages together",
   };
   const reasonText = (r) => REASONS[r] || String(r).replace(/_/g, " ");
+  // A field's limit in words (§16.7, §16.7.1): KiB where the hub counts bytes, else characters.
+  const limitWords = (max) => (max >= 1024 && max % 1024 === 0 ? "at most " + max / 1024 + " KiB" : "at most " + max + " characters");
 
   // One field's control, bound to the draft object `obj[key]`; `path` is
   // the hub's path of it, for its error.
   function control(x, obj, path, errors, redraw) {
     const id = "lp-" + path.replace(/[^A-Za-z0-9]+/g, "-");
     const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+    // Its limit, said with the hub's refusal of it (too_long, or invalid where the hub
+    // folds an empty or too long text into one reason, as for a legal page).
+    if (x.max && ["text", "long", "md"].includes(x.kind)) error.limit = limitWords(x.max);
     errors[path] = error;
     const described = { "aria-describedby": id + "-error", "data-path": path };
     let input;
@@ -131,7 +136,9 @@ window.Maity = window.Maity || {};
       else obj[x.key] = input.value;
     });
     return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input,
-      x.kind === "md" ? h("p", { class: "hint" }, "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a path like /register); no images, no HTML.") : null,
+      x.kind === "md" ? h("p", { class: "hint" }, "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a path like /register); no images, no HTML. "
+        + limitWords(x.max).replace(/^at/, "At") + ".")
+        : x.kind === "long" ? h("p", { class: "hint" }, limitWords(x.max).replace(/^at/, "At") + ".") : null,
       error);
   }
 
@@ -203,7 +210,9 @@ window.Maity = window.Maity || {};
     let first = null;
     Object.entries(fields).forEach(([path, reason]) => {
       const at = errors[path];
-      if (at) { at.textContent = reasonText(reason); if (!first) first = at; } else rest.push(path + ": " + reasonText(reason));
+      const words = at && at.limit && reason === "too_long" ? "too long: " + at.limit
+        : at && at.limit && reason === "invalid" ? "empty, or longer than allowed (" + at.limit + ")" : reasonText(reason);
+      if (at) { at.textContent = words; if (!first) first = at; } else rest.push(path + ": " + words);
     });
     status.fail("Not saved: ", { message: rest.length ? rest.join("; ") : "see the fields marked below" });
     const input = first && first.parentNode && first.parentNode.querySelector ? first.parentNode.querySelector("input, textarea") : null;
