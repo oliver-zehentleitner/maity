@@ -1,0 +1,3 @@
+### Added
+
+- hub: public pages are rendered again and taken off (§16.9, step 2): a registry of page kinds, `public_pages.touch` in the transaction that changed an input (a change that takes anything off a page renders it at once under both modes, other changes only under `on_change`), the pages rendered again at start and by a worker every `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`; `sitemap.xml` lists the stored pages with the `lastmod` of their inputs, as an index with `/sitemap-<n>.xml` above 50,000 URLs or 50 MB, and `robots.txt` allows everything but the hub's own first segments while pages are on (tsk-w89mspg3gwx1).
