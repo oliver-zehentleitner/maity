@@ -5,7 +5,7 @@ built-in role whose scopes a membership's `role` has; every membership so far ho
 built-in role, so its base is the role itself.
 
 Revision ID: 0112
-Revises: 20261030125107_person_links
+Revises: 0106
 Create Date: 2026-10-30
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0112"
-down_revision: str | None = "20261030125107_person_links"
+down_revision: str | None = "0106"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
