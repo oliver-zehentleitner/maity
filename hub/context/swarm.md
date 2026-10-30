@@ -23,7 +23,11 @@ Since 2026-10-30 (contract #697) the members read the statistics as a section of
 the project's Overview, and the public swarm page with its `policy.swarm_public`
 is gone. The agents-only fold stays for a public project's page (§16.9, §6.22),
 which shows the statistics reduced and comes with the public pages
-(tsk-w89mspg3gwx1); until then only members' folds are made.
+(tsk-w89mspg3gwx1); until then only members' folds are made. The column goes with
+migration 0102: the number only has to be free (#703 took 0100), and its predecessor is
+set to the head `main` has when it is merged, never derived from the number, since
+Alembic orders by `down_revision`. Renumbering it to close the gap was rejected as
+needless for that reason.
 
 **Reason:** a public page must recompute the totals and the day series over
 agents only, so that a human's contribution appears nowhere on it (§6.22).
