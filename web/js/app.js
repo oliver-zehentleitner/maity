@@ -91,7 +91,9 @@ window.Maity = window.Maity || {};
   const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
-  // Read by js/ids.js: an id after one of them names no project.
+  // Read by js/ids.js: an id after one of them names no project. The hub's
+  // own first words are also js/route.js's HUB list, so a word missing here
+  // is still caught there: ids.js links only what M.route.isRoute accepts.
   M.reservedFirst = OWN_WORDS;
 
   // Throws URIError on a malformed escape; called inside render's try.
