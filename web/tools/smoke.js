@@ -5720,14 +5720,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "invite: Link via unticked sends via public, and the link is on the hub's own address");
   byId("invite-via-join").checked = true;
   // A hub without a join host (join_url null): no choice, no via sent.
-  const ivSession = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/auth/session" ? ivSession(p).then((v) => Object.assign({}, v, { join_url: null })) : ivSession(p));
+  // The form takes the session the page read already (M.api.session), no new read of it.
+  const ivSessionGets = [], ivGetAll = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p === "/auth/session") ivSessionGets.push(p); return ivGetAll(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  // The app reads the session once per page drawn (two here); the form adds none.
+  expect(byId("invite-via-join") && ivSessionGets.length === 2, "invite: the form uses the session the page read, without reading it again (" + ivSessionGets.length + ")");
+  win.Maity.api.get = ivGetAll;
+  const ivSession = win.Maity.api.session;
+  win.Maity.api.session = () => Object.assign({}, ivSession(), { join_url: null });
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   const ivNoHost = ivPosts.length;
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
     "invite: without a join host there is no choice and no via; the hub picks the link");
-  win.Maity.api.get = ivSession;
+  win.Maity.api.session = ivSession;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);
