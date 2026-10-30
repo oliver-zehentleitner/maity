@@ -2007,10 +2007,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       : mGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members");
   const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
-  expect(!btn(main, "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
-    "members: a member reads the list without managing; the owner from the members");
+  expect(!btn(mRow("Maintainer"), "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
+    "members: a member reads the list without managing anyone but their own agents; the owner from the members");
   // A human's own agents are on Agents: the credentials and the owner's preferences switch, nothing that changes the membership.
-  expect(!btn(mRow("Agent A"), "Details") && !btn(mRow("Agent A"), "Manage") && chatOf("Agent A"), "members: without members:admin a row has its Chat only");
+  expect(!btn(mRow("Agent A"), "Details") && chatOf("Agent A") && main.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "") === "Manage Agent A"),
+    "members: without members:admin a row has its Chat, and one's own agent its Manage for what its owner sets");
   await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
   // agt-c carries the team's rulebook in the fixture.
   const ownCard = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-c");
@@ -6609,6 +6610,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
   expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
+  // An agent's owner sets whom it reports to without members:admin (§2.3, tsk-0s3gztb6jba7): Manage on Members, and on Agents.
+  const orGet = win.Maity.api.get, orPatch = win.Maity.api.patch;
+  const orPatches = [];
+  win.Maity.api.get = (p) => (p === "/me" ? orGet(p).then((v) => Object.assign({}, v, { projects: v.projects.map((x) => (x.slug === "maity" ? Object.assign({}, x, { trust: "member", role: "coder" }) : x)) })) : orGet(p));
+  win.Maity.api.patch = (p, b) => { orPatches.push([p, b]); return orPatch(p, b); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const orManage = (id) => main.querySelectorAll("button").find((b) => (b.getAttribute("aria-label") || "") === "Manage " + id);
+  const orPick = () => byId("owner-reports-agt-b");
+  expect(orManage("Agent B") && !main.querySelectorAll("button").some((b) => (b.getAttribute("aria-label") || "") === "Manage Maintainer"),
+    "owner reports_to: without members:admin, Manage on one's own agents only");
+  orManage("Agent B").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(orPick() && orPick().value === "agt-a" && !byId("member-role-agt-b")
+    && orPick().querySelectorAll("option").map((o) => o.getAttribute("value")).join() === ",hum-maintainer,agt-a,agt-c,agt-d,agt-r",
+    "owner reports_to: nobody, oneself and one's other agents offered, the current boss chosen; no membership form without members:admin");
+  orPick().value = "agt-d";
+  main.querySelector("form.owner-reports").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { reports_to: "agt-d" }]),
+    "owner reports_to: only reports_to is sent " + JSON.stringify(orPatches));
+  // A boss of another owner stays chosen and marked, so saving does not end it unasked.
+  win.Maity.api.getAll = ((orAll) => (p) => (p === "/projects/maintainer/maity/members" ? orAll(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-c" ? Object.assign({}, x, { reports_to: "hum-other" }) : x)) })) : orAll(p)))(win.Maity.api.getAll);
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("owner-reports-agt-b") && main.querySelector("section.agent-here form.owner-reports"),
+    "owner reports_to: the project's Agents has it beside the rulebook");
+  win.Maity.api.get = orGet; win.Maity.api.patch = orPatch;
+  await orPatch("/projects/maintainer/maity/members/agt-b", { reports_to: "agt-a" });
+  await go("#/maintainer/maity/inbox");
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };

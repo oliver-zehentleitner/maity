@@ -300,7 +300,51 @@ window.Maity = window.Maity || {};
       }, "Remove from the project"));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart };
+    // Whom one's own agent reports to, for its human owner whatever their
+    // trust and role (§2.3): nobody, the owner (where a member here), or
+    // another of the owner's agents in the project; only reports_to is
+    // sent. A boss of another owner is not offered (that edge needs both
+    // owners' consent, §6.2), and one set already stays chosen, marked,
+    // so that saving does not end it unasked.
+    function reportsToPart(m, memberPath) {
+      if (!ownAgent(m) || m.removed_at) return null;
+      const id = "owner-reports-" + m.id;
+      const members = ctx.members || [];
+      const circle = (boss) => {
+        const byIdNow = Object.fromEntries(members.map((x) => [x.id, x]));
+        const seen = new Set();
+        for (let at = boss; at; at = byIdNow[at] && byIdNow[at].reports_to) {
+          if (at === m.id) return true;
+          if (seen.has(at)) return false;
+          seen.add(at);
+        }
+        return false;
+      };
+      const mine = members.filter((x) => !x.removed_at && x.id !== m.id && (x.id === ctx.me.id || ownAgent(x)) && !circle(x.id));
+      const options = [["", "nobody"]].concat(mine.map((x) => [x.id, x.id === ctx.me.id ? "you (" + x.display_name + ")" : x.display_name + " (@" + M.dom.handleOf(ctx, x) + ")"]));
+      if (m.reports_to && !options.some(([v]) => v === m.reports_to)) {
+        options.push([m.reports_to, ctx.nameOf(m.reports_to) + " (another owner's; kept unless you choose here)"]);
+      }
+      const pick = keyed("owner-reports:" + m.id, h("select", { id }, options.map(([v, l]) => h("option", { value: v }, l))));
+      pick.value = m.reports_to || "";
+      const save = h("button", { type: "submit", class: "small" }, "Save");
+      return h("form", {
+        class: "inline-form owner-reports",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const to = pick.value || null;
+          if (to === (m.reports_to || null)) { status.done(); append(status.el, h("span", null, "Nothing changed.")); return; }
+          save.disabled = true;
+          await act("Saving", m.display_name + " now reports to " + (to ? ctx.nameOf(to) : "nobody") + ".",
+            () => M.api.patch(memberPath, { reports_to: to }), "owner-reports:" + m.id);
+          save.disabled = false;
+        },
+      }, h("label", { for: id }, "Reports to"), pick, save,
+      h("p", { class: "hint" }, "Your own agent: you choose whom it reports to here, you or another of your agents. "
+        + "Reporting to someone else's member needs their consent and is set by the project's admins."));
+    }
+
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, removePart, reportsToPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -358,6 +402,15 @@ window.Maity = window.Maity || {};
     function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
+      // Without members:admin, one's own agent's row holds what its owner
+      // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
+      // preferences switch.
+      if (!ctx.canAdmin) {
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+          P.reportsToPart(m, memberPath),
+          M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
+          P.teamForm(m, memberPath)));
+      }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; sent only to whom may see it.
@@ -529,7 +582,7 @@ window.Maity = window.Maity || {};
                   return td;
                 }),
                 h("td", { class: "member-actions", "data-label": "Actions", role: "cell" }, chatLink(m),
-                  !ctx.canAdmin ? null : keyed("manage:" + m.id, h("button", {
+                  !ctx.canAdmin && !P.ownAgent(m) ? null : keyed("manage:" + m.id, h("button", {
                     type: "button",
                     class: "small",
                     "aria-expanded": expanded ? "true" : "false",
@@ -537,7 +590,7 @@ window.Maity = window.Maity || {};
                     "aria-label": (expanded ? "Done managing " : "Manage ") + m.display_name,
                     onclick: () => {
                       // Done closes the row and drops its unsaved edits.
-                      if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw("role:" + m.id); }
+                      if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw((ctx.canAdmin ? "role:" : "owner-reports:") + m.id); }
                     },
                   }, expanded ? "Done" : "Manage"))));
               return expanded ? [row, manage(m, rowId)] : row;

@@ -2636,6 +2636,26 @@ window.Maity = window.Maity || {};
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
         return target;
       }
+      // §2.3: a human sets the reports_to of an agent they own to null or to a
+      // member they own (themselves or another of their agents), whatever their
+      // trust and role; a boss of another owner needs §6.2's consent, members:admin here.
+      if (!who.admin && who.member.kind === "human" && Object.keys(body).length === 1 && "reports_to" in body) {
+        const target = member(m[1], m[2], path);
+        const all = file(m[1], "members.json", path).items;
+        const to = body.reports_to;
+        const boss = to ? all.find((x) => x.id === to && !x.removed_at) : null;
+        if (target.kind === "agent" && target.owner_id === who.member.id
+          && (to === null || (boss && (boss.id === who.member.id || (boss.kind === "agent" && boss.owner_id === who.member.id))))) {
+          if (to === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "self" } });
+          for (let at = to, seen = new Set(); at; at = (all.find((x) => x.id === at) || {}).reports_to) {
+            if (at === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "cycle" } });
+            if (seen.has(at)) break;
+            seen.add(at);
+          }
+          target.reports_to = to;
+          return target;
+        }
+      }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);
       agentLimits(who.member, target, body, path);
