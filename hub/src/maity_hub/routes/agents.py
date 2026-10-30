@@ -12,7 +12,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import avatars, clock, events, handles, idempotency, limits, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, not_found
+from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
@@ -147,7 +147,9 @@ def patch_agent(
 
     def action(conn: Connection) -> idempotency.Outcome:
         owned(conn, agent_id, caller.principal_id)
-        if "handle" in given and body.handle is not None:
+        if "handle" in given:
+            if body.handle is None:  # as in `PATCH /me`: null renames nothing
+                raise invalid({"handle": "required"})
             done = handles.rename(conn, agent_id, caller.principal_id, body.handle)
             if done is not None:
                 handles.announce(conn, caller, agent_id, caller.principal_id, *done)

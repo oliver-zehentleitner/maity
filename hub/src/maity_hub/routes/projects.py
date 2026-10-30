@@ -18,6 +18,7 @@ from maity_hub import (
     availability,
     clock,
     commitment,
+    handles,
     idempotency,
     images,
     ktw,
@@ -462,7 +463,8 @@ def _creation_owner(
     organisation's row is locked, and the role read under the lock, before any project's."""
     assert caller.human_id is not None
     own = conn.execute(select(t.human.c.handle).where(t.human.c.id == caller.human_id)).scalar()
-    if owner is None or owner == own:
+    gave_up = handles.aliases(conn, [caller.human_id])[caller.human_id]  # §6.24
+    if owner is None or owner == own or owner in gave_up:
         return str(caller.human_id), None, None
     found = conn.execute(
         select(t.org.c.id)

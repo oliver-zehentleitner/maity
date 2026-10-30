@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import attachment_store, clock, events, moderation, namespace
+from maity_hub import attachment_store, clock, events, handles, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
@@ -125,11 +125,25 @@ def _agent_by_name(conn: Connection, name: str) -> str:
     """An agent's id from its global name `<owner>/<handle>`, as the public swarm page
     shows it (§6.3, §6.22); `not_found` for none."""
     owner, _, handle = name.partition("/")
+    owner_id = handles.human_id_of(conn, owner)  # a handle or an alias of the owner (§6.24)
+    if owner_id is None:
+        raise not_found()
     found = conn.execute(
-        select(t.agent_profile.c.id)
-        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
-        .where(t.human.c.handle == owner, t.agent_profile.c.handle == handle)
+        select(t.agent_profile.c.id).where(
+            t.agent_profile.c.owner_id == owner_id,
+            t.agent_profile.c.handle == handle,
+        )
     ).scalar()
+    if found is None:  # the profile's handle may be an alias as well
+        found = conn.execute(
+            select(t.handle_alias.c.agent_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.handle_alias.c.agent_id)
+            .where(
+                t.handle_alias.c.scope == owner_id,
+                t.handle_alias.c.handle == handle,
+                t.handle_alias.c.live.is_(True),
+            )
+        ).scalar()
     if found is None:
         raise not_found()
     return str(found)

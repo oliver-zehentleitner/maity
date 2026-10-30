@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import clock
@@ -363,3 +364,35 @@ def test_the_register_follows_a_rename_and_organisations_share_the_namespace(
     clash = owner.post("/orgs", {"handle": "maintainer", "display_name": "Old"})
     assert clash.status_code == 400 and _fields(clash) == {"handle": "taken"}
     assert _fields(owner.patch("/me", {"handle": "admin"})) == {"handle": "reserved"}
+
+
+def test_lookups_by_handle_follow_aliases_where_a_person_is_named(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub import org_invitations, reports
+    from maity_hub.errors import ApiError
+
+    owner = flow.human(make_client, migrated)
+    profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
+    assert owner.patch(f"/agents/{profile['id']}", {"handle": "wasp"}).status_code == 200
+    assert owner.patch("/me", {"handle": "boss"}).status_code == 200
+    with migrated.begin() as conn:
+        # An invitation by the handle given up still finds the account (§6.24).
+        assert org_invitations._invitee(conn, "maintainer") == owner.id
+        assert org_invitations._invitee(conn, "boss") == owner.id
+        # A global name takes the owner's alias and the profile's alias alike.
+        assert reports._agent_by_name(conn, "maintainer/bee") == profile["id"]
+        assert reports._agent_by_name(conn, "boss/wasp") == profile["id"]
+        with pytest.raises(ApiError):
+            reports._agent_by_name(conn, "nobody/wasp")
+    # A project may be created under the namespace of one's own alias.
+    created = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "maintainer"})
+    assert created.status_code == 201, created.text
+    assert created.json()["full_name"] == "boss/shop"
+
+
+def test_a_null_handle_renames_nothing(make_client: ClientFactory, migrated: Engine) -> None:
+    owner = flow.human(make_client, migrated)
+    profile = owner.post("/agents", {"handle": "bee", "display_name": "Bee"}).json()
+    refused = owner.patch(f"/agents/{profile['id']}", {"handle": None})
+    assert refused.status_code == 400 and _fields(refused) == {"handle": "required"}

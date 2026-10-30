@@ -224,7 +224,7 @@ def _unsuspend(settings: Settings, handle: str) -> int:
         return _database_error(settings, error)
     try:
         with engine.begin() as conn:
-            human_id = conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+            human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
             if human_id is None:
                 return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
             lifted = moderation.unsuspend(conn, human_id)
