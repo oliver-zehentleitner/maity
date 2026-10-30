@@ -596,7 +596,7 @@ browser's own until the account sets one. `make check` ratchets the
 views: a file may hold no more prose string literals than
 `tools/strings-baseline.json` allows, `--write` only lowers that count,
 and a new file starts at none. A count is raised only by an edit of the file by hand,
-with the reason in the commit (as for #741, #746, #740 and #753, which
+with the reason in the commit (as for #741, #746, #740, #753 and #757, which
 added text before the ratchet landed). The baseline is taken from main
 at merge time, not from the branch's base: every view PR that lands
 first raises its file's count, so a ratchet PR merges main last and
