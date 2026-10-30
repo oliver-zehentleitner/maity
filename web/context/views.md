@@ -959,7 +959,9 @@ and the five setup options beneath it in the cards' order (three until
 #715 added the CI linter and the published dashboard, 2026-10-30), all
 ticked, each sent as `true` or `false`. The dashboard's option has a
 **Path** field under it, prefilled with `keep-the-why-dashboard` and
-checked as the hub checks it, its refusal said at the field;
+checked as the hub checks it (§6.21: one to five segments, and `..`
+nowhere in the value, `a..b` included, as the coordinator settled it on
+2026-10-30), its refusal said at the field;
 `dashboard_path` is sent only while that option is ticked, and left out
 of the request otherwise, never sent as `null`. Project settings show the provider and the setup's cards
 read only, with a pointer to a card for an agent, and offer the README
@@ -974,7 +976,10 @@ change what agents are told while the repository stays as it was; the
 change is work in the repository, which is what a card is for. The
 path is left out with the dashboard unticked because the hub would only
 drop it, `null` is `invalid` (§6.21), and a malformed value in a hidden
-field would refuse a creation for something the human did not choose.
+field would refuse a creation for something the human did not choose. The
+form's check is the hub's, not a stricter or looser one of its own: a
+refusal only one side makes stops or lets through a creation for no
+reason; the hub alone checking would show the error only after sending.
 The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 
