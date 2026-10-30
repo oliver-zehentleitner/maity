@@ -34,7 +34,7 @@ see inside it, so two ids could hold the same alias.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the plan reported to the coordinator for the card, 2026-10-28 (it named an instance-wide lock for humans and was approved); the coordinator's answer to the changed grain, 2026-10-29 ("better, same guarantee")
+**Source:** the plan reported to the coordinator for the card, 2026-10-28 (it named an instance-wide lock for humans and was approved); the coordinator's confirmation of the finer grain, 2026-10-30 ("same guarantee, no registration waits for a stranger's rename")
 **Revisit when:** a database shows lock waits on `handle_lock`, or handles get a third scope
 
 `handles.lock` takes the row `(scope, handle)` in `handle_lock` (made when
