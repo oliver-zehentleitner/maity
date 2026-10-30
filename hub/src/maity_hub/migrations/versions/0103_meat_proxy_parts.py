@@ -5,7 +5,7 @@ derived, on while a part is. A human who had the switch on gets both parts on, w
 switching it on means; the old column goes.
 
 Revision ID: 0103
-Revises: 0100
+Revises: 0109
 Create Date: 2026-10-30
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0103"
-down_revision: str | None = "0100"
+down_revision: str | None = "0109"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
