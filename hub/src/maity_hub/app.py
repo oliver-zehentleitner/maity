@@ -33,6 +33,7 @@ from maity_hub import (
     org_invitations,
     probe,
     public_pages,
+    public_people,  # noqa: F401  (registers the kind of page)
     registration_accounts,
     reports,
     request_stats,

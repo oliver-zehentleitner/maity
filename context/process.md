@@ -331,7 +331,8 @@ branches half-done.
 
 **Id:** 65a9b523-fa1f-4f1f-966c-4f49a2660343
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — c711af32-3678-406c-ac57-7a4fb3b3179f — as of 2026-10-30
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-25
 **Revisit when:** parallel migration branches stop being a routine problem, or the hub gets a check that finds a diverging head before merge
@@ -351,6 +352,11 @@ without an agreed place follow in the order they are reviewed.
 same head.
 
 **Alternatives:** none were weighed.
+
+The trigger in "Revisit when" came with #752: new migrations are named by
+time, the author re-chains with `tools/rechain.py`, and CI fails on two
+heads (entry c711af32 in `hub/context/persistence.md`), so neither the
+reserved numbers nor the coordinator's order are needed any more.
 
 ## Context entries need no commit of their own; pull requests stay squash-merged
 

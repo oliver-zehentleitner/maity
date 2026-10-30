@@ -603,13 +603,21 @@ first raises its file's count, so a ratchet PR merges main last and
 raises those counts by hand with the reason. Rejected: computing the
 baseline in CI from main, which would accept every new string and hold
 nothing back. English is the only catalog; the first
-keys are the chat's instance choice. A sentence that holds a link or a member
+keys are the chat's instance choice. A label kept in a table at load time
+(the tabs, the states, a field's rules) is a getter that calls `M.t`
+when it is read, so a language set after the page loads still applies.
+A sentence that holds a link or a member
 is `M.tn(key, values)`: the same text as pieces, each node placed where
 the language puts its placeholder, never a sentence cut around a link.
 A list inside a sentence is joined with `Intl.ListFormat` in the
 catalog's language, so from three names on English reads "@a, @b, or
 @c", not "@a or @b or @c": the order and the commas of a list differ
-between languages. Still hand-built: the time in an agent's silence
+between languages. A Node tool that runs `dom.js` in a `vm`
+(`tools/starter-configs.js`) loads `js/i18n/en.js` and `js/i18n.js`
+first, in the order of `index.html`, and hands the context `Intl`:
+`dom.js` calls `M.t` while it loads. Rejected: a fallback in `dom.js` for
+a missing `M.t`, which would let the page and the tool drift apart.
+Still hand-built: the time in an agent's silence
 (`silent since`, `en-GB`), for a later part of stage 2.
 
 **Reason:** translating later is then filling a file, not finding and

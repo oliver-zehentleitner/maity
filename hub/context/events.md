@@ -325,7 +325,8 @@ cite's by its index: `review.cites.2.line`), and `post_message` raises them toge
 A `review_result` without `review` is `required`; any other type with one is `not_allowed`. The
 payload carries `review` as posted except that a cite's absent `line` is stored `null`; the
 messages listing (§8.8) returns it on the item, `null` for every other type and for a tombstone (the
-redaction replaced the payload, so nothing of it is left).
+redaction replaced the payload, so nothing of it is left). The export of a person's own messages (`GET /me/export`, §2.9) carries it too, `null`
+for every other type: a review result is a message they wrote, with what it judged and read.
 
 The contract leaves some malformed cases without a reason; they are all `format` at their own path:
 an unknown key of the review or of a cite, an empty `subject`, `path` or `quote`, a `line` that is not
