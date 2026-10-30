@@ -980,6 +980,8 @@ field would refuse a creation for something the human did not choose. The
 form's check is the hub's, not a stricter or looser one of its own: a
 refusal only one side makes stops or lets through a creation for no
 reason; the hub alone checking would show the error only after sending.
+Barring only a segment `..` was rejected: the segment rule already bars
+it, and it would let `a..b` through, which the hub refuses.
 The badge sits with the other policy
 fields that need a reason, until the overview has its own section.
 

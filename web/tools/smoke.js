@@ -4087,6 +4087,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(false, "create: a malformed path is refused at its field, nothing sent: " + JSON.stringify(bad));
     }
   }
+  const spFixture = await realPost("/projects", { slug: "dots", name: "Dots", setup: { keep_the_why_dashboard: true, dashboard_path: "a..b" } }).catch((err) => err);
+  expect(spFixture.code === "invalid" && spFixture.details.fields["setup.dashboard_path"] === "format", "create: the fixture hub refuses a..b as format, as the hub");
   expect(posts.length === spBefore, "create: malformed paths (a leading or trailing /, .. anywhere, capitals, six parts, none) are refused at the field, nothing sent");
   spPath().value = "docs/why";
   const spFmt = win.Maity.api.post;
