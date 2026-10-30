@@ -473,9 +473,10 @@ window.Maity = window.Maity || {};
     collab: ["title", "text", "items", "footnote"],
     demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
-  // A list of a section with its bounds, as the hub's landing._list: one
-  // outside them, or no list, is invalid at its path, its entries unchecked.
+  // A list of a section with its bounds, as the hub's landing._list: none
+  // is required, one outside them invalid at its path, its entries unchecked.
   function landingList(list, path, min, max, errors, each) {
+    if (list === undefined || list === null) { errors[path] = "required"; return; }
     if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
     list.forEach((x, k) => each(x || {}, path + "." + k));
   }

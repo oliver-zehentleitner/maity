@@ -75,10 +75,11 @@ window.Maity = window.Maity || {};
     });
     return o;
   }
-  // A new section of a type: each list with its least entries, one at least.
+  // A new section of a type: each list with its least entries; one that
+  // may be empty (an open source section's links) starts empty.
   function fresh(type) {
     const s = Object.assign({ type, enabled: true }, freshOf(TYPES[type].fields || []));
-    listsOf(TYPES[type]).forEach((l) => { s[l.key] = Array.from({ length: Math.max(l.min, 1) }, () => freshOf(l.fields)); });
+    listsOf(TYPES[type]).forEach((l) => { s[l.key] = Array.from({ length: l.min === 0 ? 0 : Math.max(l.min, 1) }, () => freshOf(l.fields)); });
     return s;
   }
 

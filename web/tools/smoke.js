@@ -6915,12 +6915,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(leDemo()).includes("5. Demo") && leList(leDemo(), "terminal_lines").childNodes.length === 1 && leList(leDemo(), "steps").childNodes.length === 3
     && text(leDemo()).includes("Exactly 3.") && !btn(leDemo(), "Add step") && btn(leDemo(), "Add inbox item")
     && byId("lp-pages-en-sections-4-terminal-lines-0-kind").querySelectorAll("option").map((o) => o.attrs.value).join() === "cmd,out,note"
-    && text(leOss()).includes("6. Open source") && leList(leOss(), "tiles").childNodes.length === 1 && leList(leOss(), "links").childNodes.length === 1,
-    "landing editor: a demo with one terminal line of a kind and exactly three steps, an open source section with a tile and a link");
+    && text(leOss()).includes("6. Open source") && leList(leOss(), "tiles").childNodes.length === 1 && leList(leOss(), "links").childNodes.length === 0,
+    "landing editor: a demo with one terminal line of a kind and exactly three steps, an open source section with a tile and no link yet");
   btn(leDemo(), "Add terminal line").click(); await tick();
   byId("lp-pages-en-sections-4-terminal-lines-1-kind").value = "out"; byId("lp-pages-en-sections-4-terminal-lines-1-kind").dispatch("change");
   btn(leDemo(), "Add inbox item").click(); await tick();
-  btn(leList(leOss(), "links").childNodes[0], "Remove").click(); await tick();
   await leSave();
   const leV3 = lePatches[lePatches.length - 1][1].pages.en.sections;
   expect(leV3[4].terminal_lines.map((x) => x.kind).join() === "cmd,out" && leV3[4].steps.length === 3 && leV3[4].inbox && leV3[4].inbox.question === ""
