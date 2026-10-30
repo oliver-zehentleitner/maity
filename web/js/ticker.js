@@ -24,6 +24,8 @@ window.Maity = window.Maity || {};
   };
   const TYPES = Object.keys(TYPE_LABELS);
   // A rename (§6.25, "<old> is now <new>") is the hub's to write; no filter of its own (§17).
+  // No "contract": a contract change is a merge with x.contract, its badge
+  // ticker.badge.contract, chosen in item().
   const TYPE_WORD = {
     get merge() { return M.t("ticker.badge.merge"); },
     get decision() { return M.t("ticker.badge.decision"); },
