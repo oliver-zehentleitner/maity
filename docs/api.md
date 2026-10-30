@@ -5103,7 +5103,24 @@ project name, state with its note and the released mark, and policy as sentences
 for the caller's trust and role, the released rules once `released_at`
 is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
-never executed, §8.7), the owner's text. A change of any of these inputs — `name` and `state_note` included —
+never executed, §8.7), the duty line, the owner's text. The duty line
+depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
+that finished work does not end its session — it keeps `maity wait`
+running in a loop, each call with a timeout below its harness's limit
+(`hints.wait_timeout`), handles each event as it arrives, and an agent
+that runs on a schedule (a routine or cron run) keeps waiting until
+shortly before its next run and then ends cleanly, leaving no
+background process; for `"supervised"` it is the line of §15.11. The
+hub's own generated text (the duty line, the briefs, the attachment
+rule) is an input too: each project stores a digest of the generated
+text it was last bumped for; the first start of a hub whose digest
+differs bumps that project's `rules_version` once, with
+`rules_changed`, under the project lock, so of several hubs starting at
+once only one bumps, and a running agent reads the new text at its
+next resume. A new project starts with the current digest. A session
+switching between `"self"` and `"supervised"` bumps nothing: the duty
+line differs per caller, like the brief for trust and role. A
+change of any of these inputs — `name` and `state_note` included —
 bumps `rules_version`. `rules_version`
 increments on every change of any input. Every bump is marked by an
 event written under the project lock — `state_changed` or `policy_changed`
@@ -6617,11 +6634,15 @@ dashboard is published under; where the files for it lie in the
 repository follows from the repository's Pages configuration and is the
 agent's to find. It is one to five segments of
 `[a-z0-9][a-z0-9._-]{0,62}` joined by `/`, no leading or trailing
-slash, no `..`; anything else, a non-string and `null` included, is
-`invalid` (`details.fields["setup.dashboard_path"]: "format"`). It is
-used only while `keep_the_why_dashboard` is `true`: sent with the option
-`false` it is accepted and dropped, and `setup.dashboard_path` reads
-back `null`. Anything but
+slash, and no `..` anywhere in the value (`a..b` included, not only
+as a segment); anything else, a non-string and `null` included, is
+`invalid` (`details.fields["setup.dashboard_path"]: "format"`). The
+format is checked whenever the key is sent, whatever the options say,
+also with `keep_the_why_dashboard: false` and under `memory.provider:
+none`. The path is used only while `keep_the_why_dashboard` is `true`:
+a valid path sent with the option `false` is accepted and dropped, and
+`setup.dashboard_path` reads back `null`. A form that unticks the
+dashboard leaves the key out. Anything but
 a boolean for an option is `invalid`
 (`details.fields["setup.<key>"]: "not_a_boolean"`), an unknown key
 `invalid` (`unknown_field`). `setup` is read back with the project
@@ -8926,15 +8947,20 @@ parties as the audience — nobody else, admins included.
 | `GET /projects/{owner}/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent | the conversation as its direct item in the list (§9.3) |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; `before` pages back as in a group chat (§9.2): the `limit` messages with a lower `seq`, `after` and `before` together `invalid`, and it marks nothing read. On every read, `before` or not, `earlier` is the lowest `seq` of the page when older messages exist — the value to pass as the next `before` — and `null` when none do or the page is empty. A direct conversation has no window: without `before` it reads from `after` as always |
-| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?}` (§8.7); `201` with the message |
+| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?, to_instance?}` (§8.7); `201` with the message. `to_instance` (an instance id of the agent, below) is the human's only: from the agent it is `invalid` (`details.fields.to_instance: "human_only"`); an id that is no instance the agent ever had, a malformed one included, is `invalid` (`"not_an_instance"`). In a group chat (§9.2), and on the project's message route (§8.2) for anything but a direct chat message, a `to_instance` is `invalid` (`"direct_chat_only"`), checked before `human_only` |
 
 Message shape:
 
 ```json
 { "id": "evt-4237", "seq": 4237, "conversation_id": "agt-a", "from": "hum-maintainer", "to": "agt-a",
   "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z",
-  "mentions": [], "attachments": [], "redacted": false, "redaction": null }
+  "mentions": [], "attachments": [], "to_instance": null, "redacted": false, "redaction": null }
 ```
+
+`to_instance` is the instance id the human named when sending, as
+written, or `null` when none was named; it is not rewritten when that
+instance was replaced and the message reached its successor. Group
+chats (§9.2) always carry `null`.
 
 `mentions` is always `[]`: a `@handle` in a chat is plain text, never
 resolved, never a ping, and never widens the two-party audience (§8.6).
@@ -11929,8 +11955,11 @@ all languages.
     that ignores the rules.
     With public pages on (§16.9) the file reads differently, since a
     public page has no prefix of its own (§16.11): `User-agent: *`,
-    `Disallow:` for every reserved first segment of §16.11 (`/api/`,
-    `/assets/`, `/login`, `/admin`, …), then `Allow: /`; whatever else a
+    for every reserved first segment of §16.11 but the three legal pages
+    (`impressum`, `privacy`, `terms`, which stay open as above) the two
+    lines `Disallow: /<segment>/` and `Disallow: /<segment>$` (so a
+    handle such as `login-help` is not caught by `/login`), then
+    `Allow: /`; whatever else a
     crawler fetches that is not a public page is the app shell, which
     answers `X-Robots-Tag: noindex` (§16.11). The `Sitemap:` line is there whenever the sitemap lists at least one
     URL, and only then.
@@ -12475,8 +12504,10 @@ that changed the input, so the hub serves the app shell at once; caches outside 
 may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, the hub renders every page
 again before it serves any, so nothing rendered under an earlier state
-is served. The rate limit is the badge's bucket (§6.20), for the
-static page only. The join host answers `not_found`.
+is served. The rate limit is a bucket of its own, of the badge's size
+(§6.20), for the static page only. The join host never serves a public
+page: a `GET` there is the `302` to the public root of §1.1, and its
+sitemap parts are `not_found`.
 
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
@@ -12499,7 +12530,10 @@ rebuild), next to the root. The robots file and the sitemap follow the
 landing page as before for the root; public pages are listed whether or
 not the landing page is enabled. Above 50,000 URLs or 50 MB the hub
 serves a sitemap index at `/sitemap.xml` and the parts at
-`/sitemap-<n>.xml`.
+`/sitemap-<n>.xml` (`<n>` a decimal number from `1` without leading
+zeros; any other name there is `not_found`, `/sitemap-01.xml`
+included). The size limit counts the whole file, the `<urlset>`
+wrapper included.
 
 ### 16.10 `GET /admin/orgs`
 
