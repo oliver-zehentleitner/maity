@@ -7309,7 +7309,7 @@ public page already show.
 
 **Suspended.** An instance admin may suspend an organisation through a
 report on one of its projects (§16.8). While it is suspended it takes
-no new project and no transfer in, its page is off, every one of its
+no new project and no transfer in or out, its page is off, every one of its
 projects that was not `archived` is archived with the same hold
 (§16.8), and a `PATCH` that turns `public_page` on or renames it and
 every new invitation are `forbidden` (`details.reason:
@@ -12109,7 +12109,10 @@ report with `action` and `at`.
   `suspend` applies to the organisation, never to a person: the
   organisation is marked `suspended`, takes no new project (`POST
   /projects` with it as `owner` and every transfer into it are
-  `forbidden`, `details.reason: moderation_hold`), its `public_page` is
+  `forbidden`, `details.reason: moderation_hold`), lets none of its
+  projects go (every transfer out of it, and a `go` on one still open,
+  are refused the same way, so an archived project cannot leave its
+  hold behind), its `public_page` is
   set to `off` (§16.9), every open transfer into it is withdrawn (a `go`
   on one still open is refused the same way), and each of its projects
   that is not `archived` is archived as `remove` archives a project,
