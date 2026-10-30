@@ -119,7 +119,7 @@ no consumer.
 **See:** architecture.md#runs-on-kubernetes-in-production-and-starts-locally-with-docker-or-plain-python — 4713ab88-72a2-408b-9625-87345628eb5a — as of 2026-10-30
 
 The single k3s VM on Vultr, which was the first dogfooding production,
-becomes the test system and deploys from `main` continuously. A new
+becomes the test system at `maity-test.team` and deploys from `main` continuously. A new
 production on OVHcloud (Paris, a 3-AZ region, Standard-plan managed
 Kubernetes and managed PostgreSQL outside the cluster) is prepared for the launch and deploys
 tagged releases, about once a day. The same Helm chart serves both; only
@@ -133,8 +133,8 @@ production sees it.
 **Alternatives:**
 - Spreading the hub's nodes over several zones: rejected for the one-pod hub. Its `ReadWriteOnce` attachment volume
   (csi-cinder) is bound to one zone, so the pod can only restart there; the hub's resilience comes from at least two
-  nodes in the volume's zone, and a zone failure stays a known outage until the attachments are on shared storage (the
-  multi-pod work, #728). Revisit when attachments are on object or multi-attach storage.
+  nodes in the volume's zone, and a zone failure stays a known outage, with up to one day of attachments lost (the nightly tar), until the
+  attachments are on shared storage (the multi-pod work, #728). Revisit when attachments are on object or multi-attach storage.
 - Frankfurt on the Free plan: no SLA (99.5 % SLO) and a single zone, which
   the maintainer did not accept for the launch.
 - Keep one environment: every merge would reach real users, and the
