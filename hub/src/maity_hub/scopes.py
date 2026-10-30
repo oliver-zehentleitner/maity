@@ -3,26 +3,52 @@
 from __future__ import annotations
 
 TRUSTS = ("owner", "admin", "member", "guest")
-ROLES = ("coder", "reviewer", "tester", "designer", "ops", "writer", "proxy", "manager")
-# The roles below governance: what a member's own agent may hold (§3.1), and what an
-# admin agent sets on the memberships it manages (§2.3 ᵃ) besides `ops`.
-WORK_ROLES = ("coder", "reviewer", "tester", "designer", "writer")
 # The tokens a request, a message or a setting names (§7, §8.2): `trust:<trust>`
 # for the two governing trusts, `role:<role>` for every role.
 TOKEN_TRUSTS = ("owner", "admin")
 
 _CODER = ("project:read", "tasks:write", "requests:ask", "events:post")
+_TESTER = (*_CODER, "tasks:test")
+_REVIEWER = (*_CODER, "tasks:review", "releases:write")
+# Every built-in role of §2.3 and its scopes, in one place: the other lists below, the
+# roles an invitation or a join names and the tokens a role gives are derived from it.
 _ROLE_SCOPES: dict[str, tuple[str, ...]] = {
     "coder": _CODER,
-    "reviewer": (*_CODER, "tasks:review", "releases:write"),
-    "tester": (*_CODER, "tasks:test"),
+    "reviewer": _REVIEWER,
+    "tester": _TESTER,
     "designer": _CODER,
     "ops": (*_CODER, "releases:write", "agents:propose", "ticker:post"),
     "writer": _CODER,
     "proxy": _CODER,
     # The manager leads its line (§2.3 "The manager"): `line:lead` is no governance scope.
     "manager": (*_CODER, "line:lead"),
+    # The security teams (§2.3): the scopes of the role they count as.
+    "red-team": _TESTER,
+    "blue-team": _CODER,
+    "purple-team": _REVIEWER,
 }
+ROLES = tuple(_ROLE_SCOPES)
+# Where the hub resolves a built-in role to find who holds done authority, whom a change
+# waits for the owner's go, a substitute (§6.12), a security team counts as the role whose
+# scopes it has (§2.3). A `role:` token in an address is not widened that way.
+COUNTS_AS = {"red-team": "tester", "blue-team": "coder", "purple-team": "reviewer"}
+# The roles below governance: what a member's own agent may hold (§3.1), and what an
+# admin agent sets on the memberships it manages (§2.3 ᵃ) besides `ops`.
+WORK_ROLES = tuple(role for role in ROLES if role not in ("ops", "proxy", "manager"))
+# What a member brings with their own agent (§3.1): the work roles and the manager.
+MEMBER_RULE_ROLES = (*WORK_ROLES, "manager")
+# A change of these members waits for a human's go (§2.3 ᵃ): the roles that decide `done`.
+SENSITIVE_ROLES = tuple(
+    role for role in ROLES if COUNTS_AS.get(role, role) in ("reviewer", "tester")
+)
+
+
+def counts_as(role: str) -> str:
+    """The built-in role whose scopes `role` has, for the places that resolve a role by
+    name (§2.3): a security team counts as the role it is built on, any other as itself."""
+    return COUNTS_AS.get(role, role)
+
+
 # Trust `owner` and `admin` add these on top of the role's (§2.3).
 GOVERNANCE = (
     "tasks:review",
