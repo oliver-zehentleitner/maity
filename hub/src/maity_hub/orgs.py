@@ -352,7 +352,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
     with them, its open invitations are withdrawn, the row stays with `deleted_at` and its
     handle stays taken for good (§6.26). Only while it owns no project that is not archived:
     `namespace_owner`, naming them; an archived one stays archived under its name."""
-    from maity_hub import org_invitations, org_projects
+    from maity_hub import org_invitations, org_projects, project_names
 
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
@@ -365,6 +365,7 @@ def delete_org(conn: Connection, org: Any, confirm: object) -> None:
             {"projects": sorted(namespace.full_names(conn, open_projects).values())},
         )
     org_invitations.withdraw_all(conn, org.id, "org_deleted")
+    project_names.withdraw_into(conn, org.id, "org_deleted")  # nothing moves into a deleted one
     owners = org_projects.owners_of(conn, org.id)
     # The members go first: the `member_updated` of a seat that ends must not say `org_owner`.
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))

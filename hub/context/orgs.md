@@ -75,9 +75,13 @@ the account first, then every organisation it belongs to in the order of their i
 with `org_last_owner` (`details.orgs`, the handles) for an organisation of which it is the only
 owner, at `POST /me/deletion` as at the link's `POST`. Its memberships in organisations end with
 the deletion, and the invitations it sent that are still open are withdrawn; the organisations
-and their handles stay. A `go` into an organisation (`project_names.settle`) takes the organisation's
-row before the project's, the order `suspend_org` has, so a `go` and a suspension that meet cannot
-wait on each other.
+and their handles stay. A `go` into an organisation (`project_names.settle`) takes the rows of
+both organisations, the one the project leaves and the one it goes to, in the order of their ids and
+before the project's, the order `suspend_org` has, so a `go` and a suspension of either that meet
+cannot wait on each other nor pass each other; a rename (`PATCH` with `slug`) of a project of an
+organisation locks the organisation first for the same reason, since it reads the namespace.
+Deleting an organisation withdraws every open transfer into it, and deleting an account withdraws the
+ones it started (`project_names.withdraw_into`, `withdraw_started_by`), as a suspension does.
 
 **Reason:** a role read before the lock could be stale by the time the change commits, which is
 how two demotions would both succeed and leave an organisation with no owner. One order (a

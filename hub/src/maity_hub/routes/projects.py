@@ -608,9 +608,16 @@ def patch_project(
         if "setup" in given:
             raise invalid({"setup": "read_only"}, "the setup options are set at creation only")
         mine = membership(conn, caller, slug)
+        found_owner = mine.project.owner_org_id
+        if "slug" in given and found_owner is not None:
+            # A rename reads the namespace, and so the organisation's row (§6.26): that row
+            # before the project's.
+            orgs.lock(conn, found_owner)
         # Membership's project snapshot may precede another writer's commit. Merge settings
         # and make policy/event decisions from the current row under the shared project lock.
         mine = replace(mine, project=lock_project(conn, mine.project.id))
+        if "slug" in given and mine.project.owner_org_id != found_owner:
+            raise orgs.project_moved()  # moved meanwhile: its new owner is unlocked
         _refuse_for_agents(mine, body, given)
         _authorise_patch(mine, body, given)
         project = mine.project
