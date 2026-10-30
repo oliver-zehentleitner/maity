@@ -2794,6 +2794,13 @@ window.Maity = window.Maity || {};
       list.removed.push(removed);
       return removed;
     }],
+    // §6.2: an agent's briefing versions, newest first, for its owner and members:admin.
+    ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/briefings$/, (m, body, path) => {
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === m[2]);
+      const mayRead = target && target.kind === "agent" && (target.owner_id === me().member.id || ["owner", "admin"].includes(trustIn(m[1])));
+      if (!mayRead) fail(404, "not_found", "Not found", path);
+      return { items: target.briefing ? [{ version: target.briefing_version || 1, text: target.briefing, by: target.briefing_by || null, at: target.briefing_updated_at || null }] : [], next_cursor: null };
+    }],
     ["GET", /^\/projects\/([^/]+)\/members\/([^/]+)\/credentials$/,
       (m, body, path) => keyed(m[1], "credentials.json", m[2], path)],
     ["POST", /^\/projects\/([^/]+)\/credentials\/([^/]+)\/revoke$/, (m, body, path) => {

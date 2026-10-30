@@ -4,7 +4,8 @@
 // the name and @handle, pills for trust and role, whose agent it is, whom it
 // reports to and its areas, one line of presence, harness, model and the
 // cards it holds, Chat where one may — and tabs: Activity, Cards, Briefing,
-// Sessions & credentials. Every action stays where it is done (#643): the
+// Sessions & credentials (Briefing only for an admin and the agent's owner, §6.2).
+// Every action stays where it is done (#643): the
 // Actions menu only leads there, Manage on Members for an admin, Manage on
 // Agents for the agent's owner.
 "use strict";
@@ -34,7 +35,8 @@ window.Maity = window.Maity || {};
 
   function header(ctx, m, held) {
     const inst = currentInstance(m);
-    const presence = m.kind === "human" ? null : m.paused ? "paused" : m.presence;
+    // A human has a presence too (§5.3); an agent's pause shows instead of it.
+    const presence = m.paused ? "paused" : m.presence || null;
     const line = [presence ? PRESENCE[presence] || presence : null,
       m.kind === "agent" ? (inst && inst.harness) || m.harness : null,
       m.kind === "agent" ? (inst && inst.model) || m.model : null,
@@ -122,14 +124,27 @@ window.Maity = window.Maity || {};
     append(clear(box), list(held.items || [], "Holds"), list(assigned.items || [], "Assigned"));
   }
 
-  // Briefing (§6.2): read here; it is edited in the agent's Manage row.
-  function briefing(ctx, m, box) {
-    if (m.kind !== "agent") { append(box, h("p", { class: "muted" }, "A human has no briefing.")); return; }
-    if (!("briefing" in m)) { append(box, M.dom.notOnHub("This hub has no briefings yet.")); return; }
-    append(box, m.briefing
-      ? h("div", { class: "md member-briefing" }, M.markdown(m.briefing, M.ids.where(ctx)))
+  // Who reads an agent's briefing (§6.2): an admin in the member view, its
+  // owner through the versions; nobody else, so nobody else gets the tab.
+  const readsBriefing = (ctx, m) => m.kind === "agent" && (ctx.canAdmin || ownAgentOf(ctx, m));
+
+  // Briefing: read here; it is edited in the agent's Manage row.
+  async function briefing(ctx, m, box) {
+    let text = m.briefing, by = m.briefing_by, version = m.briefing_version;
+    if (!ctx.canAdmin) {
+      // The owner without members:admin: the newest version (GET …/briefings).
+      try {
+        const latest = ((await M.api.get(ctx.base + "/members/" + encodeURIComponent(m.id) + "/briefings")).items || [])[0] || null;
+        text = latest ? latest.text : null; by = latest ? latest.by : null; version = latest ? latest.version : null;
+      } catch (err) {
+        append(box, h("p", { class: "send-status failed" }, "Could not read the briefing: " + err.message));
+        return;
+      }
+    }
+    append(box, text
+      ? h("div", { class: "md member-briefing" }, M.markdown(text, M.ids.where(ctx)))
       : h("p", { class: "muted" }, "No briefing; the project's onboarding applies."),
-    m.briefing_by ? h("p", { class: "muted" }, "Set by @" + (m.briefing_by.handle || m.briefing_by.id) + (m.briefing_version ? " · version " + m.briefing_version : "")) : null);
+    by ? h("p", { class: "muted" }, "Set by @" + (by.handle || by.id) + (version ? " · version " + version : "")) : null);
   }
 
   // Sessions & credentials: the instances with their sessions; the
@@ -141,7 +156,11 @@ window.Maity = window.Maity || {};
         h("span", { class: "mono" }, i.label || i.id), " ",
         h("span", { class: "muted" }, [i.revoked_at ? "revoked " + formatAgo(i.revoked_at) : PRESENCE[i.presence] || i.presence,
           i.harness, i.model, i.last_seen_at ? "seen " + formatAgo(i.last_seen_at) : null,
-          i.claims ? i.claims + (i.claims === 1 ? " claim" : " claims") : null].filter(Boolean).join(" · ")))))
+          i.claims ? i.claims + (i.claims === 1 ? " claim" : " claims") : null].filter(Boolean).join(" · ")),
+        // Its open session (§6.17): id, since when, and since when it has not been listening.
+        i.session ? h("p", { class: "muted member-session" }, "Session ", h("span", { class: "mono" }, i.session.id),
+          i.session.started_at ? " · since " + formatTime(i.session.started_at) : "",
+          i.session.not_listening_since ? [" · ", h("span", { class: "flag-inline" }, "not listening since " + formatAgo(i.session.not_listening_since))] : "") : null)))
       : h("p", { class: "muted" }, m.kind === "agent" ? "No instance yet." : "A human has no instances."));
     if (m.kind !== "agent" || !(ctx.canAdmin || ownAgentOf(ctx, m)) || !M.agentParts) return;
     const slot = h("div", { class: "member-credentials" }, h("p", { class: "muted" }, "Reading the credentials…"));
@@ -163,11 +182,12 @@ window.Maity = window.Maity || {};
       append(root, crumb, h("p", { class: "error", role: "alert" }, "No member with the id " + id + " in this project."));
       return;
     }
-    const chosen = TABS.some(([k]) => k === tab) ? tab : "activity";
+    const offered = TABS.filter(([k]) => k !== "briefing" || readsBriefing(ctx, m));
+    const chosen = offered.some(([k]) => k === tab) ? tab : "activity";
     // The cards held, for the header's line, from the instances' claims where the hub counts them.
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")
       ? (m.instances || []).filter((i) => !i.revoked_at).reduce((n, i) => n + (i.claims || 0), 0) : null;
-    const tabs = h("nav", { class: "member-tabs", "aria-label": "Sections" }, TABS.map(([k, label]) =>
+    const tabs = h("nav", { class: "member-tabs", "aria-label": "Sections" }, offered.map(([k, label]) =>
       h("a", { href: ctx.link("members", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label)));
     const body = h("section", { class: "member-section", "aria-label": TABS.find(([k]) => k === chosen)[1] });
     const head = header(ctx, m, claims);
@@ -176,7 +196,7 @@ window.Maity = window.Maity || {};
     if (!tab) window.setTimeout(() => head.heading.focus(), 0);
     if (chosen === "activity") await activity(ctx, m, body);
     else if (chosen === "cards") await cards(ctx, m, body);
-    else if (chosen === "briefing") briefing(ctx, m, body);
+    else if (chosen === "briefing") await briefing(ctx, m, body);
     else await sessions(ctx, m, body);
   }
 

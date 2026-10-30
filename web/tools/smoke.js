@@ -6439,13 +6439,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".member-section")).includes("Holds (") && text(main.querySelector(".member-section")).includes("Assigned ("),
     "member page: Cards lists what they hold and what is assigned to them");
   await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector(".member-section .member-briefing") || text(main.querySelector(".member-section")).includes("No briefing"),
-    "member page: Briefing shows the agent's briefing, read only");
-  await go("#/maintainer/maity/members/agt-b/sessions"); for (let k = 0; k < 8; k++) await tick();
-  expect(text(main.querySelector(".member-section")).includes("Instances") && main.querySelector(".member-section .member-instances li")
-    && !btn(main.querySelector(".member-section"), "Revoke"), "member page: Sessions & credentials lists them, without Revoke (that is in Manage)");
+  expect(main.querySelector(".member-section .member-briefing") && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: Briefing shows an admin the agent's briefing from the member view, read only");
+  // An open session of an instance (§6.17): its id, since when, and not listening.
+  const mpsAll = win.Maity.api.getAll, mpsGet = win.Maity.api.get;
+  const mpsSession = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { instances: x.instances.map((i, n) => (n ? i
+    : Object.assign({}, i, { session: { id: "ses-b-0009", started_at: "2026-10-30T08:00:00Z", not_listening_since: "2026-10-30T09:00:00Z" } }))) }) : x)), next_cursor: null });
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAll(p).then(mpsSession) : mpsAll(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGet(p).then(mpsSession) : mpsGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/sessions"); for (let k = 0; k < 8; k++) await tick();
+  const mpsSess = main.querySelector(".member-section .member-session");
+  expect(text(main.querySelector(".member-section")).includes("Instances") && mpsSess && text(mpsSess).includes("ses-b-0009") && text(mpsSess).includes("since ")
+    && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
+    "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
+  win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
   await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
-  expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu"), "member page: one's own page has no Chat and no Actions");
+  expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")
+    && mpBox().querySelector(".member-head-dot") && text(mpBox().querySelector(".member-line")).startsWith("Online")
+    && !main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing"),
+    "member page: one's own page has no Chat and no Actions; a human's presence shows; a human has no Briefing tab");
+  // Without members:admin: the owner reads its agent's briefing through its versions; another member gets no Briefing tab.
+  const mpsMe = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mpsMe(p).then((x) => Object.assign({}, x, { projects: x.projects.map((y) => Object.assign({}, y, { trust: "member", role: "coder" })) })) : mpsMe(p));
+  const mpsReads = [];
+  const mpsGetB = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p.endsWith("/briefings")) mpsReads.push(p); return mpsGetB(p); };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpsReads[0] === "/projects/maintainer/maity/members/agt-b/briefings" && text(main.querySelector(".member-section")).includes("You build the hub"),
+    "member page: the owner without members:admin reads the briefing through GET …/briefings");
+  const mpsOther = (r) => Object.assign({}, r, { items: r.items.map((x) => (x.id === "agt-b" ? Object.assign({}, x, { owner_id: "hum-other" }) : x)), next_cursor: null });
+  const mpsAllC = win.Maity.api.getAll, mpsGetC = win.Maity.api.get;
+  win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? mpsAllC(p).then(mpsOther) : mpsAllC(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? mpsGetC(p).then(mpsOther) : mpsGetC(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members/agt-b/briefing"); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelectorAll("nav.member-tabs a").some((a) => text(a) === "Briefing") && main.querySelectorAll("nav.member-tabs a")[0].getAttribute("aria-current") === "page",
+    "member page: another member's agent has no Briefing tab for a member, and its address falls back to Activity");
+  win.Maity.api.getAll = mpsAllC; win.Maity.api.get = mpsMe;
   await go("#/maintainer/maity/members/agt-nobody"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes("No member with the id agt-nobody in this project."), "member page: an unknown id is said");
   // ?manage=<id>, where Actions leads: Members with that row open.
