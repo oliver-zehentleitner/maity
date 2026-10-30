@@ -39,6 +39,7 @@ TOKEN_URL = f"https://x-access-token:{SECRET}@github.com/acme/widget.git"
         ("git+https://tok@github.com/o/r", "git+https://github.com/o/r"),
         ("HTTPS://TOK@H/r", "HTTPS://H/r"),
         ("'https://a:b@h/x' and 'https://c:d@g/y'", "'https://h/x' and 'https://g/y'"),
+        ("`https://h`,me@x.com", "`https://h`,me@x.com"),  # a closing backtick ends the URL
         ("git@github.com:acme/widget.git", "git@github.com:acme/widget.git"),
         ("https://github.com/a/b", "https://github.com/a/b"),
         ("origin", "origin"),

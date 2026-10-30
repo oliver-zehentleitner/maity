@@ -271,7 +271,12 @@ as its remote, and git and gh repeat a remote's URL as configured in their own e
 place that shows a remote, an upstream or a line of git's or gh's error output passes it
 through one helper, `redact.without_userinfo`, which takes `user:password@` out of each URL
 and keeps the rest. It cuts at the last `@` before the path, as git and `urlsplit` read a URL,
-so an `@` in a user or a password does not leave the rest of it behind. `gitfacts.collect` stores the remote already without it, since the facts
+so an `@` in a user or a password does not leave the rest of it behind. Whitespace, quotes,
+backticks and brackets end a URL; anything else up to an `@` counts as userinfo. A URL without
+a path that runs straight into text with an `@` (`https://h,admin@x.com`) is then shown with
+the wrong host, accepted because it leaks nothing and a comma may stand in a password. An
+unencoded `/` in a password stays in the text: git and `urlsplit` read it as the start of the
+path, so such a URL is broken before maity sees it. `gitfacts.collect` stores the remote already without it, since the facts
 go into the refusal messages and, as `upstream`, into the report the hub keeps; `ls-remote`
 is run before that with the remote as configured, so the token still does its work. The
 runner's `workspace claim` shows a clone's origin the same way, `runner gc` a `.git/config`
