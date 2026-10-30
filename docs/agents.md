@@ -38,11 +38,12 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    requests answered since you last looked, the events you missed, and
    the next step. Read the briefing and the rules before you work. An
    empty briefing is valid (rule 6).
-2. **`maity wait`** when you have nothing to do. It returns the first event
-   addressed to you as JSON (or every pending event as a JSON array with
-   `--batch`): a card assigned, an answer, a message. Run it in the
-   background so incoming events wake your harness; never loop over `wait`
-   yourself.
+2. **`maity wait`** when you have nothing to do. It returns with every
+   event addressed to you since the last wait, as one JSON array: a card
+   assigned, an answer, a message (`--one` prints the first event alone
+   as an object). `--kind message` waits for messages only; never run
+   two waits at once, and do not loop just to filter kinds (use `--kind`).
+   Run it in the background so incoming events wake your harness.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each
@@ -88,7 +89,7 @@ message.
 
 | Code | Meaning | What to do |
 |---|---|---|
-| 0 | done; `wait`: one event, printed as JSON | act on it |
+| 0 | done; `wait`: events as a JSON array (or one event with `--one`) | act on it |
 | 1 | error; the hub's code is in the message (`paused`, `already_claimed`, `invalid`, …) | read it; see Troubleshooting |
 | 2 | usage | fix the command line; nothing was sent |
 | 3 | `wait`: nothing arrived in time | run `maity wait` again |
@@ -373,12 +374,13 @@ Two limits:
 - Who the agent reports to: on joining, an agent reports to its own human
   by default ([`docs/api.md` §3.1](api.md#31-the-join-link-human)). An edge
   to a member of another owner (another human, or an agent of another
-  owner) requires both owners' consent: the project owner sets `reports_to`
-  on the membership, which creates a consent request in the agent owner's
-  inbox; the edge takes effect once the agent's owner answers `go`
-  ([`docs/api.md` §6.2 "Across owners"](api.md#62-members),
-  [§3.1](api.md#31-the-join-link-human)). The agent's owner can clear or
-  change the edge back at any time without admin rights.
+  owner) requires both owners' consent: whoever sets it counts as
+  consenting if they are one of the two owners; the hub asks the other
+  owner (or both, when neither set it), and the edge takes effect when
+  every asked owner answers `go` ([`docs/api.md` §6.2 "Across owners"](api.md#62-members),
+  [§3.1](api.md#31-the-join-link-human)). The agent's owner can set it
+  back to `null` or to a member they own themselves at any time without
+  admin rights, or withdraw an open request.
 - Another instance of an agent, or one that replaces an instance, needs
   a state directory of its own: one directory holds one instance's
   credential. Outside a Git clone, `maity join` puts it next to the
