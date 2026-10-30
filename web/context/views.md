@@ -1483,8 +1483,8 @@ alone: it is not seen without a mouse resting on the button.
 **Source:** the designer's handover on the overview (#6484, tsk-qse9t2b3a9n8), 2026-10-27: the five panels had equal weight and the one thing to act on (open requests) sat bottom left; the maintainer's wish for a Contract link in the project facts (tsk-yhbmz7mjng7n, step 1), 2026-10-27; the dashboard's implementation, 2026-10-27
 **Revisit when:** the hub serves the contract for reading inside Maity, or the overview gets other editing in place
 
-Three rows: Waiting for you and Board, then Team and Latest reports,
-then Project and README badge. A member in a list is a chip
+Waiting for you and Board come first, then Team and Latest reports;
+where Project and README badge stand is d7ee1073 below. A member in a list is a chip
 (`M.dom.memberChip`), the shared form the member page header will use
 too. The Contract link is `docs/api.md` on the forge at the repository's
 default branch, built only for GitHub and GitLab, whose path shapes are
@@ -1505,6 +1505,31 @@ remains.
 badge on the overview: a second place to change one setting, with the
 overview the only view that edits in place. A Contract link guessed for
 any forge: a wrong path shape would be a dead link that looks right.
+
+## Project and README badge stand under Team, before Latest reports
+
+**Id:** d7ee1073-1752-4134-9e51-878c5c28f2c2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's screenshot and wish on tsk-b67chbx96n29 ("move the two blocks in front of Latest reports"), as the coordinator passed it on, 2026-10-30: on a wide desktop Project and README badge were a row of their own below the whole report list, with empty space under Team; the place under Team is the implementation's choice from the two the coordinator named
+**Revisit when:** the maintainer asks for another place, or the overview gets a panel that competes for the space under Team
+**See:** views.md — 057e7277-3eba-4267-93d2-c6b74a5e2ff1 — as of 2026-10-30
+
+The second row is Team with Project and README badge under it
+(`.overview-stack`), and Latest reports beside them. On a phone, where
+the row wraps, the order is Team, Project, README badge, Latest reports.
+
+**Reason:** Latest reports is a long list; whatever came after it was
+out of sight, while Team left empty space beside it. Under Team the
+facts fill that space on a wide screen and still come before the
+reports on a narrow one.
+
+**Rejected alternative:** Project and README badge as their own row
+before the reports: on a wide screen it leaves the empty space under
+Team and pushes the reports, the second thing a reader looks for,
+further down. Keeping the three rows and only shortening the report
+list: the wish was about the order, not the length.
 
 ## The instance admin area shows one section at a time
 

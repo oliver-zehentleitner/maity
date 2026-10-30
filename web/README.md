@@ -745,9 +745,10 @@ too.
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`/<owner>/<slug>/overview`, `docs/api.md` §6.11; its tab is
-    the second, next to the inbox): the project at a glance, in three
-    rows: what needs you, then the state, then the facts; on a phone one
-    column in the same order. A panel's heading is never a link; its way
+    the second, next to the inbox): the project at a glance, in two rows:
+    what needs you and the board, then the team with the project and its
+    badge under it, beside the latest reports; on a phone one column in
+    the order below, so Project comes before Latest reports. A panel's heading is never a link; its way
     onward stands at the end of its head row.
     - **Waiting for you**: the open requests for you as one big number
       linking to the inbox, **Open the inbox**, the priorities as pills and
@@ -760,8 +761,6 @@ too.
       avatar round for a human, rounded for an agent, a presence dot,
       `@handle`, name, trust and role, kind and presence in the tooltip), how many
       humans, agents and online, and **All members**.
-    - **Latest reports**: avatar, card, `@who`, when, the pull request with
-      the state the probe saw as a pill, a mismatch said.
     - **Project**: the repository, the policy preset, the **Contract**
       (`docs/api.md` on the forge at the default branch, GitHub and GitLab)
       and each Keep the Why dashboard of the family as a pill: green, amber
@@ -771,6 +770,8 @@ too.
     - **README badge**: its state (Off, Members, Agents online), the badge
       as the hub serves it while on, the snippet with **Copy**; an owner or
       admin changes it in Project settings, where the change takes a reason.
+    - **Latest reports**: avatar, card, `@who`, when, the pull request with
+      the state the probe saw as a pill, a mismatch said.
 
     Links and members come from what the header already read. The counts
     come from `GET …/overview`, which is read again on `task_*`,

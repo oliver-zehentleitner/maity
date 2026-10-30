@@ -162,34 +162,18 @@ class Session:
 
     @property
     def project(self) -> str:
-        """The project's `full_name`, `<owner>/<slug>` (§6.25). A state from before the
-        namespace holds the slug alone: the full name is read once from `GET /me`, which lists
-        an agent's one project, and kept."""
+        """The project's `full_name`, `<owner>/<slug>` (§6.25), as the join answer or the
+        last resume named it."""
         full_name = self.data.get("full_name")
         if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
             return full_name
-        slug = self.data.get("project")
-        if isinstance(slug, str) and _FULL_NAME.fullmatch(slug):
-            full_name = slug  # a join answer from a hub with namespaces
-        elif isinstance(slug, str):
-            full_name = self._full_name_from_me(slug)
-        else:
+        joined = self.data.get("project")
+        if not (isinstance(joined, str) and _FULL_NAME.fullmatch(joined)):
             raise state.StateError("the project is not known yet; run `maity resume`")
-        self.data["full_name"] = full_name
-        self.data["project"] = full_name.split("/", 1)[1]
+        self.data["full_name"] = joined  # the join answer names it in full
+        self.data["project"] = joined.split("/", 1)[1]
         self.save()
-        return full_name
-
-    def _full_name_from_me(self, slug: str) -> str:
-        me = self.client.call("GET", "/me")
-        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
-        names = [p.get("full_name") for p in projects if p.get("slug") == slug]
-        if len(names) != 1 or not isinstance(names[0], str) or not _FULL_NAME.fullmatch(names[0]):
-            raise state.StateError(
-                f"the hub does not name this clone's project {onboarding.inline(slug)} with an "
-                "owner; run `maity resume`"
-            )
-        return names[0]
+        return joined
 
     def project_path(self, *parts: str) -> str:
         owner, slug = self.project.split("/", 1)
@@ -233,8 +217,6 @@ class Session:
         state.save_state(self.dir, self.data)
 
 
-# What a hub that predates them refuses: resumed without, never failed on (§5.3, §15.11).
-OPTIONAL_RESUME_FIELDS = ("environment", "supervisor")
 SUPERVISOR = re.compile(r"maity-runner/[A-Za-z0-9.+_-]{1,64}", re.ASCII)
 
 
@@ -261,22 +243,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
                 " resume refused, nothing sent"
             )
         body["supervisor"] = supervisor
-    try:
-        packet = session.client.call("POST", "/me/resume", body=body)
-    except hub.HubError as exc:
-        # A hub from before §5.3 or §15.11 refuses the field: resume without it, saying so.
-        fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
-        refused = [
-            key for key in OPTIONAL_RESUME_FIELDS
-            if key in body and isinstance(fields, dict)
-            and any(str(k).startswith(key) for k in fields)
-        ]  # fmt: skip
-        if exc.code != "invalid" or not refused:
-            raise
-        for key in refused:
-            _err(f"this hub does not take the session's {key} yet; resuming without it")
-            del body[key]
-        packet = session.client.call("POST", "/me/resume", body=body)
+    packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
@@ -328,11 +295,9 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     owner_id = field(packet, "me", "owner", "id")
     if isinstance(owner_id, str):
         session.data["owner_id"] = owner_id
-    instance = field(packet, "me", "instance")  # §5.2; absent until the hub has instances
+    instance = field(packet, "me", "instance")  # §5.2
     if isinstance(instance, str):
         session.data["instance"] = instance
-    else:
-        session.data.pop("instance", None)
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
@@ -470,12 +435,14 @@ _PAGE_HANDLE = re.compile(r"^\| Your handle \| `([a-z0-9][a-z0-9-]{1,62})` \|$",
 _INSTANCE = re.compile(r"[2-9a-hjkmnp-z]{4,5}", re.ASCII)
 
 
-def _instance_dir(taken: Path, instance: str | None) -> Path:
-    """`<handle>#<instance>` beside the derived directory another instance holds. A hub that
-    names no instance, or a directory that already holds a credential, refuses: the caller
-    rescues the spent credential."""
-    if not isinstance(instance, str) or not _INSTANCE.fullmatch(instance):
-        raise state.StateError(f"{taken} holds another credential and the hub named no instance")
+def _instance_dir(taken: Path, instance: str) -> Path:
+    """`<handle>#<instance>` beside the derived directory another instance holds. An instance
+    that is no instance id, or a directory that already holds a credential, refuses: the
+    caller rescues the spent credential."""
+    if not _INSTANCE.fullmatch(instance):
+        raise state.StateError(
+            f"{taken} holds another credential and the hub named no valid instance"
+        )
     directory = taken.with_name(f"{taken.name}#{instance}")
     if state.has_credential(directory):
         raise state.StateError(f"{directory} already holds a credential")
@@ -1338,19 +1305,10 @@ def _unread_group(
     return items, [f"before these: {back}"]
 
 
-def _require_group_chats(session: Session) -> None:
-    """A `cnv-` id is a group chat (§9.3); a hub whose openapi.json has no way to open one
-    has none, which is said instead of "not in your conversations"."""
-    if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/conversations") is False:
-        raise CommandError("this hub does not have group chats yet: only direct conversations")
-
-
 def cmd_chat(args: argparse.Namespace) -> int:
     session = Session()
     conversation = args.conversation
     listed = next((c for c in _conversations(session) if _conversation_id(c) == conversation), None)
-    if listed is None and str(conversation).startswith("cnv-"):
-        _require_group_chats(session)
     handles = _handles(listed) if listed else {}
     limit = args.limit or CHAT_DEFAULT
     notes: list[str] = []
@@ -1944,7 +1902,7 @@ def _subtask_hint(exc: hub.HubError, assign: bool = False) -> hub.HubError:
     if exc.code == "dependencies_open" and isinstance(children, list):
         hint += ": " + ", ".join(onboarding.inline(c) for c in children if isinstance(c, str))
     wrapped = hub.HubError(f"{exc}\n  {hint}", code=exc.code, status=exc.status)
-    wrapped.details, wrapped.request = exc.details, exc.request
+    wrapped.details = exc.details
     return wrapped
 
 
@@ -2561,13 +2519,7 @@ def cmd_link_add(args: argparse.Namespace) -> int:
 def cmd_link_list(args: argparse.Namespace) -> int:
     session = Session()
     card = session.client.call("GET", session.project_path("tasks", args.card))
-    raw = _field(card, "links")
-    if not isinstance(raw, list):  # absent is not "no links": an older hub has none (§6.13)
-        raise CommandError(
-            f"the hub's answer for {args.card} has no links list: this hub does not have card "
-            "links yet"
-        )
-    links = [link for link in raw if isinstance(link, dict)]
+    links = [link for link in _field(card, "links") or [] if isinstance(link, dict)]
     if args.json:
         _print_json(links)
         return EXIT_OK
@@ -2681,17 +2633,7 @@ def cmd_ticker_post(args: argparse.Namespace) -> int:
     if deploy:
         body["deploy"] = deploy
     session = Session()
-    try:
-        event = session.client.call("POST", session.project_path("ticker"), body=body)
-    except hub.HubError as exc:
-        if exc.status != 404:
-            raise
-        if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/ticker") is not False:
-            raise  # a ticker route, or no readable openapi.json: the 404 stands as it is
-        line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
-        _err("this hub has no ticker yet; post it as a project message instead:")
-        print(shlex.join(["maity", "say", "all", "--type", "notice", line]))
-        return EXIT_USAGE
+    event = session.client.call("POST", session.project_path("ticker"), body=body)
     seq = _field(event, "seq")
     item = _field(event, "id") or (f"tck-{seq}" if seq is not None else "?")
     return _done(args, event, f"posted {onboarding.inline(item)} (seq {onboarding.inline(seq)})")
@@ -3642,41 +3584,7 @@ def _explain(exc: Exception) -> str:
             f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
             f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
         )
-    missing = _missing_route(exc)
-    return missing or str(exc)
-
-
-# The first of these segments in a route that the hub lacks names the feature (§4).
-FEATURES = {
-    "notes": "card notes",
-    "links": "card links",
-    "messages": "project messages",
-    "memory": "project memory",
-    "soul": "souls",
-    "takeover": "takeovers",
-    "takeovers": "takeovers",
-    "attachments": "attachments",
-    "limit": "usage limits",
-    "conversations": "chats",
-    "ticker": "a ticker",
-}
-
-
-def _missing_route(exc: Exception) -> str | None:
-    """For a 404 on a signed call, one look at the hub's `openapi.json`: a route it does not
-    list is a feature this hub lacks, not a mistyped id, and is said so. None otherwise."""
-    if not isinstance(exc, hub.HubError) or exc.status != 404 or exc.request is None:
-        return None
-    base, method, path = exc.request
-    if hub.offers(base, method, path) is not False:
-        return None
-    route = path.removeprefix(hub.API)
-    parts = route.strip("/").split("/")
-    if parts[0] == "projects":
-        del parts[:3]  # an owner and a slug never name a feature (§6.25)
-    feature = next((FEATURES[p] for p in parts if p in FEATURES), None)
-    what = feature or f"`{method} {route}`"
-    return f"this hub does not have {what} yet: its openapi.json lists no {method} {route}"
+    return str(exc)
 
 
 def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
