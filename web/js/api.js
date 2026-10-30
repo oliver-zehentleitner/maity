@@ -466,25 +466,40 @@ window.Maity = window.Maity || {};
     };
   }
   // §16.7's checks of a landing page and its footer, each at its path.
-  // §8.4 "A review result cites what it judged": the review's fields, each
-  // refusal at its own path.
+  // §8.4 "A review result cites what it judged": a copy by hand of
+  // hub/src/maity_hub/reviews.py, each refusal at its own path, the first
+  // reason per path kept; where they differ, the hub is right.
+  const REVIEW_LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
   function reviewErrors(r, errors) {
-    if (r === undefined || r === null) { errors.review = "required"; return; }
-    if (typeof r !== "object" || Array.isArray(r)) { errors.review = "format"; return; }
-    const text = (v, max, at) => { if (typeof v !== "string" || !v.length) errors[at] = "format"; else if ([...v].length > max) errors[at] = "too_long"; };
+    const add = (at, why) => { if (!(at in errors)) errors[at] = why; };
+    if (r === undefined || r === null) { add("review", "required"); return; }
+    if (typeof r !== "object" || Array.isArray(r)) { add("review", "format"); return; }
+    const text = (v, max, at) => {
+      if (v === undefined || v === null) add(at, "required");
+      else if (typeof v !== "string" || !v.length) add(at, "format");
+      else if ([...v].length > max) add(at, "too_long");
+      else return v;
+      return null;
+    };
+    Object.keys(r).forEach((k) => { if (!["subject", "head", "verdict", "cites"].includes(k)) add("review." + k, "format"); });
     text(r.subject, 120, "review.subject");
-    if (typeof r.head !== "string" || !/^[0-9a-f]{40}$/.test(r.head)) errors["review.head"] = "format";
-    if (!["approve", "changes", "comment"].includes(r.verdict)) errors["review.verdict"] = "format";
-    if (!Array.isArray(r.cites)) { errors["review.cites"] = "format"; return; }
-    if (!r.cites.length) errors["review.cites"] = "too_few";
-    else if (r.cites.length > 50) errors["review.cites"] = "too_many";
-    r.cites.forEach((c, k) => {
+    if (r.head === undefined || r.head === null) add("review.head", "required");
+    else if (typeof r.head !== "string" || !/^[0-9a-f]{40}$/.test(r.head)) add("review.head", "format");
+    if (r.verdict === undefined || r.verdict === null) add("review.verdict", "required");
+    else if (!["approve", "changes", "comment"].includes(r.verdict)) add("review.verdict", "format");
+    const cites = r.cites;
+    if (cites === undefined || cites === null) { add("review.cites", "required"); return; }
+    if (!Array.isArray(cites)) { add("review.cites", "format"); return; }
+    if (!cites.length) { add("review.cites", "too_few"); return; }
+    if (cites.length > 50) { add("review.cites", "too_many"); return; }
+    cites.forEach((c, k) => {
       const at = "review.cites." + k;
-      if (!c || typeof c !== "object") { errors[at] = "format"; return; }
+      if (!c || typeof c !== "object" || Array.isArray(c)) { add(at, "format"); return; }
+      Object.keys(c).forEach((n) => { if (!["path", "line", "quote"].includes(n)) add(at + "." + n, "format"); });
       text(c.path, 300, at + ".path");
-      text(c.quote, 300, at + ".quote");
-      if (typeof c.quote === "string" && /[\r\n]/.test(c.quote)) errors[at + ".quote"] = "format";
-      if (c.line !== undefined && c.line !== null && !(Number.isInteger(c.line) && c.line > 0)) errors[at + ".line"] = "format";
+      const quote = text(c.quote, 300, at + ".quote");
+      if (quote !== null && REVIEW_LINE_BREAK.test(quote)) add(at + ".quote", "format");
+      if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
     });
   }
   const LANDING_TYPES = {
