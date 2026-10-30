@@ -15,8 +15,12 @@ BASE = "/projects/maintainer/maity"
 TITLES = {
     "keep_the_why_init": "Set up Keep the Why in the repository",
     "keep_the_why_badge": "Add the Keep the Why badge to the README",
+    "keep_the_why_ci": "Run the Keep the Why linter in CI",
+    "keep_the_why_dashboard": "Publish the Keep the Why dashboard",
     "maity_badge": "Add the Maity badge to the README",
 }
+KTW = ("keep_the_why_init", "keep_the_why_badge", "keep_the_why_ci", "keep_the_why_dashboard")
+KTW_OFF = {key: False for key in KTW}
 
 
 @pytest.fixture
@@ -31,19 +35,19 @@ def _card(owner: flow.Human, card_id: str) -> dict[str, Any]:
     return body
 
 
-def test_the_default_options_make_two_cards_in_order(owner: flow.Human) -> None:
+def test_the_default_options_make_four_cards_in_order(owner: flow.Human) -> None:
     body = flow.project(owner, repository=REPOSITORY)
     setup = body["setup"]
-    assert [setup[k] for k in ("keep_the_why_init", "keep_the_why_badge", "maity_badge")] == [
-        True,
-        True,
-        False,
-    ]
+    assert {k: v for k, v in setup.items() if k != "cards"} == {
+        "keep_the_why_init": True,
+        "keep_the_why_badge": True,
+        "keep_the_why_ci": True,
+        "keep_the_why_dashboard": True,
+        "dashboard_path": "keep-the-why-dashboard",
+        "maity_badge": False,
+    }
     cards = [_card(owner, i) for i in setup["cards"]]
-    assert [c["title"] for c in cards] == [
-        TITLES["keep_the_why_init"],
-        TITLES["keep_the_why_badge"],
-    ]
+    assert [c["title"] for c in cards] == [TITLES[k] for k in KTW]
     first = cards[0]
     assert (first["kind"], first["label"], first["status"], first["area"]) == (
         "setup",
@@ -76,6 +80,9 @@ def test_the_badge_is_on_without_a_repository_and_no_card_exists_yet(owner: flow
     assert body["setup"] == {
         "keep_the_why_init": True,
         "keep_the_why_badge": True,
+        "keep_the_why_ci": True,
+        "keep_the_why_dashboard": True,
+        "dashboard_path": "keep-the-why-dashboard",
         "maity_badge": True,
         "cards": None,
     }
@@ -88,7 +95,7 @@ def test_setting_the_repository_creates_the_cards_once_by_whoever_set_it(
     response = owner.patch(BASE, {"repository": REPOSITORY})
     assert response.status_code == 200, response.text
     cards = response.json()["setup"]["cards"]
-    assert len(cards) == 2 and _card(owner, cards[0])["created_by"] == owner.id
+    assert len(cards) == 4 and _card(owner, cards[0])["created_by"] == owner.id
     owner.patch(BASE, {"repository": {**REPOSITORY, "default_branch": "dev"}})
     assert owner.get(BASE).json()["setup"]["cards"] == cards
 
@@ -98,10 +105,10 @@ def test_under_none_only_the_maity_badge_is_offered(owner: flow.Human) -> None:
         owner,
         repository=REPOSITORY,
         memory={"provider": "none"},
-        setup={"keep_the_why_init": True, "keep_the_why_badge": True, "maity_badge": True},
+        setup={key: True for key in (*KTW, "maity_badge")},
     )
-    assert body["setup"]["keep_the_why_init"] is False
-    assert body["setup"]["keep_the_why_badge"] is False
+    assert all(body["setup"][key] is False for key in KTW)
+    assert body["setup"]["dashboard_path"] is None
     assert [_card(owner, i)["title"] for i in body["setup"]["cards"]] == [TITLES["maity_badge"]]
 
 
@@ -109,7 +116,7 @@ def test_every_option_off_reads_an_empty_list(owner: flow.Human) -> None:
     body = flow.project(
         owner,
         repository=REPOSITORY,
-        setup={"keep_the_why_init": False, "keep_the_why_badge": False},
+        setup=KTW_OFF,
     )
     assert body["setup"]["cards"] == []
 
@@ -127,6 +134,8 @@ def test_the_options_are_checked(owner: flow.Human) -> None:
     for setup, fields in (
         ({"maity_badge": "yes"}, {"setup.maity_badge": "not_a_boolean"}),
         ({"nope": True}, {"setup.nope": "unknown_field"}),
+        ({"keep_the_why_ci": 1}, {"setup.keep_the_why_ci": "not_a_boolean"}),
+        ({"keep_the_why_dashboard": None}, {"setup.keep_the_why_dashboard": "not_a_boolean"}),
     ):
         response = owner.post("/projects", {"slug": "xx", "name": "XX", "setup": setup})
         assert response.status_code == 400
@@ -162,17 +171,17 @@ def test_the_packet_names_the_waiting_setup_cards(
 ) -> None:
     body = flow.project(owner, repository=REPOSITORY)
     agent = flow.agent(make_client, owner)
-    first, second = body["setup"]["cards"]
+    ids = body["setup"]["cards"]
     waiting = agent.resume().json()["setup"]
     assert waiting == [
-        {"id": first, "title": TITLES["keep_the_why_init"], "status": "open", "holder": None},
-        {"id": second, "title": TITLES["keep_the_why_badge"], "status": "open", "holder": None},
+        {"id": card_id, "title": TITLES[key], "status": "open", "holder": None}
+        for card_id, key in zip(ids, KTW, strict=True)
     ]
-    claimed = agent.post(f"{BASE}/tasks/{first}/claim", {})
+    claimed = agent.post(f"{BASE}/tasks/{ids[0]}/claim", {})
     assert claimed.status_code == 200, claimed.text
     assert agent.resume().json()["setup"][0]["holder"] == agent.id
-    owner.patch(f"{BASE}/tasks/{first}", {"status": "cancelled"})
-    owner.patch(f"{BASE}/tasks/{second}", {"status": "cancelled"})
+    for card_id in ids:
+        owner.patch(f"{BASE}/tasks/{card_id}", {"status": "cancelled"})
     assert "setup" not in agent.resume().json()
 
 
@@ -201,13 +210,76 @@ def test_a_patch_that_brings_the_project_back_with_the_repository_opens_the_card
     back = owner.patch(BASE, {"repository": REPOSITORY, "state": "build", "reason": "again"})
     assert back.status_code == 200, back.text
     cards = back.json()["setup"]["cards"]
-    assert cards is not None and len(cards) == 2  # not lost for good to the old state
-    assert [_card(owner, c)["title"] for c in cards] == [
-        TITLES["keep_the_why_init"],
-        TITLES["keep_the_why_badge"],
-    ]
+    assert cards is not None and len(cards) == 4  # not lost for good to the old state
+    assert [_card(owner, c)["title"] for c in cards] == [TITLES[k] for k in KTW]
     # The project's state_changed comes first, then the cards it opens.
     kinds = _kinds(migrated)
     last_state = max(i for i, k in enumerate(kinds) if k == "state_changed")
     created = [i for i, k in enumerate(kinds) if k == "task_created"]
-    assert len(created) == 2 and min(created) > last_state
+    assert len(created) == 4 and min(created) > last_state
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["docs/why", "a", "a.b_c-d/e1/f/g/h", "x" * 63],
+)
+def test_a_dashboard_path_in_shape_is_kept_and_named_in_the_card(
+    owner: flow.Human, path: str
+) -> None:
+    body = flow.project(owner, repository=REPOSITORY, setup={"dashboard_path": path})
+    assert body["setup"]["dashboard_path"] == path
+    dashboard = _card(owner, body["setup"]["cards"][3])
+    assert dashboard["title"] == TITLES["keep_the_why_dashboard"]
+    assert f"`{path}`" in dashboard["body"]
+    assert f"/{path}[/<child directory>]/state.json" in dashboard["body"]
+    assert "dashboard-state:" in dashboard["body"]
+    assert "default branch, never a direct push" in dashboard["body"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        None,
+        "",
+        7,
+        "/docs",
+        "docs/",
+        "docs//why",
+        "Docs",
+        "-docs",
+        "a..b",
+        "docs/../x",
+        "a/b/c/d/e/f",
+        "x" * 64,
+        "dö",
+    ],
+)
+def test_a_dashboard_path_out_of_shape_is_format(owner: flow.Human, path: Any) -> None:
+    response = owner.post(
+        "/projects", {"slug": "xx", "name": "XX", "setup": {"dashboard_path": path}}
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"setup.dashboard_path": "format"}
+
+
+def test_the_path_is_dropped_without_the_dashboard_option(owner: flow.Human) -> None:
+    body = flow.project(
+        owner,
+        repository=REPOSITORY,
+        setup={"keep_the_why_dashboard": False, "dashboard_path": "docs/why"},
+    )
+    assert body["setup"]["keep_the_why_dashboard"] is False
+    assert body["setup"]["dashboard_path"] is None
+    titles = [_card(owner, i)["title"] for i in body["setup"]["cards"]]
+    assert TITLES["keep_the_why_dashboard"] not in titles
+    assert titles == [TITLES[k] for k in KTW[:3]]
+
+
+def test_the_ci_card_asks_for_the_lint_step(owner: flow.Human) -> None:
+    body = flow.project(owner, repository=REPOSITORY, setup={**KTW_OFF, "keep_the_why_ci": True})
+    [card_id] = body["setup"]["cards"]
+    card = _card(owner, card_id)
+    assert card["title"] == TITLES["keep_the_why_ci"]
+    assert "`ktw-lint`" in card["body"] and REPOSITORY["url"] in card["body"]
+    assert "lint step green" in card["body"]
+    assert body["setup"]["dashboard_path"] is None  # the dashboard option is off
