@@ -749,22 +749,17 @@ first instance becomes away, `{instances: 0}` when none is away any more, and al
 `PATCH` that leaves `bell`. The bell lists only the newest such record, and only while
 the owner is under `bell` and an instance is away when the bell is read; the count in its
 title is read then too. A later away phase writes a new record, so it is a new, unread item.
-Only an owner under `inbox` still gets a request per episode until the digest request
-comes; under `bell` the bell item is the only notice and under `off` there is none, so
-the modes never add up. Reading the count live costs the bell a fixed few queries (the
+Under `inbox` the owner gets the digest request instead (the next entry); under `bell`
+the bell item is the only notice and under `off` there is none, so the modes never add up. Reading the count live costs the bell a fixed few queries (the
 owner's episodes, notification settings and project overrides), and only while that
 newest record is open; it does not grow with the number of items.
 
-A mode that leaves `inbox` mid-episode would keep that episode's request open beside the
-bell item, because a request is filed only when an episode starts. So every digest hour
-withdraws the per-episode requests still open for an owner whose mode is not `inbox`
-(`withdraw_episode_requests`, §5.3 "at the first digest hour"); the episode itself goes
-on. Not at the `PATCH`: a withdrawal emits an event to wake the asker, and the `PATCH` of
-the notification settings is no events transaction, so the overlap lasts until the next
-hour at most. Rejected: leaving the request to the episode's end, since an episode can
-last days and the owner would hear of it twice. The other way round, `bell` → `inbox`
-mid-episode files no request for the running episode; until the digest request (mode
-`inbox`) comes, that episode stays without a request.
+Until 2026-10-30 an owner under `inbox` got one request per episode, filed when it
+started; a mode that left `inbox` mid-episode kept it open beside the bell item, so every
+digest hour withdrew those still open for an owner not under `inbox`. Since the digest
+request (tsk-9cft0j3wz3tz) an episode files no request in any mode, and the hour withdraws
+the per-episode requests still open for every owner (`withdraw_episode_requests`, §5.3 "at
+the first digest hour"); the episode itself goes on.
 
 **Reason:** `account_record` is append-only; read marks are its only change after the
 write. Deriving the open state and the count on read keeps that, lists the item exactly
@@ -776,3 +771,44 @@ state of its own to lose.
   that would be rewritten after it was written.
 - Keep "is an item open" in the worker's memory: lost at a restart, and the bell would
   need the worker to answer.
+
+## The digest request is found by its shape, rewritten in place, and `seen` is compared by time
+
+**Id:** ef2d4f8a-084f-4d43-ab7d-d79ef140a5b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §5.3 "The owner's digest" and §7 (contract #627); implementation of the `inbox` mode (tsk-9cft0j3wz3tz), 2026-10-30
+**See:** notifications.md — 5e46712b-271b-4b43-ba30-8017f745184e — as of 2026-10-30
+**Revisit when:** a second kind of request with neither project nor organisation is filed by the hub, or an owner should be able to dismiss one instance and keep hearing of the others
+
+Under `not_listening.mode: inbox` the hourly pass keeps at most one open personal request
+per owner (`not_listening_digest._inbox`, filed by `requests.file_hub_digest`): class
+`info`, one option `seen`, `filed_by: hub`, no asker, no project and no organisation. The
+request is found by exactly that shape (`_digest_requests`); no other request has it, and
+the CHECK `scope_known` allows it only so (migration 0108). While it is open and the set of
+away instances changes, its `title` and `summary` are rewritten in the row, with no record
+and no event: the contract wants no new request event, and a request without a project has
+none anyway; the human hears of it through its `personal_request_created` record and its
+mail, as of an organisation's invitation. It is withdrawn when none is away any more, and at
+the `PATCH` that leaves `inbox`: closing a request without a project emits nothing, so the
+settings' `PATCH` can do it although it is no events transaction. After the owner answers
+`seen`, an instance counts again only when its episode started after the answer
+(`not_listening_since > answered_at` of the newest answered digest), so the next hour files
+a new request only for those. The pass withdraws the old per-episode requests first, under
+their projects' locks, then locks the owner's row: project before human, the order every
+other path takes. This entry stores nothing of the bell's state (5e46712b's revisit): the
+request keeps only its own text and status.
+
+**Reason:** a marker column would name one kind of request in the schema for a shape the
+CHECK already pins down. Comparing episode starts with the answer's time follows the
+contract's wording and needs no stored list of seen instances.
+
+**Rejected alternatives:**
+- A column such as `request.kind = 'not_listening_digest'`: explicit, but a second way to
+  say what `filed_by`, `project_id` and `org_id` already say together.
+- Remember the seen instances (session ids) on the answered request: exact per instance,
+  but an instance's next episode is a new session state anyway, and the contract counts by
+  when the episode started.
+- A new request each hour instead of rewriting: one more unread item per hour for the same
+  instances.
