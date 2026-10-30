@@ -2295,7 +2295,11 @@ The sensitive calls:
   (`POST /runners/enrollments`, §15.2),
   and approving a device code (§2.6.2);
 - transferring a project to another namespace owner (`POST
-  /projects/{owner}/{slug}/transfer`, §6.25) and deleting an
+  /projects/{owner}/{slug}/transfer`, §6.25), including into an
+  organisation and to oneself, and the `go` that consents to a transfer
+  (`reply_id: go` on a `project_transfer` request, on the project's
+  route and on the personal one of an organisation's owner, §6.26) — a
+  `no` needs none, since it moves nothing — and deleting an
   organisation (`DELETE /orgs/{org}`, §6.26);
 - giving the hub access to a forge account: `POST /me/forge/github/link`
   and `PUT /me/forge/github/token`, and confirming a project's repository
