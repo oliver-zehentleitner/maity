@@ -73,6 +73,9 @@ def test_q_matches_the_handle_and_the_display_name_in_any_case(
     assert handles(admin, q="rocket") == ["beta-crew"]
     assert handles(admin, q="-t") == ["alpha-team"]
     assert handles(admin, q="100%") == ["100pct"]  # a `%` is a character, not a wildcard
+    make_org(anna, "axb-crew", "Axb Crew")
+    make_org(anna, "a-b-crew", "A_b Crew")
+    assert handles(admin, q="a_b") == ["a-b-crew"]  # nor is a `_` one: it does not match `axb`
     assert handles(admin, q="nothing") == []
     for bad in ("", "x" * 65):
         got = admin.get(PATH, params={"q": bad})

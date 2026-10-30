@@ -258,3 +258,34 @@ def test_a_project_of_an_organisation_is_renamed_under_the_organisations_lock(
     renamed = owner.patch("/projects/oz-team/shop", {"slug": "store", "reason": "new name"})
     assert renamed.status_code == 200, renamed.text
     assert renamed.json()["full_name"] == "oz-team/store"
+
+
+def test_a_rename_that_finds_the_project_moved_meanwhile_is_refused(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route locks the organisation it read, then the project; the project went to a human
+    between the two: the organisation that owns it now is unlocked, so the call is to be made
+    again (`project_moved`) and renames nothing."""
+    from sqlalchemy import update
+
+    from maity_hub import orgs
+
+    org, _ = team(make_client, migrated, owner)
+    flow.project(owner, "shop")
+    assert transfer(owner, "maintainer/shop", org["id"]).status_code == 200
+    real = orgs.lock
+
+    def lock_then_move(conn: Any, org_id: str) -> Any:
+        found = real(conn, org_id)
+        conn.execute(
+            update(t.project).values(owner_id=owner.id, owner_human_id=owner.id, owner_org_id=None)
+        )
+        return found
+
+    monkeypatch.setattr(orgs, "lock", lock_then_move)
+    refused = owner.patch("/projects/oz-team/shop", {"slug": "store", "reason": "new name"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "project_moved"
+    monkeypatch.undo()
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.project.c.slug)).scalar_one() == "shop"

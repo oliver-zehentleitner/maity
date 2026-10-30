@@ -111,7 +111,16 @@ window.Maity = window.Maity || {};
     return (view && view.full_name) || (FIXTURE_OWNERS[slug] || me().member.handle) + "/" + slug;
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
-  // The fixture directory a full name (or one of its aliases) names, or null.
+  // A member's own settings per project (§6.2), kept for the page's life.
+  const projectSettings = {};
+  function mySettings(slug, path) {
+    if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+    file(slug, "members.json", path);
+    const own = projectSettings[slug] || { not_listening: { minutes: null } };
+    const personal = fixtures()["notifications.json"].settings.not_listening || { minutes: 60 };
+    return { not_listening: { minutes: own.not_listening.minutes },
+      effective: { not_listening: { minutes: own.not_listening.minutes === null ? personal.minutes : own.not_listening.minutes } } };
+  }
   // §16.4: the fixture hub's registration settings and the accounts that wait.
   const registration = {
     values: {
@@ -138,6 +147,7 @@ window.Maity = window.Maity || {};
     return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
       registered_last_hour: 1, requests_dropped_last_hour: 0 });
   }
+  // The fixture directory a full name (or one of its aliases) names, or null.
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;
@@ -1379,6 +1389,14 @@ window.Maity = window.Maity || {};
         if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
       }
+      // §18.4: not_listening's mode and its minutes, each checked at its path.
+      if (body.not_listening) {
+        const nl = body.not_listening, fields = {};
+        if ("mode" in nl && !["inbox", "bell", "off"].includes(nl.mode)) fields["not_listening.mode"] = "invalid";
+        if ("minutes" in nl && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) fields["not_listening.minutes"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        set.not_listening = Object.assign({}, set.not_listening, nl);
+      }
       const b = body.browser || {};
       if ("enabled" in b && typeof b.enabled !== "boolean") fail(400, "invalid", "enabled is a boolean", path, { fields: { "browser.enabled": "invalid" } });
       if ("enabled" in b) set.browser.enabled = b.enabled;
@@ -1978,7 +1996,6 @@ window.Maity = window.Maity || {};
       const next = items.length > limit ? page[page.length - 1].seq + "~" + filterKey : null;
       return { items: page.map(clean), next_cursor: next };
     }],
-    // The hub's machine form (§4): here only what the views ask of it.
     // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
     // instance; a window beyond the fixture's days reads zero days, with
     // reviews unknown before the hub kept history, as the hub answers.
@@ -2083,9 +2100,7 @@ window.Maity = window.Maity || {};
       Object.entries(v.pages).forEach(([k, x]) => { if (x) pages[k] = { version: x.version, languages: Object.keys(x.languages) }; });
       return { default_language: v.default_language, pages };
     }],
-    // §6.22: the members' swarm (fixtures/<slug>/swarm.json) and its public
-    // reduction where policy.swarm_public is on: agents only, no ids, no
-    // pictures, no card titles, no live_at, as_of to the minute.
+    // §6.22: the members' swarm statistics (fixtures/<slug>/swarm.json).
     ["GET", /^\/projects\/([^/]+)\/swarm$/, (m, body, path, query) => {
       project(m[1], path);
       const n = Number(query.get("days") || 30);
@@ -2096,78 +2111,6 @@ window.Maity = window.Maity || {};
         // Oldest first, as swarm.py sends them: the window is the last n days.
         totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
     }],
-    // §6.22, §6.25: /swarm/{owner}/{slug}.
-    ["GET", /^\/swarm\/([^/]+)\/([^/]+)$/, (m, body, path, query) => {
-      const slug = slugOfFull(decodeURIComponent(m[1]) + "/" + decodeURIComponent(m[2]));
-      const p = slug && fixtures()[slug + "/project.json"];
-      const s = slug && fixtures()[slug + "/swarm.json"];
-      if (!p || !s || (p.policy || {}).swarm_public !== "on" || p.state === "archived") fail(404, "not_found", "Not found", path);
-      const agents = (list) => list.filter((x) => x.kind === "agent");
-      const sum = (rows, k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
-      const rows = agents(s.members).map((r) => ({ handle: r.handle, name: r.name, cards_done: r.cards_done, reviews_given: r.reviews_given,
-        prs_merged: r.prs_merged, handovers: r.handovers, claim_to_done_median_seconds: r.claim_to_done_median_seconds, review_to_done_median_seconds: r.review_to_done_median_seconds }));
-      return { as_of: s.as_of.slice(0, 16) + ":00Z", window_days: Number(query.get("days") || 30),
-        live: agents(s.live).map((x) => ({ handle: x.handle, name: x.name, display_name: x.display_name, online: x.online, instances_online: x.instances_online, holding_count: (x.holding || []).length })),
-        members: rows,
-        totals: { cards_done: sum(rows, "cards_done"), reviews_given: sum(rows, "reviews_given"), prs_merged: sum(rows, "prs_merged"), handovers: sum(rows, "handovers"),
-          claim_to_done_median_seconds: s.totals.claim_to_done_median_seconds, review_to_done_median_seconds: s.totals.review_to_done_median_seconds,
-          cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-Number(query.get("days") || 30)) },
-        coverage: s.coverage };
-    }],
-    ["GET", /^\/openapi\.json$/, () => ({ openapi: "3.1.0", paths: {
-      "/api/v1/admin/users": { get: {} },
-      "/api/v1/admin/statistics": { get: {} },
-      "/api/v1/admin/settings/landing": { get: {}, patch: {} },
-      "/api/v1/admin/settings/legal": { get: {}, patch: {} },
-      "/api/v1/admin/settings/landing/preview": { post: {} },
-      "/api/v1/admin/settings/legal/preview": { post: {} },
-      "/api/v1/legal": { get: {} },
-      "/api/v1/admin/settings/mail": { get: {}, patch: {} },
-      "/api/v1/admin/settings/registration": { get: {}, patch: {} },
-      "/api/v1/admin/registrations": { get: {} },
-      "/api/v1/admin/registrations/{human_id}/approve": { post: {} },
-      "/api/v1/admin/registrations/{human_id}/reject": { post: {} },
-      "/api/v1/admin/registrations/blocks/{blocked}": { delete: {} },
-      "/api/v1/admin/settings/mail/test": { post: {} },
-      "/api/v1/health": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/ticker": { get: {}, post: {} },
-      "/api/v1/projects/{owner}/{slug}/forge/webhook": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/forge/webhook/secret": { post: {}, delete: {} },
-      "/api/v1/projects/{owner}/{slug}/ticker/subscription": { get: {}, patch: {} },
-      "/api/v1/projects/{owner}/{slug}/conversations": { get: {}, post: {} },
-      "/api/v1/me/conversations": { get: {} },
-      "/api/v1/orgs": { get: {}, post: {} },
-      "/api/v1/orgs/{org}": { get: {}, patch: {}, delete: {} },
-      "/api/v1/orgs/{org}/avatar": { put: {}, delete: {} },
-      "/api/v1/orgs/{org}/members": { get: {} },
-      "/api/v1/orgs/{org}/members/{member_id}": { patch: {}, delete: {} },
-      "/api/v1/orgs/{org}/members/invitations": { get: {}, post: {} },
-      "/api/v1/orgs/{org}/members/invitations/{invitation_id}": { delete: {} },
-      "/api/v1/me/export": { get: {} },
-      "/api/v1/me/deletion": { post: {}, delete: {} },
-      "/api/v1/agents": { get: {}, post: {} },
-      "/api/v1/agents/{agent_id}": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { display_name: {}, git_identity: {}, handle: {} } } } } } }, delete: {} },
-      "/api/v1/me": { get: {}, patch: { requestBody: { content: { "application/json": { schema: { properties: { meat_proxy: {} } } } } } } },
-      "/api/v1/projects/{owner}/{slug}/attachments": { get: {}, post: {} },
-      "/api/v1/requests/{request_id}/answer": { post: {} },
-      "/api/v1/auth/device-codes": { post: {} },
-      "/api/v1/auth/methods": { get: {} },
-      "/api/v1/me/preferences": { get: {}, put: {} },
-      "/api/v1/requests/{request_id}/withdraw": { post: {} },
-      "/api/v1/projects/{owner}/{slug}/swarm": { get: {} },
-      "/api/v1/swarm/{owner}/{slug}": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/invitations": { get: {}, post: {} },
-      "/api/v1/invitations/{token}": { get: {} },
-      "/api/v1/auth/register": { post: {} },
-      "/api/v1/projects": { get: {}, post: { requestBody: { content: { "application/json": { schema: { $ref: "/components/schemas/ProjectCreate" } } } } } },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/contract": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/notes": { get: {}, post: {} },
-      "/api/v1/projects/{owner}/{slug}/tasks/{task_id}/history": { get: {} },
-      "/api/v1/projects/{owner}/{slug}/placements": { get: {}, post: {} },
-    },
-    components: { schemas: { ProjectCreate: { properties: {
-      slug: {}, name: {}, repository: {}, memory: {}, setup: {}, policy: {}, owner: {},
-    } } } } })],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
       project(m[1], path);
@@ -2331,6 +2274,20 @@ window.Maity = window.Maity || {};
         conversation_id: body.talk ? req.asked_by.member_id : null,
       };
       return req;
+    }],
+    // §6.2 a member's own settings in a project: an override or null (the
+    // personal default of §18.4), and what applies; humans only.
+    ["GET", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => mySettings(m[1], path)],
+    ["PATCH", /^\/projects\/([^/]+)\/me\/settings$/, (m, body, path) => {
+      mySettings(m[1], path);
+      const nl = body.not_listening || {};
+      if ("minutes" in nl) {
+        if (nl.minutes !== null && !(Number.isInteger(nl.minutes) && nl.minutes >= 10 && nl.minutes <= 1440)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "not_listening.minutes": "invalid" } });
+        }
+        projectSettings[m[1]] = { not_listening: { minutes: nl.minutes } };
+      }
+      return mySettings(m[1], path);
     }],
     // §6.11 the overview: counts per column (closed ones after closed_after),
     // open requests as this caller would list them, the latest reports.
@@ -3231,7 +3188,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/swarm/") && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       path = namespaced(path, fullPath);
@@ -3360,7 +3317,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|swarm\/[^?]*|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -3374,73 +3331,6 @@ window.Maity = window.Maity || {};
     return { items, next_cursor: null };
   }
 
-  // What the hub serves, from its machine form (GET /openapi.json), read
-  // once per page: a view offers a control only for a route the hub lists.
-  // The hub lists its paths under its prefix (/api/v1/…); either form
-  // counts, as in the CLI, and parameter names are not compared. A failed
-  // read is not kept: the next ask reads again.
-  let hubDoc = null;
-  let hubPaths = null;
-  const routeKey = (method, path) => method.toUpperCase() + " "
-    + path.replace(/^\/api\/v1(?=\/)/, "").replace(/\{[^}]*\}/g, "{}");
-  function machineForm() {
-    if (!hubDoc) {
-      hubDoc = M.api.get("/openapi.json");
-      hubDoc.catch(() => { hubDoc = null; });
-    }
-    return hubDoc;
-  }
-  function hubRoutes() {
-    if (!hubPaths) {
-      hubPaths = machineForm().then((doc) => {
-        const found = new Set();
-        Object.entries((doc && doc.paths) || {}).forEach(([path, ops]) =>
-          Object.keys(ops || {}).forEach((method) => found.add(routeKey(method, path))));
-        return found;
-      });
-      hubPaths.catch(() => { hubPaths = null; });
-    }
-    return hubPaths;
-  }
-
-  // The fields the hub's machine form names for the JSON body of `method
-  // path` (path as in docs/api.md), one $ref followed: what a form may
-  // send to this hub. Rejects when the machine form cannot be read.
-  function bodyFields(method, path) {
-    return machineForm().then((doc) => {
-      const paths = (doc && doc.paths) || {};
-      const op = (paths["/api/v1" + path] || paths[path] || {})[method.toLowerCase()];
-      const json = op && op.requestBody && op.requestBody.content && op.requestBody.content["application/json"];
-      let schema = json && json.schema;
-      if (schema && schema.$ref) schema = schema.$ref.split("/").slice(1).reduce((o, k) => (o ? o[k] : null), doc);
-      return new Set(Object.keys((schema && schema.properties) || {}));
-    });
-  }
-
-  // Whether the hub's machine form lists a route for this method and this
-  // concrete path (its parameters matched as path segments); null when the
-  // machine form cannot be read.
-  const escapeRe = (t) => t.replace(/[.*+?^$()|[\]\\]/g, "\\$&");
-  function routeListed(method, path) {
-    const want = method.toUpperCase();
-    const at = String(path).split("?")[0];
-    return hubRoutes().then((found) => Array.from(found).some((key) => {
-      const [m, template] = key.split(" ");
-      return m === want && new RegExp("^" + template.split("{}").map(escapeRe).join("[^/]+") + "$").test(at);
-    }), () => null);
-  }
-
-  // A route this hub does not serve: a 404 or 405 for a method and path its
-  // machine form does not list. Where a view's feature needs one, that is a
-  // fact of this hub, said quietly in its place (M.dom.notOnHub), never as
-  // an error, and the view does not ask it again until the next navigation,
-  // so no timer keeps knocking. A 404 on a route the hub lists is the
-  // resource's (a project left, a card gone) and stays an error, as does an
-  // answer when the machine form cannot be read, and any 5xx, network
-  // failure, 401 or 403.
-  const absentRoutes = new Set();
-  const routeOf = (method, path) => method.toUpperCase() + " " + String(path).split("?")[0];
-
   M.api = {
     // The session read last (null before the first read or after the end).
     session: () => lastSession,
@@ -3452,22 +3342,6 @@ window.Maity = window.Maity || {};
     },
     // Whether a 401 on this path says nothing about a session (above).
     isPublicPath: (path) => PUBLIC_PATH.test(path),
-    notOnHub: (err) => !!err && (err.status === 404 || err.status === 405),
-    // A promise: true when err says the route itself is missing (see above).
-    missingRoute: (err, method, path) => (!!err && (err.status === 404 || err.status === 405)
-      ? routeListed(method, path).then((yes) => yes === false) : Promise.resolve(false)),
-    absent: {
-      note: (method, path) => { absentRoutes.add(routeOf(method, path)); },
-      has: (method, path) => absentRoutes.has(routeOf(method, path)),
-      // On every navigation (js/app.js): a hub deployed meanwhile is asked again.
-      clear: () => { absentRoutes.clear(); },
-    },
-    // Whether the hub serves `method path` (path as in docs/api.md, without
-    // the prefix); rejects when its machine form cannot be read.
-    hubHas: (method, path) => hubRoutes().then((found) => found.has(routeKey(method, path))),
-    hubBody: bodyFields,
-    // Reads the machine form again at the next ask (the smoke test's hubs).
-    forgetRoutes: () => { hubDoc = null; hubPaths = null; absentRoutes.clear(); },
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
     source,

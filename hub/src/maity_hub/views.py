@@ -13,7 +13,6 @@ from maity_hub import (
     avatars,
     clock,
     commitment,
-    contract_text,
     forge,
     forge_access,
     mentions,
@@ -24,6 +23,8 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.cover import still_with as cover_still_with
+from maity_hub.cover import view as cover_view
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -484,6 +485,7 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    covered_by, covering = _covers(conn, rows)
     project_ids = {r.project_id for r in rows}
     projects = (
         {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
@@ -567,9 +569,8 @@ def member_views(
                     project_name=names[row.project_id],
                 ),
                 "availability_policy": availability.policy_of(row),
-                # Cover by a substitute is not built yet (§6.12).
-                "covered_by": None,
-                "covering": [],
+                "covered_by": covered_by.get(row.id),
+                "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
                 "placement": placed.get(row.id),  # always null for a human
             }
@@ -605,6 +606,56 @@ def member_views(
             view["moderation"] = held
         views.append(view)
     return views
+
+
+def _covers(
+    conn: Connection, rows: Sequence[Any]
+) -> tuple[dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
+    """`covered_by` and `covering` of the rows (§6.12): `covering` from the items each
+    member holds as cover (`cover.by`), so every substitute of a run sees whom it
+    covers, not only the one the run started with. A card counts while the substitute
+    still holds it (`cover.still_with`), a request while it is open."""
+    covered_by: dict[int, dict[str, Any]] = {}
+    by_ids = {r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by is not None}
+    principals = principal_ids(conn, by_ids)
+    for row in rows:
+        if row.cover_state == "covered" and row.cover_by is not None:
+            covered_by[row.id] = {
+                "member_id": principals[row.cover_by],
+                "since": ts(row.cover_since),
+            }
+    by_principal = {(r.project_id, r.agent_id or r.human_id): r.id for r in rows}
+    projects = list({r.project_id for r in rows})
+    found: dict[int, dict[str, str]] = {}  # the substitute's row -> covered member -> since
+    if projects:
+        held = [
+            item
+            for item in conn.execute(
+                select(t.card).where(t.card.c.project_id.in_(projects), t.card.c.cover.is_not(None))
+            )
+            if cover_still_with(item, by_principal.get((item.project_id, item.cover["by"])))
+        ]
+        held += conn.execute(
+            select(t.request).where(
+                t.request.c.project_id.in_(projects),
+                t.request.c.cover.is_not(None),
+                t.request.c.status == "open",
+            )
+        ).all()
+        for item in held:
+            row_id = by_principal.get((item.project_id, item.cover["by"]))
+            if row_id is not None:
+                of = found.setdefault(row_id, {})
+                since = item.cover["since"]
+                of[item.cover["for"]] = min(of.get(item.cover["for"], since), since)
+    covering = {
+        row_id: [
+            {"member_id": member_id, "since": since}
+            for member_id, since in sorted(of.items(), key=lambda item: (item[1], item[0]))
+        ]
+        for row_id, of in found.items()
+    }
+    return covered_by, covering
 
 
 def _org_owners(conn: Connection, projects: Iterable[Any]) -> dict[str, set[str]]:
@@ -908,8 +959,9 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": view_contract(row.contract) if row.contract is not None else None,
+                "contract": row.contract,
                 "imported_from": row.imported_from,
+                "cover": cover_view(row.cover),
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
@@ -1079,12 +1131,6 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         if found is not None:  # only while a hold stands on the message (§16.8)
             view["moderation"] = found
     return views
-
-
-def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
-    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
-    it has the defaults."""
-    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}
 
 
 def _wakes(row: Any) -> dict[str, Any]:

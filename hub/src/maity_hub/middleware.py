@@ -23,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net, request_stats
+from maity_hub import clock, events, forge_webhook, join_host, net, paths, request_stats
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -88,6 +88,10 @@ class HubMiddleware:
                 public = b"public, max-age=60"
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
+            elif self.settings.public_pages and not paths.is_hub_path(path):
+                # A public page may be cached; only the stored page's answer asks for it, the
+                # app shell of the same address stays `no-cache` (§16.9).
+                public = b"public, max-age=60"
         send = _with_headers(send, public=public)
 
         if not on_join_host and forge_webhook.matches(scope):

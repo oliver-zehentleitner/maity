@@ -34,8 +34,6 @@ window.Maity = window.Maity || {};
     { route: "messages", label: "Messages" },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", label: "Ticker" },
-    // The team at work (js/swarm.js, docs/api.md §6.22).
-    { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
     // One's own agents in the project (js/agents-page.js), the component of
@@ -44,7 +42,10 @@ window.Maity = window.Maity || {};
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
-    { route: "why", label: "Why", when: (ctx) => "keep_the_why_export" in ctx.project },
+    { route: "why", label: "Why" },
+    // One's own settings for this project (js/notify-settings.js, §6.2), for
+    // every human member; the project's Settings stay its owner's.
+    { route: "my-settings", view: "mySettings", label: "My settings", when: (ctx) => ctx.me.kind === "human" },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     { route: "settings", label: "Settings" },
@@ -90,6 +91,8 @@ window.Maity = window.Maity || {};
   const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
+  // Read by js/ids.js: an id after one of them names no project.
+  M.reservedFirst = OWN_WORDS;
 
   // Throws URIError on a malformed escape; called inside render's try.
   function parseRoute() {
@@ -504,45 +507,25 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin && ctx.project.settings && "onboarding" in ctx.project.settings) append(panel, onboardingForm(ctx));
-    if (ctx.canAdmin && "repository" in ctx.project) append(panel, repositoryForm(ctx));
-    // Its name: rename and transfer, for a human owner where the hub has them (§6.25).
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx));
+    // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
-    // A policy field, humans only (§2.3 ʰ); where the hub knows it (§6.22).
-    if (humanAdmin && M.swarm && ctx.project.policy && "swarm_public" in ctx.project.policy) append(panel, M.swarm.settingsForm(ctx, save));
-    if ("memory" in ctx.project && M.projectSetup) append(panel, memoryPanel(ctx));
-    // Humans only, as every policy field (§2.3 ʰ); where the hub knows it.
-    if (humanAdmin && ctx.project.policy && "badge" in ctx.project.policy) append(panel, badgeForm(ctx, save));
-    if (humanAdmin && ctx.project.policy && "keep_the_why" in ctx.project.policy) append(panel, keepTheWhyForm(ctx, save));
-    // The change ticker (§17.3) where the hub has one, read by every member,
-    // changed by a human admin; the forge webhook (§17.4) for that human only.
+    if (M.projectSetup) append(panel, memoryPanel(ctx));
+    // Humans only, as every policy field (§2.3 ʰ).
+    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    // The change ticker (§17.3), read by every member, changed by a human
+    // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {
-      const tickerSlot = h("div", { class: "ticker-settings-slot" });
-      append(panel, tickerSlot);
-      M.api.hubHas("GET", "/projects/{owner}/{slug}/ticker").catch(() => false).then((yes) => {
-        if (yes) append(tickerSlot, M.tickerSettings.tickerForm(ctx, save));
-      });
-      if (humanAdmin) {
-        const webhookSlot = h("div", { class: "webhook-slot" });
-        append(panel, webhookSlot);
-        M.api.hubHas("GET", "/projects/{owner}/{slug}/forge/webhook").catch(() => false).then((yes) => {
-          if (yes) append(webhookSlot, M.tickerSettings.webhookPanel(ctx));
-        });
-      }
+      append(panel, h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)));
+      if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
-    if (humanAdmin && ctx.project.policy && "member_agents" in ctx.project.policy) append(panel, memberAgentsForm(ctx, save));
-    // Only on a hub with group chats: without them there is no closed one.
-    if (ctx.canAdmin && M.groupChat) {
-      const slot = h("div", { class: "remove-reported-slot" });
-      append(panel, slot);
-      M.groupChat.served().then((yes) => { if (yes) append(slot, blindRemoveForm(ctx)); });
-    }
+    if (humanAdmin) append(panel, memberAgentsForm(ctx, save));
+    if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
-    // Offered where the hub knows the field (docs/api.md §6.1).
-    if (ctx.canAdmin && ctx.project.policy && "signing" in ctx.project.policy) append(panel, signingForm(ctx, save));
-    if (ctx.canAdmin && "logo" in ctx.project) append(panel, imagesForm(ctx));
+    // docs/api.md §6.1.
+    if (ctx.canAdmin) append(panel, signingForm(ctx, save), imagesForm(ctx));
     if (ctx.isOwner) {
       const a = ctx.project.absence;
       const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
@@ -921,16 +904,16 @@ window.Maity = window.Maity || {};
   // the cross-project view with the total.
   function switcher(ctx) {
     const N = M.notify.state;
-    // With the hub's notifications: what asks for the human, requests,
-    // unread chats and mentions (docs/api.md §18.2); else the open requests.
-    const total = N.available ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
+    // What asks for the human, requests, unread chats and mentions
+    // (docs/api.md §18.2); until the counts are read, the open requests.
+    const total = N.counts ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
     // The same words on every pill: what the number is made of.
     const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": [c.requests ? c.requests + " open" : null,
       c.chat ? c.chat + " unread in chats" : null, c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ") },
     String(c.total)) : null);
-    const pill = (p) => (N.available ? counted(M.notify.projectCount(p)) : count(p.open_requests));
-    const all = N.available ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
+    const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
+    const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
       h("a", { href: "/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
@@ -970,9 +953,9 @@ window.Maity = window.Maity || {};
   }
 
   // The inbox tab says the project's open requests, the chat tab its unread
-  // chats (docs/api.md §18.2), where the hub has notifications.
+  // chats (docs/api.md §18.2), once the counts are read.
   function tabCount(ctx, route) {
-    if (!M.notify.state.available || (route !== "inbox" && route !== "chat")) return null;
+    if (!M.notify.state.counts || (route !== "inbox" && route !== "chat")) return null;
     const c = M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug });
     const n = route === "inbox" ? c.requests : c.chat;
     return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
@@ -1058,13 +1041,6 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: "Instance administration", href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // Sign in another device (§2.6.2) where the hub's machine form has it.
-    let deviceCodes = false;
-    M.api.hubHas("POST", "/auth/device-codes").then((yes) => { deviceCodes = yes; }, () => {});
-    // Organisations (§6.26) where the hub has them; humans only.
-    let orgs = false;
-    // A machine form that cannot be read keeps the entry (views.md).
-    if (ctx.me.kind === "human") M.api.hubHas("GET", "/orgs").then((yes) => { orgs = yes; }, () => { orgs = true; });
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: "Your profile: " + ctx.me.display_name,
@@ -1075,8 +1051,8 @@ window.Maity = window.Maity || {};
         { label: "Picture", href: "/account/picture" },
         { label: "Preferences", href: "/account/preferences" },
         { label: "Theme", href: "/account/theme" },
-        orgs ? { label: "Organisations", href: "/account/orgs", current: ctx.scope === "orgs" } : null,
-        deviceCodes ? { label: "Sign in another device", href: "/account/sign-in-device" } : null,
+        ctx.me.kind === "human" ? { label: "Organisations", href: "/account/orgs", current: ctx.scope === "orgs" } : null,
+        { label: "Sign in another device", href: "/account/sign-in-device" },
         { label: "Change password", href: "/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
@@ -1158,23 +1134,11 @@ window.Maity = window.Maity || {};
     return ctx;
   }
 
-  // Each project's logo for the switcher: from /me's projects where the hub
-  // puts it there (docs/api.md §5.1), else from the full project views
-  // (GET /projects, §6.1); without either the switcher draws monograms.
+  // Each project's logo for the switcher, from /me's projects (docs/api.md §5.1).
   async function projectViews(me) {
-    if (me.projects.every((p) => "logo" in p)) {
-      const bySlug = {};
-      me.projects.forEach((p) => { bySlug[p.full_name] = p; });
-      return bySlug;
-    }
-    try {
-      const list = await M.api.get("/projects");
-      const bySlug = {};
-      (list.items || []).forEach((p) => { bySlug[p.full_name] = p; });
-      return bySlug;
-    } catch (err) {
-      return {};
-    }
+    const bySlug = {};
+    me.projects.forEach((p) => { bySlug[p.full_name] = p; });
+    return bySlug;
   }
 
   // §6.25: a full name that is no project of one's own may be an alias (a
@@ -1289,8 +1253,8 @@ window.Maity = window.Maity || {};
   function watch(ctx, where, item, main) {
     // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
     // which counts the personal requests the list holds; /me's open_requests
-    // does not. A hub without notifications: open_requests.
-    const notified = () => M.notify.state.available && M.notify.state.counts;
+    // does not. Until the counts are read: open_requests.
+    const notified = () => M.notify.state.counts;
     const openNow = () => (where.scope === "all"
       ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
       : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
@@ -1385,7 +1349,7 @@ window.Maity = window.Maity || {};
   // page renders and again when the count of unread sign-in alerts changes.
   let bannerFor = 0;
   let bannerSeq = 0;
-  const securityCount = () => (M.notify.state.available && M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
+  const securityCount = () => (M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
   function renderBanner(ctx) {
     if (!M.sessions) return;
     const main = document.getElementById("main");
@@ -1407,7 +1371,7 @@ window.Maity = window.Maity || {};
   // Browser notifications run across renders, once per page; the account's
   // wish is read once and again when the account view changes it.
   async function startBrowserNotifications(ctx) {
-    if (M.notify.running() || M.notify.state.available === false || !("Notification" in window) || window.Notification.permission !== "granted") return;
+    if (M.notify.running() || !("Notification" in window) || window.Notification.permission !== "granted") return;
     try {
       const settings = M.notify.state.settings || (M.notify.state.settings = await M.api.get("/me/notification-settings"));
       M.notify.startBrowser(ctx, settings);
@@ -1419,9 +1383,6 @@ window.Maity = window.Maity || {};
   async function render() {
     const seq = ++renderSeq;
     stopTimers();
-    // A route noted as not on this hub holds within one view only: after a
-    // deploy, the next navigation asks it again.
-    M.api.absent.clear();
     const main = document.getElementById("main");
     // The view being left stays on screen until the next one is drawn, but
     // takes no click or key any more: an action there (a Revoke) would be
@@ -1434,15 +1395,9 @@ window.Maity = window.Maity || {};
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
-      // A project's swarm (§6.22): the public page for a visitor, for anyone
-      // who is not a member and with ?as=public; a member gets the tab.
-      const swarmHere = where.scope === "project" && where.route === "swarm" && M.swarm;
-      const publicSwarm = () => M.swarm.publicPage(main, document.getElementById("header"), where.slug);
-      if (swarmHere && M.route.current().query.get("as") === "public") { await publicSwarm(); return; }
       try {
         await M.api.get("/auth/session");
       } catch (err) {
-        if (err.status === 401 && swarmHere) { await publicSwarm(); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) { renderLogin(main); return; }
@@ -1470,10 +1425,8 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
-      // Not a member: a project's swarm is its public page.
-      if (swarmHere && !me.projects.some((p) => p.full_name === where.slug)) { await publicSwarm(); return; }
       // Notifications never stop the page: a failed read is said in the
-      // notice (watch), and a hub without them leaves the counts as /me has them.
+      // notice (watch), and the counts stay as /me has them.
       const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
@@ -1561,7 +1514,7 @@ window.Maity = window.Maity || {};
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
     document.title = M.notify.title(baseTitle);
-    if (M.notify.state.available) startBrowserNotifications(ctx);
+    if (M.notify.state.counts) startBrowserNotifications(ctx);
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 

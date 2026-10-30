@@ -1,6 +1,7 @@
 // The project at a glance (/<owner>/<slug>/overview, docs/api.md §6.11): its
 // repository and Keep the Why links, members and roles, the board's counts
-// per column, open requests, and the latest reports. The project and its
+// per column, open requests, the latest reports, and the swarm statistics
+// (js/swarm.js, §6.22). The project and its
 // members are what the header already read; the counts come from one call,
 // GET …/overview, read again when a card, a request or the probe changes.
 // Every count links to where its items are.
@@ -96,7 +97,6 @@ window.Maity = window.Maity || {};
   // where a change takes its logged reason.
   function badge(ctx) {
     const policy = ctx.project.policy || {};
-    if (!("badge" in policy)) return null;
     const state = policy.badge || "off";
     const names = { off: "Off", members: "Members", agents_online: "Agents online" };
     const admin = (ctx.canAdmin || ctx.isOwner) && ctx.me.kind === "human";
@@ -214,12 +214,14 @@ window.Maity = window.Maity || {};
   // The order (the designer's handover): what needs the reader, then the
   // state, then the facts; one column on a phone in the same order. Project
   // and README badge stand under Team, beside Latest reports, not after it:
-  // the list is long, and they were out of sight below it.
-  function layout(ctx, parts) {
+  // the list is long, and they were out of sight below it. The swarm, the
+  // team's numbers, comes after the facts, before the organisation.
+  function layout(ctx, parts, swarm) {
     return [
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
       h("div", { class: "overview-row overview-row-2" },
         h("div", { class: "overview-stack" }, members(ctx), project(ctx), badge(ctx)), parts.reports),
+      swarm ? h("div", { class: "overview-row overview-row-3" }, swarm) : null,
       // Who reports to whom (js/org.js), once the Organisation tab.
       M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
     ];
@@ -230,6 +232,8 @@ window.Maity = window.Maity || {};
     const path = ctx.base + "/overview?closed_after=" + encodeURIComponent(since);
     const status = M.statusLine();
     const box = h("div", { class: "overview" });
+    // The swarm reads on its own and is kept across the redraws below.
+    const swarm = M.swarm ? M.swarm.section(ctx) : null;
     // The links and members come from what the header holds; only the
     // counts need the overview call, and a failed one is said where they go.
     // A redraw keeps the focus on the same control (its data-key).
@@ -237,24 +241,17 @@ window.Maity = window.Maity || {};
     function draw(o, err) {
       last = [o, err];
       const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
-      // A hub without the overview (404) is said quietly, as a fact of that
-      // hub, never as an error; any other failure is one. Either stands
-      // where the counts would.
-      const missing = !o && (err.notOnHub ? h("p", { class: "muted overview-missing" }, "This hub has no overview yet, so no counts are shown here.")
-        : h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message));
+      // A failed read stands where the counts would.
+      const missing = !o && h("p", { class: "send-status failed" }, "The counts could not be read: " + err.message);
       append(clear(box), layout(ctx, o
         ? { requests: requests(ctx, o), board: board(ctx, o), reports: reports(ctx, o) }
-        : { requests: missing, board: null, reports: null }));
+        : { requests: missing, board: null, reports: null }, swarm));
       const again = had && Array.from(box.querySelectorAll("a, button")).find((e) => e.getAttribute("data-key") === had);
       if (again) again.focus();
     }
-    // Not on this hub: said once, and its timers and events ask no more.
-    const absent = () => M.api.absent.has("GET", path);
     try {
-      if (absent()) throw new M.api.ApiError("not on this hub", 404, path, "not_found");
       draw(await M.api.get(path));
     } catch (err) {
-      if (absent() || await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); }
       draw(null, err);
     }
     append(root, h("h2", null, "Overview"), status.el, box);
@@ -263,14 +260,13 @@ window.Maity = window.Maity || {};
     let reading = false;
     let pendingRead = false;
     async function reread() {
-      if (absent()) return;
       if (reading) { pendingRead = true; return; }
       reading = true;
       try {
         draw(await M.api.get(path));
         status.done();
       } catch (err) {
-        if (await M.api.missingRoute(err, "GET", path)) { err.notOnHub = true; M.api.absent.note("GET", path); draw(null, err); status.done(); } else status.fail("Could not refresh: ", err);
+        status.fail("Could not refresh: ", err);
       } finally {
         reading = false;
         if (pendingRead) { pendingRead = false; reread(); }

@@ -100,7 +100,8 @@ script choosing the base by protocol: the shell's
 
 **Id:** b3982ae9-18ec-4e1a-b383-c8d68d817a71
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8a528eb5-8dd6-4fec-996e-79c5b57abb51
 **Evidence:** confirmed
 **Source:** docs/api.md §6.22 (the dashboard draws the public page at `/<owner>/<slug>/swarm` for visitors without a session, for anyone who is not a member and at `?as=public`; a member gets the Swarm tab with a link to the public view), §16.11; the card tsk-ejtazwt37dhp for the reduced body
 **Revisit when:** the hub serves the public swarm as a static page of its own (§16.9), or pictures may be shown to visitors

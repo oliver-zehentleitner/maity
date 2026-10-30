@@ -29,11 +29,10 @@ window.Maity = window.Maity || {};
     return err;
   }
 
-  // The section, for a human owner, where the hub knows names (its project
-  // view carries `aliases`); none otherwise.
+  // The section, for a human owner; none otherwise.
   function section(ctx) {
     const p = ctx.project;
-    if (ctx.me.kind !== "human" || !ctx.isOwner || !("aliases" in p)) return null;
+    if (ctx.me.kind !== "human" || !ctx.isOwner) return null;
     const box = h("div", { class: "project-names" }, h("h2", { class: "panel-title", id: "names-heading" }, "Project name"),
       h("p", null, "This project is ", h("code", null, p.full_name), "."),
       p.aliases.length
@@ -157,8 +156,7 @@ window.Maity = window.Maity || {};
     const once = (to) => (to.org ? to.org.my_role === "owner" : to.id === ctx.me.id);
     fill([]);
     if (ctx.me.kind === "human") {
-      M.api.hubHas("GET", "/orgs")
-        .then((yes) => (yes ? M.api.get("/orgs") : { items: [] }))
+      M.api.get("/orgs")
         .then((r) => {
           // A suspended organisation takes no transfer in (§6.26).
           const orgs = r.items.filter((o) => ["owner", "admin"].includes(o.my_role) && o.id !== p.owner.id && !o.moderation);
