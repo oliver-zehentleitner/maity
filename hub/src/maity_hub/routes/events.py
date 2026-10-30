@@ -317,10 +317,13 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            if instance is not None:
-                # One instance of a team: its token wakes only it, the team reads it (§8.2).
-                instances.require_active(conn, addressee, instance, "to")
-            target = instances.token(principal, instance)
+            # One instance of a team: its token wakes only it, the team reads it; a replaced
+            # instance's address reaches its successor (§8.2).
+            target = (
+                instances.token(principal, None)
+                if instance is None
+                else instances.addressed(conn, addressee.id, principal, instance, "to")
+            )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -347,7 +350,7 @@ def post_message(
         # mention stays either way.
         pinged: dict[str, str] = {}  # token -> member
         for m in mentioned:
-            token = instances.token(m["member_id"], m["instance"])
+            token = mentions.instance_token(conn, mine.project.id, m["member_id"], m["instance"])
             if not (
                 "all" in audience
                 or token in audience

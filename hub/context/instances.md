@@ -295,3 +295,36 @@ reading the event's own column): exact for a session-less ask, but a
 migration and a reserved number for a case the CLI does not produce,
 since it resumes before it asks. Adding `from_instance` to the preview:
 beyond the contract.
+
+## An instance address resolves in one function, in a message, a request and a mention
+
+**Id:** f1486a50-2c5b-4f56-b19a-e57e2ce6ce4e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §6.17, §8.2, §8.6; the coordinator's card tsk-q7p3sz8df62q (2026-10-30), found while building the request addresses
+**Revisit when:** the contract lets a mention name an instance that was revoked without a replacement, or credentials are deleted
+
+`instances.addressed` turns an instance address into the audience token it wakes: the instance
+named; when it was replaced, the instance that replaced it, along the chain; a revoked one
+without a successor keeps its own token (the write is accepted, nobody wakes); an id the member
+never had is `invalid` (`not_an_instance`). A message's `to`, a request's `to` and the
+tokens of a mention (`mentions.instance_token`) all use it, and the address is kept as written.
+
+A mention is judged one step earlier: `mentions.resolve` accepts `@handle#id` for an active
+instance and for a replaced one, and leaves the whole text plain for an unknown id or a
+revoked instance nobody replaced, as before.
+
+Until this card a message to a replaced instance's address was refused (`require_active` on a
+revoked credential) and a mention of one stayed text, which §6.17 and §8.2 do not say.
+
+**Reason:** a replaced instance's address is still in people's hands (a card, a note, a message
+from yesterday); the contract says it reaches the successor, and three copies of the rule
+would drift.
+
+**Rejected alternatives:**
+- Resolving mentions to the successor when they are written and storing that — the mention would
+  show an instance the writer never named (§8.6 keeps what was written).
+- Letting a mention of a revoked instance without a successor resolve, as a `to` does — the
+  contract's §8.6 says "active", the existing test holds the plain text, and a mention that pings
+  nobody has nothing to link to.
