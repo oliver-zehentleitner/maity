@@ -434,3 +434,29 @@ be sent. The dashboard should not report an operator's choice as a fault.
 
 **Rejected alternative:** switching the store on in the e2e run only: the page
 would still treat an unconfigured hub as broken in production.
+
+## A link in one's own chat bubble takes the text's colour, underlined
+
+**Id:** bf8a5722-3f5f-4265-a89b-5ed34622aded
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the e2e's accessibility check (axe-core, color-contrast) on the first real attachment upload, card tsk-8h6yzp4f8jqg, 2026-10-30: the accent #1a66d9 on `--out-bg` #dbe9ff at 4.33:1, below 4.5:1, and below it in the dark scheme too; the review of #673
+**Revisit when:** `--accent` or `--out-bg` change, or own messages get a background of their own per scheme
+
+`.msg.out a` takes `var(--text)` and stays underlined: any link in one's
+own bubble — an attachment's, a Markdown link, an id's link — reads
+13.2:1 on `--out-bg` in the light scheme and 10.9:1 in the dark one.
+Links everywhere else keep the accent.
+
+**Reason:** the bubble's tint is what makes one's own messages stand
+apart, and the accent fell under WCAG AA on it in both schemes. The
+underline keeps a link recognisable without its colour.
+
+**Rejected alternative:** a darker accent for every link: it would
+change every link and button of the dashboard for one background, and
+the accent's own ratios on `--bg` and `--surface` were measured and
+documented. A link colour of the bubble's own per scheme: another token
+to keep in step with both backgrounds, for what the text's colour
+already does with room to spare.
+
