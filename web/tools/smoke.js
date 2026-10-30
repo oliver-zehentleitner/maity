@@ -3613,7 +3613,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aliasMention = (t, len, ctx) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
   expect(aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: a mention typed as an alias of the member is a link");
   expect(typeof aliasMention("@agent-b hi", 8, null)[0] === "string" && typeof aliasMention("@other hi", 6, aliasCtx)[0] === "string", "mentions: without the alias, or with another name, it stays text");
-  expect(aliasMention("@old-owner/agent-b hi", 18, aliasCtx)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: owner/alias is a link as well");
+  // The owner renamed, the agent has no alias: the old owner name still leads to it (§6.24).
+  const ownerCtx = { memberById: {
+    "agt-b": { handle: "agent-b", aliases: [], name: "neo/agent-b", owner_id: "hum-o" },
+    "hum-o": { handle: "neo", aliases: ["old"] } } };
+  const ownerMention = (t, len) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
+  expect(ownerMention("@old/agent-b hi", 12)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: the owner's old handle before an agent without aliases is a link");
+  expect(typeof ownerMention("@stranger/agent-b hi", 17)[0] === "string", "mentions: an owner part that is none of the owner's names stays text");
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };

@@ -132,16 +132,22 @@ window.Maity = window.Maity || {};
       get text() { return M.t("name_rules.slug"); } },
   };
 
-  // Whether `said` is "@" + one of the member's aliases (§6.24), or
-  // "@<owner or owner alias>/<handle or alias>"; the stored mention says who
-  // is meant, the aliases only say that the typed name is one of theirs.
+  // Whether `said` is "@" + one of the member's aliases (§6.24), or the long form
+  // "@<owner>/<handle>" where the handle part is the member's handle or an alias and
+  // the owner part is the owner's current handle (the first half of the member's global
+  // name) or one of the owner's aliases, when the owner is among the member views the
+  // context knows. The stored mention says who is meant; this only says that the typed
+  // name was one of theirs.
   function aliasSaid(ctx, x, said, suffix) {
     const m = ctx && ctx.memberById ? ctx.memberById[x.member_id] : null;
-    if (!m || !m.aliases || !m.aliases.length || !said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
+    if (!m || !said.startsWith("@") || (suffix && !said.endsWith(suffix))) return false;
     const typed = said.slice(1, suffix ? said.length - suffix.length : said.length);
-    const own = [m.handle].concat(m.aliases);
     const slash = typed.indexOf("/");
-    return slash < 0 ? m.aliases.indexOf(typed) >= 0 : own.indexOf(typed.slice(slash + 1)) >= 0 && typed.slice(0, slash).length > 0;
+    if (slash < 0) return (m.aliases || []).indexOf(typed) >= 0;
+    if ([m.handle].concat(m.aliases || []).indexOf(typed.slice(slash + 1)) < 0) return false;
+    const owner = typed.slice(0, slash);
+    const named = ctx.memberById[m.owner_id];
+    return owner === String(m.name || "").split("/")[0] || (!!named && (named.aliases || []).indexOf(owner) >= 0);
   }
 
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
