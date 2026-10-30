@@ -200,7 +200,7 @@ window.Maity = window.Maity || {};
     const DISTRIBUTION = [["free", "Free: any instance claims"], ["lead", "Lead: the lead hands cards out"], ["round_robin", "Round robin: in turn"]];
     const WAKE = [["all", "All listening instances"], ["lead", "Only the lead"], ["next_free", "The least busy instance"]];
     function teamForm(m, memberPath) {
-      if (!ownAgent(m) || !("team" in m)) return null;
+      if (!ownAgent(m)) return null;
       const t = Object.assign({ max_instances: 1, distribution: "free", lead_instance: null, wake: "all", review_within_team: false }, m.team || {});
       const id = (what) => "team-" + what + "-" + m.id;
       const active = (m.instances || []).filter((i) => !i.revoked_at);
@@ -360,7 +360,7 @@ window.Maity = window.Maity || {};
       const self = m.id === ctx.me.id;
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
-        // The briefing (§6.2), edited here; where the hub knows briefings.
+        // The briefing (§6.2), edited here; sent only to whom may see it.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath));
@@ -489,7 +489,7 @@ window.Maity = window.Maity || {};
     }
 
     // A chat per entry: one's own agent's direct chat, anyone else a group
-    // chat with them chosen (§9.2), where the hub has group chats.
+    // chat with them chosen (§9.2).
     function chatLink(m) {
       if (m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human") return null;
       // A group chat as the Chat list offers one (js/chat.js): not in a closed
@@ -504,7 +504,7 @@ window.Maity = window.Maity || {};
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
-        m.kind === "agent" && m.briefing != null && ctx.project.settings && "onboarding" in ctx.project.settings
+        m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null);
     }
 
@@ -561,9 +561,8 @@ window.Maity = window.Maity || {};
           : [h("h3", { id: "members-agent" }, "Agents (0)"), h("p", { class: "muted" }, "No agents yet.")]));
     }
 
-    // Whether the Chat button may start a group chat with anyone (§9.2):
-    // asked beside the list, never before it; the rows get it once known.
-    let groupsServed = false;
+    // The Chat button may start a group chat with anyone (§9.2).
+    const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     append(root, h("h2", null, "Members"),
       h("p", { class: "muted" }, "Everyone in " + (ctx.project.name || ctx.slug) + ", humans first, each with a chat."
@@ -575,15 +574,6 @@ window.Maity = window.Maity || {};
     draw();
     // A member marked by the URL keeps the focus across this redraw.
     const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
-    if (M.groupChat) {
-      M.groupChat.served().then((yes) => {
-        if (!yes) return;
-        const had = wanted && document.activeElement === wantedHead();
-        groupsServed = true;
-        redraw();
-        if (had && wantedHead()) wantedHead().focus();
-      }, () => {});
-    }
     // Inviting a person (§3.4), below the members, for a human with members:admin.
     if (M.invite) {
       const slot = h("div", { class: "invitations-slot" });

@@ -30,8 +30,7 @@ window.Maity = window.Maity || {};
     const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
     if (why) return { message: REFUSED[why] || why };
     if (err.code === "rate_limited") return { message: "too many changes of this picture in the last hour, or the hub is busy; try again later" };
-    // /me/avatar is not_found only on a hub that has no pictures yet.
-    if (err.code === "not_found") return { message: own ? "this hub does not take pictures yet" : "this profile is not yours, or this hub does not take pictures yet" };
+    if (err.code === "not_found" && !own) return { message: "this profile is not yours" };
     return err;
   }
 
@@ -148,13 +147,9 @@ window.Maity = window.Maity || {};
   // §5.2 "Meat proxy": the human's own switch (PATCH /me). The hub tells the
   // agents that deal with them a note, always the same text, and /me carries
   // it (member.meat_proxy_note): the page shows exactly that under the switch,
-  // never a copy of its own; a hub that does not send it shows none. Where the
-  // hub's machine form does not name the field there is no switch; a machine
-  // form that cannot be read keeps it.
+  // never a copy of its own; a hub that does not send it shows none.
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
-    const offered = await M.api.hubBody("PATCH", "/me").then((fields) => fields.has("meat_proxy"), () => true);
-    if (!offered) return null;
     const status = M.statusLine();
     const note = typeof ctx.me.meat_proxy_note === "string" && ctx.me.meat_proxy_note ? ctx.me.meat_proxy_note : null;
     const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint" });

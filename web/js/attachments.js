@@ -128,7 +128,7 @@ window.Maity = window.Maity || {};
         earlier = (await M.api.getAll(ctx.base + "/attachments?status=pending&uploaded_by=" + encodeURIComponent(ctx.me.id))).items;
       } catch (err) {
         earlier = [];
-        // A hub without attachments has nothing to offer; any other failure is said.
+        // Off on the hub: nothing to offer; any other failure is said.
         if (isOff(err)) offer(false); else status.fail("Could not read your files waiting from before: ", err);
       }
       drawEarlier();
@@ -182,10 +182,10 @@ window.Maity = window.Maity || {};
         draw();
       }
     });
-    // Hidden, the whole part, until the hub is known to take files (§8.7):
-    // a chooser whose every file would be refused is not offered, and no
-    // file field is left in the page without its visible label. An
-    // unreadable machine form offers it, and an upload's failure says itself.
+    // Hidden, the whole part, while the hub has attachments off (§8.7): a
+    // chooser whose every file would be refused is not offered, and no file
+    // field is left in the page without its visible label. An upload's
+    // failure says itself.
     const chooser = h("label", { for: id, class: "button small attach-button" }, "Attach files");
     const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
     function offer(yes) {
@@ -196,10 +196,8 @@ window.Maity = window.Maity || {};
     }
     if (hubOff) offer(false);
     else {
-      M.api.hubHas("POST", "/projects/{owner}/{slug}/attachments").catch(() => true).then((yes) => {
-        offer(yes && !hubOff);
-        if (yes) loadEarlier();
-      });
+      offer(true);
+      loadEarlier();
     }
     return {
       el,
@@ -258,7 +256,7 @@ window.Maity = window.Maity || {};
         h("span", { class: "attach-meta" },
           dl ? h("a", { href: dl, download: a.name, class: "attach-link" }, a.name) : h("span", null, a.name),
           h("span", { class: "muted" }, " · " + sizeOf(a.size) + (a.kind === "image" ? "" : " · " + a.type))),
-        // A hub known to have no attachments offers no delete that would fail.
+        // Attachments off on the instance (409): no delete that would fail.
         canDelete && !hubOff && canDelete(a) ? h("button", {
           type: "button", class: "small", "aria-label": "Delete the file " + a.name + " for everyone",
           onclick: async () => {
