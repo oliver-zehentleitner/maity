@@ -7,7 +7,7 @@ request shows what was asked. `NULL` for every request that exists when this run
 were all addressed to a member, a role or the owner.
 
 Revision ID: 0100
-Revises: 0098
+Revises: 0099
 Create Date: 2026-10-30
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0100"
-down_revision: str | None = "0098"
+down_revision: str | None = "0099"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
