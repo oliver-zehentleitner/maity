@@ -43,21 +43,28 @@ NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
 
 
 def robots(
-    public_url: str, enabled: bool, pages: dict[str, Any], public_pages: bool = False
+    public_url: str,
+    enabled: bool,
+    pages: dict[str, Any],
+    public_pages: bool = False,
+    has_urls: bool = True,
 ) -> str:
-    sitemap_line = f"Sitemap: {public_url.rstrip('/')}/sitemap.xml\n"
+    """The `Sitemap:` line is there whenever the sitemap lists at least one URL, and only
+    then (§16.7)."""
+    sitemap_line = f"\nSitemap: {public_url.rstrip('/')}/sitemap.xml\n" if has_urls else ""
     if public_pages:
-        # Every path but the hub's own first segments (§16.9, §16.11); the legal pages stay open.
-        hub = sorted(paths.HUB_FIRST - set(legal.ADDRESS.values()))
+        # Every path but the reserved first segments (§16.9, §16.11); the legal pages stay
+        # open. `/word/` and `/word` itself, so that a handle `word-x` is not caught.
+        closed = sorted((paths.RESERVED_FIRST | paths.HUB_FIRST) - set(legal.ADDRESS.values()))
         return (
             "User-agent: *\n"
-            + "".join(f"Disallow: /{first}/\n" for first in hub)
-            + f"\n{sitemap_line}"
+            + "".join(f"Disallow: /{first}/\nDisallow: /{first}$\n" for first in closed)
+            + sitemap_line
         )
     if not enabled:
         return "User-agent: *\nAllow: /$\nDisallow: /\n"
     allowed = "Allow: /$\n" + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
-    return f"User-agent: *\n{allowed}Disallow: /\n\n{sitemap_line}"
+    return f"User-agent: *\n{allowed}Disallow: /\n{sitemap_line}"
 
 
 def _url(base: str, address: str, lastmod: str | None) -> str:
@@ -88,13 +95,14 @@ def urls(
 
 def chunks(entries: list[str]) -> list[list[str]]:
     """The entries in files of at most `MAX_URLS` and `MAX_BYTES`."""
+    wrapper = len(urlset([]).encode())  # the file's own `<urlset>` counts against the limit
     files: list[list[str]] = [[]]
-    size = 0
+    size = wrapper
     for entry in entries:
         weight = len(entry.encode())
         if files[-1] and (len(files[-1]) >= MAX_URLS or size + weight > MAX_BYTES):
             files.append([])
-            size = 0
+            size = wrapper
         files[-1].append(entry)
         size += weight
     return files if entries else []
@@ -139,11 +147,13 @@ def _entries(request: Request) -> tuple[list[list[str]], str]:
 
 @router.get("/robots.txt", include_in_schema=False)
 def get_robots(request: Request) -> Response:
-    with engine_of(request).begin() as conn:
-        enabled = bool(landing.stored(conn)["enabled"])
-        pages = legal.stored(conn)["pages"]
     hub = settings_of(request)
-    text = robots(hub.public_url, enabled, pages, hub.public_pages)
+    with engine_of(request).begin() as conn:
+        value = landing.stored(conn)
+        enabled = bool(value["enabled"])
+        pages = legal.stored(conn)["pages"]
+        found = urls(conn, hub.public_url, value["updated_at"], enabled, pages, hub.public_pages)
+    text = robots(hub.public_url, enabled, pages, hub.public_pages, bool(found))
     return Response(text, media_type="text/plain; charset=utf-8", headers=CACHE)
 
 
@@ -157,11 +167,16 @@ def get_sitemap(request: Request) -> Response:
 
 
 @router.get("/sitemap-{part}.xml", include_in_schema=False)
-def get_sitemap_part(part: int, request: Request) -> Response:
-    """One part of a sitemap that is an index (§16.9); a hub whose sitemap is one file has none."""
+def get_sitemap_part(part: str, request: Request) -> Response:
+    """One part of a sitemap that is an index (§16.9); a hub whose sitemap is one file has none,
+    and what is no number is `not_found` like any other unknown part."""
     files, _ = _entries(request)
-    if len(files) < 2 or not 1 <= part <= len(files):
+    if (
+        not (part.isascii() and part.isdigit())
+        or not len(files) >= 2
+        or not 1 <= int(part) <= len(files)
+    ):
         raise not_found()
     return Response(
-        urlset(files[part - 1]), media_type="application/xml; charset=utf-8", headers=CACHE
+        urlset(files[int(part) - 1]), media_type="application/xml; charset=utf-8", headers=CACHE
     )

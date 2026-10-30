@@ -311,14 +311,68 @@ def test_a_sitemap_that_fits_in_one_file_has_no_parts(
     assert client.get("/sitemap-1.xml").status_code == 404
 
 
-def test_robots_allows_everything_but_the_hubs_own_first_segments(
+def test_robots_closes_the_reserved_first_segments_and_nothing_else(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    text = make_client(public_pages=True).get("/robots.txt").text
+    from maity_hub import legal, paths
+
+    client = make_client(public_pages=True)
+    stored(migrated, "/oz-team")
+    text = client.get("/robots.txt").text
     assert text.startswith("User-agent: *\n")
-    for first in ("api", "assets", "join", "r", "mail", "badge"):
-        assert f"Disallow: /{first}/\n" in text
-    assert "Disallow: /\n" not in text and "impressum" not in text
-    assert "Sitemap: https://hub.example/sitemap.xml" in text
+    for first in sorted((paths.RESERVED_FIRST | paths.HUB_FIRST) - set(legal.ADDRESS.values())):
+        assert f"Disallow: /{first}/\n" in text and f"Disallow: /{first}$\n" in text, first
+    for legal_page in legal.ADDRESS.values():  # the legal pages stay open
+        assert f"/{legal_page}" not in text
+    assert "Disallow: /\n" not in text and "Disallow: /login-help" not in text
+    assert text.endswith("\nSitemap: https://hub.example/sitemap.xml\n")
     off = make_client().get("/robots.txt").text
     assert "Disallow: /\n" in off  # as before while pages are off
+
+
+def test_robots_names_the_sitemap_only_while_it_lists_a_url(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = make_client(public_pages=True)
+    assert client.get("/sitemap.xml").status_code == 404
+    assert "Sitemap:" not in client.get("/robots.txt").text
+    stored(migrated, "/oz-team")
+    assert client.get("/sitemap.xml").status_code == 200
+    assert "Sitemap:" in client.get("/robots.txt").text
+
+
+def test_a_part_of_the_sitemap_is_cached_like_the_sitemap_and_unknown_names_are_not_found(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(seo, "MAX_URLS", 1)
+    client = make_client(public_pages=True)
+    stored(migrated, "/a", "/b")
+    part = client.get("/sitemap-1.xml")
+    assert part.status_code == 200
+    assert part.headers["cache-control"] == "public, max-age=3600"
+    for name in ("/sitemap-abc.xml", "/sitemap-1x.xml", "/sitemap--1.xml", "/sitemap-3.xml"):
+        assert client.get(name).status_code == 404, name
+    # a path that is no sitemap part at all names nothing: the app shell
+    assert "dashboard" in client.get("/sitemap-.xml").text
+
+
+def test_the_join_host_has_no_sitemap_part_either(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = make_client(
+        base_url="https://join.example", public_pages=True, join_url="https://join.example"
+    )
+    for name in ("/robots.txt", "/sitemap.xml", "/sitemap-1.xml"):
+        got = client.get(name, follow_redirects=False)
+        assert got.status_code == 404, name
+
+
+def test_the_urlset_wrapper_counts_against_the_byte_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = seo._url("https://h", "/p", None)
+    wrapper = len(seo.urlset([]).encode())
+    monkeypatch.setattr(seo, "MAX_BYTES", wrapper + len(entry.encode()))
+    assert [len(part) for part in seo.chunks([entry, entry])] == [1, 1]
+    monkeypatch.setattr(seo, "MAX_BYTES", wrapper + 2 * len(entry.encode()))
+    parts = seo.chunks([entry, entry])
+    assert [len(part) for part in parts] == [2]
+    assert len(seo.urlset(parts[0]).encode()) <= seo.MAX_BYTES

@@ -59,7 +59,9 @@ every page and renders all again before it serves any; a worker repeats `render_
 `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
 (`public_pages.configure`), because the write paths do not carry them. The sitemap lists the stored rows
 with their `lastmod` and becomes an index with `/sitemap-<n>.xml` parts above 50,000 URLs or 50 MB;
-`robots.txt` disallows only the hub's own first segments while pages are on.
+`robots.txt` closes every reserved first segment of §16.11 (as `/word/` and `/word`, so that a handle
+`word-x` stays open, the legal pages too) while pages are on, and names the sitemap only while it lists a URL;
+the parts of a sitemap are cached like it and are not served on the join host.
 
 **Reason:** the contract wants the removal in the transaction that changed the input, which only the writer
 can give; a registry keeps each kind's rendering next to its inputs and gives the writers one call to make.
