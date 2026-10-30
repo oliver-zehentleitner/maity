@@ -347,7 +347,7 @@ would drift.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §9.1 (the human's message wakes exactly one instance when `POST …/messages` carries `to_instance`) and the card tsk-p1df7ggm17bc from the coordinator, 2026-10-30
-**Revisit when:** the contract lets an agent name an instance of a human, or lets a group chat message carry it, or the wake-rule fix (tsk-p49b0kverrph) lands (then the deviation above goes)
+**Revisit when:** the contract lets an agent name an instance of a human, or lets a group chat message carry it
 
 `ChatIn` and `MessageIn` take `to_instance`. In a direct chat it is resolved like an instance address in a
 message's `to` (`instances.addressed`: a replaced instance's id reaches its successor, an id the agent
@@ -357,11 +357,6 @@ human's `member:` token, so the whole team reads it and one instance wakes; with
 audience is as before. The payload and the message view carry `to_instance` as written, `null` when
 none was named, and `events.wakes` lets a direct chat message that names an instance wake only the
 instance whose own token is in the audience.
-
-**Known deviation from the contract, not a decision:** a direct chat message that names no instance
-still wakes every instance of the agent, because `events.wakes` answers true for a message whose
-`conversation_id` is the agent's id before it reads `row.wakes`; §9.1 and §6.18 say the team's `wake`
-rule decides. It is older than this change and is fixed in its own change (card tsk-p49b0kverrph).
 Only the human of the chat names an instance (`human_only` otherwise), and only in a direct chat:
 a group chat or a message of another type answers `direct_chat_only` — the contract names the field for
 `POST …/conversations/{agent_id}/messages`, and a group chat chooses its instance by a mention.
@@ -376,3 +371,31 @@ message, and the audience token is what the wake rule already reads.
 - Storing the resolved token in the payload instead of the id as written: the view would show an instance
   the human never named, and the successor changes at the next replacement.
 - Letting an agent name an instance of the human: a human has no instances (§6.17).
+
+## A direct chat message follows the team's wake rule unless it names an instance
+
+**Id:** 3335a9ed-8542-467d-ac13-6f05afe59dc8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §9.1 and §6.18; the probe on 2026-10-30 (wake `lead`, the lead not listening: `event.wakes` held `{agent: []}` while `events.wakes` answered true for both instances); the card tsk-p49b0kverrph from the coordinator
+**See:** instances.md#a-direct-chat-message-names-its-instance-in-to_instance-the-audience-pins-that-instance-the-payload-keeps-the-id-as-written — bd3861cc-97f5-4f18-a638-3777b91579bf — as of 2026-10-30
+**Revisit when:** the contract lets a direct chat wake every instance on purpose, or the wake rule gets a second source besides `row.wakes`
+
+`events.wakes` used to answer true at once for a message whose `conversation_id` is the agent's
+member id, before it read `row.wakes`: a human's direct message woke every instance of the agent
+whatever the team's `wake` was. Now that shortcut holds only for a message that names an instance
+(`to_instance`, which wakes that instance only); every other direct chat message goes on to the
+team's rule like any event addressed to `member:<agent>`: `all` wakes every instance, `lead` the lead
+instance, `next_free` the listening instance with the fewest claims, and a `lead` or `next_free` team
+with no listening instance wakes nobody, the message waiting in the next resume (§6.18).
+
+**Reason:** the contract says a human's message wakes the team by its `wake` rule; the shortcut was
+older than the rule and nobody removed it when the rule came, so a lead team's second instance was
+woken by every chat message and answered what the lead was meant to answer.
+
+**Rejected alternatives:**
+- Keeping the shortcut and narrowing only `to_instance`: the bug stays for every team with a
+  narrowing rule, which is the case the rule exists for.
+- Handing the chat to the lead in the route (a different audience): the audience is what the team
+  reads; the wake is a separate fact and `row.wakes` is where it is recorded.

@@ -166,9 +166,12 @@ def _inviter(conn: Connection, human_id: str) -> dict[str, Any]:
 def _asker(conn: Connection, row: Any) -> Any:
     """`asked_by` with the agent instance that asked (§7, §6.17): the instance of the
     credential whose session filed it; `null` for a human, and for a request the hub
-    files on an agent's behalf, which has no session."""
+    files on an agent's behalf, which has no session. The owner's digest (§5.3) has no
+    asker at all: `null`."""
     if row.asked_by is None and row.asked_by_human is not None:
         return _inviter(conn, row.asked_by_human)  # an organisation's invitation (§6.26)
+    if row.asked_by is None:
+        return None
     person = _person(conn, row.asked_by, row.asked_session_id)
     return {**person, "instance": _asking_instance(conn, row)}
 
@@ -2031,6 +2034,40 @@ def file_hub_notice(
         _payload(row, request_view(conn, row)),
         subject=("request", request_id),
     )
+    return request_id
+
+
+def file_hub_digest(conn: Connection, human_id: str, title_text: str, summary: str) -> str:
+    """The owner's digest of agent instances that are not listening (§5.3): a personal
+    request to the human in person, `filed_by: hub`, class `info`, one option `seen`, with
+    no asker, no project and no organisation. Without a project it has no events; the
+    human hears of it through its record, as of an organisation's invitation."""
+    request_id = new_id("request")
+    conn.execute(
+        insert(t.request).values(
+            {
+                "id": request_id,
+                "project_id": None,
+                "org_id": None,
+                "class": "info",
+                "title": title_text[: t.TITLE],
+                "summary": summary,
+                "options": SEEN,
+                "priority": "normal",
+                "to_kind": "human",
+                "to_human": human_id,
+                "personal": True,
+                "filed_by": "hub",
+                "asked_by": None,
+                "asked_by_human": None,
+                "asked_session_id": None,
+                "while_open": "wait",
+                "status": "open",
+                "created_at": clock.now(),
+            }
+        )
+    )
+    records.personal_request(conn, _row(conn, request_id))
     return request_id
 
 

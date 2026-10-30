@@ -41,7 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. At the top right are two menus, each a
+narrow screen they go under it. Beside them, where the project has them,
+two links in tabs of their own: its repository, with the forge's mark and
+name (GitHub, GitLab, Gitea; a branch mark otherwise), and **Why**, the
+Keep the Why dashboard of the family's root (`keep_the_why_export`'s
+member at `path: ""`); each only when its address is plain `https`. At the top right are two menus, each a
 real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
@@ -1028,12 +1032,15 @@ session of this human was signed out while this one stays signed in.
 **Create a project** (`/new`) sends `POST /projects` (`docs/api.md`
 §6.1): name, a slug proposed from the name (`[a-z0-9][a-z0-9-]{1,62}`,
 its rule said under the field and checked before sending), an optional repository URL, the project
-memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the three prefilled
-setup options of §6.21 — set up Keep the Why in the repository, add its badge, add the Maity
-badge — the last one also offered with `none`), and
+memory (a dropdown `none` / `Keep the Why`, Keep the Why preselected; with it the five prefilled
+setup options of §6.21 — set up Keep the Why in the repository, add its badge, run its linter in
+CI, publish its dashboard with a **Path** under it (`keep-the-why-dashboard`, checked as the hub
+checks it, its refusal said at the field), add the Maity badge — the last one also offered with
+`none`), and
 the policy preset (`hierarchical` or `solo`). The memory goes as
 `memory: {provider}` and every option as `true` or `false` in `setup`
-(under `none` the Keep the Why ones are `false`); the hint says that an
+(under `none` the Keep the Why ones are `false`), `dashboard_path` only
+while the dashboard is ticked; the hint says that an
 agent sets the memory up in the repository through setup cards, made
 once the project has a repository, and that the Maity badge also
 switches the project's public badge on. The creator becomes the

@@ -199,3 +199,159 @@ def test_marking_it_read_leaves_it_unread_while_an_instance_is_away(
     assert again["read"] is False
     unread = owner.get("/me/notifications", params={"limit": 50, "unread": "true"}).json()
     assert any((i.get("target") or {}).get("type") == "agents" for i in unread["items"])
+
+
+# --- inbox: one digest request per owner -------------------------------------------------
+
+
+@pytest.fixture
+def inbox_owner(owner: flow.Human) -> flow.Human:
+    changed = owner.patch("/me/notification-settings", {"not_listening": {"mode": "inbox"}})
+    assert changed.status_code == 200, changed.text
+    return owner
+
+
+def _digests(owner: flow.Human, status: str = "all") -> list[dict[str, Any]]:
+    items = owner.get("/requests", params={"status": status}).json()["items"]
+    return [r for r in items if r["filed_by"] == "hub" and r["project"] is None]
+
+
+def _created_records(engine: Engine, owner: flow.Human) -> int:
+    with engine.connect() as conn:
+        return len(
+            conn.execute(
+                select(t.account_record.c.n).where(
+                    t.account_record.c.human_id == owner.id,
+                    t.account_record.c.type == "personal_request_created",
+                )
+            ).all()
+        )
+
+
+def test_inbox_keeps_one_digest_request_while_an_instance_is_away(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(minutes=30))  # under the threshold
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []
+    _episode(migrated, agent, timedelta(minutes=61))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert (digest["class"], digest["status"], digest["personal"]) == ("info", "open", True)
+    assert [o["id"] for o in digest["options"]] == ["seen"]
+    assert (digest["project"], digest["org"], digest["asked_by"]) == (None, None, None)
+    assert digest["title"] == "1 of your agent instances are not listening"
+    handle = owner.get(f"{BASE}/members/{agent.id}").json()["handle"]
+    first, _, advice = digest["summary"].partition("\n\n")
+    assert first.startswith(f"{handle} ({agent.instance}) in maintainer/maity, since ")
+    assert first.endswith(" (UTC)")
+    assert advice.startswith("Their harness may have stopped its wait loop")
+    shown = owner.get(f"/requests/{digest['id']}").json()
+    assert (shown["project"], shown["org"]) == (None, None)
+    bell = owner.get("/me/notifications", params={"limit": 50}).json()
+    assert bell["counts"]["inbox"] == 1
+    [item] = [i for i in bell["items"] if (i["target"] or {}).get("id") == digest["id"]]
+    assert item["title"] == "Maity asks you: 1 of your agent instances are not listening"
+    assert item["project"] is None
+    not_listening_digest.run(migrated)
+    assert [d["id"] for d in _digests(owner)] == [digest["id"]]  # one, not a second
+
+
+def test_a_changed_set_rewrites_the_open_request_in_place(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = inbox_owner
+    first, second = _agent(make_client, owner), _agent(make_client, owner)
+    _episode(migrated, first, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    created = _created_records(migrated, owner)
+    _episode(migrated, second, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [again] = _digests(owner)
+    assert again["id"] == digest["id"]
+    assert again["title"] == "2 of your agent instances are not listening"
+    assert len(again["summary"].partition("\n\n")[0].splitlines()) == 2
+    assert _created_records(migrated, owner) == created  # rewritten, nothing new filed
+
+
+def test_the_hub_withdraws_it_when_none_is_away(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    _episode(migrated, agent, None)
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert digest["status"] == "withdrawn"
+    assert owner.get("/me/notifications", params={"limit": 0}).json()["counts"]["inbox"] == 0
+
+
+def test_after_seen_only_a_later_episode_files_a_new_one(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = inbox_owner
+    known, later = _agent(make_client, owner), _agent(make_client, owner)
+    _episode(migrated, known, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    answered = owner.post(f"/requests/{digest['id']}/answer", {"reply_id": "seen"})
+    assert answered.status_code == 200, answered.text
+    not_listening_digest.run(migrated)
+    assert [d["status"] for d in _digests(owner)] == ["answered"]  # the same one still away
+    later_start = clock.now() + timedelta(minutes=1)
+    clock.set_source(lambda: later_start + timedelta(hours=2))
+    with migrated.begin() as conn:  # an episode that started after the answer
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.credential_id == later.credential_id)
+            .values(not_listening_since=later_start)
+        )
+    not_listening_digest.run(migrated)
+    [new] = _digests(owner, "open")
+    assert new["title"] == "1 of your agent instances are not listening"
+    assert f"({later.instance})" in new["summary"] and f"({known.instance})" not in new["summary"]
+
+
+@pytest.mark.parametrize("mode", ["bell", "off"])
+def test_leaving_inbox_withdraws_the_digest_at_the_patch(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, mode: str
+) -> None:
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    changed = owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    assert [d["status"] for d in _digests(owner)] == ["withdrawn"]  # at the PATCH
+    not_listening_digest.run(migrated)
+    assert _digests(owner, "open") == []
+
+
+def test_a_new_owner_hears_of_the_instance_at_the_next_hour(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests import factory
+
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    heir = factory.human(migrated, "heir")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile).where(t.agent_profile.c.id == agent.id).values(owner_id=heir)
+        )
+    not_listening_digest.run(migrated)
+    assert [d["status"] for d in _digests(owner)] == ["withdrawn"]
+    with migrated.connect() as conn:
+        theirs = conn.execute(
+            select(t.request.c.status).where(
+                t.request.c.to_human == heir, t.request.c.project_id.is_(None)
+            )
+        ).all()
+    assert [r.status for r in theirs] == ["open"]

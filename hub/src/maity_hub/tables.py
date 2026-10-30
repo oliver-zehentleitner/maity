@@ -1355,9 +1355,14 @@ request = Table(
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
-    # No project: only a personal request that concerns an organisation (§7, §6.26).
+    # No project: a personal request that concerns an organisation (§7, §6.26), or the owner's
+    # digest of agent instances that are not listening, which concerns every project of the
+    # human's agents at once and has no asker (§5.3).
     CheckConstraint(
-        "project_id IS NOT NULL OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)",
+        "project_id IS NOT NULL"
+        " OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)"
+        " OR (org_id IS NULL AND personal AND filed_by = 'hub' AND asked_by IS NULL"
+        " AND asked_by_human IS NULL)",
         name="scope_known",
     ),
     Index("ix_request_project_status", "project_id", "status"),

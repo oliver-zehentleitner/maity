@@ -146,11 +146,16 @@ window.Maity = window.Maity || {};
 
   // The header lockup (web/brand/BRAND.md: 28 px, the small mark), one file
   // per theme; app.css shows the one the page's theme asks for, so a theme
-  // picked in the menu switches it too.
-  function brandTitle() {
+  // picked in the menu switches it too. It is the way home: signed in to
+  // everything waiting (/all), without a session to the instance's start
+  // page (/); the link carries the name, the pictures none of their own.
+  function brandTitle(signedIn) {
+    const home = signedIn === undefined ? !!M.api.session() : signedIn;
+    const label = home ? "Maity: everything waiting for you" : "Maity: home";
     return h("h1", { class: "brand" },
-      h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "Maity", width: "94", height: "28" }),
-      h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "Maity", width: "94", height: "28" }));
+      h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
+        h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
+        h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "", width: "94", height: "28" })));
   }
 
   // Light, dark, or as the system has it; per browser (js/theme.js). The
@@ -194,6 +199,46 @@ window.Maity = window.Maity || {};
     return Number.isNaN(d.getTime()) ? project.released_at
       : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
+  // The selected project's two places one goes to often, beside its state
+  // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's
+  // mark, and the Keep the Why dashboard of the family's root. Each only
+  // where the project has it, as plain https, in a tab of its own.
+  const FORGES = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea" };
+  // 16 × 16 marks: GitHub's (Octicons, MIT), GitLab's simplified, and a
+  // branch (Octicons) for any other forge.
+  const FORGE_MARKS = {
+    github: "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z",
+    gitlab: "M8 15L1 9.8 2.6 2 5 6h6l2.4-4L15 9.8z",
+    other: "M9.5 3.25a2.25 2.25 0 113 2.12V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.13a2.25 2.25 0 11-1.5 0V5.37a2.25 2.25 0 111.5 0v1.84A2.49 2.49 0 016 7h4a1 1 0 001-1v-.63A2.25 2.25 0 019.5 3.25z",
+  };
+  const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
+  function mark(d) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const p = document.createElementNS(SVG, "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "currentColor");
+    svg.appendChild(p);
+    return svg;
+  }
+  function projectLinks(project) {
+    const repo = project.repository && M.dom.safeUrl(project.repository.url);
+    const forge = project.repository && project.repository.forge;
+    const exp = project.keep_the_why_export;
+    const root = exp && (exp.members || []).find((m) => m.path === "");
+    const why = root && M.dom.safeUrl(root.dashboard_url);
+    const name = FORGES[forge] || "Repository";
+    return [
+      repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": (FORGES[forge] ? "Repository on " + name : "Repository") + " (opens in a new tab)", title: repo },
+      mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
+      why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
+      mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
+    ];
+  }
+
   function releasedMark(project) {
     if (!project || !project.released_at) return null;
     return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
@@ -245,7 +290,7 @@ window.Maity = window.Maity || {};
   function renderLogin(main, note) {
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      brandTitle(),
+      brandTitle(false),
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
@@ -282,7 +327,7 @@ window.Maity = window.Maity || {};
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
     document.title = "Waiting for approval · Maity";
-    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(), themeMenu()));
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(true), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
       h("h2", null, "Your account waits for the operator's approval"),
       h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
@@ -719,11 +764,13 @@ window.Maity = window.Maity || {};
     const provider = ctx.project.memory && ctx.project.memory.provider;
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([, title]) => title) : [];
+    // The dashboard's option names its path (§6.1 setup.dashboard_path).
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path ? title + " under " + s.dashboard_path : title)) : [];
     let setup;
     if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
     else if (Array.isArray(s.cards) && s.cards.length) {
-      setup = h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]));
+      setup = [h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)])),
+        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, "The dashboard is published under " + s.dashboard_path + ".") : null];
     } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
     else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
     return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
@@ -1063,7 +1110,7 @@ window.Maity = window.Maity || {};
     });
     append(header,
       h("div", { class: "bar" },
-        brandTitle(),
+        brandTitle(true),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
@@ -1077,10 +1124,11 @@ window.Maity = window.Maity || {};
       h("div", { class: "switcher-row" },
         switcher(ctx),
         ctx.scope === "project"
-          ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
+          ? h("div", { class: "project-state", role: "group", "aria-label": "State, absence and links" },
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
+            absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null,
+            projectLinks(ctx.project))
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.
