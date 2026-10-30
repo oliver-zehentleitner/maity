@@ -3145,7 +3145,7 @@ window.Maity = window.Maity || {};
         const listed = (fixtures()[m[1] + "/members.json"].items || []).find((x) => x.id === m[2]);
         const all = (listed && listed.instances) || [];
         const named = all.find((i) => i.id === body.to_instance);
-        if (!named) fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "unknown" } });
+        if (!named) fail(400, "invalid", "no such instance of this agent", path, { fields: { to_instance: "not_an_instance" } });
         const next = named.revoked_at ? all.find((i) => !i.revoked_at && i.replaces === named.id) : named;
         toInstance = next ? next.id : named.id;
       }

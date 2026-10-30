@@ -2822,7 +2822,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "x", to_instance: "zzzz" }); } catch (err) { ciBad = err; }
   const ciGood = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "y", to_instance: "k3pa" });
   const ciTeam = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "z" });
-  expect(ciBad && ciBad.status === 400 && JSON.stringify(ciBad.details.fields) === JSON.stringify({ to_instance: "unknown" })
+  expect(ciBad && ciBad.status === 400 && JSON.stringify(ciBad.details.fields) === JSON.stringify({ to_instance: "not_an_instance" })
     && ciGood.to_instance === "k3pa" && ciTeam.to_instance === null, "chat: the fixture hub takes to_instance as §9.1 and says it on the message");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
