@@ -28,6 +28,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import (
     briefings,
     clock,
+    cross_owner,
     events,
     handles,
     idempotency,
@@ -40,9 +41,9 @@ from maity_hub import (
     write_guard,
 )
 from maity_hub import tables as t
-from maity_hub.access import membership
+from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials, second_factor
-from maity_hub.auth.caller import require_secure_transport
+from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
@@ -597,6 +598,8 @@ def render_page(
             or conn.execute(select(t.human.c.handle).where(t.human.c.id == reports_to)).scalar()
         )
         reports_to_text = f"`{boss}`"
+        if cross_owner.join_waits(conn, row):  # §3.1: the edge is set at a human's go
+            reports_to_text += " (waiting for a human's consent)"
     else:
         reports_to_text = "nobody"
     values = {
@@ -796,6 +799,37 @@ def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
     return reports_to
 
 
+def _ask_boss_side(
+    conn: Connection, row: Any, project: Any, membership_id: int, boss_id: int
+) -> None:
+    """The consent request to the boss's side, `asked_by` the join's creator (§3.1): their
+    creating the profile is the subordinate's owner's consent. A creator who has left the
+    project asks nobody: the member starts without a boss."""
+    creator = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == row.project_id,
+            (t.membership.c.agent_id == row.created_by)
+            | (t.membership.c.human_id == row.created_by),
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if creator is None:
+        return
+    target = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    boss = conn.execute(select(t.membership).where(t.membership.c.id == boss_id)).one()
+    human = creator.agent_id is None
+    caller = Caller(
+        kind="human" if human else "agent",
+        via="join",
+        human_id=creator.human_id,
+        agent_id=creator.agent_id,
+        membership_id=creator.id,
+        project_id=row.project_id,
+    )
+    mine = Membership(project, creator, "human" if human else "agent")
+    cross_owner.file(conn, project, mine, caller, target, boss)
+
+
 def _owner(conn: Connection, row: Any) -> str | None:
     """The account a join issues for: the profile's owner (None once the profile is
     gone), or the creator for a profile the exchange creates."""
@@ -839,14 +873,18 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         # A pickup for a member, or a rejoin, never brings back a member a human removed
         # (§15.9): it answers as every join that no longer works (§1.1).
         raise not_found()
+    waiting_for: int | None = None  # a cross-owner boss: the edge waits for a human (§3.1)
     if member is None:
+        boss = _boss_still_here(conn, row.reports_to)
+        if boss is not None and cross_owner.join_waits(conn, row):
+            waiting_for, boss = boss, None
         result = conn.execute(
             insert(t.membership).values(
                 project_id=row.project_id,
                 agent_id=agent_id,
                 trust=row.trust,
                 role=row.role,
-                reports_to=_boss_still_here(conn, row.reports_to),
+                reports_to=boss,
                 areas=row.areas,
                 capabilities=row.capabilities,
                 briefing=row.briefing,
@@ -858,6 +896,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         membership_id = int(key[0])
         # Version 1, by whoever made the join (§6.2), even when it carries no text.
         briefings.record(conn, membership_id, row.briefing, row.created_by, now)
+        if waiting_for is not None:
+            _ask_boss_side(conn, row, project, membership_id, waiting_for)
     else:
         membership_id = member.id
         _recheck_instance(conn, row, member)
