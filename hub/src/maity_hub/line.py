@@ -23,14 +23,12 @@ from maity_hub.access import Membership, member_row
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, invalid, not_found
 from maity_hub.events import Actor, lock_project
-from maity_hub.scopes import has_scope
+from maity_hub.scopes import SENSITIVE_ROLES, has_scope
 from maity_hub.views import principal_id
 
 MAX_DEPTH = 8
 # The members of a reach: agents below governance, never a proxy (§2.3).
 REACH_TRUSTS = ("member", "guest")
-# A change of these members waits for a human's go, as under ᵃ (§2.3).
-SENSITIVE_ROLES = ("reviewer", "tester")
 # What a caller holding only `line:lead` sets on a member of its reach.
 LINE_FIELDS = {"areas", "paused", "instance", "reports_to"}
 

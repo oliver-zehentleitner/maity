@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
 from maity_hub import tables as t
-from maity_hub.scopes import in_admin_team, tokens_of
+from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
@@ -503,8 +503,12 @@ def wakes(
     own = instance is not None and f"instance:{principal}#{instance}" in audience
     if row.actor_membership == membership.id:
         return own and row.actor_credential_id != credential_id
-    if own or row.conversation_id == principal:
+    if own:
         return True
+    if row.conversation_id == principal:
+        # A direct chat message that names an instance wakes that one only (§9.1).
+        named = (row.payload or {}).get("to_instance")
+        return named is None or instance is None
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (
@@ -538,8 +542,8 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
         allowed = f"member:{principal}" in audience
     elif authority == "admin":
         allowed = in_admin_team(membership.trust, membership.role)
-    else:  # a guest holds none of its role's scopes (§2.3)
-        allowed = membership.trust != "guest" and membership.role in _DONE_ROLES.get(
+    else:  # a guest holds none of its role's scopes (§2.3); a security team counts as its base
+        allowed = membership.trust != "guest" and counts_as(membership.role) in _DONE_ROLES.get(
             str(authority), ()
         )
     if not allowed:

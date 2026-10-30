@@ -187,6 +187,13 @@ in Members, with the full name as tooltip (`M.dom.memberRef`). A member
 the project does not list, a personal request's people and anyone in a
 read-along view are plain text.
 
+Every role picker (a member's form, an invitation, a join, a member's own
+agent) offers the roles of `docs/api.md` §2.3 from one list (`js/trust.js`):
+coder, reviewer, tester, designer, writer, ops, proxy, manager, red team,
+blue team and purple team, each by its label, with what the role does as
+a hint under the picker; each picker keeps its own rule of what it may
+offer.
+
 The dashboard and the hub ship together: the page never asks the hub's
 machine form whether it serves a route, and a 404 or 405 from a route it
 calls is an error, said like any other.
@@ -663,7 +670,7 @@ too.
 7. **Add an agent**, inside **Agents** (owner and admin; and, as **Add
    my agent**, a human member while the project's `member_agents` is on,
    docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
-   member or guest, the roles coder, reviewer, tester and designer, and a
+   member or guest, every role but ops and proxy, and a
    briefing, the agent reporting to its owner; the member's own open joins
    only, with Revoke; "n of max agents of yours" beside the button, which
    is off at the limit; the hub's `member_join_limit` and

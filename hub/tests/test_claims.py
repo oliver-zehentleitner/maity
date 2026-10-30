@@ -289,6 +289,7 @@ def test_a_report_moves_the_card_to_review_and_keeps_the_claim(
         f"member:{agent.id}",
         f"member:{owner.id}",
         "role:reviewer",
+        "role:purple-team",  # the security team built on the reviewer is reached too (§2.3)
         "trust:admin",
     ]
 

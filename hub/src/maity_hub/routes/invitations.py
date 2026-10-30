@@ -9,10 +9,11 @@ token is one uniform `not_found`, on the page and on accept alike.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import AfterValidator
 from sqlalchemy import Connection, and_, insert, or_, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -39,6 +40,7 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
+from maity_hub.scopes import ROLES
 from maity_hub.views import member_view
 
 router = APIRouter(route_class=ProjectRoute)
@@ -46,9 +48,16 @@ router = APIRouter(route_class=ProjectRoute)
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 
+def _known_role(value: str) -> str:
+    """A built-in role of §2.3, from the one list `scopes` keeps."""
+    if value not in ROLES:
+        raise ValueError(f"role must be one of {', '.join(ROLES)}")
+    return value
+
+
 class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
-    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy", "manager"] = "coder"
+    role: Annotated[str, AfterValidator(_known_role)] = "coder"
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
