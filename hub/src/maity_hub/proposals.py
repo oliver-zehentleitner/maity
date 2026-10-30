@@ -17,8 +17,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, select
 
+from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
 
@@ -165,7 +166,17 @@ def settle(
     proposal = of(request)
     if proposal is None:
         return
-    proposer = Actor(request.asked_by, request.asked_session_id)
+    # The asking instance rides on its session's credential (§6.17).
+    credential = (
+        None
+        if request.asked_session_id is None
+        else conn.execute(
+            select(t.agent_session.c.credential_id).where(
+                t.agent_session.c.id == request.asked_session_id
+            )
+        ).scalar()
+    )
+    proposer = Actor(request.asked_by, request.asked_session_id, credential)
     _kind(request).settle(
         conn, Settlement(request, proposal, outcome, proposer, approver, closer, reply_id)
     )
