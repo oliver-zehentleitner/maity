@@ -106,4 +106,11 @@ def targets(conn: Connection) -> list[str]:
     )
 
 
-public_pages.register(public_pages.Kind(KIND, render_person, targets))
+def dependents(conn: Connection, human_id: str) -> list[tuple[str, str]]:
+    """The project pages that show the person: they change with the person's profile."""
+    from maity_hub import public_projects
+
+    return public_projects.pages_of_member(conn, human_id)
+
+
+public_pages.register(public_pages.Kind(KIND, render_person, targets, dependents))

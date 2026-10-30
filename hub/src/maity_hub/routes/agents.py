@@ -9,7 +9,17 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import avatars, clock, events, handles, idempotency, limits, moderation, namespace
+from maity_hub import (
+    avatars,
+    clock,
+    events,
+    handles,
+    idempotency,
+    limits,
+    moderation,
+    namespace,
+    public_projects,
+)
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
@@ -165,6 +175,8 @@ def patch_agent(
             conn.execute(
                 update(t.agent_profile).where(t.agent_profile.c.id == agent_id).values(**values)
             )
+        if "display_name" in values:  # a text shown on public pages is replaced at once (§16.9)
+            public_projects.touch_of_agent(conn, agent_id)
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -141,6 +141,9 @@ class Kind:
     name: str
     render: Callable[[Connection, Settings, str], list[Page]]
     targets: Callable[[Connection], list[str]]
+    # The pages of other kinds that show this target (a person on the pages of their
+    # projects): `touch` renders them again with it, `(kind, target_id)` each.
+    dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
 
 
 KINDS: dict[str, Kind] = {}
@@ -206,6 +209,9 @@ def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) 
         return
     if removal or hub.public_pages_render == "on_change":
         refresh(conn, hub, kind, target_id)
+        dependents = KINDS[kind].dependents
+        for other, other_id in dependents(conn, target_id) if dependents else []:
+            refresh(conn, hub, other, other_id)
 
 
 def render_all(engine: Engine, hub: Settings) -> None:
