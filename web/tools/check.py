@@ -501,14 +501,19 @@ def check_i18n(write):
         code, error = strip_js(src, literals)
         if error:
             continue
-        for lineno, text in enumerate(code.split("\n"), 1):
-            if re.search(r"\bM\.t\(\s*[^\s\"']", text):
+        # M.t or Maity.t, found in the code without comments (strip_js keeps
+        # every position), its key read from the source at that place.
+        for m in re.finditer(r"\b(?:M|Maity)\.t\(\s*", code):
+            lineno = code.count("\n", 0, m.start()) + 1
+            quote = src[m.end()] if m.end() < len(src) else ""
+            close = src.find(quote, m.end() + 1) if quote in ("\"", "'") else -1
+            if close < 0:
                 finding(path, lineno, "M.t takes its key as a string literal")
-        for m in re.finditer(r"\bM\.t\(\s*\"([^\"]*)\"", src):
-            key = m.group(1)
+                continue
+            key = src[m.end() + 1:close]
             used.add(key)
             if key not in english:
-                finding(path, src.count("\n", 0, m.start()) + 1, "M.t key %r is not in i18n/en.json" % key)
+                finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text in literals if prose(text))
     for key in sorted(set(english) - used):
@@ -565,10 +570,12 @@ def check_whitespace():
 def main(argv):
     write = "--write" in argv
     check_fixtures(write)
+    # The catalog's bundle before the page that loads it, so --write on a
+    # fresh checkout makes js/i18n/*.js before index.html is checked.
+    check_i18n(write)
     check_html()
     node = shutil.which("node")
     check_js(node)
-    check_i18n(write)
     check_css()
     check_whitespace()
     for f in findings:
