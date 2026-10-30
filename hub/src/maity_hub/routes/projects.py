@@ -523,6 +523,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 **policy.columns(filled),
                 settings={"release_checklist": []},
                 rules_version=1,
+                rules_text_digest=rules.text_digest(),
                 created_at=now,
             )
         )
