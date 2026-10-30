@@ -12,85 +12,85 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime } = M.dom;
 
   const ROLES = ["owner", "admin", "member"];
+  // Getters: the words are the catalog's when shown.
   const ROLE_WORDS = {
-    owner: "Owner: everything, its handle and deletion included; trust owner in every project of the organisation",
-    admin: "Admin: adds and removes members and admins, creates projects in it",
-    member: "Member: creates projects in it only where the owners allow it",
+    get owner() { return M.t("orgs.role.owner"); },
+    get admin() { return M.t("orgs.role.admin"); },
+    get member() { return M.t("orgs.role.member"); },
   };
   const orgPath = (org) => "/orgs/" + encodeURIComponent(org);
   const orgLink = (org) => "/account/orgs/" + encodeURIComponent(org);
 
   // The hub's refusals (§6.26), in words.
   const FIELD_WORDS = {
-    format: "2 to 31 lowercase letters, digits and dashes, starting with a letter or digit",
-    reserved: "a word the dashboard uses itself",
-    taken: "taken by a person or another organisation",
-    member: "already a member",
-    invited: "invited already",
-    length: "1 to 64 characters",
-    mismatch: "not the organisation's handle; read the page again",
+    get format() { return M.t("orgs.field.format"); },
+    get reserved() { return M.t("orgs.field.reserved"); },
+    get taken() { return M.t("orgs.field.taken"); },
+    get member() { return M.t("orgs.field.member"); },
+    get invited() { return M.t("orgs.field.invited"); },
+    get length() { return M.t("orgs.field.length"); },
+    get mismatch() { return M.t("orgs.field.mismatch"); },
   };
   function said(err) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields) {
       const [name, why] = Object.entries(fields)[0];
-      return { message: (name === "display_name" ? "name" : name) + ": " + (FIELD_WORDS[why] || why) };
+      return { message: M.t("orgs.refused.field", { field: name === "display_name" ? M.t("orgs.field.name") : name,
+        why: Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why] : why }) };
     }
     const reason = err.details && err.details.reason;
-    if (err.code === "forbidden" && reason === "org_role") return { message: "your role in this organisation does not allow that" };
-    if (err.code === "forbidden" && reason === "moderation_hold") return { message: "the organisation is suspended: no new invitation, no rename and no public page meanwhile" };
-    if (err.code === "forbidden" && reason === "humans_only") return { message: "organisations are for humans only" };
-    if (err.code === "org_last_owner") return { message: "the organisation would have no owner left: make someone else an owner first" };
-    if (err.code === "org_limit") return { message: "you are in as many organisations as this hub allows" };
+    if (err.code === "forbidden" && reason === "org_role") return { message: M.t("orgs.refused.org_role") };
+    if (err.code === "forbidden" && reason === "moderation_hold") return { message: M.t("orgs.refused.held") };
+    if (err.code === "forbidden" && reason === "humans_only") return { message: M.t("orgs.refused.humans_only") };
+    if (err.code === "org_last_owner") return { message: M.t("orgs.refused.last_owner") };
+    if (err.code === "org_limit") return { message: M.t("orgs.refused.limit") };
     if (err.code === "namespace_owner") {
       const projects = (err.details && err.details.projects) || [];
-      return { message: "it still owns projects that are not archived" + (projects.length ? ": " + projects.join(", ") : "") + "; archive or transfer them first" };
+      return { message: projects.length ? M.t("orgs.refused.owns_named", { projects: projects.join(", ") }) : M.t("orgs.refused.owns") };
     }
-    if (err.code === "rate_limited") return { message: "too many at once; try again later" };
-    if (err.code === "alias_limit") return { message: "the organisation has kept " + ((err.details && err.details.limit) || 8) + " earlier handles, the most it may" };
+    if (err.code === "rate_limited") return { message: M.t("orgs.refused.rate") };
+    if (err.code === "alias_limit") return { message: M.t("orgs.refused.aliases", { count: (err.details && err.details.limit) || 8 }) };
     return err;
   }
 
   // The list and the form for a new one.
   async function listPage(ctx, root) {
-    const heading = h("h2", { id: "orgs-heading", tabindex: "-1" }, "Organisations");
-    append(root, heading,
-      h("p", { class: "hint" }, "An organisation owns projects under its own handle, so that a team's projects do not hang on one person's account. "
-        + "Its owners hold trust owner in every project it owns."));
+    const heading = h("h2", { id: "orgs-heading", tabindex: "-1" }, M.t("orgs.title"));
+    append(root, heading, h("p", { class: "hint" }, M.t("orgs.intro")));
     const { items } = await M.api.get("/orgs");
     append(root, items.length
       ? h("ul", { class: "org-list" }, items.map((o) => h("li", { class: "org-item" },
         M.avatar(o, 32),
         h("a", { href: orgLink(o.handle) }, o.display_name),
         h("span", { class: "muted" }, " @" + o.handle + " · " + o.my_role))))
-      : h("p", { class: "muted" }, "You are in no organisation yet."));
+      : h("p", { class: "muted" }, M.t("orgs.none")));
     append(root, createForm());
   }
 
   function createForm() {
     const status = M.statusLine();
-    const handle = h("input", { id: "org-new-handle", required: true, autocomplete: "off", spellcheck: "false", placeholder: "oz-team" });
-    const name = h("input", { id: "org-new-name", required: true, maxlength: "64", placeholder: "OZ Team" });
-    const go = h("button", { type: "submit" }, "Create the organisation");
+    const handle = h("input", { id: "org-new-handle", required: true, autocomplete: "off", spellcheck: "false", placeholder: M.t("orgs.new.handle_placeholder") });
+    const name = h("input", { id: "org-new-name", required: true, maxlength: "64", placeholder: M.t("orgs.new.name_placeholder") });
+    const go = h("button", { type: "submit" }, M.t("orgs.new.create"));
     const form = h("form", {
       class: "org-create project-form",
       onsubmit: async (e) => {
         e.preventDefault();
         go.disabled = true;
-        status.busy("Creating…");
+        status.busy(M.t("orgs.new.creating"));
         try {
           const org = await M.api.post("/orgs", { handle: handle.value.trim().replace(/^@/, ""), display_name: name.value.trim() });
           M.route.go(orgLink(org.handle));
         } catch (err) {
-          status.fail("Not created: ", said(err));
+          status.fail(M.t("orgs.new.failed"), said(err));
           go.disabled = false;
         }
       },
     },
-    h("h3", null, "New organisation"),
-    h("label", { for: "org-new-handle" }, "Handle"), handle,
-    h("p", { class: "hint" }, "Its projects are addressed as <handle>/<project>. You become its first owner."),
-    h("label", { for: "org-new-name" }, "Name"), name,
+    h("h3", null, M.t("orgs.new.title")),
+    h("label", { for: "org-new-handle" }, M.t("orgs.handle")), handle,
+    h("p", { class: "hint" }, M.t("orgs.new.hint")),
+    h("label", { for: "org-new-name" }, M.t("orgs.name")), name,
     go, status.el);
     return form;
   }
@@ -106,19 +106,19 @@ window.Maity = window.Maity || {};
     let control = h("span", { class: "org-role" }, m.role);
     if (mayChange) {
       const id = "org-role-" + m.id;
-      const pick = h("select", { id, "aria-label": "Role of @" + m.handle },
+      const pick = h("select", { id, "aria-label": M.t("orgs.member.role_label", { handle: m.handle }) },
         ROLES.filter((r) => mine === "owner" || r !== "owner").map((r) => h("option", { value: r }, r)));
       pick.value = m.role;
       pick.addEventListener("change", async () => {
         pick.disabled = true;
-        status.busy("Changing…");
+        status.busy(M.t("orgs.member.changing"));
         try {
           await M.api.patch(orgPath(org.handle) + "/members/" + encodeURIComponent(m.id), { role: pick.value });
-          redraw("@" + m.handle + " is " + pick.value + " now.");
+          redraw(M.t("orgs.member.changed", { handle: m.handle, role: pick.value }));
         } catch (err) {
           pick.value = m.role;
           pick.disabled = false;
-          status.fail("Not changed: ", said(err));
+          status.fail(M.t("orgs.member.change_failed"), said(err));
         }
       });
       control = pick;
@@ -126,23 +126,23 @@ window.Maity = window.Maity || {};
     const remove = mayRemove ? h("button", {
       type: "button",
       class: self ? null : "danger",
-      title: lastOwner ? "The last owner: make someone else an owner first." : null,
+      title: lastOwner ? M.t("orgs.member.last_owner") : null,
       onclick: async () => {
         remove.disabled = true;
-        status.busy(self ? "Leaving…" : "Removing…");
+        status.busy(self ? M.t("orgs.member.leaving") : M.t("orgs.member.removing"));
         try {
           await M.api.del(orgPath(org.handle) + "/members/" + encodeURIComponent(m.id));
           if (self) M.route.go("/account/orgs");
-          else redraw("@" + m.handle + " was removed.");
+          else redraw(M.t("orgs.member.removed", { handle: m.handle }));
         } catch (err) {
           remove.disabled = false;
-          status.fail(self ? "Not left: " : "Not removed: ", said(err));
+          status.fail(self ? M.t("orgs.member.leave_failed") : M.t("orgs.member.remove_failed"), said(err));
         }
       },
-    }, self ? "Leave" : "Remove") : null;
+    }, self ? M.t("orgs.member.leave") : M.t("orgs.member.remove")) : null;
     return h("li", { class: "org-member" },
       M.avatar(m, 24),
-      h("span", { class: "org-member-name" }, m.display_name, h("span", { class: "muted" }, " @" + m.handle + (self ? " (you)" : ""))),
+      h("span", { class: "org-member-name" }, m.display_name, h("span", { class: "muted" }, " " + (self ? M.t("orgs.member.handle_you", { handle: m.handle }) : "@" + m.handle))),
       control, remove, status.el);
   }
 
@@ -152,24 +152,24 @@ window.Maity = window.Maity || {};
     const role = h("select", { id: "org-invite-role" },
       ROLES.filter((r) => org.my_role === "owner" || r !== "owner").map((r) => h("option", { value: r }, r)));
     role.value = "member";
-    const go = h("button", { type: "submit" }, "Invite");
+    const go = h("button", { type: "submit" }, M.t("orgs.invite.submit"));
     const form = h("form", {
       class: "org-invite inline-form",
       onsubmit: async (e) => {
         e.preventDefault();
         go.disabled = true;
-        status.busy("Inviting…");
+        status.busy(M.t("orgs.invite.busy"));
         try {
           const item = await M.api.post(orgPath(org.handle) + "/members/invitations", { handle: handle.value.trim().replace(/^@/, ""), role: role.value });
-          redraw("Invited @" + item.handle + " as " + item.role + ".");
+          redraw(M.t("orgs.invite.done", { handle: item.handle, role: item.role }));
         } catch (err) {
           go.disabled = false;
-          status.fail("Not invited: ", said(err));
+          status.fail(M.t("orgs.invite.failed"), said(err));
         }
       },
     },
-    h("label", { for: "org-invite-handle" }, "Handle"), handle,
-    h("label", { for: "org-invite-role" }, "Role"), role, go, status.el);
+    h("label", { for: "org-invite-handle" }, M.t("orgs.handle")), handle,
+    h("label", { for: "org-invite-role" }, M.t("orgs.role")), role, go, status.el);
     const rows = invitations.map((x) => {
       const line = M.statusLine();
       // An invitation for the role owner is an owner's to withdraw (§6.26).
@@ -177,26 +177,25 @@ window.Maity = window.Maity || {};
         type: "button",
         onclick: async () => {
           withdraw.disabled = true;
-          line.busy("Withdrawing…");
+          line.busy(M.t("orgs.invite.withdrawing"));
           try {
             await M.api.del(orgPath(org.handle) + "/members/invitations/" + encodeURIComponent(x.id));
-            redraw("The invitation of @" + x.handle + " was withdrawn.");
+            redraw(M.t("orgs.invite.withdrawn", { handle: x.handle }));
           } catch (err) {
             withdraw.disabled = false;
-            line.fail("Not withdrawn: ", said(err));
+            line.fail(M.t("orgs.invite.withdraw_failed"), said(err));
           }
         },
-      }, "Withdraw");
+      }, M.t("orgs.invite.withdraw"));
       return h("li", { class: "org-invitation" },
-        h("span", null, "@" + x.handle + " as " + x.role),
-        h("span", { class: "muted" }, " · by @" + x.invited_by.handle + ", open until " + formatTime(x.expires_at)),
+        h("span", null, M.t("orgs.invite.item", { handle: x.handle, role: x.role })),
+        h("span", { class: "muted" }, " · " + M.t("orgs.invite.by", { handle: x.invited_by.handle, time: formatTime(x.expires_at) })),
         withdraw, line.el);
     });
     return h("section", { class: "org-invitations", "aria-labelledby": "org-invitations-heading" },
-      h("h3", { id: "org-invitations-heading" }, "Invitations"),
-      h("p", { class: "hint" }, "Nobody joins without saying so: the person gets a request in their inbox and answers it. "
-        + "An invitation is open 14 days. The page says the same whether or not the handle names someone who can be invited."),
-      rows.length ? h("ul", { class: "org-invitation-list" }, rows) : h("p", { class: "muted" }, "No open invitations."),
+      h("h3", { id: "org-invitations-heading" }, M.t("orgs.invite.title")),
+      h("p", { class: "hint" }, M.t("orgs.invite.hint", { count: 14 })),
+      rows.length ? h("ul", { class: "org-invitation-list" }, rows) : h("p", { class: "muted" }, M.t("orgs.invite.none")),
       form);
   }
 
@@ -214,7 +213,7 @@ window.Maity = window.Maity || {};
     const held = !!org.moderation;
     handle.disabled = held;
     page.disabled = held && !page.checked;
-    const go = h("button", { type: "submit" }, "Save");
+    const go = h("button", { type: "submit" }, M.t("orgs.settings.save"));
     const form = h("form", {
       class: "org-settings project-form",
       onsubmit: async (e) => {
@@ -225,28 +224,27 @@ window.Maity = window.Maity || {};
         if (wanted !== org.handle) body.handle = wanted;
         if (create.checked !== !!org.members_create_projects) body.members_create_projects = create.checked;
         if ((page.checked ? "on" : "off") !== org.public_page) body.public_page = page.checked ? "on" : "off";
-        if (!Object.keys(body).length) { status.busy("Nothing changed."); return; }
+        if (!Object.keys(body).length) { status.busy(M.t("orgs.settings.unchanged")); return; }
         go.disabled = true;
-        status.busy("Saving…");
+        status.busy(M.t("orgs.settings.saving"));
         try {
           const now = await M.api.patch(orgPath(org.handle), body);
           if (now.handle !== org.handle) M.route.go(orgLink(now.handle));
-          else redraw("Saved.");
+          else redraw(M.t("orgs.settings.saved"));
         } catch (err) {
           go.disabled = false;
-          status.fail("Not saved: ", said(err));
+          status.fail(M.t("orgs.settings.failed"), said(err));
         }
       },
     },
-    h("label", { for: "org-name" }, "Name"), name,
-    h("label", { for: "org-handle" }, "Handle"), handle,
-    h("p", { class: "hint" }, held ? "While the organisation is suspended its handle cannot change and its public page cannot be turned on."
-      : "A new handle renames every project address of the organisation; the old one keeps leading here as an alias."),
-    h("p", { class: "check" }, create, h("label", { for: "org-members-create" }, " Members may create projects in it")),
-    h("p", { class: "check" }, page, h("label", { for: "org-public-page" }, " A public page")),
+    h("label", { for: "org-name" }, M.t("orgs.name")), name,
+    h("label", { for: "org-handle" }, M.t("orgs.handle")), handle,
+    h("p", { class: "hint" }, held ? M.t("orgs.settings.held") : M.t("orgs.settings.rename_hint")),
+    h("p", { class: "check" }, create, h("label", { for: "org-members-create" }, " " + M.t("orgs.settings.members_create"))),
+    h("p", { class: "check" }, page, h("label", { for: "org-public-page" }, " " + M.t("orgs.settings.public_page"))),
     go, status.el);
     return h("section", { class: "org-settings-part", "aria-labelledby": "org-settings-heading" },
-      h("h3", { id: "org-settings-heading" }, "Settings"), form);
+      h("h3", { id: "org-settings-heading" }, M.t("orgs.settings.title")), form);
   }
 
   // Deleting it: an owner's sensitive call (§2.8.4), confirmed by typing the handle.
@@ -256,7 +254,7 @@ window.Maity = window.Maity || {};
     ask.hidden = true;
     const id = "org-delete-confirm";
     const typed = h("input", { id, autocomplete: "off", spellcheck: "false", placeholder: "@" + org.handle });
-    const go = h("button", { type: "submit", class: "danger" }, "Delete the organisation");
+    const go = h("button", { type: "submit", class: "danger" }, M.t("orgs.delete.title"));
     let busy = false;
     const confirmed = () => typed.value.trim().replace(/^@/, "") === org.handle;
     const settle = () => { go.disabled = busy || !confirmed(); };
@@ -270,35 +268,35 @@ window.Maity = window.Maity || {};
         busy = true;
         typed.disabled = true;
         settle();
-        status.busy("Deleting…");
+        status.busy(M.t("orgs.delete.busy"));
         try {
-          await M.stepUp.run(() => M.api.del(orgPath(org.handle), { confirm: org.handle }), ask, "Deleting @" + org.handle);
+          await M.stepUp.run(() => M.api.del(orgPath(org.handle), { confirm: org.handle }), ask, M.t("orgs.delete.step_up", { handle: org.handle }));
           M.route.go("/account/orgs");
         } catch (err) {
           busy = false;
           typed.disabled = false;
           settle();
           if (err.code === "cancelled") status.done();
-          else status.fail("Not deleted: ", said(err));
+          else status.fail(M.t("orgs.delete.failed"), said(err));
         }
       },
-    }, h("label", { for: id }, "Type @" + org.handle + " to delete it"), typed, go, status.el);
+    }, h("label", { for: id }, M.t("orgs.delete.type", { handle: org.handle })), typed, go, status.el);
     return h("section", { class: "org-delete-part", "aria-labelledby": "org-delete-heading" },
-      h("h3", { id: "org-delete-heading" }, "Delete the organisation"),
-      h("p", { class: "hint" }, "Only while it owns no project that is not archived. Its open invitations are withdrawn. This cannot be undone."),
+      h("h3", { id: "org-delete-heading" }, M.t("orgs.delete.title")),
+      h("p", { class: "hint" }, M.t("orgs.delete.hint")),
       ask, form);
   }
 
   async function orgPage(ctx, root, handle) {
     const body = h("div", { class: "org-page" });
-    append(root, h("p", null, h("a", { href: "/account/orgs" }, "All your organisations")), body);
+    append(root, h("p", null, h("a", { href: "/account/orgs" }, M.t("orgs.all"))), body);
     const draw = async (words) => {
       let org;
       try {
         org = await M.api.get(orgPath(handle));
       } catch (err) {
         if (err.code !== "not_found") throw err;
-        append(clear(body), h("p", null, "You are in no organisation @" + handle + "."));
+        append(clear(body), h("p", null, M.t("orgs.not_in", { handle })));
         return;
       }
       const leads = org.my_role === "owner" || org.my_role === "admin";
@@ -306,26 +304,26 @@ window.Maity = window.Maity || {};
         M.api.get(orgPath(org.handle) + "/members"),
         leads ? M.api.get(orgPath(org.handle) + "/members/invitations") : Promise.resolve({ items: [] }),
       ]);
-      const redraw = (said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, "This page could not be read again: " + err.message)));
+      const redraw = (said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("orgs.reread_failed", { reason: err.message }))));
       const owners = members.items.filter((m) => m.role === "owner").length;
       const who = Object.assign({}, org, { avatar_source: org.avatar_url ? "uploaded" : null });
       append(clear(body),
         h("div", { class: "org-head" }, M.avatar(org, 48),
           h("h2", { id: "org-heading", tabindex: "-1" }, org.display_name),
-          h("p", { class: "muted" }, "@" + org.handle + " · you are " + org.my_role
-            + ((org.aliases || []).length ? " · also known as " + org.aliases.map((a) => "@" + a).join(", ") : ""))),
+          h("p", { class: "muted" }, (org.aliases || []).length
+            ? M.t("orgs.head.aliases", { handle: org.handle, role: org.my_role, aliases: org.aliases.map((a) => "@" + a).join(", ") })
+            : M.t("orgs.head", { handle: org.handle, role: org.my_role }))),
         words ? h("p", { class: "ok", role: "status" }, words) : null,
-        org.moderation ? h("p", { class: "flag", role: "status" }, "Suspended since " + formatTime(org.moderation.at)
-          + ": no new project, no invitation, no rename and no public page meanwhile.") : null,
+        org.moderation ? h("p", { class: "flag", role: "status" }, M.t("orgs.suspended", { time: formatTime(org.moderation.at) })) : null,
         h("section", { class: "org-members", "aria-labelledby": "org-members-heading" },
-          h("h3", { id: "org-members-heading" }, "Members"),
+          h("h3", { id: "org-members-heading" }, M.t("orgs.members")),
           h("ul", { class: "org-member-list" }, members.items.map((m) => memberRow(ctx, org, m, owners, redraw))),
           h("ul", { class: "hint org-role-words" }, ROLES.map((r) => h("li", null, ROLE_WORDS[r])))),
         leads ? invitationsPart(org, invitations.items, redraw) : null,
         org.my_role === "owner" ? settingsPart(org, redraw) : null,
         org.my_role === "owner" && M.pictureEditor
           ? h("section", { class: "org-picture", "aria-labelledby": "org-picture-heading" },
-            h("h3", { id: "org-picture-heading" }, "Picture"),
+            h("h3", { id: "org-picture-heading" }, M.t("orgs.picture")),
             M.pictureEditor(who, orgPath(org.handle) + "/avatar", false, (answer, said) => redraw(said)))
           : null,
         org.my_role === "owner" ? deletePart(org) : null);
@@ -343,7 +341,7 @@ window.Maity = window.Maity || {};
 
   M.views.orgs = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
-      append(root, h("p", null, "Organisations are for humans only."));
+      append(root, h("p", null, M.t("orgs.humans_only")));
       return;
     }
     if (args && args[0]) await orgPage(ctx, root, handleOf(args[0]));
