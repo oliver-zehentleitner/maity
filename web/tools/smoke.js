@@ -4951,8 +4951,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pmTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Messages");
   const pmItems = () => main.querySelectorAll("ol.project-messages li.pmsg");
   const pmSeq = (seq) => pmItems().find((li) => li.attrs["data-seq"] === String(seq));
-  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6009,6005,6001"
+  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6013,6009,6005,6001"
     && Number(pmItems()[0].attrs["data-seq"]) > 9000, "messages: a tab with the project's messages, newest first");
+  // A review result (§8.4): the verdict, the subject, the short head linked to the commit on GitHub, and the places read
+  // with their quotes as text, a removed line said, folded after five.
+  const pmReview = pmSeq(6013).querySelector(".review");
+  const pmCites = () => pmReview.querySelectorAll("li.review-cite");
+  expect(pmReview && text(pmReview.querySelector(".review-verdict")) === "Approve" && text(pmReview.querySelector(".review-head")).includes("#743 at 7039a4b")
+    && pmReview.querySelector(".review-head a").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/commit/7039a4b6fd8b988d71a63338711da188fcd95fba"
+    && pmCites().length === 7 && pmReview.querySelectorAll("ul.review-cites")[0].childNodes.length === 5
+    && text(pmCites()[0]).startsWith("docs/api.md:11929") && text(pmCites()[0].querySelector(".review-quote")) === "the inbox item appears after the fourth line"
+    && text(pmCites()[1]).startsWith("web/js/landing.js removed") && text(pmCites()[1].querySelector(".review-quote")) === 'if (s.type === "demo") {'
+    && text(pmReview.querySelector("details.review-more summary")) === "2 more places",
+    "messages: a review result shows its verdict, subject, short head linked to the commit and the places read, folded after five");
+  // The fixture hub as §8.4: a review result needs its review, no other type takes one, each refusal at its path.
+  const rvPost = async (b) => { try { await win.Maity.api.post("/projects/maintainer/maity/events", b); return null; } catch (err) { return err.details && err.details.fields; } };
+  const rvGood = { subject: "#1", head: "a".repeat(40), verdict: "approve", cites: [{ path: "x.js", line: null, quote: "gone" }] };
+  expect(JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x" })) === JSON.stringify({ review: "required" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "notice", to: "all", body: "x", review: rvGood })) === JSON.stringify({ review: "not_allowed" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { head: "abc", cites: [{ path: "x", line: 0, quote: "a\nb" }] }) }))
+      === JSON.stringify({ "review.head": "format", "review.cites.0.quote": "format", "review.cites.0.line": "format" })
+    && JSON.stringify(await rvPost({ kind: "message", type: "review_result", to: "all", body: "x", review: Object.assign({}, rvGood, { cites: [] }) })) === JSON.stringify({ "review.cites": "too_few" }),
+    "messages: the fixture hub checks a review result's review as §8.4 says");
   // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
   expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
   const pmHand = pmSeq(6005);

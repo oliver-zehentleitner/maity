@@ -12,12 +12,13 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
 
+  // No review_result: it carries its verdict, head and cites (§8.4), which
+  // come from the CLI's --review-file (context/views.md).
   const TYPES = [
     ["notice", "For your information (no answer expected)"],
     ["handover", "A handover"],
     ["blocker", "Something blocks work"],
     ["go_request", "Asks for a go"],
-    ["review_result", "A review's result"],
     ["interface_change", "An interface changes"],
   ];
   const CLOSED = new Set(["done", "cancelled"]);
