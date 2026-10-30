@@ -69,7 +69,12 @@ DEFAULTS: dict[str, Any] = {
         "daily_at": "08:00",
         "quiet_hours": None,
     },
+    # How the human hears of their agent instances that are not listening (§5.3, §18.4);
+    # `minutes` is the personal default a project's own setting may override (§6.2).
+    "not_listening": {"mode": "inbox", "minutes": 60},
 }
+NOT_LISTENING_MODES = ("inbox", "bell", "off")
+NOT_LISTENING_MINUTES = (10, 1440)
 
 
 def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
@@ -82,6 +87,14 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
         },
     }
     result["browser"]["content"] = dict(DEFAULTS["browser"]["content"])
+    result["not_listening"] = {
+        **DEFAULTS["not_listening"],
+        **{
+            k: v
+            for k, v in ((stored or {}).get("not_listening") or {}).items()
+            if k in DEFAULTS["not_listening"]
+        },
+    }
     for side in ("browser", "email"):
         given = (stored or {}).get(side) or {}
         for key, value in given.items():
@@ -163,6 +176,7 @@ def view(conn: Connection, human_id: str, mail_available: bool) -> dict[str, Any
         "kinds": list(KINDS),
         "browser": merged["browser"],
         "email": email,
+        "not_listening": merged["not_listening"],
         "mail_available": mail_available,
     }
 
@@ -291,6 +305,23 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
     return value
 
 
+def minutes_valid(value: Any) -> bool:
+    """`not_listening.minutes`: a whole number of minutes in its range (§6.2, §18.4)."""
+    low, high = NOT_LISTENING_MINUTES
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+def _check_not_listening(given: Any, errors: dict[str, str]) -> dict[str, Any]:
+    if not isinstance(given, dict) or not set(given) <= {"mode", "minutes"}:
+        errors["not_listening"] = "invalid"
+        return {}
+    if "mode" in given and given["mode"] not in NOT_LISTENING_MODES:
+        errors["not_listening.mode"] = "invalid"
+    if "minutes" in given and not minutes_valid(given["minutes"]):
+        errors["not_listening.minutes"] = "invalid"
+    return dict(given)
+
+
 def _zone(value: Any) -> bool:
     if not isinstance(value, str) or (value != "UTC" and value not in available_timezones()):
         return False
@@ -326,10 +357,13 @@ def patch(
     for key in body:
         if key == "kinds" or key in READ_ONLY:
             errors[key] = "read_only"
-        elif key not in ("browser", "email", "current_password"):
+        elif key not in ("browser", "email", "not_listening", "current_password"):
             errors[key] = "extra_forbidden"
     browser = _check_browser(body["browser"], errors) if "browser" in body else {}
     email = _check_email(body["email"], errors) if "email" in body else {}
+    not_listening = (
+        _check_not_listening(body["not_listening"], errors) if "not_listening" in body else {}
+    )
     if errors:
         raise invalid(errors)
     row = row_of(conn, human.id, lock=True)
@@ -366,6 +400,8 @@ def patch(
                 else:
                     merged[key] = value
             stored[side] = merged
+    if not_listening:
+        stored["not_listening"] = {**(stored.get("not_listening") or {}), **not_listening}
     conn.execute(
         update(t.notification_settings)
         .where(t.notification_settings.c.human_id == human.id)
@@ -758,6 +794,6 @@ def _tell_old_address(
             f"The Maity address of your account at {public_url} {change} "
             f"on {clock.rfc3339(clock.now())}.{where}\n\n"
             "If this was not you, sign in and check your sessions: "
-            f"{public_url}/#/account/sessions\n"
+            f"{public_url}/account/sessions\n"
         ),
     )

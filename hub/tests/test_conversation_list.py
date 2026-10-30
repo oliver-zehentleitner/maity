@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, Engine, event, select
+from sqlalchemy import Connection, Engine, select
 
 from maity_hub import conversation_list, group_chats
 from maity_hub import tables as t
@@ -17,6 +17,7 @@ from maity_hub.routes import conversations as routes
 from maity_hub.views import ts
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.statements import count_statements
 from tests.test_group_chats import BASE, create, other_human, read, say
 
 
@@ -216,20 +217,6 @@ def test_the_list_equals_the_list_built_one_chat_at_a_time(
             (who, str(q)): lists(caller, **q) for who, caller in callers.items() for q in queries
         }
     assert new == old
-
-
-def count_statements(engine: Engine, call: Any) -> int:
-    seen = [0]
-
-    def counted(*_: Any) -> None:
-        seen[0] += 1
-
-    event.listen(engine, "before_cursor_execute", counted)
-    try:
-        call()
-    finally:
-        event.remove(engine, "before_cursor_execute", counted)
-    return seen[0]
 
 
 def test_the_list_costs_the_same_statements_for_more_chats(

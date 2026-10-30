@@ -145,6 +145,14 @@ the batch's seq range instead of a list of every seq. Measured on a local fixtur
 card events and 150 chat messages: 1059 queries and ~110 ms became 13 queries and ~20 ms,
 with the same 601 items. A test keeps the count flat as events grow.
 
+The account records follow the same rule since 2026-10-29: every personal request is an
+inbox item, and `_from_records` read its request and its asker's name per record, three
+queries each. Hub notices made that the slow part of `GET /me/notifications` for a human
+with many of them. It now reads the requests in one query and the askers' names in three
+(`_member_names`, the same names as `_name`). Measured on a local fixture of 120 hub
+notices: 409 queries and ~95 ms became 52 and ~30 ms; a test keeps the count flat as
+personal requests grow.
+
 **Rejected alternatives:**
 - Caching the derived items per human between answers. Every read rule (§18.1) is applied
   as things are now, so a cache would need invalidation on every relation the
@@ -393,6 +401,61 @@ timestamp, and for `after` chains, the bounded pages equal the pages cut from `d
 **Known limit:** a filter that rejects almost every chat (`unread` after everything was read)
 still reads all of a project's chat rows in the window, in chunks, as the old derivation did.
 
+**Known limit, found 2026-10-30:** "few" did not hold for requests. The load test
+(`hub/tests/test_load.py`, process.md bb9d58df) seeded unread requests, which are not chat
+items and so are all derived: a page takes 0.12 s at 1000 unread and 0.42 s at 4000 on
+PostgreSQL, the same 52 statements at both, so the cost is the derivation in Python and is
+linear in the unread requests of the window. Card `tsk-r8f0jm3xs9y6` takes it on.
+
+**Since 2026-10-30 (tsk-r8f0jm3xs9y6) every source is paged.** "The rest is few" stopped
+holding: a human with many hub notices (one personal request each) has thousands of inbox
+items, and the page grew linearly with them (F's load test: 83 ms at 1,000, 355 ms at
+4,000). Now the non-chat events and the account records are read like the chat messages,
+in the listing's order and in growing chunks, until the page is full (`items._paged`,
+`items._records_paged`); the counts read their own few items (`items.count_items`, see the
+next entry). The events of a personal request never make an item (`_classify`: it is one
+item, from its record), so they are left out in SQL instead of being read and dropped one
+by one; `open_requests` skips personal requests the same way, and the open personal
+requests are counted per project in SQL. A request lists one item, its latest addressed
+event (`ADDRESSED`); `_items_of` replaces the earlier one only among the rows it is given,
+so the paged read takes only each request's newest such event in SQL, and a forward never
+brings back the item it replaced on a later page. Measured on SQLite with 1,000 and 2,000 hub
+notices, `limit=20`: 105 and 188 ms before, 18 and 21 ms after. A page with more items than
+it shows costs the same however many there are (the statement test); under a page it
+costs fewer chunks. The load test of `main` (#677) found two more growths. A long-poll with
+`after` read the whole window and kept only what lay past the position, so its read is now
+bounded in SQL (`seq` past the position per project, records past its record number). An
+`unread` page whose first chunk held read items took one more chunk with the larger history,
+and every chunk repeats the item lookups, so the events (outside the chats) and the records
+start with a whole chunk (`CHUNK`): one statement covers a page whatever the history. All
+four load tests pass at `MAITY_LOAD_UNIT=1000`.
+
+## The counts of the bell classify only their candidates; the mentions stay exact
+
+**Id:** f643bd86-fb41-4c13-b4f9-65d46f97e50a
+**Type:** constraint
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-r8f0jm3xs9y6, the coordinator's ruling of 2026-10-30 ("correct numbers before a pure SQL counter"); `docs/api.md` §18.2
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-10-30
+**Revisit when:** a human can have thousands of unread mentions, or the payload marks a mention so that SQL can tell it exactly
+
+`counts` reads no item for `inbox` (open requests and personal requests are counted in SQL)
+and none for `chat` (the chats' own marks). What it still needs of the items, the unread
+`mention` and `security` and the open inbox records, comes from `items.count_items`: the
+events that can be a mention (`mentioned`, and messages whose payload text names the human)
+and the security and inbox records, classified as on every other path.
+
+**Reason:** the payload text is a superset; only `_classify` tells a mention from a message
+that names the human in another field, and `forge_access_changed` is a security item only
+for `linked` and `token_set`. Classifying just these candidates keeps every count exactly as
+§18.2 defines it, at a cost that grows with mentions, not with the inbox.
+
+**Rejected alternative:** count mentions and security items with one SQL aggregate over the
+text and the record types. Cheaper, but a false hit of the text test or a forge change that
+is no security item would be counted, and the counts would disagree with the items listed.
+
 ## Changing or removing the verified address, and approving a held change, take the step-up the caller gives in
 
 **Id:** b4c0e7a3-61d8-4f29-9a5e-0d83f7b1c2e6
@@ -636,3 +699,32 @@ an agent could then change what a human reads in the bell and in mail.
 **Rejected alternatives:** a writable `language` on the member that writes through to the
 settings (an admin could change another person's language, which the contract keeps with the
 human); a stored copy on the membership (two values to keep equal, per project, for one person).
+
+## A member's own settings in a project live on the membership row, the personal defaults in the notification settings
+
+**Id:** 3bb0e3fa-9f87-4a1c-82ae-715c41c15a84
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the not-listening card tsk-32g2cjbm52ft (contract #627, the maintainer's decision of 2026-10-29 that personal settings are the defaults and a member overrides them per project), 2026-10-29
+**See:** notifications.md#notification-settings-store-only-what-the-human-changed-the-defaults-fill-the-rest-on-read — 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500 — as of 2026-10-29
+**Revisit when:** a project setting must outlive the membership (a member who leaves and comes back), or settings come that are not per project at all
+
+The personal default `not_listening {mode, minutes}` is one more key of the human's
+stored notification preferences (`notification_settings.preferences`, filled from
+`DEFAULTS` on read like the others), so it needed no migration. The override for one
+project is a JSON column `own_settings` on that membership (migration 0091), each
+setting `null` for "use the personal default". `member_settings.not_listening_minutes`
+gives the effective threshold, the override or else the personal `minutes`; the
+owner's digest (§5.3) is to read it when it comes (card tsk-32g2cjbm52ft). The export
+(§2) carries the personal `not_listening` with the notification settings and each
+membership's `own_settings` with the membership, since both are the person's.
+
+**Reason:** the contract ties the override to "the caller's own membership"
+(`not_found` without one). On the membership row it goes when the membership ends,
+and a removed member's choices for a project are not carried into a later membership.
+
+**Rejected alternative:** a map of project ids in the human's notification
+preferences, which would need no migration. It would keep overrides for projects the
+human has left, with no row that ends them, and the per-project settings would be read
+apart from the membership that the route already loads.

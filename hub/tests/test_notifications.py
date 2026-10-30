@@ -71,7 +71,7 @@ def test_a_request_to_the_human_is_an_inbox_item(
     item = next(i for i in got["items"] if i["kind"] == "inbox")
     assert item["title"].endswith("asks: Which?")
     assert item["target"] == {"type": "request", "id": asked.json()["id"]}
-    assert item["url"] == "https://hub.example/#/maintainer/maity/inbox"
+    assert item["url"] == "https://hub.example/maintainer/maity/inbox"
     assert item["actor"]["member_id"] == agent.id
 
 
@@ -285,7 +285,7 @@ def test_a_personal_request_is_one_inbox_item_from_its_record(
     got = bell(owner)
     inbox = [i for i in got["items"] if i["kind"] == "inbox"]
     assert len(inbox) == 1 and inbox[0]["record"].startswith("acr-")
-    assert inbox[0]["url"] == f"https://hub.example/#/requests/{request_id}"
+    assert inbox[0]["url"] == f"https://hub.example/requests/{request_id}"
     assert got["counts"]["inbox"] == 1
 
 
@@ -446,7 +446,7 @@ def test_a_group_chat_notifies_its_participants(
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert item["title"] == "Human someone in Release go/no-go"
     assert item["target"] == {"type": "conversation", "id": chat["id"]}
-    assert item["url"] == f"https://hub.example/#/maintainer/maity/chat/{chat['id']}"
+    assert item["url"] == f"https://hub.example/maintainer/maity/chat/{chat['id']}"
     marked = owner.post(f"{N}/read", {"ids": [item["id"]]}).json()
     assert marked["counts"]["chat"] == 0
     say(owner, chat["id"], "yes")  # the writer's own message notifies nobody but the others
@@ -528,3 +528,119 @@ def test_a_group_message_redacted_before_it_is_read_counts_as_the_chat_counts_it
     assert got["by_project"]["maintainer/maity"]["chat"] == 1
     item = next(i for i in got["items"] if i["kind"] == "chat")
     assert (item["redacted"], item["title"]) == (True, None)
+
+
+def _statements(engine: Engine, call: Any) -> int:
+    from sqlalchemy import event
+
+    seen = [0]
+
+    def counted(*_: Any) -> None:
+        seen[0] += 1
+
+    event.listen(engine, "before_cursor_execute", counted)
+    try:
+        call()
+    finally:
+        event.remove(engine, "before_cursor_execute", counted)
+    return seen[0]
+
+
+def test_the_bell_costs_the_same_statements_for_more_personal_requests(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Every personal request is an inbox item: its request and its asker are read for all
+    of them together, not three statements per item (tsk-430dnt8s25a8)."""
+    agents = [flow.agent(make_client, owner) for _ in range(3)]
+
+    def file(n: int) -> None:
+        for agent in agents:
+            for _ in range(n):
+                _file(migrated, agent.id)
+
+    def read() -> None:
+        assert owner.get("/me/notifications", params={"limit": 50}).status_code == 200
+
+    # Both sizes above a page (limit 50): the page is read only as far as it reaches, so
+    # a fuller window costs the same; under a page it costs less (fewer chunks).
+    file(20)
+    read()  # the first read of a session does one-time work; it is not a cost per item
+    few = _statements(migrated, read)
+    file(20)
+    many = _statements(migrated, read)
+    assert many == few, (few, many)
+    assert bell(owner, limit=0)["counts"]["inbox"] == 3 * 40
+
+
+def _walk(who: flow.Human, **query: Any) -> list[str]:
+    """Every item id, page by page through `next_cursor`."""
+    ids: list[str] = []
+    cursor = None
+    while True:
+        params = {"limit": 2, **query, **({"cursor": cursor} if cursor else {})}
+        page = who.get("/me/notifications", params=params).json()
+        ids += [i["id"] for i in page["items"]]
+        cursor = page["next_cursor"]
+        if not cursor:
+            return ids
+
+
+@pytest.mark.parametrize("query", [{}, {"unread": "true"}, {"kind": "inbox"}])
+def test_paging_reads_as_far_as_the_page_and_lists_what_the_whole_window_holds(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, query: dict[str, Any]
+) -> None:
+    """The page is cut while the sources are read (tsk-r8f0jm3xs9y6); walked to its end it
+    lists exactly what deriving the whole window lists, in §18.2's order."""
+    from maity_hub.notifications import items, listing
+    from tests.test_request_forwarding import admin_human, forward
+
+    agents = [flow.agent(make_client, owner) for _ in range(2)]
+    admin = admin_human(make_client, migrated, "admin")
+    # A request forwarded away and back: its `request_created` and `request_forwarded`
+    # lie pages apart, and only the latest may be listed (one item per request).
+    bounced = (
+        agents[0]
+        .post(
+            "/projects/maintainer/maity/requests",
+            {"class": "decision", "title": "Bounced?", "to": "owner"},
+        )
+        .json()
+    )
+    for n in range(7):
+        for agent in agents:
+            _file(migrated, agent.id)
+            agent.post(
+                "/projects/maintainer/maity/requests", {"class": "decision", "title": f"Which {n}?"}
+            )
+        if n == 3:
+            assert forward(owner, bounced, admin.id).status_code == 200
+            assert forward(admin, bounced, owner.id).status_code == 200
+    owner.post("/me/notifications/read", {"ids": [_walk(owner)[2]]})  # one read item
+    with migrated.connect() as conn:
+        where = items.scope(conn, owner.id, "http://testserver")
+        unread = query.get("unread") == "true"
+        kinds = {query["kind"]} if "kind" in query else None
+        whole = listing.select_items(
+            items.derive(conn, where), kinds=kinds, projects=None, unread=unread
+        )
+        expected = [i.id for i in sorted(whole, key=lambda i: i.order, reverse=True)]
+    assert expected, "the fixture produced items"
+    assert _walk(owner, **query) == expected
+
+
+def test_a_page_derives_about_a_page_of_items_however_full_the_window(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.notifications import items
+
+    agent = flow.agent(make_client, owner)
+    for _ in range(120):
+        _file(migrated, agent.id)
+    with migrated.connect() as conn:
+        where = items.scope(conn, owner.id, "http://testserver")
+        page = items.derive_page(
+            conn, where, count=21, newest_first=True, wanted=lambda _item: True
+        )
+        whole = items.derive(conn, where)
+    assert len(whole) >= 120
+    assert len(page) <= 21 * 3  # per source at most a page: events, chats, records

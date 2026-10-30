@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import events, idempotency, namespace
+from maity_hub import events, idempotency, moderation, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -550,6 +550,10 @@ def restart_placement(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
+            # Before the project lock: the suspension takes the account lock, then projects.
+            account = pl.profile_owner(conn, _placement(conn, mine, placement_id))
+            moderation.refuse_suspended(conn, account)
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)

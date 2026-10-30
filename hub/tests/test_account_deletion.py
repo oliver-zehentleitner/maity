@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import account_deletion, clock
@@ -21,6 +21,7 @@ from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_address_step_up import confirm_link, enrol, given
 from tests.test_notification_address import S, mail_env, outbox_rows, signed_in
+from tests.test_orgs import add_member
 from tests.test_requests import asked
 from tests.test_runners import paired
 from tests.test_two_factor import KEY, Clock
@@ -148,12 +149,12 @@ def test_the_request_is_mailed_and_shown_while_pending(
     mail = outbox_rows(migrated)[-1]
     assert (mail.kind, mail.recipient) == ("security", "pat@example.org")
     # The export link is the dashboard's account page, never the API route (§2.9).
-    assert "https://hub.example/#/account\n" in mail.body and "/api/v1/me/export" not in mail.body
+    assert "https://hub.example/account\n" in mail.body and "/api/v1/me/export" not in mail.body
     token = token_of(migrated)
     shown = page(pat, token)
     assert shown.status_code == 200
     assert "Delete my account" in shown.text and "pat" in shown.text
-    assert 'href="https://hub.example/#/account"' in shown.text
+    assert 'href="https://hub.example/account"' in shown.text
     assert shown.headers["Referrer-Policy"] == "no-referrer"
     assert deleted_at(migrated, pat.id) is None  # a GET changes nothing
     # Signing in still works until the link is pressed.
@@ -211,6 +212,105 @@ def test_a_namespace_owner_of_an_open_project_is_refused_both_times(
         ).scalar_one()
     assert rows and all(r.state == "archived" and r.owner_id == pat.id for r in rows)
     assert active == 0
+
+
+def test_the_last_owner_of_an_organisation_is_refused_both_times(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    refused = ask_deletion(pat)
+    assert (refused.status_code, code(refused)) == (409, "org_last_owner")
+    assert refused.json()["error"]["details"]["orgs"] == ["pat-team"]
+    add_member(migrated, org["id"], other, "owner")  # two owners: allowed to ask
+    token = requested(pat, migrated)
+    with migrated.begin() as conn:  # and the other one leaves meanwhile
+        conn.execute(delete(t.org_member).where(t.org_member.c.human_id == other))
+    pressed = press(pat, token)
+    assert pressed.status_code == 409 and "last owner of an organisation" in pressed.text
+    assert deleted_at(migrated, pat.id) is None
+    with migrated.begin() as conn:  # an offer pat made, still open
+        conn.execute(
+            insert(t.org_invitation).values(
+                id="oiv-pats",
+                org_id=org["id"],
+                handle="somebody",
+                role="member",
+                invited_by=pat.id,
+                created_at=moment.at,
+                expires_at=moment.at + timedelta(days=14),
+                live=True,
+            )
+        )
+    add_member(migrated, org["id"], other, "owner")  # handed over: the link kept working
+    done = press(pat, token)
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        left = conn.execute(select(t.org_member.c.human_id, t.org_member.c.role)).all()
+        assert [tuple(r) for r in left] == [(other, "owner")]
+        assert conn.execute(select(t.org.c.deleted_at)).scalar_one() is None
+        offer = conn.execute(select(t.org_invitation)).one()
+        assert (offer.live, offer.closed_by) == (None, "inviter_deleted")
+        assert conn.execute(select(t.handle_register.c.handle)).all()  # handles stay taken
+
+
+def test_an_owner_of_an_organisation_that_has_projects_may_delete_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The organisations' owners own its projects collectively (§6.26): one who is not the last
+    owner goes with the account, the seats the hub kept for them end, and the project stays with
+    the others, under its name, open."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    add_member(migrated, org["id"], other, "owner")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop", "owner": "pat-team"})
+    assert made.status_code in (200, 201), made.text
+    assert ask_deletion(pat).status_code == 202  # two owners, an open project: not refused
+    done = press(pat, token_of(migrated))
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        assert (project.state, project.owner_org_id) == ("build", org["id"])
+        seats = {
+            r.human_id: r.active
+            for r in conn.execute(
+                select(t.membership.c.human_id, t.membership.c.active).where(
+                    t.membership.c.project_id == project.id
+                )
+            ).all()
+        }
+        assert seats[pat.id] is None  # ended, the seat the hub kept for the organisation
+        assert seats[other] is True  # the hub made them an owner when the project was created
+        assert [r.human_id for r in conn.execute(select(t.org_member)).all()] == [other]
+
+
+def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """An admin of an organisation who asked its owners to take a project in is deleted: the
+    requests were theirs, and are withdrawn with the account (§2.9, §6.26)."""
+    admin_first(migrated, moment)
+    boss = person(make_client, migrated, moment, "boss")
+    org = boss.post("/orgs", {"handle": "boss-team", "display_name": "Boss Team"}).json()
+    pat = person(make_client, migrated, moment)
+    add_member(migrated, org["id"], pat.id, "admin")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop"})
+    assert made.status_code in (200, 201), made.text
+    filed = pat.post(f"/projects/{pat.handle}/shop/transfer", {"to": org["id"]})
+    assert filed.status_code == 202, filed.text
+    archived = pat.patch(f"/projects/{pat.handle}/shop", {"state": "archived", "reason": "done"})
+    assert archived.status_code == 200, archived.text  # an open project of theirs would refuse
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.request.c.status, t.request.c.withdraw_reason)).all()
+    assert [tuple(r) for r in rows] == [("withdrawn", "initiator_deleted")] * len(rows) != []
 
 
 def test_the_last_instance_admin_is_refused_both_times(

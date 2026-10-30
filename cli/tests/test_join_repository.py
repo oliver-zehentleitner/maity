@@ -46,9 +46,9 @@ def test_no_remote_and_no_clone_do_not_block(clone: Path, tmp_path: Path) -> Non
     assert gitfacts.repository_mismatch(tmp_path, EXPECTED) is None
 
 
-def _packet(role: str = "member") -> dict[str, Any]:
+def _packet(trust: str = "member") -> dict[str, Any]:
     return packet(
-        membership={"role": role, "briefing": None},
+        membership={"trust": trust, "role": "coder", "briefing": None},
         project={
             "slug": "maity",
             "full_name": "oliver/maity",
@@ -75,7 +75,7 @@ def test_join_warns_but_keeps_credential(
 
 
 @pytest.mark.parametrize(
-    "items,role,hint",
+    "items,trust,hint",
     [([], "admin", True), ([{"id": "tsk-a"}], "admin", False), ([], "member", False)],
 )
 def test_empty_board_hint_only_for_admins(
@@ -83,10 +83,10 @@ def test_empty_board_hint_only_for_admins(
     fake: fakehub.FakeHub,
     capsys: pytest.CaptureFixture[str],
     items: list[dict[str, str]],
-    role: str,
+    trust: str,
     hint: bool,
 ) -> None:
-    fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, _packet(role))
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, _packet(trust))
     fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda _: (200, {"items": items})
     assert cli.main(["resume"]) == 0
     out = capsys.readouterr().out
@@ -135,13 +135,12 @@ def test_admin_briefing_and_json_need_no_board_read(
         assert json.loads(capsys.readouterr().out) == p
 
 
-@pytest.mark.parametrize("state", ["accepted", "archived"])
 def test_closed_empty_board_asks_about_reopening(
     joined: Path,
     fake: fakehub.FakeHub,
     capsys: pytest.CaptureFixture[str],
-    state: str,
 ) -> None:
+    state = "archived"
     p = _packet("admin")
     p["project"]["state"] = state
     fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, p)

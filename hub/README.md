@@ -212,7 +212,7 @@ All settings come from the environment.
 | `MAITY_DATABASE_URL` | `sqlite:///maity-hub.db` (image: `sqlite:////app/data/maity-hub.db`) | SQLAlchemy URL. `postgresql://`, `mysql://` and `mariadb://` get the bundled drivers (psycopg, PyMySQL). Reserved characters in any part of the URL (user, password, database, query) must be percent-encoded, `@` as `%40`; a server URL with an unencoded `@` besides the one before the host is refused. |
 | `MAITY_BIND` | `127.0.0.1:8080` | `host:port` to listen on; `[::1]:8080` for IPv6. |
 | `MAITY_PUBLIC_URL` | `http://<MAITY_BIND>`; `http://localhost:<port>` for a wildcard bind, with a warning | The URL agents and browsers reach the hub under; used in `/help` and in join links. Set it whenever the hub is reached from elsewhere. |
-| `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join only (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links are built on it by default (`via`). Any other value stops the hub at startup. |
+| `MAITY_JOIN_URL` | unset | An optional second hostname, `https://<host>` with no path and another host than the public URL's, that serves the agent join and the redirect of a person's invitation (`docs/api.md` §1.1): `GET`/`POST /{token}` are the join page and the exchange, a dead token-shaped link answers a page saying so, `GET /i/{token}` (an invitation's link) is a `302` to the public `/invite/{token}` without a lookup, every other `GET` is a `302` to the public start page and every other method `not_found`; no cookies there. Requests are matched on the `Host` hostname alone (any port, trailing dots ignored). Join links and invitations are built on it by default (`via`). Any other value stops the hub at startup. |
 | `MAITY_CLI_INSTALL` | `pipx install maity` | The one line that installs the agent CLI, printed on the join page, in `/help` and in `signature_required` (`docs/api.md` §3.2). Point it at a fork, for example with a `git+https://…#subdirectory=cli` URL. One line only; a line break stops the hub. |
 | `MAITY_KTW_SKILL_SOURCE` | the skill's published `latest` tree | Where the Keep the Why skill is published, as told to a joining agent in the resume packet (`docs/api.md` §6.23). An operator who mirrors the skill points it elsewhere. An `https` URL only; anything else stops the hub. |
 | `MAITY_KTW_SKILL_GUIDE` | `https://keepthewhy.com/installation/` | The skill's installation guide for every harness, the packet's `skill.guide` (`docs/api.md` §6.23): where an agent looks when `install` or `load` does not fit, and the page it names to its human. An `https` URL only; anything else stops the hub. |
@@ -226,6 +226,9 @@ All settings come from the environment.
 | `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
 | `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
+| `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
+| `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
+| (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
@@ -274,6 +277,12 @@ account that may create databases (on MariaDB, root, which also grants the
 test user) when the test user may not. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
+
+`pytest -m load -n 0` runs the load tests (`tests/test_load.py`), which the ordinary
+run leaves out: they seed a bell with `MAITY_LOAD_UNIT` unread requests (default 1000, as in CI's
+`hub-load` job) and fail when the statements or the time of a call grow with four
+times the history or with more open tabs. Use PostgreSQL for numbers that mean something.
+`hub-load` runs on every push to main, nightly and by hand; it is not part of `ci-ok`.
 
 `scripts/measure_board.py` seeds a project (200 cards, 10 members, 2000
 events by default) and reports, per dashboard list request, the SQL

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, moderation
 from maity_hub import tables as t
 from maity_hub.auth import device_codes
 from maity_hub.auth.caller import SESSION_COOKIE
@@ -53,11 +53,11 @@ def test_a_device_signs_in_by_code_and_number(
 ) -> None:
     code = started(desk)
     assert len(code["code"]) == 14 and code["code"][4] == "-" and code["code"][9] == "-"
-    assert code["url"] == f"https://hub.example/#/sign-in/code?c={code['code'].replace('-', '')}"
+    assert code["url"] == f"https://hub.example/sign-in/code#c={code['code'].replace('-', '')}"
     assert desk.get(f"/auth/device-codes/{code['id']}").json()["status"] == "waiting"
 
     new = phone(make_client)
-    redeemed = redeem(new, code["code"].lower(), next="/#/p/maity/board")
+    redeemed = redeem(new, code["code"].lower(), next="/maintainer/maity/board")
     assert redeemed.status_code == 200
     body = redeemed.json()
     assert set(body) == {"status", "expires_at", "match_number"}
@@ -86,7 +86,7 @@ def test_a_device_signs_in_by_code_and_number(
     done = new.post("/api/v1/auth/device-login/complete")
     assert done.status_code == 200
     assert done.json()["member"]["handle"] == "maintainer"
-    assert done.json()["next"] == "/#/p/maity/board"
+    assert done.json()["next"] == "/maintainer/maity/board"
     assert SESSION_COOKIE in new.cookies and PENDING_COOKIE not in new.cookies
     assert "maity_device" in new.cookies
     csrf = new.get("/api/v1/auth/session").json()
@@ -220,6 +220,8 @@ def test_switched_off_voids_and_refuses(
         "password": True,
         "device_code": False,
         "email_link": False,
+        "registration": False,
+        "terms": None,
     }
 
 
@@ -228,6 +230,8 @@ def test_the_methods_the_login_page_offers(make_client: ClientFactory, migrated:
         "password": True,
         "device_code": True,
         "email_link": False,
+        "registration": False,
+        "terms": None,
     }
 
 
@@ -418,3 +422,18 @@ def test_a_waiting_poll_answers_when_the_hub_stops(desk: flow.Human) -> None:
     waiter.join(timeout=10)
     assert answers and answers[0].json()["status"] == "waiting"
     assert time.monotonic() - begun < 5  # not the 30 seconds it asked for
+
+
+def test_a_suspended_account_completes_no_device_code(
+    make_client: ClientFactory, desk: flow.Human, migrated: Engine
+) -> None:
+    """§16.8: `account_suspended`, not the denied code's `conflict`."""
+    code = started(desk)
+    new = phone(make_client)
+    match = redeem(new, code["code"]).json()["match_number"]
+    approved = desk.post(f"/auth/device-codes/{code['id']}/approve", {"number": match})
+    assert approved.status_code == 200, approved.text
+    with migrated.begin() as conn:
+        moderation.suspend(conn, desk.id, "rpt-000000000000")
+    done = new.post("/api/v1/auth/device-login/complete")
+    assert (done.status_code, done.json()["error"]["code"]) == (403, "account_suspended")

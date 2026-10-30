@@ -1,4 +1,4 @@
-// (8) Runners (#/runners): the small services on the operator's own
+// (8) Runners (/runners): the small services on the operator's own
 // machines that start agents for the projects they are allowed in
 // (docs/api.md §15). The hub never starts anything itself; a runner does,
 // within what its own configuration allows. This view pairs a runner (the

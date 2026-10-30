@@ -1,4 +1,4 @@
-// Users of this hub, the Users section of #/admin (docs/api.md §16.1;
+// Users of this hub, the Users section of /admin (docs/api.md §16.1;
 // js/instance-admin.js shows it to the instance admin only): the humans of the
 // instance for its admin — counts and times, never content. Searchable by
 // handle or name and filterable by disabled; paged by the hub's cursor.

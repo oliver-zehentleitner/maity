@@ -13,7 +13,7 @@ window.Maity = window.Maity || {};
 
   const MAX_PEOPLE = 12;
   const EARLIER_PAGE = 50;
-  const CLOSED_STATES = ["accepted", "archived"];
+  const CLOSED_STATES = ["archived"];
 
   // The hub's refusals, in words.
   const REFUSED = {
@@ -49,8 +49,11 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const title = h("input", { id: "group-title", maxlength: "200", autocomplete: "off", placeholder: "What it is about" });
     const others = ctx.members.filter((m) => m.id !== ctx.me.id && !m.removed_at);
+    // ?with=<member id> (a Chat button on Members): that person chosen.
+    const asked = M.route.current().query.get("with");
     const boxes = others.map((m) => {
       const box = h("input", { type: "checkbox", id: "group-member-" + m.id, value: m.id });
+      box.checked = m.id === asked;
       const owner = m.kind === "agent" ? (m.owner_id === ctx.me.id ? "your agent" : "agent of " + nameOf(ctx, m.owner_id)) : "human";
       return { m, box, el: h("label", { class: "check", for: box.id }, box, " " + m.display_name, h("span", { class: "muted" }, " @" + m.handle + " · " + owner)) };
     });
@@ -77,7 +80,7 @@ window.Maity = window.Maity || {};
           const created = await M.api.post(ctx.base + "/conversations",
             { title: title.value.trim() || null, participants: chosen.map((m) => m.id) });
           status.done();
-          window.location.hash = ctx.link("chat", created.id);
+          M.route.go(ctx.link("chat", created.id));
         } catch (err) {
           status.fail("Not created: ", said(err));
         } finally {
@@ -358,7 +361,7 @@ window.Maity = window.Maity || {};
         const what = lastHuman ? " You are its last human: it closes, and no one writes in it any more." : "";
         if (!window.confirm("Leave this chat?" + what)) return;
         act("Leaving", "You left the chat.", () => M.api.del(base + "/participants/" + encodeURIComponent(ctx.me.id)),
-          () => { window.location.hash = ctx.link("chat"); });
+          () => { M.route.go(ctx.link("chat")); });
       } }, "Leave the chat"));
       return box;
     }

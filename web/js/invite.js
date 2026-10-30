@@ -1,5 +1,5 @@
 // How a person comes into a project (docs/api.md §3.4): the invitation
-// page #/invite/<token>, and on the Members page the invitations a human
+// page /invite/<token>, and on the Members page the invitations a human
 // with members:admin issues and revokes. Registration is js/register.js.
 // The invitation page is the first a new person sees: who invites them to
 // what, then the way in that this instance offers.
@@ -48,11 +48,11 @@ window.Maity = window.Maity || {};
         h("h2", null, "This invitation cannot be used"),
         h("p", null, err.status === 404 ? "It may have expired, been used or been withdrawn. Ask the person who invited you for a new one."
           : "It could not be read: " + (err.message || "an error") + "."),
-        h("p", null, h("a", { href: "#/login" }, "Sign in")));
+        h("p", null, h("a", { href: "/login" }, "Sign in")));
       return;
     }
     const role = M.trust.words(inv);
-    const here = "#/invite/" + encodeURIComponent(token);
+    const here = "/invite/" + encodeURIComponent(token);
     document.title = "Join " + inv.project.name + " · Maity";
     append(box,
       h("div", { class: "invite-project" },
@@ -70,9 +70,9 @@ window.Maity = window.Maity || {};
     try { me = await signedIn(); } catch (err) { append(ways, h("p", { class: "send-status failed" }, "Could not tell whether you are signed in: " + err.message)); return; }
     if (!me) {
       append(ways,
-        h("a", { class: "button primary door-action", href: M.withNext("#/login", here) }, "Sign in to accept"),
+        h("a", { class: "button primary door-action", href: M.withNext("/login", here) }, "Sign in to accept"),
         inv.registration === "sign_in_or_register"
-          ? h("p", { class: "door-alt" }, "No account yet? ", h("a", { href: M.withNext("#/register", here) }, "Create one"), " and you come back here.")
+          ? h("p", { class: "door-alt" }, "No account yet? ", h("a", { href: M.withNext("/register", here) }, "Create one"), " and you come back here.")
           : h("p", { class: "muted" }, "This hub does not create new accounts: sign in with an account you have, or ask " + inv.invited_by.display_name + " for another way in."));
       return;
     }
@@ -99,14 +99,14 @@ window.Maity = window.Maity || {};
       status.done();
       clear(ways);
       append(ways, h("p", { class: "ok" }, "You are a member of " + inv.project.name + " now."),
-        h("p", null, h("a", { class: "button primary", href: "#/" + M.api.projectPath(inv.project.full_name) + "/inbox" }, "Open " + inv.project.name)));
+        h("p", null, h("a", { class: "button primary", href: "/" + M.api.projectPath(inv.project.full_name) + "/inbox" }, "Open " + inv.project.name)));
       const open = ways.querySelector("a");
       if (open) open.focus();
     });
     // Who is signed in, as a small row, with a way out when it is someone else.
     append(ways, h("p", { class: "door-who" }, M.avatar ? M.avatar(me, 24) : null,
       h("span", { class: "muted" }, "Signed in as " + me.display_name + " · @" + me.handle),
-      M.logout ? h("button", { type: "button", class: "link-button", onclick: () => M.logout("/" + here) }, "Not you? Sign out") : null), accept, status.el);
+      M.logout ? h("button", { type: "button", class: "link-button", onclick: () => M.logout(here) }, "Not you? Sign out") : null), accept, status.el);
   }
 
   // The reason a refusal names, beside the hub's words.
@@ -125,6 +125,9 @@ window.Maity = window.Maity || {};
     if (Date.parse(x.expires_at) <= M.api.now()) return "expired";
     return "open";
   }
+
+  // A join URL's host, as the person sees it in the link ("join.maity.team").
+  const hostOf = (url) => { try { return new URL(url).host; } catch (err) { return String(url); } };
 
   // For a human with members:admin; null otherwise or on a hub without invitations.
   async function membersPanel(ctx) {
@@ -153,6 +156,13 @@ window.Maity = window.Maity || {};
     const ttl = h("select", { id: "invite-ttl" }, TTLS.map(([v, l]) => h("option", { value: String(v) }, l)));
     ttl.value = "86400";
     const note = h("textarea", { id: "invite-note", rows: "2", maxlength: "1024", placeholder: "Optional: shown on the invitation page (at most 1 KiB)" });
+    // The link on the join host (§3.4 `via`, §1.1): offered, on by default, only
+    // where the hub names a join host (`join_url` of GET /auth/session): the
+    // session the page has read already, asked again only where there is none.
+    const session = M.api.session() || await M.api.get("/auth/session").catch(() => ({}));
+    const joinHost = session.join_url ? hostOf(session.join_url) : null;
+    const viaJoin = joinHost ? h("input", { type: "checkbox", id: "invite-via-join" }) : null;
+    if (viaJoin) viaJoin.checked = true;
     const submit = h("button", { type: "submit" }, "Create the invitation");
     const form = h("form", {
       class: "invite-form inline-form",
@@ -161,6 +171,7 @@ window.Maity = window.Maity || {};
         const body = { trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) };
         if (address.value.trim()) body.address = address.value.trim();
         if (note.value.trim()) body.note = note.value.trim();
+        if (viaJoin) body.via = viaJoin.checked ? "join" : "public";
         // The hub counts the note in UTF-8 bytes (§3.4, 1 KiB), not characters.
         if (body.note && encodeURIComponent(body.note).replace(/%[0-9A-F]{2}/g, "x").length > 1024) {
           status.fail("Not created: ", { message: "the note is longer than 1 KiB" });
@@ -175,7 +186,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           submit.disabled = false;
           status.fail("Not created: ", err.details && err.details.fields
-            ? { message: Object.entries(err.details.fields).map(([f, r]) => f + ": " + r).join("; ") } : err);
+            ? { message: Object.entries(err.details.fields).map(([f, r]) => (f === "via" && r === "no_join_host" ? "this hub has no join host any more; reload" : f + ": " + r)).join("; ") } : err);
           return;
         }
         submit.disabled = false;
@@ -190,6 +201,8 @@ window.Maity = window.Maity || {};
     h("label", { for: "invite-address" }, "Address"), address,
     h("label", { for: "invite-ttl" }, "Valid for"), ttl,
     h("label", { for: "invite-note" }, "Note"), note,
+    viaJoin ? h("label", { class: "check", for: "invite-via-join" }, viaJoin, " Link via " + joinHost) : null,
+    viaJoin ? h("p", { class: "hint" }, "Off: the link is on this hub's own address. The link works both ways; this picks the one that goes out.") : null,
     submit, status.el);
 
     // The link exists once, in this answer (§3.4): shown with a copy button
@@ -221,6 +234,8 @@ window.Maity = window.Maity || {};
           return h("li", { class: "invite-item invite-" + state, "data-invitation": x.id },
             h("span", { class: "invite-state" }, state), " ",
             h("span", null, M.trust.words(x) + (x.address ? " for " + x.address : " for whoever has the link")),
+            // Which link went out (§3.4), where the hub lists it.
+            x.via === "join" && joinHost ? h("span", { class: "muted" }, " · via " + joinHost) : x.via === "public" && joinHost ? h("span", { class: "muted" }, " · on this hub's address") : null,
             h("span", { class: "muted" }, " · by " + ctx.nameOf(x.created_by) + " · "
               + (state === "open" ? "until " + formatTime(x.expires_at) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.expires_at))),
             state === "open" ? h("button", { type: "button", class: "small", "data-focus": "revoke:" + x.id, onclick: async (e) => {

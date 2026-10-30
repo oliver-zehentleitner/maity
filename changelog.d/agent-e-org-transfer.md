@@ -1,0 +1,3 @@
+### Added
+
+- hub: organisations (§6.26), part 3b: transfers. `POST /projects/{owner}/{slug}/transfer` takes an organisation (`org-…`) as `to` and, for a project of an organisation, is made by any owner of it: an owner of the receiving organisation moves the project in the call (`200`), an admin files a personal consent request to each of its owners and the first `go` moves it, an owner who hands an organisation's project to themselves needs no request; the seats the hub kept for the sending organisation's owners end and the receiving organisation's owners become owners. Until part 4 the repository's confirmation, the forge grants, the public page and the About of a project of an organisation stay closed (tsk-whe4wv1jpsae).

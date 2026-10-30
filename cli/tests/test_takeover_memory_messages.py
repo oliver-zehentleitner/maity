@@ -432,9 +432,7 @@ def test_after_a_retracted_objection_the_holder_answers_again(
     assert fake.signed()[-1].json() == {"accept": True}
 
 
-def test_resume_stores_the_instance_and_forgets_a_stale_one(
-    joined: Path, fake: fakehub.FakeHub
-) -> None:
+def test_resume_stores_the_instance_the_packet_names(joined: Path, fake: fakehub.FakeHub) -> None:
     from maity import state
 
     packet = {"session": {"id": "ses-b-0005"}, "events": {"after": 0, "items": [], "cursor": 1},
@@ -442,9 +440,9 @@ def test_resume_stores_the_instance_and_forgets_a_stale_one(
     fake.routes[("POST", "/api/v1/me/resume")] = lambda s: (200, packet)
     assert cli.main(["resume", "--json"]) == cli.EXIT_OK
     assert state.load_state(state.resolve_state_dir())["instance"] == "wle2"
-    packet["me"] = {"member_id": "agt-b"}
+    packet["me"] = {"member_id": "agt-b", "instance": "k7mq"}
     assert cli.main(["resume", "--json"]) == cli.EXIT_OK
-    assert "instance" not in state.load_state(state.resolve_state_dir())
+    assert state.load_state(state.resolve_state_dir())["instance"] == "k7mq"
 
 
 def test_memory_add_json_is_ascii_escaped(

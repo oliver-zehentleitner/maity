@@ -67,7 +67,8 @@ project is doing to anyone who saw a link in a log.
 
 **Id:** a749f1eb-f54f-4549-8113-2abee4e2d666
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** cb26f4f4-ac8a-4a65-889d-a45896810a0e
 **Evidence:** confirmed
 **Source:** the maintainer's decision, 2026-10-22, narrowed the same day to the agent join only
 **Revisit when:** the join host should be served by a separate edge or service instead of the hub under a second hostname
@@ -109,6 +110,58 @@ public host only.
   join needs.
 - A separate join service: more to run and secure for no gain over the
   same hub answering a second hostname.
+
+## The join host also carries a person's invitation, as a redirect to the public host's invitation page
+
+**Id:** cb26f4f4-ac8a-4a65-889d-a45896810a0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-29 that invitations go out over the join host too (card tsk-nq3fjd1x6qb1); contract change in `docs/api.md` §1.1, §3.4 and §16.11
+**Revisit when:** the join host should be served by a separate edge or service, or an invitation should be accepted without a session on the public host
+**See:** join.md#an-optional-join-host-answers-only-the-agent-join-everything-else-on-it-goes-to-the-start-page — a749f1eb-f54f-4549-8113-2abee4e2d666 — as of 2026-10-30
+
+Everything a749f1eb says about the join host still holds for the agent
+join: the join at the root, never a redirect, no cookie, no `/help`,
+`/health`, runner pairing or dashboard. One route is added: `GET
+/i/{token}` on the join host is a `302` to the public host's
+`/invite/{token}`, the token carried over and nothing else. The join host
+does not look the invitation up; the page on the public host answers it.
+An invitation's `url` is built on the join host by default when one is
+configured, with a per-invitation `via` as for join links, and the mail
+carries the same `url`.
+
+**Reason:**
+- The maintainer wants one short address for every way into a project,
+  for a person as well as for an agent.
+- A person accepts an invitation in a browser and signed in, and the join
+  host has no session by design; so the invitation cannot be served
+  there, only handed on. A browser follows the redirect, and no agent
+  tool opens an invitation.
+- The redirect does not look the token up, so the join host learns and
+  tells nothing about an invitation; the public page keeps its one
+  `not_found` for every reason.
+- A prefix is needed because an invitation's token has the join token's
+  shape (22 characters of `[A-Za-z0-9_-]`): at the root the two could
+  not be told apart.
+
+**Rejected alternatives:**
+- Serving the invitation page on the join host: it would need a session
+  there, which undoes the cookie isolation that a749f1eb chose the host for.
+- Telling join and invitation tokens apart by looking them up at the root:
+  an existence check on the unauthenticated host, and two token kinds
+  that would have to stay disjoint forever.
+- A different token shape for invitations so the root can tell them
+  apart: a migration of every open invitation for a one-letter path that
+  does the same.
+- `/invite/{token}` on the join host, the same path as on the public
+  host: the join host's links are meant to be short, and `/i/` is enough
+  to tell an invitation from a join.
+
+**Constraint:** a reverse proxy in front of the join host may narrow it
+only to what the hub answers there, the one-segment join and `GET /i/`
+with one segment; a rule that passes a single segment and nothing else
+breaks every invitation link (`docs/api.md` §2.5).
 
 ## Without a join host the join page lives at `/join/{token}`; `/j/{token}` stays as an alias
 
@@ -239,3 +292,45 @@ rights over the project and its agents (`trust.md`).
 - Reusable invitation links: convenient for a team, but a leaked link
   would keep admitting; a week-long single-use link is enough, and the
   inviter can issue more.
+
+## The join host reaches the hub through the chart's Ingress; the path-split Ingresses made by hand are gone
+
+**Id:** 7d25cf86-17e2-4bd2-b28b-aba6df20226f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the coordinator's order to make `join.maity.team` the hub's join host, 2026-10-29, on the operator's side of the contract in `docs/api.md` §1.1
+**Revisit when:** the join host is served by an edge other than the chart's Ingress, or the production cluster stops using Traefik
+**See:** join.md#an-optional-join-host-answers-only-the-agent-join-everything-else-on-it-goes-to-the-start-page — a749f1eb-f54f-4549-8113-2abee4e2d666 — as of 2026-10-29
+
+Until now production answered `join.maity.team` through two Ingresses
+and a Traefik redirect Middleware made with `kubectl`, outside the
+repository: a path list for the join and pairing routes, and a catch-all
+that redirected everything else to the apex with a 307. That was a
+stopgap from before the hub routed the join host itself. Now
+`ingress.joinHost` renders the host rule, the TLS host and
+`MAITY_JOIN_URL`, and the hub answers the whole host (the token path is
+the join, any other `GET` is a 302 to the public start page, any other
+method `not_found`). The hand-made objects are deleted first, then the
+chart is upgraded with the same image, so a host never has two owners;
+`cert.yaml` carries `join.` in its names for new installs.
+
+**Reason:** the hand-made objects differed from the contract (§1.1,
+§15.2) in three ways: the catch-all redirect was a 307 where the contract
+says 302 to the start page; a non-`GET` was redirected where the contract
+says `not_found`; and the path list passed runner pairing, `/help` and
+`/health` through to the public app, which the join host does not have.
+One owner of the routing (the hub) and one of the objects (the chart)
+leaves nothing to drift.
+
+**Constraint for a running installation:** the Certificate must name the
+join host and be `Ready` before the hand-made objects are deleted; then
+delete them, then `helm upgrade` with `ingress.joinHost`. Out of that
+order the host answers with the wrong certificate or 404 in between.
+
+**Alternatives:**
+- Keep the path-split Ingresses beside the chart: two definitions of what
+  the join host serves, one of them with the wrong status codes and the
+  wrong routes.
+- A chart value for the Middleware: the hub's own 302 makes it
+  unnecessary.

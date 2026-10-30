@@ -8,7 +8,10 @@
       "tried": null,
       "options": [],
       "replies": [
-        { "id": "go", "label": "Go" }
+        {
+          "id": "go",
+          "label": "Go"
+        }
       ],
       "priority": "normal",
       "to": "profile_owner:agt-q",
@@ -30,7 +33,12 @@
       "answer": null,
       "created_at": "2026-10-23T05:40:00Z",
       "answered_at": null,
-      "project": { "slug": "elsewhere", "full_name": "ada/elsewhere", "name": "Elsewhere", "state": "build" }
+      "project": {
+        "slug": "elsewhere",
+        "full_name": "ada/elsewhere",
+        "name": "Elsewhere",
+        "state": "build"
+      }
     },
     {
       "id": "req-p002",
@@ -40,8 +48,14 @@
       "tried": null,
       "options": [],
       "replies": [
-        { "id": "go", "label": "Go" },
-        { "id": "no", "label": "No" }
+        {
+          "id": "go",
+          "label": "Go"
+        },
+        {
+          "id": "no",
+          "label": "No"
+        }
       ],
       "priority": "normal",
       "to": "human:hum-maintainer",
@@ -70,7 +84,12 @@
         "base_version": 2,
         "reason": "You asked twice this week for chat in German; this keeps it for every agent."
       },
-      "project": { "slug": "maity", "full_name": "maintainer/maity", "name": "Maity", "state": "build" }
+      "project": {
+        "slug": "elsewhere",
+        "full_name": "ada/elsewhere",
+        "name": "Elsewhere",
+        "state": "build"
+      }
     }
   ],
   "next_cursor": null

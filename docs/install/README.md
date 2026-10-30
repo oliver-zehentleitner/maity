@@ -188,8 +188,9 @@ the hub itself comes from the Helm chart, whose
 - the hub chart with a NetworkPolicy that admits only Traefik
 
 **1. The instance.**
-- Create DNS A records for the host name and `www.` pointing at the
-  instance. **No AAAA records**: k3s here is IPv4 only, and an AAAA
+- Create DNS A records for the host name, `www.` and, if you use the
+  join host (`ingress.joinHost`, docs/api.md §1.1), `join.` pointing at
+  the instance. **No AAAA records**: k3s here is IPv4 only, and an AAAA
   record breaks every client that prefers IPv6.
 - Open the firewall for ssh, 80 and 443, and for k3s's own pod and
   service networks. Without the last two, pods cannot reach each other
@@ -240,13 +241,18 @@ rm pg-password database-url
 ```
 
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
-`hub-values.yaml` first:
+`hub-values.yaml` first (and drop the join host from both if you run
+without one):
 
 ```sh
 kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
-  -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
+
+Adding the join host to a running installation: extend the Certificate and
+wait until it is `Ready`, delete any Ingress of your own that routes the join
+host, then `helm upgrade` with `ingress.joinHost`, in that order.
 
 **6. The hub.** Set the image digest in `hub-values.yaml`, then:
 
@@ -278,13 +284,25 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   volume under `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
-  the line `dump ok: /backups/maity-<UTC time>.dump <bytes>`: `kubectl -n maity logs job/<job>`.
+  the line `dump ok: /backups/maity-<UTC time>.dump <bytes> attachments <bytes>` (`attachments` is only there with the attachment backup). Read the log of the pod
+  that succeeded, not of a failed earlier try:
+  `kubectl -n maity logs "$(kubectl -n maity get pod -l job-name=<job> --field-selector=status.phase=Succeeded -o name | head -1)"`
+  (`kubectl logs` takes no `--field-selector`, `get pod` does).
+- **The attachment files are backed up with the database.** They are not in it (docs/api.md §8.7), so the same Job tars the volume
+  `maity-attachments` into `maity-<UTC time>.attachments.tar` next to `maity-<UTC time>.dump`, with the same time stamp and the same rotation, and the
+  `dump ok:` line carries both sizes. A restore of the database alone leaves messages whose files are missing.
+- **Room for the backups.** The size of `maity-backups` (5 GiB) is not enforced by k3s's local-path storage: the limit is the node's disk, which
+  PostgreSQL is on. Fourteen nights keep fourteen dumps and fourteen tars of the attachment volume, so plan with `14 × (the volume's size + a dump)`
+  against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
+  most files are compressed already, so the tar is not compressed.
 - **To restore:**
   1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
   2. Feed the dump to `pg_restore --clean --if-exists -d maity` inside
      the postgres pod
      (`kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump`).
-  3. Scale the hub back to 1.
+  3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1):
+     `sed 's/@TS@/<the time stamp of the dump>/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -`, wait for the Job, delete it.
+  4. Scale the hub back to 1.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)).
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
@@ -335,7 +353,9 @@ Back up before every upgrade.
 ## Upgrades
 
 1. Read the `CHANGELOG.md` section of the new version.
-2. **Back up.**
+2. **Back up.** When the release has `attachments.existingClaim`, apply `deploy/k3s-single/attachments.yaml` and `backup.yaml` first (without the claim
+   a hub pod stays Pending, and the old backup script has no tar) and run the upgrade script with `DUMP_REQUIRES_ATTACHMENTS=1`: it then stops
+   unless the dump's mark carries the tar.
 3. **Migrate, then serve.** `serve` refuses a database that is not at its
    own schema version, and migrations never run on their own.
    - Plain Python: stop the hub, update the checkout, reinstall from the

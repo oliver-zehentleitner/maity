@@ -54,15 +54,10 @@ def test_every_preset_starts_private(
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_policy_requires_human_admin_and_reason(
+def test_policy_requires_a_human_admin(
     setup: tuple[flow.Human, TestClient, str], make_client: ClientFactory
 ) -> None:
     owner, public, _ = setup
-    assert (
-        owner.patch("/projects/maintainer/maity", {"policy": {"badge": "members"}}).status_code
-        == 400
-    )
-    assert public.get("/badge/maintainer/maity.svg").status_code == 404
     admin = flow.agent(make_client, owner, role="admin")
     refused = admin.patch(
         "/projects/maintainer/maity", {"policy": {"badge": "members"}, "reason": "README"}
@@ -88,7 +83,7 @@ def test_policy_requires_human_admin_and_reason(
     assert changed.json()["policy"]["badge"] == "members"
 
 
-@pytest.mark.parametrize("state", ["off", "unknown", "accepted", "archived"])
+@pytest.mark.parametrize("state", ["off", "unknown", "archived"])
 def test_hidden_badges_never_validate_a_cache(
     setup: tuple[flow.Human, TestClient, str], migrated: Engine, state: str
 ) -> None:
@@ -351,3 +346,37 @@ def test_public_cache_exception_is_narrow(allow: bool, status: int, expected: by
 
     asyncio.run(check())
     assert dict(sent[0]["headers"])[b"cache-control"] == expected
+
+
+def test_the_badge_alone_needs_no_reason(setup: tuple[flow.Human, TestClient, str]) -> None:
+    """§6.20: a policy change of `badge` alone takes `reason` optionally."""
+    owner, public, _ = setup
+    before = owner.get("/projects/maintainer/maity").json()["rules_version"]
+    changed = owner.patch("/projects/maintainer/maity", {"policy": {"badge": "members"}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["policy"]["badge"] == "members"
+    assert changed.json()["rules_version"] == before + 1  # still a policy change
+    assert public.get("/badge/maintainer/maity.svg").status_code == 200
+    events = owner.get(
+        "/projects/maintainer/maity/events", params={"after": 0, "limit": 100}
+    ).json()["items"]
+    event = [e for e in events if e["kind"] == "policy_changed"][-1]
+    assert (event["payload"]["new"]["badge"], event["payload"]["reason"]) == ("members", None)
+
+
+def test_the_badge_with_another_policy_field_still_needs_a_reason(
+    setup: tuple[flow.Human, TestClient, str],
+) -> None:
+    owner, public, _ = setup
+    mixed = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "members", "subtasks": "direct"}}
+    )
+    assert mixed.status_code == 400, mixed.text
+    assert mixed.json()["error"]["details"]["fields"] == {"reason": "required"}
+    assert public.get("/badge/maintainer/maity.svg").status_code == 404  # nothing was written
+    other = owner.patch("/projects/maintainer/maity", {"policy": {"subtasks": "direct"}})
+    assert other.status_code == 400
+    state = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "members"}, "state": "review"}
+    )
+    assert state.status_code == 400  # a state change keeps its reason rule

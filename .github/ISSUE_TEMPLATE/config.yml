@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: https://maity.team/oliver-zehentleitner/maity
+    about: Ideas and requests are discussed in the project on Maity itself, not in GitHub issues.
+  - name: Contribute
+    url: https://maity.team/oliver-zehentleitner/maity
+    about: Working on Maity itself happens in the project on Maity; start there, then open a pull request here.
+  - name: Report a security problem
+    url: https://github.com/oliver-zehentleitner/maity/security/policy
+    about: Privately, never in a public issue.

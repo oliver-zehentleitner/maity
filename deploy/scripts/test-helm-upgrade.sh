@@ -15,14 +15,14 @@ echo "kubectl $*" >> "$S/log"
 case "$*" in
   *"get deploy"*)           cat "$S/initial"; exit 0;;
   *"create job"*)           [ "$FAIL" = dump ] && exit 1; exit 0;;
-  *"wait --for=condition"*) exit 0;;
   *'type=="Complete"'*)     [ "$FAIL" = job_failed ] && exit 0; echo True; exit 0;;
   *'type=="Failed"'*)       [ "$FAIL" = job_failed ] && echo True; exit 0;;
   *"get pod -l"*)           [ "$FAIL" = no_dump_pod ] && exit 0; echo pod/dump-1; exit 0;;
   *"logs"*)
     [ "$FAIL" = logs_unreadable ] && { echo "error: pod gone" >&2; exit 1; }
     [ "$FAIL" = dump_retry ] && echo "pg_dump: error: connection to server failed: Connection refused"
-    [ "$FAIL" = dump_nomark ] || echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    if [ "$FAIL" = dump_notar ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709"
+    elif [ "$FAIL" != dump_nomark ]; then echo "dump ok: /backups/maity-20261029T000000Z.dump 4048709 attachments 10240"; fi
     exit 0;;
   *"delete job"*)           exit 0;;
   *"scale"*)
@@ -51,18 +51,22 @@ STUB
 chmod +x "$work/bin/"*
 
 failures=0
-run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas, [pods left]
-  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6 podsleft=${7:-}
+run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas, [pods left], [max seconds]
+  local name=$1 fail=$2 initial=$3 want=$4 helm=$5 final=$6 podsleft=${7:-} maxsecs=${8:-} dumptimeout=${9:-20}
   export STUB_STATE="$work/$name"; mkdir -p "$STUB_STATE"
   echo "$initial" > "$STUB_STATE/initial"; echo "$initial" > "$STUB_STATE/replicas"
   echo pod/hub-1 > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
   [ "$initial" = 0 ] && [ "$podsleft" != yes ] && : > "$STUB_STATE/pods"
-  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_CRONJOB=dump \
+  local t0=$SECONDS
+  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_REQUIRES_ATTACHMENTS=${REQ_ATT:-0} DUMP_CRONJOB=dump \
     "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
-  local got=$? ran=no; grep -q '^helm ' "$STUB_STATE/log" && ran=yes
+  local got=$? ran=no took=$((SECONDS - t0)); grep -q '^helm ' "$STUB_STATE/log" && ran=yes
   local end; end=$(cat "$STUB_STATE/replicas")
+  if [ -n "$maxsecs" ] && [ "$took" -gt "$maxsecs" ]; then
+    echo "FAIL $name: took $took s, more than $maxsecs s (it must not wait out the timeout)"; failures=$((failures + 1)); return
+  fi
   if [ "$got" = "$want" ] && [ "$ran" = "$helm" ] && [ "$end" = "$final" ]; then
-    echo "ok   $name (exit $got, helm $ran, replicas $end)"
+    echo "ok   $name (exit $got, helm $ran, replicas $end${maxsecs:+, ${took} s})"
   else
     echo "FAIL $name: exit $got (want $want), helm $ran (want $helm), replicas $end (want $final)"; failures=$((failures + 1))
   fi
@@ -70,7 +74,11 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
 
 run all_good   none       1 0 yes 1
 run dump       dump       1 1 no  1
-run job_failed job_failed 1 1 no  1
+run job_failed job_failed 1 1 no  1 "" 5
+run bad_timeout none 1 1 no  1 "" "" 5m
+run dump_notar_ok dump_notar 1 0 yes 1
+REQ_ATT=1 run dump_notar_required dump_notar 1 1 no  1
+REQ_ATT=1 run dump_tar_required_ok none 1 0 yes 1
 run dump_nomark dump_nomark 1 1 no  1
 run dump_retry dump_retry 1 0 yes 1
 run logs_unreadable logs_unreadable 1 1 no  1

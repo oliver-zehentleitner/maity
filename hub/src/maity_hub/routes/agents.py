@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, events, idempotency
+from maity_hub import avatars, clock, events, idempotency, moderation, namespace
 from maity_hub import tables as t
 from maity_hub.deps import HumanCaller, engine_of
 from maity_hub.errors import ApiError, invalid, not_found
@@ -129,6 +129,8 @@ def patch_agent(
         owned(conn, agent_id, caller.principal_id)
         values: dict[str, Any] = {}
         if "display_name" in given and body.display_name is not None:
+            # A name moderation reset stays so while its hold stands (§16.8).
+            moderation.refuse_held(conn, "profile", agent_id, "remove")
             values["display_name"] = body.display_name
         if "git_identity" in given:
             git = body.git_identity
@@ -155,9 +157,11 @@ class ProfileInUse(ApiError):
 def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
     """The profile's active memberships and the active placements that run them."""
     members = conn.execute(
-        select(t.membership, t.project.c.slug, t.human.c.handle.label("owner_handle"))
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        namespace.join_owner(
+            select(
+                t.membership, t.project.c.slug, namespace.owner_handle().label("owner_handle")
+            ).join(t.project, t.project.c.id == t.membership.c.project_id)
+        )
         .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()

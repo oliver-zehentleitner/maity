@@ -22,12 +22,13 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, forge, forge_links, github_app, secretbox
+from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.notifications import records
@@ -60,7 +61,7 @@ class ForgeAccess:
         self.secret_key = secret_key
         self._lock = threading.Lock()
         # project id -> (when chosen, what it depended on, the reader)
-        self._chosen: dict[str, tuple[float, tuple[Any, ...], forge.Forge]] = {}
+        self._chosen: OrderedDict[str, tuple[float, tuple[Any, ...], forge.Forge]] = OrderedDict()
 
     def reader(self, project_id: str, base: forge.Forge) -> forge.Forge:
         facts = self._facts(project_id)
@@ -77,13 +78,13 @@ class ForgeAccess:
             # nothing, so the next read chooses again.
             return forge.Forge(None, project_id=project_id)
         with self._lock:
-            self._chosen[project_id] = (time.monotonic(), key, chosen)
-        _last_via[project_id] = chosen.via
+            bounded.put(self._chosen, project_id, (time.monotonic(), key, chosen), CHOSEN_KEPT)
+        _note_via(project_id, chosen.via)
         return chosen
 
     def not_covered(self, project_id: str) -> None:
         """The operator's token found the repository not public: nothing reads it now."""
-        _last_via[project_id] = None
+        _note_via(project_id, None)
 
     def refused(self, reader: forge.Forge, error: forge.ForgeUnavailableError | None) -> None:
         """A read with an owner's grant was refused: choose again on the next read."""
@@ -248,7 +249,17 @@ def _digest(sealed: bytes) -> str:
 
 # project id -> the source the last choice found (§6.1 `probe_via`); a view reads it
 # without asking the forge
-_last_via: dict[str, str | None] = {}
+_last_via: OrderedDict[str, str | None] = OrderedDict()
+_via_lock = threading.Lock()
+# Projects whose source is known. One dropped shows the default below until its next
+# read chooses again, which the probe does within its interval.
+VIA_KEPT = 4096
+CHOSEN_KEPT = 1024  # the readers kept per project; an older one is chosen anew
+
+
+def _note_via(project_id: str, via: str | None) -> None:
+    with _via_lock:
+        bounded.put(_last_via, project_id, via, VIA_KEPT)
 
 
 def probe_via(project_id: str, url: str | None, instance_token: str | None) -> str | None:

@@ -95,8 +95,9 @@ def wait_timeout(harness: str | None) -> int:
 
 KEEP_THE_WHY_INSTRUCTION = rules.KEEP_THE_WHY
 
-# The operations an agent may call, by scope; each slice adds its rows (§5.2).
-OPERATIONS: list[tuple[str, str, str | None]] = [
+# The operations an agent may call, by scope, or by any of several; each slice adds its
+# rows (§5.2).
+OPERATIONS: list[tuple[str, str, str | tuple[str, ...] | None]] = [
     ("GET", "/me", None),
     ("POST", "/me/resume", None),
     ("PATCH", "/me", None),
@@ -109,7 +110,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("GET", "/projects/{owner}/{slug}/members", "project:read"),
     ("GET", "/projects/{owner}/{slug}/members/{id}", "project:read"),
     # An admin agent within §2.3 ᵃ: member and reviewer agents, never itself.
-    ("PATCH", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
+    ("PATCH", "/projects/{owner}/{slug}/members/{id}", ("members:admin", "line:lead")),
     ("DELETE", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
     ("GET", "/projects/{owner}/{slug}/tasks", "project:read"),
     ("GET", "/projects/{owner}/{slug}/tasks/{id}", "project:read"),
@@ -119,7 +120,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/release", "tasks:write"),
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/checkpoint", "tasks:write"),
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/report", "tasks:write"),
-    ("POST", "/projects/{owner}/{slug}/tasks/{id}/assign", "tasks:admin"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/assign", ("tasks:admin", "line:lead")),
     ("GET", "/projects/{owner}/{slug}/requests", "project:read"),
     ("GET", "/projects/{owner}/{slug}/requests/{id}", "project:read"),
     ("POST", "/projects/{owner}/{slug}/requests", "requests:ask"),
@@ -462,6 +463,7 @@ def _packet(
             "slug": project.slug,
             "name": project.name,
             "state": project.state,
+            "released_at": ts(project.released_at),
             "state_note": project.state_note,
             "state_changed_at": ts(project.state_changed_at),
             "repository": repository(project, settings),
@@ -579,8 +581,10 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
 
 def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]:
     allowed = []
+    held = listed_scopes(trust, role, "agent")
     for method, path, scope in OPERATIONS:
-        if scope is not None and scope not in listed_scopes(trust, role, "agent"):
+        wanted = (scope,) if isinstance(scope, str) else scope
+        if wanted is not None and not set(wanted) & set(held):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
@@ -689,12 +693,17 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             # Someone else's pause is not the agent's to lift or replace (§5.3): a
             # human's, or an admin agent's, which `by` names.
             by_agent = str(row.paused_by).startswith("agt-")
+            if row.paused_line:  # a manager's, whoever it is (§2.3 "The manager")
+                who, reason = "your manager", "paused_by_manager"
+            elif by_agent:
+                who, reason = "an admin agent", "paused_by_admin"
+            else:
+                who, reason = "a human", "paused_by_human"
             raise ApiError(
                 403,
                 "forbidden",
-                f"{'an admin agent' if by_agent else 'a human'} paused you; "
-                "only they or an admin can change it",
-                {"reason": "paused_by_admin" if by_agent else "paused_by_human"},
+                f"{who} paused you; only they or an admin can change it",
+                {"reason": reason},
             )
         # The calling instance's own pause; its siblings carry on (§5.3).
         set_paused(

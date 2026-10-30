@@ -6,8 +6,9 @@
   "legacy_slug": "sample",
   "aliases": ["maintainer/sample-1", "maintainer/sample-2", "maintainer/sample-3", "maintainer/sample-4", "maintainer/sample-5", "maintainer/sample-6", "maintainer/sample-7", "maintainer/sample-old"],
   "name": "Sample shop",
-  "state": "freeze",
-  "state_note": "Release 2.3 frozen; fixes only after the tag.",
+  "state": "review",
+  "released_at": "2026-09-14T10:00:00Z",
+  "state_note": "Release 2.3 in review; fixes only after the tag.",
   "state_changed_at": "2026-10-20T16:00:00Z",
   "repository": {
     "url": "https://github.com/example/sample-shop",

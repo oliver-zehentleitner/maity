@@ -146,7 +146,10 @@ def migrate_fast(engine: Engine, template: Path | None) -> None:
 def web_dir(tmp_path: Path) -> Path:
     web = tmp_path / "web"
     web.mkdir()
-    (web / "index.html").write_text("<!doctype html><title>dashboard</title>")
+    (web / "index.html").write_text(
+        '<!doctype html><html><head><meta charset="utf-8"><title>dashboard</title></head>'
+        '<body><script src="js/app.js"></script></body></html>'
+    )
     return web
 
 
@@ -245,6 +248,7 @@ def _fresh_process_state() -> Iterator[None]:
     second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
+    forge._public.clear()
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()

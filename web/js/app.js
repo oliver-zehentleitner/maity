@@ -1,14 +1,15 @@
 // Shell: sign-in, project switcher, header with project state and the
-// owner's absence, navigation, hash router. Each view is a function
+// owner's absence, navigation, the router on paths (js/route.js, §16.11).
+// Each view is a function
 // (ctx, root, args) registered in Maity.views; see views.md in context/
 // for the order.
 //
 // Routes:
-//   #/all                         everything waiting for the human, all projects
-//   #/new                         create a project
-//   #/<owner>/<slug>/<view>[/<arg>...]  a view inside one project (§6.25)
-//   (empty)                       #/all with several projects, else the inbox
-//                                 (no project yet: #/all shows the empty state)
+//   /all                         everything waiting for the human, all projects
+//   /new                         create a project
+//   /<owner>/<slug>/<view>[/<arg>...]  a view inside one project (§6.25)
+//   (empty)                       /all with several projects, else the inbox
+//                                 (no project yet: /all shows the empty state)
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -21,16 +22,13 @@ window.Maity = window.Maity || {};
   // the chat reads its own messages.
   const NAV = [
     { route: "inbox", label: "Inbox" },
-    // Redrawn in place on task_*, request_* and probe_observed (js/overview.js).
+    // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", label: "Overview" },
     { route: "board", label: "Board", watch: /^task_/, changed: "The board changed." },
-    // One card (#/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
+    // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", label: "Board", tab: false, current: "board", watch: /^task_/, changed: "The board changed." },
-    // No tab: the agents are in Members (tsk-7v2snhk002ak); old links lead there.
-    { route: "agents", label: "Agents", tab: false },
     { route: "members", label: "Members", watch: /^(member_|session_|credential_)/, changed: "The members changed." },
-    { route: "org", label: "Organisation", watch: /^member_/, changed: "The organisation changed." },
     { route: "chat", label: "Chat" },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", label: "Messages" },
@@ -40,8 +38,9 @@ window.Maity = window.Maity || {};
     { route: "swarm", label: "Swarm" },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", label: "Message the project", tab: false },
-    // Joining is in Agents now; the old route opens it there (js/join.js).
-    { route: "join", label: "Join an agent", admin: true, tab: false },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; before Runners and Why (the maintainer, 2026-10-29).
+    { route: "agents", view: "projectAgents", label: "Agents", when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, changed: "Your agents changed." },
     // The account-level view is views.runners; this one is the project's.
     { route: "runners", view: "projectRunners", label: "Runners", admin: true, watch: /^runner_/, changed: "The runners changed." },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
@@ -52,12 +51,13 @@ window.Maity = window.Maity || {};
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
-  const STATES = ["build", "freeze", "fixes-only", "accepted", "archived"];
+  // docs/api.md §6.1; moving to launch is the owner's go.
+  const STATES = ["plan", "build", "review", "launch", "archived"];
   const STATE_LABELS = {
+    plan: "Plan",
     build: "Build",
-    freeze: "Freeze",
-    "fixes-only": "Fixes only",
-    accepted: "Accepted",
+    review: "Review",
+    launch: "Launch",
     archived: "Archived",
   };
 
@@ -81,40 +81,38 @@ window.Maity = window.Maity || {};
 
   const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
-  // A project's address is its full name (§6.25): #/<owner>/<slug>/<view>.
+  // A project's address is its full name (§6.25, §16.11): /<owner>/<slug>/<view>.
   function projectLink(full, view, ...rest) {
-    return "#/" + M.api.projectPath(full) + "/" + [view].concat(rest).map(encodeURIComponent).join("/");
+    return "/" + M.api.projectPath(full) + "/" + [view].concat(rest).map(encodeURIComponent).join("/");
   }
-  // The dashboard's own first words: never a namespace (§6.25, a handle may
-  // not be one of them).
-  const OWN_WORDS = ["account", "admin", "agents", "all", "chats", "components", "invite", "join", "login", "new", "notifications",
-    "observe", "p", "register", "requests", "runners", "s", "settings", "sign-in"];
+  // The dashboard's own first words and the hub's (§16.11, "Reserved first
+  // segments"): never a namespace, a handle may not be one of them.
+  const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
+    "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
+    "requests", "runners", "settings", "sign-in", "terms"];
 
   // Throws URIError on a malformed escape; called inside render's try.
-  function parseHash() {
-    // A route's own query (#/login?next=…, #/sign-in/code?c=…) is the page's to read.
-    const parts = window.location.hash.replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean).map(decodeURIComponent);
+  function parseRoute() {
+    // A route's own query (/login?next=…) is the page's to read (M.route.current).
+    const parts = M.route.current().path.split("/").filter(Boolean).map(decodeURIComponent);
     if (!parts.length) return { scope: null };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
-    // A project's public swarm page (§6.22), with or without a session; the
-    // old #/s/<slug> asks the hub's old address, which leads on or not.
-    if (parts[0] === "s" && parts[1]) return { scope: "public-swarm", slug: parts[2] ? parts[1] + "/" + parts[2] : parts[1] };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
-    // #/account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
+    // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
+    // /agents[/<id>]: one's agent profiles across projects (js/agents-page.js).
+    if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
-    // #/p/<slug>/…, the address before namespaces: rewritten by legacy_slug.
-    if (parts[0] === "p" && parts[1]) return { scope: "legacy", slug: parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -182,27 +180,43 @@ window.Maity = window.Maity || {};
     return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
   }
 
+  // The released mark (docs/api.md §6.1): set once with the first release
+  // tag, never cleared; shown beside the state wherever the state is.
+  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
+    + "migrations stay backward compatible, and the release checklist is required";
+  function releasedDay(project) {
+    const d = new Date(project.released_at);
+    return Number.isNaN(d.getTime()) ? project.released_at
+      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  function releasedMark(project) {
+    if (!project || !project.released_at) return null;
+    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
+  }
+
   // ---- sign-in ------------------------------------------------------------
 
-  // Where a sign-in goes on (#/login?next=…, docs/api.md §2.6.5): a
-  // dashboard route only, as the hub checks it; anything else is no next.
+  // Where a sign-in goes on (/login?next=…, docs/api.md §2.6.5, §16.11): a
+  // path of the dashboard only, as the hub checks it (no "#", no "//", not a
+  // hub path); anything else is no next.
   function safeNext(v) {
-    return typeof v === "string" && v.length <= 512 && /^\/#\/[^\s\\#]*$/.test(v) && !v.slice(1).includes("//") && !/[\u0000-\u001f]/.test(v) ? v : null;
+    return typeof v === "string" && v.length <= 512 && M.route.isRoute(v) ? v : null;
   }
-  function hashNext() {
-    const q = window.location.hash.split("?")[1];
-    return q ? safeNext(new URLSearchParams(q).get("next")) : null;
+  function routeNext() {
+    return safeNext(M.route.current().query.get("next"));
   }
   function goNext(next) {
     const n = safeNext(next);
-    // Replacing the login page's entry: Back does not lead to it again.
-    if (n && window.location.hash !== n.slice(1)) window.location.replace(n.slice(1));
+    // Replacing the login page's entry: Back does not lead to it again. The
+    // root is no place of its own: a sign-in shown in place of a view stays there.
+    if (n && n !== "/" && M.route.current().path !== n) M.route.go(n, { replace: true });
     else render();
   }
   // The sign-in calls of js/device-sign-in.js send it too.
-  M.signInNext = hashNext;
+  M.signInNext = routeNext;
+  M.safeNext = safeNext;
   // A page's link to sign in or register and come back to it.
-  M.withNext = (route, back) => route + "?next=" + encodeURIComponent("/" + back);
+  M.withNext = (route, back) => route + "?next=" + encodeURIComponent(back);
 
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
@@ -224,7 +238,6 @@ window.Maity = window.Maity || {};
   };
 
   function renderLogin(main, note) {
-    // A landing page may have set the tab's title (§16.7).
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(),
@@ -239,7 +252,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         status.busy("Signing in…");
         try {
-          const next = hashNext();
+          const next = routeNext();
           const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
           password.value = "";
           goNext(answer && answer.next);
@@ -257,7 +270,8 @@ window.Maity = window.Maity || {};
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
     append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
-      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null);
+      M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
+      M.legal ? M.legal.links() : null);
   }
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
@@ -270,7 +284,7 @@ window.Maity = window.Maity || {};
       h("button", { type: "button", onclick: logout }, "Sign out")));
   }
 
-  // back: a dashboard route ("/#/…", checked as a sign-in's next is) to
+  // back: a dashboard path (checked as a sign-in's next is) to
   // show once signed out, e.g. the invitation that offered Not you? Sign
   // out (H on #461); anything else, and none, is the root.
   async function logout(back) {
@@ -288,8 +302,8 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      window.location.hash = after ? after.slice(1) : "";
-      render();
+      // Signed out at the same address: nothing changes there, so draw it.
+      if (!M.route.go(after || "/", { replace: true })) render();
     }
   }
 
@@ -465,7 +479,12 @@ window.Maity = window.Maity || {};
 
     if (ctx.canAdmin) {
       const state = h("select", { id: "state-select" },
-        STATES.map((s) => h("option", { value: s, selected: s === ctx.project.state }, STATE_LABELS[s])));
+        STATES.map((s) => h("option", {
+          value: s,
+          selected: s === ctx.project.state,
+          // Only the owner moves the project to launch; an admin may leave it.
+          disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
+        }, STATE_LABELS[s])));
       const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: "What this state means right now" });
       const reason = h("input", { id: "state-reason", required: true, placeholder: "Why it changes (logged)" });
       append(panel, h("form", {
@@ -477,6 +496,9 @@ window.Maity = window.Maity || {};
         },
       },
       h("h2", { class: "panel-title" }, "Project state"),
+      ctx.project.released_at
+        ? h("p", { class: "released-note" }, "Released since " + releasedDay(ctx.project) + ", for good: " + RELEASED_RULES + ".")
+        : null,
       h("label", { for: "state-select" }, "State"), state,
       h("label", { for: "state-note" }, "Note"), note,
       h("label", { for: "state-reason" }, "Reason"), reason,
@@ -805,12 +827,11 @@ window.Maity = window.Maity || {};
     const current = ctx.project.policy.badge;
     const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
-    const reason = h("input", { id: "badge-reason", required: true, placeholder: "Why it changes (logged)" });
     // As reached in this tab; a file:// page has no origin to name.
     const raw = window.location && window.location.origin;
     const origin = raw && raw !== "null" ? raw : "https://<hub>";
     const url = origin + "/badge/" + M.api.projectPath(ctx.slug) + ".svg";
-    const snippet = "[![maity](" + url + ")](" + origin + "/" + projectLink(ctx.slug, "overview") + ")";
+    const snippet = "[![maity](" + url + ")](" + origin + projectLink(ctx.slug, "overview") + ")";
     const copy = h("button", {
       type: "button",
       onclick: async () => {
@@ -827,8 +848,8 @@ window.Maity = window.Maity || {};
       onsubmit: (e) => {
         e.preventDefault();
         if (select.value === current) return;
-        if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { badge: select.value }, reason: reason.value.trim() }, "Badge");
+        // The badge alone needs no reason (docs/api.md §6.20).
+        save({ policy: { badge: select.value } }, "Badge");
       },
     },
     h("h2", { class: "panel-title" }, "README badge"),
@@ -843,7 +864,6 @@ window.Maity = window.Maity || {};
         alt: "The project's badge as the hub serves it" }) : null,
     h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
     current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
-    h("label", { for: "badge-reason" }, "Reason"), reason,
     h("button", { type: "submit" }, "Change badge"));
   }
 
@@ -912,7 +932,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.available ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.available ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "#/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
+      h("a", { href: "/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -923,7 +943,7 @@ window.Maity = window.Maity || {};
       pill(p))),
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
-    h("a", { href: "#/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
+    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -1024,7 +1044,7 @@ window.Maity = window.Maity || {};
     // repository), at the repository field.
     ctx.openSettings = mayConfigure ? () => {
       settingsFocus = "repo-url";
-      window.location.hash = projectLink(ctx.slug, "settings");
+      M.route.go(projectLink(ctx.slug, "settings"));
     } : null;
     // Settings: the hub's and one's own; the project's are its tab.
     const settings = M.menuButton({
@@ -1032,8 +1052,10 @@ window.Maity = window.Maity || {};
       class: "settings-menu",
       face: M.icons.gear(18),
       items: () => [
-        { label: "Runners", href: "#/runners", current: ctx.scope === "runners" },
-        ctx.me.instance_admin ? { label: "Instance administration", href: "#/admin", current: ctx.scope === "instance-admin" } : null,
+        // Agents belong to their owner and span projects (the maintainer, 2026-10-29).
+        ctx.me.kind === "human" ? { label: "Agents", href: "/agents", current: ctx.scope === "agents" } : null,
+        { label: "Runners", href: "/runners", current: ctx.scope === "runners" },
+        ctx.me.instance_admin ? { label: "Instance administration", href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
     // Sign in another device (§2.6.2) where the hub's machine form has it.
@@ -1049,13 +1071,13 @@ window.Maity = window.Maity || {};
       class: "profile-menu",
       face: [M.avatar(ctx.me, 24), h("span", { class: "me-name" }, ctx.me.display_name)],
       items: () => [
-        { label: "Profile", href: "#/account" },
-        { label: "Picture", href: "#/account/picture" },
-        { label: "Preferences", href: "#/account/preferences" },
-        { label: "Theme", href: "#/account/theme" },
-        orgs ? { label: "Organisations", href: "#/account/orgs", current: ctx.scope === "orgs" } : null,
-        deviceCodes ? { label: "Sign in another device", href: "#/account/sign-in-device" } : null,
-        { label: "Change password", href: "#/account" },
+        { label: "Profile", href: "/account" },
+        { label: "Picture", href: "/account/picture" },
+        { label: "Preferences", href: "/account/preferences" },
+        { label: "Theme", href: "/account/theme" },
+        orgs ? { label: "Organisations", href: "/account/orgs", current: ctx.scope === "orgs" } : null,
+        deviceCodes ? { label: "Sign in another device", href: "/account/sign-in-device" } : null,
+        { label: "Change password", href: "/account" },
         { label: "Linked accounts", disabled: true, why: "later" },
         { separator: true },
         { label: "Sign out", onSelect: logout },
@@ -1066,7 +1088,7 @@ window.Maity = window.Maity || {};
         brandTitle(),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
+          : h("span", { class: "project" }, { new: "New project", account: "Your account", orgs: "Organisations", agents: "Your agents", runners: "Runners", "instance-admin": "Instance administration", observe: "Read along", chats: "Chats" }[ctx.scope] || "Everything waiting for you"),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: "Data from web/fixtures/, not from the hub. Changes are kept in this tab only." }, "Fixtures")
           : null,
@@ -1079,6 +1101,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": "State and absence" },
             stateBadge(ctx.project.state, ctx.project.state_note),
+            releasedMark(ctx.project),
             absence ? h("span", { class: "state away", title: absence.scope }, "Away until " + formatTime(absence.until)) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
@@ -1123,6 +1146,9 @@ window.Maity = window.Maity || {};
 
   // ---- context ------------------------------------------------------------
 
+  // The project's members as read: the list, the index by id and the names
+  // set together, so no view reads one fresher than the others. Every view
+  // that reads the members again sets them through this (M.withMembers).
   function withMembers(ctx, members) {
     const byId = {};
     members.forEach((m) => { byId[m.id] = m; });
@@ -1151,17 +1177,10 @@ window.Maity = window.Maity || {};
     }
   }
 
-  // §6.25: #/p/<slug> leads to the project in one's own list whose frozen
-  // legacy_slug it is (never by its current slug); a full name that is no
-  // project of one's own may be an alias, which the hub answers with the
-  // current full name. Null where nothing moved: the view says what it says.
+  // §6.25: a full name that is no project of one's own may be an alias (a
+  // rename, a transfer), which the hub answers with the current full name.
+  // Null where nothing moved: the view says what it says.
   async function movedTo(where, me) {
-    if (where.scope === "legacy") {
-      const list = await M.api.get("/projects").catch(() => ({ items: [] }));
-      const p = (list.items || []).find((x) => x.legacy_slug && x.legacy_slug === where.slug);
-      if (p) return projectLink(p.full_name, where.route, ...where.args);
-      throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
-    }
     if (where.scope !== "project" || me.projects.some((p) => p.full_name === where.slug)) return null;
     const view = await M.api.get("/projects/" + M.api.projectPath(where.slug)).catch(() => null);
     return view && view.full_name && view.full_name !== where.slug && me.projects.some((p) => p.full_name === view.full_name)
@@ -1176,6 +1195,8 @@ window.Maity = window.Maity || {};
       scope: where.scope,
       projectLink,
       stateLabel: (state) => STATE_LABELS[state] || state,
+      stateBadge,
+      releasedMark,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
@@ -1266,9 +1287,13 @@ window.Maity = window.Maity || {};
   let quietNote = null;
 
   function watch(ctx, where, item, main) {
+    // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
+    // which counts the personal requests the list holds; /me's open_requests
+    // does not. A hub without notifications: open_requests.
+    const notified = () => M.notify.state.available && M.notify.state.counts;
     const openNow = () => (where.scope === "all"
-      ? ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0)
-      : (ctx.projects.find((p) => p.full_name === ctx.slug) || {}).open_requests);
+      ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
+      : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -1406,25 +1431,21 @@ window.Maity = window.Maity || {};
     let where = { scope: "unknown" };
     let ctx;
     try {
-      where = parseHash();
+      where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
-      if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), hashNext()); return; }
-      if (where.scope === "public-swarm" && M.swarm) {
-        await M.swarm.publicPage(main, document.getElementById("header"), where.slug);
-        return;
-      }
+      if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
+      // A project's swarm (§6.22): the public page for a visitor, for anyone
+      // who is not a member and with ?as=public; a member gets the tab.
+      const swarmHere = where.scope === "project" && where.route === "swarm" && M.swarm;
+      const publicSwarm = () => M.swarm.publicPage(main, document.getElementById("header"), where.slug);
+      if (swarmHere && M.route.current().query.get("as") === "public") { await publicSwarm(); return; }
       try {
         await M.api.get("/auth/session");
       } catch (err) {
-        if (err.status === 401) {
-          // At the root, the instance's landing page where it has one
-          // (§16.7); anywhere else, and when it is off or fails, sign-in.
-          const landing = where.scope === null && M.landing ? await M.landing.read() : null;
-          if (seq !== renderSeq) return;
-          if (landing) M.landing.show(main, landing, document.getElementById("header"));
-          else renderLogin(main);
-          return;
-        }
+        if (err.status === 401 && swarmHere) { await publicSwarm(); return; }
+        // Without a session the login page; the landing page at the root
+        // is the hub's own static page (§16.7), never drawn here.
+        if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
       const me = await M.api.get("/me");
@@ -1435,18 +1456,22 @@ window.Maity = window.Maity || {};
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
       if (me.member && me.member.account_status === "pending") {
+        // Its one page has its own address (§16.11): /account/pending.
+        if (M.route.current().path !== "/account/pending") M.route.go("/account/pending", { replace: true });
         renderPending(main);
         return;
       }
       if (where.scope === null || where.scope === "login") {
-        const next = where.scope === "login" ? hashNext() : null;
-        window.location.replace(next ? next.slice(1) : me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "#/all");
+        const next = where.scope === "login" ? routeNext() : null;
+        M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
         return;
       }
-      // An old or earlier address of a project leads to its current one.
+      // An earlier address of a project (a rename, a transfer) leads to its current one.
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
-      if (moved) { window.location.replace(moved); return; }
+      if (moved) { M.route.go(moved, { replace: true }); return; }
+      // Not a member: a project's swarm is its public page.
+      if (swarmHere && !me.projects.some((p) => p.full_name === where.slug)) { await publicSwarm(); return; }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and a hub without them leaves the counts as /me has them.
       const [loaded, views] = await Promise.all([loadContext(where, me), projectViews(me),
@@ -1466,10 +1491,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
+    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats"].includes(where.scope)) viewName = where.scope;
     else if (known) viewName = (item && item.current) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
@@ -1478,7 +1503,7 @@ window.Maity = window.Maity || {};
         // what waits comes first, the way to a project of one's own after it.
         const waiting = (await M.api.getAll("/requests")).items;
         if (seq !== renderSeq) return;
-        if (waiting.length || M.notify.state.available) await M.views.inbox(ctx, root, []);
+        if (waiting.length) await M.views.inbox(ctx, root, []);
         const start = h("div", { class: "no-projects" });
         M.views.noProjects(ctx, start);
         append(root, start);
@@ -1506,10 +1531,12 @@ window.Maity = window.Maity || {};
         await M.views.instanceAdmin(ctx, root);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
+      } else if (where.scope === "agents") {
+        await M.views.agentsPage(ctx, root, where.args);
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, "No such view. ", h("a", { href: "#/all" }, "Go to everything waiting for you.")));
+        append(root, h("p", null, "No such view. ", h("a", { href: "/all" }, "Go to everything waiting for you.")));
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -1528,6 +1555,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "agents") label = "Your agents";
     else if (where.scope === "instance-admin") label = "Instance administration";
     else if (where.scope === "observe") label = "Read along · " + where.slug;
     else if (known) label = item.label + " · " + ctx.project.name;
@@ -1575,7 +1603,7 @@ window.Maity = window.Maity || {};
         : "Try again. If it keeps happening, the hub may have a problem; the details say which.";
     const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, "Try again");
     const signIn = err.status === 401
-      ? h("button", { type: "button", onclick: () => { window.location.hash = "#/login"; } }, "Sign in again") : null;
+      ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, "Sign in again") : null;
     const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
     return h("div", { class: "page-failed", role: "alert" },
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
@@ -1587,12 +1615,14 @@ window.Maity = window.Maity || {};
   }
 
   M.errorBox = errorBox;
+  M.withMembers = withMembers;
   M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
   M.STATE_LABELS = STATE_LABELS;
 
-  window.addEventListener("hashchange", render);
+  // Back, forward, a link of the dashboard, M.route.go: the view follows.
+  M.route.listen(render);
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
   });

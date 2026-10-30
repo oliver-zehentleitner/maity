@@ -1,4 +1,4 @@
-// The project at a glance (#/<owner>/<slug>/overview, docs/api.md §6.11): its
+// The project at a glance (/<owner>/<slug>/overview, docs/api.md §6.11): its
 // repository and Keep the Why links, members and roles, the board's counts
 // per column, open requests, and the latest reports. The project and its
 // members are what the header already read; the counts come from one call,
@@ -59,6 +59,7 @@ window.Maity = window.Maity || {};
     const rows = [h("dt", null, "Repository"),
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : "No repository.",
         !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, "Set the repository")] : null)];
+    rows.push(h("dt", null, "State"), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, "Policy"), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's
     // wish, tsk-yhbmz7mjng7n step 1); read inside Maity once the hub serves it.
@@ -102,7 +103,7 @@ window.Maity = window.Maity || {};
     const raw = window.location && window.location.origin;
     const origin = raw && raw !== "null" ? raw : "https://<hub>";
     const path = "/badge/" + M.api.projectPath(ctx.slug) + ".svg";
-    const snippet = "[![maity](" + origin + path + ")](" + origin + "/" + ctx.link("overview") + ")";
+    const snippet = "[![maity](" + origin + path + ")](" + origin + ctx.link("overview") + ")";
     const copy = h("button", { type: "button", class: "small", "data-key": "badge-copy", "aria-label": "Copy the badge snippet" }, "Copy");
     copy.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(snippet); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select the line"; }
@@ -217,6 +218,8 @@ window.Maity = window.Maity || {};
       h("div", { class: "overview-row overview-row-1" }, parts.requests, parts.board),
       h("div", { class: "overview-row overview-row-2" }, members(ctx), parts.reports),
       h("div", { class: "overview-row overview-row-3" }, project(ctx), badge(ctx)),
+      // Who reports to whom (js/org.js), once the Organisation tab.
+      M.org ? h("div", { class: "overview-row overview-row-4" }, M.org.section(ctx)) : null,
     ];
   }
 
@@ -228,7 +231,9 @@ window.Maity = window.Maity || {};
     // The links and members come from what the header holds; only the
     // counts need the overview call, and a failed one is said where they go.
     // A redraw keeps the focus on the same control (its data-key).
+    let last = [null, null];
     function draw(o, err) {
+      last = [o, err];
       const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.getAttribute("data-key") : null;
       // A hub without the overview (404) is said quietly, as a fact of that
       // hub, never as an error; any other failure is one. Either stands
@@ -269,7 +274,14 @@ window.Maity = window.Maity || {};
         if (pendingRead) { pendingRead = false; reread(); }
       }
     }
-    ctx.onEvents((events) => { if (events.some((e) => REREAD.test(e.kind))) reread(); });
+    // The organisation follows the members: they are read again, the
+    // counts drawn as they were.
+    ctx.onEvents((events) => {
+      if (events.some((e) => REREAD.test(e.kind))) reread();
+      if (events.some((e) => /^member_/.test(e.kind))) {
+        M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); draw(last[0], last[1]); }, (err) => status.fail("Could not read the members again: ", err));
+      }
+    });
     // §6.11: a viewer who is neither owner nor admin is in few events'
     // audiences, so the view also re-reads every 60 seconds and when the
     // tab comes back; the timer ends with the view, the listener with it.

@@ -120,15 +120,16 @@ def test_assigning_at_creation_needs_tasks_admin(
     assert task(owner, assigned_to=member.id)["assigned_to"] == member.id
 
 
-def test_a_closed_project_takes_no_card_and_a_frozen_one_wants_a_reason(
-    owner: flow.Human, migrated: Engine
+@pytest.mark.parametrize("state", ["plan", "review"])
+def test_a_closed_project_takes_no_card_and_one_in_plan_or_review_wants_a_reason(
+    owner: flow.Human, migrated: Engine, state: str
 ) -> None:
-    owner.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": state, "reason": "release"})
     without = owner.post("/projects/maintainer/maity/tasks", {"title": "x"})
     assert without.json()["error"]["details"]["fields"] == {"reason": "required"}
     task(owner, reason="hotfix for 0.1.0")
     payload = _event(migrated, "task_created").payload
-    assert (payload["project_state"], payload["reason"]) == ("freeze", "hotfix for 0.1.0")
+    assert (payload["project_state"], payload["reason"]) == (state, "hotfix for 0.1.0")
     owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
     closed = owner.post("/projects/maintainer/maity/tasks", {"title": "x", "reason": "y"})
     assert closed.status_code == 409 and closed.headers["Maity-Error"] == "project_closed"

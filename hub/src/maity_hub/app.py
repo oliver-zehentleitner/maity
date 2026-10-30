@@ -10,12 +10,9 @@ from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
-from starlette.exceptions import HTTPException
-from starlette.routing import Match, Mount
-from starlette.types import Scope
+from starlette.routing import Mount
 
 from maity_hub import (
     API_VERSION,
@@ -29,16 +26,26 @@ from maity_hub import (
     forge_access,
     images,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
+    namespace,
     not_listening,
+    org_invitations,
     probe,
     registration_accounts,
+    reports,
+    request_stats,
     takeovers,
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
-from maity_hub.db import current_revision, head_revision, make_engine
+from maity_hub.db import (
+    APPLICATION_SERVING,
+    current_revision,
+    head_revision,
+    make_engine,
+    make_health_engine,
+)
 from maity_hub.errors import error_response
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -65,11 +72,13 @@ from maity_hub.routes import (
     mail_links,
     mail_settings,
     me_session,
+    member_settings,
     members,
     memory,
     notification_settings,
     notifications,
     overview,
+    pages,
     placements,
     preferences,
     project_images,
@@ -92,11 +101,15 @@ from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
+from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import me as me_routes
+from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
+from maity_hub.routes import reports as report_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import takeovers as takeover_routes
+from maity_hub.shell import AssetFiles, ShellRoute
 
 log = logging.getLogger(__name__)
 
@@ -107,23 +120,32 @@ class SchemaNotCurrentError(RuntimeError):
     """The database is not at the migration head; `maity-hub migrate` has not run."""
 
 
-def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
-    engine = (
-        engine
-        if engine is not None
-        else make_engine(
-            settings.database_url,
-            settings.db_pool_size,
-            settings.db_max_overflow,
-            settings.db_pool_recycle,
-        )
+def serving_engine(settings: Settings) -> Engine:
+    """The engine of a serving hub: the pool and the PostgreSQL timeouts of the settings.
+    `maity-hub serve` builds it here too, so a setting reaches the engine the hub runs on."""
+    return make_engine(
+        settings.database_url,
+        settings.db_pool_size,
+        settings.db_max_overflow,
+        settings.db_pool_recycle,
+        settings.db_statement_timeout,
+        settings.db_idle_in_transaction_timeout,
+        APPLICATION_SERVING,
     )
+
+
+def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
+    engine = engine if engine is not None else serving_engine(settings)
+    health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         require_current_schema(engine)
         with engine.connect() as conn:
+            holders = namespace.reserved_holders(conn)
+            if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
+                log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
             try:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
@@ -163,6 +185,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         commitment_worker.start()
         registrations_worker = registration_accounts.Worker(engine)
         registrations_worker.start()
+        # An open report expires and a closed one's content goes on time (§16.8).
+        reports_worker = reports.Worker(engine)
+        reports_worker.start()
+        # An organisation's invitation expires without anybody calling (docs/api.md §6.26).
+        invitations_worker = org_invitations.Worker(engine)
+        invitations_worker.start()
         from maity_hub.jourfixe import worker as jour_fixe_worker
 
         jour_fixe_clock = jour_fixe_worker.Worker(engine)  # the schedule acts on its own
@@ -182,13 +210,18 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
             engine, settings.mail, settings.secret_key, settings.public_url
         )
         notify_worker.start()
+        stats_reporter = request_stats.Reporter(engine)
+        stats_reporter.start()
         yield
+        stats_reporter.stop()
         notify_worker.stop()
         if sweeper is not None:
             sweeper.stop()
         mail_worker.stop()
         takeover_worker.stop()
         jour_fixe_clock.stop()
+        reports_worker.stop()
+        invitations_worker.stop()
         registrations_worker.stop()
         commitment_worker.stop()
         availability_worker.stop()
@@ -197,6 +230,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         if worker is not None:
             worker.stop()
         engine.dispose()
+        if health_engine is not None:
+            health_engine.dispose()
 
     app = FastAPI(
         title="Maity hub",
@@ -209,6 +244,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.health_engine = health_engine or engine
     app.state.forge_access = forge_access.ForgeAccess(
         engine, settings.github_app, settings.secret_key
     )
@@ -224,9 +260,12 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
     app.include_router(landing_routes.router, prefix=prefix)
+    app.include_router(orgs_routes.router, prefix=prefix)
+    app.include_router(legal_routes.router, prefix=prefix)
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
@@ -235,6 +274,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
+    app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(avatars.router, prefix=prefix)
     app.include_router(joins.router, prefix=prefix)
@@ -257,7 +297,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(preferences.router, prefix=prefix)
     app.include_router(jour_fixe.router, prefix=prefix)
     app.include_router(forge_webhook.router, prefix=prefix)
-    app.include_router(joins.page_router)  # /j/{token}, before the dashboard mount
+    app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
@@ -265,6 +305,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(register_page.page_router)  # the registration's link page, likewise
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(seo.router)  # /robots.txt and /sitemap.xml, before the dashboard
+    app.include_router(pages.page_router)  # `/` and the legal pages, before the app shell
     app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
     _mount_web(app, settings)
     if settings.public_url_guessed:
@@ -308,7 +349,7 @@ def _api_router() -> APIRouter:
 
     @router.get("/health")
     def health(request: Request) -> JSONResponse:
-        engine: Engine = request.app.state.engine
+        engine: Engine = request.app.state.health_engine
         try:
             current = current_revision(engine)
         except SQLAlchemyError:
@@ -338,50 +379,12 @@ def _api_router() -> APIRouter:
     return router
 
 
-# Parts of web/ that belong to the dashboard's development, not to the page:
-# the fixture data it is tested against and its tools.
-NOT_SERVED = {"api", "fixtures", "tools"}
-
-
-class DashboardFiles(StaticFiles):
-    """Static files without dotfiles, the API prefix, or web/'s development parts.
-
-    A `.env`, `.git/` or `.htaccess` that ends up in the dashboard directory is
-    never served, no file can answer for an API path, and `fixtures/` and
-    `tools/` stay in the repository.
-    """
-
-    async def get_response(self, path: str, scope: Scope) -> Response:
-        # `path` is normalised; the root arrives as ".".
-        parts = [part for part in path.replace("\\", "/").split("/") if part != "."]
-        if any(part.startswith(".") for part in parts) or parts[:1] and parts[0] in NOT_SERVED:
-            raise HTTPException(status_code=404)
-        return await super().get_response(path, scope)
-
-
-class WebMount(Mount):
-    """The dashboard at `/`, which never claims a path under `/api`.
-
-    A plain mount at `/` fully matches every path, so the router would never
-    fall back to a route that matched the path but not the method: a wrong
-    method on an API path would be the mount's 404 instead of `405` with
-    `Allow` (docs/api.md §1.3).
-    """
-
-    def matches(self, scope: Scope) -> tuple[Match, Scope]:
-        path = scope.get("path", "")
-        if path == "/api" or path.startswith("/api/"):
-            return Match.NONE, {}
-        return super().matches(scope)
-
-
 def _mount_web(app: FastAPI, settings: Settings) -> None:
     web_dir = settings.web_dir
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
-        app.router.routes.append(
-            WebMount("/", app=DashboardFiles(directory=web_dir, html=True), name="web")
-        )
+        app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
+        app.router.routes.append(ShellRoute(web_dir))
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

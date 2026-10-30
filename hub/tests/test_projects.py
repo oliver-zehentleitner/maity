@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 
@@ -42,9 +42,9 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "full_name",
         "slug",
         "aliases",
-        "legacy_slug",
         "name",
         "state",
+        "released_at",
         "state_note",
         "state_changed_at",
         "repository",
@@ -168,22 +168,22 @@ def test_a_state_change_needs_a_reason_and_bumps_the_rules(
     owner: flow.Human, migrated: Engine
 ) -> None:
     flow.project(owner, "maity")
-    missing = owner.patch("/projects/maintainer/maity", {"state": "freeze"})
+    missing = owner.patch("/projects/maintainer/maity", {"state": "review"})
     assert missing.json()["error"]["details"]["fields"] == {"reason": "required"}
     response = owner.patch(
         "/projects/maintainer/maity",
-        {"state": "freeze", "state_note": "release week", "reason": "0.1.0"},
+        {"state": "review", "state_note": "release week", "reason": "0.1.0"},
     )
     assert response.status_code == 200
     body = response.json()
     assert (body["state"], body["state_note"], body["rules_version"]) == (
-        "freeze",
+        "review",
         "release week",
         2,
     )
     event = _events(migrated, "state_changed")[-1]
     assert event.audience == ["all"]
-    assert event.payload == {"old": "build", "new": "freeze", "reason": "0.1.0", "rules_version": 2}
+    assert event.payload == {"old": "build", "new": "review", "reason": "0.1.0", "rules_version": 2}
     assert _project_row(migrated, "maity").rules_changed_seq == event.seq
 
 
@@ -191,6 +191,30 @@ def test_an_unknown_state_is_invalid(owner: flow.Human) -> None:
     flow.project(owner, "maity")
     response = owner.patch("/projects/maintainer/maity", {"state": "paused", "reason": "x"})
     assert response.json()["error"]["details"]["fields"] == {"state": "unknown"}
+
+
+@pytest.mark.parametrize("state", ["freeze", "fixes-only", "accepted"])
+def test_the_states_before_2026_10_27_are_unknown(owner: flow.Human, state: str) -> None:
+    flow.project(owner, "maity")
+    response = owner.patch("/projects/maintainer/maity", {"state": state, "reason": "x"})
+    assert response.json()["error"]["details"]["fields"] == {"state": "unknown"}
+
+
+def test_only_a_human_owner_moves_a_project_to_launch(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    flow.project(owner, "maity")
+    deputy = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, _project_row(migrated, "maity").id, "admin", human_id=deputy.id)
+    refused = deputy.patch("/projects/maintainer/maity", {"state": "launch", "reason": "go"})
+    assert refused.status_code == 403
+    assert _project_row(migrated, "maity").state == "build"
+    launched = owner.patch("/projects/maintainer/maity", {"state": "launch", "reason": "go"})
+    assert launched.status_code == 200 and launched.json()["state"] == "launch"
+    assert _events(migrated, "state_changed")[-1].payload["new"] == "launch"
+    # Leaving launch is any transition with a reason.
+    back = deputy.patch("/projects/maintainer/maity", {"state": "build", "reason": "next"})
+    assert back.status_code == 200 and back.json()["state"] == "build"
 
 
 def test_a_policy_preset_fills_the_fields_and_is_announced(
@@ -260,7 +284,7 @@ def test_an_admin_agent_cannot_change_state_or_policy(
 ) -> None:
     flow.project(owner, "maity")
     admin_agent = flow.agent(make_client, owner, role="admin")
-    response = admin_agent.patch("/projects/maintainer/maity", {"state": "freeze", "reason": "x"})
+    response = admin_agent.patch("/projects/maintainer/maity", {"state": "review", "reason": "x"})
     assert response.status_code == 403
     assert response.json()["error"]["details"] == {"scope": "project:admin"}
 
@@ -330,7 +354,7 @@ def test_the_name_and_a_note_are_rules_inputs(owner: flow.Human, migrated: Engin
     )
     assert [e.payload["version"] for e in _events(migrated, "rules_changed")] == [2, 3]
     both = owner.patch(
-        "/projects/maintainer/maity", {"state": "freeze", "state_note": "0.1.0", "reason": "r"}
+        "/projects/maintainer/maity", {"state": "review", "state_note": "0.1.0", "reason": "r"}
     )
     assert both.json()["rules_version"] == 4  # the state change's own event marks it
     assert len(_events(migrated, "rules_changed")) == 2

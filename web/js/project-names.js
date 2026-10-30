@@ -72,7 +72,7 @@ window.Maity = window.Maity || {};
         status.busy("Renaming…");
         try {
           const updated = await M.api.patch(ctx.base, { slug });
-          window.location.hash = ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings");
+          M.route.go(ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings"));
         } catch (err) {
           const why = said(err);
           if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.slug) { status.done(); fail(why.message); }
@@ -134,7 +134,7 @@ window.Maity = window.Maity || {};
             const answer = await M.stepUp.run(() => M.api.post(ctx.base + "/transfer", { to: to.id }), ask, "Transferring " + p.full_name);
             status.done();
             // Moved in the call: the project answers under its new name.
-            if (answer && answer.full_name) { window.location.hash = ctx.projectLink(answer.full_name, "settings"); return; }
+            if (answer && answer.full_name) { M.route.go(ctx.projectLink(answer.full_name, "settings")); return; }
             append(M.dom.clear(result), h("p", { class: "ok" }, (to.org ? "Asked the owners of @" + to.handle + ". The project moves when one of them accepts"
               : "Asked " + to.name + ". The project moves when they accept") + " in their inbox; a rename or another transfer withdraws this one."),
             // Into an organisation the owners' requests are personal (§6.26): withdrawn on /requests.

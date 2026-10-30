@@ -29,7 +29,7 @@ from maity_hub.scopes import in_admin_team
 FINDINGS_MAX, PROPOSALS_MAX = 50, 20  # §1.7
 # §1.7, in bytes of UTF-8: a finding (also one the hub builds), the summary, a reason.
 FINDING_BYTES, SUMMARY_BYTES, REASON_BYTES = 1024, 8192, 2048
-CARD_REASON = "jour fixe proposal"  # the reason §6.1 asks for in freeze and fixes-only
+CARD_REASON = "jour fixe proposal"  # the reason §6.1 asks for in plan and review
 OPTIONS = [{"id": "adopt", "label": "Adopt"}, {"id": "reject", "label": "Reject"}]
 
 
@@ -435,7 +435,7 @@ def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, An
         project.id,
         kind="jour_fixe",
         text=text,
-        url=f"/#/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
+        url=f"/{namespace.full_name(conn, project)}/jour-fixe/{round_row.id}",
         audience=ticker.Audience(),
         origin="hub",
         subject=("jour_fixe", round_row.id),
