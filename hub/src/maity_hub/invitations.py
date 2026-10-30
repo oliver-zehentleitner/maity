@@ -60,6 +60,7 @@ def view(row: Any, project_slug: str, url: str | None = None) -> dict[str, Any]:
         "used_by": row.used_by,
         "revoked_at": _ts(row.revoked_at),
         "voided_at": _ts(row.voided_at),
+        "via": row.via,
     }
     if url is not None:
         found["url"] = url

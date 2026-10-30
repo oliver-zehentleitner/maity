@@ -270,6 +270,8 @@ invitation = Table(
     Column("revoked_at", UtcDateTime),
     Column("voided_at", UtcDateTime),
     Column("void_reason", String(16)),
+    # `join` or `public`: the host of the link that went out (§3.4), as `join_link.via`.
+    Column("via", String(16), nullable=False, server_default="public"),
     Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
     **MYSQL_TABLE,
 )

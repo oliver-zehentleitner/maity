@@ -342,6 +342,75 @@ def test_the_token_is_masked_in_the_log() -> None:
     )
 
 
+# --- the link's host (§3.4, §1.1) -------------------------------------------------------
+
+
+def test_an_invitation_goes_out_over_the_join_host_by_default_when_there_is_one(
+    make_client: ClientFactory, migrated: Engine, mailed: list[tuple[str, str]]
+) -> None:
+    from tests.test_join_host import JOIN, PUBLIC, hosted_human
+
+    owner = hosted_human(make_client, migrated, "hosted")
+    flow.project(owner)
+    path = f"/projects/{owner.handle}/maity/invitations"
+    over_join = owner.post(path, {"address": "anna@example.org"}).json()
+    assert over_join["via"] == "join"
+    assert over_join["url"] == f"{JOIN}/i/{token_of(over_join)}"
+    over_public = owner.post(path, {"via": "public"}).json()
+    assert over_public["via"] == "public"
+    assert over_public["url"] == f"{PUBLIC}/invite/{token_of(over_public)}"
+    listed = {i["id"]: i["via"] for i in owner.get(path).json()["items"]}
+    assert listed == {over_join["id"]: "join", over_public["id"]: "public"}
+    # The same token opens the invitation page in both shapes, whatever `via` says.
+    visitor = make_client(peer="198.51.100.21")
+    assert page(visitor, token_of(over_join)).status_code == 200
+    assert page(visitor, token_of(over_public)).status_code == 200
+    assert mailed == [("invite", "anna@example.org")]
+
+
+def test_the_mailed_link_is_the_one_in_the_url(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_join_host import JOIN, hosted_human
+
+    links: list[str] = []
+    monkeypatch.setattr(
+        invitation_mail,
+        "send",
+        lambda conn, *, invitation_id, to, url: links.append(url),
+    )
+    owner = hosted_human(make_client, migrated, "hosted")
+    flow.project(owner)
+    made = owner.post(f"/projects/{owner.handle}/maity/invitations", {"address": "a@example.org"})
+    assert links == [made.json()["url"]] and links[0].startswith(f"{JOIN}/i/")
+
+
+def test_without_a_join_host_the_link_is_the_pages_and_via_join_is_invalid(
+    owner: flow.Human,
+) -> None:
+    made = issue(owner)
+    assert made["via"] == "public" and made["url"].startswith("https://hub.example/invite/")
+    refused = owner.post(PATH, {"via": "join"})
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"via": "no_join_host"}
+    assert owner.post(PATH, {"via": "elsewhere"}).json()["error"]["code"] == "invalid"
+    assert [i["via"] for i in owner.get(PATH).json()["items"]] == ["public"]  # nothing was made
+
+
+def test_an_invitation_stored_without_a_host_reads_public(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """What the migration leaves on the invitations that exist: the server default."""
+    made = issue(owner)
+    with migrated.begin() as conn:
+        row = dict(conn.execute(select(t.invitation)).one()._mapping)
+        conn.execute(t.invitation.delete())
+        row.pop("via")
+        conn.execute(t.invitation.insert().values(**row))
+    assert [i["via"] for i in owner.get(PATH).json()["items"]] == ["public"]
+    assert made["via"] == "public"
+
+
 # --- accepting --------------------------------------------------------------------------
 
 
