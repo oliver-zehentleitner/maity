@@ -1889,7 +1889,10 @@ transport, `Sec-Fetch-Site` and `next`.
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
-   `POST` says exactly which version the person saw (§2.7.2).
+   `POST` says exactly which version the person saw (§2.7.2). Under the
+   form the page links the legal pages the instance serves (§16.7.1:
+   imprint, privacy notice, terms of use), as the dashboard's
+   registration form does.
 6. **Completion** (`POST` of that page). In this order: the admission is
    checked again, atomically with the completion (the mode changed, the
    address no longer listed, or the admitting invitation no longer
