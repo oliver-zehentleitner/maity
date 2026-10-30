@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
+from sqlalchemy.orm import aliased
 
 from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
@@ -270,10 +271,27 @@ def derive_page(
             .where(t.request.c.id == t.event.c.subject_id, t.request.c.personal.is_(True))
             .exists()
         )
+        # One item per request, the latest addressed one (`ADDRESSED`): `_items_of` keeps
+        # it only among the rows it is given, so a page read in chunks takes only the
+        # newest such event of each request. Every one of them is classified alike, since
+        # `_request_concerns` asks who holds the request now, not then.
+        later = aliased(t.event)
+        superseded = (
+            select(later.c.seq)
+            .where(
+                later.c.project_id == t.event.c.project_id,
+                later.c.subject_type == "request",
+                later.c.subject_id == t.event.c.subject_id,
+                later.c.kind.in_(ADDRESSED),
+                later.c.seq > t.event.c.seq,
+            )
+            .exists()
+        )
         others = (
             t.event.c.kind.in_(EVENT_KINDS),
             or_(t.event.c.kind != "message", _names(where.human_id)),
             or_(t.event.c.kind.notin_(REQUEST_EVENTS), ~personal),
+            or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         found += _paged(

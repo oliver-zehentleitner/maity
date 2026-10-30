@@ -410,7 +410,10 @@ in the listing's order and in growing chunks, until the page is full (`items._pa
 next entry). The events of a personal request never make an item (`_classify`: it is one
 item, from its record), so they are left out in SQL instead of being read and dropped one
 by one; `open_requests` skips personal requests the same way, and the open personal
-requests are counted per project in SQL. Measured on SQLite with 1,000 and 2,000 hub
+requests are counted per project in SQL. A request lists one item, its latest addressed
+event (`ADDRESSED`); `_items_of` replaces the earlier one only among the rows it is given,
+so the paged read takes only each request's newest such event in SQL, and a forward never
+brings back the item it replaced on a later page. Measured on SQLite with 1,000 and 2,000 hub
 notices, `limit=20`: 105 and 188 ms before, 18 and 21 ms after. A page with more items than
 it shows costs the same however many there are (the statement test); under a page it
 costs fewer chunks.

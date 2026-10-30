@@ -577,7 +577,7 @@ def _walk(who: flow.Human, **query: Any) -> list[str]:
     ids: list[str] = []
     cursor = None
     while True:
-        params = {"limit": 3, **query, **({"cursor": cursor} if cursor else {})}
+        params = {"limit": 2, **query, **({"cursor": cursor} if cursor else {})}
         page = who.get("/me/notifications", params=params).json()
         ids += [i["id"] for i in page["items"]]
         cursor = page["next_cursor"]
@@ -592,14 +592,29 @@ def test_paging_reads_as_far_as_the_page_and_lists_what_the_whole_window_holds(
     """The page is cut while the sources are read (tsk-r8f0jm3xs9y6); walked to its end it
     lists exactly what deriving the whole window lists, in §18.2's order."""
     from maity_hub.notifications import items, listing
+    from tests.test_request_forwarding import admin_human, forward
 
     agents = [flow.agent(make_client, owner) for _ in range(2)]
+    admin = admin_human(make_client, migrated, "admin")
+    # A request forwarded away and back: its `request_created` and `request_forwarded`
+    # lie pages apart, and only the latest may be listed (one item per request).
+    bounced = (
+        agents[0]
+        .post(
+            "/projects/maintainer/maity/requests",
+            {"class": "decision", "title": "Bounced?", "to": "owner"},
+        )
+        .json()
+    )
     for n in range(7):
         for agent in agents:
             _file(migrated, agent.id)
             agent.post(
                 "/projects/maintainer/maity/requests", {"class": "decision", "title": f"Which {n}?"}
             )
+        if n == 3:
+            assert forward(owner, bounced, admin.id).status_code == 200
+            assert forward(admin, bounced, owner.id).status_code == 200
     owner.post("/me/notifications/read", {"ids": [_walk(owner)[2]]})  # one read item
     with migrated.connect() as conn:
         where = items.scope(conn, owner.id, "http://testserver")
