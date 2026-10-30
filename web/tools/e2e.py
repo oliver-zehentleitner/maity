@@ -1099,42 +1099,22 @@ def hub_serves(run: Run, page: Page, method: str, path: str) -> bool:
 def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     """§8.7: a file attached to a direct chat message; an image shown inline from the hub's own path."""
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    # start_hub gives the hub a local store (MAITY_ATTACHMENT_DIR), so the real upload is
+    # required: a hub that lists no uploads, has them off or refuses the file is a broken
+    # store wiring here, never a case to pass quietly. The off case is the smoke's
+    # (fixture mode, ?attachments=off).
     if not hub_serves(run, page, "POST", "/projects/{owner}/{slug}/attachments"):
-        # A hub without attachments: the composer offers no chooser at all.
-        run.step("attachments: the hub's openapi.json has no uploads; the composer offers no Attach files")
-        expect(page.locator("form.compose")).to_be_visible()
-        expect(page.locator("form.compose .attach")).to_be_hidden()
-        expect(page.locator("#chat-files")).to_be_disabled()
-        no_problems(run, "attachments")
-        return
-    # Configured but off (§8.7 "Attachments off"): the route exists, the hub has no
-    # store and answers every attachment call 409 attachments_not_configured. Then the
-    # composer offers no files and no Delete; only those answers, checked by their
-    # code, are no problem.
+        raise AssertionError("attachments: the hub runs with MAITY_ATTACHMENT_DIR but its openapi.json lists no uploads")
     probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/attachments?status=pending&limit=200")
-    if probe.status == 409 and (probe.json().get("error") or {}).get("code") == "attachments_not_configured":
-        run.step("attachments: the hub has them off; the composer offers no Attach files and no Delete")
-        expect(page.locator("form.compose")).to_be_visible()
-        expect(page.locator("form.compose .attach")).to_be_hidden()
-        expect(page.locator("#chat-files")).to_be_disabled()
-        expect(page.locator("li.attach-item button", has_text="Delete")).to_have_count(0)
-        no_problems(run, "attachments")
-        return
+    if probe.status != 200:
+        code = (probe.json().get("error") or {}).get("code") if probe.headers.get("content-type", "").startswith("application/json") else None
+        raise AssertionError(f"attachments: the hub runs with a store but answers its pending list {probe.status} {code}")
     page.locator("#chat-files").set_input_files(
         files=[{"name": "e2e-shot.png", "mimeType": "image/png", "buffer": tiny_png(32, 32, (40, 160, 90))}]
     )
     pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
-    # Settled: uploaded (its Remove is there once the hub answered) or refused.
-    # While it uploads, the chip and "Uploading …" both show the name.
-    uploaded = pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)
-    expect(uploaded.or_(page.locator(".attach .send-status", has_text="Not attached")).first).to_be_visible()
-    if pending.count() == 0:
-        # Only a hub without attachments is skipped, and the composer has to say so.
-        run.step("attachments: this hub keeps no files yet; the composer says the upload failed")
-        expect(page.locator(".attach .send-status")).to_contain_text("Not attached")
-        run.problems = [p for p in run.problems if not re.match(r"POST /api/v1/projects/owner/e2e-alpha/attachments\?\S* answered (404|405)$", p)]
-        no_problems(run, "attachments")
-        return
+    # Uploaded once its Remove is there (the hub answered); a refusal is a failure here.
+    expect(pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)).to_be_visible()
     run.step("attachments: the owner sends an image to the agent; it shows inline from the hub")
     page.locator("#chat-text").fill("a picture")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
