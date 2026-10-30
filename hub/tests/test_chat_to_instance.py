@@ -55,12 +55,14 @@ def test_the_human_names_one_instance_and_only_it_wakes(
     assert [m["to_instance"] for m in listed["items"]] == [second.instance]
 
 
-def test_without_it_the_message_is_as_before(
+def test_without_it_the_message_still_wakes_every_instance_until_tsk_p49b0kverrph(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
 ) -> None:
     first, second = _pair(make_client, owner)
     sent = send(owner, first.id)
     assert sent.status_code == 201 and sent.json()["to_instance"] is None
+    # Known deviation from §9.1 and §6.18 (the team's wake rule should decide), older than
+    # to_instance: this pins what the hub does until tsk-p49b0kverrph fixes it.
     row = _last(migrated)
     member = _member(migrated, first)
     assert events.wakes(row, member, first.id, first.instance)
@@ -84,7 +86,7 @@ def test_an_id_that_is_no_instance_of_the_agent_is_invalid(
     owner: flow.Human, make_client: ClientFactory  # noqa: F811
 ) -> None:
     first, _ = _pair(make_client, owner)
-    for bad in ("zzzz", "wqe2", "x", "not-an-id-at-all"):
+    for bad in ("zzzz", "wqe2", "x", "not-an-id-at-all", "an-id-that-is-far-too-long-to-be-one"):
         refused = send(owner, first.id, to_instance=bad)
         assert refused.status_code == 400, bad
         assert refused.json()["error"]["details"]["fields"] == {"to_instance": "not_an_instance"}
@@ -125,3 +127,4 @@ def test_only_the_human_names_an_instance_and_only_in_a_direct_chat(
         {"kind": "message", "type": "notice", "to": first.id, "body": "x", "to_instance": "wqe2"},
     )
     assert typed.status_code == 400
+    assert typed.json()["error"]["details"]["fields"] == {"to_instance": "direct_chat_only"}

@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -496,8 +497,6 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
-    from dataclasses import replace
-
     return replace(mine, project=lock_project(conn, mine.project.id))
 
 
@@ -623,7 +622,15 @@ def _filtered(
             return list(rows)
         return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
     target = _parse_to(conn, mine, to)
-    return [r for r in rows if inbox.addressee_of(r) == target and inbox.may_read(conn, r, mine)]
+    # A member id alone also names the instance addresses of its team: the team reads them.
+    whole_team = target.kind == "member" and target.instance is None
+    return [
+        r
+        for r in rows
+        if (replace(inbox.addressee_of(r), instance=None) if whole_team else inbox.addressee_of(r))
+        == target
+        and inbox.may_read(conn, r, mine)
+    ]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:

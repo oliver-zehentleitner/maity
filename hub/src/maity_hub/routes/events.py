@@ -334,10 +334,13 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            if instance is not None:
-                # One instance of a team: its token wakes only it, the team reads it (§8.2).
-                instances.require_active(conn, addressee, instance, "to")
-            target = instances.token(principal, instance)
+            # One instance of a team: its token wakes only it, the team reads it; a replaced
+            # instance's address reaches its successor (§8.2).
+            target = (
+                instances.token(principal, None)
+                if instance is None
+                else instances.addressed(conn, addressee.id, principal, instance, "to")
+            )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -354,6 +357,22 @@ def post_message(
         inside = {group_chats.principal(s) for s in current}
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
+        # An instance mention wakes the instance it comes down to, a successor when the one
+        # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
+        audience = list(
+            dict.fromkeys(
+                [
+                    *audience,
+                    *(
+                        mentions.instance_token(
+                            conn, mine.project.id, m["member_id"], m["instance"]
+                        )
+                        for m in mentioned
+                        if m["instance"] is not None
+                    ),
+                ]
+            )
+        )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
@@ -364,7 +383,7 @@ def post_message(
         # mention stays either way.
         pinged: dict[str, str] = {}  # token -> member
         for m in mentioned:
-            token = instances.token(m["member_id"], m["instance"])
+            token = mentions.instance_token(conn, mine.project.id, m["member_id"], m["instance"])
             if not (
                 "all" in audience
                 or token in audience

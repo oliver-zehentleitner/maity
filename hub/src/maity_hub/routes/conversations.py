@@ -55,7 +55,7 @@ class ChatIn(Written):
 
     attachments: list[str] = Field(default_factory=list)
     body: str = markdown()
-    to_instance: str | None = Field(default=None, max_length=16)  # a direct chat only (§9.1)
+    to_instance: str | None = None  # a direct chat only (§9.1)
 
     @field_validator("body")
     @classmethod

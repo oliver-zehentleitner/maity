@@ -1247,7 +1247,9 @@ def _ping(
         conn,
         mine.project.id,
         "mentioned",
-        mentions.tokens(found, new),  # an instance mention pings that instance (§8.6)
+        mentions.tokens(
+            conn, mine.project.id, found, new
+        ),  # an instance mention pings that instance (§8.6)
         {
             "task": {"id": card.id, "title": card.title, "status": card.status},
             "field": field,

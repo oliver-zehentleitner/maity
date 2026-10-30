@@ -497,8 +497,8 @@ instance admin set, one row per name (`mail.host`, `sign_in.device_code`);
 no row means the environment's value or the default. Every name has an
 entry in the registry of `maity_hub.instance_settings`, which its section
 fills with a validator and a default; a write checks against it, and a
-stored row without an entry (left over after a downgrade or a rename) is
-ignored and logged, never served. Whether the environment wins is
+stored row without an entry is not read: every read names its fields, and a
+rename of a name is a migration of its row. Whether the environment wins is
 decided in one place, `instance_settings.effective`. A secret the admin
 may set (today only the SMTP password, §16.2) is never a setting: it has
 its own registry and lives sealed with `maity_hub.secretbox` in
@@ -527,6 +527,9 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+- Ignoring and logging a stored row that has no registry entry (left over after a
+  downgrade or a rename): removed with the alpha clean-up; no read asks for a
+  name it does not know, and a rename of a name is a migration of its row.
 
 ## A database error is logged with a category of its cause, never with the driver's text
 
@@ -723,3 +726,31 @@ stays is still dropped on its own, once no foreign key needs it.
 - Dropping the foreign key first, then the indexes, then the table:
   three steps for what `drop_table` does in one, and on SQLite a
   foreign key goes only through `batch_alter_table`.
+
+## A card is written in one shape by a migration, and no read branch carries the old one
+
+**Id:** 87be2d15-0c4d-4292-b9dd-e713b0df3de6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up of the card tsk-wgg2t8ngx9xg (the maintainer's alpha rule: no compatibility layers), migration `0101`
+**Revisit when:** a column is added that older rows cannot have, and a default is cheaper than a backfill
+
+Two shapes of older cards were read through a branch of their own: a card reported before `0022` had
+`report` but no `reported_instances`, and a contract made before §6.8 named a place had no `path` and
+`section`. Migration `0101` writes both once: the instance of the report becomes the one entry of the list,
+and a contract without a place gets `path: docs/api.md` and `section: null`. `_reporters`,
+`cards.refuse_same_team_review`, `views.view_contract`, the comparison in the card's `PATCH` and
+`contract_text.read_contract` read the stored value as it is. The downgrade is deliberately empty: the full
+shape is also readable by the older code, so there is nothing to undo. §6.8 fixes the default place for the
+input only, so storing it changes no answer and is neutral to the contract.
+
+**Reason:** a default applied while reading is a second way to the same value, which the next reader of
+the code takes for a rule and every new writer has to keep in step; a backfill moves the knowledge of what
+an old card looked like into one migration that can be deleted with the others.
+
+**Rejected alternatives:**
+- Keeping the read branches: each would stay as a way to get an old shape back, and the clean-up would have
+  to be found again by the next survey.
+- Filling the defaults in a database default or a view: the card's JSON is not a column with a default, and
+  three databases do not share a JSON default.
