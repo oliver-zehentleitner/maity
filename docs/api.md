@@ -513,7 +513,7 @@ first V1.x security item; asymmetric keys are the revisit condition
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
 nonce is unique per credential, remembered for 600 s, else `nonce_reused`;
-an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. A signed request whose `Maity-Timestamp` predates the hub process's start is `timestamp_skew`: the nonce memory is in-process, and this keeps a request captured before a restart from being replayed after it. Signed requests need
+an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
 **Signing required.** A project whose policy has `signing: required`
@@ -8283,8 +8283,9 @@ Scope `project:read`, cookie sessions included. Returns events with
 - Any call here is a heartbeat for presence (§2.4), not for leases.
 - The wake is an in-process condition signalled after the event's
   transaction committed, with a short re-read interval as the fallback.
-  V1 runs one replica; "one long-poll per session" and the nonce window
-  move to the database before a second replica exists.
+  V1 runs one replica; "one long-poll per session" moves to the database
+  before a second replica exists. The nonce window is in the database on
+  PostgreSQL already (§2.2).
 
 ### 8.4 Posting messages
 
