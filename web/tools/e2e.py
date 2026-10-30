@@ -2222,12 +2222,6 @@ def invitations_step(run: Run, page: Page) -> None:
 
 def my_settings_step(run: Run, page: Page) -> None:
     """Agents that stop listening (§5.3, §6.2, §18.4): the account's default, a project's own value."""
-    probe = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/me/settings")
-    if probe.status == 404:
-        run.step("my settings: this hub has none per project yet, so the tab says so")
-        page.goto(f"{run.base}/owner/e2e-alpha/my-settings")
-        expect(page.locator("main section.view-my-settings")).to_contain_text("no settings of your own per project")
-        return
     run.step("my settings: the account's default, then a value for the project, then back to the default")
     page.goto(f"{run.base}/account/notifications")
     form = page.locator("form.not-listening-settings")

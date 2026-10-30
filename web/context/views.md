@@ -2024,7 +2024,7 @@ to the Overview: the alpha rule, no compatibility routes.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29
+**Source:** the maintainer's decision of 2026-10-29 in docs/api.md §6.2 (personal settings are the defaults, a member overrides them per project); the card tsk-32g2cjbm52ft; the coordinator's ruling on the path, 2026-10-29; the coordinator's ruling in the review of #649 (no fallback), 2026-10-30
 **Revisit when:** a member's own settings for a project grow beyond a few, or the project's Settings tab is offered to every member as their own
 
 **My settings** (`/<owner>/<slug>/my-settings`, a project view in
@@ -2033,7 +2033,9 @@ each either **Use my default**, the value from the account sent as
 `null`, or a value for this project, with what applies now. The first
 is how long one of one's agent instances here may stop listening
 before one hears of it. The account's notification settings hold the
-default and its mode (inbox, bell or off).
+default and its mode (inbox, bell or off). A failed read of a
+member's settings is shown as an error; there is no quiet note for a
+hub without the route (e1699490 removes that mechanism everywhere).
 
 **Reason:** the project's Settings are kept by its owner and admins;
 one member's own choices are not the project's and must not sit under
@@ -2043,15 +2045,18 @@ where one thinks of that project's agents.
 **Rejected alternative:** `settings/me`, under the project's Settings:
 no new word for the slugs to avoid, but its tab would be marked as the
 one shown and mix the owner's page with a member's own. One list of
-per-project overrides on the account: far from the project it is about.
+per-project overrides on the account: far from the project it is about. A quiet "this hub has
+no settings of your own per project yet" (`M.dom.notOnHub`) where the
+route is missing: the hub and the dashboard ship together, and such a
+note would hide a broken deploy behind words that sound normal.
 
 ## A request the hub files itself is Maity's; the not-listening digest leads to one's agents
 
 **Id:** 967ed0c0-9e46-42cc-bd45-4fbc4ceae370
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.3 (`agents_not_listening`, target `agents`, linking to `/agents`; read only once its matter is closed — the coordinator's rulings of 2026-10-29); the card tsk-32g2cjbm52ft; the review of #649
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 (the owner's digest: `asked_by` null, `filed_by` "hub", no project), §7, §18.1–§18.3 (`agents_not_listening`, target `agents`, linking to `/agents`; read only once its matter is closed — the coordinator's rulings of 2026-10-29); the coordinator's decision of 2026-10-29 on the target `agents` and "Maity" as the requester; the card tsk-32g2cjbm52ft; the review of #649
 **Revisit when:** the hub files requests of its own that are about one project and should lead into it, or the dashboard gets a personal inbox
 
 A request with `asked_by: null` and `filed_by: "hub"` names its asker

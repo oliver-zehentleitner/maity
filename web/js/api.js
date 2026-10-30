@@ -111,7 +111,6 @@ window.Maity = window.Maity || {};
     return (view && view.full_name) || (FIXTURE_OWNERS[slug] || me().member.handle) + "/" + slug;
   }
   const fixtureSlugs = () => [...new Set(Object.keys(fixtures()).filter((k) => k.includes("/")).map((k) => k.split("/")[0]))];
-  // The fixture directory a full name (or one of its aliases) names, or null.
   // A member's own settings per project (§6.2), kept for the page's life.
   const projectSettings = {};
   function mySettings(slug, path) {
@@ -148,6 +147,7 @@ window.Maity = window.Maity || {};
     return Object.assign({}, JSON.parse(JSON.stringify(v)), { effective_mode: effective, missing, pending: registration.pending.length,
       registered_last_hour: 1, requests_dropped_last_hour: 0 });
   }
+  // The fixture directory a full name (or one of its aliases) names, or null.
   function slugOfFull(full) {
     return fixtureSlugs().find((slug) => fullOf(slug) === full
       || ((fixtures()[slug + "/project.json"] || {}).aliases || []).includes(full)) || null;

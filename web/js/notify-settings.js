@@ -134,7 +134,7 @@ window.Maity = window.Maity || {};
     }
     // Agent instances that stop listening (§5.3, §18.4): how one hears of
     // them and after how long; a project may override the minutes (My settings).
-    if (settings.not_listening) append(box, notListeningForm(settings, (now) => { settings = now; }));
+    append(box, notListeningForm(settings, (now) => { settings = now; }));
     if (!("Notification" in window)) {
       append(box, h("p", { class: "muted" }, "This browser cannot show notifications."));
       return { el: box, heading };
