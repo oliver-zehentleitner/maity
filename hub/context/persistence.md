@@ -754,3 +754,40 @@ an old card looked like into one migration that can be deleted with the others.
   to be found again by the next survey.
 - Filling the defaults in a database default or a view: the card's JSON is not a column with a default, and
   three databases do not share a JSON default.
+
+## A new migration is named by its time, and its author re-chains it onto main's head
+
+**Id:** c711af32-3678-406c-ac57-7a4fb3b3179f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-0p4p41g163y8 (the maintainer's go: collision-free ids, a re-chain tool, a CI check; existing numbers stay); `maity_hub.db.revision_id`, `tools/rechain.py`, the `rechain.py --check` step in `.github/workflows/ci.yml`
+**Revisit when:** pull requests with migrations are merged one at a time by a merge queue that rebases them, so no branch ever sees main move under it
+**See:** https://github.com/oliver-zehentleitner/maity — 65a9b523-fa1f-4f1f-966c-4f49a2660343 — as of 2026-10-30
+
+Migrations were numbered `0001_…` by hand, and the lead kept the order of the open pull requests in a
+text file: every branch made while another migration was open had to take a number and a
+`down_revision` from that list, and re-chain by hand when the order changed. `make revision` now names a
+new migration by the UTC second and its slug (`20261030102512_add_the_tasks`, cut to the 32 characters of
+`alembic_version.version_num`), so two branches never take the same id. Their `down_revision` can still
+point at the same head; after merging `origin/main` the author runs `make rechain`, which sets the one new
+migration's `down_revision` to main's head, and CI fails on two heads with that instruction. The numbered
+files stay as they are: renaming them would rewrite `alembic_version` in every database.
+
+This replaces the rule in 65a9b523 (`context/process.md`): numbers reserved in advance and a merge order
+set by the coordinator.
+
+**Limits:** the tool chains exactly one new migration; a branch with two orders them by hand, the first on
+main's head and the second on the first, or is split. The CI check runs on the pull request's merge
+checkout at the time of its run: a pull request that was green before another migration reached main turns
+red only on its next run, so the check does not replace a fresh CI run before the merge.
+
+The choice is the maintainer's (confirmed); the reasons below against the alternatives are inferred from the
+work they would take, not stated.
+
+**Rejected alternatives:**
+- A reservation on the hub that hands out the next number: a migration would depend on a running hub and a
+  network call while writing it, and a reserved number abandoned with its branch would leave a gap or a
+  second release step; the order between two open branches is still only known at merge time.
+- Keeping the numbers and the hand-kept queue: it is the work this replaces — each reorder changed several
+  branches, and a number taken twice was found only when the second branch merged.

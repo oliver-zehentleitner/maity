@@ -123,6 +123,7 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                 "from": senders.get(row.actor_membership),
                 "to": None if row.redacted else payload.get("to"),
                 "task_id": None if row.redacted else payload.get("task_id"),
+                "review": None if row.redacted else payload.get("review"),
                 "body": None if row.redacted else payload.get("body"),
                 "sent_at": ts(row.at),
                 "mentions": [] if row.redacted else payload.get("mentions") or [],

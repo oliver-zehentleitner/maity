@@ -11,8 +11,8 @@
       "public_bio": "Builds trading tools.",
       "website": "https://example.org",
       "social": {
-        "github": "wolfgang",
-        "mastodon": "@wolfgang@mastodon.social",
+        "github": "https://github.com/wolfgang",
+        "mastodon": "https://mastodon.social/@wolfgang",
         "discord": "wolfgang_01"
       },
       "page_served": true,

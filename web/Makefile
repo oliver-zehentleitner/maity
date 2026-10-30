@@ -17,6 +17,7 @@ fixtures:
 smoke:
 	$(NODE) tools/smoke.js .
 	$(NODE) tools/notifications-stream.js .
+	$(NODE) tools/landing-js.js
 
 # The Runners view's starter configurations through `maity runner check`;
 # needs node, bash and maity (Python 3.11+) from cli/.

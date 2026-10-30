@@ -125,13 +125,41 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+MEAT_PROXY_INTRO = "This person says: I am a meat proxy."
+MEAT_PROXY_LEAD = "Lead me step by step rather than expecting me to explain."
+MEAT_PROXY_HANDS = "When you need a human's hands, come to me first."
 
 
-def meat_proxy_view(on: bool) -> dict[str, Any]:
-    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
-    the one fixed sentence and nothing that says what it means."""
-    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+def meat_proxy_note(lead: bool, hands: bool) -> str:
+    """The note for the parts that are on, in the person's own words: the sentence of each part,
+    the lead part first, after the intro (docs/api.md §5.2, "Meat proxy")."""
+    parts = [s for on, s in ((lead, MEAT_PROXY_LEAD), (hands, MEAT_PROXY_HANDS)) if on]
+    return " ".join([MEAT_PROXY_INTRO, *parts])
+
+
+def meat_proxy_member(lead: bool, hands: bool) -> dict[str, Any]:
+    """A human's own `GET /me`: the switch, both parts and the note, always. While the mode is
+    off the note is the one switching it on would send, with both parts."""
+    on = lead or hands
+    return {
+        "meat_proxy": on,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands) if on else meat_proxy_note(True, True),
+    }
+
+
+def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
+    """The resume packet's fields (docs/api.md §5.2, "Meat proxy"): the switch, and while it is on
+    both parts and the note, nothing that says what it means."""
+    if not (lead or hands):
+        return {"meat_proxy": False}
+    return {
+        "meat_proxy": True,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands),
+    }
 
 
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
@@ -386,14 +414,19 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
 
 
 def member_view(
-    conn: Connection, row: Any, *, briefing: bool = False, details: bool = False
+    conn: Connection,
+    row: Any,
+    *,
+    briefing: bool = False,
+    details: bool = False,
+    links: Any = None,
 ) -> dict[str, Any]:
     """The member view of §6.2: the principal, the membership, the live session.
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
     an event that goes to everyone; the caller decides. `details` adds `owner` and
     `credentials`, for `members:admin` and an agent's owner, never in an event."""
-    return member_views(conn, [row], briefing=briefing, details=details)[0]
+    return member_views(conn, [row], briefing=briefing, details=details, links=links)[0]
 
 
 def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
@@ -445,9 +478,12 @@ def member_views(
     *,
     briefing: bool | Callable[[Any], bool] = False,
     details: bool | Callable[[Any], bool] = False,
+    links: Any = None,
 ) -> list[dict[str, Any]]:
     """`member_view` for several membership rows, with a fixed number of queries;
-    `briefing` for every row, or per row through a predicate."""
+    `briefing` for every row, or per row through a predicate. `links` is the reader
+    (`person_links.Reader`) of a human's `website` and `social`, which only the readers their
+    `links_visible` admits get (§16.9); without it a view has none, and no event does."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     agent_ids = {r.agent_id for r in rows if r.agent_id is not None}
@@ -505,6 +541,16 @@ def member_views(
     profile_holds = moderation.holds_of(
         conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
     )
+    seen_links: set[str] = set()
+    if links is not None:
+        from maity_hub import person_links  # person_links reads views' tables
+
+        seen_links = person_links.admitted(
+            conn,
+            {h.id: h.links_visible for h in humans.values()},
+            links,
+            {h for h in humans if h in profile_holds},
+        )
     views = []
     for row in rows:
         head = (
@@ -531,6 +577,10 @@ def member_views(
         }
         if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
             view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())
+            if row.human_id in seen_links:
+                from maity_hub import person_links
+
+                view.update(person_links.shown(humans[row.human_id]))
         session = None
         if row.agent_id is not None:
             session = live.get(row.id)

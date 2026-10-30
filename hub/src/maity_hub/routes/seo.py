@@ -26,6 +26,7 @@ from maity_hub.views import ts
 router = APIRouter()
 
 CACHE = {"Cache-Control": "public, max-age=3600"}
+LANDING_FILES = "/assets/landing/"
 
 
 def _set_pages(pages: dict[str, Any]) -> list[tuple[str, str]]:
@@ -59,11 +60,18 @@ def robots(
         return (
             "User-agent: *\n"
             + "".join(f"Disallow: /{first}/\nDisallow: /{first}$\n" for first in closed)
+            # The longer path wins over `Disallow: /assets/`: a crawler may render the page.
+            + (f"Allow: {LANDING_FILES}\n" if enabled else "")
+            + "Allow: /\n"
             + sitemap_line
         )
     if not enabled:
         return "User-agent: *\nAllow: /$\nDisallow: /\n"
-    allowed = "Allow: /$\n" + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
+    allowed = (
+        "Allow: /$\n"
+        + "".join(f"Allow: {a}$\n" for a, _ in _set_pages(pages))
+        + f"Allow: {LANDING_FILES}\n"  # the page's style, script and fonts (§16.7)
+    )
     return f"User-agent: *\n{allowed}Disallow: /\n{sitemap_line}"
 
 
@@ -171,11 +179,9 @@ def get_sitemap_part(part: str, request: Request) -> Response:
     """One part of a sitemap that is an index (§16.9); a hub whose sitemap is one file has none,
     and what is no number is `not_found` like any other unknown part."""
     files, _ = _entries(request)
-    if (
-        not (part.isascii() and part.isdigit())
-        or not len(files) >= 2
-        or not 1 <= int(part) <= len(files)
-    ):
+    if not (part.isascii() and part.isdigit()) or part != str(int(part)):
+        raise not_found()  # `01` would be a second address for the part `1`
+    if len(files) < 2 or not 1 <= int(part) <= len(files):
         raise not_found()
     return Response(
         urlset(files[int(part) - 1]), media_type="application/xml; charset=utf-8", headers=CACHE

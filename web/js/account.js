@@ -9,7 +9,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append } = M.dom;
+  const { h, append, clear } = M.dom;
 
   // The hub's minimum, counted in characters as the hub counts them.
   const MIN_LENGTH = 12;
@@ -144,42 +144,69 @@ window.Maity = window.Maity || {};
       form);
   }
   M.profileDelete = profileDelete;
-  // §5.2 "Meat proxy": the human's own switch (PATCH /me). The hub tells the
-  // agents that deal with them a note, always the same text, and /me carries
-  // it (member.meat_proxy_note): the page shows exactly that under the switch,
-  // never a copy of its own; a hub that does not send it shows none.
+  // §5.2 "Meat proxy": the human's own switch (PATCH /me) with its two
+  // parts under it, each a sentence the person says about themselves. The
+  // hub stores the parts; the switch is on while one of them is. Switching
+  // on sends `meat_proxy: true`, which ticks both; off, `false`, which
+  // clears both; a part alone sends only that part, so ticking one while
+  // off turns the mode on with it, and clearing the last turns it off.
+  // The hub's note (member.meat_proxy_note, §2) stands under the parts as
+  // /me and each answer carry it — what agents read now, or would read
+  // once it is on — never a copy of the page's own; a hub that does not
+  // send it shows none.
+  const MEAT_PARTS = [
+    ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
+    ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],
+  ];
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
     const status = M.statusLine();
-    const note = typeof ctx.me.meat_proxy_note === "string" && ctx.me.meat_proxy_note ? ctx.me.meat_proxy_note : null;
-    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint" });
-    box.checked = !!ctx.me.meat_proxy;
-    box.addEventListener("change", async () => {
-      const want = box.checked;
-      box.disabled = true;
-      status.busy("Saving…");
+    const noteOf = (m) => (typeof m.meat_proxy_note === "string" && m.meat_proxy_note ? m.meat_proxy_note : null);
+    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
+    const parts = MEAT_PARTS.map(([field, id]) => [field, h("input", { type: "checkbox", id })]);
+    const hint = h("p", { class: "hint", id: "meat-proxy-hint" });
+    const quote = h("div");
+    const inputs = [box].concat(parts.map(([, input]) => input));
+    // The switch, its parts and the note as the hub last said them.
+    function show() {
+      box.checked = !!ctx.me.meat_proxy;
+      parts.forEach(([field, input]) => { input.checked = !!ctx.me[field]; });
+      const note = noteOf(ctx.me);
+      hint.textContent = !note ? M.t("meat.hint") : ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
+      append(clear(quote), note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null);
+      box.setAttribute("aria-describedby", note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint");
+    }
+    async function send(body) {
+      inputs.forEach((x) => { x.disabled = true; });
+      status.busy(M.t("meat.saving"));
       try {
-        const answer = await M.api.patch("/me", { meat_proxy: want });
-        ctx.me.meat_proxy = answer && "meat_proxy" in answer ? answer.meat_proxy : want;
-        box.checked = !!ctx.me.meat_proxy;
+        // The answer is /me itself (§5.1), its member as GET /me has it.
+        const answer = await M.api.patch("/me", body);
+        const member = answer && answer.member;
+        ["meat_proxy", "meat_proxy_note"].concat(MEAT_PARTS.map(([field]) => field)).forEach((k) => {
+          if (member && k in member) ctx.me[k] = member[k];
+        });
+        show();
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? (note ? "Saved: your agents and the agents of your projects are told the text above." : "Saved: your agents and the agents of your projects are told.")
-          : "Saved: they are no longer told."));
+          ? (noteOf(ctx.me) ? M.t("meat.saved.on_note") : M.t("meat.saved.on"))
+          : M.t("meat.saved.off")));
       } catch (err) {
-        box.checked = !want;
-        status.fail("Not saved: ", err);
+        show();
+        status.fail(M.t("meat.not_saved"), err);
       } finally {
-        box.disabled = false;
+        inputs.forEach((x) => { x.disabled = false; });
       }
-    });
+    }
+    box.addEventListener("change", () => send({ meat_proxy: box.checked }));
+    parts.forEach(([field, input]) => input.addEventListener("change", () => send({ [field]: input.checked })));
+    show();
     return h("section", { class: "meat-proxy" },
-      h("h3", null, "Meat proxy"),
-      h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
-      h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of are told so when they resume"
-        + (note ? ", in these words:" : ".")),
-      note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null,
-      status.el);
+      h("h3", null, M.t("meat.title")),
+      h("label", { class: "check", for: "meat-proxy" }, box, " ", M.t("meat.switch")),
+      h("fieldset", { class: "meat-proxy-parts" }, h("legend", { class: "visually-hidden" }, M.t("meat.parts")),
+        MEAT_PARTS.map(([, id, sentence], i) => h("label", { class: "check", for: id }, parts[i][1], " ", sentence()))),
+      hint, quote, status.el);
   }
 
   // Set by a change; the next drawing of the view says it.

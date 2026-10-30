@@ -27,7 +27,7 @@ from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticated
 from maity_hub.models import Strict
 from maity_hub.ratelimit import Limiter
-from maity_hub.views import agent_member, human_member, owner_handles
+from maity_hub.views import agent_member, human_member, meat_proxy_member, owner_handles
 
 router = APIRouter()
 
@@ -69,7 +69,13 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             **human_member(human, avatar_url=None),
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
-            "meat_proxy": human.meat_proxy,
+            **meat_proxy_member(human.meat_proxy_lead, human.meat_proxy_hands),
+            # The person's own page, whatever it shows to others (§16.9).
+            "public_profile": human.public_profile,
+            "public_bio": human.public_bio,
+            "website": human.website,
+            "social": human.social or {},
+            "links_visible": human.links_visible,
             "account_status": human.account_status,
             "terms": (
                 {

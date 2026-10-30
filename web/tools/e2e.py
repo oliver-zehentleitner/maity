@@ -53,8 +53,10 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect, sync_playwright
 
 WEB = Path(__file__).resolve().parent.parent
@@ -2106,6 +2108,38 @@ def join_expiry_step(run: Run, page: Page) -> None:
     other = page.context.browser.new_context(storage_state=page.context.storage_state())
     second = other.new_page()
     watch_page(run, second)
+    # The page judges expiry by the hub's clock: every answer's Maity-Server-Time
+    # sets how far the browser is off it (js/api.js). Moving only the browser's
+    # clock let the next answer pull the page back to the hub's real time, and
+    # the join read as open again: the step failed or passed by which came first.
+    # So this tab sees the hub's clock moved by the same amount as its own.
+    moved = {"by": timedelta(0)}
+
+    def hub_clock(route: object) -> None:
+        # Only a tab closed while an answer was held is quiet; any other error
+        # is said where it happens and the request ends, not as a later timeout.
+        try:
+            answer = route.fetch()
+        except PlaywrightError as err:
+            if "closed" not in str(err):
+                run.problems.append(f"join expiry: the hub's answer could not be held: {err}")
+                try:
+                    route.abort()
+                except PlaywrightError:
+                    pass
+            return
+        headers = dict(answer.headers)
+        served = headers.get("maity-server-time")
+        if served and moved["by"]:
+            at = datetime.fromisoformat(served.replace("Z", "+00:00")) + moved["by"]
+            headers["maity-server-time"] = at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        try:
+            route.fulfill(response=answer, headers=headers)
+        except PlaywrightError as err:
+            if "closed" not in str(err):
+                run.problems.append(f"join expiry: the moved answer could not be given: {err}")
+
+    second.route(re.compile(r"/api/v1/"), hub_clock)
     second.clock.install()
     second.goto(f"{run.base}/owner/e2e-alpha/agents/join")
     # A direct navigation to Agents with the join panel open: the focus in its first field.
@@ -2120,7 +2154,9 @@ def join_expiry_step(run: Run, page: Page) -> None:
     row = second.locator("article.seat").first
     expect(row.get_by_role("button", name=re.compile(r"^Revoke"))).to_be_visible()
     join_id = row.get_attribute("data-join")
-    second.clock.fast_forward("16:00")  # past the default 15 minutes
+    # Past the default 15 minutes, the browser's clock and the hub's as this tab sees it.
+    moved["by"] = timedelta(minutes=16)
+    second.clock.fast_forward("16:00")
     gone = second.locator("ul.closed-joins li", has_text=join_id)
     expect(gone).to_contain_text("expired")
     expect(gone.get_by_role("button", name="Revoke")).to_have_count(0)
@@ -2197,8 +2233,9 @@ def my_settings_step(run: Run, page: Page) -> None:
     form.get_by_role("button", name="Save", exact=True).click()
     expect(form).to_contain_text("Saved.")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    view_tab(page, "My settings").click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/my-settings$"))
+    view_tab(page, "Settings").click()
+    page.locator("nav.settings-tabs").get_by_role("link", name="Mine", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/settings/mine$"))
     effective = page.locator(".my-nl-effective")
     expect(effective).to_have_text("Applies now: 45 minutes, your default.")
     page.locator("#my-nl-here").check()

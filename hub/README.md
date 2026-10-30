@@ -367,16 +367,31 @@ python3 -m venv /tmp/audit && /tmp/audit/bin/pip install --require-hashes -r req
 
 ### Migrations
 
-Schema changes are Alembic revisions in `src/maity_hub/migrations/versions/`,
-numbered `0001_…`, `0002_…`. To create the next one after changing the
-table definitions:
+Schema changes are Alembic revisions in `src/maity_hub/migrations/versions/`:
+the older ones numbered `0001_…`, every new one named by the UTC
+second it was made and its slug, `20261030102512_add_the_tasks.py`, so two
+pull requests made in parallel never take the same id. To create one after
+changing the table definitions:
 
 ```sh
-make revision m="add the task table"
+make revision m="add the tasks"
 ```
 
 It migrates a scratch SQLite file to the current head, compares it with the
-tables defined in `maity_hub` and writes `000N_add_the_task_table.py`.
+tables defined in `maity_hub` and writes the revision on that head.
+When `main` gets another migration before yours is merged, the branch has two
+heads after merging `main`, the hub refuses to start on them, and CI fails
+with a message naming the fix:
+
+```sh
+git fetch origin && git merge origin/main
+make rechain    # python3 tools/rechain.py from the repository root
+```
+
+`tools/rechain.py` finds the one migration the branch adds and sets its
+`down_revision` (and the `Revises:` line) to the head of `origin/main`; a
+branch with two new migrations, or one that lacks a migration of `main`, is
+refused with what to do.
 Run `make format` on it before `make check` (the template imports `op` and
 `sa` whether the revision uses them or not), and review the result:
 autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use
