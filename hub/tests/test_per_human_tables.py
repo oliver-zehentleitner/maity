@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, export
+from maity_hub import account_deletion, avatars, export, org_invitations
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -86,6 +86,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
     "membership": members,  # apply_remove
+    "org_invitation": org_invitations,  # withdraw_by_inviter_everywhere, withdraw_for_human
     "runner": runners,  # remove
 }
 
@@ -160,7 +161,6 @@ EXPORT_LEAVES_OUT = {
     "memory_entry": _UNLISTED,
     "notification_mail_state": _BOOKKEEPING,
     "notification_position": _BOOKKEEPING,
-    "org_invitation": f"an organisation's offer, not the caller's data; {_UNLISTED}",
     "notification_read": _BOOKKEEPING,
     "pending_registration": _SECRET,  # the password chosen with it
     "placement": _UNLISTED,
