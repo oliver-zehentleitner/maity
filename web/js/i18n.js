@@ -1,5 +1,5 @@
 // The dashboard's words from a catalog, one per language (i18n/<lang>.json,
-// loaded as i18n/<lang>.js, which tools/check.py builds from it, since
+// loaded as js/i18n/<lang>.js, which tools/check.py builds from it, since
 // file:// cannot fetch JSON). English is the only language so far; a
 // translation later fills a file, it touches no view (context/rendering.md).
 //

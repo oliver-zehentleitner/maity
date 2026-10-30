@@ -1252,7 +1252,7 @@ and plural forms (`{"one": …, "other": …}`, chosen by `values.count`
 through `Intl.PluralRules`); never a sentence put together from pieces.
 Dates and numbers go through `Intl` (`Maity.fmt.number`, `.date`,
 `.time`, `.dateTime`) in the reader's locale. As with the fixtures, the
-page loads `i18n/<lang>.js`, which `make fixtures` builds from the JSON.
+page loads `js/i18n/<lang>.js`, which `make fixtures` builds from the JSON.
 `make check` fails on a key that is malformed, missing, unused, or not
 a string literal at `M.t`, and on any view whose prose string literals
 grow past `tools/strings-baseline.json`: new text goes into the catalog,

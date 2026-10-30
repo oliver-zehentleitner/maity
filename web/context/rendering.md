@@ -543,9 +543,12 @@ already does with room to spare.
 **Revisit when:** a second language is added, the account gets a language and locale of its own, or the hub's WORDS move to per-language files
 
 `js/i18n.js` gives `M.t(key, values)` over `window.MAITY_I18N[lang]`,
-which `i18n/<lang>.js` sets; `tools/check.py --write` builds that file
+which `js/i18n/<lang>.js` sets; `tools/check.py --write` builds that file
 from `i18n/<lang>.json`, as it builds the fixtures' bundle, because a
-page from `file://` cannot fetch JSON. A text is a string or plural
+page from `file://` cannot fetch JSON. The bundle sits under `js/`, the one script
+directory the hub serves at `/assets/` besides `css/` and `brand/`
+(`hub/src/maity_hub/shell.py`), so it needs no hub change; the JSON
+beside it is the file a translator edits. A text is a string or plural
 forms chosen by `Intl.PluralRules`; a number in a placeholder is
 formatted for the locale; a key the catalog lacks reads as itself.
 `M.fmt` formats dates and numbers with `Intl` in `M.i18n.locale`, the
