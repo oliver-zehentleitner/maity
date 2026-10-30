@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, Insert
 
-from maity_hub.db import create_revision, current_revision, downgrade, head_revision, migrate
+from maity_hub.db import (
+    create_revision,
+    current_revision,
+    downgrade,
+    head_revision,
+    migrate,
+    revision_id,
+)
 
 
 @pytest.mark.wheel
@@ -58,19 +65,24 @@ def test_sqlite_keeps_the_event_seq_autoincrement_through_every_migration(engine
     assert "AUTOINCREMENT" in ddl()
 
 
-def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
+def test_create_revision_names_the_migration_by_time_and_slug(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A new revision's id cannot collide with a parallel branch's: the UTC second and the
+    slug, cut to the 32 characters of `alembic_version`; `tools/rechain.py` chains it."""
+    from datetime import UTC, datetime
+
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)
     head = head_revision(engine)
     assert head is not None
-    # The highest number plus one, not the head's: numbers are reserved ahead, so a
-    # revision chained later may carry a lower number than one merged before it.
-    numbers = [int(p.name[:4]) for p in (migrations / "versions").glob("[0-9]*.py")]
-    following = f"{max(numbers) + 1:04d}"
-    created = create_revision(engine, "add the task table", migrations)
-    assert created.name == f"{following}_add_the_task_table.py"
-    assert f'revision: str = "{following}"' in created.read_text()
+    now = datetime(2026, 10, 30, 10, 25, 12, tzinfo=UTC)
+    created = create_revision(engine, "Add the tasks!", migrations, now=now)
+    assert created.name == "20261030102512_add_the_tasks.py"
+    assert 'revision: str = "20261030102512_add_the_tasks"' in created.read_text()
     assert f'down_revision: str | None = "{head}"' in created.read_text()
+    assert revision_id("x" * 80, now) == "20261030102512_" + "x" * 17
+    assert len(revision_id("x" * 80, now)) == 32
 
 
 def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engine) -> None:
