@@ -537,6 +537,9 @@ project = Table(
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),
     Column("public_about", MARKDOWN_TEXT),
+    # Whether the forge's last answer said the repository is public (§16.9, §11.4); null
+    # before the hub looked, which counts as private. Only a public page's is kept.
+    Column("repository_public", Boolean),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),

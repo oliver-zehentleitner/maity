@@ -30,7 +30,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, merged, releases, rules, ticker
+from maity_hub import clock, forge, merged, public_pages, releases, rules, ticker
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.instances import token
@@ -362,6 +362,25 @@ def _state(data: dict[str, Any]) -> tuple[Any, ...]:
 # --- the worker --------------------------------------------------------------------------------
 
 
+def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None:
+    """Store whether the forge reports the repository of a project with a public page public,
+    whatever grant reads it (§16.9): the repository URL is on the page only while it is. A
+    page that loses it is rendered again at once; one that gains it waits for its renders."""
+    project = _project(engine, project_id)
+    if project.public_page != "on" or project.repository_url is None:
+        return
+    public = fg.for_project(project_id).repository_public(
+        forge.repository_of(project.repository_url)
+    )
+    if public == project.repository_public:
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=public)
+        )
+        public_pages.touch(conn, "project", project_id, removal=not public)
+
+
 def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
     """One round: every report without an observation on an open card or one closed
     within REPORT_WINDOW, then every open release. The round ends at the first read
@@ -391,6 +410,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     order = _rotated(sorted(observable), "sweep")
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
     work += [(observe_links, (engine, fg, project_id)) for project_id in order]
+    work += [(observe_visibility, (engine, fg, project_id)) for project_id in order]
     for job, args in work:
         if stop is not None and stop.is_set():
             return
