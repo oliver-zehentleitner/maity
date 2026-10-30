@@ -21,6 +21,11 @@ bump. `sync_text` runs once in the lifespan after the schema check, in one trans
 projects in id order, so two hubs starting together lock them in the same order and cannot deadlock.
 The first start after the migration counts every existing project once.
 
+`GET /projects/{slug}/rules` chooses the duty line the way the event stream does: an agent whose session
+has a `supervisor` gets §15.11's supervised line, every other caller (a self-waiting agent, a human) the
+`DUTY_SELF` line. Rejected: always the self line there (the document an agent reads would then differ from
+its resume packet), and a `?supervised=` parameter (the caller could pick a duty its session does not have).
+
 The duty line (`DUTY_SELF`, section `## On duty`) is the same text for every harness: it points at
 `hints.wait_timeout` in the resume packet and carries no number, so the document stays one text per
 project and role and the digest stays small. A supervised session gets the line of §15.11 instead.

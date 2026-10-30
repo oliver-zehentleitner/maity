@@ -5,7 +5,7 @@ bumps `rules_version` once per project. Null for every project that exists when 
 the first start after it counts the text once, as a hub that never recorded one should.
 
 Revision ID: 0109
-Revises: 0102
+Revises: 0108
 Create Date: 2026-10-30
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0109"
-down_revision: str | None = "0102"
+down_revision: str | None = "0108"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
