@@ -262,6 +262,21 @@ def test_a_dashboard_path_out_of_shape_is_format(owner: flow.Human, path: Any) -
     assert response.json()["error"]["details"]["fields"] == {"setup.dashboard_path": "format"}
 
 
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"setup": {"keep_the_why_dashboard": False, "dashboard_path": "docs/../x"}},
+        {"setup": {"dashboard_path": "docs/../x"}, "memory": {"provider": "none"}},
+    ],
+)
+def test_a_path_out_of_shape_is_format_even_where_it_would_be_dropped(
+    owner: flow.Human, extra: dict[str, Any]
+) -> None:
+    response = owner.post("/projects", {"slug": "xx", "name": "XX", **extra})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"setup.dashboard_path": "format"}
+
+
 def test_the_path_is_dropped_without_the_dashboard_option(owner: flow.Human) -> None:
     body = flow.project(
         owner,
