@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
+from ..redact import without_userinfo
 from . import config, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError
@@ -450,5 +451,6 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
         raise Refused(f"{place.path} is recorded already; --force to record it again")
     workspace.record(cfg.state_dir, place, args.agent, args.placement or "")
     origin = workspace.origin(place.path, _as_user(cfg))
-    print(f"recorded {place.path} for {onboarding.inline(args.agent)} (origin {origin})")
+    shown = without_userinfo(origin) if origin else origin
+    print(f"recorded {place.path} for {onboarding.inline(args.agent)} (origin {shown})")
     return 0
