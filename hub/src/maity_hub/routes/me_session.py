@@ -168,10 +168,11 @@ class MePatch(Strict):
     public_profile: StrictBool | None = None
     public_bio: str | None = None
     website: str | None = None
-    social: dict[str, Any] | None = None
+    social: Any = None  # an object, checked with the other fields: `social: "format"`
     links_visible: str | None = None
 
 
+LINKS = ("website", "social", "links_visible")
 HUMAN_FIELDS = (
     "meat_proxy",
     "meat_proxy_lead",
@@ -739,16 +740,20 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
         links_given = {"website", "social", "links_visible"} & given
+        changed = False
         if links_given:
-            if "social" in given and body.social is None:
-                raise invalid({"social": "invalid"}, "social is an object of names")
-            if "links_visible" in given and body.links_visible is None:
-                raise invalid({"links_visible": "required"})
             current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            # `social: null` clears every network; `links_visible: null` is no value (`unknown`).
+            social_in = (
+                {network: None for network in person_links.NETWORKS}
+                if "social" in given and body.social is None
+                else body.social
+            )
+            visible_in = body.links_visible if body.links_visible is not None else ""
             website, social, visible = person_links.checked(
                 body.website if "website" in given else None,
-                body.social if "social" in given else None,
-                body.links_visible if "links_visible" in given else None,
+                social_in if "social" in given else None,
+                visible_in if "links_visible" in given else None,
                 current.social,
             )
             if "website" in given:
@@ -757,8 +762,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 values["social"] = social or None
             if "links_visible" in given:
                 values["links_visible"] = visible
+            changed = any(
+                getattr(current, name) != values[name] for name in values if name in LINKS
+            )
         conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
-        if links_given:
+        if changed:  # an edit that stores what was there is no news to the projects
             person_links.announce(conn, caller.human_id)
         if public or links_given:
             # Turning the page off or editing its text takes something off it: at once (§16.9).

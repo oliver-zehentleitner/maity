@@ -69,15 +69,19 @@ def test_a_name_of_its_form_is_stored_and_two_hosts_are_lower_cased(
         ("github", "@octo"),
         ("gitlab", "repo.git"),
         ("gitlab", "feed.atom"),
+        ("gitlab", "repo.GIT"),
+        ("gitlab", "feed.Atom"),
         ("gitlab", ".dot"),
         ("x", "sixteen_chars_xx"),
         ("x", "dash-ed"),
         ("mastodon", "oz@mastodon.example"),
         ("mastodon", "@oz@localhost"),
+        ("mastodon", "@oz@1.2.3.4"),
         ("mastodon", "@oz@host.example:8080"),
         ("mastodon", "@oz@host.example/path"),
         ("mastodon", "@@host.example"),
         ("bluesky", "nodots"),
+        ("bluesky", "1.2.3.4"),
         ("bluesky", "did:plc:short"),
         ("bluesky", "did:web:example.org"),
         ("linkedin", "ab"),
@@ -99,8 +103,15 @@ def test_an_unknown_network_and_a_social_that_is_no_object_are_invalid(person: f
     refused = patch(person, social={"myspace": "tom", "github": "ok"})
     assert fields(refused) == {"social.myspace": "unknown"}
     assert own(person)["social"] == {}  # all or nothing
-    assert patch(person, social=None).status_code == 400
-    assert patch(person, social="github").status_code == 400
+    for not_an_object in ("github", ["github"], 3):
+        assert fields(patch(person, social=not_an_object)) == {"social": "format"}
+
+
+def test_a_null_social_clears_every_network(person: flow.Human) -> None:
+    patch(person, social={"github": "octo", "x": "oz"})
+    done = patch(person, social=None)
+    assert done.status_code == 200, done.text
+    assert done.json()["member"]["social"] == {}
 
 
 def test_social_merges_by_network_and_a_null_clears_one(person: flow.Human) -> None:
@@ -117,7 +128,7 @@ def test_social_merges_by_network_and_a_null_clears_one(person: flow.Human) -> N
     [
         "https://example.org",
         "https://example.org/path?q=1",
-        "https://sub.example.org:8443/x",
+        "https://sub.example.org/x",
     ],
 )
 def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
@@ -138,6 +149,12 @@ def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
         ("https://exa mple.org", "format"),
         ("https://example.org/\n", "format"),
         ("https://example.org:99999", "format"),
+        ("https://example.org:8443/x", "format"),
+        ("https://example.org:/x", "format"),
+        ("https://localhost", "format"),
+        ("https://127.0.0.1/", "format"),
+        ("https://[::1]/", "format"),
+        ("https://example.org./", "format"),
         ("https://" + "a" * 190 + ".org", "too_long"),
     ],
 )
@@ -154,7 +171,7 @@ def test_links_visible_takes_five_values_and_refuses_the_rest(person: flow.Human
         assert patch(person, links_visible=value).json()["member"]["links_visible"] == value
     refused = patch(person, links_visible="world")
     assert fields(refused) == {"links_visible": "unknown"}
-    assert patch(person, links_visible=None).status_code == 400
+    assert fields(patch(person, links_visible=None)) == {"links_visible": "unknown"}
 
 
 def test_an_agent_sets_none_of_the_fields(make_client: ClientFactory, migrated: Engine) -> None:
@@ -283,3 +300,44 @@ def test_the_person_page_shows_the_links_under_everyone_only(
     # off again: gone at once
     patch(who, links_visible="private")
     assert "example.org" not in anyone.get("/maintainer").text
+
+
+def test_a_hold_on_the_profile_makes_everyone_act_as_colleagues(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    anna = flow.human(make_client, migrated, "anna")
+    ben = flow.human(make_client, migrated, "ben")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    for human in (anna, ben):
+        factory.membership(migrated, project_id, "member", human_id=human.id)
+    bot = flow.agent(make_client, owner, role="coder")
+    patch(anna, website="https://example.org", links_visible="everyone")
+    for reader in (ben, bot, anna):
+        assert "website" in member_of(reader, "anna")
+    made = owner.post("/reports", {"target": {"type": "profile", "id": anna.id}, "reason": "spam"})
+    assert made.status_code == 201, made.text
+    held = owner.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "hide"})
+    assert held.status_code == 200, held.text
+    assert "website" in member_of(ben, "anna")  # a colleague still reads it
+    assert "website" not in member_of(bot, "anna")  # the world does not
+    assert "website" in member_of(anna, "anna")  # nor does the person lose their own
+
+
+def test_an_edit_that_stores_what_was_there_is_not_announced(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    patch(owner, links_visible="everyone", social={"github": "octo"})
+    patch(owner, links_visible="everyone", social={"github": "octo"})
+    patch(owner, website=None)
+    with migrated.connect() as conn:
+        announced = [
+            e
+            for e in conn.execute(select(t.event).where(t.event.c.kind == "member_updated"))
+            if e.payload.get("changed") == ["links"]
+        ]
+    assert len(announced) == 1

@@ -142,15 +142,18 @@ passing them through twenty calls was the alternative that cost more than one li
 
 `human.website`, `human.social` (an object of names) and `human.links_visible` (`private` by default) are
 set by `PATCH /me` for a human only; `person_links.checked` validates every field and answers `invalid` naming
-each failure (`website`: `format` or `too_long`; `social.<network>`: `format` or `unknown`; `links_visible`:
-`unknown`), all or nothing. `social` merges by network, `null` or an empty text clears one. The hub stores the
+each failure (`website`: `format` or `too_long`, a host that is a DNS name without port, user part or IP literal;
+`social`: `format` when it is no object; `social.<network>`: `format` or `unknown`; `links_visible`: `unknown`,
+`null` included), all or nothing. `social` merges by network, `null` or an empty text clears one, and
+`social: null` clears every network. The hub stores the
 names (the host of a Mastodon name and a Bluesky handle lower-cased) and builds the link when a link is shown
 (`person_links.address`); Discord has no public profile address and is shown as the name. A reader gets
 `website` and `social` in the member views of a shared project only when the value admits them (`admitted`):
 `everyone` all, the person themself always, `colleagues` and `friends_and_colleagues` a human who is an active
-member of a project the person is an active member of (agents never), `friends` nobody until follow exists. The
-member views take the reader as a parameter (`links`); no event does, because who may read them depends on the
-reader, so a change is `member_updated` with `changed: ["links"]` and a reader reads the member again. The
+member of a project the person is an active member of (agents never), `friends` nobody until follow exists; under a hold on the profile (§16.8) `everyone` acts as `colleagues`
+(`admitted(held=…)`). The member views take the reader as a parameter (`links`); no event does, because who may read them depends on the
+reader, so a change is `member_updated` with `changed: ["links"]`, sent only when a stored value changed, and a reader
+reads the member again. The
 person's page shows them, with `rel="me nofollow"`, only under `everyone`.
 
 **Reason:** a link built from a name always goes where its label says, which a stored URL would not guarantee,

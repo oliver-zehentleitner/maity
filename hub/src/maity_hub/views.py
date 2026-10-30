@@ -546,7 +546,10 @@ def member_views(
         from maity_hub import person_links  # person_links reads views' tables
 
         seen_links = person_links.admitted(
-            conn, {h.id: h.links_visible for h in humans.values()}, links
+            conn,
+            {h.id: h.links_visible for h in humans.values()},
+            links,
+            {h for h in humans if h in profile_holds},
         )
     views = []
     for row in rows:

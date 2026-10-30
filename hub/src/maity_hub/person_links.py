@@ -38,7 +38,13 @@ _HOST_MAX = 253
 
 
 def _dns(host: str) -> bool:
-    return len(host) <= _HOST_MAX and re.fullmatch(_HOST, host) is not None
+    """A DNS name of the `<host>` form: at least one dot, ASCII labels, and a last label that
+    is not all digits (so no IPv4 literal)."""
+    return (
+        len(host) <= _HOST_MAX
+        and re.fullmatch(_HOST, host) is not None
+        and not host.rsplit(".", 1)[1].isdigit()
+    )
 
 
 def normalised(network: str, name: str) -> str | None:
@@ -55,7 +61,7 @@ def normalised(network: str, name: str) -> str | None:
         if lowered.startswith("did:plc:"):
             return lowered if FORMS["bluesky"].fullmatch(lowered) else None
         return lowered if _dns(lowered) and FORMS["bluesky"].fullmatch(lowered) else None
-    if network == "gitlab" and name.endswith((".git", ".atom")):
+    if network == "gitlab" and name.lower().endswith((".git", ".atom")):
         return None
     return name if FORMS[network].fullmatch(name) else None
 
@@ -68,23 +74,19 @@ def website_problem(value: str) -> str | None:
         return "format"
     try:
         parts = urlsplit(value)
-        port = parts.port
+        host = parts.hostname
+        parts.port  # noqa: B018  (a port that is no number raises)
     except ValueError:
         return "format"
-    if (
-        parts.scheme != "https"
-        or not parts.hostname
-        or parts.username is not None
-        or parts.password is not None
-        or (port is not None and not 1 <= port <= 65535)
-    ):
+    # `netloc` is the host alone: no user part, no port, no IPv6 brackets.
+    if parts.scheme != "https" or not host or parts.netloc.lower() != host or not _dns(host):
         return "format"
     return None
 
 
 def checked(
     website: str | None,
-    social: dict[str, Any] | None,
+    social: Any,
     visible: str | None,
     stored: dict[str, str] | None,
 ) -> tuple[str | None, dict[str, str], str | None]:
@@ -98,6 +100,9 @@ def checked(
     if visible is not None and visible not in VISIBILITY:
         errors["links_visible"] = "unknown"
     merged = dict(stored or {})
+    if social is not None and not isinstance(social, dict):
+        errors["social"] = "format"
+        social = {}
     for network, name in (social or {}).items():
         if network not in NETWORKS:
             errors[f"social.{network}"] = "unknown"
@@ -167,12 +172,25 @@ def _colleagues(conn: Connection, person_ids: set[str], reader: str) -> set[str]
     )
 
 
-def admitted(conn: Connection, people: dict[str, str], reader: Reader) -> set[str]:
-    """Of `people` (human id to `links_visible`), those whose links the reader sees."""
-    seen = {h for h, value in people.items() if value == "everyone" or h == reader.human_id}
+def admitted(
+    conn: Connection, people: dict[str, str], reader: Reader, held: set[str] | None = None
+) -> set[str]:
+    """Of `people` (human id to `links_visible`), those whose links the reader sees. Under a
+    hold on the profile (`held`) the links count as members-only: `everyone` acts as
+    `colleagues` (§16.9)."""
+    held = held or set()
+    seen = {
+        h
+        for h, value in people.items()
+        if h == reader.human_id or (value == "everyone" and h not in held)
+    }
     if reader.human_id is None:
         return seen
-    wants = {h for h, value in people.items() if value in ("colleagues", "friends_and_colleagues")}
+    wants = {
+        h
+        for h, value in people.items()
+        if value in ("colleagues", "friends_and_colleagues") or (value == "everyone" and h in held)
+    }
     if wants - seen:
         seen |= _colleagues(conn, wants - seen, reader.human_id)
     return seen  # `friends` is the people the person follows: nobody until follow exists
