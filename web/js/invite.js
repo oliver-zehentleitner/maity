@@ -146,9 +146,9 @@ window.Maity = window.Maity || {};
     const roles = () => {
       const wanted = role.value || "coder";
       const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      append(clear(role), offered.map((r) => h("option", { value: r }, r)));
-      role.value = offered.includes(wanted) ? wanted : "coder";
+      M.trust.fillRoles(role, offered, wanted, "coder");
     };
+    const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", roles);
     roles();
     const address = h("input", { id: "invite-address", type: "email", autocomplete: "off", placeholder: "Optional: only this address may accept" });
@@ -196,7 +196,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: "invite-trust" }, "Trust"), trust,
-    h("label", { for: "invite-role" }, "Role"), role,
+    h("label", { for: "invite-role" }, "Role"), role, roleHelp,
     h("label", { for: "invite-address" }, "Address"), address,
     h("label", { for: "invite-ttl" }, "Valid for"), ttl,
     h("label", { for: "invite-note" }, "Note"), note,

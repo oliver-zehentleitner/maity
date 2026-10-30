@@ -412,7 +412,7 @@ window.Maity = window.Maity || {};
     const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
       // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
       .concat(["owner", "admin"].map((trust) => ({ value: "trust:" + trust, label: "Trust: every " + trust })))
-      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + role })))
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + M.trust.roleLabel(role).toLowerCase() })))
       .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
@@ -800,7 +800,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("h2", { class: "panel-title" }, "Members' own agents"),
-    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, as coder, reviewer, tester or designer, reporting to them. "
+    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, in every role but ops and proxy, reporting to them. "
       + "Turning it off stops new ones; joins already handed out stay usable."),
     h("label", { for: "member-agents-select" }, "Members add agents"), on,
     h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
