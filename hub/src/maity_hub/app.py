@@ -306,7 +306,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(badges.router)  # public /badge/*.svg, before the dashboard
     app.include_router(seo.router)  # /robots.txt and /sitemap.xml, before the dashboard
     app.include_router(pages.page_router)  # `/` and the legal pages, before the app shell
-    app.include_router(swarm.router, prefix=prefix)  # the members' and the public swarm page
+    app.include_router(swarm.router, prefix=prefix)  # the swarm statistics, for members
     _mount_web(app, settings)
     if settings.public_url_guessed:
         log.warning(

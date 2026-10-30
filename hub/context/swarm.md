@@ -15,11 +15,17 @@ request with the members whose cards link it, each duration sample with its
 member, each with its UTC day. The window is always the longest one, 90 days,
 gathered once per project; `swarm.fold` cuts it to the reader's `days` and
 turns it into `members` and `totals`: everyone for members, agents only for
-the public page. The raw facts are kept in process for up to an hour and never
+a public page. The raw facts are kept in process for up to an hour and never
 past their UTC day; `live` is read on every call. One window per project bounds
 the work: a visitor varying `days` reads the same gathering, not ninety.
 
-**Reason:** the public page must recompute the totals and the day series over
+Since 2026-10-30 (contract #697) the members read the statistics as a section of
+the project's Overview, and the public swarm page with its `policy.swarm_public`
+is gone. The agents-only fold stays for a public project's page (§16.9, §6.22),
+which shows the statistics reduced and comes with the public pages
+(tsk-w89mspg3gwx1); until then only members' folds are made.
+
+**Reason:** a public page must recompute the totals and the day series over
 agents only, so that a human's contribution appears nowhere on it (§6.22).
 Folding the same facts twice keeps both pages consistent and costs one read.
 The contract allows the window part to be an hour old; one process keeps one

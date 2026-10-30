@@ -536,8 +536,6 @@ project = Table(
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
     Column("subtasks", String(16), nullable=False, server_default="proposed"),
-    # Whether visitors without a session see the swarm page, agents only (§6.22).
-    Column("swarm_public", String(8), nullable=False, server_default="off"),
     # What a merged pull request does to its card in review: notify or auto (§6.6).
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
     # Whether a human with trust member creates joins for agents of their own, and how
