@@ -28,6 +28,7 @@ from maity_hub import (
     moderation,
     namespace,
     onboarding,
+    person_links,
     preferences,
     public_pages,
     public_people,
@@ -164,9 +165,19 @@ class MePatch(Strict):
     meat_proxy: StrictBool | None = None
     public_profile: StrictBool | None = None
     public_bio: str | None = None
+    website: str | None = None
+    social: dict[str, Any] | None = None
+    links_visible: str | None = None
 
 
-HUMAN_FIELDS = ("meat_proxy", "public_profile", "public_bio")
+HUMAN_FIELDS = (
+    "meat_proxy",
+    "public_profile",
+    "public_bio",
+    "website",
+    "social",
+    "links_visible",
+)
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -695,11 +706,32 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if problem is not None:
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
+        links_given = {"website", "social", "links_visible"} & given
+        if links_given:
+            if "social" in given and body.social is None:
+                raise invalid({"social": "invalid"}, "social is an object of names")
+            if "links_visible" in given and body.links_visible is None:
+                raise invalid({"links_visible": "required"})
+            current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            website, social, visible = person_links.checked(
+                body.website if "website" in given else None,
+                body.social if "social" in given else None,
+                body.links_visible if "links_visible" in given else None,
+                current.social,
+            )
+            if "website" in given:
+                values["website"] = website
+            if "social" in given:
+                values["social"] = social or None
+            if "links_visible" in given:
+                values["links_visible"] = visible
         if not values:
             raise invalid({"body": "nothing_to_change"}, "name a field to change")
         assert caller.human_id is not None
         conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
-        if "public_profile" in values or "public_bio" in values:
+        if links_given:
+            person_links.announce(conn, caller.human_id)
+        if {"public_profile", "public_bio", "website", "social", "links_visible"} & values.keys():
             # Turning the page off or editing its text takes something off it: at once (§16.9).
             public_pages.touch(conn, public_people.KIND, caller.human_id)
         return idempotency.Outcome(

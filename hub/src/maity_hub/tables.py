@@ -111,6 +111,11 @@ human = Table(
     # private until they choose.
     Column("public_profile", Boolean, nullable=False, server_default=false()),
     Column("public_bio", String(280)),
+    # The person's website and their names on the networks of §16.9 (never URLs), and who
+    # sees them; the links are built from the names when shown.
+    Column("website", String(200)),
+    Column("social", JSON_VALUE),
+    Column("links_visible", String(24), nullable=False, server_default="private"),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration

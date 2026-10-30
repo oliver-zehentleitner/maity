@@ -24,6 +24,7 @@ from maity_hub import (
     instances,
     line,
     namespace,
+    person_links,
     placements,
     rules,
     seats,
@@ -271,6 +272,7 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             rows,
             briefing=lambda r: admin or r.id == mine.id,
             details=lambda r: admin or r.agent_id in owned,
+            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
@@ -306,7 +308,15 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         own = row.id == mine.id
         admin = mine.may("members:admin")
         details = admin or row.agent_id in _owned_agents(conn, mine)
-        return JSONResponse(member_view(conn, row, briefing=own or admin, details=details))
+        return JSONResponse(
+            member_view(
+                conn,
+                row,
+                briefing=own or admin,
+                details=details,
+                links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+            )
+        )
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:

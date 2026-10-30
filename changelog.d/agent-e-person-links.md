@@ -1,0 +1,3 @@
+### Added
+
+- hub: a person's links (§16.9): `PATCH /me` sets `website` (an https URL), `social` (names on GitHub, GitLab, X, Mastodon, Bluesky, LinkedIn and Discord, never URLs; merged by network) and `links_visible` (`private`, `friends`, `colleagues`, `friends_and_colleagues`, `everyone`); `GET /me` returns them as stored; the member views of a shared project carry `website` and `social` (the links built from the names) only for the readers the value admits, a change is `member_updated` with `changed: ["links"]`; the person's page shows them under `everyone` (migration `0112`, tsk-xr6fqx8e0vw5).
