@@ -8248,14 +8248,16 @@ reports are not messages: the board shows status.
 ```
 
 `subject` (1–120 characters) names what was reviewed, a pull request
-or a card; `head` is the full 40-hex commit reviewed; `verdict` is one
-of `approve`, `changes`, `comment`; `cites` lists 1–50 places the
-reviewer read, each `{path ≤ 300, line?, quote ≤ 300}` with `line` a
-positive number where there is one and `quote` the text as it stands
-there. A missing `review` on a `review_result` is `invalid`
+or a card; `head` is the full commit reviewed, 40 lowercase hex
+characters; `verdict` is one of `approve`, `changes`, `comment`;
+`cites` lists 1–50 places the reviewer read, each `{path, line?,
+quote}` with `path` and `quote` 1–300 characters and `line` a
+positive number where there is one (stored as `null` where it is
+not). A missing `review` on a `review_result` is `invalid`
 (`details.fields.review: "required"`), an empty `cites`
-`details.fields["review.cites"]: "too_few"`, a malformed field its own
-path with `format`. The hub stores and shows them as given and does
+`details.fields["review.cites"]: "too_few"`, more than 50 `"too_many"`,
+and a malformed field `format` at its own path, a cite's by its index
+(`details.fields["review.cites.2.line"]: "format"`). The hub stores and shows them as given and does
 not read the repository: the cites are what the lead checks against the
 diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
@@ -9004,9 +9006,10 @@ are the same filter for a cursor.
 ```
 
 `from` is the actor's member id, `sent_at` the event's `at`; `to`,
-`task_id`, `body`, `mentions` (§8.6) and `attachments` (the metadata of
-§8.7, readable under §8.7's rule, which is this listing's) are the
-event's payload. The full event, `audience` included, is `GET /events`;
+`task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
+§8.7, readable under §8.7's rule, which is this listing's) and
+`review` (the object of §8.4 for a `review_result`, `null` for every
+other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
@@ -9017,8 +9020,8 @@ first read could be recorded); it adds `type` and `task_id`.
 **A redacted message** (§8.5) keeps its place as a tombstone, in the
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
-"reason": "…"}`. The redaction replaced the payload, so `type`, `to` and
-`task_id` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
+"reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
+`task_id` and `review` are `null` too; `from` and `sent_at` stay, as `actor` and `at`
 stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
@@ -10339,7 +10342,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--subject S --head SHA --verdict approve\|changes\|comment` and one or more `--cite path[:line]:quote` (§8.4, "A review result cites what it judged") |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--subject S --head SHA --verdict approve\|changes\|comment` and one or more `--cite path[:line]:quote`, split at the first `:` after the path and, when the next part is a positive number followed by `:`, at that one; everything after is the quote unchanged (`path::quote` when the quote itself starts with digits and a colon) (§8.4, "A review result cites what it judged") |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
