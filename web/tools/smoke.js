@@ -5332,13 +5332,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ovReport && text(ovReport).includes("@agent-b") && text(ovReport).includes("tsk-0005")
     && ovReport.querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/pull/3") && text(ovReport).includes("PR #3 open"),
     "overview: the latest report with its card, its author and its pull request as the probe saw it");
-  // The layout: three rows in the designer's order; the board as a stacked bar with an accessible name.
-  const ovRows = main.querySelectorAll(".overview-row").map((row) => row.childNodes.filter((x) => x.tagName === "SECTION").map((x) => x.getAttribute("aria-labelledby")).join("+"));
+  // The layout: the designer's order, with Project and README badge under Team, beside and before Latest reports
+  // (tsk-b67chbx96n29: below the long list they were out of sight); the board as a stacked bar with an accessible name.
+  const ovRows = main.querySelectorAll(".overview-row").map((row) => row.querySelectorAll(".overview-part").map((x) => x.getAttribute("aria-labelledby")).join("+"));
+  const ovStack = main.querySelector(".overview-row-2 .overview-stack");
   const ovBar = ovPart("overview-board").querySelector(".overview-bar");
-  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-reports", "overview-links+overview-badge", "overview-org"])
+  expect(JSON.stringify(ovRows) === JSON.stringify(["overview-requests+overview-board", "overview-members+overview-links+overview-badge+overview-reports", "overview-org"])
+    && ovStack && ovStack.childNodes.map((x) => x.getAttribute("aria-labelledby")).join("+") === "overview-members+overview-links+overview-badge"
+    && ovStack.parentNode.childNodes[1] === ovPart("overview-reports")
     && ovBar && ovBar.getAttribute("role") === "img" && ovBar.getAttribute("aria-label").includes(ov.board.counts.in_progress + " in progress")
     && main.querySelectorAll(".overview-head").every((hd) => !hd.childNodes[0].querySelector("a")),
-    "overview: four rows, what needs you first, the organisation last; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
+    "overview: three rows, what needs you first, Project and README badge under Team before Latest reports, the organisation last; the board's bar named for a screen reader; no heading is a link " + JSON.stringify(ovRows));
   // Re-read on a card, a request or the probe; not on anything else; no Reload offered.
   ovFeed = [{ seq: 10100, kind: "member_updated", actor: { member_id: "agt-b" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
