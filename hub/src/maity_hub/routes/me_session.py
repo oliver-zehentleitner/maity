@@ -701,7 +701,13 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
         if "public_profile" in values or "public_bio" in values:
             # Turning the page off or editing its text takes something off it: at once (§16.9).
-            public_pages.touch(conn, public_people.KIND, caller.human_id)
+            # Turning the page on alone adds a page: under `interval` it waits for the run.
+            switched_on_only = values.get("public_profile") is True and set(values) <= {
+                "public_profile"
+            }
+            public_pages.touch(
+                conn, public_people.KIND, caller.human_id, removal=not switched_on_only
+            )
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )

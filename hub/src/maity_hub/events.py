@@ -207,8 +207,17 @@ def emit(
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
     pending.append((project_id, seq))
+    if kind in MEMBER_KINDS and project.public_page == "on":
+        # Who a public page shows follows who is a member (§16.9): a join adds, any other
+        # change may take someone off.
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
     return seq
 
+
+# The events of a membership: what a public page shows of the team follows them (§16.9).
+MEMBER_KINDS = frozenset({"member_joined", "member_updated"})
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")
