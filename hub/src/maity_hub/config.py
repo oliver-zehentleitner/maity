@@ -107,6 +107,12 @@ class Settings:
     # `unlimited`; None where the environment leaves the value to the instance admin.
     max_agents_per_human: int | str | None = None
     max_orgs_per_human: int | str | None = None
+    # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
+    # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
+    # (1–24) say when a page is rendered again.
+    public_pages: bool = False
+    public_pages_render: str = "on_change"
+    public_pages_interval_hours: int = 6
 
     @property
     def join_host(self) -> str | None:
@@ -178,6 +184,13 @@ class Settings:
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            public_pages=parse_choice(env, "MAITY_PUBLIC_PAGES", ("on", "off"), "off") == "on",
+            public_pages_render=parse_choice(
+                env, "MAITY_PUBLIC_PAGES_RENDER", ("on_change", "interval"), "on_change"
+            ),
+            public_pages_interval_hours=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_INTERVAL_HOURS", 6, 1, 24
+            ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
         )
@@ -284,6 +297,16 @@ def parse_number(
     if not minimum <= number <= maximum:
         raise ConfigError(f"{name} must be between {minimum:g} and {maximum:g}")
     return number
+
+
+def parse_whole(env: dict[str, str], name: str, default: int, minimum: int, maximum: int) -> int:
+    """A whole number within its range; unset is the default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if not value.isdigit() or not minimum <= int(value) <= maximum:
+        raise ConfigError(f"{name} must be a whole number from {minimum} to {maximum}")
+    return int(value)
 
 
 def parse_limit(env: dict[str, str], name: str) -> int | str | None:

@@ -2088,3 +2088,21 @@ moderation_hold = Table(
     Index("ix_moderation_hold_target", "target_type", "target_id"),
     **MYSQL_TABLE,
 )
+
+# A public page as the hub rendered it (docs/api.md §16.9): one row per address, the HTML as it is
+# served, its ETag, a digest of the inputs it was made from and when they last changed (`lastmod`
+# of the sitemap). Taking a page off is deleting its row, in the transaction that changed the input.
+public_page = Table(
+    "public_page",
+    metadata,
+    Column("path", String(255), primary_key=True),
+    Column("kind", String(16), nullable=False),  # person, organisation, project, view, agent
+    Column("target_id", String(255), nullable=False),  # the id of what the page shows
+    Column("body", MARKDOWN_TEXT, nullable=False),
+    Column("etag", String(80), nullable=False),
+    Column("inputs", String(64), nullable=False),
+    Column("lastmod", UtcDateTime, nullable=False),
+    Column("rendered_at", UtcDateTime, nullable=False),
+    Index("ix_public_page_target", "kind", "target_id"),
+    **MYSQL_TABLE,
+)
