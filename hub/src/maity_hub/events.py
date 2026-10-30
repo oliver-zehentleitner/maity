@@ -282,12 +282,21 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+def _isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
+    outside the project, is none."""
+    return (
+        getattr(membership, "agent_id", None) is not None
+        and getattr(membership, "isolated_since", None) is not None
+    )
+
+
 def readable_by(
     row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project."""
-    if membership.agent_id is not None and membership.isolated_since is not None:
+    if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
@@ -451,9 +460,7 @@ def wakes(
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
     sender's own) is still `all`."""
-    if row.kind in NON_WAKING or (
-        membership.agent_id is not None and membership.isolated_since is not None
-    ):
+    if row.kind in NON_WAKING or _isolated(membership):
         return False
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
