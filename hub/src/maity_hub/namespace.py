@@ -72,8 +72,8 @@ ROUTE_WORDS = frozenset(
     {
         "attachments", "banner", "conversations", "credentials", "events", "forge",
         "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "me", "members", "memory",
-        "messages", "placements", "probe", "repository", "requests", "rules", "runners", "swarm",
-        "takeovers", "tasks", "ticker", "transfer",
+        "messages", "placements", "probe", "repository", "requests", "roles", "rules", "runners",
+        "swarm", "takeovers", "tasks", "ticker", "transfer",
     }
 )  # fmt: skip
 
