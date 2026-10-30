@@ -24,6 +24,8 @@ from maity_hub import (
     moderation,
     namespace,
     onboarding,
+    org_projects,
+    orgs,
     placements,
     policy,
     project_names,
@@ -158,6 +160,9 @@ def _provider(memory: MemoryIn | None) -> bool | None:
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
     name: str = title()
+    # The handle of an organisation to create the project in (§6.26); the caller's own
+    # handle or nothing is the default of §6.1.
+    owner: str | None = Field(default=None, max_length=64)
     repository: RepositoryIn | None = None
     memory: MemoryIn | None = None
     setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
@@ -444,6 +449,38 @@ def list_projects(request: Request, caller: AnyCaller) -> JSONResponse:
         )
 
 
+def _creation_owner(
+    conn: Connection, caller: Any, owner: str | None
+) -> tuple[str, Any, str | None]:
+    """The namespace owner a new project is created in, the organisation and the caller's
+    role in it (None for the caller's own namespace). An organisation the caller is no member
+    of is `invalid` (`owner: unknown`), the same for every such handle; a member whom
+    `members_create_projects` does not allow is `forbidden` (`org_role`) (§6.26). The
+    organisation's row is locked, and the role read under the lock, before any project's."""
+    assert caller.human_id is not None
+    own = conn.execute(select(t.human.c.handle).where(t.human.c.id == caller.human_id)).scalar()
+    if owner is None or owner == own:
+        return str(caller.human_id), None, None
+    found = conn.execute(
+        select(t.org.c.id)
+        .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
+        .where(
+            t.org.c.handle == owner,
+            t.org.c.deleted_at.is_(None),
+            t.org_member.c.human_id == caller.human_id,
+        )
+    ).scalar()
+    if found is None:
+        raise invalid({"owner": "unknown"})
+    org = orgs.lock(conn, found)
+    role = orgs.role_of(conn, found, caller.human_id) if org is not None else None
+    if org is None or role is None:
+        raise invalid({"owner": "unknown"})
+    if role == "member" and not org.members_create_projects:
+        raise orgs.org_role()
+    return str(org.id), org, role
+
+
 @router.post("/projects")
 def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -> JSONResponse:
 
@@ -453,17 +490,17 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     if body.repository is not None:  # refuse a bad repository before anything is written
         _repository_columns(body.repository)
     words = namespace.app_words(request.app)
-    owner_id = caller.human_id
-    assert owner_id is not None  # a human caller
+    assert caller.human_id is not None  # a human caller
 
     def action(conn: Connection) -> idempotency.Outcome:
-        # The creator is the namespace owner: `<handle>/<slug>`, the slug free among the
-        # owner's projects and their aliases, and never a word that follows a project in a
-        # route (§6.25).
+        # The creator is the namespace owner, or an organisation they may create in:
+        # `<handle>/<slug>`, the slug free among the owner's projects and their aliases, and
+        # never a word that follows a project in a route (§6.25, §6.26).
         if body.slug in words:
             raise invalid({"slug": "reserved"}, "this slug is a word of the API's routes")
+        owner_id, org, org_role = _creation_owner(conn, caller, body.owner)
         if namespace.taken(conn, owner_id, body.slug):
-            raise invalid({"slug": "taken"}, "you have a project with this slug")
+            raise invalid({"slug": "taken"}, "this namespace has a project with this slug")
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
@@ -472,7 +509,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         conn.execute(
             insert(t.project).values(
                 id=project_id,
-                owner_id=owner_id,
+                **namespace.owner_values(owner_id),
                 slug=body.slug,
                 name=body.name,
                 state="build",
@@ -497,6 +534,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 joined_at=now,
                 last_seen_at=now,
                 changed_via=caller.via,
+                # an owner of the organisation holds a membership the hub keeps (§6.26)
+                org_keep="created" if org_role == "owner" else None,
             )
         )
         key = result.inserted_primary_key
@@ -527,6 +566,12 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
             actor=caller.actor(owner),
             subject=("member", caller.principal_id),
         )
+        if org is not None:  # every other owner of the organisation is an owner here (§6.26)
+            org_projects.keep_all_owners(
+                conn,
+                org.id,
+                conn.execute(select(t.project).where(t.project.c.id == project_id)).one(),
+            )
         project = _load(conn, project_id)
         if project.repository_url is not None:
             setup_cards.create(

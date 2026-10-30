@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, namespace
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -122,7 +122,7 @@ def test_at_most_eight_aliases(owner: flow.Human, migrated: Engine) -> None:
             conn.execute(
                 insert(t.project_alias).values(
                     project_id=project.id,
-                    owner_id=project.owner_id,
+                    **namespace.owner_values(project.owner_id),
                     slug=f"old-{n}",
                     created_at=clock.now(),
                 )
