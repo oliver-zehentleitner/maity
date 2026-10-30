@@ -304,8 +304,8 @@ withdraws every open transfer into it (`project_names.withdraw_into`) and archiv
 that is not archived, as `remove` does; every owner gets the `moderation_applied` record, and so does
 an action of `hide` or `remove` on a project of an organisation. While the hold stands, a new project
 with the organisation as `owner`, a new invitation and `public_page: on` are `forbidden`
-(`moderation_hold`), and so are a transfer into it and a `go` on one still open (`project_names`;
-the request stays open for when the hold is lifted); settings, members and roles, avatar removal and
+(`moderation_hold`), and so are a transfer into it or out of it and a `go` on one still open
+(`project_names`; the request stays open for when the hold is lifted); settings, members and roles, avatar removal and
 deletion are not touched.
 The organisation's hold is read beside a hold of the project's own (`hide` from another report), not
 instead of it, so a hidden project of a suspended organisation stays archived too.
@@ -328,3 +328,8 @@ place that has to be kept in step. No migration is needed.
   `dismiss` would have to learn a second place.
 - Suspending the project's namespace owner when it is an organisation: the contract applies `suspend`
   to a person only, and an organisation is not one.
+- Letting a project leave a suspended organisation and giving it a hold of its own on the way out: the
+  hold is read from the organisation through `owner_org_id`, so a transfer out (to the owner
+  themselves, to another owner with their `go`, to another organisation) would have been the one call
+  that undoes a suspension. Instead the transfer out is refused (`moderation_hold`) at the filing and
+  at the `go`, as the transfer in is; the contract says "no transfer in or out".

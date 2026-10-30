@@ -256,3 +256,23 @@ def test_nothing_moves_into_a_suspended_organisation(
     ]
     held(boss.post(f"/requests/{open_one['id']}/answer", {"reply_id": "go"}))
     assert adm.get("/projects/adm/theirs").json()["owner"]["id"] != org_id
+
+
+def test_nothing_moves_out_of_a_suspended_organisation(
+    world: dict[str, Any], migrated: Engine
+) -> None:
+    boss, second = world["boss"], world["second"]
+    other = make_org(boss, "oz-other", "OZ Other")
+    # a transfer to another owner is filed before the suspension; their `go` comes after it
+    filed_out = boss.post(f"/projects/{PROJECT}/transfer", {"to": second.id})
+    assert filed_out.status_code == 202, filed_out.text
+    assert resolve(world, filed(world), "suspend").status_code == 200
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": boss.id}))
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": second.id}))
+    held(boss.post(f"/projects/{PROJECT}/transfer", {"to": other["id"]}))
+    held(
+        second.post(
+            f"/projects/{PROJECT}/requests/{filed_out.json()['id']}/answer", {"reply_id": "go"}
+        )
+    )
+    assert boss.get(f"/projects/{PROJECT}").json()["owner"]["id"] == world["org"]["id"]

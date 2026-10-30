@@ -150,6 +150,8 @@ def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str
     second factor asks for none, as for every human not enrolled."""
     project = mine.project
     _authority(conn, mine)
+    if project.owner_org_id is not None:  # §16.8: a suspended organisation's project stays in it
+        moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
     if to == project.owner_id:
         raise invalid({"to": "self"}, "the project is in this namespace already")
     if to.startswith("org-"):
@@ -305,6 +307,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     full = namespace.full_name(conn, project)
     if project.owner_id != proposal["owner_id"] or full != proposal["full_name"]:
         raise _stale(request.id, "the project's owner or name changed since the transfer")
+    if project.owner_org_id is not None:  # a `go` out of a suspended organisation is refused too
+        moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
     if to.startswith("org-"):
         _check_org_go(conn, s, org)
     elif _receiver(conn, project.id, to) is None:
