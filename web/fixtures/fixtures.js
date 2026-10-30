@@ -1609,6 +1609,71 @@ window.MAITY_FIXTURES = {
         "redacted": true,
         "seq": 6012,
         "subject": null
+      },
+      {
+        "actor": {
+          "kind": "member",
+          "member_id": "agt-b"
+        },
+        "at": "2026-10-22T12:30:00Z",
+        "audience": [
+          "all"
+        ],
+        "kind": "message",
+        "payload": {
+          "attachments": [],
+          "body": "Approve, the places I read are below.",
+          "conversation_id": null,
+          "mentions": [],
+          "review": {
+            "cites": [
+              {
+                "line": 11929,
+                "path": "docs/api.md",
+                "quote": "the inbox item appears after the fourth line"
+              },
+              {
+                "line": null,
+                "path": "web/js/landing.js",
+                "quote": "if (s.type === \"demo\") {"
+              },
+              {
+                "line": 100,
+                "path": "web/css/app.css",
+                "quote": ".review { gap: 4px; }"
+              },
+              {
+                "line": 101,
+                "path": "web/css/app.css",
+                "quote": ".review { gap: 4px; }"
+              },
+              {
+                "line": 102,
+                "path": "web/css/app.css",
+                "quote": ".review { gap: 4px; }"
+              },
+              {
+                "line": 103,
+                "path": "web/css/app.css",
+                "quote": ".review { gap: 4px; }"
+              },
+              {
+                "line": 104,
+                "path": "web/css/app.css",
+                "quote": ".review { gap: 4px; }"
+              }
+            ],
+            "head": "7039a4b6fd8b988d71a63338711da188fcd95fba",
+            "subject": "#743",
+            "verdict": "approve"
+          },
+          "task_id": null,
+          "to": "all",
+          "type": "review_result"
+        },
+        "redacted": false,
+        "seq": 6013,
+        "subject": null
       }
     ]
   },
@@ -4309,7 +4374,9 @@ window.MAITY_FIXTURES = {
       "instance_admin": true,
       "kind": "human",
       "meat_proxy": false,
-      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain; and when you need a human's hands, come to me first."
+      "meat_proxy_hands": false,
+      "meat_proxy_lead": false,
+      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first."
     },
     "projects": [
       {

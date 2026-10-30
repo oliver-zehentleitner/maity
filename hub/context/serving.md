@@ -228,6 +228,9 @@ without a restart.
   `MAITY_PUBLIC_URL`.
 - A `noindex` meta tag in `index.html`: the dashboard's page is also the signed-in page, and
   a header is what a crawler reads without rendering.
+- `Disallow: /<segment>` alone for the reserved first segments of public pages (§16.9, §16.11), as a prefix
+  rule: it would close every handle that begins with a reserved word (`login-help`, `all-stars`). The file
+  says `Disallow: /<segment>/` and `Disallow: /<segment>$` instead.
 
 ## The app shell is one route that matches last; the hub's own paths and the reserved words have one list in code
 

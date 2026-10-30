@@ -218,6 +218,20 @@ window.Maity = window.Maity || {};
   function me() {
     return fixtures()["me.json"];
   }
+  // GET /me as the hub sends it; PATCH /me answers the same (§5.1).
+  function meView() {
+    const data = me();
+    data.projects.forEach((p) => {
+      p.open_requests = openFor(p.slug).length;
+      p.state = project(p.slug, "").state;
+      // §5.1: the logo as the project view has it, without its source.
+      const logo = project(p.slug, "").logo;
+      if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
+    });
+    data.server_time = nowIso();
+    // A renamed project: its directory stays, its slug is the project's now (§6.25).
+    return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
+  }
 
   function openFor(slug) {
     return file(slug, "requests.json", "").items.filter((r) => r.status === "open");
@@ -466,12 +480,57 @@ window.Maity = window.Maity || {};
     };
   }
   // §16.7's checks of a landing page and its footer, each at its path.
+  // §8.4 "A review result cites what it judged": a copy by hand of
+  // hub/src/maity_hub/reviews.py, each refusal at its own path, the first
+  // reason per path kept; where they differ, the hub is right.
+  const REVIEW_LINE_BREAK = /[\r\n\u0085\u2028\u2029]/;
+  function reviewErrors(r, errors) {
+    const add = (at, why) => { if (!(at in errors)) errors[at] = why; };
+    if (r === undefined || r === null) { add("review", "required"); return; }
+    if (typeof r !== "object" || Array.isArray(r)) { add("review", "format"); return; }
+    const text = (v, max, at) => {
+      if (v === undefined || v === null) add(at, "required");
+      else if (typeof v !== "string" || !v.length) add(at, "format");
+      else if ([...v].length > max) add(at, "too_long");
+      else return v;
+      return null;
+    };
+    Object.keys(r).forEach((k) => { if (!["subject", "head", "verdict", "cites"].includes(k)) add("review." + k, "format"); });
+    text(r.subject, 120, "review.subject");
+    if (r.head === undefined || r.head === null) add("review.head", "required");
+    else if (typeof r.head !== "string" || !/^[0-9a-f]{40}$/.test(r.head)) add("review.head", "format");
+    if (r.verdict === undefined || r.verdict === null) add("review.verdict", "required");
+    else if (!["approve", "changes", "comment"].includes(r.verdict)) add("review.verdict", "format");
+    const cites = r.cites;
+    if (cites === undefined || cites === null) { add("review.cites", "required"); return; }
+    if (!Array.isArray(cites)) { add("review.cites", "format"); return; }
+    if (!cites.length) { add("review.cites", "too_few"); return; }
+    if (cites.length > 50) { add("review.cites", "too_many"); return; }
+    cites.forEach((c, k) => {
+      const at = "review.cites." + k;
+      if (!c || typeof c !== "object" || Array.isArray(c)) { add(at, "format"); return; }
+      Object.keys(c).forEach((n) => { if (!["path", "line", "quote"].includes(n)) add(at + "." + n, "format"); });
+      text(c.path, 300, at + ".path");
+      const quote = text(c.quote, 300, at + ".quote");
+      if (quote !== null && REVIEW_LINE_BREAK.test(quote)) add(at + ".quote", "format");
+      if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
+    });
+  }
   const LANDING_TYPES = {
     hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
     activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
     collab: ["title", "text", "items", "footnote"],
+    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
+  // A list of a section with its bounds, as the hub's landing._list: a
+  // missing one is required unless optional (`required` false), one outside
+  // them invalid at its path, its entries unchecked.
+  function landingList(list, path, min, max, errors, each, required) {
+    if (list === undefined || list === null) { if (required !== false) errors[path] = "required"; return; }
+    if (!Array.isArray(list) || list.length < min || list.length > max) { errors[path] = "invalid"; return; }
+    list.forEach((x, k) => each(x || {}, path + "." + k));
+  }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
@@ -541,6 +600,22 @@ window.Maity = window.Maity || {};
       } else if (s.type === "explore") {
         landingText(s.title, sp + ".title", 120, true, errors);
         if ((s.projects || []).length > 3) errors[sp + ".projects"] = "too_many";
+      } else if (s.type === "demo") {
+        // §16.7 (#737): the terminal's lines, the agent's question, exactly three steps.
+        landingText(s.title, sp + ".title", 120, true, errors); landingText(s.subline, sp + ".subline", 300, false, errors);
+        landingList(s.terminal_lines, sp + ".terminal_lines", 1, 8, errors, (x, ip) => {
+          if (!["cmd", "out", "note"].includes(x.kind)) errors[ip + ".kind"] = "invalid";
+          landingText(x.text, ip + ".text", 200, true, errors);
+        });
+        if (s.inbox !== undefined && s.inbox !== null) {
+          landingText(s.inbox.from, sp + ".inbox.from", 80, true, errors); landingText(s.inbox.question, sp + ".inbox.question", 300, true, errors);
+          landingText(s.inbox.context, sp + ".inbox.context", 300, false, errors);
+        }
+        landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+      } else if (s.type === "opensource") {
+        landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
     });
   }
@@ -912,8 +987,13 @@ window.Maity = window.Maity || {};
   const SETUP_CARDS = [
     ["keep_the_why_init", "Set up Keep the Why in the repository"],
     ["keep_the_why_badge", "Add the Keep the Why badge to the README"],
+    ["keep_the_why_ci", "Run the Keep the Why linter in CI"],
+    ["keep_the_why_dashboard", "Publish the Keep the Why dashboard"],
     ["maity_badge", "Add the Maity badge to the README"],
   ];
+  // §6.21 `dashboard_path`: one to five segments joined by "/", ".." nowhere in it.
+  const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
+  const dashboardPathOk = (v) => typeof v === "string" && DASHBOARD_PATH.test(v) && !v.includes("..");
   // One open setup card per chosen option, made when the project has a
   // repository (routes/projects.py, project_setup.make_cards).
   function makeSetupCards(slug, setup, by, url) {
@@ -921,7 +1001,8 @@ window.Maity = window.Maity || {};
     setup.cards = SETUP_CARDS.filter(([key]) => setup[key]).map(([key, title]) => {
       const id = localId("tsk");
       list.items.push({
-        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase() + ", as a pull request against its default branch.",
+        id, kind: "setup", title, body: "In " + url + ": " + title.toLowerCase()
+          + (key === "keep_the_why_dashboard" ? " under " + setup.dashboard_path : "") + ", as a pull request against its default branch.",
         label: "chore", status: "open", area: "/", created_by: by, assigned_to: null, claim: null, checkpoint: null,
         depends_on: [], ships_with: [], blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null,
         created_at: nowIso(), updated_at: nowIso(), closed_at: null,
@@ -1142,19 +1223,7 @@ window.Maity = window.Maity || {};
     }],
     // open_requests is derived from the request fixtures, so that answers
     // given in this tab show in the counts.
-    ["GET", /^\/me$/, () => {
-      const data = me();
-      data.projects.forEach((p) => {
-        p.open_requests = openFor(p.slug).length;
-        p.state = project(p.slug, "").state;
-        // §5.1: the logo as the project view has it, without its source.
-        const logo = project(p.slug, "").logo;
-        if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
-      });
-      data.server_time = nowIso();
-      // A renamed project: its directory stays, its slug is the project's now (§6.25).
-      return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
-    }],
+    ["GET", /^\/me$/, () => meView()],
     // §18.2: the human's notifications. inbox counts the open requests as
     // /me does; chat and the rest count the unread items of their kind
     // (the hub's chat count is the conversations' unread, which the
@@ -1217,6 +1286,8 @@ window.Maity = window.Maity || {};
           x.read = true;
           return;
         }
+        // An open matter is never marked by a caller (§18.3).
+        if (x.kind === "inbox" && x.open_matter) return;
         if (body.ids ? body.ids.includes(x.id)
           : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
             && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;
@@ -1251,12 +1322,27 @@ window.Maity = window.Maity || {};
       return { slug: entry.slug, full_name: entry.full_name, include: entry.include };
     }],
     ["GET", /^\/me\/notification-settings$/, () => fixtures()["notifications.json"].settings],
-    // §5.2 "Meat proxy": the human's own switch, a boolean; nobody sets it for another.
+    // §5.2 "Meat proxy": the human's own switch and its two parts; nobody
+    // sets them for another; the answer is /me (§5.1). The switch sets or clears both parts, then the
+    // parts the body names apply; it is on while one part is. The note names
+    // the parts set while on, both while off (what switching on would send).
     ["PATCH", /^\/me$/, (m, body, path) => {
-      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
-      if ("meat_proxy" in body && typeof body.meat_proxy !== "boolean") fail(400, "invalid", "the request does not validate", path, { fields: { meat_proxy: "type" } });
-      if ("meat_proxy" in body) me().member.meat_proxy = body.meat_proxy;
-      return Object.assign({}, me().member);
+      const mm = me().member;
+      if (mm.kind !== "human") fail(403, "forbidden", "a human's own change", path, { reason: "humans_only" });
+      const fields = {};
+      const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
+      if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";
+      MEAT.forEach((k) => { if (k in body && body[k] !== null && typeof body[k] !== "boolean") fields[k] = "bool_type"; });
+      if (body.meat_proxy === false && (body.meat_proxy_lead === true || body.meat_proxy_hands === true)) fields.meat_proxy = "conflicts_with_parts";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      if ("meat_proxy" in body) { mm.meat_proxy_lead = body.meat_proxy; mm.meat_proxy_hands = body.meat_proxy; }
+      ["meat_proxy_lead", "meat_proxy_hands"].forEach((k) => { if (k in body) mm[k] = body[k]; });
+      mm.meat_proxy = !!(mm.meat_proxy_lead || mm.meat_proxy_hands);
+      const parts = mm.meat_proxy ? [mm.meat_proxy_lead, mm.meat_proxy_hands] : [true, true];
+      mm.meat_proxy_note = ["This person says: I am a meat proxy."]
+        .concat(parts[0] ? ["Lead me step by step rather than expecting me to explain."] : [])
+        .concat(parts[1] ? ["When you need a human's hands, come to me first."] : []).join(" ");
+      return meView();
     }],
     // §6.26 Organisations: humans only; a caller who is not a member gets not_found,
     // one whose role does not allow the call forbidden (org_role).
@@ -1779,12 +1865,18 @@ window.Maity = window.Maity || {};
       if (!["keep-the-why", "none"].includes(provider)) fields["memory.provider"] = "unknown_provider";
       const given = body.setup || {};
       Object.keys(given).forEach((k) => {
-        if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
+        if (k === "dashboard_path") { if (!dashboardPathOk(given[k])) fields["setup.dashboard_path"] = "format"; }
+        else if (!SETUP_CARDS.some(([key]) => key === k)) fields["setup." + k] = "unknown_field";
         else if (typeof given[k] !== "boolean") fields["setup." + k] = "not_a_boolean";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
       const ktw = provider === "keep-the-why";
-      const setup = { keep_the_why_init: ktw && given.keep_the_why_init !== false, keep_the_why_badge: ktw && given.keep_the_why_badge !== false,
+      // The four Keep the Why options true unless unticked, under Keep the Why only;
+      // the path kept only while the dashboard is chosen.
+      const opt = (k) => ktw && given[k] !== false;
+      const setup = { keep_the_why_init: opt("keep_the_why_init"), keep_the_why_badge: opt("keep_the_why_badge"),
+        keep_the_why_ci: opt("keep_the_why_ci"), keep_the_why_dashboard: opt("keep_the_why_dashboard"),
+        dashboard_path: opt("keep_the_why_dashboard") ? given.dashboard_path || "keep-the-why-dashboard" : null,
         maity_badge: given.maity_badge === true, cards: null };
       const owner = me().member;
       const created = {
@@ -2223,6 +2315,9 @@ window.Maity = window.Maity || {};
         || members.some((x) => x.id === to))) errors.to = "not_a_member";
       // A chat names its conversation and goes to its two parties only (§8.4).
       if (body.type === "chat" && !body.conversation_id) errors.conversation_id = "missing";
+      // §8.4: a review result cites what it judged; no other type carries a review.
+      if (body.type === "review_result") reviewErrors(body.review, errors);
+      else if (body.review !== undefined && body.review !== null) errors.review = "not_allowed";
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
       const text = String(body.body);
       const code = M.mentionCode ? M.mentionCode(text) : [];
@@ -2253,7 +2348,8 @@ window.Maity = window.Maity || {};
       const files = bindAttachments(m[1], body.attachments, seq, path);
       const event = { seq, kind: "message", at: nowIso(), actor: { kind: "member", member_id: me().member.id }, subject: body.task_id ? { type: "task", id: body.task_id } : null,
         audience: [body.to === "all" ? "all" : /^(role|trust):/.test(body.to) ? body.to : "member:" + body.to], redacted: false,
-        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files } };
+        payload: { type: body.type, to: body.to, body: text, task_id: body.task_id || null, conversation_id: null, mentions, attachments: files,
+          review: body.type === "review_result" ? body.review : null } };
       // A chat lives in its conversation; a project message in the log.
       if (body.type !== "chat") log.push(event);
       return event;
@@ -2597,6 +2693,27 @@ window.Maity = window.Maity || {};
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
         return target;
+      }
+      // §2.3: a human sets the reports_to of an agent they own to null or to a
+      // member they own (themselves or another of their agents), whatever their
+      // trust and role; a boss of another owner needs §6.2's consent, members:admin here.
+      if (!who.admin && who.member.kind === "human" && Object.keys(body).length === 1 && "reports_to" in body) {
+        const target = member(m[1], m[2], path);
+        const all = file(m[1], "members.json", path).items;
+        const to = body.reports_to;
+        const boss = to ? all.find((x) => x.id === to && !x.removed_at) : null;
+        if (target.kind === "agent" && target.owner_id === who.member.id
+          && (to === null || (boss && (boss.id === who.member.id || (boss.kind === "agent" && boss.owner_id === who.member.id))))) {
+          if (to === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "self" } });
+          if (boss && boss.trust === "guest") fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "guest" } });
+          for (let at = to, seen = new Set(); at; at = (all.find((x) => x.id === at) || {}).reports_to) {
+            if (at === target.id) fail(400, "invalid", "the request does not validate", path, { fields: { reports_to: "cycle" } });
+            if (seen.has(at)) break;
+            seen.add(at);
+          }
+          target.reports_to = to;
+          return target;
+        }
       }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
       const target = member(m[1], m[2], path);

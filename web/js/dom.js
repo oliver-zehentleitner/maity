@@ -104,26 +104,22 @@ window.Maity = window.Maity || {};
     return el;
   }
 
+  // A date and time in the reader's locale, through Intl (js/i18n.js).
   function formatTime(iso) {
     if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
+    return M.fmt.dateTime(iso);
   }
 
   // "3 min ago" relative to now; falls back to the absolute time after a day.
   function formatAgo(iso, now) {
-    if (!iso) return "never";
+    if (!iso) return M.t("time.never");
     const then = new Date(iso).getTime();
     const diff = Math.round(((now || Date.now()) - then) / 1000);
     if (Number.isNaN(diff)) return iso;
     if (diff < 0) return formatTime(iso);
-    if (diff < 60) return "just now";
-    if (diff < 3600) return Math.floor(diff / 60) + " min ago";
-    if (diff < 86400) return Math.floor(diff / 3600) + " h ago";
+    if (diff < 60) return M.t("time.just_now");
+    if (diff < 3600) return M.t("time.minutes_ago", { count: Math.floor(diff / 60) });
+    if (diff < 86400) return M.t("time.hours_ago", { count: Math.floor(diff / 3600) });
     return formatTime(iso);
   }
 
@@ -131,9 +127,9 @@ window.Maity = window.Maity || {};
   // said up front where one is typed, and again when one breaks them.
   const NAME_RULES = {
     handle: { pattern: "[a-z0-9][a-z0-9\\-]{1,30}", test: /^[a-z0-9][a-z0-9-]{1,30}$/,
-      text: "Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit." },
+      get text() { return M.t("name_rules.handle"); } },
     slug: { pattern: "[a-z0-9][a-z0-9\\-]{1,62}", test: /^[a-z0-9][a-z0-9-]{1,62}$/,
-      text: "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." },
+      get text() { return M.t("name_rules.slug"); } },
   };
 
   // A scanned text with its stored mentions (docs/api.md §8.6) as text
@@ -263,9 +259,11 @@ window.Maity = window.Maity || {};
     const fields = err && err.code === "invalid" && err.details && err.details.fields;
     if (!fields || !Object.values(fields).includes("ambiguous_mention")) return null;
     const named = (err.details && err.details.mentions) || {};
-    const parts = Object.keys(named).map((handle) => "@" + handle + " is " + named[handle].length + " agents here: write "
-      + named[handle].map((n) => "@" + n).join(" or "));
-    return { message: (parts.length ? parts.join("; ") : "a handle here is two agents: write its long form, @owner/handle") + "." };
+    // One sentence per handle; the long forms joined as the catalog's language says "or".
+    const or = new Intl.ListFormat(M.i18n.language, { type: "disjunction" });
+    const parts = Object.keys(named).map((handle) => M.t("mention.ambiguous", { handle: "@" + handle, count: named[handle].length,
+      names: or.format(named[handle].map((n) => "@" + n)) }));
+    return { message: (parts.length ? parts.join("; ") : M.t("mention.ambiguous_unnamed")) + "." };
   }
 
   // A member as every view names them: always a way to their view in the
@@ -308,7 +306,7 @@ window.Maity = window.Maity || {};
   }
   function instanceTitle(inst) {
     const said = [inst.harness, inst.model].filter((x) => typeof x === "string" && x);
-    return "Instance " + inst.id + (said.length ? " · " + said.join(" · ") : "");
+    return M.t("member.instance", { id: inst.id }) + (said.length ? " · " + said.join(" · ") : "");
   }
 
   // A member as a chip (the designer's handover on the overview, #6484):
@@ -341,10 +339,10 @@ window.Maity = window.Maity || {};
     if (!isSilentAgent(member)) return null;
     const date = member.last_seen_at && new Date(member.last_seen_at);
     const known = date && !Number.isNaN(date.getTime());
-    const text = known ? "silent since " + date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })
-      : "silent · last call unknown";
+    const text = known ? M.t("member.silent_since", { time: date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }) })
+      : M.t("member.silent_unknown");
     return h("span", { class: "member-silence " + (warn ? "flag-inline" : "muted"),
-      title: known ? "Last hub call: " + formatTime(member.last_seen_at) : "No last hub call is available" }, text);
+      title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
   }
 
   M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };

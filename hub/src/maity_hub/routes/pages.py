@@ -2,8 +2,9 @@
 landing page at `/` for a visitor without a session while it is enabled, and the legal pages
 at `/impressum`, `/privacy` and `/terms` with their earlier versions at `/<page>/<version>`.
 
-They carry no script and answer with a Content-Security-Policy of their own; they are the
-public host's only (the join host never routes here, §1.1).
+The landing page loads the hub's own first-party files (`landing_files`, §16.7) and answers
+with a Content-Security-Policy that allows exactly those; the legal pages carry no script.
+They are the public host's only (the join host never routes here, §1.1).
 """
 
 from __future__ import annotations
@@ -24,7 +25,8 @@ from maity_hub.shell import shell_response
 page_router = APIRouter()
 
 LANDING_CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; "
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
+    "font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'"
 )
 LEGAL_CSP = "default-src 'none'; style-src 'unsafe-inline'"

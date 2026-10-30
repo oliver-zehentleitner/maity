@@ -248,6 +248,8 @@ window.Maity = window.Maity || {};
         h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin),
           m.paused && !ctx.canAdmin ? [" · ", P.pausedText(m)] : null),
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
+        // Whom it reports to, as its owner sets it (§2.3); an admin also on Members.
+        P.reportsToPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
         // The pause and the removal need members:admin (§6.2).

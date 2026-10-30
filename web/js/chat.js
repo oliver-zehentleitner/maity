@@ -676,7 +676,7 @@ window.Maity = window.Maity || {};
     const live = (agent.instances || []).filter((i) => !i.revoked_at);
     if (targets.has(key) && !live.some((i) => i.id === targets.get(key))) targets.delete(key);
     const target = live.length > 1 ? h("select", { id: "chat-instance", "aria-describedby": "chat-instance-hint" },
-      h("option", { value: "" }, "The whole team"),
+      h("option", { value: "" }, M.t("chat.instance.team")),
       live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · " + (PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
     if (target) {
       target.value = targets.get(key) || "";
@@ -721,8 +721,8 @@ window.Maity = window.Maity || {};
         h("span", { class: "muted" }, agent.session
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
           : "no session — picked up when it resumes"),
-        target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, "Send to"), target,
-          h("span", { class: "visually-hidden", id: "chat-instance-hint" }, "The whole team reads every message; this only chooses which instance is woken.")) : null),
+        target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, M.t("chat.instance.label")), target,
+          h("span", { class: "visually-hidden", id: "chat-instance-hint" }, M.t("chat.instance.hint"))) : null),
       earlierBox,
       messages,
       jump,

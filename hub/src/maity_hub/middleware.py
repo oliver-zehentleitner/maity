@@ -63,6 +63,10 @@ PUBLIC_PATHS = re.compile(
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
+# The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
+# one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
+LANDING_FILES = re.compile(r"/assets/landing/.+")
+LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
 
 
 class HubMiddleware:
@@ -88,6 +92,8 @@ class HubMiddleware:
                 public = b"public, max-age=60"
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
+            elif LANDING_FILES.fullmatch(path):
+                public = LANDING_FILES_CACHE
             elif self.settings.public_pages and not paths.is_hub_path(path):
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).

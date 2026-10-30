@@ -102,6 +102,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # A pull request is checked out as its merge with main: two Alembic heads mean main got
+      # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
+      - run: python tools/rechain.py --check
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
