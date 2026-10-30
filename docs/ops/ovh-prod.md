@@ -12,7 +12,7 @@ disagreed or said nothing, this plan says so and names how to settle it before o
 | | Test (today's Vultr k3s) | Prod (new, OVH Paris) |
 |---|---|---|
 | Deploys | continuously from `main` | tagged releases, about once a day |
-| Address | a new test domain (the maintainer picks) | `maity.team`, `www`, `join.maity.team` |
+| Address | `maity-test.team`, `join.maity-test.team` | `maity.team`, `www`, `join.maity.team` |
 | Database | PostgreSQL StatefulSet in the cluster | managed PostgreSQL outside the cluster |
 | Mail | into a sink, never to real people | sends |
 | Data | test data, may be reset | the real data, moved from Vultr once |
@@ -64,7 +64,8 @@ volume** (one node pool pinned to that zone). Two nodes there let a node update 
 waiting for the same node to return; a node in another zone would not help the hub, because the pod can only start next
 to its `ReadWriteOnce` volume. Traefik and the monitoring may run in the other zones. A failure of the volume's zone
 therefore stays a known outage until the attachment store is shared storage (section 12): the recovery is a restore of
-the attachment tar into a volume in another zone. The hub runs as one replica with the `Recreate` strategy it has today.
+the attachment tar into a volume in another zone, and attachments written since the last nightly tar (up to a day) are
+lost. The hub runs as one replica with the `Recreate` strategy it has today.
 The exact flavor name and the price are read off the order form; I did not take either from a search result. The
 attachment store is `csi-cinder-high-speed-gen2`, 10 Gi as now, which is why the hub stays at one replica.
 
@@ -102,14 +103,14 @@ attachment store is `csi-cinder-high-speed-gen2`, 10 Gi as now, which is why the
   guide lists the old load balancer's defaults as `timeout-client-data` and `timeout-member-data` of 180 000 ms and
   `timeout-member-connect` of 20 000 ms, and does not state the Octavia defaults. So the plan **sets them explicitly**
   on the Service (`loadbalancer.openstack.org/timeout-client-data` and `...-member-data` at 120 000 ms, above the 55 s
-  with room) and tests it: `maity wait` with the maximum wait, ten times, through the load balancer, none cut early (`.github/workflows/hub-load.yml` measures the cost of notifications against history, not connection
-  timeouts, so the wait test is separate and is added to the load test of section 12).
+  with room) and tests it: `maity wait` with the maximum wait, ten times, through the load balancer, none cut early. (`.github/workflows/hub-load.yml` measures the cost of notifications against history, not connection
+  timeouts, so the wait test is separate and is added to the load test of section 12.)
   If a proxy such as Cloudflare is put in front later, its idle limit is the next thing to check (the long-poll is
   well under common limits of 100 s, but the numbers are the proxy's to confirm).
 - **TLS**: cert-manager with Let's Encrypt (DNS-01 for the prod names before the switch, section 9; HTTP-01 for the test domain), one Certificate for the apex, `www` and
   the join host (`deploy/k3s-single/cert.yaml` is the model). Cloudflare stays **DNS only** (grey cloud), so the load balancer is reached directly. Add a CAA record for `letsencrypt.org`.
 - **DNS** at Cloudflare: `maity.team`, `www`, `join` as A records to the load balancer's address (IPv4 only, as on
-  Vultr, until IPv6 is tested end to end), and the test domain to the Vultr server. TTL 300 from one day before the
+  Vultr, until IPv6 is tested end to end), and `maity-test.team` and `join.maity-test.team` to the Vultr server. TTL 300 from one day before the
   switch.
 
 ## 5. Database
@@ -167,7 +168,7 @@ schema, so "fix forward" is the first answer and the restore the second.
 Preparation (nothing on Vultr changes):
 1. Cluster, database, load balancer, Secrets (the same `MAITY_SECRET_KEY`, mail signing key and instance key values as
    Vultr, copied by the maintainer; I never see them), cert-manager, Traefik, monitoring.
-2. Deploy the hub on a temporary address (`prod-staging.<test domain>`), load the newest Vultr dump into the managed
+2. Deploy the hub on a temporary address (`prod-staging.maity-test.team`), load the newest Vultr dump into the managed
    database, untar the attachments, run `post-upgrade-checks.sh` against it. Time the dump, the restore and the tar.
 3. The two acceptance tests of section 4 (client address, long-polls) and the restore rehearsal of section 5.
 4. A day before: TTL 300, announcement in the team chat.
@@ -195,7 +196,7 @@ Then Vultr becomes test: new domain and certificate, the mail sink, a values fil
 - Ordering the Managed Kubernetes cluster, the managed PostgreSQL service and the load balancer after the region check.
 - Object storage or the second-location bucket, and its write-only credentials.
 - A Cloudflare API token limited to editing DNS of the zone, placed as a Secret in the cluster (for DNS-01).
-- The test domain, and the DNS records at the registrar/Cloudflare, including the TTL change and the final switch.
+- The test domain `maity-test.team` (section 13 lists the registrar and DNS steps), and the DNS records at the registrar/Cloudflare, including the TTL change and the final switch.
 - Copying the Secret values (secret key, mail signing key, instance key, SMTP password, forge token) into OVH Secrets.
 - The go for each step of sections 8 and 9, and the choice in section 2.
 
@@ -258,6 +259,44 @@ writes, as the limit.
 **Load test before launch.** On the staging address of section 9: many `maity wait` long-polls, logins, join
 exchanges and writes, at a multiple of the expected load, with the hub at 1, 2 and 4 pods. It sets the node pool
 maximum, the HPA target, the database flavor and the pool size, and it is where the multi-pod behaviour is proved.
+
+## 13. Vultr becomes `maity-test.team`
+
+Today's system serves `maity.team`; after the switch of section 9 the same k3s serves `maity-test.team` and deploys from
+`main`. The two names cannot both be live on it, so the move happens right after the OVH switch (the Vultr hub is
+scaled to 0 and kept for 7 days as the rollback of section 9, then reconfigured), and the test hub is brought up on the
+new name only when that rollback window is over or the maintainer gives up the rollback.
+
+What changes on the Vultr cluster (a values file for test, `hub-values.test.yaml`, and manifests; the maintainer runs
+them):
+1. **DNS and certificate.** `deploy/k3s-single/cert.yaml` names `maity-test.team`, `www.maity-test.team` and
+   `join.maity-test.team`; the Certificate and its Secret are new (HTTP-01 works there: the names point at Vultr). The
+   old `maity-team-tls` Secret and Certificate are deleted with the old names.
+2. **Hub settings.** `ingress.host: maity-test.team`, `ingress.joinHost: join.maity-test.team`, `config.publicUrl:
+   https://maity-test.team` (`MAITY_PUBLIC_URL`), `MAITY_JOIN_URL` follows from `joinHost`. The `www` redirect middleware
+   points at the new apex. `config.trustedProxies` stays the k3s pod network.
+3. **The data.** Test starts on an **empty database** (the schema from the migrations), not on a copy of production:
+   the Vultr database holds real people's e-mail addresses and real credentials, and test must neither mail them nor
+   keep them. The old database is dumped once more at the switch, kept with the 7-day rollback copy, then dropped. Test
+   data is made by the test itself (seeded projects, agents joined to `maity-test.team`).
+4. **Mail.** Test sends into a sink in the cluster (section 6): `mail.*` points at the sink's service, with no real
+   SMTP password. The hub has no recipient allow-list; if one is wanted (mail to named addresses only), that is a hub
+   change and a card of its own, which the maintainer or the coordinator decides.
+5. **Everything that names the old host.** The CI jobs and scripts that hard-code `maity.team` (the post-upgrade checks,
+   `join-host.sh`, the deploy package) take host and address as arguments before the move (section 11). Agents that
+   joined the Vultr hub keep the address they joined with: they belong to production and move with it; test agents join
+   `maity-test.team` afresh.
+6. **Deploys from `main`.** One mechanism, to be decided: a workflow that runs `helm upgrade` against the test cluster
+   with a kubeconfig held as a repository secret, or the ops agent running it on each merge. Production stays the
+   maintainer's commands; test is not production, but it holds the Vultr credentials, so the choice is the
+   maintainer's.
+
+What the maintainer does at the registrar and DNS (separate from the above):
+- Confirm that `maity-test.team` is registered to him, and that its name servers are Cloudflare's (or add the zone).
+- At Cloudflare, DNS only (grey cloud): A records `maity-test.team`, `www` and `join` to the Vultr address
+  `95.179.167.165`, **no AAAA**, TTL 300; a CAA record for `letsencrypt.org`.
+- No mail records for test (the sink sends nothing out); the sender domain, SPF and DKIM are a production matter.
+- Remove the `maity.team` records that point at Vultr only as part of the production switch of section 9, not before.
 
 ## Sources
 
