@@ -205,6 +205,7 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     if (
         proposer is None
         or proposer.active is not True
+        or proposer.isolated_since is not None
         or not in_admin_team(proposer.trust, proposer.role)
     ):
         raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")

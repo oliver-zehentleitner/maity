@@ -67,6 +67,7 @@ def test_the_member_view_has_the_contract_shape(
         "last_seen_at",
         "presence",
         "paused",
+        "isolated",  # §6.2
         "availability",  # §6.12
         "availability_policy",
         "covered_by",

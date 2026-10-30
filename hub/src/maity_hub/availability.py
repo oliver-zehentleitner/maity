@@ -172,30 +172,53 @@ def view(
 # --- who is told --------------------------------------------------------------------------
 
 
+def coordinator_of(conn: Connection, project: Any) -> str:
+    """The coordinator seat as routing reads it: the policy's, but an isolated agent is
+    routed past as if the seat held its default, `trust:admin` (§6.2, "Isolation")."""
+    seat: str = project.coordinator
+    if seat != "trust:admin" and seat in isolation_principals(conn, project.id):
+        return "trust:admin"
+    return seat
+
+
+def isolation_principals(conn: Connection, project_id: str) -> set[str]:
+    """The agent ids isolated in the project."""
+    return set(
+        conn.execute(
+            select(t.membership.c.agent_id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.isolated_since.isnot(None),
+            )
+        ).scalars()
+    )
+
+
 def coordinator_ids(conn: Connection, project: Any) -> set[int]:
     """The membership rows that coordinate (§6.1): the named agent, or under the default
-    `trust:admin` the project's agent admins."""
-    if project.coordinator == "trust:admin":
+    `trust:admin` the project's agent admins (an isolated one coordinates nothing)."""
+    seat = coordinator_of(conn, project)
+    if seat == "trust:admin":
         query = select(t.membership.c.id).where(
             t.membership.c.project_id == project.id,
             t.membership.c.active.is_(True),
             t.membership.c.agent_id.isnot(None),
             t.membership.c.trust == "admin",
             t.membership.c.role != "proxy",
+            t.membership.c.isolated_since.is_(None),
         )
     else:
         query = select(t.membership.c.id).where(
             t.membership.c.project_id == project.id,
             t.membership.c.active.is_(True),
-            t.membership.c.agent_id == project.coordinator,
+            t.membership.c.agent_id == seat,
         )
     return set(conn.execute(query).scalars())
 
 
-def coordinator_token(project: Any) -> str:
-    if project.coordinator == "trust:admin":
-        return "trust:admin"
-    return f"member:{project.coordinator}"
+def coordinator_token(conn: Connection, project: Any) -> str:
+    seat = coordinator_of(conn, project)
+    return "trust:admin" if seat == "trust:admin" else f"member:{seat}"
 
 
 def _owner_member(conn: Connection, row: Any) -> str | None:
@@ -218,17 +241,17 @@ def _owner_member(conn: Connection, row: Any) -> str | None:
 def changed_audience(conn: Connection, row: Any, project: Any) -> list[str]:
     """`member_availability_changed` (§8.2): the member's boss, its human, the admins, the
     coordinator; the owners too when the member is the coordinator."""
-    from maity_hub.views import principal_id  # views reads this module for its fields
+    from maity_hub.views import routing_boss  # views reads this module for its fields
 
     audience: list[str] = []
-    boss = principal_id(conn, row.reports_to)
+    boss = routing_boss(conn, row.reports_to)
     if boss is not None:
         audience.append(f"member:{boss}")
     owner = _owner_member(conn, row)
     if owner is not None:
         audience.append(f"member:{owner}")
     audience.append("trust:admin")
-    audience.append(coordinator_token(project))
+    audience.append(coordinator_token(conn, project))
     if row.id in coordinator_ids(conn, project):
         audience.append("trust:owner")
     return list(dict.fromkeys(audience))
@@ -299,6 +322,7 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
                 t.membership.c.project_id == project.id,
                 t.membership.c.agent_id == project.coordinator_substitute,
                 t.membership.c.active.is_(True),
+                t.membership.c.isolated_since.is_(None),  # routed past (§6.2)
             )
         ).first()
         if stand_in is not None:
@@ -311,7 +335,7 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
     untils = [f.get("until") for f in found.values()]
     known = None if None in untils else min(u for u in untils if u is not None)
     return {
-        "coordinator": project.coordinator,
+        "coordinator": coordinator_of(conn, project),
         "until": clock.rfc3339(known) if known is not None else None,
     }
 
@@ -766,7 +790,7 @@ def end_limit(conn: Connection, project: Any, row: Any) -> bool:
     if cleared != 1:
         return False
     if not _has_active_placement(conn, row.id):
-        audience = [coordinator_token(project)]
+        audience = [coordinator_token(conn, project)]
         owner = _owner_member(conn, row)
         if owner is not None:
             audience.append(f"member:{owner}")

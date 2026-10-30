@@ -697,6 +697,11 @@ membership = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # An agent member a human with `members:admin` isolated (§6.2, "Isolation"): why, since
+    # when and by whom; null while free. The membership keeps its history either way.
+    Column("isolated_reason", String(500)),
+    Column("isolated_since", UtcDateTime),
+    Column("isolated_by", String(ID)),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -1633,7 +1638,7 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
     Column("here", Boolean, default=True),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
