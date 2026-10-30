@@ -108,7 +108,11 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
         if agents
         else {}
     )
-    shown = [a for a in agents if public_people.served(conn, owners[a.owner_id])]
+    # An agent profile under a hold of moderation (§16.8) is no more named than a person's.
+    held = moderation.holds_of(conn, "profile", [a.id for a in agents])
+    shown = [
+        a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
+    ]
     return humans, shown, len(agents) - len(shown)
 
 
@@ -191,6 +195,19 @@ def targets(conn: Connection) -> list[str]:
             select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
         ).scalars()
     )
+
+
+def touch_of_agent(conn: Connection, agent_id: str, *, removal: bool = True) -> None:
+    """The pages of every public project the agent is a member of: its `display_name` changed."""
+    m = t.membership.c
+    for project_id in conn.execute(
+        select(t.project.c.id)
+        .join(t.membership, m.project_id == t.project.c.id)
+        .where(t.project.c.public_page == "on", m.agent_id == agent_id, m.active.is_(True))
+        .distinct()
+        .order_by(t.project.c.id)
+    ).scalars():
+        public_pages.touch(conn, KIND, project_id, removal=removal)
 
 
 def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> None:

@@ -132,3 +132,32 @@ def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
     assert "Human anna" in shown(world.anyone)
     world.anna.patch("/me", {"public_profile": False})
     assert "Human anna" not in shown(world.anyone)  # taken off at once, whatever the mode
+
+
+def test_an_agent_s_new_display_name_is_on_the_page_at_once(world: World) -> None:
+    world.owner.patch("/me", {"public_profile": True})
+    agent = world.bot.get("/me").json()["member"]
+    assert f"<li>{agent['display_name']} ({agent['handle']})</li>" in shown(world.anyone)
+    renamed = world.owner.patch(f"/agents/{agent['id']}", {"display_name": "Renamed Agent"})
+    assert renamed.status_code == 200, renamed.text
+    text = shown(world.anyone)
+    assert f"<li>Renamed Agent ({agent['handle']})</li>" in text
+    assert agent["display_name"] not in text
+
+
+def test_an_agent_profile_under_a_hold_is_no_more_named_and_comes_back_with_the_dismissal(
+    world: World,
+) -> None:
+    world.owner.patch("/me", {"public_profile": True})
+    agent = world.bot.get("/me").json()["member"]
+    assert f"({agent['handle']})" in shown(world.anyone)
+    made = world.anna.post(
+        "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
+    )
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    text = shown(world.anyone)
+    assert f"({agent['handle']})" not in text and "and 1 more agent</p>" in text
+    assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
+    assert f"({agent['handle']})" in shown(world.anyone)
