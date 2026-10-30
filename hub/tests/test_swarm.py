@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -13,8 +12,6 @@ from sqlalchemy import Engine, insert, select, update
 from maity_hub import clock, listening, swarm
 from maity_hub import tables as t
 from maity_hub.ids import new_id
-from maity_hub.ratelimit import Limiter
-from maity_hub.routes import badges as badge_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -292,82 +289,23 @@ def test_task_reported_carries_the_persisted_status_on_both_sides(
     assert payload["status_before"] == "in_progress" and payload["status_after"] == "review"
 
 
-# --- the public page -------------------------------------------------------------------------
+# --- no public page --------------------------------------------------------------------------
 
 
-def public(client: Any, slug: str = "maity", **headers: str) -> Any:
-    return client.get(f"/api/v1/swarm/maintainer/{slug}", headers=headers)
-
-
-def test_the_policy_is_checked_before_any_etag(
+def test_there_is_no_public_swarm_page_and_no_switch_for_one(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
+    """The swarm is a statistic in the Overview (§6.22): the public address answers as any
+    path the hub does not know, in both forms, and `policy.swarm_public` is no field."""
     visitor = make_client()
-    off = public(visitor, **{"If-None-Match": "*"})
-    assert off.status_code == 404 and "etag" not in off.headers
-    assert public(visitor, "nope").status_code == 404
-    switched = owner.patch(
+    for path in ("/api/v1/swarm/maintainer/maity", "/api/v1/swarm/maity"):
+        gone = visitor.get(path, follow_redirects=False)
+        assert gone.status_code == 404 and "etag" not in gone.headers, path
+    assert "swarm_public" not in owner.get("/projects/maintainer/maity").json()["policy"]
+    refused = owner.patch(
         "/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"}
     )
-    assert switched.status_code == 200, switched.text
-    on = public(visitor)
-    assert on.status_code == 200 and on.headers["cache-control"] == "public, max-age=60"
-    assert "live_at" not in on.json() and on.json()["as_of"].endswith(":00Z")
-    later = NOW + timedelta(seconds=30)
-    clock.set_source(lambda: later)
-    assert public(visitor).headers["etag"] == on.headers["etag"]  # stable within the minute
-    assert public(visitor, **{"If-None-Match": on.headers["etag"]}).status_code == 304
-    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "done"})
-    closed = public(visitor, **{"If-None-Match": on.headers["etag"]})
-    assert closed.status_code == 404 and "etag" not in closed.headers
-
-
-def test_the_public_page_shows_agents_only(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
-) -> None:
-    agent = flow.agent(make_client, owner)
-    creator = membership_of(migrated, owner.id)
-    done(migrated, project_id, creator, membership_of(migrated, agent.id), NOW)
-    done(migrated, project_id, creator, creator, NOW)  # the human's: nowhere public
-    done(migrated, project_id, creator, None, NOW)  # nobody's: not in the agents' totals
-    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    handle = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["handle"]
-    body = public(make_client()).json()
-    assert [m["handle"] for m in body["live"]] == [handle]
-    assert set(body["live"][0]) == {
-        "handle", "name", "display_name", "online", "instances_online", "holding_count"
-    }  # fmt: skip
-    owner_handle = owner.get(f"/projects/maintainer/maity/members/{owner.id}").json()["handle"]
-    assert body["live"][0]["name"] == f"{owner_handle}/{handle}"
-    assert body["members"][0]["name"] == body["live"][0]["name"]
-    assert len(body["members"]) == 1 and "member_id" not in body["members"][0]
-    assert body["totals"]["cards_done"] == 1
-    assert sum(d["count"] for d in body["totals"]["cards_done_per_day"]) == 1
-    assert owner.id not in str(body) and agent.id not in str(body)
-
-
-def test_swarm_public_is_set_by_a_human(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine
-) -> None:
-    admin = flow.agent(make_client, owner, role="admin")
-    refused = admin.patch(
-        "/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "r"}
-    )
-    assert refused.status_code == 403
-    assert owner.get("/projects/maintainer/maity").json()["policy"]["swarm_public"] == "off"
-
-
-def test_the_badge_and_the_swarm_share_one_budget(
-    owner: flow.Human, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(badge_routes, "BY_ADDRESS", Limiter(2, 60))
-    monkeypatch.setattr(badge_routes, "NOT_SERVED", Limiter(1, 60))
-    visitor = make_client()
-    assert (
-        visitor.get("/badge/maintainer/nope.svg").status_code == 404
-    )  # takes the shared unknown budget
-    assert public(visitor, "other").status_code == 429  # the same budget, another slug
-    assert public(visitor).status_code == 429  # the source's two are spent
+    assert refused.status_code in (400, 422), refused.text
 
 
 def test_a_history_entry_into_review_is_a_review_sample(
@@ -411,55 +349,3 @@ def test_one_pull_request_is_one_key_however_its_url_is_written() -> None:
     a = swarm.pull_key("https://github.com/Oliver-Zehentleitner/Maity/pull/12")
     b = swarm.pull_key("https://github.com/oliver-zehentleitner/maity/pulls/12")
     assert a == b == "github.com/oliver-zehentleitner/maity#12"
-
-
-def test_the_three_not_served_answers_are_one(
-    owner: flow.Human, make_client: ClientFactory
-) -> None:
-    visitor = make_client()
-    unknown = public(visitor, "nope")
-    off = public(visitor)
-    owner.post("/projects", {"slug": "closed", "name": "Closed"})
-    owner.patch("/projects/maintainer/closed", {"policy": {"swarm_public": "on"}, "reason": "r"})
-    owner.patch("/projects/maintainer/closed", {"state": "archived", "reason": "done"})
-    closed = public(visitor, "closed")
-    assert unknown.status_code == off.status_code == closed.status_code == 404
-    assert unknown.content == off.content == closed.content
-    assert set(unknown.headers) == set(off.headers) == set(closed.headers)
-
-
-def test_nothing_of_a_human_or_a_card_reaches_the_public_page(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
-) -> None:
-    agent = flow.agent(make_client, owner)
-    listening.opened(agent.resume().json()["session"]["id"])
-    creator = membership_of(migrated, owner.id)
-    secret = card(
-        migrated, project_id, creator, title="SECRET TITLE 7731", status="in_progress",
-        claim_holder=membership_of(migrated, agent.id), claim_since=NOW,
-    )  # fmt: skip
-    done(migrated, project_id, creator, creator, NOW)
-    human = owner.get(f"/projects/maintainer/maity/members/{owner.id}").json()
-    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    text = public(make_client()).text
-    for leaked in (
-        secret, "SECRET TITLE 7731", owner.id, agent.id, human["display_name"],
-        '"avatar_url"', '"last_seen_at"', '"since"', '"task_id"', '"member_id"', '"live_at"',
-        '"holding"', '"title"',
-    ):  # fmt: skip
-        assert leaked not in text, leaked
-    # The owner's handle appears only inside its agents' global names, by design (§6.22).
-    body = json.loads(text)
-    assert all(e["handle"] != human["handle"] for e in body["live"] + body["members"])
-    assert all(e["name"].endswith("/" + e["handle"]) for e in body["live"] + body["members"])
-
-
-def test_the_one_segment_public_address_is_gone(
-    owner: flow.Human, make_client: ClientFactory, project_id: str
-) -> None:
-    """`/swarm/<slug>` from before the namespace is not kept, not even as a redirect while the
-    page is public (§16.11)."""
-    owner.patch("/projects/maintainer/maity", {"policy": {"swarm_public": "on"}, "reason": "show"})
-    visitor = make_client()
-    assert visitor.get("/api/v1/swarm/maity", follow_redirects=False).status_code == 404
-    assert visitor.get("/api/v1/swarm/maintainer/maity").status_code == 200

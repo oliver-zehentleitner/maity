@@ -25,8 +25,11 @@ window.Maity = window.Maity || {};
   // Unsent text per conversation ("<full name>/<agent id>"), kept while the
   // human switches between them in this tab; never stored or sent.
   const drafts = new Map();
+  // The instance a chat sends to, per conversation, for this tab only
+  // (§9.1 to_instance); absent: the whole team, by its wake rule.
+  const targets = new Map();
   // Signing out ends them; the next human in this tab starts empty.
-  M.clearChatDrafts = () => drafts.clear();
+  M.clearChatDrafts = () => { drafts.clear(); targets.clear(); };
 
   // A chat as the list shows it: one per owned agent (§9.1), and the group
   // chats the hub lists (§9.3); a chat's kind comes from the hub, never from
@@ -227,8 +230,10 @@ window.Maity = window.Maity || {};
     const when = h("span", { class: "when" }, said(msg));
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
     // An agent's message names its instance (from_instance, §9, §6.17).
+    // One's own message sent to one instance says which (§9.1 to_instance).
     const meta = h("span", { class: "meta" }, grouped || own ? null
-      : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "], when);
+      : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "],
+    own && msg.to_instance ? [h("span", { class: "msg-to" }, "to ", M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance })), " · "] : null, when);
     if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
@@ -665,6 +670,19 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const button = h("button", { type: "submit", class: "primary" }, "Send");
 
+    // Whom a message wakes (§9.1): the whole team by its wake rule, or one
+    // of the agent's instances that is not revoked; offered only where it
+    // has more than one. The choice is this conversation's for the tab.
+    const live = (agent.instances || []).filter((i) => !i.revoked_at);
+    if (targets.has(key) && !live.some((i) => i.id === targets.get(key))) targets.delete(key);
+    const target = live.length > 1 ? h("select", { id: "chat-instance", "aria-describedby": "chat-instance-hint" },
+      h("option", { value: "" }, "The whole team"),
+      live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · " + (PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
+    if (target) {
+      target.value = targets.get(key) || "";
+      target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
+    }
+
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
     async function send(e) {
@@ -676,7 +694,9 @@ window.Maity = window.Maity || {};
       button.disabled = true;
       status.busy("Sending…");
       try {
-        const msg = await M.api.post(path, files.length ? { body, attachments: files } : { body });
+        const sent = files.length ? { body, attachments: files } : { body };
+        if (target && target.value) sent.to_instance = target.value;
+        const msg = await M.api.post(path, sent);
         add(msg, true);
         if (files0) files0.clear(files);
         text.value = "";
@@ -700,7 +720,9 @@ window.Maity = window.Maity || {};
         heading,
         h("span", { class: "muted" }, agent.session
           ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
-          : "no session — picked up when it resumes")),
+          : "no session — picked up when it resumes"),
+        target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, "Send to"), target,
+          h("span", { class: "visually-hidden", id: "chat-instance-hint" }, "The whole team reads every message; this only chooses which instance is woken.")) : null),
       earlierBox,
       messages,
       jump,

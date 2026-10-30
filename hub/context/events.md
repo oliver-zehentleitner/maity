@@ -215,6 +215,13 @@ begins. A session with an open long-poll is listening. The start of
 `member_not_listening` wakes only an agent the event names by
 `member:`, the reports-to; the end wakes nobody.
 
+A resume counts as a call for events through the fallback `session.events_at or
+session.started_at` (`not_listening.py`): a resume sets `events_at` to its own moment, and a
+session that never called `/events` is measured from its start. Removing the fallback
+because `events_at` seems always set would drop a session that only resumed out of the check;
+the tests of #685 (resume after 8 minutes restarts the 10, the sent cursor becomes
+`acknowledged_seq`, without a cursor the event keeps waiting) hold it.
+
 **Reason:** the episode must survive restarts and be ended by whoever
 notices first, so it is stored; on the session, since an episode belongs
 to one session and ends with it. A minute's delay to notice the end is

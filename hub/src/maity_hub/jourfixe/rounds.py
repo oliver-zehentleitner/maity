@@ -104,9 +104,8 @@ def selected_instance(member: Any, instances: list[dict[str, Any]]) -> str | Non
 def presence(conn: Connection, project: Any, members: list[Any]) -> dict[int, dict[str, Any]]:
     """Per membership `{present, instance?, absent_reason?}` as §20.2 defines present."""
     now = clock.now()
-    # Public as `presences_of`/`humans_of` once the cover PR (#285) lands.
-    presences = availability._presences(conn, members)
-    humans = availability._humans(conn, members)
+    presences = availability.presences_of(conn, members)
+    humans = availability.humans_of(conn, members)
     instances = _instances(conn, [m.id for m in members if m.agent_id is not None])
     found: dict[int, dict[str, Any]] = {}
     for member in members:

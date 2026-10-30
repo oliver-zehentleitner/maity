@@ -79,7 +79,6 @@ class PolicyIn(Strict):
     on_runner_revoke: str | None = None
     badge: str | None = None
     subtasks: str | None = None
-    swarm_public: str | None = None
     keep_the_why: str | None = None
     keep_the_why_defaults: str | None = None
     merged_closes: str | None = None
@@ -189,12 +188,12 @@ def _load(conn: Connection, project_id: str) -> Any:
 
 
 # What a public project shows outside it (§6.20, §16.8): `hide` turns these off.
-PUBLIC_OFF = {"badge": "off", "swarm_public": "off"}
+PUBLIC_OFF = {"badge": "off"}
 
 
 def hide_by_moderation(conn: Connection, project_id: str, reason: str, actor: Actor) -> None:
-    """`hide` on a project (§16.8): members-only, its README badge and public swarm page
-    off, with the `policy_changed` a `PATCH` would write."""
+    """`hide` on a project (§16.8): members-only, its README badge off, with the
+    `policy_changed` a `PATCH` would write."""
     project = lock_project(conn, project_id)
     current = policy.of(project)
     new = {**current, **PUBLIC_OFF}
@@ -967,7 +966,6 @@ def confirm_repository(
 
 # Fields that govern what humans decide: no agent changes them, whatever its role (§2.3).
 HUMANS_ONLY_POLICY = {
-    "swarm_public",  # it shows the agents and their owners to the world (§6.22)
     "spawn_consent_by",
     "signing",
     "tag_authority",

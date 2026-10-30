@@ -719,3 +719,42 @@ def test_cards_are_written_in_the_one_shape_the_code_reads(engine: Engine) -> No
     assert found[unreported].reported_instances is None
     assert found[old_contract].contract == {**bare, "path": "docs/api.md", "section": None}
     assert found[new_contract].contract == placed
+
+
+def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: Engine) -> None:
+    """0107: a project's `setup` from before `keep_the_why_ci`, `keep_the_why_dashboard`
+    and `dashboard_path` gets them as `false`, `false` and `null` (nothing was chosen);
+    a project without `setup` keeps `null`; the downgrade takes the three keys away."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    old = {"keep_the_why_init": True, "keep_the_why_badge": False, "maity_badge": True}
+    with_cards = factory.project(engine, "cards")
+    without = factory.project(engine, "plain")
+    none = factory.project(engine, "none")
+    downgrade(engine, "0102")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == with_cards)
+            .values(setup={**old, "cards": ["tsk-1"]})
+        )
+        conn.execute(
+            update(t.project).where(t.project.c.id == without).values(setup={**old, "cards": None})
+        )
+        conn.execute(update(t.project).where(t.project.c.id == none).values(setup=None))
+    migrate(engine)
+    added = {"keep_the_why_ci": False, "keep_the_why_dashboard": False, "dashboard_path": None}
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[with_cards] == {**old, **added, "cards": ["tsk-1"]}
+    assert found[without] == {**old, **added, "cards": None}
+    assert found[none] is None
+    downgrade(engine, "0102")
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[with_cards] == {**old, "cards": ["tsk-1"]}
+    assert found[none] is None

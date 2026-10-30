@@ -17,7 +17,13 @@ from tests.test_tasks import task
 REPOSITORY = "https://github.com/oliver-zehentleitner/maity"
 ISSUE = f"{REPOSITORY}/issues/41"
 # No setup cards (§6.21): the board starts empty, so the counts are the tests' own.
-NO_SETUP = {"keep_the_why_init": False, "keep_the_why_badge": False, "maity_badge": False}
+NO_SETUP = {
+    "keep_the_why_init": False,
+    "keep_the_why_badge": False,
+    "keep_the_why_ci": False,
+    "keep_the_why_dashboard": False,
+    "maity_badge": False,
+}
 ZWSP = "​"
 
 

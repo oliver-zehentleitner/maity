@@ -1340,6 +1340,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!win.Maity.trust.governs({ trust: "admin", role: "proxy" }) && !win.Maity.trust.reviews({ trust: "admin", role: "proxy" })
     && win.Maity.trust.governs({ trust: "admin", role: "reviewer" }) && !win.Maity.trust.reviews({ trust: "guest", role: "reviewer" }),
     "trust: a proxy never governs; an admin reviewer does; a guest reviewer reviews nothing");
+  // Every role of §2.3, once, with its label and help; a security team holds the scopes of its base.
+  const rlT = win.Maity.trust;
+  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team"
+    && rlT.roleLabel("red-team") === "Red team" && rlT.roleLabel("manager") === "Manager" && rlT.ROLES.every((r) => rlT.roleHelp(r).length > 10)
+    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team",
+    "roles: the dashboard's one list holds every role of §2.3 with a label and a help text; a member's own agent gets all but ops and proxy");
+  expect(rlT.tests({ trust: "member", role: "red-team" }) && !rlT.reviews({ trust: "member", role: "red-team" })
+    && rlT.reviews({ trust: "member", role: "purple-team" }) && rlT.releases({ trust: "member", role: "purple-team" })
+    && !rlT.tests({ trust: "member", role: "blue-team" }) && !rlT.reviews({ trust: "member", role: "blue-team" }),
+    "roles: red team tests, purple team reviews and prepares releases, blue team as a coder");
   // A guest creates no group chat (§9.2).
   win.Maity.api.get = (p) => (p === "/me" ? trGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "guest"; return m; }) : trGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); for (let k = 0; k < 6; k++) await tick();
@@ -2005,9 +2015,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
   byoButton().click(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
-    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer"
+    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team"
     && !byId("join-reports") && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Add my agent"),
-    "own agents: the panel offers only member or guest, the four roles, no reports to and no areas");
+    "own agents: the panel offers only member or guest, every role but ops and proxy (§3.1), no reports to and no areas");
   const byoPosts = [];
   const byoPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) byoPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "member_join_limit", field: "role" })); };
@@ -2786,6 +2796,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!conv("Agent D").getAttribute("aria-label") && /^Agent D, online, .+, agent · @agent-d · Claude Code: You: Keep the inbox/.test(text(conv("Agent D"))),
     "chat: a row's name is its text, its parts apart " + JSON.stringify(text(conv("Agent D"))));
   main.querySelector("textarea").value = ""; main.querySelector("textarea").dispatch("input");
+  // The instance a message wakes (§9.1 to_instance, tsk-f0ctq47mw0f6): offered where the agent has more than one live
+  // instance, the whole team by default, kept per chat for the tab, said on the sent message.
+  expect(!byId("chat-instance"), "chat: one instance, no choice of instance");
+  const ciGet = win.Maity.api.get, ciPost = win.Maity.api.post, ciSent = [];
+  const ciInst = (id, presence, extra) => Object.assign({ id, address: "agt-a#" + id, label: "agent-a#" + id, presence, revoked_at: null, replaces: null }, extra || {});
+  win.Maity.api.get = (p) => ciGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r : Object.assign({}, r, { items: r.items.map((x) => (x.id !== "agt-a" ? x
+    : Object.assign({}, x, { instances: [ciInst("wq2e", "online"), ciInst("x7rq", "offline"), ciInst("m4tz", "offline", { revoked_at: "2026-10-29T10:00:00Z" })] }))) })));
+  win.Maity.api.post = (p, b) => {
+    if (p !== "/projects/maintainer/maity/conversations/agt-a/messages") return ciPost(p, b);
+    // The hub's answer, kept out of the fixture conversation the later checks count.
+    ciSent.push(b);
+    return Promise.resolve({ id: "evt-" + (99990 + ciSent.length), seq: 99990 + ciSent.length, conversation_id: "agt-a", from: "hum-maintainer", to: "agt-a",
+      to_instance: b.to_instance || null, body: b.body, sent_at: new Date().toISOString(), delivered_at: null, mentions: [], attachments: [], redacted: false, redaction: null });
+  };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a");
+  const ciSel = byId("chat-instance");
+  expect(ciSel && ciSel.value === "" && ciSel.querySelectorAll("option").map((o) => o.attrs.value + "=" + text(o)).join()
+    === "=The whole team,wq2e=agent-a#wq2e · online,x7rq=agent-a#x7rq · offline" && text(main.querySelector(".chat-instance label")) === "Send to",
+    "chat: the live instances offered beside the heading, the whole team first and chosen, a revoked one left out");
+  const ciSend = async (words) => { main.querySelector("textarea").value = words; main.querySelector("textarea").dispatch("input"); main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+  await ciSend("for the team");
+  ciSel.value = "x7rq"; ciSel.dispatch("change");
+  await ciSend("for one instance");
+  const ciOut = main.querySelectorAll("li.msg.out");
+  expect(JSON.stringify(ciSent) === JSON.stringify([{ body: "for the team" }, { body: "for one instance", to_instance: "x7rq" }])
+    && !ciOut[ciOut.length - 2].querySelector(".msg-to") && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).startsWith("to ")
+    && text(ciOut[ciOut.length - 1].querySelector(".msg-to")).includes("#x7rq"),
+    "chat: the team by default with no to_instance, one instance sent as to_instance and said on the message");
+  await go("#/maintainer/maity/chat/agt-d"); await go("#/maintainer/maity/chat/agt-a");
+  expect(byId("chat-instance").value === "x7rq", "chat: the choice is kept for the chat in this tab");
+  win.Maity.api.get = ciGet; win.Maity.api.post = ciPost;
+  // The fixture hub as §9.1: an instance the agent has is woken, one it never had is invalid.
+  let ciBad = null;
+  try { await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "x", to_instance: "zzzz" }); } catch (err) { ciBad = err; }
+  const ciGood = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "y", to_instance: "k3pa" });
+  const ciTeam = await ciPost("/projects/maintainer/maity/conversations/agt-c/messages", { body: "z" });
+  expect(ciBad && ciBad.status === 400 && JSON.stringify(ciBad.details.fields) === JSON.stringify({ to_instance: "not_an_instance" })
+    && ciGood.to_instance === "k3pa" && ciTeam.to_instance === null, "chat: the fixture hub takes to_instance as §9.1 and says it on the message");
   // A redacted last message.
   const cAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maintainer/maity/conversations?observed=true" ? r : { items: r.items.map((c) => (c.agent_id !== "agt-d" ? c
@@ -3817,6 +3865,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
+  const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
+  expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
   expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
@@ -4576,6 +4627,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(/#header > \.bar:only-child \{ padding-bottom: 10px; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
     "header: the bar alone has room below it, as much as above");
   await go("#/maintainer/maity/inbox");
+  expect(header.querySelector(".bar") && header.childNodes.filter((x) => x.tagName).length > 1,
+    "header: a project's header is more than the bar, so the rule leaves it as it is");
 
   // A personal request without a project (§6.26: an organisation's invitation, a transfer into one) is listed without one.
   const oiGetAll = win.Maity.api.getAll;
@@ -5623,6 +5676,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ivBox() && JSON.stringify(byId("invite-trust").querySelectorAll("option").map((o) => o.getAttribute("value"))) === JSON.stringify(["owner", "admin", "member", "guest"])
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
+  const ivRoles = byId("invite-role").querySelectorAll("option");
+  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team"
+    && ivRoles.find((o) => o.getAttribute("value") === "purple-team").textContent === "Purple team"
+    && text(byId("invite-role-help")) === win.Maity.trust.roleHelp("coder") && byId("invite-role").getAttribute("aria-describedby") === "invite-role-help",
+    "invite: every role but proxy (trust member), by its label, the chosen role's help under the picker");
+  byId("invite-role").value = "red-team"; byId("invite-role").dispatch("change");
+  expect(text(byId("invite-role-help")).startsWith("attacks the project's own test or staging instance"), "invite: the help follows the chosen role");
   byId("invite-role").value = "reviewer"; byId("invite-address").value = "ben@example.org"; byId("invite-ttl").value = "604800"; byId("invite-note").value = "Welcome.";
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(byId("invite-via-join") && byId("invite-via-join").checked && text(ivBox()).includes("Link via join.example.org"),
@@ -6045,6 +6105,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = nGet;
   delete win.Notification;
 
+  // Agents that stop listening (§5.3, §18.4): the mode and the minutes, the personal default; checked before sending.
+  const nlPatches = [];
+  const nlPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
+  await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+  const nlForm = () => main.querySelector("form.not-listening-settings");
+  expect(nlForm() && byId("not-listening-mode").value === "inbox" && byId("not-listening-minutes").value === "60"
+    && byId("not-listening-mode").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "inbox,bell,off",
+    "not listening: the account shows the mode and the minutes, inbox and 60 by default");
+  byId("not-listening-minutes").value = "5"; nlForm().dispatch("submit"); await tick();
+  expect(!nlPatches.length && text(byId("not-listening-minutes-error")) === "A whole number of minutes from 10 to 1440."
+    && byId("not-listening-minutes").getAttribute("aria-invalid") === "true", "not listening: minutes out of range are refused before sending");
+  byId("not-listening-minutes").value = "90"; byId("not-listening-mode").value = "bell"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(nlPatches.length === 1 && JSON.stringify(nlPatches[0]) === JSON.stringify(["/me/notification-settings", { not_listening: { mode: "bell", minutes: 90 } }])
+    && text(nlForm()).includes("Saved."), "not listening: only what changed is sent, both together here");
+  // The hub's refusal at its field path is said at the field.
+  win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "not_listening.mode": "invalid" } }));
+  byId("not-listening-mode").value = "off"; nlForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(byId("not-listening-mode-error")) === "Not a choice of this hub.", "not listening: the hub's refusal of the mode is said at the field");
+  win.Maity.api.patch = nlPatch;
+  // A project's My settings (§6.2): the personal default or a value for the project, with what applies now.
+  nlPatches.length = 0;
+  win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
+  await go("#/maintainer/maity/inbox");
+  const msTab = header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith("My settings"));
+  expect(msTab && msTab.getAttribute("href") === "#/maintainer/maity/my-settings", "my settings: a tab of every human member's");
+  await go("#/maintainer/maity/my-settings"); for (let k = 0; k < 4; k++) await tick();
+  const msForm = () => main.querySelector("form.my-settings");
+  expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");
+  // The test DOM keeps no radio group: the other one is unchecked by hand.
+  byId("my-nl-default").checked = false; byId("my-nl-here").checked = true; byId("my-nl-here").dispatch("change");
+  expect(!byId("my-nl-minutes").disabled, "my settings: choosing For this project frees the minutes");
+  byId("my-nl-minutes").value = "2000"; msForm().dispatch("submit"); await tick();
+  expect(!nlPatches.length && text(byId("my-nl-minutes-error")).includes("10 to 1440"), "my settings: an override out of range is refused before sending");
+  byId("my-nl-minutes").value = "30"; msForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(nlPatches[0]) === JSON.stringify(["/projects/maintainer/maity/me/settings", { not_listening: { minutes: 30 } }])
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 30 minutes, set here." && text(msForm()).includes("Saved for this project."),
+    "my settings: a value for the project is sent and applies");
+  byId("my-nl-here").checked = false; byId("my-nl-default").checked = true; byId("my-nl-default").dispatch("change"); msForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(nlPatches[1] && nlPatches[1][1]) === JSON.stringify({ not_listening: { minutes: null } })
+    && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: back to the default sends null");
+  win.Maity.api.patch = nlPatch;
+  await win.Maity.api.patch("/me/notification-settings", { not_listening: { mode: "inbox", minutes: 60 } });
+  // The bell's agents_not_listening item leads to one's agents (§18.2 target agents).
+  expect(win.Maity.notify.linkOf({ kind: "inbox", record: "acr-9", target: { type: "agents" }, project: null }) === "/agents",
+    "not listening: the bell's item links to /agents");
+  expect(win.Maity.notify.keepsUnread({ kind: "inbox", record: "acr-9", target: { type: "agents" } })
+    && !win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "request", id: "req-1" } }),
+    "not listening: the bell's item stays unread when opened, an open matter like a registration (§18.3)");
+  // The digest (§5.3): a personal request the hub files, about no project; named as Maity's, leading to one's agents.
+  const dgAll = win.Maity.api.getAll, dgGet = win.Maity.api.get;
+  const dgReq = { id: "req-dg01", class: "info", title: "2 of your agent instances are not listening",
+    summary: "agent-b (wqe2) in maintainer/maity, since 2026-10-29 14:00 (UTC)\nagent-c (k3pa) in maintainer/maity, since 2026-10-29 14:20 (UTC)\n\nTheir harness may have stopped its wait loop.",
+    tried: null, options: [{ id: "seen", label: "Seen" }], replies: [{ id: "seen", label: "Seen" }], priority: "normal", to: "human:hum-maintainer",
+    asked_by: null, filed_by: "hub", on_behalf_of: null, task_id: null, task: null, while_open: "proceed", needs_in_session: null, ktw_ref: null,
+    personal: true, status: "open", answer: null, created_at: "2026-10-29T15:00:00Z", answered_at: null, project: null, org: null };
+  win.Maity.api.getAll = (p) => (p === "/requests" ? dgAll(p).then((r) => Object.assign({}, r, { items: [dgReq].concat(r.items) })) : dgAll(p));
+  win.Maity.api.get = (p) => (p === "/requests/req-dg01" ? Promise.resolve(dgReq) : dgGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+  const dgEntry = main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === "req-dg01");
+  if (dgEntry && !dgEntry.classList.contains("current")) { dgEntry.querySelector("button.entry-head").click(); for (let k = 0; k < 4; k++) await tick(); }
+  const dgOpen = main.querySelectorAll("li.entry").find((li) => li.getAttribute("data-request") === "req-dg01");
+  expect(dgOpen && text(dgOpen.querySelector(".entry-head")).includes("Maity") && text(dgOpen).includes("Maity, on its own")
+    && dgOpen.querySelectorAll("a").some((a) => a.classList.contains("digest-agents") && a.getAttribute("href") === "#/agents")
+    && !text(dgOpen).includes("the agent waits") && text(dgOpen).includes("agent-c (k3pa) in maintainer/maity"),
+    "not listening: the digest is Maity's, lists the instances, links to one's agents, and says no agent waits");
+  win.Maity.api.getAll = dgAll; win.Maity.api.get = dgGet;
+
   // Sessions (docs/api.md §2.6.5, §2.6.7): where one is signed in, This was me, End, a held address change.
   await go("#/account/sessions"); for (let k = 0; k < 6; k++) await tick();
   const sesRow = (id) => main.querySelectorAll("li.session").find((li) => li.getAttribute("data-session") === id);
@@ -6441,6 +6570,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("No conversation of yours with the id agt-gone."), "chat: an unknown direct chat is an error");
   await go("#/maintainer/maity/inbox");
 
+  // The fixture hub takes every role and trust:owner/admin as an address, the security teams' tokens included (§2.3, §8.4, §17.6).
+  const rlTo = [];
+  for (const to of ["trust:admin", "role:red-team", "role:manager", "role:purple-team"]) {
+    rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to, body: "to " + to }).then(() => "ok", (err) => err.code));
+  }
+  rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
+  expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
   // Lead routing and the direct/group boundary.
   const leadA = { id: "agt-lead-a", kind: "agent", trust: "admin", role: "coder", handle: "a", display_name: "Lead A", owner_id: "hum-other", presence: "online", availability: { state: "available" } };
   const leadB = { ...leadA, id: "agt-lead-b", handle: "b", display_name: "Lead B", owner_id: "hum-me" };
@@ -6610,7 +6746,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const oldNotification = win.Notification;
   delete win.Notification;
   for (const mail of [false, true]) {
-    let setting = { email: { language: "en", address: null }, mail_available: mail };
+    // The hub always sends not_listening (§6.2, §18.4).
+    let setting = { email: { language: "en", address: null }, mail_available: mail, not_listening: { minutes: 60, mode: "inbox" } };
     const writes = [];
     win.Maity.api.get = async () => setting;
     win.Maity.api.patch = async (path, body) => { writes.push([path, body]); setting = { ...setting, email: { ...setting.email, ...body.email } }; return setting; };

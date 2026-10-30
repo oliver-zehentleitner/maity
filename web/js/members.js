@@ -405,9 +405,9 @@ window.Maity = window.Maity || {};
         const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
         const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
         if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
-        append(clear(role), offered.map((r) => h("option", { value: r }, r)));
-        role.value = offered.includes(wanted) ? wanted : offered.includes(m.role) ? m.role : "coder";
+        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder");
       };
+      const roleHelp = M.trust.roleHint(role);
       fillRoles();
       trust.addEventListener("change", () => { keep("trust", trust.value); fillRoles(); });
       // The current boss stays offered even if it is not in the list read.
@@ -441,7 +441,7 @@ window.Maity = window.Maity || {};
       const errors = { trust: errorOf("trust"), role: errorOf("role"), reports: errorOf("reports"), areas: errorOf("areas") };
       if (bossGone) errors.reports.textContent = bossGone + ", whom you picked, is no longer a member; reports to is back to what it is.";
       [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => f.setAttribute("aria-describedby", id(k) + "-error"
-        + (k === "areas" ? " " + id("areas") + "-hint" : "")));
+        + (k === "areas" ? " " + id("areas") + "-hint" : k === "role" ? " " + roleHelp.id : "")));
       const clearErrors = () => [[trust, "trust"], [role, "role"], [reports, "reports"], [areas, "areas"]].forEach(([f, k]) => { errors[k].textContent = ""; f.removeAttribute("aria-invalid"); });
       const fieldFail = (f, k, text) => { errors[k].textContent = text; f.setAttribute("aria-invalid", "true"); status.fail("Not saved: ", { message: text }); f.focus(); };
       const save = h("button", { type: "submit" }, "Save changes");
@@ -478,7 +478,7 @@ window.Maity = window.Maity || {};
       },
       h("div", { class: "member-fields" },
         h("label", { for: id("trust") }, "Trust"), trust, errors.trust,
-        h("label", { for: id("role") }, "Role"), role, errors.role,
+        h("label", { for: id("role") }, "Role"), role, roleHelp, errors.role,
         h("label", { for: id("reports") }, "Reports to"), reports, errors.reports,
         h("label", { for: id("areas") }, "Areas"), areas,
         h("p", { class: "hint", id: id("areas") + "-hint" }, "Repository paths this member owns, comma separated; cards in an area go to its narrowest owner."),
