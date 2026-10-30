@@ -555,13 +555,13 @@ project = Table(
     # optional or required (§2.2); the default fills projects made before 0004.
     Column("signing", String(16), nullable=False, server_default="optional"),
     # What an agent's placement proposal does, and how many placements may be active
-    # (§6.1, §15.6); the defaults fill projects made before 0008.
+    # (§6.1, §15.6).
     Column("spawn_requests", String(16), nullable=False, server_default="consent"),
     Column("max_placements", Integer, nullable=False, server_default="8"),
-    # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
+    # Who answers a placement's consent request (§6.1, §15.6).
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
-    # alone (§6.1, §6.12); the defaults fill projects made before 0024.
+    # alone (§6.1, §6.12).
     Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
