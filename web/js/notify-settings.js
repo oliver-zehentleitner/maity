@@ -211,9 +211,7 @@ window.Maity = window.Maity || {};
     try {
       mine = await M.api.get(path);
     } catch (err) {
-      append(root, await M.api.missingRoute(err, "GET", "/projects/{owner}/{slug}/me/settings")
-        ? M.dom.notOnHub("This hub has no settings of your own per project yet.")
-        : h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
+      append(root, h("p", { class: "send-status failed" }, "Could not read them: " + err.message));
       return;
     }
     const status = M.statusLine();

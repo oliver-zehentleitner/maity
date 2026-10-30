@@ -13539,7 +13539,7 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 Marking a `chat` item read moves that conversation's read mark to the
 item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
-other than the three open matters below are marked read, and the open
+other than the four open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
 that is not one of them is `invalid` as in §18.2. A `security` item about a
 new session (`session_created`, #169 §2.6.5) is marked read only from a

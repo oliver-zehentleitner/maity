@@ -9,5 +9,5 @@
   not-listening digest links to `/agents`, and so does the bell's `agents_not_listening` item.
 - docs: §16.11 names the project view `my-settings`; §18.2 names the item target `agents`.
 - hub: `my-settings` is a project view a slug may not take (§16.11).
-- docs: `agents_not_listening` is the third open matter of §18.2–§18.3: never marked read by a
+- docs: `agents_not_listening` is an open matter of §18.2–§18.3, the fourth beside `registration_pending`, `report_open` and `mail_disabled`: never marked read by a
   caller, read once no instance is away any more; the bell does not mark it read when opened.
