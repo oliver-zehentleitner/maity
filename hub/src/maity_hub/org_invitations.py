@@ -335,6 +335,10 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
                 org_id=org.id, human_id=human_id, role=invitation.role, joined_at=clock.now()
             )
         )
+        if invitation.role == "owner":  # the hub makes them an owner of the projects (§6.26)
+            from maity_hub import org_projects
+
+            org_projects.keep_in_all(conn, org.id, human_id)
     # Every other open invitation of this organisation whose request went to this human is
     # withdrawn now, so a later `go` finds nothing open (two names, two invitations).
     others = conn.execute(

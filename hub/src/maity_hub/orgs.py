@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import avatars, clock, handle_register, paths
+from maity_hub import avatars, clock, handle_register, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -287,7 +287,7 @@ def set_role(
     if current == "owner" and role != "owner" and owners_count(conn, org.id) <= 1:
         raise last_owner(org.handle)
     if current != role:
-        from maity_hub import org_invitations
+        from maity_hub import org_invitations, org_projects
 
         conn.execute(
             update(t.org_member)
@@ -295,6 +295,10 @@ def set_role(
             .values(role=role)
         )
         org_invitations.withdraw_by_inviter(conn, org.id, human_id, role)
+        if current != "owner" and role == "owner":  # the hub keeps them owners of its projects
+            org_projects.keep_in_all(conn, org.id, human_id)
+        elif current == "owner" and role != "owner":
+            org_projects.release_in_all(conn, org.id, human_id)
     return next(m for m in members(conn, org.id) if m["id"] == human_id)
 
 
@@ -312,7 +316,7 @@ def remove_member(
         raise org_role()
     if current == "owner" and owners_count(conn, org.id) <= 1:
         raise last_owner(org.handle)
-    from maity_hub import org_invitations
+    from maity_hub import org_invitations, org_projects
 
     conn.execute(
         delete(t.org_member).where(
@@ -320,16 +324,30 @@ def remove_member(
         )
     )
     org_invitations.withdraw_by_inviter(conn, org.id, human_id, None)
+    if current == "owner":  # and the memberships the hub kept for them end or fall back
+        org_projects.release_in_all(conn, org.id, human_id)
 
 
 def delete_org(conn: Connection, org: Any, confirm: object) -> None:
-    """End the organisation: its members go, its open invitations are withdrawn, the row
-    stays with `deleted_at` and its handle stays taken for good (§6.26)."""
+    """End the organisation: its members go, and the memberships the hub kept for its owners
+    with them, its open invitations are withdrawn, the row stays with `deleted_at` and its
+    handle stays taken for good (§6.26). Only while it owns no project that is not archived:
+    `namespace_owner`, naming them; an archived one stays archived under its name."""
+    from maity_hub import org_invitations, org_projects
+
     if confirm != org.handle:
         raise invalid({"confirm": "mismatch"})
-    from maity_hub import org_invitations
-
+    open_projects = [p.id for p in org_projects.projects_of(conn, org.id) if p.state != "archived"]
+    if open_projects:
+        raise ApiError(
+            409,
+            "namespace_owner",
+            "the organisation owns a project that is not archived: transfer or archive it first",
+            {"projects": sorted(namespace.full_names(conn, open_projects).values())},
+        )
     org_invitations.withdraw_all(conn, org.id, "org_deleted")
+    for human_id in org_projects.owners_of(conn, org.id):
+        org_projects.release_in_all(conn, org.id, human_id)
     conn.execute(delete(t.org_member).where(t.org_member.c.org_id == org.id))
     avatars.remove_upload(conn, org.id)  # the avatar goes with the organisation (§6.26)
     conn.execute(update(t.org).where(t.org.c.id == org.id).values(deleted_at=clock.now()))
