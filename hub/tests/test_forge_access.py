@@ -8,6 +8,7 @@ for real.
 from __future__ import annotations
 
 import base64
+from collections import OrderedDict
 from dataclasses import replace
 from typing import Any
 
@@ -67,7 +68,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeForge:
     monkeypatch.setattr(github_app.GitHubApp, "installation_of", lambda _app, repo: fg.installation)
     monkeypatch.setattr(github_app.GitHubApp, "token", lambda _app, i: fg.token(_app, i))
     monkeypatch.setattr(forge, "_public", {})
-    monkeypatch.setattr(forge_access, "_last_via", {})
+    monkeypatch.setattr(forge_access, "_last_via", OrderedDict())
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)  # the tests read themselves
     return fg
 
