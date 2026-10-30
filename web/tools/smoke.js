@@ -3219,7 +3219,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realPost2 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { joinPosts.push([p, b]); return realPost2(p, b); };
   byId("join-briefing").value = "x".repeat(16 * 1024 + 1);
+  // The limit is a number in the reader's locale: English here.
+  const joinLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   main.querySelector("form.join-form").dispatch("submit"); await tick();
+  win.Maity.i18n.locale = joinLocale;
   expect(!joinPosts.length && text(main).includes("the briefing is longer than 16,384 characters"), "a join briefing over 16 KiB is refused before sending");
   byId("join-briefing").value = "  You review hub/.  ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
