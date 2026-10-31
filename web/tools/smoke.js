@@ -4419,6 +4419,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "picture: the account has no agents of its own any more, a link to Your agents instead");
   // Your agents (/agents): every profile across projects, its memberships with instances, Add to a project.
   await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  // A list like Members (tsk-05meme59sq1x): one row per profile, Manage opens what its card holds under it.
+  const agRows = () => main.querySelectorAll("tr.agent-row");
+  expect(agRows().length >= 2 && !main.querySelector("li.agent-card") && main.querySelector("section.agents-join") && byId("agents-join-project")
+    && agRows().every((tr) => tr.querySelector("button.agent-manage").getAttribute("aria-expanded") === "false"),
+    "agents page: Join an agent at the top, the profiles as rows, closed, each with Manage");
+  for (let guard = 0; guard < 10; guard++) {
+    const closed = main.querySelectorAll("button.agent-manage").find((b) => b.getAttribute("aria-expanded") === "false");
+    if (!closed) break;
+    closed.click(); for (let k = 0; k < 6; k++) await tick();
+  }
+  expect(main.querySelectorAll("tr.agent-manage").length === agRows().length && main.querySelectorAll("button.agent-manage").every((b) => b.getAttribute("aria-expanded") === "true"),
+    "agents page: Manage opens each row, said by aria-expanded");
+  // Inside a row, per membership its instances with their credentials, in that project's context.
+  for (let k = 0; k < 8; k++) await tick();
+  const agInst = main.querySelectorAll("tr.agent-manage").find((tr) => tr.getAttribute("id") === "agent-manage-agt-b");
+  const agInstBox = agInst && agInst.querySelectorAll(".agent-instances").find((d) => d.getAttribute("data-project") === "maintainer/maity");
+  expect(agInstBox && text(agInstBox).includes("Instances in Maity") && agInstBox.querySelector(".member-credentials"),
+    "agents page: an opened row shows the instances of each membership with their credentials");
+  // aria-controls names a row only while it exists; opening another row keeps what is typed in an open one.
+  {
+    const mb = (id) => main.querySelectorAll("tr.agent-row").find((tr) => tr.getAttribute("data-agent") === id).querySelector("button.agent-manage");
+    mb("agt-x").click(); await tick();
+    expect(mb("agt-x").getAttribute("aria-expanded") === "false" && !mb("agt-x").getAttribute("aria-controls")
+      && mb("agt-b").getAttribute("aria-controls") === "agent-manage-agt-b", "agents page: aria-controls only on a row that is open");
+    const typed = byId("agent-name-agt-b");
+    if (typed) typed.value = "Typed, not saved";
+    mb("agt-x").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!typed || byId("agent-name-agt-b").value === "Typed, not saved", "agents page: opening another row keeps what is typed in an open one");
+    // A revocation in the open row reads that project's members again for the row's instance count.
+    const rcGets = [], rcAll = win.Maity.api.getAll, rcConfirm = win.confirm;
+    win.Maity.api.getAll = (p) => { rcGets.push(p); return rcAll(p); };
+    win.confirm = () => true;
+    const rcBox = main.querySelectorAll("tr.agent-manage").find((tr) => tr.getAttribute("id") === "agent-manage-agt-b")
+      .querySelectorAll(".agent-instances").find((d) => d.getAttribute("data-project") === "maintainer/maity");
+    const rcBtn = rcBox && rcBox.querySelectorAll("button").find((b) => text(b) === "Revoke");
+    if (rcBtn) { rcBtn.click(); for (let k = 0; k < 8; k++) await tick(); }
+    expect(rcBtn && rcGets.includes("/projects/maintainer/maity/members"), "agents page: a revocation in an open row reads the members again for the instance count");
+    win.Maity.api.getAll = rcAll; win.confirm = rcConfirm;
+  }
   const agCards = () => main.querySelectorAll("li.agent-card");
   const agCard = (id) => agCards().find((li) => li.getAttribute("data-agent") === id);
   expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
@@ -4433,6 +4472,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b"
     && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
+  // Join an agent from /agents with the project chosen (Members' Join agent links it so): its join panel open at once.
+  await go("#/agents?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 10; k++) await tick();
+  expect(byId("agents-join-project").value === "maintainer/maity" && main.querySelector("section.agents-join .join-panel")
+    && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: ?project= chooses the project and opens its join panel");
+  btn(main.querySelector("section.agents-join .join-panel"), "Cancel").click(); await tick();
   // A new profile, a refused handle, then a rename that keeps the old handle as an earlier one.
   await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
   byId("agent-new-handle").value = "Bad Handle"; byId("agent-new-name").value = "Bad"; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -6444,7 +6488,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   const ivInvite = main.querySelector("a.members-invite-user"), ivJoin = main.querySelector("a.members-join-agent");
   expect(ivInvite && ivInvite.getAttribute("href") === "#/invite?project=maintainer%2Fmaity" && text(ivInvite) === "Invite user"
-    && ivJoin && ivJoin.getAttribute("href") === "#/maintainer/maity/agents" && !main.querySelector("section.invitations"),
+    && ivJoin && ivJoin.getAttribute("href") === "#/agents?project=maintainer%2Fmaity" && !main.querySelector("section.invitations"),
     "invite: Members has Invite user and Join agent at the top, and no invitation form of its own");
   await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivBox = () => main.querySelector("section.invitations");
@@ -8467,8 +8511,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   try { await pdDel("/agents/agt-c"); } catch (err) { pdInUse = err; }
   expect(pdInUse && pdInUse.code === "profile_in_use" && pdInUse.details.memberships[0].project === "maintainer/maity",
     "profile: the mock refuses a profile in use without cascade, naming the memberships");
-  // On Your agents, every profile is deleted the same way.
-  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  // On Your agents, every profile is deleted the same way; /agents/<id> opens that profile's row.
+  await go("#/agents/agt-x"); for (let k = 0; k < 6; k++) await tick();
   const pdX = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-x");
   expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: Your agents offers the deletion of a profile");
   win.Maity.api.del = pdDel;
