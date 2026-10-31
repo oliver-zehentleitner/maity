@@ -39,7 +39,8 @@ At `go` the change is checked again as it stands now, not only the right to ask 
 asker is still an active member, not isolated, and still holds `members:admin` (a human) or is still an admin
 agent, by the role's base; the call's own rules hold against today's state (only an owner grants trust `owner`
 or `admin` or the role `proxy`; an admin agent stays within §2.3 ᵃ, by `admin_agents.check_change`, the one
-function its call runs too, so the two lists cannot drift); and the role is read again from the
+function its call runs too, so the two lists cannot drift, and a lift of one instance's pause asks the
+instance's own credential again, `check_instance_pause`); and the role is read again from the
 project (`project_roles.base_of`), so a project role that was rebased while the request waited gives the agent
 its base as it is now. A `go` that fails the asker's checks is refused with `409 asker_not_allowed`, one for a
 role the project no longer has with `409 role_unknown`; either way the request stays open for a `no` or a

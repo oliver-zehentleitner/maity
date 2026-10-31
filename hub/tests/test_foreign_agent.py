@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -364,3 +365,32 @@ def test_a_go_asks_the_admin_agents_own_rules_of_the_target_as_it_is_now(
     assert refused.status_code == 409, refused.text  # and so does the go
     assert refused.json()["error"]["code"] == "asker_not_allowed"
     assert _row(migrated, lent).areas != ["web/"]
+
+
+def test_a_go_refuses_to_lift_the_pause_a_human_set_on_one_instance_meanwhile(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An admin agent's lift of one instance's pause is asked again at the go, as the call
+    asks it (§5.3, §6.17): a human's pause set in between is not the admin agent's to lift."""
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    lent_row = _row(migrated, lent)
+    with migrated.begin() as conn:
+        credential = conn.execute(
+            select(t.credential).where(t.credential.c.membership_id == lent_row.id)
+        ).first()
+    assert credential is not None, "the factory agent has an instance"
+    admin = flow.agent(make_client, owner, role="admin")
+    asked = put(admin, lent, paused=None, instance=credential.instance)
+    assert asked.status_code == 202, asked.text
+    with migrated.begin() as conn:  # the agent's owner pauses that instance meanwhile
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == credential.id)
+            .values(paused_reason="owner's call", paused_since=clock.now(), paused_by=friend.id)
+        )
+    refused = answer(friend, asked.json()["id"], "go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "asker_not_allowed"

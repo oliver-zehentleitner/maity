@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import admin_agents, cross_owner, namespace, project_roles, proposals
+from maity_hub import admin_agents, cross_owner, instances, namespace, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -148,7 +148,13 @@ def _refuse(why: str) -> ApiError:
 
 
 def _still_allowed(
-    asker: Any, project: Any, target: Any, values: dict[str, Any], pause: tuple[bool, str | None]
+    conn: Connection,
+    asker: Any,
+    project: Any,
+    target: Any,
+    values: dict[str, Any],
+    pause: tuple[bool, str | None],
+    instance: str | None,
 ) -> None:
     """The asker may still make this change: still an active member, not isolated, still
     holding `members:admin` (a human) or still an admin agent, by the role's base (a project's
@@ -180,6 +186,10 @@ def _still_allowed(
                 capabilities="capabilities" in values,
                 pause=(bool(pause[0]), pause[1] is None),
             )
+            if pause[0] and instance is not None:
+                # One instance's pause: its own credential, as on the call (§5.3, §6.17).
+                held = instances.require_active(conn, target, instance, "instance")
+                admin_agents.check_instance_pause(held, asker.agent_id, pause[1] is None)
         except ApiError:
             raise _refuse("an admin agent does not make this change") from None
 
@@ -208,7 +218,9 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if base is None:
             raise ApiError(409, "role_unknown", "the project has no such role any more")
         values["role_base"] = base
-    _still_allowed(asker, project, target, values, (bool(given), reason))
+    _still_allowed(
+        conn, asker, project, target, values, (bool(given), reason), proposal.get("instance")
+    )
     assert asker is not None  # `_still_allowed` refuses a missing asker
     by = principal_id(conn, asker.id)
     assert by is not None
