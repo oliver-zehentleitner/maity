@@ -462,9 +462,15 @@ records the window.
 **Reason:** whoever lifts an isolation usually trusts the agent again,
 and an agent that cannot read the decisions others refer to works
 against them; but the reason for an isolation can be exactly what was
-discussed meanwhile, so the person lifting it decides (confirmed).
+discussed meanwhile, so the person lifting it decides (confirmed). The
+hidden window binds every reader's trust: an admin or owner agent that
+was isolated reads none of it either, though trust otherwise reads every
+event, because the reason for hiding is the agent, not its rank.
 
 **Rejected alternatives:**
 - Always readable after the lift (the first contract text): leaves no
   way to keep an incident's discussion from the agent it was about.
 - Never readable: the agent returns blind to decisions made without it.
+- Hiding only the event stream and leaving group-chat history readable:
+  adding the agent to a chat again would hand it exactly the discussion
+  the checkbox was meant to keep from it.

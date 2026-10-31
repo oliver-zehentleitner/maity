@@ -4400,9 +4400,13 @@ trusts the agent again. Who lifts it may choose otherwise —
 `hide_isolation_events: true`, a checkbox in the dashboard's lift
 dialog — and then the events whose `seq` lies between the isolation and
 its lifting stay out of what the agent may read for good, as if it had
-never been a member then: it reads none of them by `GET /events`, a
-card's or request's history or any listing that shows events, and what
-it does see of that time is the state it finds. The membership keeps
+never been a member then, whatever its trust (§8.2): it reads none of
+them by `GET /events`, the project messages (§8.8), a group chat's
+earlier history and its attachments (§9.2) or any other listing that
+shows events, nor the entries of a card's history (`GET
+…/tasks/{id}/history`, §6.15) whose `at` lies in the window. What it does
+see of that time is the state it finds: a card's fields, a request with
+its answer and status, a chat's members. The membership keeps
 the hidden window as `isolation_windows: [{from_seq, to_seq}]` in its
 member view, read by the same readers as `isolated`; a later isolation
 adds a window. Removing the member
@@ -8288,7 +8292,10 @@ Two sets per reader, because reading and waking are different things:
   `role:<its role>` or `trust:<its trust>`, or `watchers:<task id>` when
   the reader is on that event's private watcher list (§6.4), plus events
   it is the actor of. A proxy never matches `trust:admin`, for reading or waking: the
-  token resolves without it (above). Members with trust `owner` or `admin` (humans and agents, a proxy
+  token resolves without it (above). An event whose `seq` lies in one of
+  the reader's `isolation_windows` (§6.2) is readable by nothing of the
+  reader: not by its trust or role, not as its actor, not through a
+  conversation. Otherwise members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
   except a conversation's: `chat` messages, `conversation_*` events, and
   the `event_redacted` and `attachment_deleted` of a conversation's
@@ -8967,7 +8974,8 @@ itself to that caller through some read endpoint at the time of the
 call. That is the message's readable set (§8.2) — for a project message
 its audience, the sender, and owners and admins; for a direct chat its
 two parties (§9.1); for a group chat its current participants, its
-earlier history included, the owners of agent participants who read
+earlier history included except what lies in a participant's
+`isolation_windows` (§6.2), the owners of agent participants who read
 along (§9.2), an owner outside the project included, and a former participant for the messages that are still
 in its readable set of `GET /events` — those written while it was in the
 chat (§9.2): whoever could read a message keeps reading its attachments,
@@ -9145,7 +9153,8 @@ Listed are the messages whose audience holds `all`, `member:<the
 caller>`, `role:<the caller's role>` or `trust:<the caller's trust>` — a mention puts
 `member:<id>` there (§8.6) — and the messages the caller sent. Members with trust `owner` or `admin`, humans and agents, read
 every project message, as they read every event of the project that is
-not a conversation's. The exceptions §8.2 makes for conversations do not
+not a conversation's, apart from §8.2's exceptions (a hidden isolation
+window, §6.2). The exceptions §8.2 makes for conversations do not
 arise: no `chat` message is listed. A message the caller could not read
 through `/events` is never listed here, and nothing listed here is
 readable only through this endpoint. A caller who is not a member of
