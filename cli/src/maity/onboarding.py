@@ -195,6 +195,9 @@ def _name(value: Any, names: dict[str, str]) -> str:
     return inline(names.get(value, value) if isinstance(value, str) else value)
 
 
+DORMANT_OFF = "maity dormant --off"
+
+
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
     member_id = me.get("member_id")
@@ -207,14 +210,19 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if me.get("member_id"):
         line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
-    others = [_sibling(handle, i) for i in _items(packet.get("team"))]
-    if others:
-        lines.append("Other instances of you: " + "; ".join(others))
+    team = _items(packet.get("team"))
+    if team:
+        lines.append("Other instances of you: " + "; ".join(_sibling(handle, i) for i in team))
+    lead = ms.get("reports_to")
+    if lead:
+        lines.append(f"Your lead: @{_name(lead, names)}")
+    if team:
+        lines.append(_coordinate(handle, team, bool(lead)))
+    if me.get("dormant") and instance:  # §6.17
+        address = f"@{handle}#{inline(instance)}"
+        lines.append(f"Dormant: only {address} wakes this instance. End it with: {DORMANT_OFF}")
     if ms.get("trust") or ms.get("role"):
-        role = _trust_role(ms, "Trust: {trust}, role: {role}")
-        if ms.get("reports_to"):
-            role += f", reporting to {_name(ms['reports_to'], names)}"
-        lines.append(role)
+        lines.append(_trust_role(ms, "Trust: {trust}, role: {role}"))
     areas = ms.get("areas")
     if isinstance(areas, list) and areas:
         lines.append("Areas you own: " + ", ".join(inline(a) for a in areas))
@@ -236,7 +244,22 @@ def _sibling(handle: str, item: dict[str, Any]) -> str:
         facts.append(f"{claims} claim" + ("" if claims == 1 else "s"))
     facts += ["lead"] if item.get("lead") is True else []
     facts += ["paused"] if item.get("paused") else []
+    facts += ["dormant"] if item.get("dormant") else []
     return f"{handle}#{inline(item.get('id') or '?')}" + (f" ({', '.join(facts)})" if facts else "")
+
+
+def _coordinate(handle: str, team: list[dict[str, Any]], has_lead: bool) -> str:
+    """What two instances of one member do so they do not cross: ask through the team's lead
+    instance (`lead`, §6.18) or the member's lead before taking or handing over work."""
+    via = [
+        f"@{handle}#{inline(i.get('id') or '?')} (team lead)" for i in team if i.get("lead") is True
+    ]
+    via += ["your lead"] if has_lead else []
+    through = f" through {' or '.join(via)}" if via else ""
+    return (
+        f"Before you take or hand over work, check with them{through}; cards held by them "
+        "are not yours."
+    )
 
 
 def _project(packet: dict[str, Any]) -> list[str]:
@@ -347,6 +370,46 @@ def _read_more(slug: str, after: Any) -> str:
     return f"`maity api GET /projects/{slug}/events --query after={inline(after)}`"
 
 
+def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
+    """What a jour fixe event that wakes someone asks of the reader (§20.9), as plain lines;
+    [] for any other event. The questions are the hub's text and are quoted."""
+    kind = event.get("kind")
+    payload = _dict(event.get("payload"))
+    round_id = inline(payload.get("round_id") or "?")
+    if kind == "jour_fixe_opened":
+        lines = [
+            f"jour fixe {round_id} is open: answer by {inline(payload.get('answers_close_at'))} "
+            "with `maity jourfixe answer`, or not at all; the answer goes to the moderator only"
+        ]
+        questions = payload.get("questions")
+        if isinstance(questions, list):
+            questions = "\n".join(str(q) for q in questions)
+        return lines + (quote(questions) if questions else [])
+    if kind == "jour_fixe_answers_closed":
+        return [
+            f"jour fixe {round_id}: answers closed, {inline(payload.get('answers_received'))} "
+            f"received; you moderate: read them with `maity jourfixe answers {round_id}`, the "
+            f"statement is due by {inline(payload.get('statement_due_at'))} "
+            f"(`maity jourfixe statement {round_id} --file …`)"
+        ]
+    if kind == "jour_fixe_step_opened":
+        step, step_kind = inline(payload.get("step")), inline(payload.get("kind"))
+        topics = payload.get("topics")
+        named = ", ".join(inline(x) for x in topics) if isinstance(topics, list) else ""
+        return [
+            f"jour fixe {round_id}: step {step} ({step_kind}) is open for you "
+            f"until {inline(payload.get('closes_at'))}"
+            + (f", topics {named}" if named else "")
+            + f': `maity jourfixe post {round_id} --step {step_kind} --topic <topic> "…"`'
+        ]
+    if kind == "jour_fixe_exchange_closed":
+        return [
+            f"jour fixe {round_id}: the exchange closed; you moderate: the report is due by "
+            f"{inline(payload.get('report_due_at'))} (`maity jourfixe report {round_id} --file …`)"
+        ]
+    return []
+
+
 def _event(
     event: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
 ) -> list[str]:
@@ -357,7 +420,7 @@ def _event(
     if subject:
         head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":
-        return [head]
+        return [head, *("  " + line for line in jour_fixe_lines(event))]
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))

@@ -961,7 +961,7 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
-## Project memory is chosen on /new and only shown afterwards
+## Project memory is chosen on /new with its setup options
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
 **Type:** decision
@@ -979,18 +979,16 @@ checked as the hub checks it (§6.21: one to five segments, and `..`
 nowhere in the value, `a..b` included, as the coordinator settled it on
 2026-10-30), its refusal said at the field;
 `dashboard_path` is sent only while that option is ticked, and left out
-of the request otherwise, never sent as `null`. Project settings show the provider and the setup's cards
-read only, with a pointer to a card for an agent, and offer the README
-badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
+of the request otherwise, never sent as `null`. Project settings show the setup's cards
+read only and offer the README badge (`policy.badge`) with its snippet;
+the provider itself is changed there since 2026-10-31
+(de95eb84-842b-4476-95c6-dcbaf3a98064), until then it was shown read
+only with a pointer to a card for an agent. Until 2026-10-30 the form asked
 the hub's `/openapi.json` whether `POST /projects` names `memory` and
 `setup`, and without them offered neither; since then it always offers
 and sends them (e1699490, the alpha rule).
 
-**Reason:** the hub would accept a provider change by `PATCH`, but it
-creates and cancels no setup card on it, so a switch in the panel would
-change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. The
-path is left out with the dashboard unticked because the hub would only
+**Reason:** the path is left out with the dashboard unticked because the hub would only
 drop it, `null` is `invalid` (§6.21), and a malformed value in a hidden
 field would refuse a creation for something the human did not choose. The
 form's check is the hub's, not a stricter or looser one of its own: a
@@ -3240,3 +3238,90 @@ of the JSON in the page: a copy of the hub's rules that ages with each
 new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
+
+## The jour fixe is a tab of its own; its series and moderator order are in Project settings
+
+**Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
+**Revisit when:** the round's actions (answers, posts, the statement, the report and its triage, redaction) are added, or a project may run more than one series
+
+**Jour fixe** is a tab of the project. At `jour-fixe` it lists the
+rounds, the next slot and the open round, and offers a start by hand to
+trust owner and admin, the holders of `jour_fixe:start`. At
+`jour-fixe/<id>` it shows one round as a member reads it (§20.7): phase
+and deadline, moderator, the number of answers but never an answer,
+participants and the absent with their reason, the steps, the
+statement, the posts and the report with each proposal's triage. The
+series (`policy.jour_fixe`) is a form in Project settings, sent whole
+with a reason as the contract replaces it. Beside it is the moderator
+order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
+human with `project:admin`, as every policy field is.
+
+**Reason:** a round is read by every member, so it belongs in the
+project's tabs. The series is a policy field and sits with the others.
+The contract keeps answers with their readers, so the round's page
+never shows one, only the count.
+
+**Rejected alternatives:**
+- The rounds inside Project settings: members without `project:admin`
+  read rounds too.
+- Editing the series field by field: the contract replaces
+  `policy.jour_fixe` whole, so a partial form would reset the fields it
+  leaves out.
+
+## All projects has two pages, Inbox and Chats, as a project has its views
+
+**Id:** c72e8c45-838f-4304-bf9f-9e1d3a7693a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-gw59z3w3fenf (the maintainer, 2026-10-31: the existing chats page as a second page under All projects, beside the Inbox, with unread counts); the row of pages is the implementer's
+**Revisit when:** All projects gets a third page, or the Chat button and the Chats page part ways
+
+Under the header, where a project shows its views, All projects shows
+its two pages: **Inbox** (`/all`, the requests across projects) and
+**Chats** (`/chats`, every chat across them), each with the hub's
+count for it (`counts.inbox`, `counts.chat`, §18.2), refreshed with
+the other counts. On either page **All projects** stays current in the
+project row and the header names it as on the Inbox; the Chat button
+leads to the same page. A chat notification already leads into its
+chat. Rejected: Chats as a scope of its own outside All projects, as it
+was: the reader found the chats only through the Chat button, not
+where the requests across projects are. A tab inside the inbox view:
+the inbox and the chat list are views of their own, and a page address
+for each keeps the back button and links working.
+
+## The memory provider is changed in Project settings, with a reason
+
+**Id:** de95eb84-842b-4476-95c6-dcbaf3a98064
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-41hpr02cvej8 (the maintainer, 2026-10-31: a project under `none` cannot make Keep the Why required, and the dashboard offered no way to change the provider); docs/api.md §6.1 (a change by `PATCH`, `project:admin`, bumps `rules_version`, makes and cancels no setup card), §6.23
+**Revisit when:** a second provider arrives, or the hub sets something up or cancels setup cards on a provider change
+
+In Project settings, a human with `project:admin` changes **Project
+memory** (Keep the Why, None) with a reason; the form sends
+`{memory: {provider}, reason}` and says that the change reaches the agents
+at their next resume, makes no setup card and cancels none, and that
+setting Keep the Why up in the repository, or removing it, stays work for
+an agent on a card. Others see the provider and its explanation read
+only. After a switch to Keep the Why the commitment below offers
+`required` and reads it unless someone set it; under None it is
+`optional` and locked. The reason is asked although the hub takes the
+change without one: it lands in the `rules_changed` event, as a policy
+change's reason does.
+
+**Reason:** without the change a project created under None could never
+have Keep the Why required (§6.23 refuses `required` there), and the
+maintainer could not set it for this project. The panel says plainly
+what the change does not do, which was the reason it was read only.
+
+**Rejected alternative:** keeping the provider read only with a pointer
+to a card (a8e479be's earlier rule): an agent cannot change the
+provider either, only a human with `project:admin` can, so the pointer
+led nowhere. Making the setup cards on a switch: the hub does not
+(§6.21), and the dashboard does not invent cards the contract leaves out.

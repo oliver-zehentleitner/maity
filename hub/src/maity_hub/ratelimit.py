@@ -1,7 +1,8 @@
 """Sliding-window limits (login, join exchange, and every other limit of the hub).
 
 On PostgreSQL every replica counts in one table (`shared_counts`, hub/context/replicas.md
-2bd65fec): a limit is exact across the pods, read as a sliding window from two fixed ones. On
+2bd65fec): a small limit (`EXACT_UP_TO`) keeps a row per attempt and counts exactly, a larger
+one reads a sliding window estimated from two fixed ones. On
 SQLite and MariaDB, where the hub runs one replica, and before the counts are configured, a
 limit counts in the process, exactly.
 """
@@ -16,7 +17,11 @@ from datetime import datetime, timedelta
 
 from maity_hub import shared_counts
 
-Mark = float | datetime | None  # what `place` recorded: a moment in the process, or a window
+Mark = float | datetime | None  # what `place` recorded: a moment, or a fixed window's start
+# Up to this limit a shared limit counts every attempt exactly: the estimate from two windows
+# assumes attempts spread evenly, which a handful do not (one export in ten minutes would wait
+# up to twenty), and a row per attempt costs no more than the limit's few rows.
+EXACT_UP_TO = 20
 
 
 class Limiter:
@@ -24,6 +29,7 @@ class Limiter:
         self.limit = limit
         self.window = window_seconds
         self.name = name  # the bucket the counts share across replicas
+        self.exact = limit <= EXACT_UP_TO  # across replicas: a row per attempt
         self._hits: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
 
@@ -42,6 +48,9 @@ class Limiter:
         return self._take_at(key, count, time.monotonic())
 
     def _shared_take(self, key: str, count: int) -> tuple[int, datetime]:
+        if self.exact:
+            log, at = shared_counts.log_take(self.name, key, self.window, count, self.limit)
+            return (0, at) if at is not None else (self._log_wait(log, count), log.now)
         window = shared_counts.add(self.name, key, self.window, count)
         if window.estimate() <= self.limit:
             return 0, window.start
@@ -64,6 +73,17 @@ class Limiter:
             return max(1, math.ceil(remaining))
         fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
         return max(1, math.ceil(remaining + fits_at * self.window))
+
+    def _log_wait(self, log: shared_counts.Log, count: int) -> int:
+        """Seconds until enough attempts of an exact log have left the window for `count`
+        more, as the process counts."""
+        over = log.total + count - self.limit  # at most `log.total`: `count` fits the limit
+        seen = 0
+        for at, held in log.entries:
+            seen += held
+            if seen >= over:
+                return max(1, math.ceil((at - log.now).total_seconds() + self.window))
+        return 1  # not reached: the entries hold `log.total`
 
     def _take_at(self, key: str, count: int, now: float) -> int:
         """`take` at a moment the caller read from the clock."""
@@ -96,6 +116,10 @@ class Limiter:
         left the window already, so a late release never frees an attempt made after them."""
         if mark is None:
             return
+        if isinstance(mark, datetime) and self.exact:
+            # The attempts' own row; once it has left the window it counts for nothing anyway.
+            shared_counts.subtract(self.name, key, mark, count)
+            return
         if isinstance(mark, datetime):
             # The window they were counted in, while that window is still read (current or
             # previous); an older one counts for nothing any more.
@@ -112,6 +136,9 @@ class Limiter:
 
     def blocked(self, key: str) -> int:
         """Like `hit`, without recording an attempt."""
+        if shared_counts.active() and self.exact:
+            log = shared_counts.log_read(self.name, key, self.window)
+            return 0 if log.total + 1 <= self.limit else self._log_wait(log, 1)
         if shared_counts.active():
             window = shared_counts.read(self.name, key, self.window)
             one_more = shared_counts.Window(  # as if one more attempt were taken now

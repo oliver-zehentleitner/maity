@@ -14,7 +14,18 @@ window.Maity = window.Maity || {};
   const KIND_WORDS = {
     // Only what the human has to react to (docs/api.md §18.1, 2026-10-26): what
     // only informs is on the board, the ticker and the project's feed.
-    inbox: "Requests", chat: "Chats", mention: "Mentions", security: "Sign-ins and address",
+    // Read from the catalog when asked, so a language set later applies.
+    get inbox() { return M.t("bell.kind.inbox"); },
+    get chat() { return M.t("bell.kind.chat"); },
+    get mention() { return M.t("bell.kind.mention"); },
+    get security() { return M.t("bell.kind.security"); },
+  };
+  // A kind and its count in the bell, as one text per kind.
+  const KIND_COUNTS = {
+    inbox: (count) => M.t("bell.count.inbox", { count }),
+    chat: (count) => M.t("bell.count.chat", { count }),
+    mention: (count) => M.t("bell.count.mention", { count }),
+    security: (count) => M.t("bell.count.security", { count }),
   };
   // How long a browser long-poll may hold, and how long to stay away after
   // another tab took the long-poll over (§18.2: one per session).
@@ -92,7 +103,7 @@ window.Maity = window.Maity || {};
   // unread chat messages the hub counts (counts.chat, §18.2) on it.
   function chatButton(ctx) {
     const n = state.counts ? state.counts.chat || 0 : 0;
-    const label = n ? n + (n === 1 ? " unread chat message" : " unread chat messages") : "Chats";
+    const label = n ? M.t("bell.chat.unread", { count: n }) : M.t("bell.chat");
     return h("a", { class: "bell chat-button", href: "/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
       M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
   }
@@ -107,9 +118,9 @@ window.Maity = window.Maity || {};
     const unread = Object.keys(KIND_WORDS).filter((k) => k !== "inbox").reduce((n, k) => n + (counts[k] || 0), 0);
     const markable = unread - (counts.security || 0);
     const box = h("div", { class: "bell-box" });
-    const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": "Notifications" });
+    const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": M.t("bell.title") });
     list.hidden = true;
-    const label = unread ? unread + (unread === 1 ? " new notification" : " new notifications") : "Notifications";
+    const label = unread ? M.t("bell.unread", { count: unread }) : M.t("bell.title");
     const button = h("button", {
       type: "button", class: "bell", "aria-expanded": "false", "aria-controls": "bell-panel", "aria-label": label, title: label,
     }, M.icons.bell(18), unread ? h("span", { class: "count", "aria-hidden": "true" }, String(unread)) : null);
@@ -125,15 +136,15 @@ window.Maity = window.Maity || {};
     let top = null;
     function draw() {
       append(clear(list),
-        h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, "Notifications"),
+        h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, M.t("bell.title")),
           top !== null && markable ? h("button", {
             type: "button", class: "small",
             onclick: async () => {
-              status.busy("Marking…");
+              status.busy(M.t("bell.marking"));
               try {
                 await M.api.post("/me/notifications/read", { up_to: top });
               } catch (err) {
-                status.fail("Not marked: ", err);
+                status.fail(M.t("bell.not_marked"), err);
                 return;
               }
               // The bell is drawn again with the new counts; the focus goes to it.
@@ -142,9 +153,9 @@ window.Maity = window.Maity || {};
               const again = document.getElementById("header").querySelector("button.bell");
               if (again) again.focus();
             },
-          }, "Mark all read") : null),
-        h("p", { class: "muted bell-counts" }, Object.keys(KIND_WORDS).filter((k) => counts[k]).map((k) => KIND_WORDS[k] + " " + counts[k]).join(" · ") || "Nothing new."),
-        counts.security ? h("p", { class: "hint" }, "A sign-in or address alert stays unread: opening it here does not confirm it, and Mark all read leaves it. Confirm it with This was me under Sessions in your account.") : null,
+          }, M.t("bell.mark_all")) : null),
+        h("p", { class: "muted bell-counts" }, Object.keys(KIND_COUNTS).filter((k) => counts[k]).map((k) => KIND_COUNTS[k](counts[k])).join(" · ") || M.t("bell.nothing_new")),
+        counts.security ? h("p", { class: "hint" }, M.t("bell.security_hint")) : null,
         items.length
           ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
             h("a", {
@@ -155,12 +166,12 @@ window.Maity = window.Maity || {};
                 // §18.3): opening it to look must not give that session good standing.
                 if (!x.read && !keepsUnread(x)) M.api.post("/me/notifications/read", { ids: [x.id] }).then(onChange, () => {});
               },
-            }, x.redacted ? "Removed" : x.title),
+            }, x.redacted ? M.t("bell.removed") : x.title),
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
             x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
-          : h("p", { class: "muted" }, "No notifications in the last 30 days."),
-        h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, "All notifications"), " · ",
-          h("a", { href: "/account/notifications", onclick: () => close(false) }, "Notification settings")),
+          : h("p", { class: "muted" }, M.t("bell.none")),
+        h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, M.t("bell.all")), " · ",
+          h("a", { href: "/account/notifications", onclick: () => close(false) }, M.t("bell.settings"))),
         status.el);
     }
     // The latest 20 are read when the bell opens; "mark all read" marks up to
@@ -174,7 +185,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         items = [];
         top = null;
-        status.fail("Could not read your notifications: ", err);
+        status.fail(M.t("bell.read_failed"), err);
       }
       draw();
       list.hidden = false;

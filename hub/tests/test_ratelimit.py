@@ -190,7 +190,7 @@ def test_a_release_returns_to_the_window_it_was_counted_in(
     from maity_hub import shared_counts
 
     now = _frozen_shared_clock(monkeypatch, datetime(2026, 10, 31, 0, 0, 50, tzinfo=UTC))
-    limiter = Limiter(3, 60, name="test.release")
+    limiter = Limiter(30, 60, name="test.release")  # over `EXACT_UP_TO`: the estimate
     wait, mark = limiter.place("ada", 2)  # in the window from 0:00
     assert wait == 0
     now[0] += timedelta(seconds=20)  # 0:01:10, the next window
@@ -203,13 +203,43 @@ def test_a_release_returns_to_the_window_it_was_counted_in(
 def test_blocked_answers_as_hit_would_with_a_weighted_previous_window(
     shared: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """n3yv at #822: 9 now and 1 before, halfway: 9.5 counted, so one more (10.5) is over a
-    limit of 10, and `blocked` says so as `hit` would."""
+    """n3yv at #822: 29 now and 1 before, halfway: 29.5 counted, so one more (30.5) is over a
+    limit of 30, and `blocked` says so as `hit` would."""
     now = _frozen_shared_clock(monkeypatch, datetime(2026, 10, 31, 0, 0, 0, tzinfo=UTC))
-    limiter = Limiter(10, 60, name="test.blocked")
+    limiter = Limiter(30, 60, name="test.blocked")  # over `EXACT_UP_TO`: the estimate
     assert limiter.hit("ada") == 0  # the previous window
     now[0] += timedelta(seconds=90)  # halfway through the next one
-    for _ in range(9):
+    for _ in range(29):
         assert limiter.hit("ada") == 0
     assert limiter.blocked("ada") > 0
+
+
+def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#822's CI: once in ten minutes waited up to twenty with the two-window estimate. A
+    small limit keeps a row per attempt and answers as the process does."""
+    from maity_hub import shared_counts
+
+    now = [datetime(2026, 10, 31, 0, 9, 50, tzinfo=UTC)]  # late in a fixed window
+    monkeypatch.setattr(shared_counts, "_now", lambda: now[0])
+    first, second = Limiter(1, 600, name="test.once"), Limiter(1, 600, name="test.once")
+    assert first.exact and first.hit("ada") == 0
+    assert second.hit("ada") == 600  # the other replica, at once: a whole window
+    now[0] += timedelta(seconds=250)  # past the fixed window's end: nothing changes
+    assert first.blocked("ada") == 350 and second.hit("ada") == 350
+    assert shared_counts.log_read("test.once", "ada", 600).total == 1  # refusals write nothing
+    now[0] += timedelta(seconds=350)
+    assert second.hit("ada") == 0  # exactly ten minutes after the first
+
+
+def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
+    limiter = Limiter(3, 60, name="test.exact.back")
+    wait, one = limiter.place("ada")
+    assert wait == 0
+    wait, two = limiter.place("ada", 2)
+    assert wait == 0 and limiter.hit("ada") > 0
+    limiter.release("ada", one)  # the first place's own row
+    limiter.release("ada", two, 1)  # one of the two placed together
+    assert limiter.take("ada", 2) == 0
     assert limiter.hit("ada") > 0

@@ -229,12 +229,16 @@ def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[An
     return group, found
 
 
-def _messages(project_id: str, conversation_id: str) -> Any:
-    return select(t.event).where(
+def _messages(project_id: str, conversation_id: str, reader: Any = None) -> Any:
+    """A conversation's messages, but those in the reader's hidden isolation windows
+    (§6.2, §9.2)."""
+    query = select(t.event).where(
         t.event.c.project_id == project_id,
         t.event.c.kind == "message",
         t.event.c.conversation_id == conversation_id,
     )
+    visible = events.outside_windows(reader)
+    return query if visible is None else query.where(visible)
 
 
 PREVIEW = 200  # code points (§9)
@@ -276,7 +280,7 @@ def _direct_item(
     conn: Connection, mine: Membership, caller: Caller, agent_id: str
 ) -> dict[str, Any]:
     agent, human = chat_parties(conn, mine, agent_id)
-    query = _messages(mine.project.id, agent_id)
+    query = _messages(mine.project.id, agent_id, getattr(mine, "row", None))
     last = conn.execute(query.order_by(t.event.c.seq.desc()).limit(1)).first()
     people = group_chats.people(conn, [human.id, agent.id])
     return {
@@ -308,15 +312,15 @@ def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id:
             ).scalar()
             or 0
         )
-    count = conn.execute(
-        select(func.count()).where(
-            t.event.c.project_id == mine.project.id,
-            t.event.c.kind == "message",
-            t.event.c.conversation_id == agent_id,
-            t.event.c.seq > seen,
-            t.event.c.actor_membership != mine.id,
-        )
-    ).scalar_one()
+    counted = select(func.count()).where(
+        t.event.c.project_id == mine.project.id,
+        t.event.c.kind == "message",
+        t.event.c.conversation_id == agent_id,
+        t.event.c.seq > seen,
+        t.event.c.actor_membership != mine.id,
+    )
+    visible = events.outside_windows(getattr(mine, "row", None))
+    count = conn.execute(counted if visible is None else counted.where(visible)).scalar_one()
     return int(count)
 
 
@@ -662,7 +666,7 @@ def read_messages(
             raise not_found()
         else:
             _party(conn, mine, conversation_id, hidden=False)
-        query = _messages(mine.project.id, conversation_id)
+        query = _messages(mine.project.id, conversation_id, getattr(mine, "row", None))
         if before is not None:
             # The history, back to the conversation's first message, whenever the reader
             # joined; it marks nothing read and wakes nobody (§9.2).

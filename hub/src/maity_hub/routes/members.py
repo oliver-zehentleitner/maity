@@ -1019,14 +1019,32 @@ def isolate_member(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+class LiftIn(Strict):
+    # The events of the isolation stay out of what the agent may read for good (§6.2).
+    hide_isolation_events: bool = False
+
+
 @router.delete("/projects/{owner}/{slug}/members/{member_id}/isolate")
-def lift_isolation(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+def lift_isolation(
+    slug: str,
+    member_id: str,
+    request: Request,
+    caller: AnyCaller,
+    body: LiftIn | None = None,
+) -> JSONResponse:
     """Give an isolated agent its access back, nothing it held (§6.2, "Isolation")."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         target = _isolation_target(conn, mine, caller, member_id)
-        isolation.lift(conn, mine.project, target, mine.principal_id, caller.actor(mine.id))
+        isolation.lift(
+            conn,
+            mine.project,
+            target,
+            mine.principal_id,
+            caller.actor(mine.id),
+            hide=bool(body and body.hide_isolation_events),
+        )
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)

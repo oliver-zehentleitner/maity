@@ -199,7 +199,23 @@ a keyword on MariaDB), incremented with `INSERT … ON CONFLICT DO UPDATE SET co
 read as a sliding window approximated by the current and the previous fixed window (weighted by
 the overlap). A take over the limit is subtracted again, so a refusal records nothing, as in the
 process; two takes at once may both be refused where one would have fitted, the strict side.
-The wait a refusal names (`Retry-After`) follows the same estimate: when the current window alone
+A small limit (`EXACT_UP_TO`, 20 or fewer attempts) keeps a row per attempt instead, keyed by its
+moment, and counts exactly as the process does: the take reads the attempts inside the window
+under a per-key advisory lock (`pg_advisory_xact_lock`), writes its row only when it fits, and
+the wait is the moment the oldest attempts that must go leave the window. The estimate assumes
+attempts spread evenly, which a handful do not: with a limit of one, the attempt still weighs on
+the next fixed window until its end, so one export in ten minutes waited up to twenty (`Retry-After`
+1006 in #822's CI). The rows stay until the sweep (two days), those released to zero included,
+not only while their window is read: a login limit of 10 a minute keeps up to 10 rows a minute
+per address where the estimate keeps one per window. The bound sits at 20 because the limits up
+to there are the guessing bounds and the per-account courtesy limits, few attempts per key,
+where the estimate's error is a large share of the limit; above it are the per-address limits
+of 60 a minute on public endpoints and the upload volume, whose traffic would be a row each.
+Rejected:
+capping the estimate's wait at the window, which names a moment the retry is refused again; an
+exact row per attempt for every limit, which for the per-address limits of 60 a minute keeps
+every request's row until the sweep.
+For the larger limits the wait a refusal names (`Retry-After`) follows the estimate: when the current window alone
 is over the limit it runs into the next window, where this window's attempts count as the
 previous ones and fall by weight. The estimate assumes the attempts spread evenly over the
 window, so the wait can differ from the exact answer in the process either way: longer when the
@@ -207,7 +223,8 @@ attempts came early in the window (621 s instead of 600 s for the mentions test)
 they came late (29 pings at 594 s of 600, then 2 more: 27 s instead of 600 s). It is no
 conservative bound; what each backend names is the moment its own take fits again.
 Work that does not happen after all gives its attempts back with `release` and the mark
-`place` returned, which is the window the attempts were counted in: `give_back` subtracted from
+`place` returned, which is the window the attempts were counted in (for an exact limit their
+own row): `give_back` subtracted from
 whichever window was current when the work failed, a later window's count, so it is gone, and
 every caller now holds the mark. `take` and `place` refuse a count over the limit
 (`ValueError`): it never fits, and no `Retry-After` would be true; no caller passes one (a write

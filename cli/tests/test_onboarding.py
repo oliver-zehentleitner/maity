@@ -94,12 +94,44 @@ def test_resume_names_this_instance_and_its_siblings() -> None:
 def test_a_team_of_one_shows_no_sibling_line() -> None:
     text = onboarding.render({**packet(), "team": []})
     assert "Other instances" not in text
+    assert "check with them" not in text
+    assert "Your lead: @agent-a\n" in text  # the lead line stands without siblings too
+
+
+def _sib(id_: str, lead: bool) -> dict[str, Any]:
+    return {"id": id_, "address": f"agt-b#{id_}", "presence": "online", "lead": lead}
+
+
+@pytest.mark.parametrize(
+    ("team", "lead", "sentence"),
+    [
+        ([_sib("k7mq", True)], True,
+         "check with them through @agent-b#k7mq (team lead) or your lead;"),
+        ([_sib("k7mq", False)], True, "check with them through your lead;"),
+        ([_sib("k7mq", True)], False, "check with them through @agent-b#k7mq (team lead);"),
+        ([_sib("k7mq", False)], False, "check with them; cards held by them are not yours."),
+    ],
+)  # fmt: skip
+def test_siblings_come_with_the_lead_and_whom_to_ask(
+    team: list[dict[str, Any]], lead: bool, sentence: str
+) -> None:
+    base = packet()
+    ms = dict(base["membership"])
+    if not lead:
+        ms.pop("reports_to")
+    text = onboarding.render({**base, "membership": ms, "team": team})
+    who = text.split("Other instances of you: ", 1)[1].splitlines()
+    assert who[0].startswith("agent-b#k7mq (online")
+    if lead:
+        assert who[1] == "Your lead: @agent-a"
+    assert "Before you take or hand over work, " + sentence in text
+    assert ("Your lead:" in text) is lead
 
 
 def test_identity_project_rules_and_next_step() -> None:
     text = onboarding.render(packet())
     assert "You are agent-b (Agent B), member id agt-b." in text
-    assert "Trust: member, role: coder, reporting to agent-a" in text
+    assert "Trust: member, role: coder\n" in text and "Your lead: @agent-a\n" in text
     assert "Areas you own: hub/" in text
     assert "Your human: maintainer" in text
     assert "Project: Maity (oliver/maity), state build" in text
@@ -443,13 +475,13 @@ def test_members_are_named_by_handle_and_unknown_ids_stay_ids() -> None:
         full=True,
     )
     assert "  #9 member_joined by maintainer on agt-new" in text
-    assert "reporting to agent-a" in text
+    assert "Your lead: @agent-a" in text
 
 
 def test_a_handle_is_still_cleaned() -> None:
     peers = [{"member_id": "agt-a", "handle": "evil\x1b[2Jname", "role": "admin"}]
     text = onboarding.render(packet(peers=peers))
-    assert "\x1b" not in text and "reporting to evil" in text
+    assert "\x1b" not in text and "Your lead: @evil" in text
 
 
 @pytest.mark.parametrize(
@@ -461,7 +493,7 @@ def test_a_handle_that_could_mislead_falls_back_to_the_id(handle: str) -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
     ]
     text = onboarding.render(packet(peers=peers))
-    assert "reporting to agt-a" in text
+    assert "Your lead: @agt-a" in text
     assert "Members: agt-a [agt-a]" in text
 
 
@@ -483,7 +515,7 @@ def test_handles_that_only_look_different_count_as_shared(alias: str) -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
     ]
     text = onboarding.render(packet(peers=peers))
-    assert "reporting to agt-a" in text
+    assert "Your lead: @agt-a" in text
 
 
 def test_a_peer_without_a_member_id_has_no_empty_brackets() -> None:

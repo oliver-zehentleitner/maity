@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 
-from maity_hub import group_chats
+from maity_hub import events, group_chats
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.views import principal_ids, ts
@@ -56,14 +56,19 @@ def _chunks(items: Sequence[Any]) -> Iterable[Sequence[Any]]:
         yield batch
 
 
-def _after(key: Key, seq: int) -> Any:
-    """Messages of the chat `key` past `seq`."""
-    return and_(
+def _after(key: Key, seq: int, mines: dict[str, Any] | None = None) -> Any:
+    """Messages of the chat `key` past `seq`, but those in the hidden isolation windows of the
+    caller's membership in that project (§6.2), when `mines` names it."""
+    clause = and_(
         t.event.c.project_id == key[0], t.event.c.conversation_id == key[1], t.event.c.seq > seq
     )
+    visible = events.outside_windows(getattr(mines.get(key[0]), "row", None)) if mines else None
+    return clause if visible is None else and_(clause, visible)
 
 
-def _latest(conn: Connection, windows: dict[Key, int]) -> dict[Key, Any]:
+def _latest(
+    conn: Connection, windows: dict[Key, int], mines: dict[str, Any] | None = None
+) -> dict[Key, Any]:
     """Per chat the newest message after its window: the whole row."""
     found: dict[Key, Any] = {}
     for batch in _chunks(list(windows)):
@@ -73,7 +78,7 @@ def _latest(conn: Connection, windows: dict[Key, int]) -> dict[Key, Any]:
                 t.event.c.conversation_id,
                 func.max(t.event.c.seq).label("seq"),
             )
-            .where(t.event.c.kind == "message", or_(*(_after(k, windows[k]) for k in batch)))
+            .where(t.event.c.kind == "message", or_(*(_after(k, windows[k], mines) for k in batch)))
             .group_by(t.event.c.project_id, t.event.c.conversation_id)
             .subquery()
         )
@@ -92,7 +97,9 @@ def _counts(conn: Connection, mines: dict[str, Any], seen: dict[Key, int]) -> di
                 t.event.c.kind == "message",
                 or_(
                     *(
-                        and_(_after(k, seen[k]), t.event.c.actor_membership != mines[k[0]].id)
+                        and_(
+                            _after(k, seen[k], mines), t.event.c.actor_membership != mines[k[0]].id
+                        )
                         for k in batch
                     )
                 ),
@@ -215,7 +222,7 @@ def direct_entries(
     if not chats:
         return []
     people = group_chats.people(conn, {agents[k].id for k in chats} | {humans[k].id for k in chats})
-    lasts = _latest(conn, dict.fromkeys(chats, 0))
+    lasts = _latest(conn, dict.fromkeys(chats, 0), by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
     unread = _direct_unread(conn, by_project, caller, chats)
     entries = []
@@ -353,7 +360,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
     windows = _windows(conn, by_project, found, stays)
-    lasts = _latest(conn, windows)
+    lasts = _latest(conn, windows, by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
     unread, mentioned = _unread(
         conn, by_project, {k: w for k, w in windows.items() if found[k] == "participant"}
@@ -458,7 +465,9 @@ def _unread(
                 t.event.c.kind == "message",
                 or_(
                     *(
-                        and_(_after(k, seen[k]), t.event.c.actor_membership != mines[k[0]].id)
+                        and_(
+                            _after(k, seen[k], mines), t.event.c.actor_membership != mines[k[0]].id
+                        )
                         for k in batch
                     )
                 ),
