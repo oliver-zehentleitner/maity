@@ -651,6 +651,12 @@ hub: the served agent's own scopes are the limit the hub can check
   several, each for its own need.
 - Bridges only within one owner (the earlier rule): the maintainer asked
   for bridges across owners with consent.
+- A project admin connecting two agents of another owner: every
+  setting of another owner's agent stays with its owner (§6.2), so only
+  the served agent's owner asks (after review).
+- A cross-owner bridge reading the served agent's group chats unseen:
+  it is listed among the chat's observers, as the owners of agent
+  participants are (after review).
 - Enforcing the purpose as a scope: there is no reliable way to tell a
   call made for "file transfer" from one made for anything else; the
   served agent's scopes and either owner's power to end the connection
