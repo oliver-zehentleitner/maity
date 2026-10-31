@@ -1150,12 +1150,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
-  expect(prTab() && prTab().getAttribute("href") === "#/maintainer/maity/runners", "project runners: a tab for the project's admin");
+  // No tab of its own any more (the maintainer, 2026-10-31): Settings links it.
+  expect(!prTab(), "project runners: no tab of its own");
+  await go("#/maintainer/maity/settings"); await tick();
+  const prLink = main.querySelectorAll("a").find((a) => a.textContent === "This project's runners");
+  expect(prLink && prLink.getAttribute("href") === "#/maintainer/maity/runners", "project runners: linked from the project's Settings for its admin");
   const prWrites = [];
   const prPost = win.Maity.api.post, prDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { prWrites.push(["POST", p, b]); return prPost(p, b); };
   win.Maity.api.del = (p) => { prWrites.push(["DELETE", p]); return prDel(p); };
   await go("#/maintainer/maity/runners"); await tick();
+  const prSettingsTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings");
+  expect(prSettingsTab && prSettingsTab.getAttribute("aria-current") === "page" && main.querySelector("section.view-runners") && !main.querySelector("section.view-settings"),
+    "project runners: the Settings tab stands for it, the view keeps its own name");
   const prCard = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
   expect(plainTitle() === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
     "project runners: the attached runners, by name");
@@ -1483,9 +1490,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An admin who is no owner (owner_only): neither trust owner or admin nor the role proxy is offered.
   win.Maity.api.get = (p) => (p === "/me" ? trGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "admin"; return m; }) : trGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick(); await agOpen("agt-d");
-  expect(trOpts(byId("member-trust-agt-d")) === "member,guest" && !trOpts(byId("member-role-agt-d")).split(",").includes("proxy")
-    && trOpts(byId("invite-trust")) === "member,guest",
-    "trust: an admin who is no owner is offered neither owner, admin nor proxy, here or for an invitation");
+  expect(trOpts(byId("member-trust-agt-d")) === "member,guest" && !trOpts(byId("member-role-agt-d")).split(",").includes("proxy"),
+    "trust: an admin who is no owner is offered neither owner, admin nor proxy here");
+  // The invitation form lives on /invite now (the maintainer, 2026-10-31): the same limits there.
+  await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  expect(byId("invite-trust") && trOpts(byId("invite-trust")) === "member,guest", "trust: an admin who is no owner is offered neither owner nor admin for an invitation");
   // An owner's row offers a non-owner no removal (owner_only, §2.3).
   await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick(); await agOpen("hum-maintainer");
   expect(main.querySelector("tr.member-manage") && !btn(main.querySelector("tr.member-manage"), "Remove from the project"),
@@ -6449,13 +6458,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   stProto.focus = stFocus; document.activeElement = undefined;
   await go("#/maintainer/maity/inbox");
 
-  // Inviting a person (docs/api.md §3.4): on Members for a human with members:admin; the link once; the list; revoking.
+  // Inviting a person (docs/api.md §3.4): from Members' Invite user to /invite with the project chosen,
+  // for a human with members:admin; the link once; the list; revoking.
   const ivPosts = [], ivDels = [];
   const ivPost = win.Maity.api.post, ivDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { if (p.includes("invitation")) ivPosts.push([p, b]); return ivPost(p, b); };
   win.Maity.api.del = (p) => { if (p.includes("/invitations/")) ivDels.push(p); return ivDel(p); };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const ivInvite = main.querySelector("a.members-invite-user"), ivJoin = main.querySelector("a.members-join-agent");
+  expect(ivInvite && ivInvite.getAttribute("href") === "#/invite?project=maintainer%2Fmaity" && text(ivInvite) === "Invite user"
+    && ivJoin && ivJoin.getAttribute("href") === "#/maintainer/maity/agents" && !main.querySelector("section.invitations"),
+    "invite: Members has Invite user and Join agent at the top, and no invitation form of its own");
+  await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivBox = () => main.querySelector("section.invitations");
+  const ivOthers = main.querySelectorAll(".invitations-others section.invitations");
+  expect(main.querySelector("section.view-invitations") && text(main).includes("Invite a person") && byId("invitations-project") && byId("invitations-project").value === "maintainer/maity"
+    && text(ivBox()).includes("Invite a person to Maity") && ivOthers.length === 1 && !ivOthers[0].querySelector("form"),
+    "invite: /invite has the chosen project with its form, the other project's invitations without one");
+  // The other project's list keeps its own status line, so a revoke there says what happened (review of #931).
+  expect(ivOthers[0].querySelector(".send-status"), "invite: a list without a form still has its status line");
+  // A project chosen while the page still reads: one draw wins, no panel twice.
+  const ivPick = byId("invitations-project");
+  ivPick.value = "maintainer/sample"; ivPick.dispatch("change");
+  ivPick.value = "maintainer/maity"; ivPick.dispatch("change");
+  for (let k = 0; k < 10; k++) await tick();
+  expect(main.querySelectorAll("section.invitations").length === 2 && main.querySelectorAll(".invitations-others section.invitations").length === 1
+    && text(ivBox()).includes("Invite a person to Maity"), "invite: choosing again while reading draws each project once");
   const ivItems = () => ivBox().querySelectorAll("li.invite-item").map((li) => li.getAttribute("data-invitation") + ":" + text(li.querySelector(".invite-state")));
   expect(ivBox() && JSON.stringify(byId("invite-trust").querySelectorAll("option").map((o) => o.getAttribute("value"))) === JSON.stringify(["owner", "admin", "member", "guest"])
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
@@ -6486,19 +6514,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The form takes the session the page read already (M.api.session), no new read of it.
   const ivSessionGets = [], ivGetAll = win.Maity.api.get;
   win.Maity.api.get = (p) => { if (p === "/auth/session") ivSessionGets.push(p); return ivGetAll(p); };
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   // The app reads the session once per page drawn (two here); the form adds none.
   expect(byId("invite-via-join") && ivSessionGets.length === 2, "invite: the form uses the session the page read, without reading it again (" + ivSessionGets.length + ")");
   win.Maity.api.get = ivGetAll;
   const ivSession = win.Maity.api.session;
   win.Maity.api.session = () => Object.assign({}, ivSession(), { join_url: null });
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivNoHost = ivPosts.length;
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!byId("invite-via-join") && ivPosts[ivNoHost] && !("via" in ivPosts[ivNoHost][1]) && byId("invite-url"),
     "invite: without a join host there is no choice and no via; the hub picks the link");
   win.Maity.api.session = ivSession;
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   // The note's limit is 1 KiB of UTF-8, not 1024 characters: 400 three-byte characters are too long.
   byId("invite-note").value = "€".repeat(400);
   const ivBefore = ivPosts.length;
@@ -6511,8 +6539,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A member without members:admin sees no inviting.
   const ivGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { projects: v.projects.map((x) => Object.assign({}, x, { trust: "member", role: "coder" })) }) : v));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
-  expect(!ivBox(), "invite: no inviting for a member without members:admin");
+  await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  expect(!ivBox() && text(main).includes("You add members in no project"), "invite: no inviting for a member without members:admin, said so");
   win.Maity.api.get = ivGet;
   // The invitation page signed in: one button; accepted, the way into the project; the hub's refusals in its words.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 6; k++) await tick();
@@ -6622,13 +6650,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Unread on the bell: every kind but the open requests (the inbox shows those); a sign-in alert counts.
   expect(bellBtn() && bellBtn().getAttribute("aria-label") === "3 new notifications" && text(bellBtn()).includes("3")
     && tabCountOf("Chat") === "1", "notifications: the bell says how many are new; the chat tab its unread chats");
-  // The header's right block: Chat, Notifications, the gear, the profile; the Chat badge is the hub's unread chat messages.
+  // The header's right block (the maintainer, 2026-10-31): Chat, Lead, "+", the gear, Notifications, the profile;
+  // the Chat badge is the hub's unread chat messages.
   const chatBtn = () => header.querySelector("a.chat-button");
   const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
   expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
     && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
-    && /chat-button/.test(meOrder[0]) && /lead-button/.test(meOrder[1]) && /bell-box/.test(meOrder[2]) && header.querySelector(".me").childNodes.length === 5,
-    "header: Chat, Lead, then Notifications, the gear and the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+    && /chat-button/.test(meOrder[0]) && /lead-button/.test(meOrder[1]) && /menu-box/.test(meOrder[2]) && header.querySelector(".me").childNodes[2].querySelector(".add-menu")
+    && header.querySelector(".me").childNodes[3].querySelector(".settings-menu") && /bell-box/.test(meOrder[4])
+    && header.querySelector(".me").childNodes[5].querySelector(".profile-menu") && header.querySelector(".me").childNodes.length === 6,
+    "header: Chat, Lead, \"+\", the gear, Notifications, the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
+  // "+" offers an agent and a person: the agents page and the invitations page.
+  const addBtn = header.querySelector(".add-menu");
+  addBtn.click(); await tick();
+  const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
+  expect(addBtn.getAttribute("aria-label") === "Add an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite"]),
+    "header: the + menu leads to the agents page and the invitations page " + JSON.stringify(addItems));
+  addBtn.click(); await tick();
   // The Lead button (the maintainer's decision, req-4rpd7vqb6xe3): Chat stays the way to every chat; Lead reaches
   // the one lead at once (here the owner's own admin agent, on a hub without coordinator data).
   const leadBtn = () => header.querySelector(".lead-button");

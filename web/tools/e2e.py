@@ -929,7 +929,8 @@ def scenario(run: Run, page: Page) -> None:
     # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
     if view_tab(page, "Why").count():
         tabs += (("why", "Why"),)
-    tabs += (("runners", "Runners"),)
+    # Runners has no tab of its own any more (the maintainer, 2026-10-31): Settings links it.
+    expect(view_tab(page, "Runners")).to_have_count(0)
     for view, tab in tabs:
         view_tab(page, tab).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
@@ -1829,8 +1830,8 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
 def project_runners_step(run: Run, page: Page, name: str) -> None:
     """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
-    view_tab(page, "Runners").click()
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    page.get_by_role("link", name="This project's runners", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.locator("h2").first).to_be_visible()
@@ -1865,11 +1866,12 @@ def notifications_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     bell = page.locator("header button.bell")
-    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
-    # the gear, the profile, in one row also on a phone.
-    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
+    # The header's right block (the maintainer, 2026-10-31): Chat, the Lead button where there is a
+    # lead to reach, "+", the gear, Notifications, the profile, in one row also on a phone.
+    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className + (e.querySelector('.add-menu') ? ' add' : '') + (e.querySelector('.profile-menu') ? ' profile' : ''))")
     lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
-    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
+    assert (len(order) == 5 + lead and "chat-button" in order[0] and "add" in order[1 + lead]
+            and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
@@ -2581,13 +2583,18 @@ def agents_page_step(run: Run, page: Page) -> None:
 
 
 def invitations_step(run: Run, page: Page) -> None:
-    """Invitations (docs/api.md §3.4) on the real hub: the owner invites from Members; a browser
+    """Invitations (docs/api.md §3.4) on the real hub: the owner goes from Members' Invite user to
+    /invite with the project chosen and invites there; a browser
     without a session opens the link, signs in with it as next and comes back; joining is refused
     in the hub's words (the only human there is a member already: without mail the e2e hub makes
     no second account); revoked, the link is one uniform answer."""
-    run.step("invitations: the owner invites a person from Members; the link is shown once")
+    run.step("invitations: the owner invites a person from /invite, reached by Members' Invite user; the link is shown once")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    box = page.locator("section.invitations")
+    expect(page.locator("section.invitations")).to_have_count(0)
+    page.get_by_role("link", name="Invite user", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/invite\?project=owner%2Fe2e-alpha$"))
+    expect(page.locator("#invitations-project")).to_have_value("owner/e2e-alpha")
+    box = page.locator("section.invitations").first
     expect(box).to_be_visible()
     page.locator("#invite-role").select_option("reviewer")
     page.locator("#invite-note").fill("Welcome to the e2e project.")
@@ -2601,7 +2608,7 @@ def invitations_step(run: Run, page: Page) -> None:
     expect(shown).to_have_value(re.compile(r"/invite/[A-Za-z0-9_-]{22}$"))
     token = shown.input_value().rsplit("/", 1)[1]
     expect(box.locator("li.invite-item.invite-open")).to_have_count(1)
-    run.a11y(page, "members, an invitation created")
+    run.a11y(page, "invitations page, an invitation created")
 
     run.step("invitations: a browser without a session opens the link, signs in and comes back to it")
     other = page.context.browser.new_context()
