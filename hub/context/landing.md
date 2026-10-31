@@ -315,6 +315,14 @@ a counter shows none of it. Rejected: showing every online counter as soon as an
 the operator took off. In a test the naming rule can only be seen with at least five online, since below the floor the counter is
 left out anyway.
 
+The board's last details are drawn by the same renderer: an online counter in the strip has the live dot before its number, the hero line
+puts the online numbers before the note, a `github.com` link is left out of the Follow column when the Open source column has one (the
+host is compared, not the whole URL), and the scales' two-column container is `.scales-body` with the panels left and the rings in
+`.scales-art` right, the tab bar a sibling placed before it by `landing.js`. The route loads the stats only when a main page's enabled
+`stats` section names a counter (`routes/pages.py`, `landing_stats.named` reads `pages`, not `variants`), so a variant with a `stats`
+section and no main page that has one shows neither the strip nor the hero numbers; kept as it is, since `GET /landing` publishes by the
+same rule.
+
 **Reason:** the live header wrapped to two lines because the five section titles were its link texts, so a short label of its own,
 chosen by the operator, is the only way to keep one line without a fixed list in the code. The footer needs no field of its own
 because every link it shows already exists elsewhere on the page, so a new contract field would only repeat them. The numbers come
@@ -327,3 +335,27 @@ not publish.
 - Cutting the section titles to fit: a title is text for the section, and its length is the operator's.
 - A `footer.columns` field: another contract field for links the page already holds.
 - A "< 5" in place of a counter below the floor: it stands next to a larger total and invites reading who is online.
+
+## A page's languages are listed with the default first and the rest alphabetically
+
+**Id:** 59f1acda-b6e4-4a93-a2a6-9503ab1b2689
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16.7; the `hub-postgresql` CI job on #909, 2026-10-31, and the reviews of the fix (n3yv, c47w); the card tsk-hztv5d16x9g1
+**See:** persistence.md#nothing-is-derived-from-the-order-of-the-keys-of-a-json-object-read-back-from-the-database — 04ed9b8c-ce31-4c97-a761-3c4278cf9039 — as of 2026-10-31
+**Revisit when:** an operator wants to say in what order the languages are offered (the setting would then need a list, not only the `pages` object)
+
+`render.ordered_languages(pages, default)` is the one place that puts the languages of a setting in order: the default language first,
+the others alphabetically. The language bar of the footer, the `hreflang` links, the page a missing language falls back to and the
+choice among the offered languages when nothing matches (`choose_language`, last resort) all take it, so they are the same on every
+database.
+
+**Reason:** the setting keeps its pages in an object whose key order the database does not keep (PostgreSQL's `jsonb` sorts it), so
+without a rule the footer showed the languages in a different order on the production database than in the tests; a rule that does
+not depend on how the object was saved is the same everywhere.
+
+**Rejected alternatives:**
+- The order in which the admin created the languages: it cannot be stored in a `jsonb` object without carrying a list of its own,
+  and the contract has no field for one.
+- Fixing the test to expect the database's order: the page would still differ between databases, and an operator could not predict it.
