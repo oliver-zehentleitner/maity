@@ -3417,3 +3417,39 @@ to a card (a8e479be's earlier rule): an agent cannot change the
 provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
+
+## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
+
+**Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+
+The header's row beside the state shows the repository, then the
+project's own links that are set (issues, wiki, discussions, chat, each
+with its mark), then the Keep the Why dashboard. Each is plain https
+only and opens in a tab of its own with `rel="noopener noreferrer"`. The
+repository's button reads "Repository" for every forge. Its mark and
+its name for a screen reader ("Repository on GitHub") still say which
+forge. The overview's Project tab shows the same links as buttons
+beside the repository. They are not in the header's list of projects:
+each entry there is itself a link, which cannot hold four more, and `/me`
+does not carry a project's links; §6.11 was changed to name the header
+beside the project's state instead (review of #884). Project settings have four fields that send only
+the links that changed; an empty field clears its link, and each refusal
+of the hub is said at its field.
+
+**Reason:** with up to six buttons in the row, the forge's name as the
+label took room the four new ones need, and the mark already shows the
+forge. The hub merges links by key (§6.11), so a form that sent all four
+would overwrite another admin's change to a link it did not touch.
+
+**Rejected alternatives:**
+- The forge's name as the label, as before (the old header): wider, and
+  it said twice what the mark says.
+- Sending all four links on every save (#846): it loses another admin's
+  change made meanwhile.
+
