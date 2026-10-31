@@ -73,11 +73,12 @@ def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[di
     ):
         claims[(holder, instance)] = count
     found: dict[int, list[dict[str, Any]]] = {m: [] for m in membership_ids}
+    heard = listening.which((row.session_id for row in rows), conn)  # one read for all
     for row in rows:
         found[row.membership_id].append(
             {
                 "instance": row.instance,
-                "listening": listening.is_listening(row.session_id),
+                "listening": row.session_id in heard,
                 "last_seen_at": row.last_seen_at,
                 "claims": claims.get((row.membership_id, row.instance), 0),
             }
@@ -214,11 +215,12 @@ def record_presence(conn: Connection, now: datetime) -> None:
             t.agent_session.c.last_seen_at,
         ).where(t.agent_session.c.live.is_(True))
     ).all()
+    heard = listening.which((session for _, session, _ in live), conn)
     online = sorted(
         {
             m
             for m, session, seen in live
-            if instances.presence(seen, True, listening.is_listening(session)) == "online"
+            if instances.presence(seen, True, session in heard) == "online"
         }
     )
     known = set(

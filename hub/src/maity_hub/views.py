@@ -19,6 +19,7 @@ from maity_hub import (
     namespace,
     onboarding,
     policy,
+    project_links,
     ticker_read,
 )
 from maity_hub import handles as handle_book
@@ -278,6 +279,8 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
+        # The project's own links (§6.11), all four keys, null where none is set.
+        "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
@@ -588,6 +591,7 @@ def member_views(
     carried = _carried_presence(
         conn, {r.id for r in rows if r.agent_id is not None and r.id not in live}
     )
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
@@ -668,7 +672,7 @@ def member_views(
         if row.agent_id is not None:
             session = live.get(row.id)
             latest = latest_of.get(row.id)
-            is_listening = session is not None and listening.is_listening(session.id)
+            is_listening = session is not None and session.id in heard
             view["harness"] = latest.harness if latest else None
             view["model"] = latest.model if latest else None
             view["session"] = (

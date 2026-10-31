@@ -60,18 +60,17 @@ def _session(agent: flow.Agent) -> str:
 
 
 @pytest.fixture
-def listens() -> Iterator[list[str]]:
+def listens() -> Iterator[list[tuple[str, str]]]:
     """Session ids marked as holding a long-poll, unmarked after the test."""
-    opened: list[str] = []
+    opened: list[tuple[str, str]] = []
     yield opened
-    for session_id in opened:
-        listening.closed(session_id)
+    for session_id, wait in opened:
+        listening.closed(session_id, wait)
 
 
-def _listen(listens: list[str], agent: flow.Agent) -> None:
+def _listen(listens: list[tuple[str, str]], agent: flow.Agent) -> None:
     session_id = _session(agent)
-    listening.opened(session_id)
-    listens.append(session_id)
+    listens.append((session_id, listening.opened(session_id)))
 
 
 def _last(engine: Engine, kind: str) -> Any:
@@ -279,7 +278,7 @@ def test_without_a_narrowing_team_an_event_records_no_wakes(
 
 
 def test_next_free_wakes_the_listening_instance_with_the_fewest_claims(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[tuple[str, str]]
 ) -> None:
     first, second = _pair(make_client, owner)
     busy = _assigned(owner, first)
@@ -298,7 +297,7 @@ def test_next_free_wakes_the_listening_instance_with_the_fewest_claims(
 
 
 def test_a_lead_team_wakes_its_lead_and_nobody_when_it_does_not_listen(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[tuple[str, str]]
 ) -> None:
     lead, other = _pair(make_client, owner)
     _team(owner, lead.id, wake="lead", lead_instance=lead.instance)
@@ -362,7 +361,7 @@ def test_instance_goes_with_paused_only(owner: flow.Human, make_client: ClientFa
 
 
 def test_a_members_presence_is_the_best_of_its_instances(
-    owner: flow.Human, make_client: ClientFactory, listens: list[str]
+    owner: flow.Human, make_client: ClientFactory, listens: list[tuple[str, str]]
 ) -> None:
     first, second = _pair(make_client, owner)
     _listen(listens, second)

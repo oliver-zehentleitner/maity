@@ -121,7 +121,7 @@ window.Maity = window.Maity || {};
       "aria-describedby": "setup-dashboard-path-hint setup-dashboard-path-error" });
     pathInput.value = DASHBOARD_PATH_DEFAULT;
     const pathError = h("p", { class: "field-error", id: "setup-dashboard-path-error", role: "alert" });
-    const pathField = h("div", { class: "setup-path" },
+    const pathField = h("div", { class: "setup-path field-stack" },
       h("label", { for: "setup-dashboard-path" }, "Path"), pathInput,
       h("p", { class: "hint", id: "setup-dashboard-path-hint" }, "Where the dashboard is published, below the root of the repository's "
         + "documentation site. " + DASHBOARD_PATH_RULE + "."),

@@ -132,8 +132,12 @@ window.Maity = window.Maity || {};
   // A join URL's host, as the person sees it in the link ("join.maity.team").
   const hostOf = (url) => { try { return new URL(url).host; } catch (err) { return String(url); } };
 
-  // For a human with members:admin; null otherwise.
-  async function membersPanel(ctx) {
+  // For a human with members:admin; null otherwise. opts.heading: the
+  // section's title instead of the usual one (the /invite page names the
+  // project); opts.listOnly: the invitations without the form (another
+  // project's on /invite).
+  async function membersPanel(ctx, opts) {
+    const o = opts || {};
     if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
     const box = h("section", { class: "invitations", "aria-labelledby": "invitations-heading" });
     const listBox = h("div");
@@ -259,9 +263,13 @@ window.Maity = window.Maity || {};
         }))
         : h("p", { class: "muted" }, M.t("invite.none")));
     }
-    append(box, h("h3", { id: "invitations-heading" }, M.t("invite.title")),
-      h("p", { class: "muted" }, M.t("invite.hint")),
-      form, issued, h("h4", null, M.t("invite.list")), listBox);
+    // Ids per project, so that several panels share a page.
+    const headingId = "invitations-heading" + (o.heading ? "-" + ctx.slug.replace(/[^a-z0-9]+/gi, "-") : "");
+    box.setAttribute("aria-labelledby", headingId);
+    append(box, h("h3", { id: headingId }, o.heading || M.t("invite.title")),
+      // Without the form its status line stands here: a revoke in the list says what happened.
+      o.listOnly ? status.el : [h("p", { class: "muted" }, M.t("invite.hint")), form, issued],
+      h("h4", null, M.t("invite.list")), listBox);
     await list();
     return box;
   }

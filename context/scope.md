@@ -784,6 +784,37 @@ script files was only ever a workaround for a page drawn by script.
   no longer carry the words.
 
 
+## A "Works with" band names agents from a list in the code; their logos are third-party marks, never page content
+
+**Id:** d09cf943-1cca-42cc-8c5c-ac953105ecba
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish of 2026-10-31 through the designer (a band like keepthewhy.com's under the hero buttons, the logos cleared in his Keep the Why project); contract `docs/api.md` §16.7
+**See:** scope.md#the-landing-page-is-enhanced-by-a-first-party-script-and-fonts-from-the-code-never-needed-to-read-it — e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37 — as of 2026-10-31
+
+The landing may show a `works_with` section: a label, a band of agent
+logos and an optional line for the rest. The section names agents by
+slug from a fixed list in the hub's code, which also holds each name
+and logo; the page's JSON chooses which and in what order, nothing
+more.
+
+**Reason:** the logos are other companies' marks. Keeping them as files
+in the code, with a notice of where they come from and on what terms,
+keeps them out of the instance's editable content and out of the MIT
+licence, and stops an operator from pointing the band at arbitrary
+images. They are one file per mark, not inline SVG, so that each sits
+beside its notice and the licence exception has a clear boundary
+(chosen in review). The list follows what Keep the Why already ships, where the
+maintainer settled their use.
+
+**Rejected alternatives:**
+- Logo URLs or uploads in the page's JSON: arbitrary images on the
+  landing, and third-party marks entering instance content without
+  their terms.
+- Names only, without logos: the maintainer asked for the band as on
+  keepthewhy.com.
+
 ## The landing page is enhanced by a first-party script and fonts from the code, never needed to read it
 
 **Id:** e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37
@@ -854,3 +885,39 @@ sections are worth a link.
   own for an instance's page in every language, and the operator could
   not choose.
 
+
+## The landing's counters show the real numbers, small ones too; cards done count across every project
+
+**Id:** 05b29565-5505-4bab-a67f-cfacef328964
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-31 ("zeig einfach an wie es ist, kein Rumdrücksen, besser 2 Humans als gar nix", relayed by the designer and confirmed by the maintainer in the inbox with the online floor named); contract `docs/api.md` §16.7
+
+Every counter of the landing's stats is the real number, `0` and small
+numbers included: `people_online` and `agents_online` have no floor
+any more, `public_projects` shows `0` instead of being left out, and
+`cards_done_week` counts the cards done in the last 7 days across every
+project of the instance, not only the public ones. Who is online is
+still never shown, only how many.
+
+**Reason:** a young instance with two people looks empty when its
+counters disappear, and a missing counter says less than a small one.
+The maintainer chose an honest small number over a hidden one. A weekly
+sum of done cards names no project, card or person, so counting every
+project discloses nothing private. The online floor was dropped knowing
+that on a small instance the online count can tell when a person is
+there; the maintainer accepted that for this instance.
+
+**Alternatives:**
+- Keeping the floor of 5 for the online counts and showing everything
+  else (the coordinator's recommendation): kept privacy on a small
+  instance, but the hero would show no online number at all for now.
+- Leaving the online counters out entirely: the same effect as the
+  floor, and the board names them.
+- Counting cards done in public projects only (the state before): zero
+  until a project turns its public page on, so the counter was never
+  shown.
+
+**Revisit when:** an operator of another instance needs the floor back
+for privacy; it would return as a setting, not as the default.

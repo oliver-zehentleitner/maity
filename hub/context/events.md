@@ -311,6 +311,36 @@ statements per stay; that and the per-agent direct count are replaced by `unread
 `tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
 mark.
 
+## A pin belongs to the human, lives while it reads the chat, and is dropped where access ends
+
+**Id:** cc8d2f9e-a34c-4d3c-8008-8619dcc77b72
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.3 "Pinned" (contract #914) and the card tsk-9a3ph3jvhhrb; the contract fixes the routes, the 20 across projects, the four bands and that a chat left keeps no pin; how the hub keeps that is this entry's reading
+**Revisit when:** a way to lose access to a chat appears that neither ends a stay nor removes a membership (a trust change that ends reading a round's thread along is one today), or the lists move into SQL
+
+`conversation_pin` is keyed by human, project and chat id, not by membership: an owner outside the
+project reads its agents' chats along without a membership (§9.2) and may pin them, and the 20 are
+counted across projects. `pins.prune(project)` runs where a stay in a group chat ends
+(`group_chats.remove`, which a membership's removal and an isolation pass through) and after a
+membership's removal (its direct chats), and drops every pin of the project its holder no longer
+reads; `PUT …/pin` prunes the holder's own pins before it counts, under the human's row lock, so a
+pin lost some other way never blocks a new one and two projects cannot both take the 21st. A chat
+left and joined again therefore comes back unpinned. The lists add `pinned` after the entries are
+built and sort in Python, a stable sort per band; the cursor carries the band, and the cursor scope
+changed so a cursor from before the bands is refused instead of read wrongly.
+
+**Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
+and come back on a later join. The places where access ends are few and already central.
+
+**Rejected alternatives:**
+- A pin valid while its `pinned_at` is after the start of the current access: every list would need
+  each chat's access start, which the entries do not carry, and the 20 would still count dead rows.
+- Pruning while reading a list: a `GET` that writes, and a list without `observed` cannot tell a
+  chat read along from one no longer read.
+- Keying by membership: an owner outside the project holds none, and the limit is per human.
+
 ## A review result's `review` is checked for its shape and stored as given; the repository is never read
 
 **Id:** d6ea47d4-3ad6-435e-8806-f1faa96a6360
@@ -347,3 +377,22 @@ instead of one problem per attempt.
 - Stopping at the first problem: a reviewer would fix and resend up to five times for one review.
 - Keeping `review` optional for a while: nothing posts a review result without it that is not about
   to be changed, and alpha keeps no layers for the old shape.
+
+## The meat-proxy choice per chat is a row of its own, keyed by human, project and conversation, and one function adds it to every participants list
+
+**Id:** ab4caa81-c57d-418f-a664-7ff498f1e6e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §9.3 "Meat proxy per chat", §5.2 (contract #922); the card tsk-2yqm0gebktrk
+**Verification:** corroborated
+**Revisit when:** a chat may carry more than the human's own on/off choice, or the participants lists are built in one place
+
+`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
+
+**Reason:** a direct chat has no participant row (its id is the agent's), and the choice must work there as much as in a group chat, so a column on `conversation_participant` would cover only half. The same agent's direct chat exists once per project under one id, which is why the project is part of the key: a choice in one project must not switch the mode on in another. One function over the lists keeps the fields from drifting between the four places participants are built. The migration's primary key and foreign keys must be the same as in `tables.py` (human, project, conversation; foreign keys on human and project): the tests build the schema from the migrations, so a key only in `tables.py` is never checked. A first version had `(human_id, conversation_id)` in the migration, and a second project's direct chat then failed with a unique violation.
+
+**Rejected alternatives:**
+- A column on `conversation_participant`: no row for a direct chat, and a stay per join in a group chat that would lose the choice when the human leaves and comes back.
+- Keying by conversation id alone: the same agent in two projects would share one choice.
+- Emitting an event on a change: the contract has the agents read it on their next resume and wakes nobody; an event would reach every reader of the chat for what is context about a person.

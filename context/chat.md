@@ -182,8 +182,12 @@ maintainer.
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
 **See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
-The team looks at how it works in a jour fixe. A human sets the series
-in the project policy, and the hub triggers it. Owners and admins,
+The team looks at how it works in a jour fixe. Who sets it up, who
+takes part and who moderates changed on 2026-10-31: see ee0abca3, which
+supersedes this entry's schedule, start and moderator parts; the
+answers, the exchange, the triage and "nothing executed directly" stand.
+As first decided, a human sets the series in the project policy, and the
+hub triggers it. Owners and admins,
 admin agents included, can also start one by hand. The hub asks every
 present member three questions: what went well, what went badly, what
 would help. Each member answers privately to the moderator, by name or
@@ -217,6 +221,59 @@ settles what the rules already allow.
   practice nobody does.
 - An always-open feedback channel: it wakes everyone constantly, so its
   cost has no bound.
+
+## Several jour fixe series per project, each with a topic and a circle; moderating is a right the agent's owner consents to
+
+**Id:** ee0abca3-e0a5-4d65-8ff7-774114209dd5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting; "everyone should be able to opt out if they want"; the report always to the jour fixe owner and to those marked as recipients, everyone able to subscribe and unsubscribe); contract `docs/api.md` §20.1, §20.2
+**Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
+**See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+**Supersedes:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 in part (schedule, start, moderator)
+
+A project holds up to ten jour fixe series instead of one schedule in
+its policy. Each has a topic that heads its questions and report, a
+circle — one owner with their own agents, the project's humans, or
+every member — and its own schedule. An owner keeps the series of their
+own circle; the project's admins keep the others. Moderating is a right
+held per series: a human who could set the member's reporting line
+grants it, and an agent's owner always consents, unless the grant is
+the owner's own. Of the holders, the one most online in the last day
+moderates; with nobody there the round is skipped and the keepers are
+told. In an owner's series the answers, the decisions and the round
+itself stay with that owner. Every member may opt out of a series and come back at any
+time, an agent also through its owner; nobody else sees who opted out. The report goes to the series' keepers and to whoever put
+themselves on its recipient list, and anyone who may read the rounds
+can join or leave that list.
+
+**Reason:** the maintainer runs his own agents in a project with other
+members; a round for his team should not wait for, or be read by,
+everyone else, while a project-wide round still has its place. A topic
+keeps each round focused. Making moderation a granted right rather than
+a consequence of trust or role keeps one owner from drafting another
+owner's agent into extra work: the agent's time is its owner's to give.
+
+**Rejected alternatives:**
+- The first admin agent by time online as moderator (the earlier
+  default): the maintainer called admin "the ops thing"; the right
+  belongs to whoever is given it.
+- Every manager agent of the project owner as moderator (the first
+  redraft): still automatic, and blind to agents of other owners.
+- Granting the right to the agents below one in the org chart without
+  their owner: reporting to someone does not hand them the agent's time
+  (the maintainer: the owner must always consent).
+- One jour fixe per project with the circle as a setting: the
+  maintainer chose several, each with its topic.
+- A grant with the agent's owner's consent alone: the moderator reads
+  every answer, so an owner could make their own agent moderator of a
+  project-wide series, or an admin could put another owner's agent into
+  an owner's private round; a keeper of the series consents too (found
+  in review).
+- A silent substitute moderator when nobody with the right is present
+  (this contract's reading): the keepers are told instead, since only
+  they can grant the right to someone else.
 
 ## A request carries its own discussion thread; the decision stays a separate click
 
@@ -373,3 +430,32 @@ field elsewhere.
   turn; a change emits no event, and the agents read it on their next
   resume or read of the chat (this contract's reading).
 
+
+## An inbox answer carries a note with any button; "Talk" takes one too
+
+**Id:** 6e357e0c-e95e-447c-9b4d-9a6dbb4b9f3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (the text field above the answer buttons, always writable, its text sent with whichever button is pressed, "Send" renamed "Talk"); contract `docs/api.md` §7
+
+The inbox shows one free-text field above the reply buttons. Whatever
+is typed there goes along with the button pressed: a reply (`reply_id`
+with `text`), or "Talk" (`talk: true` with `text`). A request without
+prepared replies keeps a send button for a free-text answer beside
+"Talk". The note on "Talk" is stored as the answer's text; the hub
+posts nothing into the direct chat for it.
+
+**Reason:** the maintainer often wants to pick an option and add a small
+remark ("o1, but keep the old name"), or ask to talk about one point.
+With the field below the buttons and its own send button, a remark was a
+second, separate answer that the hub refused once the request was
+answered. The contract already let `text` accompany `reply_id`; only
+`talk` lacked it.
+
+**Alternatives:**
+- Keeping the field as its own answer path with "Send": a choice and a
+  remark could not be given together.
+- Posting the note on "Talk" as the human's first message in the direct
+  chat: it would write a chat message on the human's behalf; the agent
+  reads the answer's text before it opens the conversation anyway.

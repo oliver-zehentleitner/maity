@@ -35,6 +35,7 @@ class Waiter:
     # A runner's waiter reads several projects (docs/api.md §15.8); the reader
     # replaces the set on every pass, an assignment the notifier reads atomically.
     project_ids: frozenset[str] = frozenset()
+    listening_wait: str | None = None  # its row in the listening registry (`listening`)
 
     def wake(self) -> None:
         self.loop.call_soon_threadsafe(self.event.set)
@@ -56,14 +57,15 @@ class Registry:
             previous.superseded = True
             previous.wake()
         if waiter.session_id:
-            listening.opened(waiter.session_id)
+            waiter.listening_wait = listening.opened(waiter.session_id)
 
     def leave(self, waiter: Waiter) -> None:
         with self._lock:
             if self._by_key.get(waiter.key) is waiter:
                 del self._by_key[waiter.key]
-        if waiter.session_id:
-            listening.closed(waiter.session_id)
+        if waiter.session_id and waiter.listening_wait is not None:
+            listening.closed(waiter.session_id, waiter.listening_wait)
+            waiter.listening_wait = None
 
     def supersede(self, waiter: Waiter) -> None:
         """A newer wait of the same key took over on another replica (`wakeups`)."""

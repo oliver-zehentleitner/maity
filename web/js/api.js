@@ -710,6 +710,19 @@ window.Maity = window.Maity || {};
     }
     return e;
   }
+  // As hub/person_links.website_problem: https, a DNS name (a dot, labels of [a-z0-9-], a last
+  // label not all digits) as the whole authority (no user part, no port), no space or control
+  // character, at most `max` characters, checked first.
+  function websiteProblem(value, max) {
+    if (value.length > max) return "too_long";
+    if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
+    const m = /^https:\/\/([^/?#]*)/.exec(value);
+    if (!m) return "format";
+    const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
+    const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+    if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
+    return null;
+  }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
     if (ft.operator === "") errors["footer.operator"] = "invalid";
@@ -936,6 +949,18 @@ window.Maity = window.Maity || {};
   }
   // §9.3 for one project (m[1]: its fixture key), shared by the project's
   // route and the list across projects.
+  // §9.3 pins: the caller's own, "<slug>/<id>", at most 20 across projects.
+  function pinsOf() {
+    const all = fixtures();
+    if (!all["pins.json"]) all["pins.json"] = { items: [] };
+    return all["pins.json"].items;
+  }
+  // Four bands, each by activity: pinned with unread, unpinned with unread,
+  // quiet pinned, the rest (an observer's null unread is none).
+  function banded(items, at) {
+    const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
+    return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
+  }
   function conversationList(m, path, query) {
     const all = file(m[1], "conversations.json", path);
     const members = file(m[1], "members.json", path).items;
@@ -978,7 +1003,9 @@ window.Maity = window.Maity || {};
         });
       });
     const at = (c) => c.last_message_at || c.created_at || "";
-    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    const human = me().member.kind === "human";
+    const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
+    return { items: banded(items, at), next_cursor: null };
   }
 
   // The view as the caller may see it, or null when it may not.
@@ -2249,6 +2276,29 @@ window.Maity = window.Maity || {};
         }) });
       }
 
+      // §6.11 the project's own links, merged by key, each checked as the hub's
+      // person_links.website_problem does (500 characters): too_long first, then the form.
+      if ("links" in body) {
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const merged = {};
+        if (body.links !== null) {
+          if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
+          Object.entries(p.links || {}).forEach(([k, v]) => { if (KEYS.includes(k) && v) merged[k] = v; });
+          const fields = {};
+          Object.entries(body.links).forEach(([k, v]) => {
+            if (!KEYS.includes(k)) fields["links." + k] = "unknown";
+            else if (v === null || v === "") delete merged[k];
+            else if (typeof v !== "string") fields["links." + k] = "format";
+            else {
+              const problem = websiteProblem(v, 500);
+              if (problem) fields["links." + k] = problem; else merged[k] = v;
+            }
+          });
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        }
+        p.links = Object.fromEntries(KEYS.map((k) => [k, merged[k] || null]));
+      }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
@@ -3378,6 +3428,7 @@ window.Maity = window.Maity || {};
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
+        if (body.takes_over && !fixtures()["agents.json"].items.some((a) => a.id === body.takes_over && a.owner_id === me().member.id)) limit("takes_over");
         if (!body.new_instance && !body.replaces) {
           const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
           file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
@@ -3419,6 +3470,25 @@ window.Maity = window.Maity || {};
           fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
         }
       }
+      // §3.1: takes_over for a first join only, naming another active agent member;
+      // handover a card of the project or a message of it to all.
+      if (body.takes_over != null) {
+        if (member || body.new_instance != null || body.replaces != null) fail(400, "invalid", "takes_over is for a first join only", path, { fields: { takes_over: "first_join_only" } });
+        const named = file(m[1], "members.json", path).items.find((x) => x.id === body.takes_over && x.kind === "agent" && !x.removed_at);
+        if (!named || body.takes_over === agentId) fail(400, "invalid", "no such agent member", path, { fields: { takes_over: "not_an_agent_member" } });
+      }
+      let handover = null;
+      if (body.handover != null) {
+        if (typeof body.handover === "number") {
+          const e = eventsOf(m[1]).find((x) => x.seq === body.handover && x.kind === "message");
+          if (!e) fail(400, "invalid", "no such message in this project", path, { fields: { handover: "not_found" } });
+          if (e.redacted || !(e.audience || []).includes("all")) fail(400, "invalid", "the message is not addressed to all", path, { fields: { handover: "not_readable" } });
+          handover = { kind: "message", id: body.handover };
+        } else {
+          if (!file(m[1], "tasks.json", path).items.some((x) => x.id === body.handover)) fail(400, "invalid", "no such card in this project", path, { fields: { handover: "not_found" } });
+          handover = { kind: "task", id: body.handover };
+        }
+      }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -3427,7 +3497,9 @@ window.Maity = window.Maity || {};
         id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
+        takes_over: body.takes_over || null, handover,
       });
+      // §3.2 "The install line": installs and joins in one command.
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
@@ -3553,10 +3625,26 @@ window.Maity = window.Maity || {};
       const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
       const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
-      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
-        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      banded(items, at);
       return { items, next_cursor: null,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.3 pins: human only, idempotent, at most 20 across projects.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      if (!pinsOf().includes(key)) {
+        if (pinsOf().length >= 20) fail(400, "invalid", "at most 20 pins", path, { fields: { pin: "too_many" } });
+        pinsOf().push(key);
+      }
+      return null;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      const at = pinsOf().indexOf(key);
+      if (at >= 0) pinsOf().splice(at, 1);
+      return null;
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {

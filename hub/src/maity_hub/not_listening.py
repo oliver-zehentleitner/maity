@@ -192,7 +192,7 @@ def check(engine: Engine, session_id: str) -> None:
             elif session.acknowledged_seq >= session.not_listening_seq:
                 _end(conn, member, credential, session, "the agent read its events again")
             return
-        if why is not None or listening.is_listening(session.id):
+        if why is not None or listening.is_listening(session.id, conn):
             return
         now = clock.now()
         called_at = session.events_at or session.started_at
