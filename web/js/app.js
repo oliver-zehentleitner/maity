@@ -1632,6 +1632,12 @@ window.Maity = window.Maity || {};
       append(clear(root), errorBox(err));
     }
     if (seq !== renderSeq) return;
+    // The project just created (§16.9): whether its page is public, as the hub's 201 said it, once.
+    const created = M.projectSetup && M.projectSetup.takeCreated(where.scope === "project" ? ctx.slug : null);
+    if (created) {
+      root.insertBefore(h("p", { class: "ok created-visibility", role: "status" },
+        created.public_page === "on" ? M.t("newproject.created.public") : M.t("newproject.created.private")), root.firstChild);
+    }
     append(clear(main), root);
     renderBanner(ctx);
     watch(ctx, where, known ? item : null, main);

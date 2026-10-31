@@ -3351,3 +3351,37 @@ to a card (a8e479be's earlier rule): an agent cannot change the
 provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
+
+## The create form offers Private, unticked for the namespace's owner, ticked and fixed for anyone else
+
+**Id:** 1656dcc0-bbe3-4d1b-b88f-15eae4c117a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-rnq4r29m2axf; docs/api.md §16.9 `public_page` as of #865 (the form's checkbox, its note and what it sends are written there); the hub's reason, public by default as on a forge: `context/projects.md` 038e685e; how the 201's value is said is the implementer's
+**Revisit when:** the hub takes `public_page` on `POST /projects` (tsk-es3adbcyvy4v), Project settings get a switch for the page, or private projects become a paid feature
+
+On /new a box **Private** follows the repository field. It is unticked
+when the human creates in their own namespace or in an organisation they
+own, and ticked and fixed, with the note that an owner of the
+organisation can make it public, when they create in one they only
+administer or are a member of. Under the repository field a note says
+that a private repository, or one the hub cannot read, keeps the project
+private. Only a ticked box sends `public_page: "off"`; otherwise the
+field is left out and the hub's default stands. After the creation the
+next view of the new project says once whether it is public or private,
+from the `public_page` of the hub's answer, since the hub may have made
+it private because of the repository whatever the form sent.
+
+**Reason:** the contract makes a new project public by default and puts
+the repository's privacy above the creator's choice, so the form says
+both before the creation and the result after it. Leaving the field out
+when unticked keeps the hub's own default (and its rule for others in an
+organisation) the one that counts.
+
+**Rejected alternative:** sending `public_page: "on"` when unticked: it
+would claim a choice the hub's default already makes, and for a creator
+who is not the namespace's owner the hub's default is `off`. Saying the
+result only in Project settings: there is no switch for the page there
+yet, and the creator would not see that a private repository kept the
+project private.

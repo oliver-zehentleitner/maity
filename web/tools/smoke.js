@@ -4610,6 +4610,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(fieldError0("project-owner") === "Not an organisation you are in." && byId("project-owner").getAttribute("aria-invalid") === "true",
     "create: an owner the hub does not know is said at the field");
   win.Maity.api.post = owPost;
+  // §16.9 (tsk-rnq4r29m2axf): Private, unticked for the namespace's owner; checked and fixed in an
+  // organisation the human does not own (crew: admin), with the note; open again for one they own (acme).
+  await go("#/all"); await go("#/new"); await tick(); await tick();
+  const pvBox = () => byId("project-private");
+  const pvLocked = () => pvBox().disabled === true || (pvBox().attrs && pvBox().attrs.disabled !== undefined && pvBox().attrs.disabled !== null);
+  expect(pvBox() && !pvBox().checked && !pvLocked() && text(byId("project-private-hint")).startsWith("Unticked, the project is public")
+    && text(byId("project-repository-hint")) === "A private repository, or one the hub cannot read, keeps the project private.",
+    "create: Private unticked for the human's own project, the repository note under its field");
+  byId("project-owner").value = "crew"; byId("project-owner").dispatch("change");
+  expect(pvBox().checked && pvLocked() && text(byId("project-private-hint")).includes("an owner of the organisation can make it public"),
+    "create: in an organisation the human does not own, Private is ticked and fixed, with the note");
+  byId("project-owner").value = "acme"; byId("project-owner").dispatch("change");
+  expect(!pvBox().checked && !pvLocked(), "create: in an organisation the human owns, Private is open and unticked again");
   // A suspended organisation takes no new project: not offered (§6.26).
   const owGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/orgs" ? owGet(p).then((r) => ({ items: r.items.map((o) => Object.assign({}, o, { moderation: { action: "suspend", report_id: "rpt-1", at: "2026-10-29T10:00:00Z" } })) })) : owGet(p));
@@ -4784,6 +4797,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "settings: back under None the commitment is optional and locked again");
   win.Maity.api.patch = memPatch;
   await projectSettings();
+  // Private ticked: public_page "off" is sent, and the next view says what the 201 set; unticked, nothing is sent.
+  await go("#/new");
+  byId("project-name").value = "Hidden"; byId("project-name").dispatch("input");
+  byId("project-preset").value = "hierarchical";
+  byId("project-private").checked = true;
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(posts[posts.length - 1][1].public_page === "off", "create: Private ticked sends public_page off " + JSON.stringify(posts[posts.length - 1][1]));
+  win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector(".created-visibility")) === "Created. The project is private: its page is off.",
+    "create: the next view says the project is private, as the hub's answer set it");
+  await go("#/all"); await go("#/maintainer/hidden/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector(".created-visibility"), "create: the note is said once");
+  expect(!("public_page" in posts.find((x) => x[1].slug === "plain")[1]), "create: Private unticked leaves public_page out");
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
   await go("#/new");
   byId("project-name").value = "Later"; byId("project-name").dispatch("input");
