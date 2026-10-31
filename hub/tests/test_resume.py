@@ -74,7 +74,8 @@ def test_the_packet_has_every_part_of_the_contract(
         "briefing": None,
         "briefing_source": None,
         "chat_url": f"https://hub.example/maintainer/maity/chat/{agent.id}",  # §5.2
-        "bridging_for": [],  # §2.3: it lends its hands to nobody
+        "bridges": [],  # §2.3: nobody lends it their hands
+        "bridging_for": [],  # and it lends its hands to nobody
         "takes_over": None,  # §3.1: the join named none
         "handover": None,
         "team": {

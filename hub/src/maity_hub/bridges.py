@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from sqlalchemy import Connection, delete, insert, or_, select, update
+from sqlalchemy import Connection, insert, or_, select, update
 
 from maity_hub import clock, namespace, policy, proposals
 from maity_hub import tables as t
@@ -58,7 +58,7 @@ def of_members(conn: Connection, membership_ids: Iterable[int]) -> list[Any]:
     return list(
         conn.execute(
             select(t.bridge)
-            .where(or_(b.served.in_(ids), b.bridge.in_(ids)))
+            .where(or_(b.served.in_(ids), b.bridge.in_(ids)), b.live.is_(True))
             .order_by(b.created_at, b.id)
         ).all()
     )
@@ -115,6 +115,10 @@ def view(conn: Connection, row: Any) -> dict[str, Any]:
         "cross_owner": row.cross_owner,
         "created_by": row.created_by,
         "created_at": ts(row.created_at),
+        # Its final state once ended (§12).
+        "ended_at": ts(row.ended_at),
+        "ended_by": row.ended_by,
+        "end_reason": row.end_reason,
     }
 
 
@@ -128,7 +132,7 @@ def cross_owner_pairs(conn: Connection, membership_ids: Iterable[int]) -> list[t
     b = t.bridge.c
     rows = conn.execute(
         select(b.served, b.bridge)
-        .where(b.served.in_(ids), b.cross_owner.is_(True))
+        .where(b.served.in_(ids), b.cross_owner.is_(True), b.live.is_(True))
         .order_by(b.created_at, b.id)
     ).all()
     return [(row[0], row[1]) for row in rows]
@@ -143,6 +147,7 @@ def get(conn: Connection, project_id: str, served: Any, bridge_id: str) -> Any:
             t.bridge.c.id == bridge_id,
             t.bridge.c.project_id == project_id,
             t.bridge.c.served == served.id,
+            t.bridge.c.live.is_(True),
         )
     ).first()
     if row is None:
@@ -269,10 +274,16 @@ def check(
         if bridge.isolated_since is not None:
             raise invalid({"bridge": "isolated"}, "the bridge is isolated")
     b = t.bridge.c
-    exists = conn.execute(select(b.id).where(b.served == served.id, b.bridge == bridge.id)).first()
+    exists = conn.execute(
+        select(b.id).where(b.served == served.id, b.bridge == bridge.id, b.live.is_(True))
+    ).first()
     if exists is not None:
         raise invalid({"bridge": "already"}, "the two are connected already")
-    held = conn.execute(select(b.bridge).where(b.served == served.id)).scalars().all()
+    held = (
+        conn.execute(select(b.bridge).where(b.served == served.id, b.live.is_(True)))
+        .scalars()
+        .all()
+    )
     pending = {
         r.proposal["bridge"]
         for r in open_requests(conn, served.id, pending_new=True)
@@ -376,12 +387,25 @@ def set_purpose(conn: Connection, row: Any, purpose: str, actor: Actor) -> Any:
     return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
 
 
-def end(conn: Connection, row: Any, actor: Actor | None, reason: str = "bridge_ended") -> None:
-    """Delete the connection, withdraw an open request to change it, and tell both."""
+def end(
+    conn: Connection,
+    row: Any,
+    actor: Actor | None,
+    reason: str = "bridge_ended",
+    by: str | None = None,
+) -> Any:
+    """End the connection, keeping its row in its final state (§12), withdraw an open
+    request to change it, and tell both. `by` is who ended it; null for the hub's own
+    endings (a member removed, an owner gone)."""
     withdraw(conn, open_requests(conn, row.served, connection=row.id), actor, reason)
-    conn.execute(delete(t.bridge).where(t.bridge.c.id == row.id))
+    conn.execute(
+        update(t.bridge)
+        .where(t.bridge.c.id == row.id)
+        .values(ended_at=clock.now(), ended_by=by, end_reason=reason, live=None)
+    )
     if actor is not None:
         announce(conn, row.project_id, _active(conn, (row.served, row.bridge)), actor)
+    return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
 
 
 def _active(conn: Connection, membership_ids: Iterable[int]) -> list[int]:
@@ -558,7 +582,11 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     bridge = conn.execute(select(t.membership).where(t.membership.c.id == proposal["bridge"])).one()
     actor = s.proposer
     if proposal.get("connection") is not None:
-        row = conn.execute(select(t.bridge).where(t.bridge.c.id == proposal["connection"])).first()
+        row = conn.execute(
+            select(t.bridge).where(
+                t.bridge.c.id == proposal["connection"], t.bridge.c.live.is_(True)
+            )
+        ).first()
         if row is None:
             return  # ended meanwhile: the end withdrew the change
         for member in (served, bridge):

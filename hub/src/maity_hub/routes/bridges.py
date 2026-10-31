@@ -8,14 +8,15 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import StringConstraints
-from sqlalchemy import Connection
+from sqlalchemy import Connection, select
 
-from maity_hub import bridges, idempotency
+from maity_hub import bridges, idempotency, namespace
+from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.cross_owner import owner_of
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import forbidden, humans_only
-from maity_hub.events import lock_project
+from maity_hub.errors import ApiError, forbidden, humans_only, not_found
+from maity_hub.events import Actor, lock_project
 from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.tables import BRIDGE_PURPOSE
@@ -124,17 +125,68 @@ def change_purpose(
 def disconnect(
     slug: str, member_id: str, bridge_id: str, request: Request, caller: AnyCaller
 ) -> JSONResponse:
-    """End a connection: either agent's owner, either agent, a human with `members:admin`
-    (§2.3). An open request to change it is withdrawn with it."""
+    """End a connection: either agent's owner (the bridge's also from outside the project),
+    either agent, a human with `members:admin` (§2.3). An open request to change it is
+    withdrawn with it; the answer is the connection in its final state (§12)."""
 
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = membership(conn, caller, slug)
+        try:
+            mine = membership(conn, caller, slug)
+        except ApiError:
+            # The bridge's owner may be no member and still ends its agent's connection,
+            # seeing that one connection and nothing else of the project (§2.3, §1.3).
+            row = _for_outside_owner(conn, caller, slug, member_id, bridge_id)
+            ended = bridges.end(conn, row, _outside_actor(caller), by=caller.principal_id)
+            return idempotency.Outcome(200, "bridge", row.id, bridges.view(conn, ended))
         project = lock_project(conn, mine.project.id)
         served = member_row(conn, project.id, member_id)
         row = bridges.get(conn, project.id, served, bridge_id)
         if not bridges.may_end(conn, mine, row):
             raise forbidden("members:admin")
-        bridges.end(conn, row, caller.actor(mine.id))
-        return idempotency.Outcome(204, None, None, {})
+        ended = bridges.end(conn, row, caller.actor(mine.id), by=mine.principal_id)
+        return idempotency.Outcome(200, "bridge", row.id, bridges.view(conn, ended))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _for_outside_owner(
+    conn: Connection, caller: Any, slug: str, member_id: str, bridge_id: str
+) -> Any:
+    """The live connection whose bridge the calling human owns without being a member;
+    anything else stays `not_found`, as the project does for a non-member."""
+    project = namespace.resolve(conn, slug) if caller.kind == "human" else None
+    if project is None:
+        raise not_found()
+    lock_project(conn, project.id)
+    m, b = t.membership.c, t.bridge.c
+    row = conn.execute(
+        select(t.bridge)
+        .select_from(t.bridge.join(t.membership, m.id == b.served))
+        .where(
+            b.id == bridge_id,
+            b.project_id == project.id,
+            b.live.is_(True),
+            m.agent_id == member_id,
+        )
+    ).first()
+    if row is None:
+        raise not_found()
+    bridge = conn.execute(select(t.membership).where(m.id == row.bridge)).one()
+    if owner_of(conn, bridge) != caller.human_id:
+        raise not_found()
+    return row
+
+
+def _outside_actor(caller: Any) -> Actor:
+    """A human who is no member as the actor (§8.1)."""
+    return Actor(membership_id=None, human_id=caller.human_id, via=caller.via)
+
+
+def _load(conn: Connection, bridge_id: str) -> dict[str, Any]:
+    row = conn.execute(select(t.bridge).where(t.bridge.c.id == bridge_id)).first()
+    if row is None:
+        raise not_found()
+    return bridges.view(conn, row)
+
+
+idempotency.LOADERS["bridge"] = idempotency.plain(_load)
