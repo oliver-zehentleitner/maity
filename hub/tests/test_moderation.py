@@ -329,3 +329,25 @@ def test_a_held_human_profile_shows_its_hold(team: dict[str, Any], migrated: Eng
     members = team["owner"].get(f"/projects/{PROJECT}/members").json()["items"]
     shown = next(m for m in members if m["handle"] == "pat")
     assert shown["moderation"]["report_id"] == made["id"]
+
+
+def test_hide_isolates_the_agents_of_outsiders_of_an_unset_setting(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    """§6.2: an unset `agent_owners` reads `members` once the project is not served, so the
+    agents whose owners are no member are isolated by the hub."""
+    owner = team["owner"]
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    lent = factory.agent(migrated, project_id, factory.human(migrated, "outside-owner")).agent_id
+    assert owner.patch(f"/projects/{PROJECT}", {"public_page": "on"}).status_code == 200
+
+    def isolated() -> Any:
+        with migrated.connect() as conn:
+            return conn.execute(select(t.membership).where(t.membership.c.agent_id == lent)).one()
+
+    assert isolated().isolated_since is None  # `anyone` while the project has a page
+    made = report(team["pat"], {"type": "project", "id": PROJECT}).json()
+    assert resolve(team, made["id"], "hide", "spam page").status_code == 200
+    row = isolated()
+    assert row.isolated_since is not None and row.isolated_by == "hub"

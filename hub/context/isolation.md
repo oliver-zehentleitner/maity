@@ -131,7 +131,8 @@ overwrites an isolation in place. It runs after the things that can change its a
 ending (`apply_remove`, so the removal route, an organisation owner's seat falling away, a deleted account and a
 removed agent profile all reach it), a policy `PATCH` or `public_page` turning off, a transfer (which turns the page
 off) and a moderation hold or suspension that stops the project being served. What reads as the setting is
-`agent_owners` when set, else `anyone` while `public_projects.served` is true and `members` otherwise.
+`agent_owners` when set, else `anyone` while `public_projects.served` is true and `members` otherwise, so an
+archived project, which is not served, reads `members` although its `public_page` column may still say `on`.
 
 **Reason:** the answer depends on rows in three places (the setting, the public page and the memberships), so
 isolating at each write would repeat the rule and miss one; one idempotent pass called after each write cannot
