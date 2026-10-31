@@ -1222,8 +1222,10 @@ is not `http(s)://`. The line is not repeated by `maity resume`.
 
 **Reason:** the line is what the agent hands its human as its last
 message in the agent's window; the join is the moment the two switch to
-Maity. It goes to stderr with the other closing lines of `join`, so the
-order in a terminal is the one the contract gives. The scheme check
+Maity. It goes to stderr with the other closing lines of `join`; stdout
+is flushed first, because a harness that reads both through one pipe
+gets stdout block-buffered and would otherwise see the closing lines
+before the resume text, though they are meant for exactly that reader. The scheme check
 keeps the CLI from handing a human something a browser would not open
 as a page.
 
