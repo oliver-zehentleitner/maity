@@ -932,6 +932,7 @@
   "meat.switch": "I am a meat proxy",
   "meat.title": "Meat proxy",
   "member.instance": "Instance {id}",
+  "member.instance_missing": "Instance {id} is not listed for this member.",
   "member.last_call": "Last hub call: {time}",
   "member.no_last_call": "No last hub call is available",
   "member.silent_since": "silent since {time}",

@@ -1416,8 +1416,11 @@ the same page's Sessions with that instance's line marked and focused
 member the project does not list, a view from outside) both stay text.
 A stored mention `@handle#id` in a text reads the same: two links, the
 member and its instance. The @ picker offers, after each agent, its
-instances that are not revoked as `@handle#id`, a dormant one marked;
-typing `#` after a full handle narrows to that agent's instances. Until
+instances that are not revoked as `@handle#id`, a dormant one marked,
+in the slots the members leave free, so a short `@` shows as many
+members as before; typing `#` after a full handle narrows to that
+agent's instances. An address naming an instance the member does not
+list says so on Sessions instead of marking nothing. Until
 2026-10-31 the `#id` led nowhere (the designer's pass on #429: it
 names, it leads nowhere else); the maintainer asked for it to lead to
 the instance.

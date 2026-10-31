@@ -154,11 +154,20 @@ window.Maity = window.Maity || {};
       // An agent's instances follow it, those not revoked; with a "#" typed only
       // the instances of the agent named in full, by the id typed so far.
       const instancesOf = (m) => (m.kind === "agent" ? (m.instances || []).filter((i) => !i.revoked_at && typeof i.id === "string") : []);
-      shown = (iq === undefined
-        ? [].concat(...matching.map((m) => [{ m }].concat(instancesOf(m).map((inst) => ({ m, inst })))))
-        : [].concat(...matching.filter((m) => M.dom.handleIn(members, m) === q || m.handle === q)
-          .map((m) => instancesOf(m).filter((i) => i.id.startsWith(iq)).map((inst) => ({ m, inst })))))
-        .slice(0, SHOWN);
+      if (iq === undefined) {
+        // The members come first, as many as fit; instances only fill the slots
+        // left, each after its agent, so a short @ still shows every member it did.
+        const base = matching.slice(0, SHOWN);
+        let room = SHOWN - base.length;
+        shown = [].concat(...base.map((m) => {
+          const extra = room > 0 ? instancesOf(m).slice(0, room) : [];
+          room -= extra.length;
+          return [{ m }].concat(extra.map((inst) => ({ m, inst })));
+        }));
+      } else {
+        shown = [].concat(...matching.filter((m) => M.dom.handleIn(members, m) === q || m.handle === q)
+          .map((m) => instancesOf(m).filter((i) => i.id.startsWith(iq)).map((inst) => ({ m, inst })))).slice(0, SHOWN);
+      }
       active = 0;
       draw();
     }

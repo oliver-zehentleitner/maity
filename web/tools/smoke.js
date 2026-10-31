@@ -302,6 +302,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const inOptions = inList.querySelectorAll("li").map((li) => text(li));
   expect(JSON.stringify(inOptions) === JSON.stringify(["@bee Bee · agent", "@bee#k7mq Bee · instance", "@bee#wqe2 Bee · instance, dormant"]),
     "mentions: revoked instances left out, a dormant one marked " + JSON.stringify(inOptions));
+  // Members come first (#871's review): with nine members and instances, an @ still shows eight members.
+  const manyText = document.createElement("textarea");
+  const manyList = win.Maity.mentionPicker(manyText, () => Promise.resolve(
+    Array.from({ length: 9 }, (_, i) => ({ id: "agt-" + i, kind: "agent", handle: "o" + i, display_name: "O" + i, instances: [{ id: "k7m" + "abcdefghj"[i] }] }))), "me");
+  manyText.value = "@o"; manyText.dispatch("input"); await tick(); await tick();
+  const manyShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(manyShown.length === 8 && manyShown.every((x) => !x.includes("#")), "mentions: members fill the list first, instances only the room left " + JSON.stringify(manyShown));
+  manyText.value = "@o1"; manyText.dispatch("input"); await tick(); await tick();
+  const oneShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(JSON.stringify(oneShown) === JSON.stringify(["@o1", "@o1#k7mb"]), "mentions: with room, an agent's instance follows it " + JSON.stringify(oneShown));
   freeText.value = "mail me@age"; freeText.dispatch("input"); await tick();
   expect(pickList.hidden, "mentions: an @ inside a word offers nothing");
   const CR = (t) => JSON.stringify(win.Maity.mentionCode(t));
@@ -7036,6 +7046,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mpsChosen && mpsChosen.classList.contains("chosen") && mpsChosen.getAttribute("aria-current") === "true" && mpsChosen.getAttribute("tabindex") === "-1"
     && main.querySelectorAll(".member-instances li.chosen").length === 1,
     "member page: an instance's address marks its line on Sessions as the current one");
+  await go("#/maintainer/maity/members/agt-b/sessions/zzzz"); for (let k = 0; k < 8; k++) await tick();
+  expect(!main.querySelector(".member-instances li.chosen") && text(main.querySelector(".member-instance-missing")) === "Instance zzzz is not listed for this member.",
+    "member page: an address naming an instance the member does not list says so (#871's review)");
   win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
   await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
   expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")

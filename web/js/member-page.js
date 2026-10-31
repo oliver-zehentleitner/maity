@@ -155,8 +155,12 @@ window.Maity = window.Maity || {};
   // credentials where the hub shows them to the viewer (an admin, the owner).
   // `chosen`: the instance an address's #id leads to (tsk-bczgjkfpw1wg),
   // marked as the current one and given the focus.
-  function focusWhenShown(el, tries) {
-    if (el.isConnected === false) { if (tries > 0) window.setTimeout(() => focusWhenShown(el, tries - 1), 100); return; }
+  // Tried until the line is in the page, a few seconds at most, and not
+  // after the reader went elsewhere meanwhile.
+  function focusWhenShown(el, tries, path) {
+    const here = path || M.route.current().path;
+    if (M.route.current().path !== here) return;
+    if (el.isConnected === false) { if (tries > 0) window.setTimeout(() => focusWhenShown(el, tries - 1, here), 100); return; }
     el.focus();
   }
 
@@ -186,6 +190,8 @@ window.Maity = window.Maity || {};
     // The view is put into the page once it is drawn: the chosen line takes
     // the focus as soon as it is there (tried for a few seconds at most).
     if (pickedLine) focusWhenShown(pickedLine, 40);
+    // An address naming an instance this member does not list says so, rather than a page that looks as usual.
+    else if (chosen) append(box, h("p", { class: "flag member-instance-missing", role: "status" }, M.t("member.instance_missing", { id: chosen })));
     if (m.kind !== "agent" || !(ctx.canAdmin || ownAgentOf(ctx, m)) || !M.agentParts) return;
     const slot = h("div", { class: "member-credentials" }, h("p", { class: "muted" }, "Reading the credentials…"));
     append(box, slot);
