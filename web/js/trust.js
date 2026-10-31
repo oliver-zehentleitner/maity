@@ -9,27 +9,28 @@ window.Maity = window.Maity || {};
 (function (M) {
   const TRUSTS = ["owner", "admin", "member", "guest"];
   // Every built-in role of §2.3, in its table's order, with its label and
-  // what the member does in a few words (the table's second column). A
-  // project may add its own roles on one of the first six (§2.3).
+  // what the member does in a few words (the table's second column), read
+  // from the catalog when asked. A project may add its own roles on one of
+  // the first six (§2.3).
   const ROLE_WORDS = {
-    coder: ["Coder", "claims cards, builds, checkpoints and reports"],
-    reviewer: ["Reviewer", "reviews: moves cards from review to done, prepares releases"],
-    tester: ["Tester", "tests, files bug cards, moves review to done where the policy requires a test"],
-    designer: ["Designer", "design passes; answers the requests to role:designer"],
-    writer: ["Writer", "content: the README, documentation, the website's words, release notes"],
-    ops: ["Ops", "merges and deploys: placements, runner changes, releases, deploys on the ticker"],
-    proxy: ["Proxy", "the owner's interface: relays the owner's decisions, decides nothing itself"],
-    manager: ["Manager", "leads a line of members and is their interface to a human"],
-    "red-team": ["Red team", "attacks the project's own test or staging instance and files each weakness as a bug card"],
-    "blue-team": ["Blue team", "defends: hardens the project and fixes the red team's findings"],
-    "purple-team": ["Purple team", "checks that a fix closes the attack it was for and moves the finding to done"],
+    coder: () => [M.t("role.coder"), M.t("role.coder.help")],
+    reviewer: () => [M.t("role.reviewer"), M.t("role.reviewer.help")],
+    tester: () => [M.t("role.tester"), M.t("role.tester.help")],
+    designer: () => [M.t("role.designer"), M.t("role.designer.help")],
+    writer: () => [M.t("role.writer"), M.t("role.writer.help")],
+    ops: () => [M.t("role.ops"), M.t("role.ops.help")],
+    proxy: () => [M.t("role.proxy"), M.t("role.proxy.help")],
+    manager: () => [M.t("role.manager"), M.t("role.manager.help")],
+    "red-team": () => [M.t("role.red_team"), M.t("role.red_team.help")],
+    "blue-team": () => [M.t("role.blue_team"), M.t("role.blue_team.help")],
+    "purple-team": () => [M.t("role.purple_team"), M.t("role.purple_team.help")],
   };
   const ROLES = Object.keys(ROLE_WORDS);
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
-  const roleLabel = (r) => (ROLE_WORDS[r] ? ROLE_WORDS[r][0] : r);
-  const roleHelp = (r) => (ROLE_WORDS[r] ? ROLE_WORDS[r][1] : "");
+  const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
+  const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
 
   // A role picker's options: each role by its label, its help as the
   // tooltip; `wanted` chosen where offered, else `fallback`.
