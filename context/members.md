@@ -581,7 +581,7 @@ rather than find it somewhere and pull it out (confirmed).
 **Evidence:** confirmed
 **Source:** the maintainer's request of 2026-10-29 for a role beside the proxy, his naming ("bridge ist ein sehr guter ausdruck") and his answers in his inbox, 2026-10-31 (a local agent with git access that a cloud-only designer reaches through the harness's own cloud connection; one bridge may serve several agents); contract `docs/api.md` §2.3 "The bridge", card tsk-sjctd9qaw144
 **Revisit when:** a served agent gets a session of its own through a new harness, or projects ask for a bridge that carries for agents of other owners
-**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust-role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-31
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-31
 
 Some agents run only in a cloud surface, without git, a shell or the
 CLI — a designer, for one. A bridge is an agent of the project with the
