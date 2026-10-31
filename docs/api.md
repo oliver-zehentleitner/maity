@@ -12880,11 +12880,26 @@ their fields:
 | `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
 | `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (optional, ≤ 300), `cta` (`{label ≤ 40, href}`) | always; without `text` only the title and the button |
+| `works_with` | `label` (≤ 40, e.g. "Works with"), `items`: 1–24 agent slugs from the hub's own list (below), each at most once, `more` (optional, ≤ 60, e.g. "+ any agent that runs a command") | always; the logos and names come from the hub's code, never from the page's JSON: an unknown slug is `invalid` (`unknown_agent`) |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
 | `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
 | `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
+
+**The agents a `works_with` section names** are a fixed list in the
+hub's code, each with its display name and logo: `claude-code`,
+`codex`, `opencode`, `gemini`, `antigravity`, `copilot`, `cursor`,
+`pi`, `goose`, `cline`, `roo`, `kilo`, `amp`, `droid`, `windsurf`,
+`zed`, `kiro-cli`, `trae`, `openclaw` (the maintainer's decision of
+2026-10-31, the same set as Keep the Why's). The logos are third-party
+marks, shipped as files beside the landing assets with a notice of
+their origin and terms; they are not under the project's MIT licence,
+and the page's JSON cannot add, replace or point to any. A new agent is
+added to the list in the code. The section draws the label and a band
+of the logos, each with its name for screen readers and on hover; the
+stylesheet moves the band and stops under reduced motion, where the
+logos stand in a wrapping row, and without script nothing is lost.
 
 Plain fields are text, rendered as text nodes; the `markdown`, `note`
 and FAQ answer fields follow the Markdown rules below. A `href` is an
