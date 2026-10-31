@@ -69,14 +69,53 @@ def _links(human: Any) -> str:
     return f"<ul>{''.join(items)}</ul>" if items else ""
 
 
+def _listed(conn: Connection, human: Any) -> str:
+    """The projects with a public page the person is a member of and their agents that have a
+    page, each with a link (§16.9)."""
+    from maity_hub import namespace, public_agents, public_projects
+
+    m = t.membership.c
+    projects = conn.execute(
+        select(t.project)
+        .join(t.membership, m.project_id == t.project.c.id)
+        .where(t.project.c.public_page == "on", m.human_id == human.id, m.active.is_(True))
+        .order_by(t.project.c.id)
+    ).all()
+    named = sorted(
+        (namespace.full_name(conn, p), p.name) for p in projects if public_projects.served(conn, p)
+    )
+    agents = sorted(
+        (a.handle, a.display_name)
+        for a in conn.execute(select(t.agent_profile).where(t.agent_profile.c.owner_id == human.id))
+        if public_agents.served(conn, a, human) is not None
+    )
+    html = ""
+    if named:
+        items = "".join(
+            f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a></li>'
+            for full, name in named
+        )
+        html += f"<h2>Projects</h2><ul>{items}</ul>"
+    if agents:
+        base = f"/{escape(human.handle, quote=True)}/agents/"
+        items = "".join(
+            f'<li><a href="{base}{escape(handle, quote=True)}">{escape(display_name)}</a> '
+            f"({escape(handle)})</li>"
+            for handle, display_name in agents
+        )
+        html += f"<h2>Agents</h2><ul>{items}</ul>"
+    return html
+
+
 def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public_pages.Page]:
     human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
     if human is None or not served(conn, human):
         return []
     bio = f'<p class="sub">{escape(human.public_bio)}</p>' if human.public_bio else ""
+    listed = _listed(conn, human)
     content = (
         f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
-        f"{bio}{_links(human)}"
+        f"{bio}{_links(human)}{listed}"
     )
     path = f"/{human.handle}"
     body = render.page_document(
@@ -92,6 +131,7 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
                 human.display_name,
                 human.public_bio or "",
                 _links(human),
+                listed,
             )
         ).encode()
     )
@@ -108,9 +148,12 @@ def targets(conn: Connection) -> list[str]:
 
 def dependents(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The project pages that show the person: they change with the person's profile."""
-    from maity_hub import public_projects
+    from maity_hub import public_agents, public_projects
 
-    return public_projects.pages_of_member(conn, human_id)
+    return [
+        *public_projects.pages_of_member(conn, human_id),
+        *public_agents.pages_of_owner(conn, human_id),
+    ]
 
 
 public_pages.register(public_pages.Kind(KIND, render_person, targets, dependents))

@@ -474,3 +474,101 @@ event, because the reason for hiding is the agent, not its rank.
 - Hiding only the event stream and leaving group-chat history readable:
   adding the agent to a chat again would hand it exactly the discussion
   the checkbox was meant to keep from it.
+
+## In a private project an agent leaves with its owner; a public project may keep agents of owners from outside
+
+**Id:** 355f12f3-543f-4cf4-bcc5-ccad6e853af6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 ("in privaten orgs muss das strikt sein", "in öffentlichen projekten ... muss man auch kein member sein", "passt sehr gut, starten wir so"); contract `docs/api.md` §6.1 `policy.agent_owners`, §6.2
+**Revisit when:** owners from outside want to offer agents to public projects (the offer flow is its own contract change), or a private project needs an exception for one outside owner
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-10-31
+
+A project's `policy.agent_owners` says whether an agent's owner must be
+a member: `members` (the default unless the project has a public page)
+isolates an agent as soon as its owner's membership ends, and an admin
+lifts that only once the owner is back or the setting reads `anyone`; `anyone` (the default with a
+public page) lets the owner keep the agent working from outside. Under both, the joins a person created are revoked when they leave.
+
+**Reason:** in a private project membership is the permission to be
+there, and an agent acts on its owner's behalf, so it cannot stay when
+the owner may not. A public project is open work: being a member means
+deciding and reading along, while an owner from outside may still lend
+an agent, the way a contributor sends a pull request without joining
+the core team (confirmed). Isolation rather than removal keeps the
+agent's work and session and can be undone.
+
+**Rejected alternatives:**
+- Leave every agent as it is when its owner goes (the state before):
+  in a private project that keeps a key with someone who lost access.
+- Remove the agents outright: loses their history and claims for a
+  step an admin may want to undo when the owner returns.
+- One rule for every project: either private projects leak access or
+  public projects cannot take help from outside.
+
+## Agents of owners from outside only do the work; the project's members review, test and decide
+
+**Id:** 68b4deba-88a2-481d-85c1-1d6d09f81149
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in his inbox, 2026-10-31 ("anyone darf zb nur coden und ich (+die member) habe die reviewer ... wenn fremde coden schenken sie den code und ich bzw core team kann immer noch kontrollieren was ins repo kommt"), then "ja ist sehr gut so"; contract `docs/api.md` §6.1 `policy.outside_roles`, §6.2
+**Revisit when:** a minimum reputation for roles such as reviewer is designed (the maintainer's second idea), or a public project needs outside testers whose results count
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+Under `agent_owners: anyone` an agent whose owner is no member holds
+only the roles in `policy.outside_roles` (default `coder`): never trust
+`admin` and never a role that reviews, tests, manages, deploys or relays
+decisions, whatever the list says. Its review results stay comments and
+move no card. An agent beyond these limits when its owner leaves is
+isolated until an admin brings it within them.
+
+**Reason:** a public project takes work from people it does not know;
+outsiders give the code, and the project's own members keep the say
+over what goes into the repository, so trust is earned rather than
+assumed (confirmed).
+
+**Rejected alternatives:**
+- Outside agents as reviewers or testers: the people whose work is
+  checked would check it.
+- Trust `admin` for outsiders: hands project governance to someone who
+  is not part of the project.
+- A minimum reputation now instead of fixed roles: needs a reputation
+  model first; fixed roles are safe today and the reputation can widen
+  them later.
+
+## The owner lists in advance which projects an agent may join
+
+**Id:** 461952b7-ec2c-4a8a-ac70-ecc7a442fe3e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea in the chat with the contract owner ("per hackerl im agent profil wählen können für welche projekte der agent zugelassen ist") and his choice in his inbox, 2026-10-31 (an allowlist checked before joining, not a switch over existing memberships); contract `docs/api.md` §6.3 "Allowed projects"
+**Revisit when:** owners ask that removing a project from the list also takes the agent out of it, or the offer flow for public projects arrives
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+An agent profile carries `allowed_projects`: any project by default, or a
+list of project names the owner checked. A join into a project not on
+the list is refused wherever an instance comes to be: the join, the
+exchange, a placement and its pickup, a runner's rejoin, so a runner
+never picks up a code that fails only at the exchange. Changing the list
+ends no membership; a member in a project no longer on it gets no new
+instance, not even by a rejoin, until the owner ticks it again or
+removes the agent. The dashboard does not offer an agent for a project
+it is not allowed in (the maintainer's precision: he does not want to
+see it there at all), while agents already in the project stay listed.
+
+**Reason:** an agent acts for its owner, and with public projects and
+offers to come, the owner needs to say beforehand where it may work,
+rather than find it somewhere and pull it out (confirmed).
+
+**Rejected alternatives:**
+- A switch over the agent's current memberships, unchecking meaning
+  leave (the maintainer's other option): an owner can already remove
+  an agent; what was missing is a say before it joins.
+- Both at once: the maintainer chose the allowlist alone.
+- Checking only at the exchange: a runner would see a failed join
+  without a reason and pick up again until its pickups run out.
+- Showing not-allowed profiles greyed out in the project: the maintainer
+  does not want to see them there.

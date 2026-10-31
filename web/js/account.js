@@ -288,6 +288,8 @@ window.Maity = window.Maity || {};
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     // Your data (§2.9): the export and the deletion of the account.
     const yourData = M.yourData ? await M.yourData.section(ctx) : null;
+    // Forge access (§11.4): the grants one's projects read their repositories with.
+    const forge = M.forge ? await M.forge.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
     // The theme (js/theme.js): signed in, it is chosen here, not in the
     // header (the maintainer's instruction). Per browser, as before: what
@@ -315,6 +317,7 @@ window.Maity = window.Maity || {};
       preferences ? preferences.el : null,
       notify ? notify.el : null,
       sessions ? sessions.el : null,
+      forge ? forge.el : null,
       yourData ? yourData.el : null,
       h("h3", null, M.t("password.title")),
       h("p", { class: "muted" }, M.t("password.hint")),
@@ -331,5 +334,7 @@ window.Maity = window.Maity || {};
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
     // /account/data (the mail's link to the export, §2.9) starts at Your data.
     if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
+    // /settings/forge (the hub's redirect after an installation, §11.4) starts at Forge access.
+    if (forge && args && args[0] === "forge") window.setTimeout(() => forge.heading.focus(), 0);
   };
 })(window.Maity);

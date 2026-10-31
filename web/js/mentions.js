@@ -65,7 +65,7 @@ window.Maity = window.Maity || {};
   M.mentionPicker = function (textarea, loadMembers, selfId) {
     serial += 1;
     const listId = "mention-list-" + serial;
-    const list = h("ul", { class: "mention-list", id: listId, role: "listbox", "aria-label": "Members to mention", hidden: true });
+    const list = h("ul", { class: "mention-list", id: listId, role: "listbox", "aria-label": M.t("mentions.list"), hidden: true });
     let members = null;
     let loading = null;
     let shown = [];
@@ -111,7 +111,7 @@ window.Maity = window.Maity || {};
           // mousedown, not click: the textarea keeps its focus and caret.
           onmousedown: (e) => { e.preventDefault(); pick(m); },
         }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m)), " ", h("span", { class: "muted" }, m.display_name
-          + (m.kind === "agent" ? " · agent" : ""))));
+          + (m.kind === "agent" ? " · " + M.t("mentions.agent") : ""))));
       });
       list.hidden = !shown.length;
       if (shown.length) textarea.setAttribute("aria-activedescendant", listId + "-" + active);

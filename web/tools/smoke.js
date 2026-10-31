@@ -3867,6 +3867,69 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // Forge access (§11.4, tsk-6pbe89e1yt50) on the account and at /settings/forge, where the hub's setup redirect lands:
+  // the linked installation with its repositories, linking (asked for proof first), unlinking, the own token stored and removed.
+  {
+    const fgAssigned = [];
+    win.location.assign = (u) => { fgAssigned.push(u); };
+    const fgPost = win.Maity.api.post;
+    let fgNeed = "step_up_required";
+    win.Maity.api.post = (p, b) => {
+      if ((p === "/auth/second-factor/verify" && b.code === "123456")) fgNeed = null;
+      if (p === "/me/forge/github/link" && fgNeed) { const r = fgNeed; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: r })); }
+      return fgPost(p, b);
+    };
+    await go("#/settings/forge?error=installation_not_yours"); for (let k = 0; k < 6; k++) await tick();
+    const fgBox = () => main.querySelector("section.forge-access");
+    expect(fgBox() && text(fgBox()).includes("That installation belongs to another GitHub account") && win.location.hash === "#/settings/forge"
+      && text(main).includes("Your account"),
+      "forge: /settings/forge is the account's Forge access; the hub's ?error= said in words, then dropped from the address");
+    expect(text(fgBox()).includes("@maintainer") && text(fgBox()).includes("active") && text(fgBox()).includes("2 repositories it covers")
+      && text(fgBox()).includes("maintainer/sample") && text(fgBox()).includes("No token is stored.") && !text(fgBox()).includes("ghp_"),
+      "forge: the linked installation with its status and repositories; no token stored");
+    btn(fgBox(), "Link the GitHub App").click(); for (let k = 0; k < 4; k++) await tick();
+    const fgForm = () => fgBox().querySelector("form.step-up");
+    expect(fgForm() && !fgAssigned.length, "forge: linking asks for the second factor first, nothing opened yet");
+    byId("step-up-step_up_required").value = "123456"; fgForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(fgAssigned) === JSON.stringify(["https://github.com/apps/maity-fixture/installations/new?state=fixture-state"]),
+      "forge: proven, the browser goes to the App's installation page the hub names " + JSON.stringify(fgAssigned));
+    // The own token: a classic one refused at its field, a fine-grained one stored, then removed.
+    byId("forge-token").value = "ghp_classic000"; fgBox().querySelector("form.forge-token-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(byId("forge-token-error")) === "This is a classic token; only a fine-grained token is taken." && byId("forge-token").getAttribute("aria-invalid") === "true",
+      "forge: a classic token is refused at its field, in words");
+    byId("forge-token").value = "github_pat_fixture"; fgBox().querySelector("form.forge-token-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The token is stored.") && text(fgBox()).includes("A token for @maintainer is stored.") && !text(fgBox()).includes("github_pat_fixture")
+      && btn(fgBox(), "Replace the token"), "forge: a fine-grained token stored, its login shown, never the token");
+    btn(fgBox(), "Remove the token").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The token is removed.") && text(fgBox()).includes("No token is stored."), "forge: the token removed");
+    expect(text(fgBox()).includes("it does not uninstall the App"), "forge: an unlink says it does not uninstall the App on GitHub");
+    // A project's settings: which grant reads its repository, and the namespace owner's confirmation for their grants.
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+    const fgRepo = () => main.querySelector(".forge-repository");
+    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, so only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
+      && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/settings/forge"),
+      "forge: the project's settings say which grant reads the repository, unconfirmed, with a link to Forge access");
+    const fgConfirms = [];
+    win.Maity.api.post = (p, b) => { if (p.endsWith("/repository/confirm")) fgConfirms.push(b); return fgPost(p, b); };
+    btn(fgRepo(), "Confirm this repository for my grants").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(fgConfirms) === JSON.stringify([{ url: "https://github.com/oliver-zehentleitner/maity" }])
+      && text(fgRepo()).includes("Confirmed for the grants of @maintainer") && text(fgRepo()).includes("GitHub App installation") && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: confirmed with the URL the owner saw; then read with the owner's installation");
+    // Another owner of the project, not its namespace owner, is offered no confirmation: the hub would refuse it.
+    const fgGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/sample"
+      ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "hum-someone", handle: "someone" }, repository: Object.assign({}, x.repository, { owner_confirmed: false, confirmed_by: null }) }))
+      : fgGet(p));
+    await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgRepo() && text(fgRepo()).includes("Not confirmed by the namespace owner") && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: a project owner who is not the namespace owner gets no Confirm button");
+    win.Maity.api.get = fgGet;
+    await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
+    btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The installation is unlinked.") && text(fgBox()).includes("No installation is linked."), "forge: unlinked");
+    win.Maity.api.post = fgPost;
+    delete win.location.assign;
+  }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
   await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();
@@ -7404,6 +7467,95 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
   expect(pvTabs.length === 2 && pvTabs[1].closed && text(byId("lp-pages-de-title-error")) === "required", "landing editor: a refused preview closes its tab and says why at the field");
   byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
+  // Import and export as JSON (tsk-36d575f5yybz): the draft as text; text as the draft after a confirmation, checked by
+  // the hub's preview call, which stores nothing and opens no tab; only Save saves.
+  {
+    const js = () => main.querySelector("details.lp-json");
+    const jsLoad = async () => { btn(js(), "Load into the editor").click(); for (let k = 0; k < 6; k++) await tick(); };
+    const jsPatches = lePatches.length, jsPosts = pvPosts.length, jsTabs = pvTabs.length;
+    const jsConfirm = win.confirm;
+    let jsAsked = null;
+    btn(js(), "Export the draft").click(); await tick();
+    const exported = JSON.parse(byId("lp-json").value);
+    expect(Object.keys(exported).join() === "enabled,default_language,pages,footer" && exported.pages.de.title === "Maity — bring deine Agents"
+      && exported.footer.operator === "Maintainer, Austria", "landing JSON: Export puts the draft as the hub takes it into the field");
+    byId("lp-json").value = "{nope"; await jsLoad();
+    expect(text(js()).includes("Not loaded: this is not JSON"), "landing JSON: text that is not JSON is said, nothing replaced");
+    byId("lp-json").value = "[1]"; await jsLoad();
+    expect(text(js()).includes("neither the landing page's body (with pages) nor one page (with sections)"), "landing JSON: JSON of another shape is said");
+    exported.pages.en.title = "Imported title"; exported.default_language = "en";
+    byId("lp-json").value = JSON.stringify(exported);
+    win.confirm = (q) => { jsAsked = q; return false; };
+    await jsLoad();
+    expect(jsAsked && jsAsked.startsWith("Replace the whole draft in the editor") && byId("lp-pages-de-title").value === "Maity — bring deine Agents"
+      && pvPosts.length === jsPosts, "landing JSON: a whole body asks first; declined, the draft stays and nothing is checked");
+    win.confirm = () => true;
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "Imported title" && pvPosts.length === jsPosts + 1 && pvPosts[jsPosts][0] === "/admin/settings/landing/preview"
+      && pvTabs.length === jsTabs && lePatches.length === jsPatches && text(main).includes("Loaded into the editor and checked by the hub. Nothing is saved yet"),
+      "landing JSON: accepted, the draft is replaced and checked by the preview call; no tab, nothing saved");
+    byId("lp-json").value = JSON.stringify({ title: "", description: "One page", sections: [] });
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "" && byId("lp-pages-en-description").value === "One page" && text(byId("lp-pages-en-title-error")) === "required"
+      && text(main).includes("Loaded into the editor, but the hub refuses parts of it") && lePatches.length === jsPatches,
+      "landing JSON: one page goes into the language shown; the hub's refusal is said at its field, nothing saved");
+    byId("lp-pages-en-title").value = "Imported title"; byId("lp-pages-en-title").dispatch("input");
+    await leSave();
+    expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
+      "landing JSON: Save saves the imported draft, as one typed by hand");
+    // A body without a footer (as landing-v3-complete.json, #808's review): the editor's footer stays, as a PATCH keeps the stored one.
+    const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
+    byId("lp-json").value = JSON.stringify(jsNoFooter);
+    await jsLoad();
+    expect(byId("lp-footer-operator").value === "Maintainer, Austria" && byId("lp-pages-en-title").value === "V3" && text(main).includes("checked by the hub"),
+      "landing JSON: a body without a footer keeps the editor's footer and is checked as accepted");
+    // A part of the wrong kind (sections no list): the hub names it, the draft stays, nothing breaks.
+    byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Broken", description: "x", sections: 5 } } });
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "V3" && text(main).includes("Not loaded:"), "landing JSON: a body the editor cannot draw leaves the draft as it was and says why");
+    // Every value the editor binds to an object (#808's delta review): a footer link that is null, a hero without its button.
+    for (const broken of [{ default_language: "en", pages: { en: { title: "Broken", description: "x", sections: [] } }, footer: { social: [null] } },
+      { default_language: "en", pages: { en: { title: "Broken", description: "x", sections: [{ type: "hero", enabled: true, title: "t", cta_primary: null }] } } }]) {
+      byId("lp-json").value = JSON.stringify(broken);
+      await jsLoad();
+      expect(byId("lp-pages-en-title").value === "V3" && text(main).includes("Not loaded:") && leBox().querySelector("form.lp-form"),
+        "landing JSON: a null footer link or a missing button leaves the draft and the editor as they were " + JSON.stringify(broken).slice(0, 80));
+    }
+    // An emptied operator line is none, never an empty one (the hub refuses "", §16.7); Save asks for the step-up through M.stepUp.
+    byId("lp-footer-operator").value = ""; byId("lp-footer-operator").dispatch("input");
+    const jsStep = win.Maity.stepUp.run;
+    let jsStepped = null;
+    win.Maity.stepUp.run = (call, slot, what) => { jsStepped = what; return jsStep(call, slot, what); };
+    await leSave();
+    win.Maity.stepUp.run = jsStep;
+    const jsLast = lePatches[lePatches.length - 1][1];
+    expect(!("operator" in jsLast.footer) && jsStepped === "Saving the landing page" && text(main).includes("Saved. Visitors see it within a minute."),
+      "landing editor: an emptied operator line is left out, and Save goes through the step-up");
+    byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
+    await leSave();
+    // The prepared landing V3 itself (tsk-k7pwrzs8vb8k, tools/landing-v3-complete.json): loaded, checked without a refusal,
+    // every section of both languages in the editor, the footer kept; saved as it is.
+    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/landing-v3-complete.json"), "utf8"));
+    byId("lp-json").value = JSON.stringify(v3);
+    await jsLoad();
+    const v3Patches = lePatches.length;
+    expect(text(main).includes("Loaded into the editor and checked by the hub") && leSections().length === v3.pages[v3.default_language].sections.length
+      && byId("lp-footer-operator").value === "Maintainer, Austria" && lePatches.length === v3Patches,
+      "landing JSON: the prepared V3 file loads, the hub's check refuses nothing, its sections are in the editor, nothing saved yet");
+    await leSave();
+    const v3Saved = lePatches[lePatches.length - 1][1];
+    expect(text(main).includes("Saved. Visitors see it within a minute.") && Object.keys(v3Saved.pages).sort().join() === Object.keys(v3.pages).sort().join()
+      && v3Saved.footer.operator === "Maintainer, Austria", "landing JSON: the V3 file saved with both languages and the footer kept");
+    // A type that is a key every object inherits is no section type (#808): the hub refuses it, the editor draws it as one it keeps.
+    const ctorPatches = lePatches.length;
+    byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Ctor", description: "x", sections: [{ type: "constructor", enabled: true }] } } });
+    await jsLoad();
+    expect(leBox().querySelector("form.lp-form") && leSections().length === 1 && text(leSections()[0].querySelector(".lp-section-title")) === "1. constructor"
+      && text(leSections()[0]).includes("not a section this hub knows") && text(main).includes("Loaded into the editor, but the hub refuses parts of it")
+      && lePatches.length === ctorPatches,
+      "landing JSON: a section type named like an inherited key is drawn as an unknown one, nothing saved");
+    win.confirm = jsConfirm;
+  }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
   const lgBox = () => main.querySelectorAll("section.lg-page");
   const lgImprint = () => lgBox().find((x) => x.attrs["aria-label"] === "Imprint");

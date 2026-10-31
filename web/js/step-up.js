@@ -17,23 +17,23 @@ window.Maity = window.Maity || {};
 
   const ASK = {
     reauthentication_required: {
-      title: "Confirm with your password",
-      hint: (what) => what + " needs your password again on this browser (it counts for 10 minutes).",
-      label: "Password", type: "password", autocomplete: "current-password",
+      get title() { return M.t("stepup.password.title"); },
+      hint: (what) => M.t("stepup.password.hint", { what }),
+      get label() { return M.t("stepup.password.label"); }, type: "password", autocomplete: "current-password",
       prove: (value) => M.api.post("/auth/reauthenticate", { password: value }),
       wrong: (err) => (err.code === "invalid" && err.details && err.details.fields && err.details.fields.password
-        ? "That is not your password." : err.code === "rate_limited" ? "Too many wrong passwords; wait a few minutes." : null),
+        ? M.t("stepup.password.wrong") : err.code === "rate_limited" ? M.t("stepup.password.rate_limited") : null),
     },
     step_up_required: {
-      title: "Confirm with your second factor",
-      hint: (what) => what + " needs your second factor: enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
-      label: "Code", type: "text", autocomplete: "one-time-code",
+      get title() { return M.t("stepup.code.title"); },
+      hint: (what) => M.t("stepup.code.hint", { what }),
+      get label() { return M.t("stepup.code.label"); }, type: "text", autocomplete: "one-time-code",
       // A code may be typed with spaces ("482 913"): six digits without them are a code (§2.8.1).
       prove: (value) => {
         const digits = value.replace(/\s+/g, "");
         return M.api.post("/auth/second-factor/verify", /^\d{6}$/.test(digits) ? { code: digits } : { recovery_code: value });
       },
-      wrong: (err) => (err.code === "code_invalid" ? "That code is not valid." : err.code === "rate_limited" ? "Too many wrong codes; wait a few minutes." : null),
+      wrong: (err) => (err.code === "code_invalid" ? M.t("stepup.code.wrong") : err.code === "rate_limited" ? M.t("stepup.code.rate_limited") : null),
     },
   };
 
@@ -48,9 +48,9 @@ window.Maity = window.Maity || {};
       const id = "step-up-" + reason;
       const input = h("input", { id, type: a.type, autocomplete: a.autocomplete, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-      const submit = h("button", { type: "submit" }, "Confirm");
+      const submit = h("button", { type: "submit" }, M.t("stepup.confirm"));
       const done = () => { open.delete(slot); clear(slot); slot.hidden = true; };
-      open.set(slot, () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); });
+      open.set(slot, () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); });
       const form = h("form", {
         class: "step-up inline-form",
         onsubmit: async (e) => {
@@ -66,16 +66,16 @@ window.Maity = window.Maity || {};
             resolve();
           } catch (err) {
             submit.disabled = false;
-            error.textContent = a.wrong(err) || "Not confirmed: " + err.message;
+            error.textContent = a.wrong(err) || M.t("stepup.not_confirmed", { reason: err.message });
             input.value = "";
             input.focus();
           }
         },
       },
       h("h4", { class: "step-up-title" }, a.title),
-      h("p", { class: "hint" }, a.hint(what || "This")),
+      h("p", { class: "hint" }, a.hint(what || M.t("stepup.this_action"))),
       h("label", { for: id }, a.label), input, submit,
-      h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); } }, "Cancel"),
+      h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); } }, M.t("stepup.cancel")),
       error);
       slot.hidden = false;
       append(clear(slot), form);

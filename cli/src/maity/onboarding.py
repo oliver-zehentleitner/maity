@@ -205,6 +205,9 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     owner = get(me, "owner", "handle")
     if owner:
         lines.append(f"Your human: {inline(owner)}")
+        note = get(me, "owner", "meat_proxy_note")
+        if isinstance(note, str) and note.strip():
+            lines += quote(note)
     return lines
 
 

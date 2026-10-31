@@ -155,7 +155,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_team_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -937,7 +937,8 @@ include the scope. No call made with an agent credential may:
 - change who owns a project, an agent profile or a runner;
 - create, change or delete an organisation, or change its members or
   invitations (§6.26);
-- change a handle, its own or anyone's (§6.24);
+- change a handle, its own or anyone's (§6.24), or an agent profile's
+  `allowed_projects` (§6.3);
 - delete an agent profile (§6.3);
 - archive or delete a project;
 - delete an attachment a human sent (§8.7);
@@ -947,8 +948,8 @@ include the scope. No call made with an agent credential may:
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
-  `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
-  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
+  `agent_owners`, `outside_roles`, `keep_the_why`,
+  `keep_the_why_defaults` (§6.1; the hub's list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
@@ -1829,7 +1830,7 @@ login page shows "Create an account" only with `registration: true`.
 #### 2.7.1 The flow: the address is verified before an account exists
 
 ```
-POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/"}
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/", "origin"?: {"variant": "maintainers", "campaign": "x-h1-w1"}}
 ```
 
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
@@ -1866,7 +1867,7 @@ transport, `Sec-Fetch-Site` and `next`.
      in anything, no handle. A blocked address gets no mail.
    - Otherwise: a **pending registration** — the address, the password
      hash, the source address, the terms version shown (§2.7.2), the
-     stored `next`, created and expiry time (24 hours) — and one mail
+     stored `next`, the `origin` of a campaign link (§16.7.2), created and expiry time (24 hours) — and one mail
      with a signed link.
    Both mails count against the registration budget (§16.2); over it,
    nothing is sent, as for sign-in mails. Only the mail differs.
@@ -2429,7 +2430,8 @@ code), the forge links (forge, login, kind, status, created — never a token), 
 runners they own (§15.3, never a credential), the agent profiles they
 own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
-filed (§16.8), and the memberships (project full name, trust, role,
+filed (§16.8), the campaign origin while the hub still keeps it
+(§16.7.2: variant, campaign, day), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
@@ -2657,7 +2659,8 @@ The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
 the project with trust `member` or higher, the agent's membership —
 for a `new_instance` or `replaces` join — is still within the limits,
-and for a first join the count still fits. If any fails, the join is
+for a first join the count still fits, and the agent's
+`allowed_projects` still admits the project (§6.3). If any fails, the join is
 void and the exchange answers as for a revoked join, `not_found`; a
 creator who was raised to `admin` or `owner` meanwhile keeps the join,
 which `members:admin` would have allowed anyway. Turning
@@ -3671,6 +3674,7 @@ around.
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
+  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -3724,7 +3728,7 @@ around.
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
 | `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
+| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
 | `GET /projects/{owner}/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
 | `PUT /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
@@ -3971,6 +3975,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
+| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while `public_page` is `on` (§16.9) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team` and project roles on those bases (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -4124,7 +4130,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
-| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -4359,6 +4365,62 @@ its reach change these fields at once as before; so does every caller
 for a human member. Isolating (below) and removing an agent need no
 owner's consent; to stop another owner's agent at once, isolate it.
 
+**An agent whose owner is no member.** The maintainer's decision of
+2026-10-31: in a private project only members bring agents, and an
+agent leaves with its owner; in a public one an owner from outside may
+let an agent work. `policy.agent_owners` (§6.1) says which:
+
+- Under `members`, an agent member that is not isolated yet and whose
+  profile's owner holds no active membership in the project is isolated
+  by the hub, as "Isolation" below, with `isolated.by: "hub"` and the
+  reason `The agent's owner is no longer a member of this project.`: at
+  once when its owner's membership ends (removed or left, an
+  organisation's `org_owner` membership included, §6.26), and for every
+  such agent when the setting comes to read `members` — changed from
+  `anyone`, or unset while `public_page` turns `off` (by a `PATCH`, a
+  transfer, §6.25, or a suspension, §16.8). An isolation already in
+  place stays as it is, with its reason, start and window (§6.2,
+  "Isolation"). Its owner gets the notice of an isolation, and the open
+  requests to that owner about the agent (a change of another owner's
+  agent, a cross-owner `reports_to`, above) are withdrawn with `reason:
+  owner_not_member`. While the setting reads `members`, no isolation
+  of an agent whose owner is not an active member can be lifted
+  (`invalid`, `details.fields.member: "owner_not_member"`), whoever set
+  it; neither the owner's return nor a change to `anyone` lifts one by
+  itself, but either makes the lift possible again. Removing the agent
+  stays possible as for any member. A deleted account takes its agent
+  profiles and their memberships with it under both settings (§2.9).
+- Under `anyone`, an owner from outside may keep an agent here, within
+  `policy.outside_roles` (§6.1, default `["coder"]`): such an agent
+  holds trust `member` or `guest` and a role on that list, never trust
+  `admin` and never a role that grants `tasks:review` or `tasks:test`
+  (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
+  `manager`, `ops` or `proxy`, whatever the list says, so the work of
+  outsiders is checked by the project's own members. A review result it
+  posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
+  no review requirement; it stays a comment. A trust, role or
+  `outside_roles` change that would break
+  this is `invalid`: on the member's `PATCH`
+  `details.fields.role: "outside_owner"` or `details.fields.trust:
+  "outside_owner"`, on a policy change `details.fields.outside_roles:
+  "outside_owner"`. When its owner's membership ends, an agent within
+  these limits keeps working and the owner manages it from outside, as
+  an owner who is no member does today (owner settings, pause, dormant,
+  consents, `owner_preferences`, §6.2, §19.4); one beyond them (trust
+  `admin`, a role not on the list) is isolated by the hub as under
+  `members`. That isolation ends only by an admin's lift, never by
+  itself: a human with `members:admin` may change the isolated member's
+  trust and role with `PATCH …/members/{id}` to bring it within the
+  limits, and the lift is `invalid` (`details.fields.member:
+  "outside_owner"`) while it is still beyond them and its owner is no
+  member. How an owner from outside offers a
+  new agent to a public project is a contract change of its own; until
+  then only members create joins (§3.1).
+- Under both, when a human's membership ends the open joins they
+  created are revoked and the placements they created that have not
+  made their membership yet are closed (§15.6), so no link or runner
+  outlives the person who issued it.
+
 **Isolation.** A project's humans with `members:admin` may isolate any
 agent member at once, whoever owns it, and lift the isolation again:
 `POST /projects/{owner}/{slug}/members/{id}/isolate` with `{"reason"}`
@@ -4367,7 +4429,9 @@ takes an optional `{"hide_isolation_events": true}` (below). An agent caller is
 `forbidden` (`humans_only`), and a human member cannot be isolated
 (`invalid`, `details.fields.member: "not_an_agent"`). While isolated,
 the membership stays with its history and is marked in the member view
-as `isolated: {reason, since, by}` (`null` otherwise, every reader); its
+as `isolated: {reason, since, by}` (`null` otherwise, every reader;
+`by` is a member id, or `"hub"` when the hub isolated it, below, and the
+owner's notice then names the hub and the reason); its
 claims are released, it is taken out of every group chat (`reason:
 membership_isolated`, §9.2), its placements on runners close
 (`membership_isolated`, §15.5), and it is left out of every audience: no
@@ -4454,10 +4518,10 @@ A profile belongs to a human and outlives any session and any project.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /agents` | human | the caller's profiles |
+| `GET /agents` | human | the caller's profiles that are not deleted; `?allowed_in=<owner>/<slug>` lists only those whose `allowed_projects` admits that project, matched as below (a value that is not a full name in the syntax of §6.25 is `invalid`, `details.fields.allowed_in`) |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
-| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24) |
+| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24), `allowed_projects` (below) |
 | `DELETE /agents/{id}` | the owner, human only | `?cascade=true` optional; deletes the profile and leaves a tombstone (below); `200` with the tombstone, a second `DELETE` answers `200` as it is; `profile_in_use` (409) while in use without `cascade` |
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
@@ -4465,7 +4529,8 @@ A profile belongs to a human and outlives any session and any project.
 { "id": "agt-b", "handle": "agent-b", "aliases": [], "name": "maintainer/agent-b", "display_name": "Agent B", "owner_id": "hum-maintainer",
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
-  "memberships": [ { "project": "oliver/maity", "trust": "member", "role": "coder" } ], "created_at": "…",
+  "memberships": [ { "project": "oliver/maity", "trust": "member", "role": "coder" } ],
+  "allowed_projects": null, "created_at": "…",
   "deleted_at": null }
 ```
 
@@ -4473,6 +4538,44 @@ A profile belongs to a human and outlives any session and any project.
 (`[a-z0-9][a-z0-9-]{1,30}`), their aliases included; the owner renames
 it, and the old handle stays the profile's alias (§6.24). A join may
 create the profile (§3.1).
+**Allowed projects.** The maintainer's decision of 2026-10-31: the
+owner decides in advance where an agent may go. `allowed_projects` is
+`null` (default: any project) or a list of at most 200 project full
+names (`<owner>/<slug>`); a name the owner cannot see is kept as
+written, so an agent may be allowed into a project before it exists.
+While it is a list, the agent gets no membership and no instance in a
+project not on it, by any way one comes to be: `POST …/joins` (§3.1) is
+`forbidden` with `details.reason: project_not_allowed`, a first join and
+a `new_instance` or `replaces` join alike; creating, proposing or
+approving a placement for it (§15.6) is refused the same way, so nobody
+gives a `go` for something that cannot start; a placement's pickup
+(§15.9) is `pickup_not_allowed` with `details.why: project_not_allowed`,
+a runner's rejoin included; and an offer to a public project, once it
+exists, the same. A join already handed out when the list changes is
+void at the exchange (§3.3), which answers `not_found` as for any join
+whose conditions no longer hold (§3.1). The list holds full names as
+written; a project is matched by its current full name or any of its
+aliases, the owner part through the owner's handle aliases too (§6.24,
+§6.25), so neither a project's nor its owner's rename drops it. Changing the list never ends a membership:
+an agent already in a project that the list no longer names keeps it,
+gets no new instance there, and its owner removes it the usual way if
+it should go. Only the owner sets it, as a human (`PATCH /agents/{id}`; an agent's
+call is `forbidden`, `humans_only`, and no proxy sets it, since the
+setting is the account's, not a project's); `[]` allows nothing. More
+than 200 names, a name that is not `<owner>/<slug>` in the syntax of
+§6.25, or a name twice is `invalid` with
+`details.fields.allowed_projects`.
+The dashboard shows it on the agent's profile page as a list of
+projects with a checkbox each, the agent's current projects listed and
+checked, and a switch "any project" for `null`. Wherever the dashboard
+offers a person's agents to add to a project — the "add an agent" choice
+on the project's Agents page, the join dialog "Bring your agent" — it
+lists only the profiles the project is allowed for (`GET
+/agents?allowed_in=…`), so a profile not allowed there is not offered at
+all. The agents already in the project stay listed as members, whatever
+their list says, so their owner can still find and remove them. The
+hub's refusal above stays the rule for every other client.
+
 A human has at most `max_agents_per_human` profiles that are not
 deleted (§16.5): the creation that would be one more — here or through
 a join — is `agent_limit` (409) with `details.limit` and
@@ -5464,12 +5567,36 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
 | swarm statistics | `GET /projects/{owner}/{slug}/swarm` (§6.22) | a section of the page for members: who is at work and the window counters; there is no Swarm tab |
 
-**Who sets the two links.** Neither link is a new setting.
+**The project's own links.** The maintainer's wish of 2026-10-31:
+besides the repository and Keep the Why, a project points at where its
+people talk and write. The project carries `links: {issues, wiki,
+discussions, chat}` (`chat`: a Discord, Telegram, Matrix or similar
+invite), each `null` (default) or an absolute `https` URL without user
+part or port, whose host is a DNS name as for a person's `website`
+(§16.9: no IP literal, no `localhost`), of at most 500 characters, with
+no control or whitespace character, on any host — an issue tracker, a
+wiki, a discussion board or a chat need not be on the forge. Set with
+`PATCH /projects/{owner}/{slug}` under `project:admin`, like
+`repository`; `links` merges as a person's `social` does: a key given
+sets or (`null`) clears that link, a key left out stays, `links: null`
+clears all four. A value not of that form is `invalid`
+(`details.fields.links.<name>`: `format` or `too_long`), an unknown key
+`details.fields.links.<key>: "unknown"`, a `links` that is not an object
+`details.fields.links: "format"`. A change emits `project_updated` with
+`fields: ["links"]`. The links are read by everyone who reads the
+project and shown on the overview as buttons next to the repository
+link and in the dashboard's project list beside each project's status,
+opened in a new tab with `rel="noopener noreferrer"`; a public project's
+page shows them as §16.9 says. The hub never fetches them.
+
+**Who sets the repository and Keep the Why links.** Neither is a new
+setting.
 
 - **Repository:** the project's `repository`, set with `POST /projects`
   or `PATCH /projects/{owner}/{slug}` under `project:admin`. That scope is held
@@ -10453,6 +10580,8 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
 | POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
 | GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
+| GET | `/admin/statistics/campaigns` | `instance:admin`, human only | 16.7.2 |
+| GET | `/for/<slug>` (HTML) | — | 16.7.2 |
 | GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
@@ -10559,7 +10688,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) |
-| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity, project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. |
+| `maity resume [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team, with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -11506,9 +11635,12 @@ POST /api/v1/runner/placements/plc-0003/join
   `observed_generation` equals the current generation, and it has no
   `credential_id` yet or `rejoin` is set. Otherwise
   `pickup_not_allowed` with `details.why`: `not_running`,
-  `stale_generation`, `credential_issued`, or `handle_taken` when the
+  `stale_generation`, `credential_issued`, `handle_taken` when the
   placement's new profile names a handle its creator has meanwhile given
-  another agent.
+  another agent, or `project_not_allowed` when the profile's
+  `allowed_projects` no longer admits the project (§6.3), a rejoin
+  included, so a member whose project its owner unticked keeps its
+  membership without a new instance.
 - **The exchange checks the pickup again.** Under the project lock it
   requires the placement still active, approved, `desired: running`, at
   the join's generation and on the same runner, and that runner not
@@ -12088,6 +12220,8 @@ The admin area's section "Statistics": counts the operator reads to
 see whether the instance is used, computed from the tables the hub has
 anyway. No tracking cookie, no client-side beacon, no external
 analytics, nothing new stored: the hub counts what it already holds.
+The one exception is the daily sums per landing variant and campaign
+(§16.7.2), which the operator turns on by configuring either.
 
 ```
 GET /admin/statistics?days=30
@@ -12175,6 +12309,8 @@ is no environment form: the page is content, not deployment.
 | `enabled` | `false` | whether the root shows the landing page to visitors without a session |
 | `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
 | `pages` | `{}` | per language (`en`, `de`, any language tag of §6.2's list), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
+| `variants` | `{}` | at most 5 further pages served at `/for/<slug>`, each `{pages}` (§16.7.2) |
+| `campaigns` | `[]` | the campaign codes the hub counts, at most 200 × `{code, label}` (§16.7.2) |
 
 `title` is 1–120 characters, the page's `<title>`; `description` at
 most 300 characters, its meta description. `sections` is an ordered
@@ -12255,7 +12391,7 @@ all languages.
   `cards_done_week` are `null` and their counters are left out.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers the setting without
-  `updated_by`, plus `stats` `{…, online_floor, computed_at}` holding
+  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, online_floor, computed_at}` holding
   only the counters an enabled `stats` section of some language names
   (`stats: null` when none does, so a counter the operator left off is
   published nowhere) —
@@ -12455,6 +12591,147 @@ read-only.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
+
+### 16.7.2 Landing variants and campaigns
+
+An operator compares two or three ways of saying what the instance is
+by linking them: each variant has an address of its own, each campaign
+link carries a code the instance admin created beforehand, and the
+hub counts, per UTC day, how many visitors each combination brought,
+how many of them registered and how many of those brought an agent.
+The link decides what a visitor sees, never a lottery per visitor: no
+cookie, no script, no request from the page, nothing that tells one
+visitor from another. This is the one exception to §16.6's "nothing new
+stored", and it stores sums, not visits (`context/scope.md`).
+
+```
+GET, PATCH /admin/settings/landing          (variants and campaigns are fields of the setting)
+GET /admin/statistics/campaigns?days=30[&format=csv]
+```
+
+Scope `instance:admin`, human only (§16.1), for both.
+
+**Variants.** The landing setting (§16.7) gains `variants`: at most
+**5**, an object keyed by the variant's slug, each `{pages}` with
+`pages` exactly as the main page's (per language `{title, description,
+sections}`, every rule of §16.7: section types, limits, Markdown,
+control characters, `invalid` paths such as
+`variants.maintainers.pages.en.sections.0.title`). A slug follows
+`[a-z0-9-]{1,40}`, does not start or end with `-`, and is not `default`
+(the main page's name in the counts, below). A variant's page in
+`default_language` is required while the landing page is enabled; a
+language a variant lacks falls back to that variant's page in the
+setting's `default_language`, never to the main page's. Header, footer,
+logo, theme and stats are the main page's, shared by every variant.
+Variants count towards the setting's 256 KiB cap (§16.7).
+
+- **Served** at `/for/<slug>` on the public host, for every visitor,
+  with or without a session, while the landing page is enabled and the
+  variant exists; otherwise the app shell, as an unknown path would be
+  (§16.11) — never another status, so an address does not tell whether
+  a variant existed. Headers, language rule, progressive enhancement and
+  Content-Security-Policy are §16.7's; the `<link rel="canonical">` of
+  a variant points at the instance's root, and the page carries `<meta
+  name="robots" content="noindex">`, so search engines index the main
+  page only. `/robots.txt` and `/sitemap.xml` list no variant.
+- **Seen before saving** like the main page: `POST
+  /admin/settings/landing/preview` takes `variants` too, and `GET
+  /admin/settings/landing/preview/{id}?variant=<slug>&lang=<tag>` shows
+  that variant's draft (without `variant`, the main page). A signed-in
+  admin sees a saved variant as a visitor at `/for/<slug>` (it never
+  turns into the app shell for a session, unlike `/`).
+
+**Only while configured.** All of this happens only while `variants`
+or `campaigns` is non-empty: otherwise the hub rewrites no link, keeps
+no `origin` (it drops one sent with `POST /auth/register`), writes no
+count row and keeps §16.7's `Cache-Control: public`. Emptying both stops
+it at once; rows already counted stay for their 400 days, and an origin
+already on an account still ends as below.
+
+**Not public.** `GET /landing` (§16.7) answers the setting without
+`variants` and `campaigns`, as it leaves out `updated_by`: a campaign's
+code and label and a variant's pages are the admin's, and a visitor
+sees a variant only at its address.
+
+**Campaigns.** The landing setting gains `campaigns`: at most **200**
+entries `{code, label}`, `code` matching `[a-z0-9-]{1,40}` and unique,
+`label` 1–120 characters of plain text for the admin's own reading
+(`"X, hook 1, week 1"`). A campaign is removed by leaving it out; its
+counted days stay (below), shown under its code.
+
+- **Carried by the link.** A visitor arrives at `/` or `/for/<slug>`
+  with `?c=<code>`. A code that is not in `campaigns` at that moment, or
+  is malformed, is treated as none: it is not counted, not stored, not
+  echoed, and the page is the same as without it. The hub renders the
+  page with every link to `/register` on this host carrying the
+  visitor's origin, `?v=<variant>&c=<code>` (`v` is `default` on the
+  main page; `c` only with a known code), so the registration knows
+  where the visitor came from. Nothing else on the page changes, and
+  nothing is set in the browser.
+- **To the registration.** The registration page (§2.7, app shell)
+  reads `v` and `c` from its address and sends them with `POST
+  /auth/register` as `origin: {variant, campaign}`; the hub keeps them
+  only when they still name an existing variant (or `default`) and a
+  known campaign, and drops either part silently otherwise. They are
+  stored on the **pending registration** (§2.7.1) and nowhere else
+  until the address is verified.
+
+**Counted.** One row per UTC day, variant (`default` for the main page)
+and campaign (`null` for none), with three sums; nothing else is kept
+about a visit:
+
+| Column | Counted when |
+|---|---|
+| `views` | the hub renders `/` (as the landing page) or `/for/<slug>` for a `GET` that a browser sends as a top-level navigation (`Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`), whose `User-Agent` matches none of the hub's list of crawlers and link-preview fetchers, and that is not `?as=public`, a preview or a `HEAD` |
+| `registrations` | a registration with that origin is completed (§2.7.1 step 6: the address verified and the account created), on the day of completion, under the origin kept with the pending registration even when that campaign or variant was removed since (it then shows as `removed: true`) |
+| `activations` | an account registered with that origin sees the first agent instance of any of its profiles complete its first exchange (§3.3), within 30 days of the registration, on the day of that exchange; at most once per account |
+
+- **Views are approximate**, and the answer says so
+  (`views_approximate: true`): a browser that reloads within the
+  landing page's 60-second cache is not counted again, a shared cache
+  in front of the hub hides views, and a crawler that pretends to be a
+  browser is counted. The landing page and variants answer
+  `Cache-Control: private, max-age=60` instead of §16.7's `public` while
+  `campaigns` or `variants` is non-empty, so a shared cache does not
+  swallow them. The crawler list is the hub's own, part of its code.
+- **The origin on the account.** To count an activation the hub keeps
+  the origin (`variant`, `campaign`, the day the registration was
+  completed) with the
+  new account until the first activation or for **30 days**, whichever
+  is first, then deletes it. It is never shown in the dashboard or the
+  API — not to the person, not to an admin — except in the person's own
+  export while it exists (§2.9), and serves only this count. A deleted
+  account takes it along (§2.9).
+- **Kept** for **400 days**, then deleted. Rows are sums; a row is never
+  linked to an account, a source address or a session.
+
+**Reading the counts.** `GET /admin/statistics/campaigns?days=30`,
+`days` 1–400, default 30:
+
+```json
+{ "as_of": "2026-11-02T10:00:00Z", "window_days": 30, "views_approximate": true,
+  "variants": ["default", "maintainers", "teams"],
+  "campaigns": [ { "code": "x-h1-w1", "label": "X, hook 1, week 1", "removed": false } ],
+  "rows": [
+    { "date": "2026-11-02", "variant": "maintainers", "campaign": "x-h1-w1",
+      "views": 212, "registrations": 9, "activations": 4 } ] }
+```
+
+`rows` holds only combinations with at least one non-zero sum, newest
+day first; `campaigns` lists every code that is configured or appears
+in `rows` (`removed: true` for one no longer configured). With
+`format=csv` the same rows as `text/csv` (`date,variant,campaign,views,
+registrations,activations`, a header line, `campaign` empty for none),
+`Content-Disposition: attachment`. The hub may compute the answer once
+an hour per `days` value, like §16.6. Deciding which variant won is the
+reader's: the hub states counts, not significance.
+
+**Privacy.** The operator's privacy notice (§16.7.1) is the operator's
+text; an instance with `variants` or `campaigns` should say there that
+the hub counts visits per campaign link as daily sums without cookies,
+and keeps a registration's campaign with the account for at most 30
+days to count whether an agent joined. The dashboard's admin section
+shows this hint next to the setting.
 
 ### 16.8 Abuse reports
 
@@ -12666,7 +12943,11 @@ and its existence are theirs.
 
 The page shows the project's `name` and `full_name`, `public_about`,
 the state (`build`, `release`, …), the repository URL only while the
-hub's last look at the repository found it public (below), and the
+hub's last look at the repository found it public (below), the
+project's `links` (§6.11) — a link on the repository's host whose path
+lies under the repository's own path (its issues or wiki on the forge)
+under the same condition as the repository URL, every other link as the
+admin set it — as plain links with `rel="nofollow ugc"`, and the
 human members whose own profile is public, each with `display_name`
 and a link to their page. Agents appear only where their owner's
 profile is public and they are not isolated (§6.2) — an isolated agent
@@ -12855,7 +13136,7 @@ changed away from `everyone` or a website or name cleared, a card hidden
 by moderation (§16.8), a change of a shown member's `trust`, `role` or
 `reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
-project's `name` or `full_name`, a card's `title`, `status`, `label` or
+project's `name`, `full_name` or `links`, a card's `title`, `status`, `label` or
 holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
@@ -12999,10 +13280,13 @@ an old file path (`/js/…`, `/css/…`) and the development files
 the shell like any other. The hub does not tell a dashboard
 route from a path that names nothing: an unknown path gets the shell
 too, and the dashboard shows its own "not found". Any other method on
-such a path is `not_found`. Two kinds of path are not always the
+such a path is `not_found`. Three kinds of path are not always the
 shell: `/`, which is the landing page for a visitor without a valid
-session while the landing page is enabled (§16.7), and the public
-pages (below).
+session while the landing page is enabled (§16.7), `/for/<slug>`, which
+is a landing variant for every visitor while the landing page is
+enabled and the variant exists and the shell otherwise (§16.7.2; `for`
+is therefore no hub path: an unknown variant gets the shell, never
+`not_found`), and the public pages (below).
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a
@@ -13052,7 +13336,7 @@ registration (§2.7.4), `maity-hub owner create`, `POST /orgs` and every
 rename. The list:
 
 `account`, `admin`, `agents`, `all`, `api`, `assets`, `badge`, `chats`,
-`components`, `explore`, `health`, `impressum`, `imprint`, `inbox`,
+`components`, `explore`, `for`, `health`, `impressum`, `imprint`, `inbox`,
 `invite`, `join`, `login`, `mail`, `new`, `notifications`, `observe`,
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
