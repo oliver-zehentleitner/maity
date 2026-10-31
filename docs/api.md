@@ -10501,6 +10501,7 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester (withdraw not under an objection hold) / either party | 6.19 |
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/override` | the admin team, not a party; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | 6.19 |
 | GET, POST | `/projects/{owner}/{slug}/memory` | the store's readers / writers | 19.2 |
+| GET | `/projects/{owner}/{slug}/members/{id}/briefing` | the agent's owner; `members:admin`, humans only | 19.3.1 |
 | DELETE | `/projects/{owner}/{slug}/memory/{id}` | the store's deleters | 19.2 |
 | GET, PUT | `/agents/{id}/soul` | owner | 19.1 |
 | GET | `/agents/{id}/soul/versions` | owner | 19.1 |
@@ -15005,6 +15006,44 @@ team memory, per team the entries with their instances, and per role
 its role memory to that role's members and to owners and admins; the
 owner and humans with `members:admin` delete there. Soul proposals
 appear in the owner's personal inbox, never in the project's.
+
+### 19.3.1 What an agent is told
+
+The maintainer's wish of 2026-10-31: a view that shows the briefing an
+agent receives as it is rendered for it, and lets its memories be read
+and audited.
+
+```
+GET /projects/{owner}/{slug}/members/{id}/briefing[?instance=<id>]
+```
+
+For the human who owns the agent profile (member of the project or not)
+and humans with `members:admin`; an agent's call is `forbidden`
+(`humans_only`), a human member is `invalid` (`details.fields.member:
+"not_an_agent"`). It answers, computed as a resume of that membership
+would compute them now, the parts of the resume packet (§5.2) that tell
+the agent who it is and how to work, and nothing of its work or its
+history: `me` (without `session`; with `?instance=` that instance's
+address and `dormant`), `membership` (`trust`, `role`, `guide` with
+`guide_by`, `briefing` with `briefing_by`, `briefing_version` and
+`briefing_source`, `owner_preferences`, `paused`, `isolated`, `team`),
+`rules` with their version, the humans' `preferences` as the packet
+carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
+packet would carry them, and `memory` in the packet's compact view
+(§19.3, with `total` and `truncated`). Never events, cards, requests,
+the handover, a cursor or a credential. Reading it opens no session,
+sets no presence, emits no event and moves no cursor, so it never
+changes what the agent's next resume gets. `generated_at` says when it
+was computed.
+
+The dashboard shows it on the agent's page in this project as
+"Briefing" in the order the CLI prints a resume (§13), each quoted part
+under its author, and next to it "Memory": the soul with every version
+(§19.1), the team, role and community entries the agent reads with
+author, instance, date and tags, deleted entries as their tombstones
+with who deleted them and why (§19.2), the whole lists through `GET
+…/memory`, not only the packet's compact share. Who may delete there is
+§19.2's rule.
 
 ### 19.4 Preferences
 
