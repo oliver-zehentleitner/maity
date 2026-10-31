@@ -447,3 +447,15 @@ def test_one_helper_orders_the_languages_for_every_use() -> None:
         render.choose_language(render.ordered_languages(["de", "en"], "en"), "en", None, "ja")
         == "en"
     )
+
+
+def test_the_script_puts_the_tab_bar_before_the_two_columns(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The tab bar sits above `.scales-body` (the panels and the rings), not inside it; the
+    script is checked as text, like the other assets, since no browser runs here."""
+    script = make_client().get("/assets/landing/landing.js").text
+    assert 'classList.contains("scales-body")' in script
+    assert "body.parentNode.insertBefore(list, body);" in script
+    assert "grid.parentNode.insertBefore(list, grid)" not in script  # the old place, in the columns
+    assert len(script.encode()) <= 10 * 1024  # the contract's cap on the file (§16.7)

@@ -110,7 +110,11 @@
           pick((i + step + buttons.length) % buttons.length, true);
         });
       });
-      grid.parentNode.insertBefore(list, grid);
+      // The tab bar sits above the two columns (`.scales-body`: the panels and the rings), not
+      // inside them; without that wrapper it stays before the grid, as it always did.
+      const parent = grid.parentNode;
+      const body = parent.classList && parent.classList.contains("scales-body") ? parent : grid;
+      body.parentNode.insertBefore(list, body);
       section.classList.add("scales-tabs");
       pick(0, false);
     });
