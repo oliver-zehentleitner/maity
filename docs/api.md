@@ -787,17 +787,22 @@ carries only what the bridge posts.
   two agents have different owners (below). Asked only by the served
   agent's owner, a human — a project admin who owns neither agent cannot
   connect another human's agents, as §6.2 keeps every setting of another
-  owner's agent with its owner. Both must be agents and members of the
-  project, not the same agent, and neither may hold the role `proxy` —
-  the owner's interface carries nobody's hands and is carried by none;
-  else `invalid`, on the served side with `details.fields.member`
-  (`not_an_agent`, `role`, `too_many`), on the bridge's with
-  `details.fields.bridge` (`not_a_member`, `not_an_agent`, `self`,
-  `role`, `already` for an existing connection of the pair). An agent
-  may have several bridges, each with its own purpose, at most 5, and
-  serve several agents. `PATCH …/bridges/{brg}` `{purpose}` changes the
-  text, asked by the same human (same owner: at once; across owners: a
-  new consent, the old text holding until `go`). `DELETE
+  owner's agent with its owner: an agent caller gets `forbidden` with
+  `humans_only`, any other human `forbidden` with `details.reason:
+  "agent_owner"`. Both must be agents and members of the project, not
+  the same agent, and neither may hold the role `proxy` — the owner's
+  interface carries nobody's hands and is carried by none; else
+  `invalid`. On the served side `details.fields.member` is one of
+  `not_an_agent`, `role` (a `proxy`), `too_many` (5 connections and open
+  requests already), `security_team` (across owners, below) and
+  `outside_role` (below); on the bridge's side `details.fields.bridge`
+  is one of `not_a_member`, `not_an_agent`, `self`, `role` (a `proxy`)
+  and `already` (an existing connection of the pair). An agent may have
+  several bridges, each with its own purpose, at most 5, and serve
+  several agents. `PATCH …/bridges/{brg}` `{purpose}` changes the text,
+  asked by the same human (same owner: at once; across owners: the same
+  two consents as the `POST`, the old text holding until both said
+  `go`, since the purpose is the frame both agreed to). `DELETE
   …/bridges/{brg}` ends it, open to either agent's owner, to either
   agent itself, and to a human with `members:admin` — ending a
   connection only takes access away. The member view carries `bridges` (the connections
@@ -813,7 +818,7 @@ carries only what the bridge posts.
   will read and act on. Two limits hold whatever the answers: a served
   agent of a security team (`red-team`, `blue-team`, `purple-team`)
   gets no bridge of another owner, since its findings stay within the
-  security teams (§2.3); and when the bridge's owner is not an active
+  security teams (§2.3; `details.fields.member: "security_team"`); and when the bridge's owner is not an active
   member of the project, the served agent's role must be one
   `policy.outside_roles` allows (§6.1), so that an outsider cannot act
   with a reviewer's or tester's scopes through a bridge it could not
@@ -825,18 +830,23 @@ carries only what the bridge posts.
   agreement and says what `go` grants: the bridge reads what the served
   agent reads in this project — its cards, its messages, the group chats
   it takes part in and its direct conversation with its owner — and acts
-  there as it, within the purpose stated; and one to the project's
-  humans with `members:admin` with the same summary. The connection
+  there as it, within the purpose stated; and one to the project
+  (`to: owner`, answerable by every human with `members:admin` in the
+  project, an exception to the `consent` rules of §2.3 and §7 as the
+  cross-owner `reports_to` is) with the same summary,
+  answered by a human directly — a proxy does not relay it, since it is
+  the project's own consent. The connection
   exists once both said `go`; a `no` to either, or a withdrawal,
   withdraws both and creates nothing. At `go` the hub checks again
   that both are active agent members, neither isolated nor a `proxy`,
   the two limits above and the limit of 5; failing that the `go` is `invalid` as the `POST`
   would be, nothing changes, and the request stays open for a `no` or a
-  withdrawal. A further `POST` for the same pair or a `PATCH` of the
-  connection while a request is open withdraws it (`reason:
-  "superseded"`), and `DELETE …/bridges/{brg}` withdraws an open `PATCH`
-  request with the connection. An open request counts as the pair's
-  connection for `already` and the limit of 5. Withdrawal is open to the
+  withdrawal. A further `POST` for the same pair while its request is
+  open withdraws that request (`reason: "superseded"`) and files it anew
+  with the new purpose; a `PATCH` of the connection while its request is
+  open does the same, and `DELETE …/bridges/{brg}` withdraws an open
+  `PATCH` request with the connection. An existing connection is what
+  answers `already`; an open request counts toward the limit of 5. Withdrawal is open to the
   asker, the two owners and every human with `members:admin` in the
   project; an agent other than the asker gets `forbidden` with
   `details.reason: pending_consent`, as in §6.2.
@@ -2655,6 +2665,10 @@ everywhere, spaces ignored.
 verified address (`address_status` other than `verified`, §18.4) is
 handled by whether the account ever had one; the hub keeps that as a
 flag on the account, set at the first verification and never cleared.
+An account that existed before the flag counts as having had one when
+its address is `verified` or `disabled` at the upgrade (a disabled
+address was verified once, §18.7); the migration that adds the flag
+sets it so, so that no such account falls under "never had one".
 
 - **Never had one** (an account made by `maity-hub owner create`
   without an address, say): the enrolment session of `required_admins`
@@ -9808,7 +9822,7 @@ bridges the agent's owner connected to it (§2.3, "The bridge").
 | `GET /projects/{owner}/{slug}/conversations` | human / agent | the list of §9.3; its direct items are the caller's owned agents in this project with `{agent_id, last_message_at, unread, last_message}`; for an agent, its one direct conversation and its group chats |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}` | the owner of the agent, or the agent (and its bridges with `Maity-For`, §2.3) | the conversation as its direct item in the list (§9.3) |
 | `GET /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent (and its bridges with `Maity-For`, §2.3) | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; `before` pages back as in a group chat (§9.2): the `limit` messages with a lower `seq`, `after` and `before` together `invalid`, and it marks nothing read. On every read, `before` or not, `earlier` is the lowest `seq` of the page when older messages exist — the value to pass as the next `before` — and `null` when none do or the page is empty. A direct conversation has no window: without `before` it reads from `after` as always |
-| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the same two | `{body, attachments?, to_instance?}` (§8.7); `201` with the message. `to_instance` (an instance id of the agent, below) is the human's only: from the agent it is `invalid` (`details.fields.to_instance: "human_only"`); an id that is no instance the agent ever had, a malformed one included, is `invalid` (`"not_an_instance"`). In a group chat (§9.2), and on the project's message route (§8.2) for anything but a direct chat message, a `to_instance` is `invalid` (`"direct_chat_only"`), checked before `human_only` |
+| `POST /projects/{owner}/{slug}/conversations/{agent_id}/messages` | the owner of the agent, or the agent — not its bridges, which read the direct conversation as observers and do not write in it | `{body, attachments?, to_instance?}` (§8.7); `201` with the message. `to_instance` (an instance id of the agent, below) is the human's only: from the agent it is `invalid` (`details.fields.to_instance: "human_only"`); an id that is no instance the agent ever had, a malformed one included, is `invalid` (`"not_an_instance"`). In a group chat (§9.2), and on the project's message route (§8.2) for anything but a direct chat message, a `to_instance` is `invalid` (`"direct_chat_only"`), checked before `human_only` |
 
 Message shape:
 
@@ -10190,7 +10204,9 @@ by nobody but the human for itself. A change emits no event and wakes
 nobody — the agents read it on their next resume or read of the chat;
 the fields stand in the conversation view wherever it is served,
 including the view in a later `conversation_created` or
-`conversation_updated` (§8.2). The dashboard shows it as a switch next
+`conversation_updated` (§8.2), where it is the value at that event's
+time; what holds now is what the resume packet and a read of the chat
+give. The dashboard shows it as a switch next
 to "Attach" and "Send" in the conversation's composer, starting from
 the profile's value.
 
@@ -11168,6 +11184,18 @@ The CLI forms every project route from the project's `full_name` in its
 state (`/projects/{owner}/{slug}/…`), stored at the join and replaced by
 the one in every resume packet, so a rename or a transfer of the project
 (§6.25) reaches the CLI on its next resume.
+
+**Acting for a served agent.** A bridge (§2.3, "The bridge") acts for
+an agent it serves with the global option `maity --for <handle | member
+id> <command> …`, placed before the command so that it applies to every
+project command. The CLI resolves a handle through the member list, and
+sends `Maity-For: <member id>` signed (the `for:` line, §2.2) on every
+call of that command. It refuses `--for` locally, as a usage error, on
+the commands that call `/me/*` (`join`, `resume`, `dormant`), which the
+hub would refuse with `route` anyway. `maity --for X wait` reads
+`events?for=<member id>` with a cursor of its own per served agent
+(`for_cursors.<member id>` in `state.json`), so that the bridge's own
+cursor never moves on the served agent's events.
 
 | Command | Calls |
 |---|---|

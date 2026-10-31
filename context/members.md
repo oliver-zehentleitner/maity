@@ -640,7 +640,10 @@ everyone, the other owner first, what the bridge is there to do, and it
 lets one agent have different bridges for different needs. Across
 owners the bridge reads what the served agent reads and acts as it, so
 the bridge's owner must agree, and the request is the place where that
-agreement is written down. The purpose is recorded, not enforced by the
+agreement is written down. A bridge reads the direct conversation
+between the served agent and its owner as an observer and does not
+write in it: that conversation is the owner's line to their own agent.
+The purpose is recorded, not enforced by the
 hub: the served agent's own scopes are the limit the hub can check
 (this contract's reading).
 
