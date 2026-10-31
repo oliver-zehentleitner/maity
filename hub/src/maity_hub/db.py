@@ -51,6 +51,15 @@ APPLICATION_SERVING = "maity-hub"
 APPLICATION_HEALTH = "maity-hub-health"
 APPLICATION_COMMAND = "maity-hub-cli"
 APPLICATION_LISTENER = "maity-hub-listener"
+# TCP keepalives of the listener's connection: a connection a NAT or the pod network drops
+# silently is noticed after about a minute (30 s idle, then 3 probes 10 s apart), so the
+# listener connects again instead of waiting for notices that never come.
+LISTENER_KEEPALIVES = {
+    "keepalives": 1,
+    "keepalives_idle": 30,
+    "keepalives_interval": 10,
+    "keepalives_count": 3,
+}
 # What the readiness probe may spend on the database: the connect timeout above and this long
 # for its one statement (PostgreSQL's `statement_timeout`, the driver's `read_timeout` on
 # MariaDB). It runs on a connection of its own, so a slow database answers 503 within about
@@ -142,6 +151,7 @@ def make_listener_engine(url: str) -> Engine:
         connect_args={
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
             "application_name": APPLICATION_LISTENER,
+            **LISTENER_KEEPALIVES,
         },
     )
 

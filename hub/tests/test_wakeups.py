@@ -190,3 +190,22 @@ def test_a_wait_without_postgresql_announces_nothing(migrated: Engine) -> None:
     closed = asyncio.run(wakeups.opened(migrated, "events", "cred-1", lambda: None))
     assert wakeups._held == {}
     closed()
+
+
+def test_the_listener_notices_a_dead_connection(postgres: Engine) -> None:
+    """c47w at #869: without keepalives a connection dropped silently would leave the listener
+    waiting for good, and its session would hold the server's notice queue."""
+    from maity_hub.db import make_listener_engine
+
+    engine = make_listener_engine(_url(postgres))
+    try:
+        raw = engine.raw_connection()
+        try:
+            assert raw.driver_connection is not None
+            parameters = raw.driver_connection.info.get_parameters()
+        finally:
+            raw.close()
+    finally:
+        engine.dispose()
+    assert parameters["keepalives"] == "1"
+    assert parameters["keepalives_idle"] == "30"

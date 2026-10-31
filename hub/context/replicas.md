@@ -69,7 +69,7 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 **Status:** open
 **Evidence:** inferred
 **Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; points 4 and 5 have cards of their own (tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
-**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods
+**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
 `engine.begin()`); a waiter on another pod sees the row at its 2-second fallback re-read. The
@@ -80,7 +80,9 @@ design:
    precedes its row and never announces a row that does not exist. The local `notifier.notify`
    after commit stays, so the writing pod wakes without the round trip; its own notification,
    which comes back through the listener, is skipped (the notifier remembers the last 4096
-   events it announced), so a write does not wake the writing pod's waiters twice. The payload
+   events it announced), so a write usually does not wake the writing pod's waiters twice; when
+   the listener hears the notice before the commit's own announcement has run, they are woken
+   twice, which costs one read more. The payload
    says where to look, never what happened: the waiter reads the row with its own rights.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
@@ -123,6 +125,14 @@ design:
    notifies `maity_bell` with the human's id, and a device-code write (`redeem`, `approve`,
    `deny`, `void_open`) notifies `maity_device` with the code's key. With 20 000 open dashboards the 0.5-second poll alone
    would be 40 000 stamp reads a second; on the wake-up it is a read per change.
+
+**Constraint:** PostgreSQL keeps notices in one queue (8 GB by default) until every listening
+session has read them. A session that listens and stops reading, such as a listener whose
+connection died half-open, holds the queue; once it is full, every commit that notifies fails,
+which here is every write with an event. The listener's connection therefore sets TCP keepalives
+(`db.LISTENER_KEEPALIVES`, a dead connection noticed after about a minute, then a new one), and
+the server's own keepalive ends the dead session. What is left to watch is
+`pg_notification_queue_usage()`, which the operator's monitoring should alert on well before 1.
 
 **Reason:** `NOTIFY` inside the transaction makes the wake-up exactly as durable as the write;
 one listener per pod costs one connection, and fan-out to the waiters stays in memory as today.
