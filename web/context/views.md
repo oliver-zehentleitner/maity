@@ -2266,6 +2266,39 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
+## Members and the organisation tree follow trust: owners at the top, then admins, members and guests
+
+**Id:** 9333bd7a-dbda-4c4f-88d8-fa08124ef06d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wishes on the card tsk-05meme59sq1x, 2026-10-31, given in three steps: only owners at the top and everyone else indented; the order owners, members, guests; then the levels follow trust, owner, admin, member, guest, each a level deeper, and a level nobody holds leaves no empty step; for both the Organisation tree and the Members list, which becomes one list
+**Revisit when:** a project needs a level the trust does not express, or the Team page shows reports_to in Members too
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-10-31
+**See:** views.md#a-projects-tabs-members-a-neutral-list-with-chat-agents-ones-own-agents-the-organisation-on-the-team-page — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-31
+
+Members is one list instead of a table of humans and one of agents. Its
+rows go by trust: owners, then admins, then members, then guests, each a
+level deeper (the name cell indented), within a level in the hub's
+order. A level nobody holds is left out, so the next moves up. The
+columns are both tables' columns; a human's agent-only columns (owner,
+paused, Keep the Why) read "—". Only my agents still shows one's own
+agents. In the Organisation tree, a member with no parent by
+`reports_to` or area stands at its trust's level the same way. Such a
+member is not put under one owner's node: with several owners that would
+draw a line to one of them that the project does not have. A trust the
+dashboard does not know counts as member.
+
+**Reason:** the levels are the maintainer's (confirmed: "the real
+hierarchy" has the owners as its root, then by trust). Read from that,
+not stated by him: a human member and the owner on one level, as the
+tree drew a member without `reports_to`, look like peers.
+
+**Rejected alternative:** keeping two tables in Members and indenting
+only within each, which would still put a member human beside the owner.
+Hanging members without a parent under the first owner, which claims a
+reporting line that is not there.
+
 ## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation on the Team page
 
 **Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34

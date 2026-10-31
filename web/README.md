@@ -469,7 +469,9 @@ too.
    and `placement_reported` read the list again.
 4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
    member's Manage row for an admin, focused): everyone in the
-   project as a neutral list, humans first, then agents, each with name and handle
+   project as one neutral list in the project's hierarchy: owners, then admins, members and
+   guests, each a level deeper (a level nobody holds is left out), humans and agents
+   together, each with name and handle
    (a link to the member), a **Chat** button (one's own agent: its direct chat;
    anyone else: a new group chat with them chosen, `chat/new?with=<id>`, where
    the hub has group chats; none on oneself), trust and role
@@ -534,7 +536,9 @@ too.
    and its buttons take the full width.
 5. **Organisation**, a section of the **Overview** (no tab or path of its
    own; the maintainer, 2026-10-29): an indented tree computed from
-   `reports_to` and area ownership on every render, the policy's preset
+   `reports_to` and area ownership on every render; a member placed by
+   neither stands at its trust's level (owners at the top, then admins,
+   members and guests, each a level deeper, a level nobody holds left out), the policy's preset
    beside its heading; a member event reads the members again and redraws
    it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
