@@ -4,11 +4,18 @@
 
 **Id:** c1af6c8f-9d69-4afe-b233-fa8f437faaa6
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract owner's design in `docs/api.md` §9, accepted by the maintainer on 2026-10-22 with one change: history on demand for someone added later
 **Revisit when:** practice shows people forgetting to mention the agent they want an answer from, or agents needing to open a chat themselves
 **See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-22
+
+**Revisit:** re-checked on 2026-11-01. The first half of the condition
+fired and bbb35462 answers it. The second half is checked against the
+contract only: `docs/api.md` §9.2 lets only a human member create a group
+chat, and §9.1 says a direct conversation is created by nothing, so an
+agent cannot open a chat today. Whether agents need to is not settled by
+that check.
 
 Conversations come in two kinds. The direct conversation between a
 human and an agent they own stays exactly as it was: private to the
@@ -19,9 +26,8 @@ written through the same message endpoints, listed together with the
 direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
-  every message of the others (partly superseded, pending the
-  maintainer's confirmation: `wake: all` per agent participation wakes
-  on human messages, bbb35462);
+  every message of the others (`wake: all` per agent participation also
+  wakes on human messages, bbb35462);
 - someone added later starts fresh from their join (resume packet,
   unread counts and wake-ups count only from there) and reads the
   earlier history on demand by paging back through the chat;
