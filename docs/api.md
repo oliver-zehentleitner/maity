@@ -12240,7 +12240,7 @@ all languages.
   `cards_done_week` are `null` and their counters are left out.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers the setting without
-  `updated_by`, plus `stats` `{…, online_floor, computed_at}` holding
+  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, online_floor, computed_at}` holding
   only the counters an enabled `stats` section of some language names
   (`stats: null` when none does, so a counter the operator left off is
   published nowhere) —
@@ -12490,6 +12490,18 @@ Variants count towards the setting's 256 KiB cap (§16.7).
   admin sees a saved variant as a visitor at `/for/<slug>` (it never
   turns into the app shell for a session, unlike `/`).
 
+**Only while configured.** All of this happens only while `variants`
+or `campaigns` is non-empty: otherwise the hub rewrites no link, keeps
+no `origin` (it drops one sent with `POST /auth/register`), writes no
+count row and keeps §16.7's `Cache-Control: public`. Emptying both stops
+it at once; rows already counted stay for their 400 days, and an origin
+already on an account still ends as below.
+
+**Not public.** `GET /landing` (§16.7) answers the setting without
+`variants` and `campaigns`, as it leaves out `updated_by`: a campaign's
+code and label and a variant's pages are the admin's, and a visitor
+sees a variant only at its address.
+
 **Campaigns.** The landing setting gains `campaigns`: at most **200**
 entries `{code, label}`, `code` matching `[a-z0-9-]{1,40}` and unique,
 `label` 1–120 characters of plain text for the admin's own reading
@@ -12534,9 +12546,10 @@ about a visit:
 - **The origin on the account.** To count an activation the hub keeps
   the origin (`variant`, `campaign`, the registration's day) with the
   new account until the first activation or for **30 days**, whichever
-  is first, then deletes it. It is never shown — not to the person, not
-  to an admin, not in any export (§2.9 names it while it exists) — and
-  serves only this count. A deleted account takes it along (§2.9).
+  is first, then deletes it. It is never shown in the dashboard or the
+  API — not to the person, not to an admin — except in the person's own
+  export while it exists (§2.9), and serves only this count. A deleted
+  account takes it along (§2.9).
 - **Kept** for **400 days**, then deleted. Rows are sums; a row is never
   linked to an account, a source address or a session.
 
