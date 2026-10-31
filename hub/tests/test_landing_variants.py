@@ -269,6 +269,50 @@ def test_a_campaign_link_carries_the_origin_to_every_register_link(
     assert 'href="/register?v=maintainers"' in visitor.get("/for/maintainers").text
 
 
+def test_an_absolute_link_to_register_on_this_host_carries_the_origin_too(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    absolute = {
+        "type": "hero",
+        "enabled": True,
+        "title": "Bring your agents.",
+        "cta_primary": {"label": "Create", "href": "https://hub.example/register"},
+    }
+    owner.patch(
+        ADMIN,
+        {
+            "enabled": True,
+            "default_language": "en",
+            "pages": {"en": page("Main", absolute)},
+            "campaigns": [{"code": "k", "label": "K"}],
+        },
+    )
+    got = make_client().get("/?c=k").text
+    assert 'href="https://hub.example/register?v=default&amp;c=k"' in got
+    # another host's /register is not this hub's: untouched
+    other = {**absolute, "cta_primary": {"label": "x", "href": "https://other.example/register"}}
+    owner.patch(ADMIN, {"pages": {"en": page("Main", other)}})
+    assert 'href="https://other.example/register"' in make_client().get("/?c=k").text
+
+
+def test_the_language_switch_keeps_the_campaign_but_the_alternate_links_do_not(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    owner.patch(
+        ADMIN,
+        {
+            "enabled": True,
+            "default_language": "en",
+            "pages": {"en": page("Main", HERO), "de": page("Haupt", HERO)},
+            "campaigns": [{"code": "k", "label": "K"}],
+        },
+    )
+    got = make_client().get("/?c=k").text
+    assert '<a href="?lang=de&amp;c=k">' in got
+    assert '<link rel="alternate" hreflang="de" href="?lang=de">' in got  # for search engines
+    assert 'hreflang="de" href="?lang=de&amp;c=k"' not in got
+
+
 def test_an_unknown_or_malformed_code_is_treated_as_none_and_not_echoed(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

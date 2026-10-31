@@ -434,23 +434,28 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     )
 
 
-_REGISTER = re.compile(r'href="(/register)((?:\?[^"#]*)?)((?:#[^"]*)?)"')
-_SWITCH = re.compile(r'href="(\?lang=[a-z]+)"')
+_SWITCH = re.compile(r'(<a href=")(\?lang=[A-Za-z-]+)(")')
 
 
-def carry_origin(html: str, variant: str, campaign: str | None) -> str:
-    """Every link to `/register` on the page carries the visitor's origin, `v` and (for a known
-    campaign) `c`, so the registration knows where they came from (§16.7.2); the language
-    switch keeps the campaign. The page is otherwise as it was: nothing set in the browser."""
+def carry_origin(html: str, variant: str, campaign: str | None, public_url: str) -> str:
+    """Every link to `/register` on this host, a path or this hub's own address, carries the
+    visitor's origin, `v` and (for a known campaign) `c`, so the registration knows where they
+    came from (§16.7.2); the visible language switch keeps the campaign (not the `alternate`
+    links of the head, which are for search engines). The page is otherwise as it was: nothing
+    set in the browser."""
     origin = f"v={variant}" + (f"&amp;c={campaign}" if campaign else "")
+    here = re.escape(escape(public_url.rstrip("/"), quote=True))
+    pattern = re.compile(rf'href="((?:{here})?/register)((?:\?[^"#]*)?)((?:#[^"]*)?)"')
 
     def register(found: re.Match[str]) -> str:
         joined = "&amp;" if found.group(2) else "?"
-        return f'href="/register{found.group(2)}{joined}{origin}{found.group(3)}"'
+        return f'href="{found.group(1)}{found.group(2)}{joined}{origin}{found.group(3)}"'
 
-    html = _REGISTER.sub(register, html)
+    html = pattern.sub(register, html)
     if campaign:
-        html = _SWITCH.sub(lambda found: f'href="{found.group(1)}&amp;c={campaign}"', html)
+        html = _SWITCH.sub(
+            lambda found: f"{found.group(1)}{found.group(2)}&amp;c={campaign}{found.group(3)}", html
+        )
     return html
 
 

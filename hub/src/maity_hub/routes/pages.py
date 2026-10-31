@@ -60,7 +60,12 @@ def landing_html(
         variant=variant,
     )
     if landing.configured(setting):
-        html = render.carry_origin(html, variant or landing.DEFAULT_VARIANT, campaign)
+        html = render.carry_origin(
+            html,
+            variant or landing.DEFAULT_VARIANT,
+            campaign,
+            settings_of(request).public_url,
+        )
     return html
 
 
