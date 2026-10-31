@@ -551,6 +551,7 @@ def _event_line(event: dict[str, Any]) -> str:
 
 
 NOTE_RESERVE = 5.0  # seconds of --timeout kept for the unread-chats note
+POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the read gives up
 
 
 def _unread_note(session: Session, budget: float) -> None:
@@ -605,9 +606,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
         if remaining <= 0:
             _unread_note(session, end - time.monotonic())
             return EXIT_TIMEOUT
-        # The hub holds for `poll` and gets a second to answer; the read never outlasts the
-        # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.
-        poll = max(1, min(LONG_POLL, int(remaining) - 1))
+        # The hub holds for `poll` and keeps POLL_SLACK to answer (half of what is left near
+        # the end); the read never outlasts the deadline, so a hub that stops answering
+        # cannot keep `wait` running past --timeout.
+        slack = min(POLL_SLACK, remaining / 2)
+        poll = max(1, min(LONG_POLL, int(remaining - slack)))
         read_timeout = max(0.5, min(poll + 15, remaining))
         started = time.monotonic()
         try:
@@ -620,6 +623,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
         except hub.HubError as exc:
             server_error = exc.status is not None and 500 <= exc.status < 600
             disconnected = exc.status is None and exc.code is None
+            if disconnected and time.monotonic() >= deadline:
+                continue  # the window's last read ran out: a timeout like any other
             if server_error or disconnected:  # retry the same `after`, within the deadline
                 if not warned:
                     reason = f"hub answered {exc.status}" if server_error else "hub connection lost"
