@@ -277,7 +277,9 @@ def test_a_member_of_the_organisation_sees_its_members_and_projects(
 ) -> None:
     org = make_org(owner)
     add_member(migrated, org["id"], stranger.id, "member")
-    made = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    made = owner.post(
+        "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team", "public_page": "off"}
+    )
     assert made.status_code == 201, made.text
     _with_picture(owner)
     body = stranger.get(f"{P}/oz-team").json()
@@ -303,7 +305,9 @@ def test_an_outsider_sees_an_organisation_only_through_what_it_serves(
     owner: flow.Human, stranger: flow.Human, migrated: Engine
 ) -> None:
     org = make_org(owner)
-    owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    owner.post(
+        "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team", "public_page": "off"}
+    )
     _not_found(stranger.get(f"{P}/oz-team"))
     _serve(migrated, "project", _project_id(migrated, "shop"), "/oz-team/shop")
     body = stranger.get(f"{P}/oz-team").json()
