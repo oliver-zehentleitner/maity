@@ -265,6 +265,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(box.querySelector("button.md-copy") && text(box.querySelector("pre")) === "maity join @agent-b" && box.querySelectorAll("a.mention").length === 1
       && text(box.querySelector("a.mention")) === "@agent-b", "markdown: a fenced block keeps its Copy; a mention inside code is code, one outside a link");
   }
+  {
+    // A mention the hub stored inside a link's address, its label or a fence's info string is the text as written there:
+    // no placeholder left in an href or a text, no member link inside a link (review of #860).
+    const src = "See https://x.example/?by=@agent-b and [ask @agent-b](https://x.example/#@agent-b)\n   ```sh@agent-b\nls\n   ```";
+    const at = (k) => [...src].findIndex((c, i) => c === "@" && [...src].slice(0, i).filter((x) => x === "@").length === k);
+    const ms = [0, 1, 2, 3].map((k) => ({ member_id: "agt-b", handle: "agent-b", field: "body", offset: at(k), length: 8 }));
+    const box = document.createElement("div"); win.Maity.markdown(src, null, { mentions: ms, hrefOf: (id) => "/m/" + id }).forEach((n) => box.appendChild(n));
+    const hrefs = box.querySelectorAll("a").map((a) => a.getAttribute("href") || "");
+    expect(!/[\uE000\uE001]/.test(text(box) + hrefs.join("")) && hrefs.includes("https://x.example/?by=@agent-b") && hrefs.includes("https://x.example/#@agent-b")
+      && text(box).includes("ask @agent-b") && !box.querySelector("a.mention"),
+      "markdown: a stored mention inside a link or a fence's info string stays as written, no placeholder, no member link " + JSON.stringify(hrefs));
+  }
   const freeText = hashEntry.querySelector(".free-text textarea");
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);

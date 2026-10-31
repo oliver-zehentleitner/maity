@@ -100,15 +100,19 @@ window.Maity = window.Maity || {};
     for (const m of text.matchAll(TOKEN)) {
       if (m.index > at) out.push(...plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
-        const url = safeUrl(m[2]);
+        // A mention the hub stored inside a link (a label, an address's query) is the link's
+        // text as written, never a placeholder and never a member link.
+        const label = restore(m[1]), target = restore(m[2]);
+        const url = safeUrl(target);
         // A text that looks like another address says where the link goes.
-        const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
+        const looks = /^\s*(https?:\/\/|www\.)/i.test(label) && hostOf(label) !== hostOf(target);
         // An https link opens apart, without an opener.
-        out.push(!url ? restore(m[0]) : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, restore(m[1])));
-        if (url && looks) out.push(h("span", { class: "md-real-href" }, " ", M.t("md.goes_to", { host: hostOf(m[2]) })));
+        out.push(!url ? restore(m[0]) : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, label));
+        if (url && looks) out.push(h("span", { class: "md-real-href" }, " ", M.t("md.goes_to", { host: hostOf(target) })));
       } else if (m[3] !== undefined) {
-        const url = safeUrl(m[3]);
-        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);
+        const written = restore(m[3]);
+        const url = safeUrl(written);
+        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, written) : restore(m[0]));
       } else if (m[4] !== undefined) {
         out.push(h("strong", null, plain(m[4])));
       } else {
@@ -229,7 +233,7 @@ window.Maity = window.Maity || {};
       const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
       if (fence && !(fence[1][0] === "`" && fence[2].includes("`"))) {
         flush();
-        const lang = (fence[2].trim().split(/\s+/)[0] || "").slice(0, 40);
+        const lang = (restore(fence[2]).trim().split(/\s+/)[0] || "").slice(0, 40);
         const close = new RegExp("^ {0,3}" + (fence[1][0] === "`" ? "`" : "~") + "{" + fence[1].length + ",}\\s*$");
         const body = [];
         i += 1;

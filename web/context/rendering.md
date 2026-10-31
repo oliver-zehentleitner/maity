@@ -681,14 +681,16 @@ so those pieces cannot be translated on their own.
 - chats and project messages;
 - a request's summary, what was tried, its options' details and its
   answer;
-- a card's notes and a report's summary.
+- a card's description and notes, and a report's summary.
 
 All of them get the same code with its copy, links and ids. The mentions
 the hub stored for a text are taken in where they stand
 (`M.dom.mentionSpans`, the same check as before: offsets in code points,
 the text there is the handle). They are marked as private-use
 placeholders that no Markdown rule reads, drawn as member links in text
-and restored as written inside code. `M.dom.withMentions`, the inbox's
+and restored as written inside code, a link's label and address and a
+fence's info string; a mention the hub stored inside a link stays the
+link's text, never a member link inside it. `M.dom.withMentions`, the inbox's
 and the board's own plain-text path, is gone. A project message's
 separate line of mentions is gone as well, because the mentions are now
 links in its text. A request's title stays plain text: it is the label

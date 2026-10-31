@@ -70,7 +70,8 @@ window.Maity = window.Maity || {};
       heading,
       cardSlot,
       h("h3", null, "Description"),
-      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where)) : h("p", { class: "muted" }, "No description."),
+      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
+        : h("p", { class: "muted" }, "No description."),
       (c.links || []).length ? [h("h3", null, "Links"), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       h("h3", null, "Notes"), notesBox,
       h("h3", null, "History"), historyBox);
