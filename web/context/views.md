@@ -3287,7 +3287,11 @@ the same under the page's key). A load is checked by the page's preview
 call and replaces the page's draft after a confirmation. Registration has
 one for the body of its PATCH: a load fills the form after a
 confirmation, keeps the fields the environment or the legal pages set,
-and names a field the setting does not have. The hub checks the values
+and names a field the setting does not have. A field the JSON does not
+name keeps what the form shows, typed and not saved included, since the
+load starts from the form; an empty limit is left out of the export, so
+an export always loads again. A legal page's load from a file of several
+pages takes only its own and names the others. The hub checks the values
 when the admin saves. Both editors share one part (`js/json-io.js`). In
 every editor, the landing page's included, a preview while the JSON
 field holds text that was neither loaded nor exported says so and opens
