@@ -82,8 +82,17 @@ def canonical_query(raw_query: bytes) -> str:
 
 
 def canonical_string(
-    method: str, raw_path: bytes, raw_query: bytes, timestamp: str, nonce: str, body: bytes
+    method: str,
+    raw_path: bytes,
+    raw_query: bytes,
+    timestamp: str,
+    nonce: str,
+    body: bytes,
+    for_member: str | None = None,
 ) -> str:
+    """The string a request signs (§2.2). `Maity-For` adds its line, `for:` and the value,
+    before the body hash; without the header there is no line, so a request signs as it did
+    before the header existed."""
     return "\n".join(
         [
             "MAITY-HMAC-V1",
@@ -92,6 +101,7 @@ def canonical_string(
             canonical_query(raw_query),
             timestamp,
             nonce,
+            *([f"for:{for_member}"] if for_member is not None else []),
             hashlib.sha256(body).hexdigest(),
         ]
     )

@@ -137,6 +137,8 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                     if tomb
                     else None
                 ),
+                # Carried by a bridge for the sender (§2.3): only then.
+                **({"via": row.actor_bridge} if row.actor_bridge else {}),
             }
         )
     return items

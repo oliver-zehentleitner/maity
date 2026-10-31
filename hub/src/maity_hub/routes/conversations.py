@@ -188,6 +188,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "body": None if row.redacted else payload.get("body"),
             "sent_at": ts(row.at),
         }
+        if row.actor_bridge:  # carried by a bridge for the sender (§2.3)
+            view["via"] = row.actor_bridge
         if not group:  # several recipients: no read receipt is modelled (§9.2)
             view["delivered_at"] = ts(delivered.get(row.seq))
         view |= {

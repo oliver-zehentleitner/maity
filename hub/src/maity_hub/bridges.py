@@ -618,3 +618,61 @@ proposals.register(
         refusal="a human with members:admin answers for the project",
     ),
 )
+
+
+# --- calls for a served agent -----------------------------------------------------------
+
+
+def not_your_bridge() -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "the caller is no bridge of this agent",
+        {"reason": "not_your_bridge"},
+    )
+
+
+def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | None) -> Caller:
+    """A call with `Maity-For` (§2.3): made as the served agent, the bridge kept in
+    `caller.bridge`. Only on the routes of the connection's project; the connection must be
+    direct, so a bridge never chains; an isolated served agent is refused as its own
+    credentials would be. Decided before any route runs."""
+    from dataclasses import replace
+
+    from maity_hub.auth.caller import Bridged
+    from maity_hub.isolation import refusal
+
+    if caller.kind != "agent" or caller.bridge is not None:
+        raise not_your_bridge()
+    if slug is None or not path.startswith("/api/v1/projects/"):
+        raise invalid({"Maity-For": "route"}, "Maity-For is taken on project routes only")
+    m, b, a = t.membership.c, t.bridge.c, t.agent_profile.c
+    found = conn.execute(
+        select(t.membership, b.id.label("bridge_id"), a.owner_id.label("served_owner"))
+        .select_from(
+            t.bridge.join(t.membership, m.id == b.served).join(t.agent_profile, a.id == m.agent_id)
+        )
+        .where(
+            b.bridge == caller.membership_id,
+            b.project_id == caller.project_id,
+            m.agent_id == value.strip(),
+            m.active.is_(True),
+        )
+    ).first()
+    if found is None:
+        raise not_your_bridge()
+    if found.isolated_since is not None:
+        raise refusal(found)
+    assert caller.membership_id is not None and caller.agent_id is not None
+    return replace(
+        caller,
+        agent_id=found.agent_id,
+        owner_id=found.served_owner,
+        membership_id=found.id,
+        bridge=Bridged(
+            membership_id=caller.membership_id,
+            agent_id=caller.agent_id,
+            instance=caller.instance or "",
+            bridge_id=found.bridge_id,
+        ),
+    )

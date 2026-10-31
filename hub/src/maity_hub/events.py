@@ -41,6 +41,8 @@ class Actor:
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
+    # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
+    bridge: dict[str, str] | None = None
 
 
 CHANNEL = "maity_events"  # PostgreSQL's wake-ups across replicas (`wakeups`, replicas.md 387c2409)
@@ -198,6 +200,7 @@ def emit(
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
             actor_report_id=actor.report_id if actor else None,
+            actor_bridge=actor.bridge if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
             audience=audience,

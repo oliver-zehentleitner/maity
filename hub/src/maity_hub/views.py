@@ -1167,6 +1167,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                 "harness": row.actor_harness,
                 "model": row.actor_model,
             }
+            if row.actor_bridge:  # made by a bridge for the member (§2.3)
+                actor["via"] = row.actor_bridge
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {
