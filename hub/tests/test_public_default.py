@@ -63,9 +63,8 @@ def test_in_an_organisation_the_page_is_an_owners_to_give(
     assert by_owner.status_code == 201 and by_owner.json()["public_page"] == "on"
     by_admin = create(admin, "by-admin", owner="oz-team")  # an admin is no owner
     assert by_admin.status_code == 201 and by_admin.json()["public_page"] == "off"
-    refused = create(admin, "asks-on", owner="oz-team", public_page="on")
-    assert refused.status_code == 403
-    assert refused.json()["error"]["details"] == {"reason": "org_role"}
+    ignored = create(admin, "asks-on", owner="oz-team", public_page="on")
+    assert ignored.status_code == 201 and ignored.json()["public_page"] == "off"  # ignored (§6.1)
     asked_off = create(admin, "asks-off", owner="oz-team", public_page="off")
     assert asked_off.status_code == 201 and asked_off.json()["public_page"] == "off"
     owner.patch("/orgs/oz-team", {"members_create_projects": True})

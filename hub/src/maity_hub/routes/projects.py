@@ -560,13 +560,12 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         if namespace.taken(conn, owner_id, body.slug):
             raise invalid({"slug": "taken"}, "this namespace has a project with this slug")
         # The page is the namespace owner's (§16.9): `on` is theirs to give or leave as the
-        # default, anyone else's project starts `off`; a repository the hub could not see
+        # default, anyone else's project starts `off`. A repository the hub could not see
         # public keeps it `off` whatever was sent, so no creation publishes what the creator
         # could not see the hub see (§6.1).
         owns_namespace = org is None or org_role == "owner"
-        if body.public_page == "on" and not owns_namespace:
-            raise orgs.org_role()
-        page = body.public_page or ("on" if owns_namespace else "off")
+        # An `on` from anyone else is ignored, the project starts `off` (§6.1).
+        page = (body.public_page or "on") if owns_namespace else "off"
         if page == "on" and body.repository is not None and not seen_public:
             page = "off"
         now = clock.now()
