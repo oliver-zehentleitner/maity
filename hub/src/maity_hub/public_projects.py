@@ -319,4 +319,19 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
         public_pages.touch(conn, KIND, project_id, removal=removal)
 
 
-public_pages.register(public_pages.Kind(KIND, render_project, targets))
+def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
+    """The pages that show a project: its agents' pages, and the person pages of its human
+    members, which list it (§16.9)."""
+    from maity_hub import public_agents
+
+    m = t.membership.c
+    humans = conn.execute(
+        select(m.human_id)
+        .where(m.project_id == project_id, m.human_id.is_not(None))
+        .distinct()
+        .order_by(m.human_id)
+    ).scalars()
+    return [*public_agents.pages_of_project(conn, project_id), *[("person", h) for h in humans]]
+
+
+public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))
