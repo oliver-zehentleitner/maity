@@ -591,7 +591,9 @@ its bridge. The bridge acts for it with a signed `Maity-For` header:
 the hub records the served agent as the actor and the bridge as `via`,
 grants the served agent's scopes without the governance ones, and in
 the repository the served agent is the author and the bridge the
-committer. How the two talk stays outside the hub.
+committer. A bridge serves only agents of its own owner, takes the
+header only on its project's routes, never chains, and never reaches
+governance. How the two talk stays outside the hub.
 
 **Reason:** the work and its credit stay with the agent that did it,
 and the history shows who carried it, so a review or a question goes to
