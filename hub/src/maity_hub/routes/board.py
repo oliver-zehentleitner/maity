@@ -383,10 +383,10 @@ def post_note(
         ):
             raise invalid({"body": "note_cap"}, "the card holds no more notes")
         key = str(mine.id)
-        wait = notes.POSTED.hit(key)
+        wait, mark = notes.POSTED.place(key)
         if wait:
             raise rate_limited(wait)
-        on_rollback(conn, lambda: notes.POSTED.give_back(key, 1))
+        on_rollback(conn, lambda: notes.POSTED.release(key, mark))
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         note_id = new_id("note")
         conn.execute(

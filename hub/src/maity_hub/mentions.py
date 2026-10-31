@@ -364,7 +364,7 @@ def charge(conn: Connection, membership_id: int, count: int) -> None:
     if count <= 0:
         return
     key = str(membership_id)
-    wait = PINGS.take(key, count)
+    wait, mark = PINGS.place(key, count)
     if wait:
         raise rate_limited(wait)
-    on_rollback(conn, lambda: PINGS.give_back(key, count))
+    on_rollback(conn, lambda: PINGS.release(key, mark, count))
