@@ -1233,7 +1233,6 @@ window.MAITY_I18N["en"] = {
     "other": "{count} sign-in mails"
   },
   "mail.enable": "Enable mail",
-  "mail.field.from": "Sender",
   "mail.field.from_address": "Sender address",
   "mail.field.from_name": "Sender name",
   "mail.field.host": "SMTP host",

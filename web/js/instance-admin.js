@@ -8,7 +8,7 @@ window.Maity = window.Maity || {};
   const fields = [
     ["host", () => M.t("mail.field.host"), "text"], ["port", () => M.t("mail.field.port"), "number"],
     ["tls", () => M.t("mail.field.tls"), "select"], ["username", () => M.t("mail.field.username"), "text"],
-    ["from", () => M.t("mail.field.from"), "sender"], ["reply_to", () => M.t("mail.field.reply_to"), "email"],
+    ["from", () => M.t("mail.field.from_address"), "sender"], ["reply_to", () => M.t("mail.field.reply_to"), "email"],
     ["max_per_hour", () => M.t("mail.field.max_per_hour"), "number"],
     ["security_max_per_hour", () => M.t("mail.field.security_max_per_hour"), "number"],
     ["sign_in_max_per_hour", () => M.t("mail.field.sign_in_max_per_hour"), "number"],
@@ -69,7 +69,7 @@ window.Maity = window.Maity || {};
           input = h("input", { id, type: type === "sender" ? "email" : type, disabled: locked, autocomplete: "off" });
           input.value = type === "sender" ? (field.value || {}).address || "" : field.value == null ? "" : String(field.value);
         }
-        append(form, h("label", { for: id }, type === "sender" ? M.t("mail.field.from_address") : label()), input);
+        append(form, h("label", { for: id }, label()), input);
         if (type === "sender") {
           name = h("input", { id: id + "-name", disabled: locked, autocomplete: "off" }); name.value = (field.value || {}).name || "";
           append(form, h("label", { for: name.id }, M.t("mail.field.from_name")), name);
