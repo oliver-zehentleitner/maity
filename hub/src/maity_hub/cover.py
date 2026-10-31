@@ -87,11 +87,14 @@ def available(conn: Connection, project: Any, rows: list[Any], now: datetime) ->
         return []
     presences = availability.presences_of(conn, rows)
     humans = availability.humans_of(conn, rows)
+    dormant = availability.dormants_of(conn, rows)
     return [
         r
         for r in rows
         if r.cover_state is None
-        and availability.computed(r, presences[r.id], humans.get(r.human_id), project, now)["state"]
+        and availability.computed(
+            r, presences[r.id], humans.get(r.human_id), project, now, dormant=r.id in dormant
+        )["state"]
         == "available"
     ]
 

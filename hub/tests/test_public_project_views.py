@@ -241,3 +241,50 @@ def test_an_agent_on_members_links_to_its_page_under_its_owner(world: World) -> 
     assert f'<a href="/maintainer/agents/{handle}">' in members
     page = world.anyone.get(f"/maintainer/agents/{handle}")
     assert page.status_code == 200 and "<title>dashboard</title>" not in page.text
+
+
+def test_the_holder_of_a_done_card_is_still_an_agent_when_it_was_isolated(world: World) -> None:
+    agent = world.bot.get("/me").json()["member"]
+    with world.migrated.connect() as conn:
+        bot_member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent["id"])
+        ).scalar_one()
+    world.card(
+        title="Shipped by the bot", status="done", closed_at=clock.now(), claim_holder=bot_member
+    )
+    world.card(
+        title="Shipped by anna",
+        status="done",
+        closed_at=clock.now(),
+        claim_holder=world.anna_member,
+    )
+    isolate = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
+    assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
+    world.touch()
+    text = view(world.anyone, "board") or ""
+    assert "Shipped by the bot" in text and "an agent" in text and "a member" in text
+    assert agent["handle"] not in text
+
+
+def test_the_limit_of_a_column_counts_the_cards_the_hold_leaves(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub import public_project_views
+
+    monkeypatch.setattr(public_project_views, "BOARD_LIMIT", 3)
+    start = clock.now() - timedelta(days=1)
+    ids = [world.card(title=f"card {n}", created_at=start + timedelta(seconds=n)) for n in range(5)]
+    report_id = world.owner.post(
+        "/reports",
+        {"target": {"type": "card", "id": ids[4], "project": "maintainer/maity"}, "reason": "spam"},
+    )
+    assert report_id.status_code == 201, report_id.text
+    resolved = world.owner.post(
+        f"/admin/reports/{report_id.json()['id']}/resolve", {"action": "hide"}
+    )
+    assert resolved.status_code == 200, resolved.text
+    world.touch()
+    text = view(world.anyone, "board") or ""
+    # the newest card is held: the three shown are the next three, not two
+    assert "card 4" not in text and all(f"card {n}<" in text for n in (3, 2, 1))
+    assert "open (3)" in text

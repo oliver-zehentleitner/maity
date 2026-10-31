@@ -152,7 +152,7 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
         chosen = instances.round_robin(conn, target)
         if chosen is not None:
             return target, chosen
-    return target, instances.resolve(conn, target, named, "to")
+    return target, instances.resolve(conn, target, named, "to", past_dormant=True)
 
 
 def open_takeover(
