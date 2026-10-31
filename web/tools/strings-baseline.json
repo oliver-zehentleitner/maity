@@ -13,7 +13,7 @@
   "ids.js": 1,
   "inbox.js": 8,
   "instance-admin.js": 89,
-  "invite.js": 58,
+  "invite.js": 2,
   "join.js": 3,
   "landing.js": 164,
   "markdown.js": 3,
@@ -30,12 +30,11 @@
   "preferences.js": 2,
   "project-message.js": 30,
   "project-names.js": 46,
-  "project-runners.js": 32,
   "qr.js": 2,
   "register.js": 34,
   "runners.js": 12,
-  "sessions.js": 61,
-  "ticker-settings.js": 40,
+  "sessions.js": 2,
+  "ticker-settings.js": 1,
   "ticker.js": 2,
   "why.js": 42
 }

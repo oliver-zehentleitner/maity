@@ -60,9 +60,13 @@ def test_several_at_once_wait_for_room_for_all(monkeypatch: pytest.MonkeyPatch) 
     now[0] = 6.0
     assert limiter.take("k", 1) == 4  # the hit at 0 leaves at 10
     assert limiter.take("k", 2) == 9  # two need the hit at 5 gone too: at 15
-    assert limiter.take("k", 4) == 10  # never fits: a whole window
-    limiter.give_back("k", 2)
-    assert limiter.take("k", 2) == 0
+    with pytest.raises(ValueError):
+        limiter.take("k", 4)  # never fits: no wait would be true
+    now[0] = 15.0
+    wait, mark = limiter.place("k", 2)
+    assert wait == 0
+    limiter.release("k", mark, 2)  # work that did not happen: both come back
+    assert limiter.take("k", 3) == 0
 
 
 def test_a_late_release_frees_no_later_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,8 +153,9 @@ def test_what_a_replica_gives_back_frees_the_place_for_every_replica(shared: Non
     wait, mark = first.place("ada")
     assert wait == 0 and second.hit("ada") > 0
     first.release("ada", mark)
-    assert second.take("ada", 1) == 0
-    second.give_back("ada", 1)
+    wait, mark = second.place("ada")
+    assert wait == 0
+    second.release("ada", mark)
     assert first.hit("ada") == 0
     first.reset()
     assert second.blocked("ada") == 0  # a reset clears the bucket for everyone
@@ -167,6 +172,46 @@ def test_a_breaker_tripped_on_one_replica_shuts_every_replica(shared: None) -> N
     dropped[0].add()
     dropped[1].add()
     assert dropped[0].last_hour() == dropped[1].last_hour() == 2  # the instance's sum
+
+
+def _frozen_shared_clock(monkeypatch: pytest.MonkeyPatch, start: datetime) -> list[datetime]:
+    from maity_hub import shared_counts
+
+    now = [start]
+    monkeypatch.setattr(shared_counts, "_now", lambda: now[0])
+    return now
+
+
+def test_a_release_returns_to_the_window_it_was_counted_in(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """c47w at #822: what a take counted in one window is given back there, not to the
+    window that is current when the work fails."""
+    from maity_hub import shared_counts
+
+    now = _frozen_shared_clock(monkeypatch, datetime(2026, 10, 31, 0, 0, 50, tzinfo=UTC))
+    limiter = Limiter(30, 60, name="test.release")  # over `EXACT_UP_TO`: the estimate
+    wait, mark = limiter.place("ada", 2)  # in the window from 0:00
+    assert wait == 0
+    now[0] += timedelta(seconds=20)  # 0:01:10, the next window
+    assert limiter.take("ada", 1) == 0
+    limiter.release("ada", mark, 2)
+    window = shared_counts.read("test.release", "ada", 60)
+    assert (window.current, window.previous) == (1, 0)  # the new window keeps its take
+
+
+def test_blocked_answers_as_hit_would_with_a_weighted_previous_window(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """n3yv at #822: 29 now and 1 before, halfway: 29.5 counted, so one more (30.5) is over a
+    limit of 30, and `blocked` says so as `hit` would."""
+    now = _frozen_shared_clock(monkeypatch, datetime(2026, 10, 31, 0, 0, 0, tzinfo=UTC))
+    limiter = Limiter(30, 60, name="test.blocked")  # over `EXACT_UP_TO`: the estimate
+    assert limiter.hit("ada") == 0  # the previous window
+    now[0] += timedelta(seconds=90)  # halfway through the next one
+    for _ in range(29):
+        assert limiter.hit("ada") == 0
+    assert limiter.blocked("ada") > 0
 
 
 def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
@@ -190,10 +235,11 @@ def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
 
 def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
     limiter = Limiter(3, 60, name="test.exact.back")
-    wait, mark = limiter.place("ada")
-    assert wait == 0 and limiter.take("ada", 2) == 0
-    assert limiter.hit("ada") > 0
-    limiter.release("ada", mark)  # the place's own row
-    limiter.give_back("ada", 1)  # the newest of the two taken together
+    wait, one = limiter.place("ada")
+    assert wait == 0
+    wait, two = limiter.place("ada", 2)
+    assert wait == 0 and limiter.hit("ada") > 0
+    limiter.release("ada", one)  # the first place's own row
+    limiter.release("ada", two, 1)  # one of the two placed together
     assert limiter.take("ada", 2) == 0
     assert limiter.hit("ada") > 0

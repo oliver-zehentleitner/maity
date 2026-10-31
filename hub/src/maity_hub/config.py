@@ -77,6 +77,10 @@ class Settings:
     # PostgreSQL connection of the hub (30 and 60; 0 turns one off, hub/context/persistence.md).
     db_statement_timeout: float = 30.0
     db_idle_in_transaction_timeout: float = 60.0
+    # MAITY_DIRECT_DATABASE_URL: PostgreSQL past a pooler, for the one connection per process
+    # that listens for other replicas' wake-ups (hub/context/replicas.md 387c2409); unset, the
+    # listener uses `database_url`.
+    direct_database_url: str | None = None
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -131,6 +135,13 @@ class Settings:
         return cls(
             database_url=normalize_database_url(
                 env.get("MAITY_DATABASE_URL", DEFAULT_DATABASE_URL)
+            ),
+            direct_database_url=(
+                normalize_database_url(
+                    env["MAITY_DIRECT_DATABASE_URL"], "MAITY_DIRECT_DATABASE_URL"
+                )
+                if env.get("MAITY_DIRECT_DATABASE_URL")
+                else None
             ),
             host=host,
             port=port,
@@ -452,7 +463,7 @@ _DRIVERS = {
 }
 
 
-def normalize_database_url(url: str) -> str:
+def normalize_database_url(url: str, name: str = "MAITY_DATABASE_URL") -> str:
     """Pin the driver the hub ships with when the URL names only the database.
 
     `postgresql://` would otherwise make SQLAlchemy look for psycopg2 and
@@ -464,14 +475,14 @@ def normalize_database_url(url: str) -> str:
         # query) splits the URL: a password's tail would be taken for the host,
         # the port or the database name and end up in messages.
         raise ConfigError(
-            "MAITY_DATABASE_URL has an '@' that is not the one before the host: "
+            f"{name} has an '@' that is not the one before the host: "
             "an '@' in any part of the URL must be percent-encoded (%40)"
         )
     try:
         parsed = make_url(url)
     except (ArgumentError, ValueError):
         # Never the parser's message: it quotes the text it failed on.
-        raise ConfigError("MAITY_DATABASE_URL is not a valid database URL") from None
+        raise ConfigError(f"{name} is not a valid database URL") from None
     parsed = parsed.set(drivername=_DRIVERS.get(parsed.drivername, parsed.drivername))
     return parsed.render_as_string(hide_password=False)
 

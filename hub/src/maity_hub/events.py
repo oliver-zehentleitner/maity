@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import OrderedDict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import ColumnElement, Connection, Engine, and_, insert, not_, select
+from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
@@ -42,6 +43,10 @@ class Actor:
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
 
 
+CHANNEL = "maity_events"  # PostgreSQL's wake-ups across replicas (`wakeups`, replicas.md 387c2409)
+ANNOUNCED_KEPT = 4096  # events this process announced itself, so their wake-up is not repeated
+
+
 class Notifier:
     """Post-commit fan-out of new events to whoever waits on a project.
 
@@ -52,6 +57,7 @@ class Notifier:
     def __init__(self) -> None:
         self._listeners: list[Callable[[str, int], None]] = []
         self._lock = threading.Lock()
+        self._announced: OrderedDict[tuple[str, int], None] = OrderedDict()
 
     def subscribe(self, listener: Callable[[str, int], None]) -> Callable[[], None]:
         with self._lock:
@@ -65,6 +71,19 @@ class Notifier:
 
     def notify(self, project_id: str, seq: int) -> None:
         with self._lock:
+            listeners = list(self._listeners)
+            self._announced[(project_id, seq)] = None
+            if len(self._announced) > ANNOUNCED_KEPT:
+                self._announced.popitem(last=False)
+        for listener in listeners:
+            listener(project_id, seq)
+
+    def notify_from_elsewhere(self, project_id: str, seq: int) -> None:
+        """An event another replica committed (`wakeups`); this process's own, which it
+        announced at its commit already, comes back through PostgreSQL too and is skipped."""
+        with self._lock:
+            if (project_id, seq) in self._announced:
+                return
             listeners = list(self._listeners)
         for listener in listeners:
             listener(project_id, seq)
@@ -207,6 +226,11 @@ def emit(
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
     pending.append((project_id, seq))
+    if conn.dialect.name == "postgresql":
+        # Every replica's listener hears it at commit, never for a rollback, so a wake-up
+        # neither precedes its row nor announces one that does not exist. Only where to look,
+        # never what happened: the row is read with the reader's own rights.
+        conn.execute(select(func.pg_notify(CHANNEL, f"{project_id}:{seq}")))
     if kind in MEMBER_KINDS and project.public_page == "on":
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
         # change may take someone off.

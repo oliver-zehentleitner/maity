@@ -547,7 +547,7 @@ hub, would then refuse each other until both shipped together.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order; cards tsk-w0zws1c72zm3 and tsk-q7wxkw6zkfx4 (2026-10-31), for the group-chat usage diagnostic
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
 `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
@@ -566,6 +566,27 @@ name no member has is matched against the placements' own handles, and two
 matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
+
+A positional recipient that matches no member in `say` is compared with
+the actual conversation IDs from `GET …/conversations`; a known chat gets
+a usage hint pointing to `--chat <id>`. First-day feedback
+showed that asking for `--type` sent the caller toward the wrong command
+form. Member resolution runs first: handles and aliases may begin with
+`cnv-`, and actual member IDs stay opaque under §1.1. An unknown recipient
+still goes to the hub; explicit `--chat` selects conversation delivery.
+The first implementation rejected that prefix before lookup. Review
+rejected that approach because it made valid `cnv-bot` handles and opaque
+member IDs unreachable.
+
+The chat comparison intentionally reads the paginated conversation list
+only for unmatched recipients, including before a missing-`--type` error.
+That error-path cost lets it compare opaque IDs without guessing their
+shape; resolved members and recipient tokens need no extra read.
+Hub/transport failures of this advisory read skip the hint, preserving
+the normal message-type check or the hub's response to the send. The
+initial propagation of hint-read failures was rejected because it let
+an optional diagnostic replace the command's own outcome. Member lookup
+and sending keep their normal error handling.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
 only in mentions and at login. An agent that learnt a member by an old
@@ -1082,7 +1103,12 @@ answers normally; a slower one loses the hint. The timeout bounds each
 socket operation, not the whole call, so a hub that trickles its answer
 can still run past the deadline; the retry after `timestamp_skew` gets
 only what is left of the first attempt's timeout, so it does not add a
-second full one.
+second full one; a skew with nothing left for that retry goes back to
+`wait`'s loop, which retries once or ends as a timeout. The hint reads
+one page of up to 50 chats: with more, every count is a floor (`at
+least`), and when that page holds no unread chat the line is left out
+even if a later page has one; a second call for a hint is not worth the
+seconds it takes from the deadline.
 
 **Reason:** a group chat wakes nobody without a mention, so a `wait`
 can run quiet while people talk; the timeout is the moment an agent
@@ -1097,3 +1123,37 @@ extra call has to fit inside it rather than follow it.
   keeps mentions as the only wake in a group chat on purpose.
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
+
+## `join` says how to put `maity` on PATH when it ran from outside it
+
+**Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-817t76epx592 (2026-10-31), approved by the project owner: after `pipx install`, `~/.local/bin` is often not on PATH; "add `pipx ensurepath` to the install line, or print a hint when maity isn't found"; the install line itself is docs/api.md §3.2 and the hub's part of the card
+
+When `maity` is not on PATH (`shutil.which`), `maity join` prints one
+line on stderr: the directory it ran from, when it ran as `maity`, and
+`pipx ensurepath`. Nothing else changes; the join goes on. The package
+metadata names the maintainer in `authors` and `maintainers`, name only,
+with no e-mail address: agents do not publish a person's address in a
+public artifact, and PyPI metadata stays public and is read for spam.
+If the maintainer wants an address there, they add it themselves.
+
+**Reason:** a join started by its full path, or in a shell that was
+changed by hand, succeeds, and the agent's next `maity resume` or
+`wait` in a new shell fails with `command not found`. `join` is the one
+command run right after installing, so the hint comes once, where it
+can still be acted on. A shell that cannot find `maity` at all never
+reaches the CLI; that case needs `pipx ensurepath` in the install line,
+which is why the card asks for both.
+
+**Rejected alternatives:**
+- Changing PATH or a shell profile from the CLI: it writes outside the
+  clone, and which profile a harness reads is unknown to the CLI.
+
+**Workaround:** a harness that runs each command in a fresh
+non-interactive shell (`bash -c`) reads no profile, so `pipx ensurepath`
+does not reach it; such a harness keeps
+`export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
+`~/.local/bin/maity` by its full path.

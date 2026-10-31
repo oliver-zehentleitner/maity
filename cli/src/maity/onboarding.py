@@ -822,7 +822,16 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             "",
         ]
     elif first:
-        out += ["No briefing was given with this join; your work comes from the board.", ""]
+        # A link does not say yet whom it replaces (tsk-f32nnh1de7gn): point at where a
+        # handover would be, so a replacement does not start blind.
+        lead = ms.get("reports_to")
+        ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
+        out += [
+            "No briefing was given with this join. If you replace someone, look for the handover "
+            f"before you take work: read `maity messages`, check the cards below and {ask}. "
+            "Otherwise your work comes from the board.",
+            "",
+        ]
     out += _who(packet, names)
     out += _project(packet)
     rules = _dict(packet.get("rules"))

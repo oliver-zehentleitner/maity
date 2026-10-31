@@ -68,7 +68,7 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes)
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; points 3 to 5 have cards of their own (tsk-ywss353vk5q2, tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -78,7 +78,10 @@ design:
 1. `events.emit` adds `SELECT pg_notify('maity_events', '<project_id>:<seq>')` to the writing
    transaction. PostgreSQL delivers it at commit and drops it on rollback, so a wake-up never
    precedes its row and never announces a row that does not exist. The local `notifier.notify`
-   after commit stays, so the writing pod wakes without the round trip.
+   after commit stays, so the writing pod wakes without the round trip; its own notification,
+   which comes back through the listener, is skipped (the notifier remembers the last 4096
+   events it announced), so a write does not wake the writing pod's waiters twice. The payload
+   says where to look, never what happened: the waiter reads the row with its own rights.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
    every waiter and reconnects with backoff, so a missed notification costs one re-read, not an
@@ -186,11 +189,11 @@ is the cheapest shared check there is.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31
-**Revisit when:** the counter writes show in the load test, or a limit needs exact sliding-window semantics across pods
+**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31; review findings of #822 (the window of a give-back, `blocked`, a count over the limit, the second connection, the sweep) built in card tsk-kckyhv9vdrrp
+**Revisit when:** the counter writes or the sweep show in the load test, the pool runs out while requests hold a second connection for a count, or a limit needs exact sliding-window semantics across pods
 
-`ratelimit.Limiter` keeps its interface (`hit`, `take`, `place`/`release`, `give_back`,
-`blocked`, `reset`) and gets a shared backend on PostgreSQL (`shared_counts`): an `UNLOGGED`
+`ratelimit.Limiter` keeps its interface (`hit`, `take`, `place`/`release`, `blocked`,
+`reset`; `give_back` gave way to `place` with a count, below) and gets a shared backend on PostgreSQL (`shared_counts`): an `UNLOGGED`
 table `rate_count(bucket, subject, window_start, count)` (`subject` is the limit's key; `key` is
 a keyword on MariaDB), incremented with `INSERT … ON CONFLICT DO UPDATE SET count = count + n`,
 read as a sliding window approximated by the current and the previous fixed window (weighted by
@@ -202,7 +205,13 @@ under a per-key advisory lock (`pg_advisory_xact_lock`), writes its row only whe
 the wait is the moment the oldest attempts that must go leave the window. The estimate assumes
 attempts spread evenly, which a handful do not: with a limit of one, the attempt still weighs on
 the next fixed window until its end, so one export in ten minutes waited up to twenty (`Retry-After`
-1006 in #822's CI). A row per attempt costs no more than the limit's few rows there. Rejected:
+1006 in #822's CI). The rows stay until the sweep (two days), those released to zero included,
+not only while their window is read: a login limit of 10 a minute keeps up to 10 rows a minute
+per address where the estimate keeps one per window. The bound sits at 20 because the limits up
+to there are the guessing bounds and the per-account courtesy limits, few attempts per key,
+where the estimate's error is a large share of the limit; above it are the per-address limits
+of 60 a minute on public endpoints and the upload volume, whose traffic would be a row each.
+Rejected:
 capping the estimate's wait at the window, which names a moment the retry is refused again; an
 exact row per attempt for every limit, which for the per-address limits of 60 a minute keeps
 every request's row until the sweep.
@@ -213,7 +222,13 @@ window, so the wait can differ from the exact answer in the process either way: 
 attempts came early in the window (621 s instead of 600 s for the mentions test), shorter when
 they came late (29 pings at 594 s of 600, then 2 more: 27 s instead of 600 s). It is no
 conservative bound; what each backend names is the moment its own take fits again.
-`give_back` and `release` subtract from the window they counted in. Every `Limiter` now has a
+Work that does not happen after all gives its attempts back with `release` and the mark
+`place` returned, which is the window the attempts were counted in (for an exact limit their
+own row): `give_back` subtracted from
+whichever window was current when the work failed, a later window's count, so it is gone, and
+every caller now holds the mark. `take` and `place` refuse a count over the limit
+(`ValueError`): it never fits, and no `Retry-After` would be true; no caller passes one (a write
+pings at most 10 members per field against 30, an upload counts at most the volume limit). Every `Limiter` now has a
 `name`, its bucket (`<module>.<variable>`). The breakers keep their "shut until" as a row of the
 same table (`set_until`, `until`), `_wrong_in_session` counts the current and the previous window
 of the session's five minutes (at least every wrong code, never fewer), and
@@ -221,11 +236,19 @@ of the session's five minutes (at least every wrong code, never fewer), and
 `requests_dropped_last_hour` is the sum over every pod, not the answering pod's. A key that is
 long or holds a NUL (an address paired with a source) is stored as its SHA-256. Each count is
 its own short transaction, apart from the request's, as the counts in the process were never
-rolled back either. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
+rolled back either. Inside a request's transaction (a wrong second-factor code in
+`second_factor.verify`, the mentions, notes, ticker and avatar charges) that means a second
+connection from the same pool for the moment of the count; a pool held entirely by such requests
+makes the counts wait for `pool_timeout` instead of failing at once, which the pool's overflow
+(16 by default) keeps far away. Rejected: the count on the request's own connection, which a
+refused request's rollback would undo, a wrong code included. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
 changes nothing of an account, and taking the human's shared `account_lock` there would wait for
 the request's own transaction, which may have just made that row (a hang `create_invitation`
 showed in the tests). Rejected: a second engine for the counts without the guard's hook, which
-would bring a second pool per replica for the same database. Every thousandth add of a process deletes windows older than two days. On
+would bring a second pool per replica for the same database. Every thousandth add of a process deletes windows older than two days, inside that add's
+transaction: the one request that makes it waits for a scan of the table, since the primary key
+starts with `bucket`, not `window_start`. Two days of windows keep that small; an index on
+`window_start` or a timed sweep apart from the requests are the moves if the load test shows it. On
 SQLite and MariaDB, and until `create_app` configures it, the in-process backend stays.
 
 Two things stay per pod on purpose: the concurrency caps that protect the pod itself (`avatars._slots`,

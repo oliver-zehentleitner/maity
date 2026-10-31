@@ -281,11 +281,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
   freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
-  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-c", "@agent-d"])
+  // An agent's instances follow it (tsk-bczgjkfpw1wg): @agent-b#wle2, @agent-c#k3pa in the fixture.
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-b#wle2", "@agent-c", "@agent-c#k3pa", "@agent-d"])
     && freeText.getAttribute("aria-expanded") === undefined && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
     "mentions: @ offers the project's members by handle " + JSON.stringify(options()));
   freeText.dispatch("keydown", { key: "ArrowDown" }); freeText.dispatch("keydown", { key: "Enter" }); await tick();
   expect(freeText.value === "Ask @agent-b " && pickList.hidden && !freeText.getAttribute("aria-activedescendant"), "mentions: arrow and Enter put the handle in");
+  freeText.value = "Ask @agent-b#"; freeText.dispatch("input"); await tick(); await tick();
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-b#wle2"])
+    && text(pickList.querySelector("li")).includes("Agent B · instance"),
+    "mentions: after # only the instances of the agent named, as instances " + JSON.stringify(options()));
+  freeText.dispatch("keydown", { key: "Enter" }); await tick();
+  expect(freeText.value === "Ask @agent-b#wle2 " && pickList.hidden, "mentions: Enter puts the instance's address in");
+  // A revoked instance is not offered, a dormant one is marked.
+  const inText = document.createElement("textarea");
+  const inList = win.Maity.mentionPicker(inText, () => Promise.resolve([
+    { id: "agt-1", kind: "agent", handle: "bee", display_name: "Bee", instances: [{ id: "k7mq" }, { id: "wqe2", dormant: { since: "2026-10-31T09:00:00Z", by: "hum-1" } }, { id: "p4zz", revoked_at: "2026-10-30T09:00:00Z" }] },
+  ]), "me");
+  inText.value = "@be"; inText.dispatch("input"); await tick(); await tick();
+  const inOptions = inList.querySelectorAll("li").map((li) => text(li));
+  expect(JSON.stringify(inOptions) === JSON.stringify(["@bee Bee · agent", "@bee#k7mq Bee · instance", "@bee#wqe2 Bee · instance, dormant"]),
+    "mentions: revoked instances left out, a dormant one marked " + JSON.stringify(inOptions));
+  // Members come first (#871's review): with nine members and instances, an @ still shows eight members.
+  const manyText = document.createElement("textarea");
+  const manyList = win.Maity.mentionPicker(manyText, () => Promise.resolve(
+    Array.from({ length: 9 }, (_, i) => ({ id: "agt-" + i, kind: "agent", handle: "o" + i, display_name: "O" + i, instances: [{ id: "k7m" + "abcdefghj"[i] }] }))), "me");
+  manyText.value = "@o"; manyText.dispatch("input"); await tick(); await tick();
+  const manyShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(manyShown.length === 8 && manyShown.every((x) => !x.includes("#")), "mentions: members fill the list first, instances only the room left " + JSON.stringify(manyShown));
+  manyText.value = "@o1"; manyText.dispatch("input"); await tick(); await tick();
+  const oneShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(JSON.stringify(oneShown) === JSON.stringify(["@o1", "@o1#k7mb"]), "mentions: with room, an agent's instance follows it " + JSON.stringify(oneShown));
   freeText.value = "mail me@age"; freeText.dispatch("input"); await tick();
   expect(pickList.hidden, "mentions: an @ inside a word offers nothing");
   const CR = (t) => JSON.stringify(win.Maity.mentionCode(t));
@@ -566,11 +592,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
     "mentions: a stored mention whose text does not match stays text");
   // An instance mention (§8.6, §6.17): @handle#id or @owner/handle#id links to the member, the instance in the title.
-  const instShort = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
-  const instLong = linkOf(wm("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
-  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wqe2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wqe2"
-    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wqe2",
-    "mentions: a stored instance mention, short or long, links to its member with the instance in the title");
+  // Since tsk-bczgjkfpw1wg the handle and the #id are two links: the member, and its Sessions with that instance.
+  const instCtx = { link: (...parts) => "/p/" + parts.join("/") };
+  const wmi = (t, ms) => mentionsDrawn(t, ms, "body", (id) => "/m/" + id, undefined, instCtx);
+  const instShort = linkOf(wmi("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  const instLong = linkOf(wmi("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
+  expect(instShort.length === 2 && instShort[0].textContent === "@agent-b" && instShort[0].getAttribute("href") === "#/m/agt-b"
+    && instShort[1].textContent === "#wqe2" && instShort[1].getAttribute("href") === "#/p/members/agt-b/sessions/wqe2" && instShort[1].getAttribute("title") === "Instance wqe2"
+    && instLong.length === 2 && instLong[0].textContent === "@maintainer/agent-b" && instLong[1].textContent === "#wqe2",
+    "mentions: a stored instance mention, short or long, is two links: the member and its instance");
+  const instNoCtx = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  expect(instNoCtx.length === 1 && instNoCtx[0].textContent === "@agent-b#wqe2" && instNoCtx[0].getAttribute("title") === "Instance wqe2",
+    "mentions: without a project to link into, the instance mention stays one link to the member");
   const teamSuffix = wm("ping @agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", instance: null, field: "body", offset: 5, length: 8 }]);
   expect(linkOf(teamSuffix).length === 1 && linkOf(teamSuffix)[0].textContent === "@agent-b" && !linkOf(teamSuffix)[0].getAttribute("title")
     && teamSuffix[teamSuffix.length - 1] === "#wqe2", "mentions: a team mention followed by a #-looking suffix links the handle, the suffix stays text");
@@ -812,10 +845,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && agRow("agt-b").querySelector(".badge.member-isolated").getAttribute("title") === "Isolated: loops on the board"
       && isoAfter && text(isoAfter.querySelector(".member-isolate")).includes("loops on the board") && btn(isoAfter, "Lift isolation"),
       "isolate: the badge on the row with the reason, the Manage row says who and why and offers Lift isolation");
-    btn(isoAfter, "Lift isolation").click(); for (let k = 0; k < 6; k++) await tick();
+    // Lifting (tsk-zwxtdfmdscf7): the box to hide the isolation's events, unticked; unticked, no body is sent.
+    const isoDels = [];
+    const isoDel = win.Maity.api.del;
+    win.Maity.api.del = (p, b) => { isoDels.push([p, b]); return isoDel(p, b); };
+    const liftHide = byId("member-lift-hide-agt-b");
+    expect(liftHide && !liftHide.checked && text(isoAfter.querySelector("form.member-lift")).includes("Hide what happened while it was isolated")
+      && text(isoAfter.querySelector("form.member-lift")).includes("stay hidden from it for good"),
+      "isolate: the lift form offers to hide what happened meanwhile, unticked, with what it means");
+    isoAfter.querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
     expect(text(main).includes("The isolation of Agent B is lifted.") && !agRow("agt-b").querySelector(".badge.member-isolated")
-      && main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate"),
-      "isolate: lifted, the badge gone, the form back");
+      && main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate")
+      && isoDels.length === 1 && isoDels[0][0] === "/projects/maintainer/maity/members/agt-b/isolate" && isoDels[0][1] === undefined
+      && !agRow("agt-b").querySelector(".member-hidden-windows"),
+      "isolate: lifted unticked, no body sent, nothing hidden; the badge gone, the form back");
+    // Again, something happens meanwhile, and the box is ticked: the window is sent and shown on the row.
+    win.confirm = () => true;
+    byId("member-isolate-agt-b").value = "again"; byId("member-isolate-agt-b").dispatch("input");
+    main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    win.confirm = isoConfirm;
+    await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "while it was isolated" });
+    byId("member-lift-hide-agt-b").checked = true; byId("member-lift-hide-agt-b").dispatch("change");
+    // The choice survives a redraw (#867's review): another row opened and closed rebuilds the table.
+    const liftFormBefore = main.querySelector("form.member-lift");
+    btn(agRow("agt-a"), "Manage").click(); await tick();
+    btn(agRow("agt-a"), "Done").click(); await tick();
+    expect(main.querySelector("form.member-lift") !== liftFormBefore && byId("member-lift-hide-agt-b").checked,
+      "isolate: the ticked box survives a redraw of the table");
+    const isoAgain = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+    isoAgain.querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const isoWin = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b").isolation_windows || [];
+    expect(isoDels.length === 2 && JSON.stringify(isoDels[1][1]) === JSON.stringify({ hide_isolation_events: true })
+      && text(main).includes("The isolation of Agent B is lifted; what happened meanwhile stays hidden from it.")
+      && isoWin.length === 1 && isoWin[0].from_seq <= isoWin[0].to_seq
+      && text(agRow("agt-b").querySelector(".member-hidden-windows")) === "Hidden from it after an isolation: events " + isoWin[0].from_seq + "–" + isoWin[0].to_seq + ".",
+      "isolate: lifted with the box ticked, hide_isolation_events sent, the hidden window on the row " + JSON.stringify(isoWin));
+    win.Maity.api.del = isoDel;
     const isoHuman = await win.Maity.api.post("/projects/maintainer/maity/members/hum-maintainer/isolate", { reason: "x" }).catch((e) => e);
     expect(isoHuman.status === 400 && isoHuman.details.fields.member === "not_an_agent", "isolate: the fixture hub refuses a human, as the hub does");
   }
@@ -4050,6 +4115,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(text(byId("jf-timezone-error")) === "not a time zone the hub knows" && text(main).includes("see the fields marked below"),
       "jour fixe: the hub's refusal of the time zone said at its field");
+    // A refusal of a path with no field of its own is named in the status line, beside the fields marked.
+    const jfPatchNow = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => (b && b.policy && "jour_fixe" in b.policy
+      ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "policy.jour_fixe.time": "format", "policy.jour_fixe.recurrence": "not_an_object" } }))
+      : jfPatchNow(p, b));
+    byId("jf-timezone").value = "Europe/Vienna"; jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("jf-time-error")) === "a time as HH:MM, 24-hour" && text(main).includes("see the fields marked below; recurrence: not_an_object"),
+      "jour fixe: a refusal with no field of its own is named in the status line, the others at their fields");
+    win.Maity.api.patch = jfPatchNow;
     // Started by hand: a reason, then the new round; a second start while it is open is refused in words.
     await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
     expect(text(main).includes("Next round:"), "jour fixe: with the series on, the next slot is said");
@@ -4061,6 +4135,113 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("jf-start-reason").value = "again"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(text(main).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round while one is open is refused in words");
     win.Maity.api.patch = jfPatch; win.Maity.api.put = jfPut; win.Maity.api.post = jfPost;
+  }
+  // The round's actions (§20.3–§20.8, tsk-6h70epze0906 part 2): an answer, by name or anonymously with the
+  // limits said first, read back and withdrawn; the answers for their readers; the statement; a post; the report.
+  {
+    const raPosts = [], raDels = [];
+    const raPost = win.Maity.api.post, raDel = win.Maity.api.del;
+    win.Maity.api.post = (p, b) => { if (/\/jour-fixe\/rounds\/[^/]+\//.test(p)) raPosts.push([p.replace(/^.*\/rounds\//, ""), JSON.parse(JSON.stringify(b))]); return raPost(p, b); };
+    win.Maity.api.del = (p, b) => { if (p.includes("/jour-fixe/")) raDels.push(p); return raDel(p, b); };
+    const raLast = () => raPosts[raPosts.length - 1];
+    const opened = (await win.Maity.api.get("/projects/maintainer/maity/jour-fixe/rounds?status=answering")).items[0];
+    await go("#/maintainer/maity/jour-fixe/" + opened.id); for (let k = 0; k < 8; k++) await tick();
+    const raForm = () => main.querySelector("form.jfa-answer-form");
+    expect(raForm() && byId("jfa-limits").hidden && text(main).includes("What went well?"), "jour fixe answer: the three questions, the limits of anonymity not shown yet");
+    raForm().dispatch("submit"); await tick();
+    expect(!raPosts.length && text(raForm()).includes("write at least one of the three"), "jour fixe answer: an empty answer is said before anything is sent");
+    byId("jfa-anonymous").checked = true; byId("jfa-anonymous").dispatch("change");
+    expect(!byId("jfa-limits").hidden && text(byId("jfa-limits")).includes("Small rounds"), "jour fixe answer: answering anonymously shows what anonymity does not cover, first");
+    byId("jfa-went_well").value = "The board is clear.";
+    raForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify([opened.id + "/answers", { anonymous: true, went_well: "The board is clear." }])
+      && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
+      "jour fixe answer: sent anonymously with only what was written; read back while the window is open");
+    btn(main.querySelector("section.jfa-answer"), "Withdraw my answer").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(raDels.length === 1 && raDels[0].endsWith("/answers/mine") && !raForm() && text(main).includes("no new answer is possible in this round"),
+      "jour fixe answer: an anonymous answer withdrawn, and said that no second answer is possible (the hub keeps its tag)");
+    // A human moderator in step 1: the answers (an anonymous one names nobody, text never markup), one removed; the statement.
+    await go("#/maintainer/sample/jour-fixe/jfx-s3"); for (let k = 0; k < 8; k++) await tick();
+    const raAnswers = () => main.querySelector("section.jfa-answers");
+    expect(raAnswers() && raAnswers().querySelectorAll("li").filter((li) => li.getAttribute("data-answer")).length === 2 && text(raAnswers()).includes("anonymous") && !raAnswers().querySelector("b")
+      && text(raAnswers()).includes("<b>board</b>"), "jour fixe answers: read by the moderator, an anonymous one names nobody, no markup taken from them");
+    const raAnon = () => raAnswers().querySelectorAll("li").find((li) => li.getAttribute("data-answer") === "jfa-s2");
+    btn(raAnon(), "Remove").click(); await tick();
+    byId("jfa-redact-answer-jfa-s2").value = "names a person"; btn(raAnon(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/redact", { target: "answer:jfa-s2", reason: "names a person" }]) && text(raAnon()).includes("Removed."),
+      "jour fixe answers: one removed with its reason");
+    byId("jfa-t0-title").value = "Reviews wait"; byId("jfa-t0-title").dispatch("input");
+    btn(main.querySelector("section.jfa-statement"), "Add what was said").click(); await tick();
+    byId("jfa-t0-i0").value = "A second reviewer."; byId("jfa-t0-i0").dispatch("input");
+    const raFrom = main.querySelector("section.jfa-statement").querySelectorAll("select")[0];
+    raFrom.value = "agt-s1"; raFrom.dispatch("change");
+    btn(main.querySelector("section.jfa-statement"), "Add a proposal").click(); await tick();
+    byId("jfa-t0-s0").value = "A second reviewer agent"; byId("jfa-t0-s0").dispatch("input");
+    main.querySelector("section.jfa-statement form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/statement", { topics: [{ title: "Reviews wait", items: [{ text: "A second reviewer.", from: "agt-s1" }],
+      proposals: [{ title: "A second reviewer agent" }] }] }]) && main.querySelector("section.jf-statement"),
+      "jour fixe statement: the topics with who said what and the proposals, posted; the round shows it " + JSON.stringify(raLast()));
+    // An eligible member in the response step: once per topic, addressed to a participant.
+    await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 8; k++) await tick();
+    const raPostForm = () => main.querySelector("form.jfa-post-form");
+    byId("jfa-post-t1").value = "A second reviewer would help."; byId("jfa-post-t1-to-agt-s1").checked = true;
+    raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
+      && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");
+    // After the window, a participant who is neither moderator nor of the admin team reads their named answer and removes it
+    // (§20.3, §20.8); an anonymous one is no longer theirs to find (§20.4).
+    {
+      const asMember = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/me"
+        ? asMember(p).then((x) => Object.assign({}, x, { projects: x.projects.map((pr) => (pr.full_name === "maintainer/sample" ? Object.assign({}, pr, { trust: "member" }) : pr)) }))
+        : asMember(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const own = () => main.querySelector("section.jfa-answer");
+      expect(own() && text(own()).includes("The window has closed; you may still remove it.") && text(own()).includes("Short reviews.")
+        && !main.querySelector("section.jfa-answers"), "jour fixe answer: after the window a member reads their own named answer, not the others'");
+      btn(own(), "Remove").click(); await tick();
+      byId("jfa-redact-answer-jfa-s9").value = "too personal"; btn(own(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/redact", { target: "answer:jfa-s9", reason: "too personal" }]) && text(own()).includes("Removed."),
+        "jour fixe answer: the author removes their named answer after the window");
+      win.Maity.api.get = asMember;
+      const anonAfter = await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s1/answers?mine=true");
+      expect(anonAfter.items.length === 0, "jour fixe answer: an anonymous answer is not found as one's own after the window, in the fixture hub as in the hub");
+    }
+    // A reply step offers only the topics where a response addressed me, and names the responses answered (§20.5).
+    {
+      const rsGet = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/projects/maintainer/sample/jour-fixe/rounds/jfx-s2"
+        ? rsGet(p).then((x) => Object.assign({}, x, {
+          steps: x.steps.map((st) => (st.kind === "response" ? Object.assign({}, st, { closed_at: "2026-10-28T12:30:00Z" }) : st))
+            .concat([{ n: 3, kind: "reply", opened_at: "2026-10-28T12:30:00Z", closed_at: null, closes_at: "2026-10-28T14:30:00Z", reason: null, eligible: ["hum-maintainer"] }]),
+          statement: Object.assign({}, x.statement, { topics: x.statement.topics.concat([{ id: "t2", title: "Nights", summary: null, items: [], proposals: [], redaction: null }]) }),
+          posts: [{ id: "p-r1", step: "response", topic_id: "t1", by: "agt-s1", to: ["hum-maintainer"], in_reply_to: [], body: "You?", message_seq: null, redaction: null }] }))
+        : rsGet(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const forms = main.querySelectorAll("form.jfa-post-form").map((f) => f.getAttribute("data-topic"));
+      expect(JSON.stringify(forms) === JSON.stringify(["t1"]), "jour fixe reply: only the topic where a response addressed me is offered " + JSON.stringify(forms));
+      byId("jfa-post-t1").value = "Me, tomorrow."; main.querySelector("form.jfa-post-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "reply", topic_id: "t1", body: "Me, tomorrow.", in_reply_to: ["p-r1"] }]),
+        "jour fixe reply: sent naming the response it answers");
+      win.Maity.api.get = rsGet;
+    }
+    // A human moderator of the admin team writes the report: one proposal decided with a reason, one to the owner.
+    await go("#/maintainer/sample/jour-fixe/jfx-s1"); for (let k = 0; k < 8; k++) await tick();
+    const raRep = () => main.querySelector("section.jfa-report-form");
+    byId("jfa-report-summary").value = "Reviews are the bottleneck."; byId("jfa-report-findings").value = "Reviews wait.\n\nOne reviewer only.";
+    byId("jfa-triage-t1-s1").value = "adopt"; byId("jfa-triage-t1-s2").value = "to_owner";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(raLast()[0] !== "jfx-s1/report", "jour fixe report: a decision without its reason is not sent");
+    byId("jfa-triage-t1-s1-reason").value = "Within the rules.";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 12; k++) await tick();
+    const raSent = raLast()[1];
+    expect(raLast()[0] === "jfx-s1/report" && raSent.summary === "Reviews are the bottleneck." && raSent.findings.length === 2
+      && raSent.proposals[0].triage === "decided" && raSent.proposals[0].decision.outcome === "adopt" && raSent.proposals[0].decision.basis.human_id === "hum-maintainer"
+      && raSent.proposals[0].statement_proposal_id === "t1.s1" && raSent.proposals[1].triage === "to_owner" && text(main).includes("reported"),
+      "jour fixe report: findings, a decision with its reason and basis, one to the owner; the round reported " + JSON.stringify(raSent));
+    const raRedact = () => main.querySelector("details.jfa-report-redact");
+    expect(raRedact() && raRedact().querySelectorAll("li").length === 5, "jour fixe report: its summary, findings and proposals may be removed by an invited human");
+    win.Maity.api.post = raPost; win.Maity.api.del = raDel;
   }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
@@ -6361,6 +6542,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("a.chat-button").length === 1, "header: a refresh to new chat messages brings Chat's badge back, one button");
   win.Maity.api.get = rcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  // A project's tab follows a refresh of the counts in place, in the fixture's #/ links too (#861's review).
+  const tcGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? tcGet(p).then((r) => ({ ...r, by_project: { ...(r.by_project || {}), "maintainer/maity": { ...((r.by_project || {})["maintainer/maity"] || {}), chat: 5 } } })) : tcGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(tabCountOf("Chat") === "5", "notifications: a refresh of the counts updates the project's Chat tab in place " + tabCountOf("Chat"));
+  win.Maity.api.get = tcGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
@@ -7007,6 +7196,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".member-section")).includes("Instances") && mpsSess && text(mpsSess).includes("ses-b-0009") && text(mpsSess).includes("since ")
     && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
     "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
+  // An instance's address (tsk-bczgjkfpw1wg): members/<id>/sessions/<instance> marks that instance's line and focuses it.
+  await go("#/maintainer/maity/members/agt-b/sessions/wle2"); for (let k = 0; k < 8; k++) await tick();
+  const mpsChosen = byId("member-instance-wle2");
+  expect(mpsChosen && mpsChosen.classList.contains("chosen") && mpsChosen.getAttribute("aria-current") === "true" && mpsChosen.getAttribute("tabindex") === "-1"
+    && main.querySelectorAll(".member-instances li.chosen").length === 1,
+    "member page: an instance's address marks its line on Sessions as the current one");
+  await go("#/maintainer/maity/members/agt-b/sessions/zzzz"); for (let k = 0; k < 8; k++) await tick();
+  expect(!main.querySelector(".member-instances li.chosen") && text(main.querySelector(".member-instance-missing")) === "Instance zzzz is not listed for this member.",
+    "member page: an address naming an instance the member does not list says so (#871's review)");
   win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
   await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
   expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")
@@ -7059,14 +7257,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An agent's instance (§6.17): <handle>#<id>, the #id muted with harness and model as tooltip;
   // a human keeps the name, and an id that is no instance id is not shown.
   const inCtx = { memberById: { "agt-b": { id: "agt-b", kind: "agent", handle: "agent-b", display_name: "Agent B" },
-    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, id) => "/maintainer/maity/" + k + "/" + id, nameOf: (id) => id };
+    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, ...rest) => "/maintainer/maity/" + [k].concat(rest).join("/"), nameOf: (id) => id };
   const inRef = win.Maity.dom.memberRef(inCtx, "agt-b", { instance: { instance: "wqe2", harness: "Claude Code", model: "claude-opus-5-5" } });
   const inSuffix = inRef.querySelector(".member-instance");
   const inLink = inRef.querySelector("a.member-ref");
   expect(text(inRef) === "agent-b#wqe2" && inLink && text(inLink) === "agent-b" && inLink.getAttribute("title") === "Agent B"
     && inSuffix && inSuffix.parentNode === inRef && inSuffix.classList.contains("muted")
-    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5",
-    "instances: an agent is named <handle>#<id>, the id muted beside the link, harness and model as its tooltip");
+    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5"
+    && inSuffix.tagName === "A" && inSuffix.getAttribute("href") === "#/maintainer/maity/members/agt-b/sessions/wqe2",
+    "instances: an agent is named <handle>#<id>, the #id a link of its own beside the handle's to the instance, harness and model as its tooltip");
   expect(text(win.Maity.dom.memberRef(inCtx, "agt-b", { text: "handle", instance: "k7mq" })) === "@agent-b#k7mq"
     && text(win.Maity.dom.memberRef(inCtx, "hum-m", { instance: "wqe2" })) === "Maintainer"
     && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"
