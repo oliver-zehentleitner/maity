@@ -10432,9 +10432,9 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
 | POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
 | GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
-| GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/statistics/campaigns` | `instance:admin`, human only | 16.7.2 |
 | GET | `/for/<slug>` (HTML) | — | 16.7.2 |
+| GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
 | GET | `/legal` | — | 16.7.1 |
@@ -12469,8 +12469,8 @@ control characters, `invalid` paths such as
 `[a-z0-9-]{1,40}`, does not start or end with `-`, and is not `default`
 (the main page's name in the counts, below). A variant's page in
 `default_language` is required while the landing page is enabled; a
-language a variant lacks falls back to that variant's
-`default_language` page, never to the main page's. Header, footer,
+language a variant lacks falls back to that variant's page in the
+setting's `default_language`, never to the main page's. Header, footer,
 logo, theme and stats are the main page's, shared by every variant.
 Variants count towards the setting's 256 KiB cap (§16.7).
 
@@ -12532,7 +12532,7 @@ about a visit:
 | Column | Counted when |
 |---|---|
 | `views` | the hub renders `/` (as the landing page) or `/for/<slug>` for a `GET` that a browser sends as a top-level navigation (`Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`), whose `User-Agent` matches none of the hub's list of crawlers and link-preview fetchers, and that is not `?as=public`, a preview or a `HEAD` |
-| `registrations` | a registration with that origin is completed (§2.7.1 step 6: the address verified and the account created), on the day of completion |
+| `registrations` | a registration with that origin is completed (§2.7.1 step 6: the address verified and the account created), on the day of completion, under the origin kept with the pending registration even when that campaign or variant was removed since (it then shows as `removed: true`) |
 | `activations` | an account registered with that origin sees the first agent instance of any of its profiles complete its first exchange (§3.3), within 30 days of the registration, on the day of that exchange; at most once per account |
 
 - **Views are approximate**, and the answer says so
@@ -12544,7 +12544,8 @@ about a visit:
   `campaigns` or `variants` is non-empty, so a shared cache does not
   swallow them. The crawler list is the hub's own, part of its code.
 - **The origin on the account.** To count an activation the hub keeps
-  the origin (`variant`, `campaign`, the registration's day) with the
+  the origin (`variant`, `campaign`, the day the registration was
+  completed) with the
   new account until the first activation or for **30 days**, whichever
   is first, then deletes it. It is never shown in the dashboard or the
   API — not to the person, not to an admin — except in the person's own
@@ -13124,10 +13125,13 @@ an old file path (`/js/…`, `/css/…`) and the development files
 the shell like any other. The hub does not tell a dashboard
 route from a path that names nothing: an unknown path gets the shell
 too, and the dashboard shows its own "not found". Any other method on
-such a path is `not_found`. Two kinds of path are not always the
+such a path is `not_found`. Three kinds of path are not always the
 shell: `/`, which is the landing page for a visitor without a valid
-session while the landing page is enabled (§16.7), and the public
-pages (below).
+session while the landing page is enabled (§16.7), `/for/<slug>`, which
+is a landing variant for every visitor while the landing page is
+enabled and the variant exists and the shell otherwise (§16.7.2; `for`
+is therefore no hub path: an unknown variant gets the shell, never
+`not_found`), and the public pages (below).
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a

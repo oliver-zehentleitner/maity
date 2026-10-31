@@ -470,8 +470,9 @@ instance of an account registered through that link, within 30 days).
 To count an activation, the account keeps its variant and campaign,
 shown to nobody but the person in their own export, until the first
 activation or 30 days, then the hub deletes it. None of it happens
-while the operator has configured neither variants nor campaigns. The link decides what a visitor sees, never a lottery; no
-cookie, no script, nothing that tells one visitor from another.
+while the operator has configured neither variants nor campaigns.
+The link decides what a visitor sees, never a lottery; no cookie, no
+script, nothing that tells one visitor from another.
 
 **Reason:** marketing needs to compare messages before the launch, and
 registrations alone do not say which message brings people who use
