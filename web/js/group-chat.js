@@ -421,8 +421,9 @@ window.Maity = window.Maity || {};
         }
       };
       M.dom.sendOnCtrlEnter(text, sendIt, button);
-      compose = h("form", { class: "compose", onsubmit: sendIt },
-        h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) })),
+      compose = h("form", { class: "compose", onsubmit: sendIt });
+      append(compose,
+        parts.composeHead(compose, text, h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) }))),
         text, hint, files ? files.el : null, parts.actionRow(files, button));
     }
 
