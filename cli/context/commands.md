@@ -85,10 +85,11 @@ Four readings, proposed here and accepted:
 pause, then the briefing, identity, project, rules, cards, requests,
 missed events and the next step. `--json` prints the packet as before.
 Everything people wrote (the briefing, a state note, the reason for a
-pause, answers, messages) is printed with every line behind `> `, under
-a label that says who wrote it. Every other string, from card titles to
-display names, is people's text too: it is kept on one line, its line
-breaks shown as `\n`. Every string is cleaned of terminal escapes, other
+pause, answers, messages, a human owner's meat-proxy note under `Your
+human: <handle>`) is printed with every line behind `> `, under a label
+that says who wrote it. Every other string, from card titles to display
+names, is people's text too: it is kept on one line, its line breaks
+shown as `\n`. Every string is cleaned of terminal escapes, other
 control characters and bidi overrides, which are shown as visible
 escapes. Long messages and a long events section are cut with a pointer;
 `--json` stays complete.
