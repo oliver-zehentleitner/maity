@@ -1,4 +1,4 @@
-"""Memory endpoints: the soul, team and community memory (docs/api.md §19).
+"""Memory endpoints: the soul, team, role and community stores (docs/api.md §19).
 
 The domain — views, writes, caps, events, the resume block — is `maity_hub.memory`.
 """
@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, StringConstraints
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import idempotency, memory, namespace, paging
+from maity_hub import idempotency, memory, namespace, paging, project_roles
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
@@ -39,9 +39,10 @@ class SoulProposalIn(SoulIn):
 
 
 class EntryIn(Strict):
-    store: Literal["team", "community"]
+    store: Literal["team", "role", "community"]
     text: str = Field(min_length=1, max_length=memory.ENTRY_MAX)
     tags: list[Tag] = Field(default_factory=list, max_length=5)
+    role: str | None = Field(default=None, max_length=24)
 
 
 class DeleteIn(Strict):
@@ -109,7 +110,7 @@ def propose_soul(body: SoulProposalIn, request: Request, caller: AgentCaller) ->
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-# --- team and community memory (§19.2) -----------------------------------------------------------
+# --- team, role and community memory (§19.2) -----------------------------------------------------
 
 
 def _team(conn: Connection, mine: Membership, member_id: str) -> Any:
@@ -126,13 +127,20 @@ def _matches(row: Any, q: str) -> bool:
     return needle in (row.text or "").casefold() or any(needle in tag for tag in row.tags or [])
 
 
+def _role(mine: Membership, name: str) -> str:
+    if not memory.reads_role(mine, name):
+        raise not_found()
+    return name
+
+
 @router.get("/projects/{owner}/{slug}/memory")
 def list_memory(
     slug: str,
     request: Request,
     caller: AnyCaller,
-    store: Literal["team", "community"] | None = None,
+    store: Literal["team", "role", "community"] | None = None,
     member_id: str | None = None,
+    role: str | None = Query(default=None, max_length=24),
     q: str | None = Query(default=None, min_length=1, max_length=200),
     deleted: bool = False,
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
@@ -142,16 +150,24 @@ def list_memory(
         mine = membership(conn, caller, slug)
         c = t.memory_entry.c
         query = select(t.memory_entry).where(c.project_id == mine.project.id)
+        if role is not None and store != "role":
+            raise invalid({"role": "role_only"}, "role names a role memory store")
         if member_id is not None:
-            if store == "community":
+            if store in ("role", "community"):
                 raise invalid({"member_id": "team_only"}, "member_id names a team")
             query = query.where(c.team_membership == _team(conn, mine, member_id).id)
         elif store == "team":
             query = query.where(memory.readable_teams(mine))
         elif store == "community":
             query = query.where(c.store == "community")
+        elif store == "role":
+            query = query.where(c.store == "role", c.role == _role(mine, role or mine.role))
         else:
-            query = query.where(or_(c.store == "community", memory.readable_teams(mine)))
+            query = query.where(
+                or_(
+                    c.store == "community", memory.readable_teams(mine), memory.readable_roles(mine)
+                )
+            )
         if not deleted:
             query = query.where(c.deleted_at.is_(None))
         if cursor is not None:
@@ -176,6 +192,8 @@ def list_memory(
 def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -> JSONResponse:
     if not body.text.strip():
         raise invalid({"text": "blank"}, "an entry needs text")
+    if body.role is not None and body.store != "role":
+        raise invalid({"role": "role_only"}, "role names a role memory store")
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -184,6 +202,12 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
         if body.store == "team":
             if mine.kind != "agent":
                 raise forbidden(message="team memory is written by the team's agents")
+        elif body.store == "role":
+            if body.role is not None and not memory.role_admin(mine):
+                raise forbidden(message="only an owner or admin may choose a role memory store")
+            _role(mine, body.role or mine.role)
+            if project_roles.base_of(mine.project, body.role or mine.role) is None:
+                raise invalid({"role": "unknown"})
         elif mine.kind == "agent":
             return _propose_community(conn, mine, caller, body)
         else:
@@ -196,6 +220,7 @@ def post_memory(slug: str, body: EntryIn, request: Request, caller: AnyCaller) -
             body.store,
             body.text,
             body.tags,
+            role=(body.role or mine.role) if body.store == "role" else None,
         )
         return idempotency.Outcome(201, "memory", entry_id, memory.load_entry(conn, entry_id))
 
@@ -254,6 +279,11 @@ def delete_memory(
             # it that the entry exists (§1.3). An agent reads its own team only, so this
             # is also what keeps an admin agent from deleting another team's memory.
             if not memory.reads_team(conn, mine, memory.member(conn, row.team_membership)):
+                raise not_found()
+            if mine.trust == "guest":
+                raise forbidden("tasks:write", "a guest writes no memory")
+        elif row.store == "role":
+            if not memory.reads_role(mine, row.role):
                 raise not_found()
             if mine.trust == "guest":
                 raise forbidden("tasks:write", "a guest writes no memory")
