@@ -234,3 +234,16 @@ def test_a_pin_lost_without_a_stay_or_membership_ending_is_dropped_at_the_next_p
             ).scalars()
         )
     assert held == {room["id"]}
+
+
+def test_the_export_carries_the_pins(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    guest = other_human(make_client, migrated, "guest")
+    chat = create(owner, guest.id).json()
+    assert put(owner, chat["id"]).status_code == 204
+    exported = owner.get("/me/export")
+    assert exported.status_code == 200, exported.text
+    [pin] = exported.json()["pinned_conversations"]
+    assert (pin["project"], pin["conversation_id"]) == ("maintainer/maity", chat["id"])
+    assert pin["pinned_at"]
