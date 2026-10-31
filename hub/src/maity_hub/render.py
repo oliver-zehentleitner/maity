@@ -434,6 +434,26 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     )
 
 
+_REGISTER = re.compile(r'href="(/register)((?:\?[^"#]*)?)((?:#[^"]*)?)"')
+_SWITCH = re.compile(r'href="(\?lang=[a-z]+)"')
+
+
+def carry_origin(html: str, variant: str, campaign: str | None) -> str:
+    """Every link to `/register` on the page carries the visitor's origin, `v` and (for a known
+    campaign) `c`, so the registration knows where they came from (§16.7.2); the language
+    switch keeps the campaign. The page is otherwise as it was: nothing set in the browser."""
+    origin = f"v={variant}" + (f"&amp;c={campaign}" if campaign else "")
+
+    def register(found: re.Match[str]) -> str:
+        joined = "&amp;" if found.group(2) else "?"
+        return f'href="/register{found.group(2)}{joined}{origin}{found.group(3)}"'
+
+    html = _REGISTER.sub(register, html)
+    if campaign:
+        html = _SWITCH.sub(lambda found: f'href="{found.group(1)}&amp;c={campaign}"', html)
+    return html
+
+
 def landing_document(
     setting: dict[str, Any],
     lang: str,
@@ -442,6 +462,7 @@ def landing_document(
     legal: dict[str, Any],
     stats: dict[str, Any] | None,
     preview: bool = False,
+    variant: str | None = None,
 ) -> str:
     """The landing page in `lang` (a missing field falls back to the default language's page).
 
@@ -449,7 +470,9 @@ def landing_document(
     stylesheet and the fonts it names, a script that only adds motion and the theme switch, and
     the design's pictures inline. Every word of the operator's is escaped text; the page reads
     completely without the script and without the stylesheet."""
-    pages: dict[str, Any] = setting["pages"]
+    # A variant has pages of its own, and a language it lacks falls back to its own page in the
+    # default language, never to the main page's (§16.7.2).
+    pages: dict[str, Any] = setting["variants"][variant]["pages"] if variant else setting["pages"]
     default = pages.get(setting["default_language"]) or next(iter(pages.values()))
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
@@ -481,6 +504,8 @@ def landing_document(
     footer = _landing_footer(setting, words, legal, lang, list(pages))
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
     head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
+    if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
+        head += '<meta name="robots" content="noindex">'
     if sheet:
         head += f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">'
     if script:
