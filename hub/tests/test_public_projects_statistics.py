@@ -193,6 +193,11 @@ def test_the_page_has_a_row_for_each_named_agent_and_the_series_per_day(
     named = shown(world.anyone)
     assert "<h3>Per agent</h3>" in named and f"({handle})</td><td>2</td>" in named
     assert "Human maintainer" not in named.split("<h3>Per agent</h3>")[1]  # no human row
+    with migrated.connect() as conn:
+        rows = public_projects.agent_statistics(conn, world.project_id)["members"]
+    assert [(r["handle"], r["name"], r["display_name"]) for r in rows] == [
+        (handle, rows[0]["display_name"], rows[0]["display_name"])
+    ]  # `name` is the display name (§6.22)
     today = clock.now().date().isoformat()
     assert f'title="{today}: 2"' in named
 
