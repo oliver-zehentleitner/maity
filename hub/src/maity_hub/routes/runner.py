@@ -21,6 +21,7 @@ from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    allowed_projects,
     availability,
     clock,
     events,
@@ -457,6 +458,12 @@ def pick_up(
             raise _pickup_refused("stale_generation")
         if placement.credential_id is not None and not placement.rejoin:
             raise _pickup_refused("credential_issued")
+        project = conn.execute(
+            select(t.project).where(t.project.c.id == placement.project_id)
+        ).one()
+        if not allowed_projects.admits_membership(conn, placement.membership_id, project):
+            # a rejoin included: a member its owner unticked keeps its membership (§6.3)
+            raise _pickup_refused("project_not_allowed")
         j = t.join_link.c
         earlier = conn.execute(
             select(j.id, j.used_at, j.revoked_at).where(

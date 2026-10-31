@@ -307,6 +307,7 @@ def test_profiles_belong_to_their_human(
         "avatar_source",  # the profile's owner reads it (§6.10)
         "owner_id",
         "git_identity",
+        "allowed_projects",
         "memberships",
         "created_at",
         "deleted_at",  # null until its owner deletes it (§6.3)

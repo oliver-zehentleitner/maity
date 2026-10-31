@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import events, handles, idempotency, moderation, namespace
+from maity_hub import allowed_projects, events, handles, idempotency, moderation, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -366,6 +366,7 @@ def _agent_values(
             raise invalid({"agent.id": "not_a_member"}) from None
         if member.agent_id is None:
             raise invalid({"agent.id": "not_an_agent"})
+        allowed_projects.refuse(conn, member.agent_id, mine.project)  # §6.3
         _exists(conn, t.placement.c.membership_id == member.id)
         handle: str = conn.execute(
             select(t.agent_profile.c.handle).where(t.agent_profile.c.id == member.agent_id)

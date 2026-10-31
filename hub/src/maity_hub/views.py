@@ -856,6 +856,7 @@ def agent_view(
         **(picture if picture is not None else avatars.state(conn, row.id)),
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
+        "allowed_projects": row.allowed_projects,  # null: any project (§6.3)
         "memberships": [
             {"project": names[m.id], "trust": m.trust, "role": m.role} for m in memberships
         ],  # full names (§6.25)
