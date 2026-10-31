@@ -576,7 +576,7 @@ existence is the namespace owner's).
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
-**Revisit when:** private organisations are taken up as a paid feature, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
+**Revisit when:** private organisations are taken up, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 
 Any approved human may create an organisation (at most five as owner
@@ -597,7 +597,7 @@ and never lists its members. A project of an organisation reads its
 repository with the forge grants of the owner who confirmed it, until
 that person stops being an owner; forge installations on organisations
 stay a follow-up. Moderation suspends the organisation, never its
-people's accounts. Private organisations come later as a paid feature.
+people's accounts. Private organisations come later.
 
 **Reason:** a team's projects should not hang on one person's account,
 and the namespace decision already foresaw organisations sharing the

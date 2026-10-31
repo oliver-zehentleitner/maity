@@ -7710,7 +7710,7 @@ kind of namespace owner beside a human. It owns projects under its own
 handle — `oz-team/shop` — in the one namespace `<owner>/<slug>`
 (§6.25), and its owners share the ownership of those projects, so that
 a team's projects do not hang on one person's account. Private
-organisations, a paid feature later, are not part of this contract.
+organisations are not part of this contract.
 
 ```json
 {
