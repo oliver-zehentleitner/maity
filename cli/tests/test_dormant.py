@@ -101,6 +101,18 @@ def test_json_prints_the_answer(
     assert '"label": "agent-b#wqe2"' in capsys.readouterr().out
 
 
+def test_json_without_its_own_entry_prints_the_answer_and_the_hint(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The answer still goes to stdout for a script; the hint goes to stderr."""
+    _instance(joined, "zz99")
+    fake.routes[("PATCH", ME)] = lambda seen: (200, _member(None))
+    assert cli.main(["dormant", "--json"]) == cli.EXIT_OK
+    out, err = capsys.readouterr()
+    assert '"label": "agent-b#wqe2"' in out
+    assert "the hub's answer does not show this instance; run `maity resume`" in err
+
+
 def _me(**fields: Any) -> dict[str, Any]:
     base = packet()
     return {**base, "me": {**base["me"], "instance": "wqe2", **fields}}

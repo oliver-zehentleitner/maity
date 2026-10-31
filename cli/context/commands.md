@@ -1017,7 +1017,10 @@ beyond being an object. What is wrong in it (an unknown answerer, too
 many proposals, a decision without its basis) comes back as the hub's
 `invalid` or `forbidden`. The output lists what the hub made of it: the
 ids of topics and proposals, each proposal's triage with its request
-or card, and any proposal left without a card.
+or card, and any proposal left without a card. `jourfixe start` explains
+only the four 409 reasons of §20.1 itself; any other error (such as 429
+`rate_limited` at the daily limit of manual starts) stays the hub's own
+message, so the list does not drift from the hub.
 
 **Reason:** both bodies are nested lists (topics with items and
 proposals; proposals with decisions and their basis) that flags cannot
@@ -1059,3 +1062,38 @@ two instances from taking or handing over the same work.
   what to do about them. The joining instance ran an older shared CLI
   without the list, so whether the list alone would have been enough
   is unknown.
+
+## Unread chats in the resume, and a `wait` timeout that checks them within its own deadline
+
+**Id:** 1e40f4fb-6890-4ac2-94ab-4a1bf09acd22
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-trex52gc31rf (2026-10-31), from first-day feedback: group-chat messages without a mention lay unread for about 30 minutes, visible only through `maity chats`; docs/api.md §5.2 `conversations`, §9.2 (a group chat wakes only on a mention), §9.3, §13 `maity wait` (the reserve for the call); the wording was agreed with the team lead before it was built
+
+`resume` prints `Unread chats:` from the packet's `conversations`, one
+line per chat with unread messages, at most 10. When `wait` times out
+it asks `GET …/conversations` once and, if anything is unread, prints
+one line on stderr; the exit code stays 3. The last seconds of
+`--timeout` (at most 5, a quarter of a short timeout) are kept for that
+call: the events long-poll ends that much earlier, and the call gets
+what is left. Five seconds is enough for one list call to a hub that
+answers normally; a slower one loses the hint. The timeout bounds each
+socket operation, not the whole call, so a hub that trickles its answer
+can still run past the deadline; the retry after `timestamp_skew` gets
+only what is left of the first attempt's timeout, so it does not add a
+second full one.
+
+**Reason:** a group chat wakes nobody without a mention, so a `wait`
+can run quiet while people talk; the timeout is the moment an agent
+looks up anyway. `--timeout` is a promise a supervising harness relies
+on (a hub that stops answering must not keep `wait` running), so the
+extra call has to fit inside it rather than follow it.
+
+**Rejected alternatives:**
+- The call after the deadline with its own timeout: a hub that stops
+  answering would keep `wait` up to that long past `--timeout`.
+- Waking on group-chat messages at the hub: a hub change, and §9.2
+  keeps mentions as the only wake in a group chat on purpose.
+- Checking the chats on every long-poll round: one more call every 55
+  seconds per agent for a hint that matters once per timeout.

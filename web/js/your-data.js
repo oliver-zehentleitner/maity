@@ -23,7 +23,7 @@ window.Maity = window.Maity || {};
     if (err.code === "org_last_owner") {
       const orgs = ((err.details && err.details.orgs) || []).map((o) => "@" + o);
       return { message: orgs.length
-        ? M.t("data.refused.org_last_owner", { orgs: new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(orgs) })
+        ? M.t("data.refused.org_last_owner", { orgs: M.fmt.list(orgs) })
         : M.t("data.refused.org_last_owner.unnamed") };
     }
     return Object.hasOwn(REFUSALS, err.code) ? { message: REFUSALS[err.code]() } : err;

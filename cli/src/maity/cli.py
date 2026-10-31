@@ -508,6 +508,36 @@ def _event_line(event: dict[str, Any]) -> str:
     return line
 
 
+NOTE_RESERVE = 5.0  # seconds of --timeout kept for the unread-chats note
+
+
+def _unread_note(session: Session, budget: float) -> None:
+    """On a timeout, one line on stderr when chats hold unread messages: a group chat's
+    messages wake nobody unless they mention you (§9.2), so a quiet wait can hide them. A
+    hint only, within what is left of --timeout: a hub that does not answer leaves it out."""
+    if budget < 0.5:
+        return
+    try:
+        page = session.client.call(
+            "GET", session.project_path("conversations"), query=[("limit", "50")], timeout=budget
+        )
+    except hub.HubError:
+        return
+    counts = [
+        (c.get("unread"), c.get("mentions_unread") or 0)
+        for c in (_field(page, "items") or []) if isinstance(c, dict)
+    ]  # fmt: skip
+    unread = [(n, m) for n, m in counts if isinstance(n, int) and n > 0 and isinstance(m, int)]
+    if unread:
+        total, mentions = sum(n for n, _ in unread), sum(m for _, m in unread)
+        # One page only, within the budget: past it the counts are a floor.
+        more = "at least " if _field(page, "next_cursor") else ""
+        _err(
+            f"unread chats: {more}{total} in {more}{len(unread)} chats ({mentions} mentions): "
+            "maity chats"
+        )
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -520,7 +550,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
             "--kind reads past other events, which acknowledges them at the hub; "
             "it does not go with --keep-cursor"
         )
-    deadline = time.monotonic() + timeout
+    end = time.monotonic() + timeout
+    # The last seconds are kept for the unread-chats note, so it never runs past --timeout.
+    deadline = end - min(NOTE_RESERVE, timeout / 4)
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
     backoff = 2.0
@@ -528,6 +560,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            _unread_note(session, end - time.monotonic())
             return EXIT_TIMEOUT
         # The hub holds for `poll` and gets a second to answer; the read never outlasts the
         # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.

@@ -123,6 +123,7 @@ window.MAITY_I18N["en"] = {
     "one": "Sign-ins and address {count}",
     "other": "Sign-ins and address {count}"
   },
+  "bell.item.unread": "(unread)",
   "bell.kind.chat": "Chats",
   "bell.kind.inbox": "Requests",
   "bell.kind.mention": "Mentions",
@@ -468,7 +469,10 @@ window.MAITY_I18N["en"] = {
   "group.new.title_hint": "Without one, the chat is named after its participants.",
   "group.new.title_label": "Title (optional)",
   "group.new.title_placeholder": "What it is about",
-  "group.new.too_many": "At most twelve participants, you included.",
+  "group.new.too_many": {
+    "one": "At most {count} participant, you included.",
+    "other": "At most {count} participants, you included."
+  },
   "group.new.your_agent": "your agent",
   "group.observer.another_owner": "another agent's owner",
   "group.observer.outside": "an owner outside the project",
@@ -491,7 +495,10 @@ window.MAITY_I18N["en"] = {
   "group.refused.project_closed": "the project is closed: no new group chats and no one added",
   "group.refused.quota": "this project has as many open group chats as the hub allows",
   "group.refused.too_few": "a group chat needs at least one other participant",
-  "group.refused.too_many": "a group chat has at most twelve participants, you included",
+  "group.refused.too_many": {
+    "one": "a group chat has at most {count} participant, you included",
+    "other": "a group chat has at most {count} participants, you included"
+  },
   "group.refused.use_direct": "that is your direct chat with your agent",
   "group.reread_failed": "The chat could not be read again: ",
   "group.untitled": "Group chat",
@@ -1845,11 +1852,20 @@ window.MAITY_I18N["en"] = {
   "swarm.col.prs_merged": "PRs merged",
   "swarm.col.review_to_done": "Review → done",
   "swarm.col.reviews_given": "Reviews given",
-  "swarm.duration.d": "{d} d",
-  "swarm.duration.d_h": "{d} d {h} h",
-  "swarm.duration.h": "{h} h",
-  "swarm.duration.h_min": "{h} h {min} min",
-  "swarm.duration.min": "{min} min",
+  "swarm.duration.d": {
+    "one": "{count} d",
+    "other": "{count} d"
+  },
+  "swarm.duration.d_h": "{d} {h}",
+  "swarm.duration.h": {
+    "one": "{count} h",
+    "other": "{count} h"
+  },
+  "swarm.duration.h_min": "{h} {min}",
+  "swarm.duration.min": {
+    "one": "{count} min",
+    "other": "{count} min"
+  },
   "swarm.last_seen": "last seen {ago}",
   "swarm.live": "At work now",
   "swarm.not_seen": "not seen yet",
