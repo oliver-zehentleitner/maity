@@ -85,6 +85,17 @@
   "agents.reread_failed": "Your agents could not be read again: {reason}",
   "agents.rulebook": "Team rulebook",
   "agents.title": "Your agents",
+  "all.page.chats": "Chats",
+  "all.page.chats.count": {
+    "one": "{count} unread",
+    "other": "{count} unread"
+  },
+  "all.page.inbox": "Inbox",
+  "all.page.inbox.count": {
+    "one": "{count} open",
+    "other": "{count} open"
+  },
+  "all.pages": "Pages of all projects",
   "board.assigned_to": "Assigned to {name}",
   "board.blocking.checklist_open": "checklist item {item} is open",
   "board.blocking.group_incomplete": "the group {tasks} does not ship complete",
@@ -405,7 +416,6 @@
   "header.agents": "Your agents",
   "header.all": "Everything waiting for you",
   "header.away_until": "Away until {time}",
-  "header.chats": "Chats",
   "header.fixtures": "Fixtures",
   "header.fixtures.title": "Data from web/fixtures/, not from the hub. Changes are kept in this tab only.",
   "header.instance_admin": "Instance administration",
