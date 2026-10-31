@@ -250,6 +250,21 @@ def direct_entries(
     return entries
 
 
+def agent_cursor(conn: Connection, caller: Any, membership_id: int) -> int:
+    """How far an agent has read its events: its session's cursor; through a bridge, whose
+    session is the bridge's, the furthest of the served agent's own live sessions (§2.3)."""
+    a = t.agent_session.c
+    if caller.bridge is None:
+        found = conn.execute(select(a.acknowledged_seq).where(a.id == caller.session_id))
+    else:
+        found = conn.execute(
+            select(func.max(a.acknowledged_seq)).where(
+                a.membership_id == membership_id, a.live.is_(True)
+            )
+        )
+    return int(found.scalar() or 0)
+
+
 def _direct_unread(
     conn: Connection, mines: dict[str, Any], caller: Any, chats: list[Key]
 ) -> dict[Key, int]:
@@ -259,15 +274,8 @@ def _direct_unread(
         marks = _marks(conn, mines, chats)
         seen = {k: marks.get(k, 0) for k in chats}
     else:  # the agent's side is its event cursor
-        cursor = (
-            conn.execute(
-                select(t.agent_session.c.acknowledged_seq).where(
-                    t.agent_session.c.id == caller.session_id
-                )
-            ).scalar()
-            or 0
-        )
-        seen = dict.fromkeys(chats, int(cursor))
+        cursor = agent_cursor(conn, caller, next(iter(mines.values())).id) if mines else 0
+        seen = dict.fromkeys(chats, cursor)
     return _counts(conn, mines, seen)
 
 

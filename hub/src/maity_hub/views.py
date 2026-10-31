@@ -373,10 +373,11 @@ def presence(row: Any, session: Any, listening: bool) -> str:
 
 def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
     """Per served agent without a session of its own, the best presence of its bridges
-    (§2.3): it is present through them."""
+    (§2.3): it is present through them. A bridge that is isolated, paused, suspended with
+    its owner's account, or whose every instance is paused carries nobody's presence."""
     if not served_ids:
         return {}
-    from maity_hub import listening  # the in-process registry of open long-polls
+    from maity_hub import instances, listening, moderation
 
     b = t.bridge.c
     pairs = conn.execute(
@@ -386,14 +387,29 @@ def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
         return {}
     carriers = {row[1] for row in pairs}
     rows = {
-        r.id: r for r in conn.execute(select(t.membership).where(t.membership.c.id.in_(carriers)))
+        r.id: r
+        for r in conn.execute(
+            select(t.membership, t.agent_profile.c.owner_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(t.membership.c.id.in_(carriers))
+        )
     }
+    suspended = moderation.suspensions(
+        conn, rows.values(), {r.agent_id: r.owner_id for r in rows.values()}
+    )
+    per_instance = instances.unpaused_presences(conn, carriers)
     live, _ = _sessions(conn, carriers)
     shown: dict[int, str] = {}
     for membership_id, row in rows.items():
-        session = live.get(membership_id)
         if row.isolated_since is not None or row.paused_since is not None:
-            continue  # an isolated or paused bridge carries nobody's presence
+            continue
+        if membership_id in suspended:
+            continue
+        if membership_id in per_instance:  # the best of its instances' (§5.3)
+            if per_instance[membership_id]:
+                shown[membership_id] = min(per_instance[membership_id], key=PRESENCE_ORDER.index)
+            continue
+        session = live.get(membership_id)
         shown[membership_id] = presence(
             row, session, session is not None and listening.is_listening(session.id)
         )
@@ -675,6 +691,14 @@ def member_views(
             shown_presence = "paused"
         if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
             shown_presence = "offline"
+        elif row.agent_id is not None and stopped is None:
+            # Settled before `availability`, which reads it: the best of its instances'
+            # (§5.3), and without a session of its own the best of its bridges' (§2.3).
+            team = team_of.get(row.id, [])
+            if team:
+                shown_presence = min((i["presence"] for i in team), key=PRESENCE_ORDER.index)
+            if row.id in carried:
+                shown_presence = min(shown_presence, carried[row.id], key=PRESENCE_ORDER.index)
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
@@ -712,14 +736,6 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and stopped is None and row.isolated_since is None:
-                # The best of its instances' (§5.3).
-                view["presence"] = min(
-                    (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
-                )
-        if row.id in carried and stopped is None and row.isolated_since is None:
-            # No session of its own: present through its bridges (§2.3).
-            view["presence"] = min(view["presence"], carried[row.id], key=PRESENCE_ORDER.index)
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         elif row.agent_id is None:

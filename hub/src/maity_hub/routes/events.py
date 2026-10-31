@@ -142,8 +142,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             reader = _reader(conn, caller, served_param, request, slug, waiting=wait > 0)
             mine = membership(conn, reader, slug)
             mine.require("project:read")
+            # A runner supervises the bridge's session, not the agent it reads for (§15.11).
             supervised = (
                 caller.kind == "agent"
+                and reader.bridge is None
                 and conn.execute(
                     select(t.agent_session.c.supervisor).where(
                         t.agent_session.c.id == caller.session_id
@@ -166,8 +168,12 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         # From now on, without the history; acknowledges nothing (§8.3).
         return answer([], after, superseded=False)
 
-    def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
+    def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
+        """The events after `since` and the new cursor; None when a bridge's connection
+        ended or the bridge was isolated or removed since the call began (§2.3)."""
         with engine.begin() as conn:
+            if carried and not _still_carried(conn, reader):
+                return None
             row = mine.row
             if caller.kind == "agent":
                 # As of now, not as of the call's start: an isolation that committed since
@@ -185,6 +191,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                     # The bridge's own credential is not the served agent's (dormancy, §6.17).
                     credential_id=None if carried else caller.credential_id,
                     supervised=supervised,
+                    carried=carried,
                 )
             else:
                 rows, examined, _ = events.read(
@@ -198,8 +205,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             return event_views(conn, rows, mine), cursor
 
     if wait == 0:
-        items, cursor = await run_in_threadpool(read, False, after)
-        return answer(items, cursor, superseded=False)
+        found = await run_in_threadpool(read, False, after)
+        if found is None:
+            return answer([], after, superseded=False)
+        return answer(*found, superseded=False)
 
     key = caller.credential_id or f"session:{caller.human_session}"
     waiter = longpoll.Waiter(
@@ -209,6 +218,8 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         session_id=caller.session_id,
         loop=asyncio.get_running_loop(),
         membership_id=reader.membership_id,
+        bridge_id=reader.bridge.bridge_id if reader.bridge else None,
+        bridge_membership_id=reader.bridge.membership_id if reader.bridge else None,
     )
     closed = await wakeups.opened(
         engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
@@ -225,7 +236,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
-            items, cursor = await run_in_threadpool(read, True, since)
+            found = await run_in_threadpool(read, True, since)
+            if found is None:
+                return answer([], since, superseded=False)
+            items, cursor = found
             if waiter.superseded:
                 return answer([], after, superseded=True)
             if items:
@@ -262,6 +276,25 @@ def _reader(
     from maity_hub import bridges
 
     return bridges.carry(conn, caller, served, request.url.path, slug, renew_leases=not waiting)
+
+
+def _still_carried(conn: Connection, reader: Caller) -> bool:
+    """The connection a bridge reads through is live and the bridge an active agent that is
+    not isolated, as of now: a long-poll outlives the check at its start (§2.3)."""
+    assert reader.bridge is not None
+    return (
+        conn.execute(
+            select(t.bridge.c.id)
+            .join(t.membership, t.membership.c.id == t.bridge.c.bridge)
+            .where(
+                t.bridge.c.id == reader.bridge.bridge_id,
+                t.bridge.c.live.is_(True),
+                t.membership.c.active.is_(True),
+                t.membership.c.isolated_since.is_(None),
+            )
+        ).first()
+        is not None
+    )
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:

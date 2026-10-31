@@ -410,6 +410,34 @@ def _shared_workspaces(
             ]
 
 
+def unpaused_presences(conn: Connection, membership_ids: Iterable[int]) -> dict[int, list[str]]:
+    """Per agent membership the presence of each active instance nobody paused (§5.3), for a
+    reader that needs no instance view; a membership without instances is absent."""
+    from maity_hub import listening  # the in-process registry of open long-polls
+
+    credentials = conn.execute(
+        select(t.credential).where(
+            t.credential.c.membership_id.in_(list(membership_ids)),
+            t.credential.c.revoked_at.is_(None),
+        )
+    ).all()
+    sessions = _live_sessions(conn, [c.id for c in credentials])
+    found: dict[int, list[str]] = {}
+    for c in credentials:
+        shown = found.setdefault(c.membership_id, [])
+        if c.paused_since is not None:
+            continue
+        session = sessions.get(c.id)
+        shown.append(
+            presence(
+                c.last_used_at,
+                session is not None,
+                session is not None and listening.is_listening(session.id),
+            )
+        )
+    return found
+
+
 def _live_sessions(conn: Connection, credential_ids: list[str]) -> dict[str, Any]:
     """Per credential its open session, if it has one."""
     if not credential_ids:

@@ -136,7 +136,20 @@ agent's events wake the bridge's wait for it without a registry of its own. Reje
 that merges the bridge's events with those of every agent it serves, which would need cursors per
 reader in one answer.
 
+A long-poll outlives the check at its start, so every pass of a carried read checks again that the
+connection is live and the bridge an active agent that is not isolated, and answers empty
+otherwise; that holds on every replica. On the replica that commits it, ending the connection
+(`registry.end_bridge`) or isolating the bridge (`registry.end`, which also matches the waiter's
+`bridge_membership_id`) ends the wait at once instead of at the next fallback pass. Without an
+instance the carried read wakes as the `member:` token: an instance mention or a direct message
+to one instance does not wake it (`wakes(carried=True)`), and the runner supervision read from
+the bridge's session does not apply. A conversation read through the bridge marks nothing
+delivered or read, and its unread count starts at the furthest cursor of the served agent's own
+live sessions (`conversation_list.agent_cursor`), never the bridge's.
+
 A served agent without a live session of its own shows the best presence of its live bridges
-that are neither paused nor isolated (`views._carried_presence`), after its instances' presence.
-A request filed through the bridge names no asking instance: `_asking_instance` only takes a
-session of the asker's own membership, so the answer wakes `member:` of the served agent.
+(`views._carried_presence`), after its instances' presence and before `availability`, which reads
+it. A bridge carries no presence when it is isolated, paused, suspended with its owner's account,
+or when every one of its instances is paused. A request filed through the bridge names no asking
+instance: `_asking_instance` only takes a session of the asker's own membership, so the answer
+wakes `member:` of the served agent.
