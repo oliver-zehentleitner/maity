@@ -636,7 +636,9 @@ window.Maity = window.Maity || {};
     });
   }
   function landingFooter(ft, errors) {
-    landingText(ft.operator, "footer.operator", 120, false, errors);
+    // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
+    if (ft.operator === "") errors["footer.operator"] = "invalid";
+    else landingText(ft.operator, "footer.operator", 120, false, errors);
     const social = ft.social || [];
     if (social.length > 8) errors["footer.social"] = "too_many";
     social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));

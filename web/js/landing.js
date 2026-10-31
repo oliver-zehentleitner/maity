@@ -62,6 +62,16 @@ window.Maity = window.Maity || {};
   const listsOf = (type) => (type.items ? [Object.assign({ key: "items" }, type.items)] : []).concat(type.lists || []);
   const KEPT = { activity: "Activity", collab: "Collaboration" };
 
+  // Whether pages can be drawn as the editor: each page an object, its
+  // sections a list of objects, each list a section has a list. What the
+  // values say is the hub's to check; only their kind decides here.
+  const isObject = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+  function drawable(pages) {
+    return Object.values(pages).every((pg) => isObject(pg) && (pg.sections === undefined || (Array.isArray(pg.sections) && pg.sections.every((sec) =>
+      isObject(sec) && (!TYPES[sec.type] || listsOf(TYPES[sec.type]).every((l) => sec[l.key] === undefined || (Array.isArray(sec[l.key]) && sec[l.key].every(isObject))))
+        && (!TYPES[sec.type] || TYPES[sec.type].fields.every((x) => !["lines", "stats"].includes(x.kind) || sec[x.key] === undefined || Array.isArray(sec[x.key])))))));
+  }
+
   // A new object of `fields`, as the hub would take it.
   function freshOf(fields) {
     const o = {};
@@ -305,10 +315,14 @@ window.Maity = window.Maity || {};
     let saved = await M.api.get(LANDING);
     let draft = JSON.parse(JSON.stringify(saved));
     draft.pages = draft.pages || {};
-    draft.footer = draft.footer || { operator: "", social: [] };
+    // No operator line is none, never an empty one, which the hub refuses (§16.7).
+    draft.footer = draft.footer || { social: [] };
     let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
     // The fields drawn last, by the hub's path: an import's check marks them.
     let errors = {};
+    // Where the step-up asks for the second factor, kept across redraws.
+    const stepSlot = h("div", { class: "step-up-slot" });
+    stepSlot.hidden = true;
     const draw = () => {
       errors = {};
       const langs = Object.keys(draft.pages);
@@ -348,15 +362,17 @@ window.Maity = window.Maity || {};
           status.busy("Saving…");
           const body = { enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer };
           try {
-            saved = await M.api.patch(LANDING, body);
+            // A sensitive call (§2.8.4): the second factor asked for here when the hub wants it.
+            saved = await M.stepUp.run(() => M.api.patch(LANDING, body), stepSlot, M.t("landing.save.step_up"));
             draft = JSON.parse(JSON.stringify(saved));
             draft.pages = draft.pages || {};
-            draft.footer = draft.footer || { operator: "", social: [] };
+            draft.footer = draft.footer || { social: [] };
             draw();
             status.done();
             append(status.el, h("span", { class: "ok" }, "Saved. Visitors see it within a minute."));
           } catch (err) {
-            showErrors(errors, err, status);
+            if (err.code === "cancelled") status.done();
+            else showErrors(errors, err, status);
           }
         },
       },
@@ -367,9 +383,10 @@ window.Maity = window.Maity || {};
           pageEditor(draft, lang, errors, draw)] : null]
         : h("p", { class: "muted" }, "No language yet: add one to write its page."),
       h("h4", null, "Footer, for every language"),
-      control(f("operator", "Operator line (name, country)", "text", 120), footer, "footer.operator", errors, draw),
+      control(f("operator", "Operator line (name, country)", "text", 120, { optional: true }), footer, "footer.operator", errors, draw),
       social, small("Add a social link", () => footer.social.push({ label: "", href: "" }), footer.social.length >= 8, draw),
       h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
+      stepSlot,
       h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
         h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
           "Preview the draft"),
@@ -408,31 +425,46 @@ window.Maity = window.Maity || {};
       async function importIt() {
         let data;
         try { data = JSON.parse(area.value); } catch (err) { io.fail(M.t("landing.json.not_loaded"), { message: M.t("landing.json.not_json", { reason: err.message }) }); area.focus(); return; }
-        const object = data && typeof data === "object" && !Array.isArray(data);
         // The body of PATCH …/landing, or one language's page.
-        const whole = object && data.pages && typeof data.pages === "object" && !Array.isArray(data.pages);
-        const one = object && !whole && Array.isArray(data.sections);
+        const whole = isObject(data) && isObject(data.pages);
+        const one = isObject(data) && !whole && Array.isArray(data.sections);
         if (!whole && !one) { io.fail(M.t("landing.json.not_loaded"), { message: M.t("landing.json.shape") }); area.focus(); return; }
         const target = lang || "en";
         if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
+        const before = { draft, lang };
+        let next;
         if (whole) {
-          draft = { enabled: !!data.enabled, default_language: data.default_language || Object.keys(data.pages)[0] || "en",
-            pages: data.pages, footer: data.footer && typeof data.footer === "object" ? data.footer : { operator: "", social: [] } };
-          lang = draft.default_language;
+          // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).
+          next = { enabled: "enabled" in data ? !!data.enabled : !!draft.enabled,
+            default_language: data.default_language || Object.keys(data.pages)[0] || "en",
+            pages: data.pages, footer: isObject(data.footer) ? data.footer : draft.footer };
         } else {
-          draft.pages[target] = { title: data.title || "", description: data.description || "", sections: data.sections };
-          if (!draft.default_language || !draft.pages[draft.default_language]) draft.default_language = target;
-          lang = target;
+          next = Object.assign({}, draft, { pages: Object.assign({}, draft.pages,
+            { [target]: { title: data.title || "", description: data.description || "", sections: data.sections } }) });
+          if (!next.default_language || !next.pages[next.default_language]) next.default_language = target;
         }
-        draw();
+        // The hub checks it first: a part of the wrong kind (a list that is no list) is its to
+        // name, and the editor is drawn from what it would take.
         status.busy(M.t("landing.json.checking"));
+        let refused = null;
         try {
-          await M.api.post(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer });
-          status.done();
-          append(status.el, h("span", { class: "ok" }, M.t("landing.json.loaded")));
+          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer });
         } catch (err) {
-          showErrors(errors, err, status, M.t("landing.json.refused"));
+          refused = err;
         }
+        // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
+        if (!drawable(next.pages) || (next.footer && !Array.isArray(next.footer.social || []))) {
+          draft = before.draft;
+          lang = before.lang;
+          showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));
+          return;
+        }
+        draft = next;
+        lang = whole ? next.default_language : target;
+        draw();
+        if (refused) { showErrors(errors, refused, status, M.t("landing.json.refused")); return; }
+        status.done();
+        append(status.el, h("span", { class: "ok" }, M.t("landing.json.loaded")));
       }
       return h("details", { class: "lp-json" }, h("summary", null, M.t("landing.json.title")),
         h("p", { class: "hint", id: "lp-json-hint" }, M.t("landing.json.hint")),

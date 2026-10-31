@@ -3107,7 +3107,14 @@ and sends it to `POST …/landing/preview`, the hub's own check, which
 stores a draft for ten minutes and saves nothing. Its refusals are
 said at their fields as a save's are; **Save** stays the only call that
 saves, so the confirmation that counts is the admin's Save after
-looking the import over.
+looking the import over. A field the imported body leaves out keeps what
+the editor has, as a `PATCH` keeps the stored one: the prepared V3 file
+has no footer, and an empty operator line is one the hub refuses
+(`footer.operator` is 1 to 120 characters or none), so the editor sends
+none instead of an empty one. The hub checks an import before the
+editor is drawn from it; a body whose pages, sections or lists are of
+the wrong kind leaves the draft as it was. Save asks for the step-up
+(§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
 save does, so the import reuses it instead of a second check in the

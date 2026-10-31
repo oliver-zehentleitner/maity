@@ -2132,12 +2132,12 @@ def landing_json_step(run: Run, page: Page) -> None:
     page.locator("nav.admin-nav").get_by_role("button", name="Landing page", exact=True).click()
     io = page.locator("details.lp-json")
     io.locator("summary").click()
+    # No footer, as the prepared landing V3 file: the editor's footer stays (§16.7, #808's review).
     body = {
         "enabled": False,
         "default_language": "en",
         "pages": {"en": {"title": "E2E landing", "description": "Imported by the e2e run.",
                          "sections": [{"type": "text", "enabled": True, "markdown": "Hello from **e2e**."}]}},
-        "footer": {"operator": "E2E, Austria", "social": []},
     }
     page.locator("#lp-json").fill(json.dumps(body))
     asked = []
@@ -2154,7 +2154,8 @@ def landing_json_step(run: Run, page: Page) -> None:
     page.locator("form.lp-form").get_by_role("button", name="Save the landing page", exact=True).click()
     expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
     saved = page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()
-    assert saved["pages"]["en"]["title"] == "E2E landing" and saved["footer"]["operator"] == "E2E, Austria", saved
+    assert saved["pages"]["en"]["title"] == "E2E landing", saved
+    assert saved["footer"] == saved_before["footer"], (saved["footer"], saved_before["footer"])
     io.get_by_role("button", name="Export the draft", exact=True).click()
     assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
     run.shot(page, "landing-json")

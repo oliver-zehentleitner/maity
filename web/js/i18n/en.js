@@ -456,6 +456,7 @@ window.MAITY_I18N["en"] = {
   "landing.json.refused": "Loaded into the editor, but the hub refuses parts of it: ",
   "landing.json.shape": "neither the landing page's body (with pages) nor one page (with sections)",
   "landing.json.title": "Import or export JSON",
+  "landing.save.step_up": "Saving the landing page",
   "limits.agents.at": {
     "one": "{count} person is at or over this limit.",
     "other": "{count} people are at or over this limit."

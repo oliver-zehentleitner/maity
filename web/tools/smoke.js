@@ -7400,6 +7400,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
       "landing JSON: Save saves the imported draft, as one typed by hand");
+    // A body without a footer (as landing-v3-complete.json, #808's review): the editor's footer stays, as a PATCH keeps the stored one.
+    const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
+    byId("lp-json").value = JSON.stringify(jsNoFooter);
+    await jsLoad();
+    expect(byId("lp-footer-operator").value === "Maintainer, Austria" && byId("lp-pages-en-title").value === "V3" && text(main).includes("checked by the hub"),
+      "landing JSON: a body without a footer keeps the editor's footer and is checked as accepted");
+    // A part of the wrong kind (sections no list): the hub names it, the draft stays, nothing breaks.
+    byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Broken", description: "x", sections: 5 } } });
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "V3" && text(main).includes("Not loaded:"), "landing JSON: a body the editor cannot draw leaves the draft as it was and says why");
+    // An emptied operator line is none, never an empty one (the hub refuses "", §16.7); Save asks for the step-up through M.stepUp.
+    byId("lp-footer-operator").value = ""; byId("lp-footer-operator").dispatch("input");
+    const jsStep = win.Maity.stepUp.run;
+    let jsStepped = null;
+    win.Maity.stepUp.run = (call, slot, what) => { jsStepped = what; return jsStep(call, slot, what); };
+    await leSave();
+    win.Maity.stepUp.run = jsStep;
+    const jsLast = lePatches[lePatches.length - 1][1];
+    expect(!("operator" in jsLast.footer) && jsStepped === "Saving the landing page" && text(main).includes("Saved. Visitors see it within a minute."),
+      "landing editor: an emptied operator line is left out, and Save goes through the step-up");
+    byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
+    await leSave();
     win.confirm = jsConfirm;
   }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
