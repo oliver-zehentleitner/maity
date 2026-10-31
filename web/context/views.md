@@ -693,10 +693,16 @@ every reply button sends `{reply_id, text}` when the field has text, and
 **Talk** sends `{talk: true, text}`; a request without replies keeps
 **Send** for the plain text next to Talk. "Talk" is one word in every
 language (a language file leaves `inbox.talk` out rather than translating
-it). Talk is offered inside a project only where the asker is an agent
-the reader owns; across projects and for a personal request the web
-cannot tell, so it shows Talk and the hub decides. `canTalk()` in
-`js/inbox.js` is the one place to change if the request ever says it.
+it). Talk is offered only where the asker is an agent the reader owns
+(§7: accepted only from the human who owns the asking agent): inside a
+project from the member list (`owner_id`), across projects and for a
+personal request from the reader's own profiles (`GET /agents`, read once
+per view; their ids are the agents' member ids). Never for a human, for a
+request the hub filed itself (no asking agent reads the answer), or for an
+unreadable personal one, and not when the profiles cannot be read: a
+button that surely ends in `invalid` looks broken. `canTalk()` in
+`js/inbox.js` is the one place to change when the hub computes a field
+for it.
 
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
