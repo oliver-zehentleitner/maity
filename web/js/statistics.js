@@ -14,25 +14,26 @@ window.Maity = window.Maity || {};
   const SVG = "http://www.w3.org/2000/svg";
   const WINDOWS = [7, 30, 90];
 
+  // Labels and notes read from the catalog when drawn.
   const TILES = [
-    ["humans", "Humans", (t) => (t.humans_pending ? t.humans_pending + " waiting for approval" : null)],
-    ["agents", "Agent profiles", null],
-    ["projects", "Projects", () => "not archived"],
-    ["instances_online", "Agent instances online", null],
-    ["humans_with_an_agent", "Humans with an agent", null],
+    ["humans", () => M.t("stats.tile.humans"), (t) => (t.humans_pending ? M.t("stats.tile.humans.pending", { count: t.humans_pending }) : null)],
+    ["agents", () => M.t("stats.tile.agents"), null],
+    ["projects", () => M.t("stats.tile.projects"), () => M.t("stats.tile.projects.note")],
+    ["instances_online", () => M.t("stats.tile.instances_online"), null],
+    ["humans_with_an_agent", () => M.t("stats.tile.humans_with_an_agent"), null],
   ];
   // Each series: its key, its name, and whether the window figure is the
   // sum of its days (a count of things) or its highest day (a count of
   // people, who are active on many days).
   const SERIES = [
-    ["registrations", "Registrations", "sum"],
-    ["new_instances", "New agent instances", "sum"],
-    ["humans_active", "Humans active", "peak"],
-    ["agents_active", "Agent instances active", "peak"],
-    ["cards_created", "Cards created", "sum"],
-    ["cards_claimed", "Cards claimed", "sum"],
-    ["cards_done", "Cards done", "sum"],
-    ["reviews", "Reviews", "sum"],
+    ["registrations", () => M.t("stats.series.registrations"), "sum"],
+    ["new_instances", () => M.t("stats.series.new_instances"), "sum"],
+    ["humans_active", () => M.t("stats.series.humans_active"), "peak"],
+    ["agents_active", () => M.t("stats.series.agents_active"), "peak"],
+    ["cards_created", () => M.t("stats.series.cards_created"), "sum"],
+    ["cards_claimed", () => M.t("stats.series.cards_claimed"), "sum"],
+    ["cards_done", () => M.t("stats.series.cards_done"), "sum"],
+    ["reviews", () => M.t("stats.series.reviews"), "sum"],
   ];
 
   function svg(tag, attrs) {
@@ -71,17 +72,30 @@ window.Maity = window.Maity || {};
     return { value: how === "peak" ? Math.max(...known) : known.reduce((a, b) => a + b, 0), partial: known.length < days.length };
   }
 
+  // The window's figure in words: a sum or "up to … a day", and, when some
+  // days are unknown, since when or over how many days it counts.
+  function figureText(f, how, since, knownDays) {
+    if (!f) return "–";
+    const value = String(f.value);
+    if (how === "peak") {
+      if (!f.partial) return M.t("stats.figure.peak", { value });
+      return since ? M.t("stats.figure.peak.since", { value, since }) : M.t("stats.figure.peak.days", { value, count: knownDays });
+    }
+    if (!f.partial) return value;
+    return since ? M.t("stats.figure.sum.since", { value, since }) : M.t("stats.figure.sum.days", { value, count: knownDays });
+  }
+
   async function section(ctx, root) {
     let days = 30;
     const status = M.statusLine();
     const body = h("div", { class: "statistics-body", "aria-live": "polite" });
-    const switcher = h("div", { class: "statistics-window", role: "group", "aria-label": "Window" },
+    const switcher = h("div", { class: "statistics-window", role: "group", "aria-label": M.t("stats.window") },
       WINDOWS.map((n) => h("button", { type: "button", class: "small", "aria-pressed": String(n === days), "data-days": String(n),
         onclick: () => {
           days = n;
           Array.from(switcher.querySelectorAll("button")).forEach((b) => b.setAttribute("aria-pressed", String(b.getAttribute("data-days") === String(n))));
           load();
-        } }, n + " days")));
+        } }, M.t("stats.window.days", { count: n }))));
 
     function draw(s) {
       const t = s.totals || {};
@@ -89,33 +103,32 @@ window.Maity = window.Maity || {};
       const newest = (s.days || [])[0] || {};
       const since = s.coverage && s.coverage.reviews_since;
       append(clear(body),
-        h("p", { class: "muted" }, "Counted " + formatTime(s.as_of) + " (the hub counts at most once an hour) · the last "
-          + s.window_days + " days, UTC, today so far. Counts only, never a name."),
+        h("p", { class: "muted" }, M.t("stats.counted", { when: formatTime(s.as_of) }), " · ", M.t("stats.window.note", { count: s.window_days })),
         h("ul", { class: "stat-tiles" }, TILES.map(([key, label, note]) => h("li", { class: "stat-tile" },
           h("span", { class: "stat-value" }, String(t[key] == null ? "–" : t[key])),
-          h("span", { class: "stat-label" }, label),
+          h("span", { class: "stat-label" }, label()),
           note && note(t) ? h("span", { class: "stat-note muted" }, note(t)) : null))),
         h("table", { class: "stat-series" },
-          h("thead", null, h("tr", null, h("th", { scope: "col" }, "Each day"), h("th", { scope: "col", class: "stat-number" }, "Last " + s.window_days + " days"),
-            h("th", { scope: "col", class: "stat-number" }, "Today (UTC)"), h("th", { scope: "col", class: "stat-trend" }, h("span", { class: "visually-hidden" }, "Trend")))),
+          h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("stats.col.series")), h("th", { scope: "col", class: "stat-number" }, M.t("stats.col.window", { count: s.window_days })),
+            h("th", { scope: "col", class: "stat-number" }, M.t("stats.col.today")), h("th", { scope: "col", class: "stat-trend" }, h("span", { class: "visually-hidden" }, M.t("stats.col.trend"))))),
           h("tbody", null, SERIES.map(([key, label, how]) => {
             const f = figure(s.days || [], key, how);
-            const text = !f ? "–" : (how === "peak" ? "up to " + f.value + " a day" : String(f.value))
-              + (f && f.partial ? (since ? " since " + since : " (" + (s.days || []).filter((d) => d[key] != null).length + " days)") : "");
+            const text = figureText(f, how, since, (s.days || []).filter((d) => d[key] != null).length);
             return h("tr", { "data-series": key },
-              h("th", { scope: "row" }, label),
+              h("th", { scope: "row" }, label()),
               h("td", { class: "stat-number" }, text),
               h("td", { class: "stat-number" }, newest[key] == null ? "–" : String(newest[key])),
               h("td", { class: "stat-trend" }, sparkline(list.map((d) => (d[key] == null ? null : d[key])))));
           }))),
         since && (s.days || []).some((d) => d.reviews == null)
-          ? h("p", { class: "muted" }, "Reviews are counted from " + since + ", when the hub began keeping card history; earlier days show –.") : null,
-        h("h3", null, "Who comes back"),
-        h("p", null, (s.returning ? s.returning.after_7_days : "–") + " after 7 days · " + (s.returning ? s.returning.after_30_days : "–") + " after 30 days"),
-        h("p", { class: "hint" }, "Humans whose first visit lies at least 7 (or 30) days back and who were active within the last 7 (or 30) days."),
-        h("details", { class: "stat-days" }, h("summary", null, "Every day"),
+          ? h("p", { class: "muted" }, M.t("stats.reviews_since", { since })) : null,
+        h("h3", null, M.t("stats.returning")),
+        h("p", null, M.t("stats.returning.7", { value: s.returning ? String(s.returning.after_7_days) : "–" }), " · ",
+          M.t("stats.returning.30", { value: s.returning ? String(s.returning.after_30_days) : "–" })),
+        h("p", { class: "hint" }, M.t("stats.returning.hint")),
+        h("details", { class: "stat-days" }, h("summary", null, M.t("stats.days")),
           h("div", { class: "table-scroll" }, h("table", null,
-            h("thead", null, h("tr", null, h("th", { scope: "col" }, "Date"), SERIES.map(([, label]) => h("th", { scope: "col" }, label)))),
+            h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("stats.col.date")), SERIES.map(([, label]) => h("th", { scope: "col" }, label())))),
             h("tbody", null, (s.days || []).map((d) => h("tr", null, h("th", { scope: "row" }, d.date),
               SERIES.map(([key]) => h("td", null, d[key] == null ? "–" : String(d[key]))))))))));
     }
@@ -123,7 +136,7 @@ window.Maity = window.Maity || {};
     let seq = 0;
     async function load() {
       const mine = ++seq;
-      status.busy("Counting…");
+      status.busy(M.t("stats.counting"));
       try {
         const s = await M.api.get("/admin/statistics?days=" + days);
         if (mine !== seq) return;
@@ -132,11 +145,11 @@ window.Maity = window.Maity || {};
       } catch (err) {
         if (mine !== seq) return;
         clear(body);
-        status.fail("The statistics could not be read: ", err);
+        status.fail(M.t("stats.read_failed"), err);
       }
     }
 
-    append(root, h("h2", null, "Statistics"), switcher, status.el, body);
+    append(root, h("h2", null, M.t("stats.title")), switcher, status.el, body);
     // Not awaited: the admin area's other sections need not wait for the
     // instance's heaviest read.
     load();

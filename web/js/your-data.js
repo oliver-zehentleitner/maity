@@ -11,21 +11,22 @@ window.Maity = window.Maity || {};
 
   // The hub's refusals of a deletion request, in words.
   const REFUSALS = {
-    namespace_owner: "a project in your namespace is still open: archive it, or transfer it to someone else (Project settings), first",
-    last_instance_admin: "you are this hub's last instance admin: make someone else an instance admin first",
-    mail_not_configured: "this hub sends no mail, and the deletion is confirmed by a mail",
-    address_unverified: "your address is not verified, and the deletion is confirmed by a mail to it",
+    namespace_owner: () => M.t("data.refused.namespace_owner"),
+    last_instance_admin: () => M.t("data.refused.last_instance_admin"),
+    mail_not_configured: () => M.t("data.refused.mail_not_configured"),
+    address_unverified: () => M.t("data.refused.address_unverified"),
   };
   function said(err) {
-    if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.confirm) return { message: "that is not your handle" };
-    if (err.code === "rate_limited") return { message: "an export at most every 10 minutes; try again later" };
+    if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.confirm) return { message: M.t("data.refused.not_handle") };
+    if (err.code === "rate_limited") return { message: M.t("data.refused.rate_limited") };
     // §6.26: an organisation always has an owner.
     if (err.code === "org_last_owner") {
       const orgs = ((err.details && err.details.orgs) || []).map((o) => "@" + o);
-      return { message: "you are the last owner of " + (orgs.length ? orgs.join(", ") : "an organisation")
-        + ": make someone else an owner, or delete the organisation, first (Organisations)" };
+      return { message: orgs.length
+        ? M.t("data.refused.org_last_owner", { orgs: new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(orgs) })
+        : M.t("data.refused.org_last_owner.unnamed") };
     }
-    return REFUSALS[err.code] ? { message: REFUSALS[err.code] } : err;
+    return Object.hasOwn(REFUSALS, err.code) ? { message: REFUSALS[err.code]() } : err;
   }
 
   // The file as the hub names it (§2.9), saved through a link the page clicks.
@@ -40,28 +41,26 @@ window.Maity = window.Maity || {};
 
   function exportPart(ctx, ask) {
     const status = M.statusLine();
-    const go = h("button", { type: "button" }, "Export my data");
+    const go = h("button", { type: "button" }, M.t("data.export.button"));
     go.addEventListener("click", async () => {
       go.disabled = true;
-      status.busy("Preparing your export…");
+      status.busy(M.t("data.export.busy"));
       try {
-        const doc = await M.stepUp.run(() => M.api.get("/me/export"), ask, "Exporting your data");
+        const doc = await M.stepUp.run(() => M.api.get("/me/export"), ask, M.t("data.export.step_up"));
         const day = String(doc.exported_at || new Date().toISOString()).slice(0, 10);
         M.yourData.save("maity-export-" + ctx.me.handle + "-" + day + ".json", JSON.stringify(doc, null, 2));
         status.done();
-        append(status.el, h("span", { class: "ok" }, "Your export was saved."));
+        append(status.el, h("span", { class: "ok" }, M.t("data.export.saved")));
       } catch (err) {
         if (err.code === "cancelled") status.done();
-        else status.fail("Not exported: ", said(err));
+        else status.fail(M.t("data.export.failed"), said(err));
       } finally {
         go.disabled = false;
       }
     });
     return h("div", { class: "data-export" },
-      h("h4", null, "Export"),
-      h("p", { class: "hint" }, "One JSON file with your account, your sessions and memberships, your agents and runners, and what you wrote in every project: "
-        + "messages, requests and answers, cards, reports and notes. Another person's text appears only as the title of what yours belongs to. "
-        + "At most once every 10 minutes."),
+      h("h4", null, M.t("data.export.title")),
+      h("p", { class: "hint" }, M.t("data.export.hint")),
       go, status.el);
   }
 
@@ -69,28 +68,27 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const pending = ctx.me.deletion;
     if (pending) {
-      const withdraw = h("button", { type: "button" }, "Withdraw the deletion");
+      const withdraw = h("button", { type: "button" }, M.t("data.delete.withdraw"));
       withdraw.addEventListener("click", async () => {
         withdraw.disabled = true;
-        status.busy("Withdrawing…");
+        status.busy(M.t("data.delete.withdrawing"));
         try {
           await M.api.del("/me/deletion");
           ctx.me.deletion = null;
-          redraw("The deletion was withdrawn; your account stays.");
+          redraw(M.t("data.delete.withdrawn"));
         } catch (err) {
           withdraw.disabled = false;
-          status.fail("Not withdrawn: ", err);
+          status.fail(M.t("data.delete.not_withdrawn"), err);
         }
       });
       return h("div", { class: "data-deletion pending" },
-        h("h4", null, "Delete my account"),
-        h("p", { class: "flag", role: "status" }, "You asked to delete your account on " + formatTime(pending.requested_at)
-          + ". It is deleted only when you follow the link in the mail we sent to your verified address, before " + formatTime(pending.expires_at) + "."),
+        h("h4", null, M.t("data.delete.title")),
+        h("p", { class: "flag", role: "status" }, M.t("data.delete.pending", { requested: formatTime(pending.requested_at), expires: formatTime(pending.expires_at) })),
         withdraw, status.el);
     }
     const id = "delete-account-confirm";
     const typed = h("input", { id, autocomplete: "off", spellcheck: "false", placeholder: "@" + ctx.me.handle });
-    const go = h("button", { type: "submit", class: "danger" }, "Delete my account");
+    const go = h("button", { type: "submit", class: "danger" }, M.t("data.delete.button"));
     // One request at a time, for the handle as typed now: the field is locked
     // while it runs (a password or code asked meanwhile included).
     let busy = false;
@@ -106,33 +104,31 @@ window.Maity = window.Maity || {};
         busy = true;
         typed.disabled = true;
         settle();
-        status.busy("Asking…");
+        status.busy(M.t("data.delete.asking"));
         try {
-          const answer = await M.stepUp.run(() => M.api.post("/me/deletion", { confirm: ctx.me.handle }), ask, "Deleting your account");
+          const answer = await M.stepUp.run(() => M.api.post("/me/deletion", { confirm: ctx.me.handle }), ask, M.t("data.delete.step_up"));
           ctx.me.deletion = (answer && answer.deletion) || null;
-          redraw("We sent a mail to your verified address. Your account is deleted only when you follow its link.");
+          redraw(M.t("data.delete.mailed"));
         } catch (err) {
           busy = false;
           typed.disabled = false;
           settle();
           if (err.code === "cancelled") status.done();
-          else status.fail("Not asked: ", said(err));
+          else status.fail(M.t("data.delete.not_asked"), said(err));
         }
       },
-    }, h("label", { for: id }, "Type @" + ctx.me.handle + " to delete your account"), typed, go, status.el);
+    }, h("label", { for: id }, M.t("data.delete.confirm", { handle: "@" + ctx.me.handle })), typed, go, status.el);
     return h("div", { class: "data-deletion" },
-      h("h4", null, "Delete my account"),
-      h("p", { class: "hint" }, "Deleting ends every session and membership, deletes your agents and runners, and removes your name, addresses and picture. "
-        + "What you wrote stays in its projects, shown as from \"Deleted account\": redact what you want gone first, and export your data. "
-        + "Your handle is never given to anyone else. This cannot be undone."),
-      h("p", { class: "hint" }, "It takes two steps: we send a mail to your verified address, and only its link (valid 24 hours) deletes the account."),
+      h("h4", null, M.t("data.delete.title")),
+      h("p", { class: "hint" }, M.t("data.delete.hint")),
+      h("p", { class: "hint" }, M.t("data.delete.steps")),
       form);
   }
 
   // The section for a human; null for an agent.
   async function section(ctx) {
     if (ctx.me.kind !== "human") return null;
-    const heading = h("h3", { id: "your-data-heading", tabindex: "-1" }, "Your data");
+    const heading = h("h3", { id: "your-data-heading", tabindex: "-1" }, M.t("data.title"));
     const ask = h("div", { class: "step-up-slot" });
     ask.hidden = true;
     const note = h("div");
