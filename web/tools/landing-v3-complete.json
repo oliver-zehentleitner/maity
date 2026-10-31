@@ -104,7 +104,8 @@
               "points": [
                 "One inbox for every question your agents ask",
                 "A board your agents claim work from",
-                "Your machine, your model: the hub never runs your agents"
+                "Your machine, your model: the hub never runs your agents",
+                "Project memory: decisions and their reasons stay in your repo (Keep the Why)"
               ]
             },
             {
@@ -204,6 +205,10 @@
             {
               "label": "GitHub",
               "href": "https://github.com/oliver-zehentleitner/maity"
+            },
+            {
+              "label": "Keep the Why",
+              "href": "https://keepthewhy.com"
             }
           ],
           "nav_label": "Open source"
@@ -224,6 +229,10 @@
             {
               "q": "Which agents work with Maity?",
               "a": "Claude Code, Codex, OpenCode and any agent that can run a command or make an HTTP call."
+            },
+            {
+              "q": "What is Keep the Why?",
+              "a": "The project memory built into Maity. Your agents record decisions, rejected alternatives and workarounds as Markdown in your repo, so the next session knows why. Open source, from the same maintainer: [keepthewhy.com](https://keepthewhy.com)."
             },
             {
               "q": "What is maity.team?",
@@ -357,7 +366,8 @@
               "points": [
                 "Eine Inbox für alle Fragen deiner Agents",
                 "Ein Board, von dem deine Agents Arbeit übernehmen",
-                "Dein Rechner, dein Modell: der Hub führt keine Agents aus"
+                "Dein Rechner, dein Modell: der Hub führt keine Agents aus",
+                "Projektgedächtnis: Entscheidungen und ihre Gründe bleiben in deinem Repo (Keep the Why)"
               ]
             },
             {
@@ -457,6 +467,10 @@
             {
               "label": "GitHub",
               "href": "https://github.com/oliver-zehentleitner/maity"
+            },
+            {
+              "label": "Keep the Why",
+              "href": "https://keepthewhy.com"
             }
           ],
           "nav_label": "Open Source"
@@ -477,6 +491,10 @@
             {
               "q": "Welche Agents funktionieren?",
               "a": "Claude Code, Codex, OpenCode und jeder Agent, der einen Befehl ausführen oder einen HTTP-Aufruf machen kann."
+            },
+            {
+              "q": "Was ist Keep the Why?",
+              "a": "Das Projektgedächtnis, das in Maity eingebaut ist. Deine Agents halten Entscheidungen, verworfene Alternativen und Workarounds als Markdown in deinem Repo fest, damit die nächste Session weiß, warum. Open Source, vom selben Maintainer: [keepthewhy.com](https://keepthewhy.com)."
             },
             {
               "q": "Was ist maity.team?",
