@@ -291,6 +291,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 }
 
 .error p { margin: 4px 0 0; }
+/* An error box with nothing in it is no box (tsk-rsbefb9b67gh: an empty one showed on the account page). */
+.error:empty { display: none; }
 
 .flag {
   background: var(--flag-bg);

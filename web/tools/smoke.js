@@ -3911,15 +3911,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hdForm = () => main.querySelector("form.handle-form");
   const hdRename = async (value) => { hdForm().querySelector("input").value = value; hdForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
   expect(hdForm() && text(main).includes("A handle you give up stays as an alias"), "handles: the account offers the rename, with what an alias is");
+  // Untouched, the form shows no error box (tsk-rsbefb9b67gh): its error is a field error, empty, and an empty
+  // error box takes no space.
+  const hdCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  expect(main.querySelector(".handle-form .field-error") && !text(main.querySelector(".handle-form .field-error")) && !main.querySelector(".handle-form .error")
+    && /\.field-error:empty \{ display: none; \}/.test(hdCss) && /\.error:empty \{ display: none; \}/.test(hdCss),
+    "handles: an untouched rename form shows no error box");
   await hdRename("Bad_Handle");
-  expect(!hdPatches.length && text(main.querySelector(".handle-form .error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
+  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
   await hdRename("boss");
   expect(hdPatches.length === 1 && hdPatches[0][0] === "/me" && JSON.stringify(hdPatches[0][1]) === JSON.stringify({ handle: "boss" }), "handles: a rename is PATCH /me {handle}");
   expect(text(main).includes("@boss") && text(main).includes("Aliases: @maintainer") && text(main).includes("the old handle stays as an alias"), "handles: the new handle shows and the old one is an alias");
   await hdRename("second"); await hdRename("maintainer");
   expect(text(main).includes("an old alias taken back") && text(main).includes("Aliases: @boss, @second"), "handles: the own old handle taken back leaves the aliases");
   await hdRename("boss");
-  expect(text(main.querySelector(".handle-form .error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
+  expect(text(main.querySelector(".handle-form .field-error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
   win.Maity.api.patch = realPatch6;
   const aliasCtx = { memberById: { "agt-b": { handle: "b-new", aliases: ["agent-b"] } } };
   const aliasMention = (t, len, ctx) => mentionsDrawn(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
