@@ -60,7 +60,8 @@ window.Maity = window.Maity || {};
     }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
-    const said = Object.entries(fields).map(([f, reason]) => (Object.hasOwn(REFUSALS, f + ":" + reason) ? REFUSALS[f + ":" + reason]() : f.replace("_", " ") + ": " + reason));
+    const said = Object.entries(fields).map(([f, reason]) => (Object.hasOwn(REFUSALS, f + ":" + reason) ? REFUSALS[f + ":" + reason]()
+      : M.t("members.refused.unknown", { field: f.replace(/_/g, " "), reason })));
     return { message: said.join(" ") };
   }
 
@@ -540,8 +541,8 @@ window.Maity = window.Maity || {};
       const listed = !m.reports_to || others.some((x) => x.id === m.reports_to);
       // A guest is never reported to (§2.3).
       const reports = keyed("reports:" + m.id, h("select", { id: id("reports") }, h("option", { value: "" }, M.t("members.reports.nobody")),
-        others.filter((x) => !M.trust.guest(x) || x.id === m.reports_to).map((x) => h("option", { value: x.id }, M.t("members.reports.agent", { name: x.display_name, handle: M.dom.handleOf(ctx, x) }))),
-        listed ? null : h("option", { value: m.reports_to }, M.t("members.edit.reports.unlisted", { name: nameOf(m.reports_to) }))));
+        others.filter((x) => !M.trust.guest(x) || x.id === m.reports_to).map((x) => h("option", { value: x.id }, M.t("members.reports.member", { name: x.display_name, handle: M.dom.handleOf(ctx, x) }))),
+        listed ? null : h("option", { value: m.reports_to }, M.t("members.reports.unlisted", { name: nameOf(m.reports_to) }))));
       reports.value = m.reports_to || "";
       // A drafted boss who has left since is dropped, and said: a select that
       // fell back to "nobody" would clear the member's boss on the next save.
