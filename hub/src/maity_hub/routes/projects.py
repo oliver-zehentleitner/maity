@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import (
+    agent_owners,
     attachments,
     availability,
     clock,
@@ -90,6 +91,8 @@ class PolicyIn(Strict):
     takeover_window_minutes: int | None = None
     member_agents: str | None = None
     member_agents_max: int | None = None
+    agent_owners: str | None = None  # `members` or `anyone`; never null again once set (§6.1)
+    outside_roles: list[str] | None = Field(default=None, max_length=50)
 
 
 class AbsenceIn(Strict):
@@ -292,6 +295,16 @@ def _apply_policy(
         if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
             errors["policy.member_agents_max"] = "out_of_range"
         proposed["member_agents_max"] = change.member_agents_max
+    if change.outside_roles is not None:
+        roles = list(dict.fromkeys(change.outside_roles))
+        found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        # The contract names the field plain here, not under `policy.` (§6.1, §6.2).
+        problem = agent_owners.role_errors(found, roles) or agent_owners.check_policy(
+            conn, found, roles
+        )
+        if problem is not None:
+            errors["outside_roles"] = problem
+        proposed["outside_roles"] = roles
     if change.on_runner_revoke == "keep" and instance_rule == "stop_floor":
         # The operator made stop a floor (§15.3, §16): no project keeps its agents.
         errors["policy.on_runner_revoke"] = "stop_floor"
@@ -902,6 +915,9 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
+        if new_policy is not None or "public_page" in given:
+            # The setting may come to read `members`: agents of owners who are none go (§6.2).
+            agent_owners.reconcile(conn, project.id, actor)
         if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
             # What the page shows, or whether it exists, changed: at once (§16.9).
             public_pages.touch(conn, public_projects.KIND, project.id)
@@ -1005,6 +1021,8 @@ HUMANS_ONLY_POLICY = {
     "merged_closes",  # set by a human with project:admin (§6.1)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
+    "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)
+    "outside_roles",
     "keep_the_why",  # whether the project requires Keep the Why (§6.23)
     "keep_the_why_defaults",
 }

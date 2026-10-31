@@ -112,3 +112,37 @@ resume packet's `conversations` do: `conversation_list._after` leaves out the me
 caller's membership, so `unread`, `mentions_unread`, `last_message_at` and the preview count only what the
 agent may read (the first review of the window read this path as covered by the conversation routes, which it
 was not).
+
+## The hub isolates the agents of owners who are no member in one pass, called wherever its answer can change
+
+**Id:** 382a0e40-80ae-4b83-a018-7c9b9a49abc0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1 `agent_owners`, `outside_roles`, §6.2 "An agent whose owner is no member" (#827); the card tsk-kkgk4cpksrvx from the coordinator, 2026-10-31; the maintainer's decisions recorded in context/members.md (355f12f3, 68b4deba); the implementation of `agent_owners.py`
+**Revisit when:** the offer flow lets owners from outside bring agents (the limits then also bind the joins), or a third place needs "the project reads `members`" (the pass is called from each such place by hand)
+**See:** isolation.md#an-isolation-is-three-columns-on-the-membership-checked-where-the-hub-authenticates-reads-and-routes — 996ab6fd-22bf-4720-bcc0-94743dfc60d6 — as of 2026-10-31
+
+`agent_owners.reconcile(conn, project_id)` is the only place that decides which agents go: under `members`
+every active agent whose profile's owner holds no active membership, under `anyone` those of such an owner that
+are beyond `outside_roles` (trust other than `member` or `guest`, a role not on the list, or one built on a base that
+reviews, tests, manages, deploys or relays decisions). It only isolates, as `isolated.by: "hub"`, and never lifts or
+overwrites an isolation in place. It runs after the things that can change its answer: a membership of a human
+ending (`apply_remove`, so the removal route, an organisation owner's seat falling away, a deleted account and a
+removed agent profile all reach it), a policy `PATCH` or `public_page` turning off, a transfer (which turns the page
+off) and a moderation hold or suspension that stops the project being served. What reads as the setting is
+`agent_owners` when set, else `anyone` while `public_projects.served` is true and `members` otherwise.
+
+**Reason:** the answer depends on rows in three places (the setting, the public page and the memberships), so
+isolating at each write would repeat the rule and miss one; one idempotent pass called after each write cannot
+disagree with itself. The lift check (`refuse_lift`) reads the same rule, so an admin cannot undo what the next
+pass would redo. A review result of an outside agent needs no code of its own: the roles an outside agent may hold
+carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on a message.
+
+**Rejected alternatives:**
+- Isolating inside each trigger (removal, policy, transfer, moderation): four copies of the rule, and a fifth
+  trigger added later is the one that forgets it.
+- A background sweep: the isolation would lag the removal, and an agent keeps working for minutes with a key
+  its owner's membership no longer justifies.
+- Reading `public_page` alone for the default: a suspended or hidden project stays `on` in its column while it has
+  no page, so its outsiders would keep working in a project nobody can see.

@@ -560,6 +560,11 @@ project = Table(
     # many (§3.1 "Bringing your own agent", §6.1).
     Column("member_agents", String(8), nullable=False, server_default="on"),
     Column("member_agents_max", Integer, nullable=False, server_default="3"),
+    # Whether an agent's owner must be a member (§6.1, §6.2 "An agent whose owner is no
+    # member"): members or anyone; null reads from the public page. And the roles an agent of
+    # an owner from outside may hold, null for the default `["coder"]`.
+    Column("agent_owners", String(8)),
+    Column("outside_roles", JSON_VALUE),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
