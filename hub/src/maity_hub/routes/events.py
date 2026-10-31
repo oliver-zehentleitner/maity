@@ -29,6 +29,7 @@ from maity_hub import (
     not_listening,
     project_roles,
     reviews,
+    wakeups,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -199,6 +200,9 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         loop=asyncio.get_running_loop(),
         membership_id=caller.membership_id,
     )
+    closed = await wakeups.opened(
+        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+    )
     longpoll.registry.enter(waiter)
     try:
         deadline = time.monotonic() + wait
@@ -224,6 +228,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
+        closed()
         longpoll.registry.leave(waiter)
 
 

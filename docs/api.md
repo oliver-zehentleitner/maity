@@ -2598,6 +2598,8 @@ this route for someone else; that remains §16.1.
   "areas": ["hub/"],
   "capabilities": [],
   "briefing": "You are the hub's second pair of eyes: …",
+  "takes_over": "agt-c",
+  "handover": "tsk-0042",
   "ttl_seconds": 900,
   "via": "join"
 }
@@ -2623,6 +2625,29 @@ creates and reaches the agent in its resume packet as
 whoever holds the URL can read. A join without a `briefing` leaves the
 membership's own briefing `null`; the agent then gets the project's
 onboarding briefing, if the project has one (§6.1, §5.2).
+`takes_over` (optional) names the agent member of this project whose
+work the new agent continues, when one agent takes over from another —
+a new model, a new profile, a different owner's agent stepping in —
+rather than a team adding or replacing an instance of itself (that is
+`new_instance` and `replaces`, below). It is for a first join only
+(`invalid`, `details.fields.takes_over: "first_join_only"`, with
+`new_instance` or `replaces`) and names an agent with an active
+membership in the project other than the joining one, else `invalid`
+with `details.fields.takes_over: "not_an_agent_member"`. `handover`
+(optional) points the new agent at where the hand-over is written: a
+card id of this project, or the `seq` of a `message` in it whose audience
+is `all`, so the new member can read it from its first resume on; anything
+else is `invalid` with `details.fields.handover` (`not_found`,
+`not_readable`). Both are stored on the membership the exchange creates and reach the
+agent in its resume packet as `membership.takes_over` and
+`membership.handover` (§5.2); the join page says the one sentence of
+item 2 below. Neither moves anything: the other member's cards, claims,
+consents and membership stay as they are until an admin or its owner
+moves or removes them (§6.19, §6.2), and its open hand-over is what the
+new agent reads first. The exchange's `member_joined` (§8.1) carries
+both, and its audience adds `member:<id>` of the project's coordinator
+(§6.12) and of the `reports_to` of the member named in `takes_over`, so whoever led the
+old agent learns who continues its work.
 The join carries no preferences: giving an agent its owner's
 preferences on its membership is the owner's `PATCH` after the join
 (`owner_preferences`, §6.2, §19.4), since an owner who is not a member
@@ -2640,7 +2665,7 @@ Response `201`:
   "id": "join-0007",
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
-  "paste_line": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
+  "paste_line": "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
   "agent_id": "agt-b",
   "project": "oliver/maity",
   "via": "join",
@@ -2651,10 +2676,12 @@ Response `201`:
 `join_url` and `paste_line` follow `via`: on the join host the URL is
 `https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
 without a join host it is `https://maity.team/join/9fK2…` as before. The
-token is valid in both shapes whatever `via` says. `join_url`, `code` and `paste_line`
+token is valid in both shapes whatever `via` says. `paste_line` installs
+and joins in one command, as §3.2 "The install line" builds it, so a
+fresh machine needs nothing first. `join_url`, `code` and `paste_line`
 appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
-new_instance, replaces, instance}` (`instance`: the id the exchange gave)
+new_instance, replaces, instance, takes_over, handover}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
 an unused join and returns it with `revoked_at` (200); a join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
@@ -2700,7 +2727,8 @@ member_join_limit` and `details.field` naming the field when broken:
   a manager and the team below it; `areas` and
   `capabilities` are empty or omitted — an admin assigns them later
   with `PATCH …/members/{id}`;
-- `briefing`, `ttl_seconds` and `via` as for any join;
+- `briefing`, `handover`, `ttl_seconds` and `via` as for any join;
+  `takes_over` names only an agent the caller owns;
 - `new_instance` and `replaces` (§6.17) only for an agent whose
   membership in the project is, now, within these same limits: trust
   `member` or `guest` and one of the nine roles above. The fields the body
@@ -2776,7 +2804,9 @@ for an agent that has never heard of Maity and has no tool installed:
 2. Who the agent will be: project name, agent handle, trust and role, areas,
    who it reports to (from the join record); for an existing member,
    that it joins as a new instance of the team or in place of
-   `<handle>#<id>` (§6.17).
+   `<handle>#<id>` (§6.17); with `takes_over`, that it continues the
+   work of `<handle>` and finds the hand-over in its first resume —
+   never the hand-over's text, which the URL's holder could read.
 3. The exchange call (§3.3): the directory, the one command that saves
    the response to a file, the config file for later calls, and the
    rule that the credential file is never read, printed or passed on a
@@ -2817,6 +2847,24 @@ the fork, with a `git+https://…#subdirectory=cli` URL.
 The page adds `pip install --user` with the same target as the
 alternative, the minimum Python version (3.11), and that the curl
 exchange needs no install at all.
+
+The join line is that install line and `maity join` in one command, so
+that a fresh machine needs nothing first: `<install line> && maity join
+<url> --code <code>`. The dashboard's join dialog shows it as
+`paste_line` (§3.1); the join page's item 7 and `/help` show the same
+shape with the placeholder `<code>`, since neither ever contains a code. pipx
+puts `maity` into its bin directory, `~/.local/bin` unless
+`PIPX_BIN_DIR` says otherwise, which a shell started before the install
+often does not have on its `PATH`; so when the install line starts with
+`pipx `, the hub puts `export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"`
+between the two, and the command finds `maity` in the same shell. It
+asks pipx nothing: `pipx environment` exists only from pipx 1.1, and on
+an older pipx a failed `$(…)` would leave an empty `PATH` element, which
+means the current directory. A CLI already
+installed is kept as it is (`pipx install` leaves an existing one
+alone). For later shells the page, `/help` and `maity join`'s own output
+add one sentence: if `maity` is not found, run `pipx ensurepath` once
+and open a new shell. The line changes no shell profile itself.
 
 **Where the credential lives.** Next to the install line the page says,
 in one sentence each: run `maity join` from the Git clone the agent works
@@ -3383,6 +3431,22 @@ Response `200`, bounded and deterministic:
   setting reaches the next resume of every member without a briefing of
   its own, and once the membership gets one (a join or a `PATCH`), that
   one wins.
+- `membership.takes_over` and `membership.handover` (not in the example
+  above) are set when the join that created the membership named them
+  (§3.1), else `null`: `takes_over` as `{member_id, handle, name}` of the
+  agent whose work this one continues — also after that member was
+  removed, with its handle as it was then — and `handover` as `{kind,
+  id}` with `kind` `task` (the card id) or `message` (the `seq`). The
+  hub keeps neither text nor copy: the card or message is read as any
+  other (`maity task show`, `GET …/events?after=`). The packet carries
+  them only until the membership has checked in (`onboarded_at`, §6.1,
+  "Checked in": a message to the check-in target or a first claim), then
+  `null`; the member view (§6.2) keeps them. Whenever they are set, the
+  CLI prints one line before the briefing, in the check-in block when
+  there is one: `Takes over from <handle>; the hand-over is in <card id>.`
+  or `… is in message #<seq>.` followed by the command that reads it. A
+  join without them prints nothing there, never "no hand-over was
+  given".
 - `membership.guide` says what this agent's trust and role mean in
   practice. For the trusts and the built-in roles these are the same
   texts on every instance and in every project, written into the hub,
@@ -4140,7 +4204,11 @@ It starts `false`; the agent's owner switches it on or off with a
 `PATCH` after the join, member of the project or not, as `team` (the
 member view's one-click "give my preferences to this agent"). It is in
 the member view where `briefing` is, and for the agent's owner, and is
-a flag only — the text is never in the member view or an event. Humans have no `owner_id`, `harness`, `model`
+a flag only — the text is never in the member view or an event.
+`takes_over` and `handover` (agents only, `null` when the join named
+none, §3.1) are in every reader's view, never a text, as in the resume
+packet (§5.2): who reads the member list sees whose work an agent
+continues. Humans have no `owner_id`, `harness`, `model`
 or `session`. `keep_the_why_unconfirmed` and each instance's
 `keep_the_why_acknowledged_at` and `keep_the_why_acknowledge_by` are the
 Keep the Why commitment (§6.23):
@@ -8406,7 +8474,7 @@ learns its content.
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all**; a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` (§3.1); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
@@ -10769,7 +10837,7 @@ the one in every resume packet, so a rename or a transfer of the project
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with the `pipx ensurepath` sentence of §3.2. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
