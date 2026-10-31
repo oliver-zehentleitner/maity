@@ -91,6 +91,10 @@ def _leave_the_server_database_empty(_server_database_url: str | None) -> Iterat
     yield
     if _server_database_url:
         engine = make_engine(_server_database_url)
+        if current_revision(engine) is not None:
+            # The rows first: a downgrade refuses what the last test left behind, such as a
+            # project an organisation owns (below 0089).
+            _empty_the_tables(engine)
         downgrade(engine)
         engine.dispose()
 
@@ -102,6 +106,15 @@ def _empty_the_tables(engine: Engine) -> None:
         if engine.dialect.name == "postgresql":
             quoted = ", ".join(f'"{t}"' for t in tables)
             connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+            if "nonce_epoch" in tables:
+                # The nonces known since long before the test (auth.nonces): a test signs no
+                # request in the second the epoch would otherwise be set in.
+                connection.execute(
+                    text(
+                        "INSERT INTO nonce_epoch (id, since) "
+                        "VALUES (1, (now() AT TIME ZONE 'utc') - interval '1 hour')"
+                    )
+                )
         else:
             connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
             for table in tables:

@@ -125,23 +125,40 @@ would read the database every 2 seconds.
 
 **Id:** 1c65bb74-d5a1-41ff-8741-dafd80ce449f
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
-**Source:** `auth/credentials.py:108-129` (`NonceWindow`, its docstring "this moves to the database before a second"), `auth/caller.py:249-277` (`TIMESTAMP_WINDOW_SECONDS` 300, `NONCE_WINDOW_SECONDS` 600, `PROCESS_STARTED`), `idempotency.py` (POST and PATCH of agents and runners need an `Idempotency-Key`)
+**Source:** `auth/credentials.py:108-129` (`NonceWindow`, its docstring "this moves to the database before a second"), `auth/caller.py:249-277` (`TIMESTAMP_WINDOW_SECONDS` 300, `NONCE_WINDOW_SECONDS` 600, `PROCESS_STARTED`), `idempotency.py` (POST and PATCH of agents and runners need an `Idempotency-Key`); built in `auth/nonces.py` and migration `20261030180344_request_nonces` (card tsk-s7b80az2s0wm), 2026-10-30
 **Revisit when:** the insert per signed request shows in the load test as a write bottleneck, or the signing scheme changes
 
 A signed request's nonce is claimed with `INSERT INTO request_nonce (credential_id, nonce,
-expires_at) VALUES (…) ON CONFLICT DO NOTHING`; no row inserted means a replay, refused as today.
-The claim happens after the signature verifies, as now, in its own short transaction. A sweep
-deletes rows past `expires_at` (600 s, twice the timestamp window). The table is `UNLOGGED`: no
-WAL per request.
+expires_at) VALUES (…) ON CONFLICT DO NOTHING RETURNING nonce`; no row returned means a replay,
+refused as today (the driver reports `rowcount` -1 for such an insert, so it is not read). The
+claim happens after the signature verifies, as before, in the short transaction that
+authenticates and commits before the route runs (`deps._resolve`): a request refused later in
+that same transaction leaves its nonce unspent, and replaying it is refused the same way. Every
+thousandth claim of a process deletes the rows past `expires_at` (600 s, twice the timestamp
+window). The table is `UNLOGGED` on PostgreSQL: no WAL per request. SQLite and MariaDB create
+both tables but keep the window in the process, as before (`auth.nonces.shared`).
 
 An `UNLOGGED` table is emptied by a crash of the database and is not replicated, so it is empty
 on a promoted standby after a failover. `PROCESS_STARTED` is therefore replaced by an **epoch
 row that vanishes exactly when the nonces do**: a one-row `UNLOGGED` table `nonce_epoch(since)`.
-Each check reads it in the same round trip as the claim; when it is missing, the first pod to
-notice inserts `now()` (`ON CONFLICT DO NOTHING`, then reads it back), and every request signed
-before `since` is refused (`timestamp_skew`), on every pod. A database restart or a failover
+The migration writes it; each signed request reads it before the signature check; when it is
+missing, the first pod to notice inserts `now()` (`ON CONFLICT DO NOTHING`, then reads it back),
+and every request signed before `since`, in whole seconds as `PROCESS_STARTED` was, is refused
+(`timestamp_skew`), on every pod. The request that sets it may itself have been signed in the
+second before and is then refused once; the client signs again with the `server_time` it gets.
+The epoch takes the database's clock (`timezone('UTC', now())`), not the replica's: a replica
+whose clock runs behind could otherwise put the boundary before nonces another replica spent
+just before the loss.
+
+Both the claim and the setting of the epoch rely on READ COMMITTED, the hub's isolation level
+(`db.make_engine`): `ON CONFLICT DO NOTHING` waits for a competing transaction that is still open,
+and the `SELECT` after it takes a new snapshot and sees the committed epoch. Under REPEATABLE
+READ that `SELECT` would not see it and the claim would fail with a serialisation error, so the
+authenticating transaction stays READ COMMITTED. A refusal that rolls the authenticating
+transaction back takes a freshly set epoch with it; the next request sets it later, which only
+refuses more, never less. A database restart or a failover
 thus closes the replay gap at once, and a newly started pod no longer refuses requests that
 another pod would take. Reading one row per request takes no lock and stays in the buffer cache.
 
@@ -153,6 +170,8 @@ is the cheapest shared check there is.
 **Rejected alternatives:**
 - **A logged table:** survives a crash and a failover, so it needs no epoch, but writes WAL for
   state that is worthless after ten minutes; the epoch row covers both cases for one read.
+- **Setting the epoch under an advisory lock:** one more round trip for the same effect as the
+  conflict-free insert.
 - **The database's start time (`pg_postmaster_start_time()`), read once per pod:** misses a
   database restart while the pods keep running (their cached time is old) and a failover (the
   promoted standby keeps its own, older start time), so a request signed in the last 300 s could

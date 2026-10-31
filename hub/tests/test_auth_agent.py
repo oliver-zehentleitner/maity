@@ -498,9 +498,16 @@ def test_malformed_signature_headers_are_signature_invalid_not_a_crash(
 
 
 def test_a_request_signed_before_the_process_started_is_skew(
-    make_client: ClientFactory, agent: factory.Agent, monkeypatch: pytest.MonkeyPatch
+    make_client: ClientFactory,
+    agent: factory.Agent,
+    monkeypatch: pytest.MonkeyPatch,
+    migrated: Engine,
 ) -> None:
+    """Where the process keeps the nonces; PostgreSQL has the epoch instead (below)."""
     from maity_hub.auth import caller
+
+    if migrated.dialect.name == "postgresql":
+        pytest.skip("the nonces are shared: the database's epoch, not the process start, counts")
 
     monkeypatch.setattr(caller, "PROCESS_STARTED", int(clock.now().timestamp()) + 10)
     response = make_client().get("/api/v1/me", headers=signed(agent, "GET", "/api/v1/me"))
@@ -541,3 +548,53 @@ def test_an_unknown_id_is_unauthenticated_on_both_paths(
     assert make_client().get("/api/v1/me", headers=headers).headers["Maity-Error"] == (
         "unauthenticated"
     )
+
+
+# --- nonces shared by every replica (PostgreSQL, hub/context/replicas.md 1c65bb74) -----------
+
+
+def _shared_only(engine: Engine) -> None:
+    if engine.dialect.name != "postgresql":
+        pytest.skip("SQLite and MariaDB keep the nonce window in the process")
+
+
+def test_a_nonce_spent_on_one_replica_is_refused_on_another(
+    make_client: ClientFactory, agent: factory.Agent, migrated: Engine
+) -> None:
+    from maity_hub.auth import caller
+    from maity_hub.auth.credentials import NonceWindow
+
+    _shared_only(migrated)
+    headers = signed(agent, "GET", "/api/v1/me")
+    first, second = make_client(), make_client()  # two apps on one database: two replicas
+    assert first.get("/api/v1/me", headers=headers).status_code == 200
+    caller.NONCES = NonceWindow()  # nothing the first one remembered in its process
+    again = second.get("/api/v1/me", headers=headers)
+    assert again.status_code == 401 and again.headers["Maity-Error"] == "nonce_reused"
+    with migrated.connect() as conn:
+        spent = conn.execute(select(t.request_nonce.c.credential_id)).scalars().all()
+    assert spent == [agent.credential_id]
+
+
+def test_after_the_nonces_are_lost_what_was_signed_before_is_refused(
+    make_client: ClientFactory, agent: factory.Agent, migrated: Engine
+) -> None:
+    """A crash or a failover empties both UNLOGGED tables; the new epoch refuses a request
+    signed before it, so nothing spent before the loss can be replayed."""
+    from sqlalchemy import delete
+
+    _shared_only(migrated)
+    with migrated.connect() as conn:  # the nonces known for a while, as the test setup leaves
+        assert conn.execute(select(t.nonce_epoch.c.since)).scalar_one() < clock.now()
+    client = make_client()
+    before = signed(agent, "GET", "/api/v1/me", timestamp=int(clock.now().timestamp()) - 5)
+    assert client.get("/api/v1/me", headers=before).status_code == 200
+    with migrated.begin() as conn:  # what a crash of the database leaves
+        conn.execute(delete(t.request_nonce))
+        conn.execute(delete(t.nonce_epoch))
+    replayed = client.get("/api/v1/me", headers=before)
+    assert replayed.status_code == 401 and replayed.headers["Maity-Error"] == "timestamp_skew"
+    later = clock.now() + timedelta(seconds=2)
+    clock.set_source(lambda: later)
+    fresh = signed(agent, "GET", "/api/v1/me", timestamp=int(later.timestamp()))
+    assert client.get("/api/v1/me", headers=fresh).status_code == 200

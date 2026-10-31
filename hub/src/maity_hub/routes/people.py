@@ -124,14 +124,13 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
 
 def _links(conn: Connection, human: Any, me: str) -> dict[str, Any]:
     """`website` and `social` where `links_visible` admits the caller (§16.9), as the member
-    views show them; nothing when the person has no link. A hold on the profile (§16.8) makes
-    `everyone` count as `colleagues`."""
+    views show them, the hold rule included (§16.8); nothing when the person has no link."""
     if not human.website and not human.social:
         return {}
-    visible = human.links_visible
-    if visible == "everyone" and moderation.hold(conn, "profile", human.id) is not None:
-        visible = "colleagues"
-    seen = person_links.admitted(conn, {human.id: visible}, person_links.Reader(me))
+    held = {human.id} if moderation.hold(conn, "profile", human.id) is not None else None
+    seen = person_links.admitted(
+        conn, {human.id: human.links_visible}, person_links.Reader(me), held=held
+    )
     return person_links.shown(human) if human.id in seen else {}
 
 

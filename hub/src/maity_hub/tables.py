@@ -11,9 +11,10 @@ the API shows the principal's id (`hum-…`, `agt-…`). No table or column is
 named after an SQL keyword of any of the three engines (`join`, `key`,
 `cursor`, `release` are), so hand-written SQL needs no quoting.
 
-Not in a table, by design for one replica (docs/api.md §8.3): the nonce
-window of signed requests and whether a session is `listening`; both move
-to the database before a second replica exists. The policy is columns on
+Not in a table, by design for one replica (docs/api.md §8.3): whether a
+session is `listening`, which moves to the database before a second replica
+exists; the nonce window of signed requests is in `request_nonce` on
+PostgreSQL and in the process elsewhere. The policy is columns on
 `project`, the one-to-one form of architecture §3.6's policy entity; its
 history is in the events.
 """
@@ -915,6 +916,27 @@ credential = Table(
     Column("paused_by", String(ID)),
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
+    **MYSQL_TABLE,
+)
+
+# The nonces of signed requests (docs/api.md §2.2), shared by every replica on PostgreSQL, where
+# the migration makes both tables UNLOGGED: lost on a crash or a failover, and `nonce_epoch` with
+# them, so a request signed before the loss is refused (hub/context/replicas.md 1c65bb74).
+# SQLite and MariaDB keep the window in the process (`auth.credentials.NonceWindow`).
+request_nonce = Table(
+    "request_nonce",
+    metadata,
+    Column("credential_id", String(ID), primary_key=True),
+    Column("nonce", String(128), primary_key=True),
+    Column("expires_at", UtcDateTime, nullable=False, index=True),
+    **MYSQL_TABLE,
+)
+
+nonce_epoch = Table(
+    "nonce_epoch",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=False),  # always 1
+    Column("since", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
 
