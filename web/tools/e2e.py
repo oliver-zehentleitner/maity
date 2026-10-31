@@ -958,6 +958,7 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     registration_admin_step(run, page)
     reports_admin_step(run, page, alpha)
+    forge_access_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2184,6 +2185,27 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")
+
+
+def forge_access_step(run: Run, page: Page) -> None:
+    """Forge access (docs/api.md §11.4) at /settings/forge, where the hub's setup redirect
+    lands: this hub has no GitHub App and no secret key, and says so."""
+    run.step("forge: /settings/forge shows the account's forge access; no App, a token needs the secret key")
+    page.goto(f"{run.base}/settings/forge?error=link_state")
+    box = page.locator("section.forge-access")
+    expect(box).to_contain_text("The link expired or was started in another session")
+    expect(page).to_have_url(re.compile(r"/settings/forge$"))
+    expect(box).to_contain_text("This instance has no GitHub App configured")
+    expect(box).to_contain_text("No token is stored.")
+    page.locator("#forge-token").fill("github_pat_e2e_not_a_real_token")
+    box.get_by_role("button", name="Store the token", exact=True).click()
+    expect(box).to_contain_text("This hub has no secret key to store a token with")
+    # That refusal is this hub's configuration, the expected answer here.
+    refused = "PUT /api/v1/me/forge/github/token answered 409"
+    run.problems = [p for p in run.problems if p != refused]
+    run.shot(page, "forge-access")
+    run.a11y(page, "forge access")
+    no_problems(run, "forge access")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:

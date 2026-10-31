@@ -3152,3 +3152,47 @@ on the hub, and one key keeps the choice from one chat to the next.
 for it per browser, and a reader would set it again in every chat. A
 field that grows with its text by itself: it moves the history while one
 types and still does not give a phone its screen.
+
+## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
+
+**Id:** 861705c6-539c-4d4c-9532-658311c463b7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
+**Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
+
+**Forge access** is a section of the account page, next to the
+sessions. It shows:
+- the linked installations of the instance's GitHub App, each with its
+  status and the repositories it covers;
+- **Link the GitHub App**, offered only where `app_configured`;
+- **Unlink**, which says it does not uninstall the App on GitHub and
+  links to GitHub's page;
+- the human's own fine-grained token: stored, replaced or removed,
+  with a hint naming the read permissions the probe needs.
+
+A token is never shown, only that one is set, its login and its status.
+`/settings/forge`, the path the hub's setup redirect lands on, is the
+same account page opened at that section. Its `?error=<reason>` is said
+in words and dropped from the address. A project's settings say which
+grant reads its repository (`probe_via` in words) and whether the
+namespace owner confirmed it, with **Confirm this repository for my
+grants** for an owner and a link to Forge access.
+
+**Reason:** the grants are the human's own and serve every project they
+own, so they belong on the account, not on one project. The project's
+settings are where an admin wonders why nothing is read. Without the
+owner's confirmation their grants are never used for the repository,
+so the confirmation stands next to the grant it unlocks.
+
+**Rejected alternatives:**
+- A page of its own at `/settings/forge`: a second "account" with one
+  section, beside the account that has all the others.
+- Redirecting `/settings/forge` to `/account/forge`: the contract names
+  `/settings/forge` (§16.11), and a redirect would add a hop to the
+  setup's return.
+- Showing the probe's `details.reason` on the settings: it comes from a
+  failed read, not from the project view, and the view's `probe_via`
+  with the confirmation already says what is missing.
+
