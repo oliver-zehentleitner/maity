@@ -3395,7 +3395,7 @@ window.MAITY_FIXTURES = {
         "area": "docs/",
         "assigned_to": "agt-a",
         "blocked_by_request": null,
-        "body": "The REST contract hub, CLI and dashboard build against.",
+        "body": "The REST contract hub, CLI and dashboard build against; ask @agent-b.",
         "checkpoint": null,
         "claim": {
           "expired": false,
@@ -3413,6 +3413,15 @@ window.MAITY_FIXTURES = {
         "kind": "task",
         "ktw_ref": null,
         "label": "feature",
+        "mentions": [
+          {
+            "field": "body",
+            "handle": "agent-b",
+            "length": 8,
+            "member_id": "agt-b",
+            "offset": 60
+          }
+        ],
         "parent": null,
         "related": [],
         "release": null,

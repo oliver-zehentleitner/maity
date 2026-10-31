@@ -2715,7 +2715,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const cpNotes = () => cpPanel().querySelectorAll(".card-note-list li").map((li) => text(li));
   expect(cpPanel() && cpPanel().querySelector(".card-panel-card article.card") && cpPanel().querySelector(".card-panel-card article.card .card-actions")
     && !cpPanel().querySelector(".card-panel-card a.card-open") && !cpPanel().querySelector(".card-panel-card article.card").getAttribute("draggable")
-    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against."
+    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
+    // Its stored mention a link where it stands (the one renderer, review of #860).
+    && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
     && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
     && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
