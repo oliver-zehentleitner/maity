@@ -638,6 +638,47 @@ window.Maity = window.Maity || {};
       }
     });
   }
+  // §20.1: policy.jour_fixe as the hub checks it, each refusal at its field path.
+  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  function jourFixeErrors(jf, members) {
+    // As hub/jourfixe/schedule.py names each refusal (§20.1).
+    const e = {};
+    const at = (k) => "policy.jour_fixe." + k;
+    const zone = jf.timezone;
+    if (typeof jf.enabled !== "boolean") e[at("enabled")] = "not_a_boolean";
+    if (zone != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(zone)) e[at("timezone")] = "unknown_timezone";
+    if (jf.enabled === true) {
+      if (jf.time == null) e[at("time")] = "required";
+      if (zone == null) e[at("timezone")] = "required";
+      if (jf.recurrence == null) e[at("recurrence")] = "required";
+    }
+    if (jf.time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(jf.time)) e[at("time")] = "format";
+    [["answer_window_minutes", 30, 1440], ["step_window_minutes", 30, 1440], ["report_window_hours", 1, 72]].forEach(([k, lo, hi]) => {
+      if (!(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
+    });
+    if (jf.moderator !== "admin_agent" && !members.some((x) => x.id === jf.moderator && !x.removed_at)) e[at("moderator")] = "not_a_member";
+    const r = jf.recurrence;
+    if (r != null) {
+      const key = (k) => at("recurrence." + k);
+      if (typeof r !== "object" || Array.isArray(r)) e[at("recurrence")] = "not_an_object";
+      else if (!["daily", "weekly", "monthly"].includes(r.freq)) e[key("freq")] = "unknown";
+      else {
+        const n = r.interval === undefined ? 1 : r.interval;
+        if (!Number.isInteger(n) || n < 1 || n > (r.freq === "weekly" ? 8 : 1)) e[key("interval")] = "out_of_range";
+        if (r.freq === "weekly") {
+          if (!r.weekdays || !r.weekdays.length) e[key("weekdays")] = "required";
+          else if (!Array.isArray(r.weekdays) || r.weekdays.some((d) => !WEEKDAYS.includes(d))) e[key("weekdays")] = "unknown";
+        } else if (r.weekdays != null) e[key("weekdays")] = "not_for_freq";
+        const day = r.month_day, nth = r.month_weekday;
+        if (r.freq === "monthly") {
+          if ((day == null) === (nth == null)) e[key("month_day")] = "one_of";
+          else if (day != null && !(Number.isInteger(day) && day >= 1 && day <= 31)) e[key("month_day")] = "out_of_range";
+          else if (nth != null && !(nth && [1, 2, 3, 4, -1].includes(nth.ordinal) && WEEKDAYS.includes(nth.weekday))) e[key("month_weekday")] = "invalid";
+        } else if (day != null || nth != null) e[key(day != null ? "month_day" : "month_weekday")] = "not_for_freq";
+      }
+    }
+    return e;
+  }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
     if (ft.operator === "") errors["footer.operator"] = "invalid";
@@ -2232,10 +2273,73 @@ window.Maity = window.Maity || {};
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
+        if ("jour_fixe" in body.policy && body.policy.jour_fixe !== null) {
+          const errors = jourFixeErrors(body.policy.jour_fixe, file(m[1], "members.json", path).items);
+          if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
       return p;
+    }],
+    // §20.9 the jour fixe: the series, the moderator order, the rounds; members only.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const jf = file(m[1], "jour-fixe.json", path);
+      const policy = (p.policy || {}).jour_fixe || null;
+      const rounds = jf.rounds;
+      return { policy, moderators: jf.moderators, next_at: policy && policy.enabled ? jf.next_at : null,
+        current_round: rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status)) || null,
+        last_round: rounds.find((r) => r.status === "reported") || null };
+    }],
+    ["PUT", /^\/projects\/([^/]+)\/jour-fixe\/moderators$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const all = file(m[1], "members.json", path).items;
+      const adminAgents = all.filter((x) => x.kind === "agent" && x.trust === "admin" && x.role !== "proxy" && !x.removed_at);
+      const human = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
+      if (!human && !adminAgents.some((x) => x.id === me().member.id)) fail(403, "forbidden", "project:admin or an admin agent", path);
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const order = body.order;
+      if (order !== null && !(Array.isArray(order) && order.every((id) => adminAgents.some((x) => x.id === id)))) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { order: "not_admin_agent" } });
+      }
+      p.policy = Object.assign({}, p.policy, { jour_fixe_moderators: order });
+      // The resolved order: the named ones first, the other admin agents after them.
+      const named = (order || []).map((id) => adminAgents.find((x) => x.id === id));
+      const rest = adminAgents.filter((x) => !(order || []).includes(x.id)).sort((a, b) => (a.handle < b.handle ? -1 : 1));
+      const jf = file(m[1], "jour-fixe.json", path);
+      jf.moderators = named.concat(rest).map((x) => ({ member_id: x.id, handle: x.handle }));
+      return { moderators: jf.moderators };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path, query) => {
+      project(m[1], path);
+      const status = query.get("status");
+      return { items: file(m[1], "jour-fixe.json", path).rounds.filter((r) => !status || r.status === status), next_cursor: null };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => {
+      const r = file(m[1], "jour-fixe.json", path).rounds.find((x) => x.id === m[2]);
+      if (!r) fail(404, "not_found", "Not found", path);
+      return r;
+    }],
+    // §20.1: started by hand with a reason, by trust owner or admin; one round at a time.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "jour_fixe:start needed", path, { scope: "jour_fixe:start" });
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const jf = file(m[1], "jour-fixe.json", path);
+      const open = jf.rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status));
+      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
+      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const cfg = Object.assign({ answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 }, (p.policy || {}).jour_fixe || {});
+      const now = nowIso();
+      const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
+      const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", trigger: "manual", mode: "message",
+        scheduled_for: now, opened_at: now, answers_close_at: new Date(Date.now() + cfg.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config: cfg,
+        moderator: { member_id: (jf.moderators[0] || {}).member_id || null, instance: null },
+        invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
+      jf.rounds.unshift(round);
+      return round;
     }],
     // The log in fixture mode: fixtures/<slug>/events.json, the project
     // messages there and the ones posted in this tab (§8.3, oldest first).

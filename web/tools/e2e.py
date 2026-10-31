@@ -961,6 +961,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    jour_fixe_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2159,6 +2160,41 @@ def registration_admin_step(run: Run, page: Page) -> None:
     run.shot(page, "registration-admin")
     run.a11y(page, "registration admin")
     no_problems(run, "registration admin")
+
+
+def jour_fixe_step(run: Run, page: Page) -> None:
+    """The jour fixe (docs/api.md §20): the series saved in Project settings against the
+    real hub, the view says the next slot, and a start by hand opens a round or says why
+    not (on this hub no admin agent may be present to moderate)."""
+    run.step("jour fixe: the series saved in Project settings, the next slot shown, a start by hand")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.jf-settings")
+    expect(form).to_be_visible()
+    page.locator("#jf-enabled").check()
+    page.locator("#jf-time").fill("10:00")
+    page.locator("#jf-timezone").fill("Europe/Vienna")
+    page.locator("#jf-day-mon").check()
+    page.locator("#jf-reason").fill("e2e: a weekly look back")
+    form.get_by_role("button", name="Save the jour fixe", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Jour fixe saved.")
+    expect(page.locator("ol.jf-order")).to_be_visible()
+    page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
+    expect(page.locator("main")).to_contain_text("Next round:")
+    page.locator("#jf-start-reason").fill("e2e: before the launch")
+    page.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
+    opened = re.compile(r"/owner/e2e-alpha/jour-fixe/jfx-")
+    expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
+    if opened.search(page.url):
+        expect(page.locator("main")).to_contain_text("answering")
+    else:
+        # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
+        refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"
+        run.problems = [p for p in run.problems if p != refused]
+    run.shot(page, "jour-fixe")
+    run.a11y(page, "jour fixe")
+    no_problems(run, "jour fixe")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def landing_json_step(run: Run, page: Page) -> None:
