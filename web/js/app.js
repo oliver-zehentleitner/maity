@@ -663,7 +663,15 @@ window.Maity = window.Maity || {};
       append(panel, h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)));
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
-    if (humanAdmin) append(panel, memberAgentsForm(ctx, save));
+    if (humanAdmin) {
+      const outside = h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save, []));
+      append(panel, memberAgentsForm(ctx, save), outside);
+      // The project's own roles on a base that works may be offered too (§2.3, §6.1); without them the built-in ones stay.
+      M.api.get(ctx.base + "/roles").then((r) => {
+        const custom = ((r && r.custom) || []).filter((x) => OUTSIDE_BASES.includes(x.base)).map((x) => x.name);
+        if (custom.length) append(clear(outside), agentOwnersForm(ctx, save, custom));
+      }).catch(() => {});
+    }
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
@@ -934,6 +942,60 @@ window.Maity = window.Maity || {};
     h("label", { for: "ktw-policy-select" }, "Keep the Why"), select,
     h("label", { for: "ktw-policy-reason" }, "Reason"), reason,
     h("button", { type: "submit", disabled: off ? true : null }, "Change"));
+  }
+
+  // §6.1 agent_owners and outside_roles, §6.2 "An agent whose owner is no
+  // member". Unset, the setting follows the public page; the form says what it
+  // reads now, and once set it has no way back to unset, as in the hub.
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team"];
+  function agentOwnersForm(ctx, save, customRoles) {
+    const pol = ctx.project.policy;
+    const stored = pol.agent_owners || null;
+    const served = ctx.project.public_page === "on" && ctx.project.state !== "archived";
+    const effective = stored || (served ? "anyone" : "members");
+    const words = { members: M.t("settings.agent_owners.members"), anyone: M.t("settings.agent_owners.anyone") };
+    const select = h("select", { id: "agent-owners-select" },
+      stored ? null : h("option", { value: "" }, M.t("settings.agent_owners.unset", { value: words[effective] })),
+      ["members", "anyone"].map((v) => h("option", { value: v }, words[v])));
+    select.value = stored || "";
+    const current = pol.outside_roles || ["coder"];
+    // A role already on the list stays offered, so that saving never drops it unseen.
+    const offered = [...new Set([...OUTSIDE_BASES, ...customRoles, ...current])];
+    const boxes = offered.map((r) => {
+      const box = h("input", { type: "checkbox", id: "outside-role-" + r, value: r });
+      box.checked = current.includes(r);
+      return box;
+    });
+    const reason = h("input", { id: "agent-owners-reason", required: true, placeholder: M.t("settings.agent_owners.reason_hint") });
+    const error = h("p", { class: "field-error", id: "agent-owners-error", role: "alert" });
+    return h("form", {
+      class: "inline-form agent-owners-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const roles = offered.filter((r, i) => boxes[i].checked);
+        const policy = {};
+        if (select.value && select.value !== stored) policy.agent_owners = select.value;
+        if (roles.length !== current.length || roles.some((r) => !current.includes(r))) policy.outside_roles = roles;
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, M.t("settings.agent_owners.title"), (err) => {
+          if (((err.details || {}).fields || {}).outside_roles !== "outside_owner") return false;
+          error.textContent = M.t("settings.agent_owners.role_in_use");
+          return true;
+        });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.agent_owners.title")),
+    h("p", { class: "hint" }, M.t("settings.agent_owners.hint")),
+    h("label", { for: "agent-owners-select" }, M.t("settings.agent_owners.label")), select,
+    h("fieldset", { class: "outside-roles" },
+      h("legend", null, M.t("settings.outside_roles.label")),
+      offered.map((r, i) => h("label", { class: "check", for: "outside-role-" + r }, boxes[i], " ", M.trust.roleLabel(r))),
+      h("p", { class: "hint" }, M.t("settings.outside_roles.hint"))),
+    error,
+    h("label", { for: "agent-owners-reason" }, M.t("settings.agent_owners.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.agent_owners.save")));
   }
 
   // §3.1 "Bringing your own agent", §6.1: whether members add agents of

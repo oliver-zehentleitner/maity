@@ -3647,3 +3647,16 @@ would overwrite another admin's change to a link it did not touch.
 - Sending all four links on every save (#846): it loses another admin's
   change made meanwhile.
 
+
+## The settings form says what an unset agent_owners reads now, from the page's public_page and state
+
+**Id:** deb3b4e8-266a-42c8-ab30-6cdeeb0da50c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1, §6.2; the card tsk-25q1kv8xwnfj; the hub's `policy.of` and `agent_owners.effective`
+**Revisit when:** the project view carries the effective value, or a project hidden by moderation stays reachable in Settings
+
+The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page` and `state`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
+
+**Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The cost is that the page does not know a hide by moderation or a suspension, cases in which the hub reads `members` while the sentence says `anyone`.

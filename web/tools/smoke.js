@@ -2489,6 +2489,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
+  // Agents of owners who are not members (§6.1, §6.2): settings, the mark, the hub's isolation, the refused lift.
+  await projectSettings();
+  const aoForm = () => main.querySelector("form.agent-owners-form");
+  expect(aoForm() && byId("agent-owners-select").value === "" && text(byId("agent-owners-select")).includes("Not set, follows the public page (now: "),
+    "agent owners: unset, the form says what it reads now");
+  const aoRoles = aoForm().querySelectorAll("input").filter((b) => b.attrs.type === "checkbox").map((b) => b.attrs.value);
+  expect(aoRoles.join() === "coder,designer,writer,blue-team" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked,
+    "agent owners: only the working roles are offered, coder by default " + aoRoles.join());
+  const aoPatches = [];
+  const aoPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { aoPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { outside_roles: "outside_owner" } })); };
+  aoForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!aoPatches.length, "agent owners: nothing changed, nothing sent");
+  byId("agent-owners-select").value = "anyone"; byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "open source";
+  aoForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(aoPatches.length === 1 && JSON.stringify(aoPatches[0]) === JSON.stringify({ policy: { agent_owners: "anyone", outside_roles: ["coder", "writer"] }, reason: "open source" }),
+    "agent owners: what changed is sent with its reason " + JSON.stringify(aoPatches[0]));
+  expect(text(byId("agent-owners-error")).includes("holds a role you left out"), "agent owners: a role still in use is said at the field");
+  win.Maity.api.patch = aoPatch;
+  const ownersGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
+    ? Object.assign({}, x, { items: x.items.map((m) => (m.id === "agt-b" ? Object.assign({}, m, { owner_id: "hum-gone", isolated: { by: "hub", since: "2026-10-31T00:00:00Z", reason: "The agent's owner is no longer a member of this project." } }) : m)) })
+    : x));
+  await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const aoRow = main.querySelectorAll("tr.member").find((r) => r.querySelector(".member-owner-outside"));
+  expect(aoRow && text(aoRow.querySelector(".member-owner-outside")) === "Owner outside", "agent owners: the list marks an agent whose owner is outside");
+  expect(main.querySelectorAll(".member-owner-outside").length === 1, "agent owners: an agent whose owner is a member has no mark");
+  aoRow.querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 6; k++) await tick();
+  const aoManage = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+  expect(aoManage() && text(aoManage().querySelector(".member-isolate")).includes("by Maity") && text(aoManage().querySelector(".member-isolate")).includes("the owner is no longer a member"),
+    "agent owners: the hub's isolation is said as Maity's, not as a member's");
+  const ownersDel = win.Maity.api.del;
+  win.Maity.api.del = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { member: "owner_not_member" } }));
+  aoManage().querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("This isolation cannot be lifted: the agent's owner is no member"), "agent owners: a refused lift explains owner_not_member");
+  win.Maity.api.del = ownersDel; win.Maity.api.get = ownersGet;
+  await go("#/maintainer/maity/inbox");
+
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");

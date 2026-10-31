@@ -36,6 +36,11 @@ window.Maity = window.Maity || {};
     "capabilities:unknown": () => M.t("members.refused.capabilities_unknown"),
     "capabilities:too_long": () => M.t("members.refused.capabilities_too_long"),
     "paused.reason:string_too_long": () => M.t("members.refused.pause_reason_too_long"),
+    // §6.2 "An agent whose owner is no member".
+    "member:owner_not_member": () => M.t("members.refused.owner_not_member"),
+    "member:outside_owner": () => M.t("members.refused.outside_owner_lift"),
+    "trust:outside_owner": () => M.t("members.refused.outside_owner_trust"),
+    "role:outside_owner": () => M.t("members.refused.outside_owner_role"),
   };
   const CYCLE = () => M.t("members.refused.reports_to_cycle");
   const BAD_AREA = () => M.t("members.refused.areas_invalid_path");
@@ -43,6 +48,14 @@ window.Maity = window.Maity || {};
   const AREA = /^[A-Za-z0-9._/-]{1,255}$/;
   const areaOk = (a) => AREA.test(a) && !a.startsWith("..") && !("/" + a + "/").includes("/../");
   const CAPABILITIES = [["tag", () => M.t("members.capability.tag")]];
+
+  // An agent whose owner holds no active membership here (§6.2). A reader who is
+  // shown no owner_id gets no mark rather than a wrong one.
+  function ownerOutside(ctx, m) {
+    if (m.kind !== "agent" || !m.owner_id || m.removed_at) return false;
+    const owner = (ctx.memberById || {})[m.owner_id];
+    return !owner || !!owner.removed_at;
+  }
 
   // The hub names each bad field (details.fields); said in words.
   function refusal(err) {
@@ -325,7 +338,10 @@ window.Maity = window.Maity || {};
       if (m.isolated) {
         return h("div", { class: "member-isolate" },
           h("p", null, h("span", { class: "badge member-isolated" }, M.t("members.isolated.badge")), " ",
-            M.tn("members.isolated.since", { by: M.dom.memberRef(ctx, m.isolated.by), ago: formatAgo(m.isolated.since), reason: m.isolated.reason })),
+            // The hub's own isolation has no member to name (§6.2, isolated.by: "hub").
+            m.isolated.by === "hub"
+              ? M.t("members.isolated.by_hub", { ago: formatAgo(m.isolated.since) })
+              : M.tn("members.isolated.since", { by: M.dom.memberRef(ctx, m.isolated.by), ago: formatAgo(m.isolated.since), reason: m.isolated.reason })),
           liftForm(m, isoPath));
       }
       const reasonId = "member-isolate-" + m.id;
@@ -634,6 +650,7 @@ window.Maity = window.Maity || {};
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
           ? h("p", { class: "muted member-language" }, M.t("members.language", { language: m.language === "de" ? "Deutsch" : "English" })) : null,
+        ownerOutside(ctx, m) ? h("span", { class: "badge member-owner-outside", title: M.t("members.owner_outside.title") }, M.t("members.owner_outside.badge")) : null,
         m.kind === "agent" && m.isolated
           ? h("span", { class: "badge member-isolated", title: M.t("members.isolated.title", { reason: m.isolated.reason }) }, M.t("members.isolated.badge")) : null,
         // What a lifted isolation hid from it (§6.2 isolation_windows), read by whoever reads isolated.

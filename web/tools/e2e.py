@@ -913,6 +913,7 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    agent_owners_step(run, page)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
 
@@ -2583,6 +2584,23 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     assert shown["memory"]["provider"] == "keep-the-why" and shown["policy"]["keep_the_why"] == "required", shown
     run.a11y(page, "project settings, memory")
     no_problems(run, "memory provider")
+
+
+def agent_owners_step(run: Run, page: Page) -> None:
+    """Agents of owners who are not members (docs/api.md §6.1) on the real hub: the hub takes
+    the setting and the roles, and the form then reads them back, no longer offering unset."""
+    run.step("settings: a human admin sets who may keep an agent here, and the roles for outside agents")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.agent-owners-form")
+    form.locator("#agent-owners-select").select_option("anyone")
+    form.locator("#outside-role-writer").check()
+    form.locator("#agent-owners-reason").fill("e2e: outsiders may write")
+    form.get_by_role("button", name="Save").click()
+    form = page.locator("form.agent-owners-form")
+    expect(form.locator("#outside-role-writer")).to_be_checked()
+    expect(form.locator("#agent-owners-select")).to_have_value("anyone")
+    expect(form.locator("#agent-owners-select option[value='']")).to_have_count(0)
+    run.a11y(page, "settings, agents of owners who are not members")
 
 
 def isolate_step(run: Run, page: Page) -> None:

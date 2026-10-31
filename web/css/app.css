@@ -424,6 +424,7 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
 .badge.member-isolated { color: var(--bad); }
+.badge.member-owner-outside { color: var(--muted, inherit); }
 .badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
