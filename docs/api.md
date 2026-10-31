@@ -9631,6 +9631,7 @@ request (§7) always points here.
 | `PATCH /projects/{owner}/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
 | `POST /projects/{owner}/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id, wake?}`; `200` with the conversation; emits `conversation_updated` |
 | `PATCH /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH`; an agent participant for itself; the owner of an agent participant for it | `{wake}`, `mentions` or `all`, for an agent participant only (a human: `invalid`, `details.fields.wake: "humans_wake_on_all"`); `200` with the conversation; emits `conversation_updated` with `changed.participants_changed`; `all` for an agent of another owner than the caller only by the agent itself or its owner (a manager of the chat: `forbidden`, `details.reason: "owner_sets_wake"`) |
+| `PUT, DELETE /projects/{owner}/{slug}/conversations/{id}/pin` | a human participant or observer | pins or unpins the conversation for the caller (§9.3); `204`; no event |
 | `DELETE /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
 | `GET /projects/{owner}/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below; a redacted message keeps its place as in §9.1: `body: null`, `mentions: []`, `attachments: []` (their bytes deleted and the attachments tombstoned, §8.7), `redacted: true` and its `redaction` |
 | `POST /projects/{owner}/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body, attachments?}` (§8.7); `201` with the message |
@@ -13514,7 +13515,7 @@ names:
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
 | `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
-| `/invite` | the invitations the human issues across its projects: create one for a project (§3.4) and manage the open ones |
+| `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (the open ones first, then those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
