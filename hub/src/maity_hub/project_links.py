@@ -54,9 +54,10 @@ def checked(given: Any, stored: dict[str, Any] | None) -> dict[str, str]:
 
 
 def _segments(path: str) -> list[str]:
-    """A path's segments as a browser resolves them: percent-escapes decoded, `.` and `..`
-    resolved, compared without case; so `x/../maity` and `%6Daity` are `maity`."""
-    resolved = posixpath.normpath("/" + unquote(path))
+    """A path's segments as a browser resolves them: percent-escapes decoded, `\\` read as
+    `/`, `.` and `..` resolved, compared without case; so `x/../maity` and `%6Daity` are
+    `maity`."""
+    resolved = posixpath.normpath("/" + unquote(path).replace("\\", "/"))
     return [part.lower() for part in resolved.split("/") if part]
 
 

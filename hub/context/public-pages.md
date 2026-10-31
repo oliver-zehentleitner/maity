@@ -429,4 +429,7 @@ a list just for links, would make readers handle two shapes.
 - Comparing the raw segments (review of #884): `x/../maity`, `%6Daity`,
   `%2e%2e` and `%2F` resolve into the repository's path in a browser but
   not in the comparison, so a private repository's issues would show.
+- Only `/` as the separator (delta review of #884): browsers read `\` in
+  an https URL as `/`, so `acme\maity` lies inside the repository; `\` is
+  therefore a separator after decoding.
 

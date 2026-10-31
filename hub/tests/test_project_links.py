@@ -157,6 +157,8 @@ def test_inside_the_repository_is_its_host_and_path_by_segment_without_case() ->
         "chat": "https://github.com/acme%2Fmaity/chat",  # an escaped slash
     }
     assert project_links.public(tricks, repo, False) == []
+    backslash = {"issues": "https://github.com/acme\\maity/issues"}  # a browser reads `\` as `/`
+    assert project_links.public(backslash, repo, False) == []
     assert project_links.public(tricks, repo, True) == list(tricks.values())
     assert project_links.public(links, repo, True) == list(links.values())
     assert project_links.public(links, None, None) == list(links.values())
