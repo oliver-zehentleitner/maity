@@ -404,6 +404,8 @@ class Client:
     # A handle given to `--for`, resolved as the bridge itself on the first call that needs it,
     # so a call under `/me` is refused before anything is sent, the lookup included (§13).
     for_resolve: Callable[[], str] | None = None
+    # Set with `--for` whatever the resolution does, so the `/me` refusal never hangs on it.
+    for_given: bool = False
     clock_offset: float = 0.0
     timeout: float = 30.0
     _opener: urllib.request.OpenerDirector = field(default_factory=opener, repr=False)
@@ -412,7 +414,13 @@ class Client:
         """The agent `Maity-For` names, resolving a handle first; None without `--for`."""
         if self.for_resolve is not None:
             resolve, self.for_resolve = self.for_resolve, None  # its own lookup goes plain
-            self.for_member = resolve()
+            try:
+                self.for_member = resolve()
+            except BaseException:
+                # Kept for the next call: a lookup that failed never lets a later call of the
+                # same process go out as the bridge itself (fails closed).
+                self.for_resolve = resolve
+                raise
         return self.for_member
 
     def call(
@@ -441,7 +449,7 @@ class Client:
             # would put them, not with the `?` inside the signed path (§2.2).
             query = [*urllib.parse.parse_qsl(inline_query, keep_blank_values=True), *query]
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
-        acting_for = self.for_member is not None or self.for_resolve is not None
+        acting_for = self.for_given or self.for_member is not None
         if acting_for and (full_path == f"{API}/me" or full_path.startswith(f"{API}/me/")):
             # Before anything is sent: a bridge acts for an agent on project routes only (§13).
             raise ForRefused(

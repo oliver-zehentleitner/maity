@@ -9,7 +9,7 @@ from typing import Any
 import fakehub
 import pytest
 
-from maity import cli, onboarding, sign, state
+from maity import cli, hub, onboarding, sign, state
 
 SERVED = {
     "id": "agt-s",
@@ -135,5 +135,32 @@ def test_the_served_agent_answers_for_its_card_through_the_bridge(joined: Path) 
         assert session.me == "agt-s" and session.my_instance is None
         with pytest.raises(cli.LocalRefusal):
             cli._check_holder(session, "tko-1", {"from": {"member_id": "agt-other"}})
+    finally:
+        cli.Session.for_target = None
+
+
+def test_a_failed_lookup_of_the_handle_never_lets_a_call_go_out_as_the_bridge(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    cli.Session.for_target = "designer"
+    try:
+        session = cli.Session()
+        fake.routes[("GET", "/api/v1/projects/oliver/maity/members")] = lambda _seen: (
+            502,
+            {"error": {"code": "unavailable", "message": "down"}},
+        )
+        with pytest.raises(hub.HubError):
+            session.client.call("GET", "/projects/oliver/maity/tasks")
+        with pytest.raises(hub.ForRefused):  # the /me refusal does not hang on it
+            session.client.call("GET", "/me")
+        _members(fake)
+        fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda _seen: (
+            200,
+            {"items": [], "next_cursor": None},
+        )
+        session.client.call("GET", "/projects/oliver/maity/tasks")  # resolved on the retry
+        tasks = [s for s in fake.seen if s.path.endswith("/tasks")]
+        assert [s.headers.get("maity-for") for s in tasks] == ["agt-s"]
+        assert not [s for s in fake.seen if s.path.startswith("/api/v1/me")]
     finally:
         cli.Session.for_target = None

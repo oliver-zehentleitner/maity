@@ -1291,7 +1291,9 @@ and the CLI keeps no rule of its own about it.
 `maity --for <handle | member id>` is a global option: the client signs `Maity-For` (the `for:`
 line after a `Maity-On-Request` line) on every call of the command, and resolves a handle through
 the member list as the bridge itself on the first call that needs it (`Client.for_resolve`), so
-nothing is looked up before the `/me` check. The client refuses a path under `/me` before
+nothing is looked up before the `/me` check. A lookup that fails is kept for the next call and the
+`/me` refusal reads `Client.for_given`, set with `--for` whatever the lookup did, so no call of the
+process goes out as the bridge itself after a caller swallowed the error (fails closed). The client refuses a path under `/me` before
 anything is sent (`hub.ForRefused`, exit 2), which covers `dormant`, `ack`, `limit` and the soul
 forms as a rule, as §13 asks, including commands added later. `join`, `resume` (whose `--full`
 prints a stored packet without a call) and `profile avatar` (which reads the file first) refuse it

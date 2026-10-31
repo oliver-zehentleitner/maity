@@ -190,6 +190,7 @@ class Session:
         if target is not None:
             # Sent as `Maity-For` on every call (§13); a handle is resolved as the bridge
             # itself, once a call needs it.
+            self.client.for_given = True
             if target.startswith("agt-"):
                 self.client.for_member = target
             else:
@@ -238,7 +239,7 @@ class Session:
         full_name = self.data.get("full_name")
         if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
             return None
-        if self.client.for_member is not None:
+        if Session.for_target is not None:
             return None  # `/me` is the bridge's own, never asked with --for (§13)
         old = self.project_path()
         if path != old and not path.startswith(old + "/"):
