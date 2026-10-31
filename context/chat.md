@@ -308,3 +308,30 @@ keeps busy chats from crowding the packet.
   owner's (66d4076f); a manager may still set `mentions`.
 - `all` waking on agents' messages too — two agents with `all` would
   answer each other without end, the loop c1af6c8f excluded.
+
+## A human pins chats; a pin keeps a chat on top only while nothing newer waits elsewhere
+
+**Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
+
+A human pins conversations; the list is ordered in four bands, each by
+activity: pinned with unread messages, unpinned with unread, pinned
+without, the rest. The pin is the human's own, stored by the hub so it
+holds across devices, emits no event, and is limited to 20.
+
+**Reason:** the maintainer wants the chats he works with at the top, but
+never at the price of missing something new elsewhere: a quiet pinned
+chat must not sit above a chat with a new message. Four bands express
+exactly that and keep the activity order inside each.
+
+**Alternatives:**
+- Pinned always on top: a new message in an unpinned chat could drop
+  below several quiet pinned ones and be missed.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+
