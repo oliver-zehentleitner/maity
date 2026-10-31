@@ -29,7 +29,16 @@ from maity_hub.views import principal_id
 KIND = "foreign_agent_change"
 # `role_base` goes with `role` (a role change sets both, §2.3): it waits for the owner too, but
 # the summary names the role only.
-FIELDS = ("trust", "role", "role_base", "areas", "capabilities", "briefing", "availability_policy")
+FIELDS = (
+    "trust",
+    "role",
+    "role_base",
+    "areas",
+    "capabilities",
+    "briefing",
+    "availability_policy",
+    "dormant",
+)
 SHOWN = 300  # characters of one value in the request's summary
 
 
@@ -82,7 +91,13 @@ def _shown(value: Any) -> str:
 
 
 def _summary(
-    conn: Connection, project: Any, asker: str, handle: str, target: Any, wanted: dict[str, Any]
+    conn: Connection,
+    project: Any,
+    asker: str,
+    handle: str,
+    target: Any,
+    wanted: dict[str, Any],
+    instance: str | None,
 ) -> str:
     """What the decision needs, all in the request: the current and the proposed value of
     each field, for an owner who may not be a member of the project."""
@@ -93,7 +108,18 @@ def _summary(
     for field, proposed in wanted.items():
         if field == "role_base":
             continue
-        if field == "paused":
+        if field == "dormant":
+            held = conn.execute(
+                select(t.credential.c.dormant_since).where(
+                    t.credential.c.membership_id == target.id,
+                    t.credential.c.instance == instance,
+                )
+            ).scalar()
+            now = "dormant" if held is not None else "awake"
+            lines.append(
+                f"- dormant (instance {instance}): {now} → {'dormant' if proposed else 'awake'}"
+            )
+        elif field == "paused":
             current = target.paused_reason if target.paused_since is not None else None
             current_text = "not paused" if target.paused_since is None else _shown(current)
             proposed_text = "lift the pause" if proposed is None else f"pause: {_shown(proposed)}"
@@ -138,7 +164,7 @@ def file(
         caller,
         owner,
         f"Change {handle} in {project.name}",
-        _summary(conn, project, asker, handle, target, wanted),
+        _summary(conn, project, asker, handle, target, wanted, instance),
         proposal,
     )
 
@@ -225,9 +251,24 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     by = principal_id(conn, asker.id)
     assert by is not None
     change = members.Change(project, s.proposer, by, s.approver, None, None)
-    old = members.apply_patch(
-        conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
-    )
+    dormant = values.pop("dormant", None)
+    old: dict[str, Any] = {}
+    if values or given:
+        old = members.apply_patch(
+            conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
+        )
+    if dormant is not None:
+        # One instance's rest, with the owner's `go` (§6.17); an instance revoked meanwhile
+        # leaves nothing to change.
+        held = conn.execute(
+            select(t.credential).where(
+                t.credential.c.membership_id == target.id,
+                t.credential.c.instance == proposal.get("instance"),
+                t.credential.c.revoked_at.is_(None),
+            )
+        ).first()
+        if held is not None:
+            instances.set_dormant(conn, target, held, bool(dormant), by, s.proposer, own=False)
     if asker.agent_id is not None:
         for field in ("trust", "role"):
             if field in old:

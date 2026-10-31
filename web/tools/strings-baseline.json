@@ -7,7 +7,7 @@
   "board.js": 109,
   "card-panel.js": 36,
   "chat.js": 51,
-  "contract-panel.js": 23,
+  "contract-panel.js": 2,
   "device-sign-in.js": 1,
   "dom.js": 5,
   "ids.js": 1,
@@ -35,9 +35,7 @@
   "register.js": 34,
   "runners.js": 12,
   "sessions.js": 61,
-  "swarm.js": 22,
   "ticker-settings.js": 40,
   "ticker.js": 2,
-  "trust.js": 22,
   "why.js": 42
 }

@@ -106,7 +106,10 @@ def test_identity_project_rules_and_next_step() -> None:
     assert "Rules (version 7), read them before you work:\n> # Rules for Maity" in text
     assert "Keep the Why: Load the keep-the-why skill." in text
     assert "Members: agent-a [agt-a] (admin coder, online)" in text
-    assert text.rstrip().endswith("Next: `maity wait` until something is addressed to you.")
+    assert text.rstrip().endswith(
+        "Next: start maity wait in the background and keep working from what "
+        "it returns. Do not wait for your human in the terminal."
+    )
 
 
 def test_a_human_with_a_meat_proxy_note_shows_the_note_as_a_quote() -> None:
@@ -212,6 +215,7 @@ def test_work_answers_and_missed_messages() -> None:
         "kind": "message",
         "actor": {"member_id": "agt-a"},
         "payload": {"type": "handover", "to": "agt-b", "body": "take tsk-4\nit is yours"},
+        "audience": ["member:agt-b"],  # for this member: shown in the compact text too
     }
     text = onboarding.render(
         packet(
@@ -226,12 +230,13 @@ def test_work_answers_and_missed_messages() -> None:
     missed = "  #4300 message by agent-a (handover, to agent-b)"
     assert f"{missed}\n  > take tsk-4\n  > it is yours" in text
     assert "more events after #4300" in text
-    assert "Next: Continue tsk-4 from its checkpoint" in text
+    held_next = "Next: continue tsk-4 from its checkpoint, then start maity wait in the"
+    assert held_next in text
 
 
 def test_an_assigned_card_is_the_next_step() -> None:
     text = onboarding.render(packet(assigned=[{"id": "tsk-9", "status": "open", "title": "X"}]))
-    assert "Next: `maity claim tsk-9`, the card assigned to you." in text
+    assert "Next: maity claim tsk-9, then start maity wait in the background" in text
 
 
 def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
@@ -243,7 +248,7 @@ def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
 
 
 def test_a_minimal_packet_still_renders() -> None:
-    assert "Next: `maity wait`" in onboarding.render({})
+    assert "Next: start maity wait" in onboarding.render({})
 
 
 # --- through the commands ---------------------------------------------------------------------
@@ -364,7 +369,7 @@ def test_clean_shows_controls_and_keeps_text() -> None:
 
 def test_a_redacted_message_says_so() -> None:
     redacted = {"seq": 7, "kind": "message", "actor": {"member_id": "hum-1"}, "redacted": True}
-    text = onboarding.render(packet(events={"items": [redacted], "cursor": 7}))
+    text = onboarding.render(packet(events={"items": [redacted], "cursor": 7}), full=True)
     assert "  #7 message by hum-1 (redacted by an admin; its text is gone)" in text
 
 
@@ -386,7 +391,7 @@ def test_a_long_message_is_cut_with_a_pointer() -> None:
     body = "\n".join(f"line {i}" for i in range(100))
     payload = {"type": "notice", "to": "all", "body": body}
     message = {"seq": 50, "kind": "message", "payload": payload}
-    text = onboarding.render(packet(events={"items": [message], "cursor": 50}))
+    text = onboarding.render(packet(events={"items": [message], "cursor": 50}), full=True)
     assert "  > line 39\n" in text and "line 40" not in text
     assert (
         "… (cut, 60 more lines: `maity api GET /projects/oliver/maity/events --query after=49"
@@ -400,7 +405,7 @@ def test_the_events_section_is_capped() -> None:
         {"seq": n, "kind": "message", "payload": {"type": "chat", "to": "agt-b", "body": body}}
         for n in range(1, 41)
     ]
-    text = onboarding.render(packet(events={"items": items, "cursor": 40}))
+    text = onboarding.render(packet(events={"items": items, "cursor": 40}), full=True)
     assert len(text) < onboarding.MAX_EVENTS_CHARS + 8000
     assert "  … more events after #" in text
     assert "#40 message" not in text
@@ -408,7 +413,7 @@ def test_the_events_section_is_capped() -> None:
 
 def test_fields_of_the_wrong_type_do_not_crash() -> None:
     odd = {"session": "x", "membership": "y", "events": [], "requests": 3, "claims": {"a": 1}}
-    assert "Next: `maity wait`" in onboarding.render(odd)
+    assert "Next: start maity wait" in onboarding.render(odd)
 
 
 def test_a_failed_rendering_does_not_move_the_cursor(
@@ -416,7 +421,7 @@ def test_a_failed_rendering_does_not_move_the_cursor(
 ) -> None:
     from maity import state
 
-    def broken(packet: Any, first: bool = False, board_empty: bool = False) -> str:
+    def broken(packet: Any, *args: Any, **kwargs: Any) -> str:
         raise ValueError("renderer bug")
 
     monkeypatch.setattr(onboarding, "render", broken)
@@ -434,7 +439,8 @@ def test_members_are_named_by_handle_and_unknown_ids_stay_ids() -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner", "presence": "away"},
     ]
     text = onboarding.render(
-        packet(peers=peers, events={"items": [event], "cursor": 9, "truncated": False})
+        packet(peers=peers, events={"items": [event], "cursor": 9, "truncated": False}),
+        full=True,
     )
     assert "  #9 member_joined by maintainer on agt-new" in text
     assert "reporting to agent-a" in text

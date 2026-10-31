@@ -65,6 +65,38 @@ the human, instead of waiting for work to appear. In an archived project
 it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
+The text of `join` and `resume` is compact by default; the sections that
+ask for action (held and assigned cards, open requests, requests to
+answer, the handover) stay whole. `Answered since your last session:`
+shows the last 10 answers, then `… <n> earlier answers: maity resume
+--full`. `Events since your last session:` shows the last 10 events whose
+`audience` holds this member's `member:` or this instance's `instance:`
+token, of any kind, then one line `Not shown: <n> events (<k> <kind>, …;
+<m> earlier for you): maity resume --full`, the five most frequent kinds
+named. A message body in the events and an answer's text are cut at 5
+lines or 200 characters, with the usual pointer; requests, the ones to
+answer with their `summary` included, stay whole. Every resume
+stores the packet it received in the state directory (`last-resume.json`,
+0600, overwritten each time); `maity resume --full` renders that packet
+in full without calling the hub, since a second resume would open
+another session. Its first line, `Stored packet of the resume at
+<started_at>; run maity resume for what changed since.`, keeps an old
+`Next:` from being taken as current; the resume's board check for
+an admin is kept beside it, so the same line shows. Without a stored
+packet it resumes and prints in full. Answers are ordered by
+`answered_at`, so an old request answered last is among the ten.
+A realistic rejoin (300 events, 30 answers, the rules in full) prints
+under 8 KB, measured in `tests/test_compact.py`.
+
+The text ends with one line `Next: …` that the agent can act on without
+asking its human: continue the held card, claim the assigned one, read a
+handover first, or after a join without work report to its lead
+(`reports_to`, else `maity say human`), each followed by `then start
+maity wait in the background and keep working from what it returns. Do
+not wait for your human in the terminal.` After a resume without work
+it says only that. Isolated, paused and an admin's empty board keep
+their own lines.
+
 An instance that replaced another (§6.17) finds what the replaced ones
 left undone in its resume, right before the missed events: "Handed over
 from <handle>#<id>[, …]:", the chain newest first, then those events in
@@ -104,7 +136,7 @@ Assigned to you, not claimed yet:
 
 Members: agent-a (admin, online), maintainer (owner, away)
 
-Next: `maity claim tsk-0004`, the card assigned to you.
+Next: maity claim tsk-0004, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.
 How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
@@ -310,6 +342,22 @@ owner. `maity ack keep-the-why` sends `POST /me/keep-the-why/ack`. It
 prints when the confirmation was recorded, and a second call answers
 the first record. In a project that does not require it, it says so and
 exits 0. The CLI never confirms on its own.
+
+**A dormant instance** (§6.17) keeps its session, its claims and
+everything it may do, but its `wait` ends only for events addressed to
+it by name: `@<handle>#<id>`, an assignment naming it, the cards it
+holds. `maity dormant` puts the calling instance to rest with
+`PATCH /me` `{"dormant": true}`, `maity dormant --off` wakes it; it
+prints `dormant: only @<handle>#<id> wakes this instance` or `awake`,
+from the hub's answer for this instance (`--json` prints the answer).
+When the answer has no entry for this instance, it prints neither, only
+a hint on stderr to check with `maity resume`, and exits 0: the change
+is stored.
+`resume` does not end it. While it lasts, `maity resume` says so after
+the instance and its siblings: `Dormant: only @<handle>#<id> wakes this
+instance. End it with: maity dormant --off`; a dormant sibling is marked
+`dormant` in `Other instances of you`. Its owner or a human with
+`members:admin` can set it too (§6.17).
 
 ## Claims, messages, answers, releases
 

@@ -282,7 +282,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
             pass  # An unavailable board is unknown, not empty; resume still succeeds.
-    text = None if args.json else onboarding.render(packet, first=first, board_empty=board_empty)
+    full = bool(getattr(args, "full", False))
+    text = (
+        None
+        if args.json
+        else onboarding.render(packet, first=first, board_empty=board_empty, full=full)
+    )
     session_id = field(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
@@ -311,7 +316,10 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"
     )
+    session.data["board_empty"] = board_empty  # the board check `--full` cannot repeat
     session.save()
+    # What `--full` renders again without a second resume, which would open another session.
+    state.save_state(session.dir, packet, name=LAST_PACKET)
     if text is None:
         _print_json(packet)
     else:
@@ -463,8 +471,26 @@ def _identity_dir(url: str, target: str, outside: Exception) -> Path:
     return state.identity_dir(host, handle.group(1))
 
 
+LAST_PACKET = "last-resume.json"
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
-    return _resume(Session(args.hub), args)
+    """`--full` renders the packet the last resume stored, in full and without calling the hub;
+    without one it resumes as usual and prints in full."""
+    session = Session(args.hub)
+    stored = state.load_state(session.dir, name=LAST_PACKET) if args.full else {}
+    if not stored:
+        return _resume(session, args)
+    if args.json:
+        _print_json(stored)
+        return EXIT_OK
+    # The packet may be hours old, and its `Next:` with it: say so before anything else.
+    started = onboarding.get(stored, "session", "started_at")
+    when = f"the resume at {onboarding.inline(started)}" if started else "the last resume"
+    print(f"Stored packet of {when}; run maity resume for what changed since.\n")
+    board_empty = session.data.get("board_empty") is True
+    print(onboarding.render(stored, board_empty=board_empty, full=True), end="")
+    return EXIT_OK
 
 
 BATCH_MAX = 50
@@ -756,6 +782,31 @@ def cmd_ack(args: argparse.Namespace) -> int:
     instance = _field(answer, "instance")
     of = f" for instance {onboarding.inline(instance)}" if instance else ""
     return _done(args, answer, f"confirmed Keep the Why{of} at {when}")
+
+
+def cmd_dormant(args: argparse.Namespace) -> int:
+    """`PATCH /me` with `dormant` (§6.17): the calling instance puts itself to rest, or wakes
+    with --off. The line comes only from what the hub stored for this instance, never from the
+    request; an answer without this instance's entry gets a hint instead, and still exit 0."""
+    session = Session()
+    answer = session.client.call("PATCH", "/me", body={"dormant": not args.off})
+    mine = session.data.get("instance")
+    instances = _field(answer, "instances")
+    item = next(
+        (i for i in instances if isinstance(i, dict) and i.get("id") == mine),
+        None,
+    ) if isinstance(instances, list) and mine else None  # fmt: skip
+    if item is None:
+        if args.json:
+            _print_json(answer)
+        _err("the hub's answer does not show this instance; run `maity resume` to see whether "
+             "it is dormant")  # fmt: skip
+        return EXIT_OK
+    given = item.get("label")
+    label = given if isinstance(given, str) else f"{_field(answer, 'handle') or '?'}#{mine}"
+    if not item.get("dormant"):
+        return _done(args, answer, "awake")
+    return _done(args, answer, f"dormant: only @{onboarding.inline(label)} wakes this instance")
 
 
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
@@ -2912,8 +2963,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Open a session and print what it says: the briefing, identity and role, the project's "
         "state and rules (in full when they changed), the cards you hold with their checkpoints, "
         "answered and open requests, the events since your last session, and the next step. "
-        "--json prints the resume packet itself. Run it at the start of every session and after "
-        "a context compaction.",
+        "The text is compact: the last 10 answers and the last 10 events addressed to you, the "
+        "rest counted; --full prints the packet of the last resume in full, without opening "
+        "another session. --json prints the resume packet itself. Run it at the start of every "
+        "session and after a context compaction.",
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
         "--hub", help="the hub URL, once, when the credential came from the page-driven join"
@@ -3017,6 +3075,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("what", choices=("keep-the-why",), help="what to confirm")
     _json_flag(p)
     p.set_defaults(handler=cmd_ack)
+
+    p = add(
+        "dormant",
+        "put this instance to rest, woken only by its own address",
+        "`PATCH /me` with `dormant` (§6.17): this instance keeps its session, its claims and "
+        "everything it may do, but its `wait` ends only for events addressed to it by name "
+        "(`@<handle>#<id>`, an assignment naming it, the cards it holds); messages to the "
+        "member, its role or the team no longer wake it. Run it when your work has moved to a "
+        "sibling instance but you should stay reachable for a question only you can answer. "
+        "`resume` does not end it; `maity dormant --off` does.",
+    )
+    p.add_argument("--off", action="store_true", help="wake this instance again")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_dormant)
 
     p = add(
         "ask",
