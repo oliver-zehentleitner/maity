@@ -1179,7 +1179,35 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         box = compose.bounding_box()
         assert box["y"] + box["height"] <= 780 + 1, f"the composer is below the screen at {phone} px: {box}"
         run.shot(page, f"phone-{phone}-chat")
+        if phone == 390:
+            # The composer folds away for reading (tsk-k6nakahy6fnj): the history gets its room.
+            history = page.locator("ol.messages")
+            reading = history.bounding_box()["height"]
+            compose.get_by_role("button", name="Hide the composer", exact=True).click()
+            expect(page.locator("#chat-text")).to_be_hidden()
+            grown = history.bounding_box()["height"]
+            assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
+            run.shot(page, "phone-390-chat-composer-hidden")
+            run.a11y(page, "chat, the composer hidden")
+            # The check ends at its last width: back to the phone, where the button is.
+            page.set_viewport_size({"width": phone, "height": 780})
+            compose.get_by_role("button", name="Write a message", exact=True).click()
+            expect(page.locator("#chat-text")).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
+    # On a wide screen the field grows to three times its height and back; no empty
+    # band between it and its buttons.
+    field = page.locator("#chat-text")
+    one = field.bounding_box()["height"]
+    actions = compose.locator(".compose-actions").bounding_box()
+    gap = actions["y"] - (field.bounding_box()["y"] + one)
+    assert gap <= 16, f"{gap} px between the message field and its buttons"
+    compose.locator(".compose-size").get_by_role("button", name="3×", exact=True).click()
+    three = field.bounding_box()["height"]
+    assert three >= one * 2.5, f"3× made the field {three} px from {one} px"
+    expect(compose.locator(".compose-size").get_by_role("button", name="3×", exact=True)).to_have_attribute("aria-pressed", "true")
+    run.shot(page, "chat-composer-3x")
+    compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
+    assert abs(field.bounding_box()["height"] - one) < 2
     no_problems(run, "chat")
 
     run.step("global chat: /chats has every project's chats and opens one in place")

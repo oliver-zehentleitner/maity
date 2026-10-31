@@ -343,3 +343,34 @@ moment.
 - Totals only, the rows per agent left to the agent's page: this was the first reading, and §6.22 says
   otherwise for agents whose owner's profile is public; the contract won (review of #806).
 - Folding over everyone and hiding the humans' rows: the totals would still carry the humans' work.
+
+## The Board, Members and Organisation are a second kind of page that follows the cards at once
+
+**Id:** 6b0e2f4a-7d51-4c38-9a6e-3f1c8d5b2e97
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("The public views of a project"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
+
+`public_project_views` registers the kind `project_views`, one target per public project and three pages
+(`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
+renders a project page (a switch, a hold, an archive, a rename, an owner's suspension, a member change) renders
+the views with it, and a person's page lists both kinds. The Board is the one part that follows the cards:
+`events.emit` touches `project_views` alone for a card event (`task_created` as an addition, the others as
+possible removals), so a title, a status, a label or a holder is on the page in the card's own transaction,
+while the project page and its statistics are not rendered again. A card under a moderation hold is
+filtered out of every column and the hold's resolution touches the views, so a card cancelled by `remove`
+never shows its title. No migration: the views are rows of `public_page` like every other page.
+
+**Reason:** the contract names a card's title, status, label and holder among the inputs that render at once,
+and the Board is the only view they reach; a separate kind keeps a card event from paying for the statistics
+and the people of the overview.
+
+**Rejected alternatives:**
+- The views as three more pages of the kind `project`: every card event would render the statistics fold
+  and the team again, and the entry on the statistics' wait for the run would no longer hold.
+- No card hook, the views only on the worker's run: §16.9 renders edits of a shown text at once, and a
+  hidden card would stay on the Board until the next run.
+- Three kinds, one per view: the three share one query for the people and one rule for who is named, and a
+  member change touches all of them.

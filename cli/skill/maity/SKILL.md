@@ -131,8 +131,11 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    the session in the dashboard.
 2. **Facts come from tools, not from memory.** Never type a commit hash or a
    pull request number into a report or a message. `maity report` reads them
-   from git and gh. If it refuses (exit 4), fix what it names (push, commit,
-   pull) and run it again. Never work around a refusal.
+   from git and gh, from the branch that is checked out: report a card from
+   its own pull request's branch, and check the `reporting …` line it
+   prints first. If it refuses (exit 4), fix what it names (push, commit,
+   pull, switch to the card's branch) and run it again. Never work around
+   a refusal.
 3. **One clone, one identity.** The state lives in the clone. Do not copy it
    between clones; a second clone joins with its own line.
 4. **Questions go to the inbox, self-contained.** Write each `maity ask` so a

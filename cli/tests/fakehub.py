@@ -231,6 +231,10 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                         "me": {"member_id": "agt-b", "owner": {"id": "hum-1", "handle": "m"}},
                     },
                 )
+            if self.command == "GET" and ("POST", f"{path}/report") in hub.routes:
+                # A card a test reports on: `maity report` reads it first (§6.6). Without a
+                # report route the card stays `not_found`, as the namespace tests need.
+                return self._send(200, {"id": path.rsplit("/", 1)[-1], "links": [], "report": None})
             if (self.command, path) == ("GET", "/api/v1/projects/oliver/maity/members"):
                 return self._send(200, {"items": MEMBERS, "next_cursor": None})
             if path == "/api/v1/projects/oliver/maity/events":
