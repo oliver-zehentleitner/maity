@@ -623,6 +623,70 @@ def _why(args: argparse.Namespace) -> dict[str, str] | None:
     return None
 
 
+_PR_URL = re.compile(r"^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)/?$")
+
+
+def _described(facts: gitfacts.Facts) -> str:
+    """What the report states, in one line: branch, head and pull request."""
+    where = f"{onboarding.inline(facts.branch)} at {facts.head[:12]}"
+    if facts.pr is not None:
+        return f"{where}, PR #{facts.pr.number} ({onboarding.inline(facts.pr.state.lower())})"
+    if facts.pr_unknown_reason is not None:
+        return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
+    return f"{where}, no pull request"
+
+
+def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
+    """`(owner/repo, number)` of a pull request URL, lowercased; None for anything else."""
+    match = _PR_URL.match(url) if isinstance(url, str) else None
+    if match is None:
+        return None
+    return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
+
+
+def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
+    """Why the pull request found for this checkout is not the card's, or None (§6.6, §6.13).
+
+    Two things on the card name its pull request: a link of kind `pr`, and the pull request
+    of its last report while that one is still open. A report from another PR's branch (a
+    follow-up branch checked out after the merge) is refused rather than filed on the card."""
+    found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
+    if facts.pr is not None:
+        shown = f"PR #{facts.pr.number}"
+    elif facts.pr_unknown_reason is not None:
+        shown = f"an unknown pull request ({onboarding.inline(facts.pr_unknown_reason)})"
+    else:
+        shown = "no pull request"
+    switch = (
+        f"check out that pull request's branch (`git switch <branch>`; after a merge with the "
+        f"branch deleted, `git switch -c <branch> <merged head>`) and report {card_id} from there"
+    )
+    links = card.get("links") if isinstance(card, dict) else None
+    linked = {
+        key
+        for link in (links if isinstance(links, list) else [])
+        if isinstance(link, dict) and link.get("kind") == "pr"
+        if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+    }
+    if found is not None:  # links to another repository of the owner say nothing about this one
+        linked = {key for key in linked if key[0] == found[0]}
+    if linked and found not in linked:
+        named = ", ".join(f"#{number}" for _, number in sorted(linked))
+        return f"{card_id} links pull request {named}, this checkout has {shown}; {switch}"
+    report = onboarding.get(card, "report")
+    before = onboarding.get(report, "pr")
+    if isinstance(before, dict):
+        state = onboarding.get(report, "observed", "pr_state") or before.get("state")
+        key = _pr_key(before.get("url"), before.get("number"))
+        other = found is not None and key is not None and key[0] != found[0]
+        if state == "open" and key is not None and key != found and not other:
+            return (
+                f"the last report on {card_id} names pull request #{key[1]}, still open; this "
+                f"checkout has {shown}; {switch}"
+            )
+    return None
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
@@ -657,6 +721,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     body = _report_body(facts, args.summary.strip(), args.done)
     if why is not None:
         body["why"] = why
+    # Said before anything is sent, so a report from the wrong checkout shows as such.
+    _err(f"reporting {_described(facts)}")
+    card = session.client.call("GET", session.project_path("tasks", args.task))
+    mismatch = _card_pr_mismatch(card, facts, args.task)
+    if mismatch:
+        _err(f"report refused: {mismatch}")
+        return EXIT_REFUSED
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
     pr = body["pr"]

@@ -645,7 +645,9 @@ def test_a_truncated_handover_pages_on_from_after() -> None:
     handover = {"from": ["old1"], "after": 4100, "items": [_handed(4150, "x")], "truncated": True}
     text = onboarding.render(packet(handover=handover))
     pointer = "`maity api GET /projects/oliver/maity/events --query after=4100`"
-    assert f"  … more handed-over events after #4100: {pointer}" in text
+    # The read returns every readable event from there, so the pointer says which are the chain's.
+    scope = "all events you may read; those for agent-b#old1 or you are the handed-over ones"
+    assert f"  … more handed-over events after #4100 ({scope}): {pointer}" in text
 
 
 def test_a_long_handover_is_cut_and_pages_on_from_after() -> None:
@@ -653,7 +655,23 @@ def test_a_long_handover_is_cut_and_pages_on_from_after() -> None:
     handover = {"from": ["old1"], "after": 4100, "items": items, "truncated": False}
     text = onboarding.render(packet(handover=handover))
     assert len(text) < onboarding.MAX_EVENTS_CHARS + 8000
-    assert "  … more handed-over events after #4100:" in text  # not the last `seq` shown
+    assert "  … more handed-over events after #4100 (" in text  # not the last `seq` shown
+
+
+@pytest.mark.parametrize("after", [None, "4100", True, -1])
+def test_without_a_usable_after_the_handover_pages_on_from_events_after(after: Any) -> None:
+    items = [_handed(n, "x" * 3900) for n in range(4140, 4101, -1)]
+    handover = {"from": ["old1"], "after": after, "items": items, "truncated": False}
+    text = onboarding.render(packet(handover=handover, events={"after": 4090, "items": []}))
+    assert "  … more handed-over events after #4090 (" in text  # never the last `seq` shown
+    assert "after #4103" not in text
+
+
+def test_a_truncated_handover_without_any_cursor_still_says_there_is_more() -> None:
+    handover = {"from": ["old1"], "items": [_handed(4150, "x")], "truncated": True}
+    text = onboarding.render(packet(handover=handover, events={"items": []}))
+    assert "  … more handed-over events (all events you may read;" in text
+    assert text.count("`maity api GET /projects/oliver/maity/events`") == 1
 
 
 @pytest.mark.parametrize(
