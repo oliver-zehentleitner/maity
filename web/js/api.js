@@ -2073,6 +2073,7 @@ window.Maity = window.Maity || {};
       }
       const space = org ? org.handle : me().member.handle;
       if (!SLUG.test(body.slug || "")) fields.slug = "string_pattern_mismatch";
+      if ("public_page" in body && !["on", "off"].includes(body.public_page)) fields.public_page = "literal_error";
       // §6.25: a slug is never a route word, and taken once in one's namespace.
       else if (ROUTE_WORDS.includes(body.slug)) fields.slug = "reserved";
       else if (fixtures()[body.slug + "/project.json"] || slugOfFull(space + "/" + body.slug)) fields.slug = "taken";
@@ -2113,6 +2114,9 @@ window.Maity = window.Maity || {};
           probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
+        // §16.9: public by default for the namespace's owner, private for anyone else; a
+        // repository the hub finds private would make it off too, which the fixture cannot see.
+        public_page: body.public_page || (!org || orgRole(org) === "owner" ? "on" : "off"),
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).

@@ -71,7 +71,16 @@ window.Maity = window.Maity || {};
   }
 
   // Project settings name them the same way (js/app.js).
-  M.projectSetup = { PROVIDERS, OPTIONS, DASHBOARD_PATH_DEFAULT };
+  // The project just created and its page's value from the 201, said once
+  // on the next view of that project.
+  let created = null;
+  const takeCreated = (full) => {
+    if (!created || created.full_name !== full) return null;
+    const said = created;
+    created = null;
+    return said;
+  };
+  M.projectSetup = { PROVIDERS, OPTIONS, DASHBOARD_PATH_DEFAULT, takeCreated };
 
   M.views.newProject = async function (ctx, root) {
     const field = (id, label, input, hint) => {
@@ -95,7 +104,24 @@ window.Maity = window.Maity || {};
       h("input", { id: "project-slug", required: true, pattern: SLUG_PATTERN, maxlength: "63", autocomplete: "off", spellcheck: "false" }),
       M.dom.NAME_RULES.slug.text + " Used in links and by the CLI; it cannot be changed later.");
     const repository = field("project-repository", "Repository (optional)",
-      h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
+      h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }),
+      M.t("newproject.repository.private_note"));
+    // §16.9: a project is public by default for the namespace's owner; anyone
+    // else creating in an organisation creates it private, fixed, and an
+    // owner of the organisation may make it public later.
+    const privateBox = h("input", { type: "checkbox", id: "project-private", "aria-describedby": "project-private-hint" });
+    const privateHint = h("p", { class: "hint", id: "project-private-hint" });
+    const ownsNamespace = () => !owner.input.value || orgs.some((o) => o.handle === owner.input.value && o.my_role === "owner");
+    const settlePrivate = () => {
+      const fixed = !ownsNamespace();
+      if (fixed) privateBox.checked = true;
+      else if (privateBox.disabled) privateBox.checked = false;
+      privateBox.disabled = fixed;
+      privateHint.textContent = fixed ? M.t("newproject.private.fixed") : M.t("newproject.private.hint");
+    };
+    owner.input.addEventListener("change", settlePrivate);
+    settlePrivate();
+    const visibility = [h("label", { class: "check", for: "project-private" }, privateBox, " ", M.t("newproject.private")), privateHint];
     const memory = field("project-memory", "Project memory",
       h("select", { id: "project-memory" }, PROVIDERS.map(([value, label]) => h("option", { value, selected: value === "keep-the-why" }, label))),
       "Where the project keeps its decisions and their reasons. Maity stores none of it: an agent sets it up in the repository, "
@@ -207,6 +233,8 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
+        // Only a ticked Private is sent; otherwise the hub's default stands.
+        if (privateBox.checked) body.public_page = "off";
         body.memory = { provider: memory.input.value };
         // §6.21: every option sent as it stands; under None the Keep the
         // Why ones are false, as the hub would take them.
@@ -217,11 +245,12 @@ window.Maity = window.Maity || {};
         status.busy("Creating…");
         submit.disabled = true;
         try {
-          const created = await M.api.post("/projects", body);
+          const made = await M.api.post("/projects", body);
+          created = { full_name: made.full_name, public_page: made.public_page };
           status.done();
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
-          M.route.go(ctx.projectLink(created.full_name, "agents"));
+          M.route.go(ctx.projectLink(made.full_name, "agents"));
         } catch (err) {
           submit.disabled = false;
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;
@@ -241,6 +270,7 @@ window.Maity = window.Maity || {};
     },
     orgs.length ? owner.nodes : null,
     name.nodes, slug.nodes, repository.nodes,
+    visibility,
     memory.nodes,
     setupBox,
     preset.nodes);
