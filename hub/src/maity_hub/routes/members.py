@@ -5,11 +5,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field, field_validator
+from pydantic import Field, StringConstraints, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select, update
 
@@ -20,6 +20,7 @@ from maity_hub import (
     briefings,
     clock,
     cross_owner,
+    foreign_agent,
     group_chats,
     idempotency,
     instances,
@@ -558,6 +559,17 @@ def patch_member(
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         change = change_of(mine, caller, line=line_lead)
         asked: list[str] | None = None
+        consent_id: str | None = None
+        if not line_lead and foreign_agent.is_foreign(conn, mine.row, target):
+            # Another owner's agent: these fields wait for its owner (§6.2). A further PATCH
+            # ends the open request and files a new one for the fields it names.
+            foreign_agent.withdraw_open(conn, target.id, change.actor, "superseded")
+            consent_id = foreign_agent.file(
+                conn, mine.project, mine, caller, target, values, pause, instance
+            )
+            if consent_id is not None:
+                values = {k: v for k, v in values.items() if k not in foreign_agent.FIELDS}
+                pause, instance = (False, None), None
         if "reports_to" in given:
             # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
             # of the member; an agent that did not ask for them does not end the decision of
@@ -584,6 +596,8 @@ def patch_member(
         for field in ("trust", "role"):
             if agent_admin and field in old:
                 admin_agents.announce(conn, change, target, field, old[field], values[field])
+        if consent_id is not None:
+            return idempotency.Outcome(202, "request", consent_id, _request(conn, consent_id))
         if asked:
             return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
@@ -838,6 +852,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     onboarding.member_removed(
         conn, change.project.id, target.agent_id or target.human_id, change.actor
     )
+    foreign_agent.withdraw_open(conn, target.id, change.actor, "member_removed")
     cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
     now = clock.now()
     credentials = (
@@ -947,7 +962,8 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
 
 
 class IsolateIn(Strict):
-    reason: str = Field(min_length=1, max_length=500)
+    # Trimmed first: a reason of blanks is none (§6.2, 1–500 characters).
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 
 
 def _isolation_target(conn: Connection, mine: Membership, caller: Caller, member_id: str) -> Any:

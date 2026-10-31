@@ -320,7 +320,7 @@ def may_withdraw(conn: Connection, row: Any, mine: Membership) -> bool | None:
     if mine.may("requests:answer") or mine.may("members:admin"):
         return True
     proposal = row.proposal or {}
-    named = [proposal.get("target"), proposal["boss"]]
+    named = [proposal["target"], proposal["boss"]]
     sides = conn.execute(select(t.membership).where(t.membership.c.id.in_(named))).all()
     owners = {owner_of(conn, side) for side in sides}
     return True if mine.principal_id in owners or mine.principal_id == row.to_human else None

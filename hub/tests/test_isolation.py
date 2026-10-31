@@ -104,7 +104,11 @@ def test_the_reason_is_one_to_five_hundred_characters(
 ) -> None:
     agent = flow.agent(make_client, owner)
     assert isolate(owner, agent.id, "").status_code == 400
+    assert isolate(owner, agent.id, "   \n ").status_code == 400  # blanks are no reason
     assert isolate(owner, agent.id, "x" * 501).status_code == 400
+    padded = isolate(owner, agent.id, "  too loud  ")
+    assert padded.status_code == 200 and padded.json()["isolated"]["reason"] == "too loud"
+    lift(owner, agent.id)
     assert isolate(owner, agent.id, "x" * 500).status_code == 200
 
 

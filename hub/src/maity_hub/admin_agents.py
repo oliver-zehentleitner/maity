@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import cross_owner, line, project_roles, proposals
+from maity_hub import cross_owner, foreign_agent, line, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -59,22 +59,44 @@ def _pause_of_another_agent(target: Any, agent_id: str) -> bool:
 
 
 def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> None:
+    check_change(
+        mine,
+        target,
+        trust=body.trust,
+        role=body.role,
+        capabilities="capabilities" in given,
+        pause=("paused" in given, body.paused is None),
+    )
+
+
+def check_change(
+    mine: Membership,
+    target: Any,
+    *,
+    trust: str | None,
+    role: str | None,
+    capabilities: bool,
+    pause: tuple[bool, bool],
+) -> None:
+    """What an admin agent may change of a member (§2.3 ᵃ), on the values of one change;
+    `pause` is (given, lifting). A call and the `go` of another owner's consent
+    (`foreign_agent`) ask exactly this."""
     check_target(mine, target)
-    if "capabilities" in given:
+    if capabilities:
         raise humans_only("capabilities are a human's to set")
-    if body.trust is not None and body.trust not in AGENT_TRUSTS:
+    if trust is not None and trust not in AGENT_TRUSTS:
         raise humans_only("an admin agent moves trust between member and guest only")
     # A project role counts as its base (§2.3); a role the project lacks is `invalid` later.
-    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    base = project_roles.base_of(mine.project, role) if role is not None else None
     if base is not None and base not in AGENT_ROLES:
         raise humans_only("the proxy and the manager are a human's to give")
-    if body.role is not None and body.role != target.role and target.role == "manager":
+    if role is not None and role != target.role and target.role == "manager":
         raise humans_only("only a human removes the role manager")
-    if body.trust == "guest" and target.trust != "guest" and target.role == "manager":
+    if trust == "guest" and target.trust != "guest" and target.role == "manager":
         # Trust guest ends a manager's rights as the role removal does (§6.2).
         raise humans_only("only a human lowers a manager to guest")
-    if "paused" in given:
-        _check_pause(target, mine.principal_id, body.paused is None)
+    if pause[0]:
+        _check_pause(target, mine.principal_id, pause[1])
 
 
 def _check_pause(target: Any, agent_id: str, lifting: bool = False) -> None:
@@ -281,23 +303,43 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if cross_owner.owners(conn, target, boss_row) is not None:
             cross_boss = boss_row
             del values["reports_to"]
-    old = members.apply_patch(
-        conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
-    )
-    for field in ("trust", "role"):
-        if field in old:
-            announce(conn, change, target, field, old[field], values[field], request.id)
-    if cross_boss is not None and proposer is not None:
-        caller = Caller(
+    instance = proposal.get("instance")
+    caller = (
+        Caller(
             kind="agent",
             via="bearer",
             agent_id=agent,
             membership_id=proposer.id,
             project_id=project.id,
         )
-        cross_owner.file(
-            conn, project, Membership(project, proposer, "agent"), caller, target, cross_boss
+        if proposer is not None
+        else None
+    )
+    consent_id = None
+    if (
+        proposer is not None
+        and caller is not None
+        and foreign_agent.is_foreign(conn, proposer, target)
+    ):
+        # Another owner's agent: after ᵃ, its owner's consent for the fields that wait for it
+        # (§6.2, "Another owner's agent"); the rest applies now.
+        mine = Membership(project, proposer, "agent")
+        foreign_agent.withdraw_open(conn, target.id, change.actor, "superseded")
+        consent_id = foreign_agent.file(
+            conn, project, mine, caller, target, values, (bool(given), reason), instance
         )
+        if consent_id is not None:
+            values = {k: v for k, v in values.items() if k not in foreign_agent.FIELDS}
+            given, reason, instance = False, None, None
+    old = members.apply_patch(
+        conn, change, target, values, (bool(given), reason), instance=instance
+    )
+    for field in ("trust", "role"):
+        if field in old:
+            announce(conn, change, target, field, old[field], values[field], request.id)
+    if cross_boss is not None and proposer is not None and caller is not None:
+        mine = Membership(project, proposer, "agent")
+        cross_owner.file(conn, project, mine, caller, target, cross_boss)
 
 
 # The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).
