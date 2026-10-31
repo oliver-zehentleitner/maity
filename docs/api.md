@@ -2277,7 +2277,8 @@ included:
   is `second_factor`.
 - A second-factor session reaches only `GET /auth/session` (which
   answers `{second_factor: "required", via, session_id, csrf_token,
-  expires_at}` and no member — the verify carries the CSRF token as
+  expires_at}`, under `via: email` also `mail`: `sent`, `rate_limited`
+  (with `retry_after`) or `unavailable` (§2.8.8), and no member — the verify carries the CSRF token as
   every cookie call),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
@@ -2350,7 +2351,9 @@ a new enrolment from Profile → Security. Without a recovery code:
   effect: `second_factor_changed` `{change: reset, by: <admin
   handle>}` is written and the security mail of §18.5 sent, and the
   next sign-in of the human goes into enrolment (§2.8.5) whatever the
-  policy says, unless it is `off`. An instance without mail cannot
+  policy says, unless it is `off`, or `email` with a verified address,
+  where the mail is the factor again (§2.8.8): the reset itself went
+  through that mailbox. An instance without mail cannot
   reset this way (`409 mail_not_configured`, §1.3), nor a human without
   a verified address (`409 address_unverified`). The mail proves the
   mailbox, not the person: the dashboard tells the admin to confirm the
@@ -2468,14 +2471,17 @@ environment winning as there:
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
-| `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first |
+| `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
 
 The per-human limit is a known denial of service: whoever holds the
 first factor can keep the human's sign-ins at the second step for 15
 minutes at a time. It is accepted, as the device-code breaker in §2.6.4
 is: a limit per source address alone would let a distributed guess at
 six digits run, and the attacker it slows already holds the password or
-the mailbox, which the alerts of §2.8.2 report.
+the mailbox, which the alerts of §2.8.2 report. The same holds for the
+mail factor's hourly limit (§2.8.8): whoever holds the password can use
+up the human's ten mails and keep a human without TOTP out for an hour;
+every one of those mails tells the human that someone has the password.
 
 #### 2.8.7 The dashboard and the CLI
 
@@ -2513,12 +2519,15 @@ enrolled TOTP. The maintainer's five rules of 2026-10-31:
 
 1. **Every new session of every human** ends in a second-factor session
    after the first factor (§2.8.2, `via: email`); only the link or the
-   code from the mail makes it a full session. Sessions that exist when
+   code from the mail makes it a full session, and it sets the session's
+   `second_factor_at` (§2.8.4) as a TOTP code does. Sessions that exist when
    the setting is turned on stay as they are; their next sensitive call
    asks for the factor (§2.8.4).
 2. **TOTP before mail.** A human enrolled with TOTP (§2.8.1) is asked
    for TOTP or a recovery code as under `optional` (`via: totp`), never
-   for mail: TOTP is the stronger factor.
+   for mail: TOTP is the stronger factor. A human who turns TOTP off
+   (§2.8.1) or whose TOTP is reset (§2.8.3) has the mail as the factor
+   again.
 3. **No sign-in link as the first factor.** While the setting is
    `email`, sign-in links and codes by mail (§2.6.3) are off:
    `GET /auth/methods` answers `email_link: false` (§2.6.1),
@@ -2531,13 +2540,20 @@ enrolled TOTP. The maintainer's five rules of 2026-10-31:
    /auth/second-factor/email` from a full session sends it (a code
    only, no link), and `POST /auth/second-factor/verify`
    `{email_code}` answers `{valid_until}`.
-5. **No lock-out.** See "Turning it on" and "Mail fails later" below.
+5. **No silent fallback, and a way back.** The setting never quietly
+   drops to no second factor; TOTP, the instance admins with TOTP and
+   the operator's environment are the ways back in. See "Turning it
+   on", "Mail fails later" and "The address lost" below.
 
 **The mail.** Sent to the verified address the moment the first factor
-succeeds, in the human's `language`: what the hub observed of the
-sign-in (time, IP address) and what the browser claims (browser,
-operating system, labelled as claimed), a link, the six-digit code, and
-"If this was not you, change your password: someone has it". The link
+succeeds, in the human's `language`: the first factor's method
+(password or device code), what the hub observed of the sign-in (time,
+IP address) and what the browser claims (browser, operating system,
+labelled as claimed), a link, the six-digit code, "Never give this code
+to anyone: Maity never asks for it", and what to do if it was not the
+human — after a password, "someone has your password: change it"; after
+a device code, "a sign-in was approved from one of your sessions: end
+the sessions you do not know" (§2.6.5). The link
 is the dashboard route `/sign-in/second-factor/email#<token>`: the
 token stands in the fragment, which no browser sends to a server and no
 log records, and the dashboard posts it from the page. Link and code
@@ -2562,12 +2578,35 @@ counts as a wrong code (§2.8.6); the code is the same six digits as
 everywhere, spaces ignored.
 
 **Without a verified address.** A human who has neither TOTP nor a
-verified address (`address_status` other than `verified`, §18.4) gets
-the enrolment session of `required_admins` (§2.8.5) instead and enrols
-TOTP; for an account without a password the pending rule of §2.8.1
-applies. The second-factor session never tells a verified address
-from an unverified one beyond this: the first factor already proved
-the account.
+verified address (`address_status` other than `verified`, §18.4) is
+handled by whether the account ever had one; the hub keeps that as a
+flag on the account, set at the first verification and never cleared.
+
+- **Never had one** (an account made by `maity-hub owner create`
+  without an address, say): the enrolment session of `required_admins`
+  (§2.8.5), and the human enrols TOTP; for an account without a
+  password the pending rule of §2.8.1 applies. This first enrolment
+  rests on the first factor alone, as under `required_admins`: an
+  accepted risk, since such an account never had a second factor to
+  lose.
+- **The address lost.** An account whose address was verified and no
+  longer is — `disabled` after delivery failures (§18.7), or removed —
+  does **not** fall back to enrolling on the first factor alone, which
+  would let whoever holds the password install their own TOTP exactly
+  where the mail used to be the factor. It fails closed: the sign-in
+  stops at the second-factor session, whose `POST
+  /auth/second-factor/email` answers `409 address_unverified`, and the
+  hub writes the account record `second_factor_failed` `{method:
+  email_unavailable, ip, browser, os}` (§2.8.2), an `inbox` item since
+  no mail can reach the human. The way back is the operator: `maity-hub
+  second-factor reset --handle <handle>` (§2.8.3) sends the next sign-in
+  into enrolment once. Removing the verified address under `email` is
+  refused for a human without TOTP (`forbidden`, `details.reason:
+  second_factor_required`), so nobody locks themselves out by it.
+
+The second-factor session never tells a verified address from an
+unverified one beyond this: the first factor already proved the
+account.
 
 **Turning it on.** A `PATCH /admin/settings/sign-in`
 `{second_factor: "email"}` needs the mail settings complete and
@@ -2582,7 +2621,10 @@ this hub has actually arrived, not just been accepted by the server
 (§16.3). A new `PATCH` replaces an open confirmation; a `PATCH` to any
 other value needs none. In the environment,
 `MAITY_SIGN_IN_SECOND_FACTOR=email` is the operator's own choice and
-takes effect at once.
+takes effect at once, without the mailed code; but the hub refuses to
+start with it while the mail settings are not complete and enabled (as
+§2.8.1 does for `required_admins` without the key), so the environment
+cannot lock out every human without TOTP at the start.
 
 **Mail fails later.** While the mail settings are not complete and
 enabled, the hub does **not** fall back to no second factor: it fails

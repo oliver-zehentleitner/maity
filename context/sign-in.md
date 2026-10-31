@@ -358,4 +358,15 @@ back to no factor.
   than the setting promises (this contract's reading).
 - The mail factor giving good standing: it is the mailbox, which good
   standing exists to distrust (§2.6.5; this contract's reading).
+- Enrolling TOTP on the first factor alone when a verified address is
+  lost (bounced to `disabled`, or removed): whoever holds the password
+  would install their own TOTP exactly where the mail was the factor.
+  Such an account fails closed and the operator lets it enrol once; only
+  an account that never had a verified address enrols on the first
+  factor, an accepted risk as under `required_admins` (this contract's
+  reading, after review).
+- `MAITY_SIGN_IN_SECOND_FACTOR=email` taking effect while the mail
+  settings are incomplete: it would lock out every human without TOTP,
+  the admins included; the hub refuses to start with that combination
+  instead (this contract's reading, after review).
 
