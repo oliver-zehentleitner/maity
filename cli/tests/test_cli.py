@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import stat
 import sys
 import threading
@@ -651,14 +652,79 @@ def test_a_join_started_off_path_says_how_to_put_maity_on_path(
     ) in err
 
 
-def test_a_join_with_maity_on_path_says_nothing_about_path(
+def test_a_join_with_maity_on_path_ends_with_the_ensurepath_sentence(
     clone: Path, bin_dir: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """For later shells (§3.2): the sentence is the last line, after the resume."""
     (bin_dir / "maity").write_text("#!/bin/sh\n")
     (bin_dir / "maity").chmod(0o755)
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    err = capsys.readouterr().err
+    assert "not on PATH" not in err
+    assert err.endswith(cli.PATH_SENTENCE + "\n")
+
+
+CHAT_URL = "https://maity.team/oliver/maity/chat/cnv-1"
+
+
+@pytest.mark.parametrize("chat_url", [CHAT_URL, None, "javascript:alert(1)"])
+def test_a_join_ends_with_the_chat_with_its_human(
+    clone: Path,
+    bin_dir: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    chat_url: str | None,
+) -> None:
+    """§5.2: the line the agent gives its human, before the PATH sentence."""
+    (bin_dir / "maity").write_text("#!/bin/sh\n")
+    (bin_dir / "maity").chmod(0o755)
+    packet: dict[str, Any] = {"session": {"id": "ses-b-0004"}, "membership": {}}
+    if chat_url is not None:
+        packet["membership"]["chat_url"] = chat_url
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, packet)
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[-1] == cli.PATH_SENTENCE
+    if chat_url == CHAT_URL:
+        assert lines[-2] == f"Talk to me in Maity: {CHAT_URL}"
+    else:  # no address, or none a browser opens as a page: no line
+        assert not any("Talk to me" in line for line in lines)
+
+
+def test_through_a_pipe_the_chat_line_still_comes_after_the_resume_text(
+    clone: Path, fake: fakehub.FakeHub
+) -> None:
+    """A harness reads stdout and stderr through one pipe, where stdout is buffered."""
+    import subprocess
+
+    packet = {"session": {"id": "ses-b-0004"}, "membership": {"chat_url": CHAT_URL}}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, packet)
+    src = Path(cli.__file__).resolve().parents[1]
+    done = subprocess.run(
+        [sys.executable, "-m", "maity", "join", f"{fake.url}/j/{fakehub.TOKEN}"]
+        + ["--code", fakehub.CODE],
+        cwd=clone,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout
+    lines = done.stdout.splitlines()
+    assert lines[-2] == f"Talk to me in Maity: {CHAT_URL}"
+    assert "pipx ensurepath" in lines[-1]
+    assert done.stdout.index("No briefing was given") < done.stdout.index("Talk to me")
+
+
+def test_a_join_without_resume_has_no_chat_line(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--no-resume` has no packet, so no chat address to give."""
     args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
     assert cli.main(args) == cli.EXIT_OK
-    assert "not on PATH" not in capsys.readouterr().err
+    assert "Talk to me" not in capsys.readouterr().err
 
 
 def test_a_join_file_with_the_wrong_shape_is_refused(
@@ -707,11 +773,12 @@ def test_join_names_maity_as_the_work_channel_after_the_pointer(
     assert cli.main(args) == cli.EXIT_OK
     out = capsys.readouterr()
     lines = out.err.splitlines()
-    assert lines[-1] == pointer.PROJECT_CHANNEL
-    assert "main channel" in lines[-1]
-    assert all(command in lines[-1] for command in ["maity say", "maity ask", "maity report"])
+    assert "pipx ensurepath" in lines[-1]  # the last line is about PATH (§3.2)
+    assert lines[-2] == pointer.PROJECT_CHANNEL
+    assert "main channel" in lines[-2]
+    assert all(command in lines[-2] for command in ["maity say", "maity ask", "maity report"])
     # Once joined the human is reached through Maity alone, and the agent is told why.
-    assert pointer.HUMAN_CHANNEL in lines[-1]
+    assert pointer.HUMAN_CHANNEL in lines[-2]
     for words in [
         "only through Maity",
         "maity say human",

@@ -15,7 +15,7 @@ import urllib.parse
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
@@ -26,6 +26,8 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    allowed_projects,
+    availability,
     briefings,
     campaigns,
     clock,
@@ -35,8 +37,10 @@ from maity_hub import (
     handover,
     idempotency,
     instances,
+    join_line,
     limits,
     line,
+    mentions,
     moderation,
     namespace,
     project_roles,
@@ -61,7 +65,7 @@ from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
 from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
-from maity_hub.views import join_view, member_view, principal_id
+from maity_hub.views import join_view, member_view, principal_id, routing_boss
 
 router = APIRouter(route_class=ProjectRoute)
 page_router = APIRouter(route_class=ProjectRoute)  # /join/{token}, outside the API prefix
@@ -96,6 +100,10 @@ class JoinCreate(Strict):
     # For an agent that is already a member: which instance the join adds (§6.17).
     new_instance: bool | None = None
     replaces: str | None = Field(default=None, max_length=5)
+    # A first join only (§3.1): the agent member whose work this one continues, and where
+    # the hand-over is written, a card id of the project or the `seq` of a message to `all`.
+    takes_over: str | None = Field(default=None, max_length=40)
+    handover: Annotated[str, Field(max_length=200)] | int | None = None
 
 
 class Exchange(Strict):
@@ -136,6 +144,9 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             member_rule,
             limits.of(conn, settings, "max_agents_per_human"),
         )
+        # The owner decides in advance where an agent may go: a first join, a new instance
+        # and a replacement alike (§6.3).
+        allowed_projects.refuse(conn, agent_id, mine.project)
         existing = conn.execute(
             select(t.membership).where(
                 t.membership.c.project_id == mine.project.id,
@@ -181,7 +192,9 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         # After the member's own trust and role are in: a new instance of an admin or a
         # proxy hands out a credential with that trust, which is the owner's to give.
         _require_owner_for(mine, values)
+        _check_takes_over(conn, body, mine.project.id, agent_id, existing)
         _check_instance(conn, body, existing)
+        handed = _check_handover(conn, body.handover, mine.project.id)
         if member_rule and existing is None:
             # The count and the new join are one step under the project's lock (§3.1).
             project = lock_project(conn, mine.project.id)
@@ -209,6 +222,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 via=via,
                 new_instance=bool(body.new_instance),
                 replaces=body.replaces,
+                takes_over=body.takes_over,
+                handover=handed,
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
@@ -225,7 +240,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "id": join_id,
                 "join_url": join_url,
                 "code": code,
-                "paste_line": f"maity join {join_url} --code {code}",
+                "paste_line": join_line.command(settings.cli_install, join_url, code),
                 "agent_id": agent_id,
                 "project": namespace.full_name(conn, mine.project),
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
@@ -234,6 +249,56 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _check_takes_over(
+    conn: Connection, body: JoinCreate, project_id: str, agent_id: str, existing: Any
+) -> None:
+    """`takes_over` (§3.1): for a first join only, naming another agent with an active
+    membership in the project."""
+    if body.takes_over is None:
+        return
+    if existing is not None or body.new_instance is not None or body.replaces is not None:
+        raise invalid({"takes_over": "first_join_only"}, "takes_over is for a first join only")
+    named = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.agent_id == body.takes_over,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if named is None or body.takes_over == agent_id:
+        raise invalid({"takes_over": "not_an_agent_member"}, "no such agent member")
+
+
+def _check_handover(
+    conn: Connection, value: str | int | None, project_id: str
+) -> dict[str, Any] | None:
+    """`handover` (§3.1) as the `{kind, id}` the membership keeps: a card of this project,
+    or a message of it that is addressed to everyone. Nothing of either is stored."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise invalid({"handover": "not_found"}, "a card id or the seq of a message")
+    if isinstance(value, int):
+        row = conn.execute(
+            select(t.event.c.audience, t.event.c.redacted).where(
+                t.event.c.seq == value,
+                t.event.c.project_id == project_id,
+                t.event.c.kind == "message",
+            )
+        ).first()
+        if row is None:
+            raise invalid({"handover": "not_found"}, "no such message in this project")
+        if row.redacted or "all" not in (row.audience or []):
+            raise invalid({"handover": "not_readable"}, "the message is not addressed to all")
+        return {"kind": "message", "id": value}
+    found = conn.execute(
+        select(t.card.c.id).where(t.card.c.id == value, t.card.c.project_id == project_id)
+    ).first()
+    if found is None:
+        raise invalid({"handover": "not_found"}, "no such card in this project")
+    return {"kind": "task", "id": value}
 
 
 def _require_owner_for(mine: Any, values: dict[str, Any]) -> None:
@@ -344,6 +409,15 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
         # A membership an admin raised beyond the limits gets new instances only
         # through `members:admin`.
         raise _limit("agent")
+    if body.takes_over is not None:
+        own = conn.execute(
+            select(t.agent_profile.c.id).where(
+                t.agent_profile.c.id == body.takes_over,
+                t.agent_profile.c.owner_id == mine.principal_id,
+            )
+        ).first()
+        if own is None:  # never another human's agent, nor one that is not an agent
+            raise _limit("takes_over")
 
 
 def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
@@ -555,8 +629,7 @@ signs: a call with the bearer credential is refused with `signature_required`.
 Install the CLI and join with it:
 
 ```sh
-{{cli_install}}
-maity join {{join_link}} --code <code>
+{{join_command}}
 ```
 
 If you cannot install it yet, the exchange in section 3 still works and
@@ -606,6 +679,7 @@ def render_page(
             reports_to_text += " (waiting for a human's consent)"
     else:
         reports_to_text = "nobody"
+    join_command = join_line.command(settings.cli_install, link, "<code>")
     values = {
         "project_name": _md(project.name),
         "project_repository": _md(project.repository_url or "not configured"),
@@ -620,11 +694,14 @@ def render_page(
         # The host `maity join` keys an identity's directory by outside a clone (cli/README).
         "join_host": urllib.parse.urlsplit(link).netloc.lower(),
         "cli_install": settings.cli_install,
+        "join_command": join_command,
+        "ensurepath": join_line.ENSUREPATH,
+        "takes_over": _takes_over_sentence(conn, row),
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
             _SIGNING_REQUIRED.replace("{{hub}}", hub)
             .replace("{{join_link}}", link)
-            .replace("{{cli_install}}", settings.cli_install)
+            .replace("{{join_command}}", join_command)
             if project.signing == "required"
             else ""
         ),
@@ -639,6 +716,19 @@ def render_page(
 
 
 _HTML = MarkdownIt("commonmark", {"html": False}).enable("table")
+
+
+def _takes_over_sentence(conn: Connection, row: Any) -> str:
+    """Item 2's sentence for a join that names `takes_over` (§3.2): whose work the agent
+    continues and that the hand-over is in its first resume, never the hand-over itself."""
+    if row.takes_over is None:
+        return ""
+    handle = conn.execute(
+        select(t.agent_profile.c.handle).where(t.agent_profile.c.id == row.takes_over)
+    ).scalar()
+    if handle is None:
+        return ""
+    return f"You continue the work of `{handle}`; the hand-over is in your first resume.\n"
 
 
 def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
@@ -867,6 +957,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    if not allowed_projects.admits(conn, allowed_projects.of_profile(conn, row.agent_id), project):
+        raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
     agent_id = row.agent_id or _create_for_join(conn, row)
@@ -898,6 +990,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 areas=row.areas,
                 capabilities=row.capabilities,
                 briefing=row.briefing,
+                takes_over=_takes_over_of(conn, row),
+                handover=row.handover,
                 joined_at=now,
             )
         )
@@ -962,13 +1056,55 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             conn,
             row.project_id,
             "member_joined",
-            ["all"],
+            ["all", *_told_of_takeover(conn, project, new)],
             member_view(conn, new),
             actor=Actor(membership_id=membership_id, credential_id=credential_id),
             subject=("member", agent_id),
         )
     name = namespace.full_name(conn, project)  # the join answer's project (§6.25)
     return value, credential_id, agent_id, name, project.signing, instance
+
+
+def _takes_over_of(conn: Connection, row: Any) -> dict[str, Any] | None:
+    """The member a first join continues, `{member_id, handle, name}` with the global name
+    (§6.3) as they are at the exchange and kept after that member is removed (§5.2); null for
+    a join that named none."""
+    if row.takes_over is None:
+        return None
+    profile = conn.execute(
+        select(t.agent_profile.c.handle, t.human.c.handle.label("owner_handle"))
+        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
+        .where(t.agent_profile.c.id == row.takes_over)
+    ).first()
+    if profile is None:  # the profile went since the join was made: nothing to continue
+        return None
+    return {
+        "member_id": row.takes_over,
+        "handle": profile.handle,
+        "name": mentions.global_name(profile.owner_handle, profile.handle),  # §6.3
+    }
+
+
+def _told_of_takeover(conn: Connection, project: Any, new: Any) -> list[str]:
+    """What `member_joined` adds to its audience when the join named `takes_over` (§8.1):
+    the project's coordinator and the lead of the member named, so that whoever led the old
+    agent learns who continues its work."""
+    if new.takes_over is None:
+        return []
+    told = [availability.coordinator_token(conn, project)]
+    named = conn.execute(
+        select(t.membership.c.reports_to)
+        .where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.agent_id == new.takes_over["member_id"],
+        )
+        .order_by(t.membership.c.id.desc())
+    ).first()
+    # An isolated lead is routed past, as everywhere events go to a boss (§6.2).
+    lead = routing_boss(conn, named.reports_to) if named is not None else None
+    if lead is not None:
+        told.append(f"member:{lead}")
+    return list(dict.fromkeys(told))
 
 
 def _active_member(conn: Connection, row: Any) -> Any:

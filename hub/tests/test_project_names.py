@@ -241,3 +241,22 @@ def test_the_namespace_owner_is_neither_demoted_nor_removed(
         owner.patch(f"/projects/maintainer/maity/members/{anna.id}", {"trust": "admin"}).status_code
         == 200
     )
+
+
+def test_a_transfer_turns_the_page_off_and_isolates_the_agents_of_outsiders(
+    owner: flow.Human, anna: flow.Human, migrated: Engine
+) -> None:
+    """§6.2: an unset `agent_owners` reads `members` once the page is off, and the transfer
+    turns it off, so an agent whose owner is no member goes with it."""
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    lent = factory.agent(migrated, project_id, factory.human(migrated, "stranger")).agent_id
+    assert owner.patch("/projects/maintainer/maity", {"public_page": "on"}).status_code == 200
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == lent)).one()
+    assert row.isolated_since is None  # `anyone` while the project has a page
+    request = transfer(owner, anna.id).json()
+    assert answer(anna, "maintainer/maity", request["id"]).status_code == 200
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == lent)).one()
+    assert row.isolated_since is not None and row.isolated_by == "hub"

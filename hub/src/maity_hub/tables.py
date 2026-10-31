@@ -342,6 +342,8 @@ agent_profile = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
+    # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
+    Column("allowed_projects", JSON_VALUE),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
@@ -564,6 +566,11 @@ project = Table(
     # many (§3.1 "Bringing your own agent", §6.1).
     Column("member_agents", String(8), nullable=False, server_default="on"),
     Column("member_agents_max", Integer, nullable=False, server_default="3"),
+    # Whether an agent's owner must be a member (§6.1, §6.2 "An agent whose owner is no
+    # member"): members or anyone; null reads from the public page. And the roles an agent of
+    # an owner from outside may hold, null for the default `["coder"]`.
+    Column("agent_owners", String(8)),
+    Column("outside_roles", JSON_VALUE),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -724,6 +731,11 @@ membership = Table(
     Column("line_consent", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    # Whose work this agent continues and where the hand-over is written, as the join that
+    # made the membership named them (§3.1): `{member_id, handle, name}` as they were at the
+    # exchange, and `{kind, id}`; null when the join named none. The hub keeps no text.
+    Column("takes_over", JSON_VALUE),
+    Column("handover", JSON_VALUE),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -855,6 +867,10 @@ join_link = Table(
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
     Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
+    # A first join's `takes_over` (an agent id) and `handover` (`{kind, id}`, §3.1); they
+    # move to the membership at the exchange.
+    Column("takes_over", String(ID)),  # no foreign key: the profile may go (§6.3)
+    Column("handover", JSON_VALUE),
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
     # For a member's join, which instance it adds (§6.17); `instance` is what the
@@ -1933,16 +1949,17 @@ soul_version = Table(
     **MYSQL_TABLE,
 )
 
-# Team and community memory entries. A team's entries belong to its membership (the
-# handle in this project); community entries have none. A deletion keeps the row as a
-# tombstone with `text` null, so the history says that something was there.
+# Team, role and community entries. A team's entries belong to its membership (the
+# handle in this project), a role's to its name; community entries have neither.
+# A deletion keeps the row as a tombstone with `text` null, saying something was there.
 memory_entry = Table(
     "memory_entry",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("store", String(16), nullable=False),  # team, community
+    Column("store", String(16), nullable=False),  # team, role, community
     _membership_ref("team_membership"),
+    Column("role", String(24)),
     Column("text", MARKDOWN_TEXT),
     Column("tags", JSON_VALUE, nullable=False),
     Column("by_kind", String(16), nullable=False),  # human, agent
@@ -1957,8 +1974,9 @@ memory_entry = Table(
     _membership_ref("deleted_by_membership"),
     Column("deleted_reason", MARKDOWN_TEXT),
     CheckConstraint(
-        "(store = 'team' AND team_membership IS NOT NULL)"
-        " OR (store = 'community' AND team_membership IS NULL)",
+        "(store = 'team' AND team_membership IS NOT NULL AND role IS NULL)"
+        " OR (store = 'role' AND team_membership IS NULL AND role IS NOT NULL)"
+        " OR (store = 'community' AND team_membership IS NULL AND role IS NULL)",
         name="store_shape",
     ),
     CheckConstraint(
@@ -1967,6 +1985,7 @@ memory_entry = Table(
     ),
     Index("ix_memory_entry_project_store", "project_id", "store", "created_at"),
     Index("ix_memory_entry_team", "team_membership", "created_at"),
+    Index("ix_memory_entry_role", "project_id", "role", "created_at"),
     **MYSQL_TABLE,
 )
 

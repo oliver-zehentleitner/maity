@@ -17,7 +17,15 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import admin_agents, cross_owner, instances, namespace, project_roles, proposals
+from maity_hub import (
+    admin_agents,
+    agent_owners,
+    cross_owner,
+    instances,
+    namespace,
+    project_roles,
+    proposals,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -244,6 +252,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if base is None:
             raise ApiError(409, "role_unknown", "the project has no such role any more")
         values["role_base"] = base
+    agent_owners.check_assignment(conn, project, target, values)  # the limits as they are now
     _still_allowed(
         conn, asker, project, target, values, (bool(given), reason), proposal.get("instance")
     )

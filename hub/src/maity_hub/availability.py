@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, case, or_, select, update
+from sqlalchemy import Connection, Engine, case, literal, or_, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -647,7 +647,10 @@ def renewed_lease(conn: Connection, membership_id: int, now: datetime, lease_sec
     if cap is None:
         return target
     target = min(target, cap)
-    return case((t.card.c.lease_until > target, t.card.c.lease_until), else_=target)
+    # Typed as the column: an untyped bind goes to PostgreSQL as timestamptz and would be
+    # stored in the session's time zone (hub/context/persistence.md).
+    held = literal(target, t.card.c.lease_until.type)
+    return case((t.card.c.lease_until > held, t.card.c.lease_until), else_=held)
 
 
 def set_agent_limit(

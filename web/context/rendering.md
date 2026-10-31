@@ -636,7 +636,12 @@ progress" in the board bar's name, "2 urgent") is one key per word with
 `{count}`, not the label lowercased after a number. A key that counts
 has its plural forms even where English writes them alike ("Earlier
 joins ({count}): …", "{count} urgent"): another language may not, and the
-form chosen by `Intl.PluralRules` is there to be translated. A key per value also lets a
+form chosen by `Intl.PluralRules` is there to be translated. Two counts
+in one sentence (Why's "1 error, 2 warnings") are a plural key each inside
+a frame key, since each may be one or many on its own and a count the
+export does not carry reads "—" with no plural rule. Rejected: one
+sentence with two numbers, which no single `count` can choose a form
+for. A key per value also lets a
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
@@ -648,7 +653,16 @@ names are one set of keys (`cards.column.*`) for the board and the
 overview: the board keeps its columns as `[status, name]` pairs, the name
 a getter on index 1, because `board.js` reads them as pairs; the
 overview a getter per status. Rejected: a second set for the overview,
-the same words twice for a translator. A text the
+the same words twice for a translator. A member's page (its Cards tab)
+names a card's status with those names too (`M.boardEdit.columnName`),
+so a status has one key and renaming a column renames it everywhere.
+Rejected: `memberpage.status.*`, a second translation that could drift
+from the board's. A refusal a view has no words for reads as
+`{field}: {reason}` from one key (`members.refused.unknown`), the
+field's underscores as spaces and the hub's reason as it comes: the
+sentence's shape is the catalog's, while the two values stay the hub's.
+Rejected: the English glued together in code, which no translation
+reaches. A text the
 dashboard writes into the hub for the reader (the title of a chat the
 Lead button makes) is taken from the catalog in the writer's language
 and stays as written, as a title they typed would: the hub keeps no

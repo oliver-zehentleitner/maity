@@ -308,3 +308,68 @@ keeps busy chats from crowding the packet.
   owner's (66d4076f); a manager may still set `mentions`.
 - `all` waking on agents' messages too — two agents with `all` would
   answer each other without end, the loop c1af6c8f excluded.
+
+## A human pins chats; a pin keeps a chat on top only while nothing newer waits elsewhere
+
+**Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
+
+A human pins conversations; the list is ordered in four bands, each by
+activity: pinned with unread messages, unpinned with unread, pinned
+without, the rest. The pin is the human's own, stored by the hub so it
+holds across devices, emits no event, and is limited to 20.
+
+**Reason:** the maintainer wants the chats he works with at the top, but
+never at the price of missing something new elsewhere: a quiet pinned
+chat must not sit above a chat with a new message. Four bands express
+exactly that and keep the activity order inside each.
+
+**Alternatives:**
+- Pinned always on top: a new message in an unpinned chat could drop
+  below several quiet pinned ones and be missed.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows the bands.
+
+## A human switches the meat-proxy mode per chat; the profile gives the default
+
+**Id:** 1bdcfac7-9bf9-4ae3-9ad6-23b7f8e9a535
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (a meat-proxy button next to "Attach" and "Send" that switches the mode on and off for this chat; with "I am a meat proxy" in the settings the chat starts in that mode); contract `docs/api.md` §9.3
+
+A human sets the meat-proxy mode for one conversation: `true`, `false`,
+or `null` to follow the profile. The value that holds in a chat is on the
+human's entry in that chat's participants, with the profile's note while
+it is on, so the agents in the chat read it next to the person. Only the
+human sets it, for itself; it is context, never a permission.
+
+**Reason:** the same person may want to be led step by step with one
+agent and talk briefly with another, or in one project and not in the
+next. Changing the profile for every chat would switch it for all of
+them at once. Putting the value on the participant entry means the
+agents see it where they already see who is in the chat, without a new
+field elsewhere.
+
+**Alternatives:**
+- Only the profile switch (the state before): all or nothing across
+  every chat and project.
+- A per-project switch: still too coarse for the case of one chat with
+  one agent, which is the one the maintainer described.
+- Both parts per chat (`{lead, hands}` per conversation): the button the
+  maintainer asked for is one on/off switch; whoever wants one part only
+  sets it in the profile and leaves the chat on `null` (this contract's
+  reading).
+- A change as an event that wakes the agents in the chat: it would cost
+  a model run per agent for context that matters only at their next
+  turn; a change emits no event, and the agents read it on their next
+  resume or read of the chat (this contract's reading).
+

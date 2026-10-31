@@ -8,7 +8,6 @@ redeems, approves or completes a code.
 
 from __future__ import annotations
 
-import asyncio
 import secrets
 import time
 from collections.abc import Callable
@@ -105,12 +104,16 @@ async def _hold(
     if wait == 0 or first["status"] in ("used", "denied", "expired"):
         return first
     token = object()
+    _holding[key] = token  # held before the announcement, which may supersede it at once
+    # The code's writers ring the key (`ring_code`); expiry, which nothing writes, is the
+    # fallback's to see.
+    hold = wakeups.held(engine, "device", wait_key=key, ring_key=key, poll=POLL)
 
     def taken_over() -> None:  # a newer wait of the key on another replica (`wakeups`)
         if _holding.get(key) is token:
             del _holding[key]
+        hold.wake()
 
-    _holding[key] = token  # held before the announcement, which may supersede it at once
     closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     current = first
@@ -118,7 +121,7 @@ async def _hold(
         closed = await wakeups.opened(engine, "device", key, taken_over)
         # A stopping hub answers with what it has; the client simply waits again (§8.3).
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
-            await asyncio.sleep(POLL)
+            await hold.pause(deadline - time.monotonic())
             if _holding.get(key) is not token:
                 return {**current, "superseded": True}
             current = await run_in_threadpool(read)
@@ -126,6 +129,7 @@ async def _hold(
                 break
         return current
     finally:
+        hold.close()
         if closed is not None:
             closed()
         if _holding.get(key) is token:

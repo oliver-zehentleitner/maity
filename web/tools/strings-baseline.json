@@ -3,7 +3,7 @@
   "agents.js": 26,
   "app.js": 240,
   "board.js": 109,
-  "card-panel.js": 36,
+  "card-panel.js": 2,
   "chat.js": 51,
   "contract-panel.js": 2,
   "device-sign-in.js": 1,
@@ -14,7 +14,7 @@
   "join.js": 3,
   "landing.js": 164,
   "markdown.js": 3,
-  "member-page.js": 43,
+  "member-page.js": 2,
   "members.js": 2,
   "mentions.js": 3,
   "menu.js": 4,
@@ -26,12 +26,11 @@
   "placements.js": 1,
   "preferences.js": 2,
   "project-message.js": 30,
-  "project-names.js": 46,
   "qr.js": 2,
   "register.js": 34,
   "runners.js": 12,
   "sessions.js": 2,
   "ticker-settings.js": 1,
   "ticker.js": 2,
-  "why.js": 42
+  "why.js": 1
 }

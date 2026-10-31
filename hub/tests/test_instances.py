@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select, text
+from sqlalchemy import Engine, func, insert, select, text
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -367,7 +367,11 @@ def test_a_replacement_takes_the_claims_and_the_lead(
     assert [i["id"] for i in view["instances"]] == [new.instance]
     assert view["instances"][0]["replaces"] == old.instance
     assert view["team"]["lead_instance"] == new.instance
+    with migrated.connect() as conn:
+        head = conn.execute(select(func.max(t.event.c.seq))).scalar_one()
     packet = new.resume().json()
+    # The replacing instance starts at the project's head, not at the old one's backlog (§8.3).
+    assert packet["events"]["after"] == head
     assert [c["id"] for c in packet["claims"]] == [card_id]
     assert packet["claims"][0]["checkpoint"]["last_step"] == "a"
     moved = _events(migrated, "task_claimed")[-1]

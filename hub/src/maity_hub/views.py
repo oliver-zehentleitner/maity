@@ -660,6 +660,9 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # Whose work this agent continues and where the hand-over is, never a text (§3.1).
+            view["takes_over"] = row.takes_over
+            view["handover"] = row.handover
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
@@ -856,6 +859,7 @@ def agent_view(
         **(picture if picture is not None else avatars.state(conn, row.id)),
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
+        "allowed_projects": row.allowed_projects,  # null: any project (§6.3)
         "memberships": [
             {"project": names[m.id], "trust": m.trust, "role": m.role} for m in memberships
         ],  # full names (§6.25)
@@ -927,6 +931,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,
         "instance": row.instance,
+        "takes_over": row.takes_over,
+        "handover": row.handover,
     }
 
 

@@ -794,3 +794,74 @@ def test_a_truncated_handover_without_any_cursor_still_says_there_is_more() -> N
 )
 def test_no_handover_section_without_items(handover: Any) -> None:
     assert "Handed over" not in onboarding.render(packet(handover=handover))
+
+
+TAKES_OVER = {"member_id": "agt-c", "handle": "agent-ops-opus", "name": None}
+
+
+@pytest.mark.parametrize(
+    ("handover", "where"),
+    [
+        ({"kind": "task", "id": "tsk-42"}, "; the hand-over is in tsk-42: maity task show tsk-42."),
+        (
+            {"kind": "message", "id": 9},
+            "; the hand-over is in message #9: maity messages --after 8.",
+        ),
+        (None, "."),
+    ],
+)
+def test_a_takeover_is_named_in_the_check_in_block(handover: Any, where: str) -> None:
+    ms = packet()["membership"] | {"takes_over": TAKES_OVER, "handover": handover}
+    check_in = {"check_in_with": {"handle": "agent-a", "kind": "coordinator"}}
+    text = onboarding.render(packet(membership=ms, onboarding=check_in))
+    line = "Takes over from @agent-ops-opus" + where
+    assert f"Check in:\n{line}\nReport to @agent-a" in text
+
+
+def test_a_takeover_without_a_check_in_target_stands_before_the_briefing() -> None:
+    ms = packet()["membership"] | {
+        "takes_over": TAKES_OVER,
+        "handover": {"kind": "task", "id": "tsk-0042"},
+        "briefing": "Ship it.",
+    }
+    text = onboarding.render(packet(membership=ms))
+    assert "Check in:" not in text
+    assert text.index("Takes over from @agent-ops-opus") < text.index("Your briefing")
+
+
+def test_without_a_takeover_nothing_is_said_about_one() -> None:
+    assert "Takes over" not in onboarding.render(packet(), first=True)
+
+
+def test_a_takeover_without_a_briefing_points_at_the_hand_over_above() -> None:
+    handover = {"kind": "task", "id": "tsk-42"}
+    ms = packet()["membership"] | {"takes_over": TAKES_OVER, "handover": handover, "briefing": None}
+    text = onboarding.render(packet(membership=ms), first=True)
+    assert "No briefing was given with this join: read the hand-over above and ask" in text
+    assert "If you replace someone" not in text
+
+
+@pytest.mark.parametrize(
+    "handover",
+    [
+        None,
+        {"kind": "task"},
+        {"kind": "message", "id": "9"},
+        {"kind": "message", "id": True},
+        {"kind": "file"},
+    ],
+)
+def test_a_takeover_without_a_hand_over_asks_where_it_is(handover: Any) -> None:
+    """`handover` is optional (§3.1); one that names nothing readable prints nothing above
+    either, so the sentence does not point there."""
+    ms = packet()["membership"] | {
+        "takes_over": TAKES_OVER,
+        "handover": handover,
+        "briefing": None,
+    }
+    ms["reports_to"] = "agt-a"
+    text = onboarding.render(packet(membership=ms), first=True)
+    assert "read the hand-over above" not in text
+    assert "and no hand-over named: ask your lead @" in text
+    assert "where the hand-over of @agent-ops-opus is before you take work." in text
+    assert "Takes over from @agent-ops-opus.\n" in text

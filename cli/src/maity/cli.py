@@ -427,7 +427,6 @@ def cmd_join(args: argparse.Namespace) -> int:
         f"stored in {path} (mode 0600, not printed)",
         file=sys.stderr,
     )
-    _path_note()
     if derived:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
@@ -450,22 +449,42 @@ def cmd_join(args: argparse.Namespace) -> int:
             end="",
         )
     print(pointer.PROJECT_CHANNEL, file=sys.stderr)
-    if args.no_resume:
-        return EXIT_OK
-    try:
-        return _resume(Session(), args, first=True)
-    except hub.HubError as exc:
-        _err(
-            f"joined, but the first resume failed: {exc}; run `maity resume`. "
-            f"How to work as a member: {onboarding.HANDBOOK}"
-        )
-        return EXIT_ERROR
+    status = EXIT_OK
+    if not args.no_resume:
+        try:
+            session = Session()
+            status = _resume(session, args, first=True)
+            # The resume text is on stdout, the closing lines on stderr: through one pipe, the
+            # way a harness reads both, stdout is buffered and would come after them.
+            sys.stdout.flush()
+            _chat_note(state.load_state(session.dir, name=LAST_PACKET))
+        except hub.HubError as exc:
+            _err(
+                f"joined, but the first resume failed: {exc}; run `maity resume`. "
+                f"How to work as a member: {onboarding.HANDBOOK}"
+            )
+            status = EXIT_ERROR
+    _path_note()
+    return status
+
+
+def _chat_note(packet: dict[str, Any]) -> None:
+    """The line an agent gives its human as its last message in the agent's window (§5.2):
+    the direct chat with its owner, where the two talk from then on. Left out when the
+    packet has no web address there (a human's membership, an older hub)."""
+    url = onboarding.get(packet, "membership", "chat_url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
+
+
+PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
 
 
 def _path_note() -> None:
-    """After `pipx install`, `~/.local/bin` is often not on PATH: this run was started by its
-    full path, but every later `maity` in a new shell would not be found."""
+    """The last line of `join` (§3.2): pipx puts `maity` where a new shell often does not look.
+    When this run itself is not on PATH, the sentence names the directory instead."""
     if shutil.which("maity") is not None:
+        print(PATH_SENTENCE, file=sys.stderr)
         return
     ran = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
     where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""
@@ -546,6 +565,7 @@ def _event_line(event: dict[str, Any]) -> str:
 
 
 NOTE_RESERVE = 5.0  # seconds of --timeout kept for the unread-chats note
+POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the read gives up
 
 
 def _unread_note(session: Session, budget: float) -> None:
@@ -590,6 +610,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
     end = time.monotonic() + timeout
     # The last seconds are kept for the unread-chats note, so it never runs past --timeout.
     deadline = end - min(NOTE_RESERVE, timeout / 4)
+    # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
+    slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
+    asked = False
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
     backoff = 2.0
@@ -600,11 +623,17 @@ def cmd_wait(args: argparse.Namespace) -> int:
         if remaining <= 0:
             _unread_note(session, end - time.monotonic())
             return EXIT_TIMEOUT
-        # The hub holds for `poll` and gets a second to answer; the read never outlasts the
+        if asked and remaining - slack < 1:
+            # Too little left for a poll and its answer: rest out the window instead of a
+            # chain of short polls that would mostly be cut off.
+            time.sleep(remaining)
+            continue
+        # The hub holds for `poll` and keeps `slack` to answer; the read never outlasts the
         # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.
-        poll = max(1, min(LONG_POLL, int(remaining) - 1))
+        poll = max(1, min(LONG_POLL, int(remaining - slack)))
         read_timeout = max(0.5, min(poll + 15, remaining))
         started = time.monotonic()
+        asked = True
         try:
             page = session.client.call(
                 "GET",
@@ -615,6 +644,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
         except hub.HubError as exc:
             server_error = exc.status is not None and 500 <= exc.status < 600
             disconnected = exc.status is None and exc.code is None
+            if disconnected and time.monotonic() >= deadline:
+                continue  # the window's last read ran out: a timeout like any other
             if server_error or disconnected:  # retry the same `after`, within the deadline
                 if not warned:
                     reason = f"hub answered {exc.status}" if server_error else "hub connection lost"

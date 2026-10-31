@@ -12,40 +12,44 @@ window.Maity = window.Maity || {};
   const { h, append, clear, safeUrl, formatAgo, formatTime } = M.dom;
 
   const STATUSES = ["needs-review", "pending-confirmation", "open", "active", "superseded", "other"];
-  const STATUS_LABELS = {
-    "needs-review": "needs review", "pending-confirmation": "pending confirmation", open: "open",
-    active: "active", superseded: "superseded", other: "other",
+  const STATUS_WORDS = {
+    "needs-review": () => M.t("why.status.needs_review"), "pending-confirmation": () => M.t("why.status.pending_confirmation"),
+    open: () => M.t("why.status.open"), active: () => M.t("why.status.active"),
+    superseded: () => M.t("why.status.superseded"), other: () => M.t("why.status.other"),
   };
+  const statusWord = (s) => (Object.hasOwn(STATUS_WORDS, s) ? STATUS_WORDS[s]() : s);
 
   // A member's failure (§11.3), in words.
   const REASONS = {
-    forge_unavailable: "its .keep-the-why could not be read from the forge",
-    config_missing: "there is no .keep-the-why at its path",
-    no_state_url: "its .keep-the-why names no dashboard-state",
-    location_not_followed: "its location is not a directory in this repository, so the hub does not follow it",
-    state_url_invalid: "its dashboard-state URL is not a plain https URL",
-    address_refused: "its dashboard-state points at an address the hub does not read from",
-    redirect_refused: "its dashboard-state answered with a redirect, which the hub does not follow",
-    timeout: "its state.json did not answer in time",
-    http_status: "its state.json answered with an error status",
-    too_large: "its state.json is larger than 1 MiB",
-    not_json: "its state.json is not JSON",
-    state_json_version: "its state.json is in a version the hub does not know",
-    shape: "its state.json does not have the expected shape",
+    forge_unavailable: () => M.t("why.reason.forge_unavailable"),
+    config_missing: () => M.t("why.reason.config_missing"),
+    no_state_url: () => M.t("why.reason.no_state_url"),
+    location_not_followed: () => M.t("why.reason.location_not_followed"),
+    state_url_invalid: () => M.t("why.reason.state_url_invalid"),
+    address_refused: () => M.t("why.reason.address_refused"),
+    redirect_refused: () => M.t("why.reason.redirect_refused"),
+    timeout: () => M.t("why.reason.timeout"),
+    http_status: () => M.t("why.reason.http_status"),
+    too_large: () => M.t("why.reason.too_large"),
+    not_json: () => M.t("why.reason.not_json"),
+    state_json_version: () => M.t("why.reason.state_json_version"),
+    shape: () => M.t("why.reason.shape"),
   };
 
   // The root's own read failed (ktw_unavailable on the call): said of the root.
   const ROOT_REASONS = {
-    forge_unavailable: "the forge did not give the hub the repository's root .keep-the-why",
+    forge_unavailable: () => M.t("why.reason.root_forge_unavailable"),
   };
 
-  const memberName = (m) => (m.path === "" ? "the project root" : (m.name || m.path));
+  const reasonWord = (table, reason) => (Object.hasOwn(table, reason) ? table[reason]() : null);
+
+  const memberName = (m) => (m.path === "" ? M.t("why.root") : (m.name || m.path));
 
   function reasonText(err) {
     if (!err) return "";
-    const base = REASONS[err.reason] || err.reason || err.code;
-    if (err.reason === "http_status" && err.status) return base + " (" + err.status + ")";
-    if (err.reason === "state_json_version" && err.version) return base + " (" + err.version + ")";
+    const base = reasonWord(REASONS, err.reason) || err.reason || err.code;
+    if (err.reason === "http_status" && err.status) return M.t("why.reason.detail", { reason: base, detail: String(err.status) });
+    if (err.reason === "state_json_version" && err.version) return M.t("why.reason.detail", { reason: base, detail: String(err.version) });
     return base;
   }
 
@@ -57,19 +61,21 @@ window.Maity = window.Maity || {};
     && a.link.startsWith(member.dashboard_url + "#entry/") ? link(a.link, text) : text);
 
   function counts(summary) {
-    if (!summary) return h("span", { class: "muted" }, "no read yet");
+    if (!summary) return h("span", { class: "muted" }, M.t("why.no_read"));
     const parts = STATUSES.filter((s) => summary.status && summary.status[s])
-      .map((s) => summary.status[s] + " " + STATUS_LABELS[s]);
-    return h("span", null, summary.entries + " entr" + (summary.entries === 1 ? "y" : "ies")
-      + (parts.length ? " (" + parts.join(", ") + ")" : ""));
+      .map((s) => M.t("why.count.status", { count: summary.status[s], status: statusWord(s) }));
+    const entries = M.t("why.count.entries", { count: summary.entries });
+    return h("span", null, parts.length ? M.t("why.count.with_statuses", { entries, statuses: M.fmt.list(parts) }) : entries);
   }
 
   // Each count is null when that export does not carry it: said per field.
   function findings(summary) {
     const f = summary && summary.findings;
     if (!f || (f.errors === null && f.warnings === null)) return "—";
-    const n = (v) => (v === null || v === undefined ? "—" : String(v));
-    return n(f.errors) + " errors, " + n(f.warnings) + " warnings";
+    // Each count with its own plural form; a missing one has none.
+    const errors = typeof f.errors === "number" ? M.t("why.findings.errors", { count: f.errors }) : M.t("why.findings.errors_unknown");
+    const warnings = typeof f.warnings === "number" ? M.t("why.findings.warnings", { count: f.warnings }) : M.t("why.findings.warnings_unknown");
+    return M.t("why.findings", { errors, warnings });
   }
 
   function summaryBox(answer) {
@@ -77,28 +83,29 @@ window.Maity = window.Maity || {};
     return h("div", { class: "why-summary" },
       h("p", { class: "why-headline" },
         s.attention
-          ? h("strong", null, s.attention + (s.attention === 1 ? " entry needs" : " entries need") + " attention")
-          : h("strong", null, "Nothing needs attention"),
-        " · " + s.entries + " entries in " + s.members + " part" + (s.members === 1 ? "" : "s") + " of the project",
-        s.failed ? h("span", { class: "flag-inline" }, " · " + s.failed + " could not be read") : null),
-      h("p", { class: "muted" }, "Linter: " + findings(s) + ". Read by the hub " + formatAgo(answer.observed_at)
-        + (answer.fresh === false ? " (from its cache)" : "") + "."),
-      answer.family_truncated ? h("p", { class: "flag" }, "The family is larger than the hub reads (depth 4, 32 parts); the rest is not shown.") : null,
-      answer.skipped ? h("p", { class: "muted" }, answer.skipped + " entries without an id were skipped.") : null);
+          ? h("strong", null, M.t("why.summary.attention", { count: s.attention }))
+          : h("strong", null, M.t("why.summary.nothing")),
+        " · " + M.t("why.summary.entries", { count: s.members, entries: M.t("why.count.entries", { count: s.entries }) }),
+        s.failed ? h("span", { class: "flag-inline" }, " · " + M.t("why.summary.failed", { count: s.failed })) : null),
+      h("p", { class: "muted" }, answer.fresh === false
+        ? M.t("why.summary.read_cached", { findings: findings(s), ago: formatAgo(answer.observed_at) })
+        : M.t("why.summary.read", { findings: findings(s), ago: formatAgo(answer.observed_at) })),
+      answer.family_truncated ? h("p", { class: "flag" }, M.t("why.summary.family_truncated", { depth: 4, parts: 32 })) : null,
+      answer.skipped ? h("p", { class: "muted" }, M.t("why.summary.skipped", { count: answer.skipped })) : null);
   }
 
   function membersTable(answer) {
-    return h("table", { class: "why-members", tabindex: "0", "aria-label": "Parts of the project" },
+    return h("table", { class: "why-members", tabindex: "0", "aria-label": M.t("why.parts.label") },
       h("thead", null, h("tr", null,
-        h("th", { scope: "col" }, "Part"), h("th", { scope: "col" }, "Entries"),
-        h("th", { scope: "col" }, "Attention"), h("th", { scope: "col" }, "Linter"),
-        h("th", { scope: "col" }, "Exported"))),
+        h("th", { scope: "col" }, M.t("why.parts.part")), h("th", { scope: "col" }, M.t("why.parts.entries")),
+        h("th", { scope: "col" }, M.t("why.parts.attention")), h("th", { scope: "col" }, M.t("why.parts.linter")),
+        h("th", { scope: "col" }, M.t("why.parts.exported")))),
       h("tbody", null, answer.members.map((m) => h("tr", { class: m.error ? "failed" : "" },
         h("td", null, link(m.dashboard_url, memberName(m)), m.path ? h("span", { class: "muted" }, " · " + m.path + "/") : null,
-          m.error ? h("p", { class: "flag" }, "Could not be read: " + reasonText(m.error)
-            + (m.summary ? ". Shown is its last good read." : ".")) : null),
+          m.error ? h("p", { class: "flag" }, (m.summary
+            ? M.t("why.parts.failed_last", { reason: reasonText(m.error) }) : M.t("why.parts.failed", { reason: reasonText(m.error) }))) : null),
         h("td", null, counts(m.summary)),
-        h("td", null, m.summary ? String(m.summary.attention) : "—"),
+        h("td", null, m.summary ? M.fmt.number(m.summary.attention) : "—"),
         h("td", null, findings(m.summary)),
         h("td", null, m.summary && m.summary.generated ? h("span", { title: formatTime(m.summary.generated) }, formatAgo(m.summary.generated)) : "—")))));
   }
@@ -108,34 +115,33 @@ window.Maity = window.Maity || {};
     answer.attention.forEach((a) => { (byMember[a.member] = byMember[a.member] || []).push(a); });
     const groups = answer.members.filter((m) => byMember[m.path]);
     if (!groups.length) {
-      return h("p", { class: "muted" }, "No entry is open, needs review or waits for confirmation.");
+      return h("p", { class: "muted" }, M.t("why.attention.none"));
     }
     return [groups.map((m) => h("section", { class: "why-group", "aria-label": memberName(m) },
-      h("h3", null, memberName(m)[0].toUpperCase() + memberName(m).slice(1)),
+      h("h3", null, m.path === "" ? M.t("why.root.heading") : memberName(m)),
       h("ul", { class: "why-entries" }, byMember[m.path].map((a) => h("li", null,
-        h("span", { class: "badge why-" + a.status }, STATUS_LABELS[a.status] || a.status),
+        h("span", { class: "badge why-" + a.status }, statusWord(a.status)),
         " ", entryLink(a, m, a.title),
-        h("span", { class: "muted" }, " · " + [a.topic || a.file, (a.type || []).join(", ")].filter(Boolean).join(" · "))))))),
-    answer.truncated ? h("p", { class: "muted" }, "Only the first 200 are listed.") : null];
+        h("span", { class: "muted" }, " · " + [a.topic || a.file, M.fmt.list(a.type || [])].filter(Boolean).join(" · "))))))),
+    answer.truncated ? h("p", { class: "muted" }, M.t("why.attention.truncated", { count: 200 })) : null];
   }
 
   // The view's title row: Read again is there in every state, and off while a read runs.
   function toolbar(root, ctx) {
-    const again = h("button", { type: "button", class: "small", onclick: () => { again.disabled = true; load(root, ctx, true); } }, "Read again");
-    return h("div", { class: "toolbar" }, h("h2", null, "Why"), again);
+    const again = h("button", { type: "button", class: "small", onclick: () => { again.disabled = true; load(root, ctx, true); } }, M.t("why.read_again"));
+    return h("div", { class: "toolbar" }, h("h2", null, M.t("why.title")), again);
   }
 
   function render(root, answer, ctx, note) {
     clear(root);
     append(root,
       toolbar(root, ctx),
-      h("p", { class: "muted" }, "The project's decisions and their reasons, as its published Keep the Why dashboard shows them. "
-        + "The hub reads them from the repository; nothing here changes them."),
+      h("p", { class: "muted" }, M.t("why.intro")),
       note || null,
       summaryBox(answer),
-      h("h3", null, "Needs attention"),
+      h("h3", null, M.t("why.attention.title")),
       attentionList(answer),
-      h("h3", null, "Parts"),
+      h("h3", null, M.t("why.parts.title")),
       membersTable(answer));
   }
 
@@ -147,18 +153,17 @@ window.Maity = window.Maity || {};
       clear(root);
       if (err.code === "ktw_not_configured") {
         append(root, toolbar(root, ctx), h("div", { class: "empty-state why-empty" },
-          h("p", null, "This project publishes no Keep the Why dashboard yet."),
-          h("p", { class: "muted" }, ctx.project.repository
-            ? "The hub reads the dashboard-state line of the repository's root .keep-the-why, and that line is missing (or the file is)."
-            : "It needs a repository first: the hub reads the dashboard-state line of the repository's root .keep-the-why.")));
+          h("p", null, M.t("why.empty")),
+          h("p", { class: "muted" }, ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository"))));
         return;
       }
       if (err.code === "ktw_unavailable") {
         const last = err.details && err.details.last;
         const why = err.details && err.details.reason;
-        const note = h("p", { class: "flag" }, "The hub could not read the project's root .keep-the-why just now ("
-          + (ROOT_REASONS[why] || REASONS[why] || why || "unavailable") + ")."
-          + (last ? " Shown is its last good read, from " + formatAgo(last.observed_at) + "." : ""));
+        const reason = reasonWord(ROOT_REASONS, why) || reasonWord(REASONS, why) || why || M.t("why.reason.unavailable");
+        const note = h("p", { class: "flag" }, last
+          ? M.t("why.root_unreadable_last", { reason, ago: formatAgo(last.observed_at) })
+          : M.t("why.root_unreadable", { reason }));
         if (last) { render(root, last, ctx, note); return; }
         append(root, toolbar(root, ctx), note);
         return;

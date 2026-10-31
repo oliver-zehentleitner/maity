@@ -379,6 +379,29 @@ def _remove(
         _reset_profile(conn, report)
 
 
+def _agents_of_outsiders(
+    conn: Connection, report: Any, org_id: str | None, account: str | None
+) -> None:
+    """A project that is no longer served reads an unset `agent_owners` as `members` (§6.1):
+    the agents whose owners are no member are isolated, as when the setting changes (§6.2)."""
+    from maity_hub import agent_owners, org_projects
+
+    if report.target_type == "project":
+        ids = [str(report.project_id)]
+    elif org_id is not None:
+        ids = [p.id for p in org_projects.projects_of(conn, org_id)]
+    elif account is not None:
+        ids = list(
+            conn.execute(select(t.project.c.id).where(t.project.c.owner_human_id == account))
+            .scalars()
+            .all()
+        )
+    else:
+        return
+    for project_id in ids:
+        agent_owners.reconcile(conn, project_id, actor(report.id))
+
+
 def apply(
     conn: Connection,
     report: Any,
@@ -432,6 +455,7 @@ def apply(
         public_pages.touch(conn, "project", str(report.project_id))
     if report.target_type == "card":  # a card a hold stands on is on no Board
         public_pages.touch(conn, "project_views", str(report.project_id))
+    _agents_of_outsiders(conn, report, org_id, account)
     again = report.status == "resolved" and report.action == action and report.note == note
     # The affected account's notice: the action and the note, never the reporter. A repeat of
     # the same resolution tells it nothing new. For an organisation's suspension and for an
