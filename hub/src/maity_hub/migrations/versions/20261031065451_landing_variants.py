@@ -8,7 +8,7 @@ sums (views, registrations, activations) per variant and campaign, `""` for none
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261031065451_landing_variants
-Revises: 20261030180344_request_nonces
+Revises: 20261031011834_rate_counts
 Create Date: 2026-10-31
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "20261031065451_landing_variants"
-down_revision: str | None = "20261030180344_request_nonces"
+down_revision: str | None = "20261031011834_rate_counts"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
