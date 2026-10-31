@@ -61,6 +61,14 @@ class Registry:
         if waiter.session_id:
             listening.closed(waiter.session_id)
 
+    def supersede(self, waiter: Waiter) -> None:
+        """A newer wait of the same key took over on another replica (`wakeups`)."""
+        with self._lock:
+            if self._by_key.get(waiter.key) is waiter:
+                del self._by_key[waiter.key]
+        waiter.superseded = True
+        waiter.wake()
+
     def notify(self, project_id: str, _seq: int) -> None:
         with self._lock:
             waiting = [

@@ -30,6 +30,7 @@ from maity_hub import (
     instances,
     longpoll,
     namespace,
+    wakeups,
 )
 from maity_hub import placements as pl
 from maity_hub import tables as t
@@ -296,6 +297,9 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
         items, cursor = await run_in_threadpool(read, after)
         return answer(items, cursor, superseded=False)
 
+    closed = await wakeups.opened(
+        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+    )
     longpoll.registry.enter(waiter)
     try:
         deadline = time.monotonic() + wait
@@ -319,6 +323,7 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
+        closed()
         longpoll.registry.leave(waiter)
 
 

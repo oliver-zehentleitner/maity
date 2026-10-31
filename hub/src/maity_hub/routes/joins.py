@@ -28,6 +28,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import (
     allowed_projects,
     briefings,
+    campaigns,
     clock,
     cross_owner,
     events,
@@ -756,7 +757,11 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
             if slot != 1:
                 raise not_found()
             if code_matches(body.code, row.code_hash):
-                return _consume(conn, row, body.client)
+                made = _consume(conn, row, body.client)
+                campaigns.activated(
+                    conn, owner
+                )  # §16.7.2: the first exchange of an account's agent
+                return made
             conn.execute(
                 update(t.join_link)
                 .where(
