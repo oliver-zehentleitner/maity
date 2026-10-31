@@ -63,13 +63,32 @@ window.Maity = window.Maity || {};
   const KEPT = { activity: "Activity", collab: "Collaboration" };
 
   // Whether pages can be drawn as the editor: each page an object, its
-  // sections a list of objects, each list a section has a list. What the
-  // values say is the hub's to check; only their kind decides here.
+  // sections a list of objects, and every value the editor binds to an
+  // object or a list of the right kind: a button (cta) an object, or absent
+  // where optional; a group an object or absent; each list a list of
+  // objects whose own fields hold the same; lines and counters lists. What
+  // the values say is the hub's to check; only their kind decides here.
   const isObject = (x) => !!x && typeof x === "object" && !Array.isArray(x);
-  function drawable(pages) {
-    return Object.values(pages).every((pg) => isObject(pg) && (pg.sections === undefined || (Array.isArray(pg.sections) && pg.sections.every((sec) =>
-      isObject(sec) && (!TYPES[sec.type] || listsOf(TYPES[sec.type]).every((l) => sec[l.key] === undefined || (Array.isArray(sec[l.key]) && sec[l.key].every(isObject))))
-        && (!TYPES[sec.type] || TYPES[sec.type].fields.every((x) => !["lines", "stats"].includes(x.kind) || sec[x.key] === undefined || Array.isArray(sec[x.key])))))));
+  function fieldsOk(fields, obj) {
+    return fields.every((x) => {
+      const v = obj[x.key];
+      if (x.kind === "cta") return x.optional ? v === undefined || v === null || isObject(v) : isObject(v);
+      if (x.kind === "group") return v === undefined || v === null || (isObject(v) && fieldsOk(x.fields, v));
+      if (x.kind === "lines" || x.kind === "stats") return v === undefined || Array.isArray(v);
+      return true;
+    });
+  }
+  function sectionOk(sec) {
+    if (!isObject(sec)) return false;
+    const type = TYPES[sec.type];
+    if (!type) return true;
+    return fieldsOk(type.fields || [], sec) && listsOf(type).every((l) => sec[l.key] === undefined
+      || (Array.isArray(sec[l.key]) && sec[l.key].every((item) => isObject(item) && fieldsOk(l.fields, item))));
+  }
+  function drawable(pages, footer) {
+    const social = footer && footer.social;
+    return Object.values(pages).every((pg) => isObject(pg) && (pg.sections === undefined || (Array.isArray(pg.sections) && pg.sections.every(sectionOk))))
+      && (!footer || (isObject(footer) && (social === undefined || (Array.isArray(social) && social.every(isObject)))));
   }
 
   // A new object of `fields`, as the hub would take it.
@@ -453,7 +472,7 @@ window.Maity = window.Maity || {};
           refused = err;
         }
         // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
-        if (!drawable(next.pages) || (next.footer && !Array.isArray(next.footer.social || []))) {
+        if (!drawable(next.pages, next.footer)) {
           draft = before.draft;
           lang = before.lang;
           showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));

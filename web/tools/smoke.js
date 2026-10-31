@@ -7418,6 +7418,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Broken", description: "x", sections: 5 } } });
     await jsLoad();
     expect(byId("lp-pages-en-title").value === "V3" && text(main).includes("Not loaded:"), "landing JSON: a body the editor cannot draw leaves the draft as it was and says why");
+    // Every value the editor binds to an object (#808's delta review): a footer link that is null, a hero without its button.
+    for (const broken of [{ default_language: "en", pages: { en: { title: "Broken", description: "x", sections: [] } }, footer: { social: [null] } },
+      { default_language: "en", pages: { en: { title: "Broken", description: "x", sections: [{ type: "hero", enabled: true, title: "t", cta_primary: null }] } } }]) {
+      byId("lp-json").value = JSON.stringify(broken);
+      await jsLoad();
+      expect(byId("lp-pages-en-title").value === "V3" && text(main).includes("Not loaded:") && leBox().querySelector("form.lp-form"),
+        "landing JSON: a null footer link or a missing button leaves the draft and the editor as they were " + JSON.stringify(broken).slice(0, 80));
+    }
     // An emptied operator line is none, never an empty one (the hub refuses "", §16.7); Save asks for the step-up through M.stepUp.
     byId("lp-footer-operator").value = ""; byId("lp-footer-operator").dispatch("input");
     const jsStep = win.Maity.stepUp.run;

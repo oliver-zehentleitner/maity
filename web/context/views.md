@@ -3148,7 +3148,12 @@ has no footer, and an empty operator line is one the hub refuses
 (`footer.operator` is 1 to 120 characters or none), so the editor sends
 none instead of an empty one. The hub checks an import before the
 editor is drawn from it; a body whose pages, sections or lists are of
-the wrong kind leaves the draft as it was. Save asks for the step-up
+the wrong kind leaves the draft as it was. That kind check covers every
+value the editor binds to an object, not only lists: a button, a group
+and each footer link must be an object, or absent where optional, or the
+editor would break after the draft was replaced. Rejected: drawing
+inside try/catch and restoring the draft afterwards, which would hide
+real drawing bugs and leave a half-built editor behind. Save asks for the step-up
 (§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
