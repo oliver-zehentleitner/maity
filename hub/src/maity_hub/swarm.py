@@ -51,7 +51,7 @@ class Window:
     review_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
 
 
-def _day(value: datetime) -> date:
+def utc_day(value: datetime) -> date:
     return value.astimezone(UTC).date()
 
 
@@ -67,13 +67,13 @@ def _reviews_since(conn: Connection) -> date | None:
         first = conn.execute(select(func.min(t.card_history.c.at))).scalar()
         if first is None:
             return None
-        _first_history.append(_day(first))
+        _first_history.append(utc_day(first))
     return _first_history[0]
 
 
 def window(conn: Connection, project_id: str) -> Window:
     now = clock.now()
-    since = _start(_day(now) - timedelta(days=MAX_DAYS - 1))
+    since = _start(utc_day(now) - timedelta(days=MAX_DAYS - 1))
     found = Window(as_of=now, reviews_since=_reviews_since(conn))
     active = set(
         conn.execute(
@@ -97,7 +97,7 @@ def window(conn: Connection, project_id: str) -> Window:
     )
     holder_of = {c.id: member(c.claim_holder) for c in closed}
     for card in closed:
-        found.done.append((holder_of[card.id], _day(card.closed_at)))
+        found.done.append((holder_of[card.id], utc_day(card.closed_at)))
     _reviews(conn, project_id, since, member, found)
     _prs(conn, project_id, since, member, found)
     _durations(conn, project_id, closed, holder_of, found)
@@ -127,7 +127,7 @@ def _reviews(
         if before == "review" and after in REVIEWED:
             reviewer = member(actor)
             # Without a member it counts in the totals and in no member's row.
-            found.reviews.append((reviewer if reviewer is not None else -1, _day(at)))
+            found.reviews.append((reviewer if reviewer is not None else -1, utc_day(at)))
 
 
 def pull_key(url: Any) -> str:
@@ -175,7 +175,7 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
     for key, at in first.items():
         if at >= since:
             members = {m for m in (member(holders.get(c)) for c in cards[key]) if m}
-            found.prs.append((members, _day(at)))
+            found.prs.append((members, utc_day(at)))
 
 
 def _durations(
@@ -221,7 +221,7 @@ def _durations(
         if after == "review":
             entered[card_id] = max(at, entered.get(card_id, at))
     for card in closed:
-        holder, day = holder_of[card.id], _day(card.closed_at)
+        holder, day = holder_of[card.id], utc_day(card.closed_at)
         if card.id in claimed and claimed[card.id] <= card.closed_at:
             seconds = int((card.closed_at - claimed[card.id]).total_seconds())
             found.claim_to_done.append((holder, seconds, day))
@@ -233,7 +233,7 @@ def _durations(
 # --- folding for a reader --------------------------------------------------------------------
 
 
-def _median(values: list[int]) -> int | None:
+def median_of(values: list[int]) -> int | None:
     return int(statistics.median(values)) if len(values) >= MIN_SAMPLES else None
 
 
@@ -243,7 +243,7 @@ def fold(
     """`members` and `totals` over the last `days` days of the window and the memberships
     `include` admits; a contribution without a member (no holder, a holder gone) counts in
     the totals only when `include` admits `None`."""
-    today = _day(found.as_of)
+    today = utc_day(found.as_of)
     shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
     cut = shown[0]
     reviews_known = found.reviews_since is not None
@@ -265,9 +265,9 @@ def fold(
                 1 for ms in prs if (of in ms if of is not None else _any(ms, include))
             ),
             "handovers": sum(1 for m in handovers if mine(m)),
-            "claim_to_done_median_seconds": _median([s for m, s in claim if mine(m)]),
+            "claim_to_done_median_seconds": median_of([s for m, s in claim if mine(m)]),
             "review_to_done_median_seconds": (
-                _median([s for m, s in review if mine(m)]) if reviews_known else None
+                median_of([s for m, s in review if mine(m)]) if reviews_known else None
             ),
         }
 
@@ -318,7 +318,7 @@ class _Cache:
         if (
             kept is not None
             and (now - kept.as_of).total_seconds() < CACHE_SECONDS
-            and _day(kept.as_of) == _day(now)
+            and utc_day(kept.as_of) == utc_day(now)
         ):
             return kept
         fresh = window(conn, project_id)

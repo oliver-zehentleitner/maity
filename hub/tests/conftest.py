@@ -223,13 +223,23 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
     must not leak between tests."""
-    from maity_hub import availability, clock, forge, images, ktw, mentions, not_listening
+    from maity_hub import (
+        availability,
+        clock,
+        forge,
+        images,
+        ktw,
+        mentions,
+        not_listening,
+        public_pages,
+    )
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
     from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
 
     badges.BY_ADDRESS.reset()
+    public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
     badges.NOT_SERVED.reset()
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()

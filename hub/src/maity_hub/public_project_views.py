@@ -30,7 +30,15 @@ CLOSED = ("done", "cancelled")
 class Person:
     """A member as the views show them: `handle` is None for one that is not shown."""
 
-    def __init__(self, row: Any, handle: str | None, name: str | None, human: bool) -> None:
+    def __init__(
+        self,
+        row: Any,
+        handle: str | None,
+        name: str | None,
+        human: bool,
+        address: str | None = None,
+    ) -> None:
+        self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
         self.role = row.role
         self.trust = row.trust
@@ -79,11 +87,24 @@ def members(conn: Connection, project_id: str) -> dict[int, Person]:
         if row.human_id:
             human = humans[row.human_id]
             ok = public_people.served(conn, human)
-            found[row.id] = Person(row, human.handle if ok else None, human.display_name, True)
+            found[row.id] = Person(
+                row,
+                human.handle if ok else None,
+                human.display_name,
+                True,
+                f"/{human.handle}" if ok else None,
+            )
         else:
             agent = agents[row.agent_id]
             ok = agent.id not in held and public_people.served(conn, owners[agent.owner_id])
-            found[row.id] = Person(row, agent.handle if ok else None, agent.display_name, False)
+            owner = owners[agent.owner_id]
+            found[row.id] = Person(
+                row,
+                agent.handle if ok else None,
+                agent.display_name,
+                False,
+                f"/{owner.handle}/agents/{agent.handle}" if ok else None,
+            )
     return found
 
 
@@ -138,12 +159,8 @@ def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
 def members_html(who: dict[int, Person]) -> str:
     shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
     items = "".join(
-        (
-            f'<li><a href="/{escape(p.handle or "", quote=True)}">{escape(p.name or "")}</a>'
-            if p.human
-            else f"<li>{escape(p.name or '')}"
-        )
-        + f" ({escape(p.handle or '')}) "
+        f'<li><a href="{escape(p.address or "", quote=True)}">{escape(p.name or "")}</a>'
+        f" ({escape(p.handle or '')}) "
         f'<span class="tag">{escape(p.trust)} · {escape(p.role)}</span></li>'
         for p in shown
     )
