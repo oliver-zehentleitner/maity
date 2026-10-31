@@ -981,8 +981,13 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
-        if new_policy is not None or "public_page" in values:
-            # The setting may come to read `members`: agents of owners who are none go (§6.2).
+        if (
+            new_policy is not None
+            or "public_page" in values
+            or (state_changes and body.state == "archived")
+        ):
+            # Every way the page stops being served may make the setting read `members`:
+            # agents of owners who are none go (§6.2). The way back lifts nothing.
             agent_owners.reconcile(conn, project.id, actor)
         if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
             # What the page shows, or whether it exists, changed: at once (§16.9).

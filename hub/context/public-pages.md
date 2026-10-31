@@ -392,3 +392,33 @@ and the people of the overview.
 - Medians of the per-project medians: the figure would not be a median of anything, and a project with three samples would weigh as much as one with three hundred.
 - Rendering the agent pages only from the worker's run: the contract takes a page off at once, and a renamed handle would leave the old address standing.
 - One page per agent and project: the contract has one page under the owner's page.
+
+## A new project is public for its namespace owner, and the hub's own look at the repository decides before anything is stored
+
+**Id:** 7bc52549-f0eb-4596-800d-e3ec61b563a8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.1 and §16.9 (#865, #875); the card tsk-es3adbcyvy4v from the coordinator, 2026-10-31; the implementation of `create_project` and `patch_project`
+**Revisit when:** the instance offers a way to ask the forge without a token for a repository that is public, or the dashboard's create form needs the hub's answer before it sends
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-10-31
+
+`POST /projects` stores `public_page: on` for a creator who owns the namespace (for an organisation, one of its owners)
+and `off` for anyone else; `off` is taken from anyone, `on` from an owner only. When a `repository` comes with the call
+(or later with a `PATCH`), `routes/projects._looks_public` asks the forge once, with the hub's own reader
+(`Forge.repository_public`: anything but `private: false` counts as private), and the page stays `off` unless the answer
+was public. The call is made before the transaction opens, so no database transaction waits on the forge, and a first
+answer of public is stored in `repository_public`, so the page need not wait for the probe's round. A `PATCH` that
+changes the repository to one the hub does not see public turns an `on` page `off` and writes `project_updated`; the
+same pass as any other way the page stops being served (`agent_owners.reconcile`, here also archiving) follows.
+
+**Reason:** a project is public by default so a new project is findable and its outside agents are allowed (the
+maintainer's decision, 2026-10-31), but creating one must never publish what the creator could not see the hub see: a
+private repository's name and a page that links it. Looking before the transaction keeps a slow forge from holding a
+write lock; storing the first answer avoids a window in which a page of a public repository shows no link.
+
+**Rejected alternatives:**
+- Create the project `on` and let the probe turn it off: for the length of a round a private repository's page is public.
+- Look inside the transaction: a slow or down forge would hold the project's rows, and the call still has to answer.
+- Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
+  case is exactly the private one without a grant.
