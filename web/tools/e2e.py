@@ -782,8 +782,13 @@ def scenario(run: Run, page: Page) -> None:
         run.a11y(page, "inbox, @ picker open")
         free.press("Escape")
         expect(picker).to_be_hidden()
-        free.fill("")
-        page.locator("li.entry.current").get_by_role("button", name="Ship it", exact=True).click()
+        # The one field stands above the buttons; a reply takes its text along (§7).
+        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        current = page.locator("li.entry.current")
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
+        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        free.fill("Ship it, with this note.")
+        current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
         expect(
             page.locator("nav.switcher a", has_text="E2E Alpha").locator(".count")
@@ -799,7 +804,9 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   maity wait woke on {event.get('kind')} for {event.get('subject')}")
     assert event.get("kind") == "request_answered", event
     assert event.get("subject") == {"type": "request", "id": request_id}, event
-    assert (event.get("payload") or {}).get("answer", {}).get("reply_id") == "o1", event
+    answer = (event.get("payload") or {}).get("answer", {})
+    assert answer.get("reply_id") == "o1", event
+    assert answer.get("text") == "Ship it, with this note.", event
     view_tab(page, "Board").click()
     card = board_card(page, "E2E card")
     expect(card).to_contain_text("Claimed by")
