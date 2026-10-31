@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
-from pydantic import Field, ValidationInfo, field_validator
+from fastapi.responses import JSONResponse, Response
+from pydantic import Field, StrictBool, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
 from maity_hub import (
+    chat_meat_proxy,
     conversation_list,
     events,
     group_chats,
@@ -273,7 +274,19 @@ def _read_mark(conn: Connection, reader: int, conversation_id: str) -> int:
 
 def _short(person: dict[str, Any]) -> dict[str, Any]:
     """A participant as the list shows it; an agent with its global name (§6.3)."""
-    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
+    return {k: person[k] for k in conversation_list.SHORT if k in person}
+
+
+def _with_meat_proxy(
+    conn: Connection,
+    project_id: str,
+    conversation_id: str,
+    participants: list[dict[str, Any]],
+    caller: Caller,
+) -> list[dict[str, Any]]:
+    viewer = caller.human_id if caller.kind == "human" else None
+    chat_meat_proxy.shown(conn, [(project_id, conversation_id, participants)], viewer)
+    return participants
 
 
 def _direct_item(
@@ -288,7 +301,13 @@ def _direct_item(
         "kind": "direct",
         "agent_id": agent_id,
         "title": None,
-        "participants": [_short(people[human.id]), _short(people[agent.id])],
+        "participants": _with_meat_proxy(
+            conn,
+            mine.project.id,
+            agent_id,
+            [_short(people[human.id]), _short(people[agent.id])],
+            caller,
+        ),
         "access": "party",
         "closed_at": None,
         "last_message_at": ts(last.at) if last is not None else None,
@@ -465,7 +484,14 @@ def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> l
     items = conversation_list.direct_entries(conn, [mine], caller, owned)
     items += conversation_list.group_entries(conn, [mine], False)
     items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
-    return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
+    return [
+        {
+            **{k: i[k] for k in PACKET_FIELDS},
+            # The humans for whom the meat-proxy mode holds in this chat (§9.3).
+            "meat_proxy": chat_meat_proxy.packet(i["participants"]),
+        }
+        for i in items[:PACKET_CONVERSATIONS]
+    ]
 
 
 # --- group chats (§9.2) --------------------------------------------------------------------
@@ -508,7 +534,12 @@ def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -
 
 def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str, Any]:
     group, found = _group(conn, mine, conversation_id)
-    return group_chats.view(conn, group, found)
+    return group_chats.view(conn, group, found, _viewer(mine))
+
+
+def _viewer(mine: Any) -> str | None:
+    """The human reading, who alone sees its own `meat_proxy_chat` (§9.3)."""
+    return str(mine.principal_id) if mine.kind == "human" else None
 
 
 def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -> dict[str, Any]:
@@ -519,7 +550,7 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     found = group_chats.access(conn, conversation_id, mine)
     if found is None:  # a replay shows nothing the caller may no longer read (as #271)
         raise not_found()
-    return group_chats.view(conn, row, found)
+    return group_chats.view(conn, row, found, _viewer(mine))
 
 
 idempotency.LOADERS["conversation"] = _load_for_caller
@@ -640,6 +671,43 @@ idempotency.LOADERS["participation"] = idempotency.plain(_load_participation)
 
 
 # --- messages (§9.1, §9.2) ---------------------------------------------------------------
+
+
+class MeatProxyIn(Strict):
+    meat_proxy: StrictBool | None
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/meat-proxy")
+def put_meat_proxy(
+    slug: str, conversation_id: str, body: MeatProxyIn, request: Request, caller: AnyCaller
+) -> Response:
+    """A human's own choice of the meat-proxy mode for one chat it takes part in (§9.3, "Meat
+    proxy per chat"): `204`, idempotent, no event, wakes nobody."""
+    with engine_of(request).begin() as conn:
+        if caller.kind != "human":
+            raise humans_only("only a human sets the meat-proxy mode, for itself")
+        mine = _reader(conn, caller, slug)
+        if group_chats.is_group(conversation_id):
+            _, found = _group(conn, mine, conversation_id)
+            if found != "participant":  # it reads along without taking part
+                raise _not_a_participant()
+        elif isinstance(mine, Outsider):
+            raise not_found()
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+        chat_meat_proxy.put(
+            conn, str(mine.principal_id), mine.project.id, conversation_id, body.meat_proxy
+        )
+    return Response(status_code=204)
+
+
+def _not_a_participant() -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "the chat is read along, not taken part in",
+        {"reason": "not_a_participant"},
+    )
 
 
 @router.get("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")

@@ -68,6 +68,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         # While the hub still keeps it, null otherwise: it ends with the first agent exchange or
         # after 30 days (§16.7.2).
         "campaign_origin": _campaign_origin(conn, human_id),
+        "conversation_meat_proxy": _conversation_meat_proxy(conn, human_id),
         "organisation_invitations": _org_invitations(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
@@ -301,6 +302,25 @@ def _campaign_origin(conn: Connection, human_id: str) -> dict[str, Any] | None:
         "campaign": row.campaign,
         "registered_on": row.registered_at.date().isoformat(),
     }
+
+
+def _conversation_meat_proxy(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The person's own choice of the meat-proxy mode per conversation (§9.3)."""
+    rows = conn.execute(
+        select(t.conversation_meat_proxy)
+        .where(t.conversation_meat_proxy.c.human_id == human_id)
+        .order_by(
+            t.conversation_meat_proxy.c.project_id, t.conversation_meat_proxy.c.conversation_id
+        )
+    )
+    return [
+        {
+            "project_id": r.project_id,
+            "conversation_id": r.conversation_id,
+            "meat_proxy": bool(r.meat_proxy),
+        }
+        for r in rows
+    ]
 
 
 def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
