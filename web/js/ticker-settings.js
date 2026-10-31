@@ -27,7 +27,7 @@ window.Maity = window.Maity || {};
       if (!m) { errors.push(M.t("tickerset.err.shape", { line: i + 1 })); return; }
       const tokens = m[2].split(/\s+/).filter(Boolean);
       const bad = tokens.filter((t) => !TOKEN.test(t));
-      if (bad.length) errors.push(M.t("tickerset.err.token", { line: i + 1, tokens: bad.join(", "), count: bad.length }));
+      if (bad.length) errors.push(M.t("tickerset.err.token", { line: i + 1, tokens: M.fmt.list(bad), count: bad.length }));
       if (tokens.length > TOKENS_MAX) errors.push(M.t("tickerset.err.tokens_max", { line: i + 1, count: TOKENS_MAX }));
       map[m[1]] = tokens;
     });
@@ -70,7 +70,7 @@ window.Maity = window.Maity || {};
       const { map } = parseImplementers(impl.value);
       const lost = [...new Set([].concat(...Object.values(map)).filter((tok) => TOKEN.test(tok) && unresolved(ctx, tok)))];
       unresolvedBox.hidden = !lost.length;
-      unresolvedBox.textContent = lost.length ? M.t("tickerset.unresolved", { tokens: lost.join(", ") }) : "";
+      unresolvedBox.textContent = lost.length ? M.t("tickerset.unresolved", { tokens: M.fmt.list(lost) }) : "";
     };
     impl.addEventListener("input", showUnresolved);
     showUnresolved();
