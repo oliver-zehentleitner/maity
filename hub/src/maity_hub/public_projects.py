@@ -24,6 +24,7 @@ from maity_hub import (
     public_pages,
     public_people,
     render,
+    swarm,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
@@ -117,6 +118,53 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
     return humans, shown, len(agents) - len(shown)
 
 
+STAT_DAYS = 30
+_STAT_LABELS = (
+    ("cards_done", "Cards done"),
+    ("reviews_given", "Reviews given"),
+    ("prs_merged", "Pull requests merged"),
+    ("handovers", "Handovers"),
+    ("claim_to_done_median_seconds", "Median, claim to done"),
+    ("review_to_done_median_seconds", "Median, review to done"),
+)
+
+
+def agent_statistics(conn: Connection, project_id: str) -> dict[str, Any]:
+    """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
+    the agents only, so that no human's contribution appears; `totals` of the swarm fold."""
+    agents = set(
+        conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.agent_id.is_not(None),
+                t.membership.c.isolated_since.is_(None),  # an isolated agent is not counted
+            )
+        ).scalars()
+    )
+    found = swarm.CACHE.get(conn, project_id)
+    totals: dict[str, Any] = swarm.fold(
+        found, {}, days=STAT_DAYS, include=lambda member: member in agents
+    )["totals"]
+    return totals
+
+
+def _duration(seconds: int | None) -> str:
+    if seconds is None:
+        return "-"
+    hours, rest = divmod(seconds, 3600)
+    return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
+
+
+def _statistics_html(totals: dict[str, Any]) -> str:
+    rows = []
+    for key, label in _STAT_LABELS:
+        value = totals[key]
+        shown = _duration(value) if key.endswith("seconds") else ("-" if value is None else value)
+        rows.append(f"<li>{escape(label)}: {escape(str(shown))}</li>")
+    return f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{''.join(rows)}</ul>"
+
+
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
     is one (a person's profile turning private or public changes them, §16.9)."""
@@ -164,9 +212,10 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
         f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
     )
+    statistics_html = _statistics_html(agent_statistics(conn, project.id))
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
-        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}'
+        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}{statistics_html}'
     )
     path = f"/{full}"
     body = render.page_document(
@@ -184,6 +233,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
                 project.public_about or "",
                 shown_url or "",
                 team_html,
+                statistics_html,
             )
         ).encode()
     )
