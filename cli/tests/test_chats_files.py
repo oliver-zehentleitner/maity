@@ -307,6 +307,32 @@ def test_say_unknown_chat_shaped_recipient_keeps_the_hubs_error(
     assert fake.signed()[-1].json()["to"] == "cnv-unknown"
 
 
+@pytest.mark.parametrize("status", [403, 500])
+@pytest.mark.parametrize("typed", [False, True])
+def test_say_failed_chat_hint_keeps_the_normal_command_outcome(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    status: int,
+    typed: bool,
+) -> None:
+    fake.routes[("GET", f"{P}/conversations")] = lambda s: (
+        status, {"error": {"code": "hint_unavailable", "message": "hint unavailable"}}
+    )  # fmt: skip
+    fake.routes[("POST", f"{P}/events")] = lambda s: (
+        400, {"error": {"code": "not_a_member", "message": "not_a_member"}}
+    )  # fmt: skip
+    options = ["--type", "notice"] if typed else []
+    expected = cli.EXIT_ERROR if typed else cli.EXIT_USAGE
+    assert cli.main(["say", "unknown", "hello", *options]) == expected
+    err = capsys.readouterr().err
+    assert ("not_a_member" if typed else "--type is required") in err
+    assert "hint unavailable" not in err
+    assert [s.method for s in fake.signed()] == (
+        ["GET", "GET", "POST"] if typed else ["GET", "GET"]
+    )
+
+
 @pytest.mark.parametrize(
     "argv",
     [["say", "--chat", "cnv-0007", "agt-a", "hi"], ["say", "--chat", "cnv-0007", "hi",
