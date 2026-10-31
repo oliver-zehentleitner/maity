@@ -803,7 +803,9 @@ more.
 in the code, with a notice of where they come from and on what terms,
 keeps them out of the instance's editable content and out of the MIT
 licence, and stops an operator from pointing the band at arbitrary
-images. The list follows what Keep the Why already ships, where the
+images. They are one file per mark, not inline SVG, so that each sits
+beside its notice and the licence exception has a clear boundary
+(chosen in review). The list follows what Keep the Why already ships, where the
 maintainer settled their use.
 
 **Rejected alternatives:**
