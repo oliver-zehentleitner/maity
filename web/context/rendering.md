@@ -648,7 +648,16 @@ names are one set of keys (`cards.column.*`) for the board and the
 overview: the board keeps its columns as `[status, name]` pairs, the name
 a getter on index 1, because `board.js` reads them as pairs; the
 overview a getter per status. Rejected: a second set for the overview,
-the same words twice for a translator. A text the
+the same words twice for a translator. A member's page (its Cards tab)
+names a card's status with those names too (`M.boardEdit.columnName`),
+so a status has one key and renaming a column renames it everywhere.
+Rejected: `memberpage.status.*`, a second translation that could drift
+from the board's. A refusal a view has no words for reads as
+`{field}: {reason}` from one key (`members.refused.unknown`), the
+field's underscores as spaces and the hub's reason as it comes: the
+sentence's shape is the catalog's, while the two values stay the hub's.
+Rejected: the English glued together in code, which no translation
+reaches. A text the
 dashboard writes into the hub for the reader (the title of a chat the
 Lead button makes) is taken from the catalog in the writer's language
 and stays as written, as a title they typed would: the hub keeps no

@@ -20,6 +20,12 @@ def _url(engine: Engine) -> str:
     return engine.url.render_as_string(hide_password=False)
 
 
+def _mine(heard: list[tuple[str, int]], *projects: str) -> list[tuple[str, int]]:
+    """The wake-ups of this test's own projects: another writer on the same database (a
+    background worker of an earlier test) may notify meanwhile, which says nothing here."""
+    return [(project, seq) for project, seq in heard if project in projects]
+
+
 def _until(check: Callable[[], bool], seconds: float = 10.0) -> bool:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -70,7 +76,7 @@ def test_an_event_another_replica_commits_wakes_this_one(
     postgres: Engine, listener: wakeups.Listener, heard: list[tuple[str, int]]
 ) -> None:
     _notify(postgres, "prj-elsewhere:42")
-    assert _until(lambda: heard == [("prj-elsewhere", 42)])
+    assert _until(lambda: _mine(heard, "prj-elsewhere") == [("prj-elsewhere", 42)])
 
 
 def test_emit_announces_at_commit_and_never_for_a_rollback(postgres: Engine) -> None:
@@ -94,7 +100,7 @@ def test_an_event_of_this_process_wakes_its_waiters_once(
         seq = events.emit(conn, project_id, "state_changed", ["all"], {})
     _notify(postgres, "prj-marker:1")  # delivered after the event's own, in commit order
     assert _until(lambda: ("prj-marker", 1) in heard)
-    assert heard == [(project_id, seq), ("prj-marker", 1)]
+    assert _mine(heard, project_id, "prj-marker") == [(project_id, seq), ("prj-marker", 1)]
 
 
 def test_a_lost_connection_wakes_every_waiter_and_listens_again(
@@ -120,13 +126,13 @@ def test_a_lost_connection_wakes_every_waiter_and_listens_again(
     assert ended == [True]
     assert _until(lambda: spreads == [wakeups.RESPREAD_SECONDS] and listener.listening.is_set())
     _notify(postgres, "prj-after:7")
-    assert _until(lambda: heard == [("prj-after", 7)])
+    assert _until(lambda: _mine(heard, "prj-after") == [("prj-after", 7)])
 
 
 def test_a_wake_up_that_is_no_project_and_seq_is_ignored(heard: list[tuple[str, int]]) -> None:
     wakeups.handle("no seq here")
     wakeups.handle("prj:")
-    assert heard == []
+    assert _mine(heard, "", "prj") == []  # what either payload could have named
 
 
 def test_a_spread_wake_reaches_every_waiter_within_the_spread() -> None:
