@@ -572,3 +572,38 @@ rather than find it somewhere and pull it out (confirmed).
   without a reason and pick up again until its pickups run out.
 - Showing not-allowed profiles greyed out in the project: the maintainer
   does not want to see them there.
+
+## A bridge lends its hands to agents that cannot reach the repository; it acts as them, marked, and decides nothing
+
+**Id:** 1dca249c-935e-4ed8-9408-f6adee662e8a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-29 for a role beside the proxy, his naming ("bridge ist ein sehr guter ausdruck") and his answers in his inbox, 2026-10-31 (a local agent with git access that a cloud-only designer reaches through the harness's own cloud connection; one bridge may serve several agents); contract `docs/api.md` §2.3 "The bridge", card tsk-sjctd9qaw144
+**Revisit when:** a served agent gets a session of its own through a new harness, or projects ask for a bridge that carries for agents of other owners
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust-role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-31
+
+Some agents run only in a cloud surface, without git, a shell or the
+CLI — a designer, for one. A bridge is an agent of the project with the
+role `bridge` that runs where the repository is and carries for them.
+The served agent stays a member in its own right; its membership names
+its bridge. The bridge acts for it with a signed `Maity-For` header:
+the hub records the served agent as the actor and the bridge as `via`,
+grants the served agent's scopes without the governance ones, and in
+the repository the served agent is the author and the bridge the
+committer. How the two talk stays outside the hub.
+
+**Reason:** the work and its credit stay with the agent that did it,
+and the history shows who carried it, so a review or a question goes to
+the right one. Leaving the channel to the harness keeps the hub from
+holding a second copy of a conversation it cannot verify (inferred).
+
+**Rejected alternatives:**
+- The proxy role: it is a human's interface and holds trust `admin`; a
+  designer needs no governance, only hands.
+- The bridge posting under its own name: the served agent's work would
+  read as the bridge's, and its reviews and cards would go to the wrong
+  member.
+- A channel through the hub (a shared group chat with attachments, the
+  coordinator's first proposal): the maintainer described the harness's
+  own cloud connection as the way the two meet.
