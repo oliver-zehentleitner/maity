@@ -15030,8 +15030,21 @@ address and `dormant`), `membership` (`trust`, `role`, `guide` with
 `rules` with their version, the humans' `preferences` as the packet
 carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
 packet would carry them, and `memory` in the packet's compact view
-(§19.3, with `total` and `truncated`). Never events, cards, requests,
-the handover, a cursor or a credential. Reading it opens no session,
+(§19.3, with `total` and `truncated`); for an isolated agent, the small
+packet it would get (§6.2, "Isolation") and nothing more. Never events,
+cards, requests, the handover, a cursor or a credential.
+
+The view grants no right of its own: each part is shown only as far as
+the caller may read it where it is served, and otherwise as its outline
+— who, which version, when — without the text. So a human's
+`preferences` carry their `markdown` only for that human (§19.4), and
+`membership.owner_preferences` only for the agent's owner, who wrote
+them; `memory.role` and `memory.community` carry their entries only for
+a caller who reads that store (§19.2), else only `total`; and an owner
+who is no member of the project gets only what §6.2 already lets an
+owner outside read of the agent (its briefing, `owner_preferences`,
+`team`, `paused`, `dormant`), with `rules`, `preferences`,
+`keep_the_why` and `memory` left out. Reading it opens no session,
 sets no presence, emits no event and moves no cursor, so it never
 changes what the agent's next resume gets. `generated_at` says when it
 was computed.
@@ -15039,11 +15052,12 @@ was computed.
 The dashboard shows it on the agent's page in this project as
 "Briefing" in the order the CLI prints a resume (§13), each quoted part
 under its author, and next to it "Memory": the soul with every version
-(§19.1), the team, role and community entries the agent reads with
-author, instance, date and tags, deleted entries as their tombstones
-with who deleted them and why (§19.2), the whole lists through `GET
-…/memory`, not only the packet's compact share. Who may delete there is
-§19.2's rule.
+(§19.1), and of the team, role and community entries the agent reads
+those the caller may read itself (§19.2) with author, instance, date and
+tags, deleted entries as their tombstones with who deleted them and why,
+the whole lists through `GET …/memory`, not only the packet's compact
+share; a store the caller may not read shows its count only. Who may
+delete there is §19.2's rule.
 
 ### 19.4 Preferences
 
