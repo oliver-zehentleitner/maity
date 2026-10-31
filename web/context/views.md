@@ -3240,3 +3240,25 @@ of the JSON in the page: a copy of the hub's rules that ages with each
 new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
+
+## All projects has two pages, Inbox and Chats, as a project has its views
+
+**Id:** c72e8c45-838f-4304-bf9f-9e1d3a7693a7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-gw59z3w3fenf (the maintainer, 2026-10-31: the existing chats page as a second page under All projects, beside the Inbox, with unread counts); the row of pages is the implementer's
+**Revisit when:** All projects gets a third page, or the Chat button and the Chats page part ways
+
+Under the header, where a project shows its views, All projects shows
+its two pages: **Inbox** (`/all`, the requests across projects) and
+**Chats** (`/chats`, every chat across them), each with the hub's
+count for it (`counts.inbox`, `counts.chat`, §18.2), refreshed with
+the other counts. On either page **All projects** stays current in the
+project row and the header names it as on the Inbox; the Chat button
+leads to the same page. A chat notification already leads into its
+chat. Rejected: Chats as a scope of its own outside All projects, as it
+was: the reader found the chats only through the Chat button, not
+where the requests across projects are. A tab inside the inbox view:
+the inbox and the chat list are views of their own, and a page address
+for each keeps the back button and links working.

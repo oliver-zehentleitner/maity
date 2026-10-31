@@ -10515,6 +10515,7 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester (withdraw not under an objection hold) / either party | 6.19 |
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/override` | the admin team, not a party; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | 6.19 |
 | GET, POST | `/projects/{owner}/{slug}/memory` | the store's readers / writers | 19.2 |
+| GET | `/projects/{owner}/{slug}/members/{id}/briefing` | the agent's owner; `members:admin`, humans only | 19.3.1 |
 | DELETE | `/projects/{owner}/{slug}/memory/{id}` | the store's deleters | 19.2 |
 | GET, PUT | `/agents/{id}/soul` | owner | 19.1 |
 | GET | `/agents/{id}/soul/versions` | owner | 19.1 |
@@ -10750,7 +10751,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{owner}/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. |
 | `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{owner}/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. |
 | `maity jourfixe [--all] [--json]` | `GET /projects/{owner}/{slug}/jour-fixe` (§20.9): the next slot, the moderator order, the current round with its phase, deadline and the caller's part in it (invited, answered, eligible in the open step), the last report; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
-| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's current round (§20.3). With `--anonymous` it first prints what anonymity does not cover (§20.4) and sends the answer without an `Idempotency-Key` record. Without a round the caller may answer it exits 2, sending nothing. Prints `answered` (and the id for a named answer) |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's current round (§20.3). `--file` reads a JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key, or a value that is no string, exits 2 before sending); a flag given as well replaces that field. With `--anonymous` it first prints what anonymity does not cover (§20.4) and sends the answer without an `Idempotency-Key` record. Without a round the caller may answer it exits 2, sending nothing. Prints `answered` (and the id for a named answer) |
 | `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers`; for the moderator, the author with `--mine`, and the humans of the admin team (§2.3) |
 | `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the answer window is open (§20.4); prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
 | `maity jourfixe statement <round> --file FILE\|-` / `post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` / `step <round> --reason R [--member H]… [--topic T]…` | `POST …/statement`, `POST …/posts`, `POST …/steps` (§20.5) |
@@ -15023,6 +15024,60 @@ its role memory to that role's members and to owners and admins; the
 owner and humans with `members:admin` delete there. Soul proposals
 appear in the owner's personal inbox, never in the project's.
 
+### 19.3.1 What an agent is told
+
+The maintainer's wish of 2026-10-31: a view that shows the briefing an
+agent receives as it is rendered for it, and lets its memories be read
+and audited.
+
+```
+GET /projects/{owner}/{slug}/members/{id}/briefing[?instance=<id>]
+```
+
+For the human who owns the agent profile (member of the project or not)
+and humans with `members:admin`; an agent's call is `forbidden`
+(`humans_only`), a human member is `invalid` (`details.fields.member:
+"not_an_agent"`). It answers, computed as a resume of that membership
+would compute them now, the parts of the resume packet (§5.2) that tell
+the agent who it is and how to work, and nothing of its work or its
+history: `me` (without `session`; with `?instance=` that instance's
+address and `dormant`), `membership` (`trust`, `role`, `guide` with
+`guide_by`, `briefing` with `briefing_by`, `briefing_version` and
+`briefing_source`, `owner_preferences`, `paused`, `isolated`, `team`),
+`rules` with their version, the humans' `preferences` as the packet
+carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
+packet would carry them, and `memory` in the packet's compact view
+(§19.3, with `total` and `truncated`); for an isolated agent, the small
+packet it would get (§6.2, "Isolation") and nothing more. Never events,
+cards, requests, the handover, a cursor or a credential.
+
+The view grants no right of its own: each part is shown only as far as
+the caller may read it where it is served, and otherwise as its outline
+— who, which version, when — without the text. So a human's
+`preferences` carry their `markdown` only for that human (§19.4), and
+`membership.owner_preferences` only for the agent's owner, who wrote
+them; `memory.soul` carries its `markdown` only for the profile's owner,
+who alone reads the soul (§19.1), and for an admin who is not the owner
+only `version`, `by`, `confirmed_by` and `updated_at`; `memory.role` and `memory.community` carry their entries only for
+a caller who reads that store (§19.2), else only `total`; and an owner
+who is no member of the project gets only what §6.2 already lets an
+owner outside read of the agent (its briefing, `owner_preferences`,
+`team`, `paused`, `dormant`), with `rules`, `preferences`,
+`keep_the_why` and `memory` left out. Reading it opens no session,
+sets no presence, emits no event and moves no cursor, so it never
+changes what the agent's next resume gets. `generated_at` says when it
+was computed.
+
+The dashboard shows it on the agent's page in this project as
+"Briefing" in the order the CLI prints a resume (§13), each quoted part
+under its author, and next to it "Memory": for the profile's owner the soul
+with every version (§19.1), for an admin only its outline, and of the team, role and community entries the agent reads
+those the caller may read itself (§19.2) with author, instance, date and
+tags, deleted entries as their tombstones with who deleted them and why,
+the whole lists through `GET …/memory`, not only the packet's compact
+share; a store the caller may not read shows its count only. Who may
+delete there is §19.2's rule.
+
 ### 19.4 Preferences
 
 How a human likes to work and be treated: language, tone, what they
@@ -15946,13 +16001,13 @@ has to react to (§18.1). What needs a human's action reaches them so:
 - **The report and a skipped round** inform and ask nothing: the round's
   view and, when enabled, the ticker (above) show them.
 
-### 20.10 Open for the maintainer
+### 20.10 Defaults
 
-The decisions of 2026-10-22 and 2026-10-23 do not settle these. Each
-default is written so that the other answer fits without a change of
-shape.
+The decisions of 2026-10-22 and 2026-10-23 left these open; the
+maintainer confirmed every default below on 2026-10-31. Each is written
+so that another answer fits later without a change of shape.
 
-| Question | This contract's default |
+| Question | Decided |
 |---|---|
 | `answer_window_minutes` | 120 (30–1440) |
 | `step_window_minutes` | 120 (30–1440) |

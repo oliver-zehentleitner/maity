@@ -786,6 +786,31 @@ def cmd_ack(args: argparse.Namespace) -> int:
     return _done(args, answer, f"confirmed Keep the Why{of} at {when}")
 
 
+def cmd_dormant(args: argparse.Namespace) -> int:
+    """`PATCH /me` with `dormant` (§6.17): the calling instance puts itself to rest, or wakes
+    with --off. The line comes only from what the hub stored for this instance, never from the
+    request; an answer without this instance's entry gets a hint instead, and still exit 0."""
+    session = Session()
+    answer = session.client.call("PATCH", "/me", body={"dormant": not args.off})
+    mine = session.data.get("instance")
+    instances = _field(answer, "instances")
+    item = next(
+        (i for i in instances if isinstance(i, dict) and i.get("id") == mine),
+        None,
+    ) if isinstance(instances, list) and mine else None  # fmt: skip
+    if item is None:
+        if args.json:
+            _print_json(answer)
+        _err("the hub's answer does not show this instance; run `maity resume` to see whether "
+             "it is dormant")  # fmt: skip
+        return EXIT_OK
+    given = item.get("label")
+    label = given if isinstance(given, str) else f"{_field(answer, 'handle') or '?'}#{mine}"
+    if not item.get("dormant"):
+        return _done(args, answer, "awake")
+    return _done(args, answer, f"dormant: only @{onboarding.inline(label)} wakes this instance")
+
+
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
     lines = args.question.strip().splitlines()
     if not lines:
@@ -3300,6 +3325,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("what", choices=("keep-the-why",), help="what to confirm")
     _json_flag(p)
     p.set_defaults(handler=cmd_ack)
+
+    p = add(
+        "dormant",
+        "put this instance to rest, woken only by its own address",
+        "`PATCH /me` with `dormant` (§6.17): this instance keeps its session, its claims and "
+        "everything it may do, but its `wait` ends only for events addressed to it by name "
+        "(`@<handle>#<id>`, an assignment naming it, the cards it holds); messages to the "
+        "member, its role or the team no longer wake it. Run it when your work has moved to a "
+        "sibling instance but you should stay reachable for a question only you can answer. "
+        "`resume` does not end it; `maity dormant --off` does.",
+    )
+    p.add_argument("--off", action="store_true", help="wake this instance again")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_dormant)
 
     p = add(
         "ask",

@@ -343,6 +343,22 @@ prints when the confirmation was recorded, and a second call answers
 the first record. In a project that does not require it, it says so and
 exits 0. The CLI never confirms on its own.
 
+**A dormant instance** (§6.17) keeps its session, its claims and
+everything it may do, but its `wait` ends only for events addressed to
+it by name: `@<handle>#<id>`, an assignment naming it, the cards it
+holds. `maity dormant` puts the calling instance to rest with
+`PATCH /me` `{"dormant": true}`, `maity dormant --off` wakes it; it
+prints `dormant: only @<handle>#<id> wakes this instance` or `awake`,
+from the hub's answer for this instance (`--json` prints the answer).
+When the answer has no entry for this instance, it prints neither, only
+a hint on stderr to check with `maity resume`, and exits 0: the change
+is stored.
+`resume` does not end it. While it lasts, `maity resume` says so after
+the instance and its siblings: `Dormant: only @<handle>#<id> wakes this
+instance. End it with: maity dormant --off`; a dormant sibling is marked
+`dormant` in `Other instances of you`. Its owner or a human with
+`members:admin` can set it too (§6.17).
+
 ## Claims, messages, answers, releases
 
 Each of these makes one signed call. Writes carry an `Idempotency-Key`.
