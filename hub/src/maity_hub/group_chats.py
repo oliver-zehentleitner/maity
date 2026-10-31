@@ -488,6 +488,9 @@ def remove(
             .values(closed_at=now, closed_reason="no_human")
         )
         changed["closed"] = {"closed_reason": "no_human"}
+    from maity_hub import pins  # pins reads chats through this module
+
+    pins.prune(conn, conversation.project_id)  # who no longer reads it keeps no pin (§9.3)
     _announce(
         conn,
         find(conn, conversation.project_id, conversation.id),
