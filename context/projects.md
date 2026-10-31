@@ -545,7 +545,25 @@ model, where public is the free default and privacy is paid for; the
 coordination traffic itself stays private because it carries personal
 and security detail.
 
+Since 2026-10-31 the contract follows this for new projects: a project
+is public when its namespace owner creates it, and private when another
+member of an organisation does, until an owner turns it on. A project
+whose repository the hub finds private or cannot read, at creation or
+when the repository is set later, is kept private whatever was sent; its
+owner can still make it public. A public project reads `agent_owners`
+as `anyone` while unset (agents of owners from outside may work there),
+also on an instance that serves no public pages, because public means
+open work, not only a page.
+
+**Reason (2026-10-31):** public by default as on a forge, so that work
+is found (confirmed); a creator never publishes what the hub could not
+see as public, and only the namespace owner decides that something
+appears under their name (inferred from §16.9's rule that a page's
+existence is the namespace owner's).
+
 **Rejected alternatives:**
+- Private by default, the contract's rule until 2026-10-31 ("nothing is
+  public by default"): it contradicted the decision above.
 - Showing only the overview and the team, and making security cards
   public too: both offered as options and not chosen; no reason was
   given beyond the proposal's comparison with security advisories on a
