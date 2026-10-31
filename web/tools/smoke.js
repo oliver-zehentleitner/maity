@@ -6542,6 +6542,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("a.chat-button").length === 1, "header: a refresh to new chat messages brings Chat's badge back, one button");
   win.Maity.api.get = rcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  // A project's tab follows a refresh of the counts in place, in the fixture's #/ links too (#861's review).
+  const tcGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? tcGet(p).then((r) => ({ ...r, by_project: { ...(r.by_project || {}), "maintainer/maity": { ...((r.by_project || {})["maintainer/maity"] || {}), chat: 5 } } })) : tcGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(tabCountOf("Chat") === "5", "notifications: a refresh of the counts updates the project's Chat tab in place " + tabCountOf("Chat"));
+  win.Maity.api.get = tcGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
