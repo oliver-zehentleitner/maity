@@ -179,6 +179,9 @@ def _name(value: Any, names: dict[str, str]) -> str:
     return inline(names.get(value, value) if isinstance(value, str) else value)
 
 
+DORMANT_OFF = "maity dormant --off"
+
+
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
     member_id = me.get("member_id")
@@ -194,6 +197,9 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     others = [_sibling(handle, i) for i in _items(packet.get("team"))]
     if others:
         lines.append("Other instances of you: " + "; ".join(others))
+    if me.get("dormant") and instance:  # §6.17
+        address = f"@{handle}#{inline(instance)}"
+        lines.append(f"Dormant: only {address} wakes this instance. End it with: {DORMANT_OFF}")
     if ms.get("trust") or ms.get("role"):
         role = _trust_role(ms, "Trust: {trust}, role: {role}")
         if ms.get("reports_to"):
@@ -217,6 +223,7 @@ def _sibling(handle: str, item: dict[str, Any]) -> str:
         facts.append(f"{claims} claim" + ("" if claims == 1 else "s"))
     facts += ["lead"] if item.get("lead") is True else []
     facts += ["paused"] if item.get("paused") else []
+    facts += ["dormant"] if item.get("dormant") else []
     return f"{handle}#{inline(item.get('id') or '?')}" + (f" ({', '.join(facts)})" if facts else "")
 
 
