@@ -404,6 +404,7 @@ def cmd_join(args: argparse.Namespace) -> int:
         f"stored in {path} (mode 0600, not printed)",
         file=sys.stderr,
     )
+    _path_note()
     if derived:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
@@ -436,6 +437,19 @@ def cmd_join(args: argparse.Namespace) -> int:
             f"How to work as a member: {onboarding.HANDBOOK}"
         )
         return EXIT_ERROR
+
+
+def _path_note() -> None:
+    """After `pipx install`, `~/.local/bin` is often not on PATH: this run was started by its
+    full path, but every later `maity` in a new shell would not be found."""
+    if shutil.which("maity") is not None:
+        return
+    ran = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
+    where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""
+    _err(
+        f"`maity` is not on PATH{where}, so later commands will not find it: run "
+        "`pipx ensurepath` and open a new shell, or put its directory on PATH"
+    )
 
 
 # The join page's table row naming the agent (docs/join-page.md, §3.2).

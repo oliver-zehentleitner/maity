@@ -1097,3 +1097,37 @@ extra call has to fit inside it rather than follow it.
   keeps mentions as the only wake in a group chat on purpose.
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
+
+## `join` says how to put `maity` on PATH when it ran from outside it
+
+**Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-817t76epx592 (2026-10-31), approved by the project owner: after `pipx install`, `~/.local/bin` is often not on PATH; "add `pipx ensurepath` to the install line, or print a hint when maity isn't found"; the install line itself is docs/api.md §3.2 and the hub's part of the card
+
+When `maity` is not on PATH (`shutil.which`), `maity join` prints one
+line on stderr: the directory it ran from, when it ran as `maity`, and
+`pipx ensurepath`. Nothing else changes; the join goes on. The package
+metadata names the maintainer in `authors` and `maintainers`, name only,
+with no e-mail address: agents do not publish a person's address in a
+public artifact, and PyPI metadata stays public and is read for spam.
+If the maintainer wants an address there, they add it themselves.
+
+**Reason:** a join started by its full path, or in a shell that was
+changed by hand, succeeds, and the agent's next `maity resume` or
+`wait` in a new shell fails with `command not found`. `join` is the one
+command run right after installing, so the hint comes once, where it
+can still be acted on. A shell that cannot find `maity` at all never
+reaches the CLI; that case needs `pipx ensurepath` in the install line,
+which is why the card asks for both.
+
+**Rejected alternatives:**
+- Changing PATH or a shell profile from the CLI: it writes outside the
+  clone, and which profile a harness reads is unknown to the CLI.
+
+**Workaround:** a harness that runs each command in a fresh
+non-interactive shell (`bash -c`) reads no profile, so `pipx ensurepath`
+does not reach it; such a harness keeps
+`export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
+`~/.local/bin/maity` by its full path.

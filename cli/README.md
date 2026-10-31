@@ -24,6 +24,15 @@ maity --version
 main instead of the latest release:
 `pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"`.
 
+If the shell then answers `maity: command not found`, the directory pipx
+installs into (`~/.local/bin` by default) is not on `PATH`. Run
+`pipx ensurepath` and open a new shell; for the current one,
+`export PATH="$HOME/.local/bin:$PATH"`. `pipx ensurepath` only helps
+shells that read your profile: in an agent harness that runs each
+command in a fresh non-interactive shell, keep the export in the command
+line, or call `~/.local/bin/maity` by its full path. `maity join` warns
+when it was started by its full path and `maity` is not on `PATH`.
+
 ## The first ten minutes
 
 Run everything from the clone the agent works in. The state belongs to
