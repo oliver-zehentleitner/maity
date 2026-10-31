@@ -3195,3 +3195,42 @@ of the JSON in the page: a copy of the hub's rules that ages with each
 new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
+
+## Landing variants are edited one at a time in the landing editor; campaigns sit beside the privacy hint, their counts in Statistics
+
+**Id:** 43d9837f-64fd-44d8-9527-1e590092ad38
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-ets3x0c4ethg with the maintainer's request for A/B testing before the launch, 2026-10-31; docs/api.md §16.7.2 (contract #823)
+**See:** https://github.com/oliver-zehentleitner/maity — b9dc57f9-7581-47ef-acc8-00b679f7aa1e — as of 2026-10-31
+**Revisit when:** the hub serves more than five variants, or a variant gets a header or footer of its own
+
+The landing editor edits one page at a time: the main page or one
+variant, picked in a row of buttons above the languages, with the same
+page editor. Only the path prefix of the hub's refusals differs
+(`variants.<slug>.pages`). A variant starts with an empty page in the
+default language, the one the hub requires. A language it lacks shows
+its own default page, which the editor says. **Campaigns** are a list of
+code and label next to the privacy hint the contract asks the dashboard
+to show. Both travel with the setting in one `PATCH`, in the preview
+and in the JSON import and export. **Statistics** shows the campaign
+counts for the same window as the instance's figures and links the
+hub's CSV. The fixture hub serves no file, so there is no link there.
+The registration page sends `v` and `c` from its address as `origin`,
+dropping a malformed part; the hub decides the rest.
+
+**Reason:** a variant is a page like the main one, so the editor the
+admin already knows serves it. Two editors would drift. The counts
+belong with the other counts. The CSV is the hub's own, so the columns
+cannot differ from what the contract names.
+
+**Rejected alternatives:**
+- A separate Variants section in the admin area: the same page editor
+  twice, and header and footer, which variants share, would look
+  editable twice.
+- Building the CSV in the browser from the JSON: it works in fixtures
+  too, but copies the hub's columns and quoting by hand.
+- Sending `v` and `c` unchecked: the hub drops them silently anyway, but
+  a malformed value would then sit in the request for nothing.
+

@@ -14,6 +14,10 @@ window.Maity = window.Maity || {};
   const LANDING = "/admin/settings/landing";
   const LEGAL = "/admin/settings/legal";
   const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
+  // A variant's slug and a campaign's code (§16.7.2): lowercase, digits and
+  // dashes, 1–40, a variant's neither starting nor ending with a dash.
+  const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+  const CODE = /^[a-z0-9-]{1,40}$/;
 
   // A field of a section or of an item: its key, its label, its kind and
   // its limit. Kinds: text (one line), long (several lines), md (Markdown),
@@ -228,9 +232,10 @@ window.Maity = window.Maity || {};
     return b;
   };
 
-  function sectionBox(lang, sections, i, errors, redraw) {
+  // prefix: where the pages sit in the setting, "pages" or "variants.<slug>.pages" (§16.7.2).
+  function sectionBox(prefix, lang, sections, i, errors, redraw) {
     const s = sections[i];
-    const path = "pages." + lang + ".sections." + i;
+    const path = prefix + "." + lang + ".sections." + i;
     const type = Object.hasOwn(TYPES, s.type) ? TYPES[s.type] : null;
     const on = h("input", { type: "checkbox", id: "lp-" + lang + "-" + i + "-enabled" });
     on.checked = s.enabled !== false;
@@ -265,16 +270,16 @@ window.Maity = window.Maity || {};
       type.fields.map((x) => control(x, s, path + "." + x.key, errors, redraw)), lists, error);
   }
 
-  function pageEditor(draft, lang, errors, redraw) {
-    const p = draft.pages[lang];
+  function pageEditor(pages, prefix, lang, errors, redraw) {
+    const p = pages[lang];
     p.sections = p.sections || [];
-    const title = control(f("title", "Page title", "text", 120), p, "pages." + lang + ".title", errors, redraw);
-    const description = control(f("description", "Description (for search engines)", "long", 300), p, "pages." + lang + ".description", errors, redraw);
+    const title = control(f("title", "Page title", "text", 120), p, prefix + "." + lang + ".title", errors, redraw);
+    const description = control(f("description", "Description (for search engines)", "long", 300), p, prefix + "." + lang + ".description", errors, redraw);
     const kind = h("select", { id: "lp-add-type-" + lang }, Object.entries(TYPES).map(([k, t]) => h("option", { value: k }, t.label)));
     const add = small("Add the section", () => p.sections.push(fresh(kind.value)), p.sections.length >= 20, redraw);
     return h("div", { class: "lp-page" }, title, description,
       h("h4", null, "Sections"),
-      p.sections.length ? h("ol", { class: "lp-sections" }, p.sections.map((s, i) => sectionBox(lang, p.sections, i, errors, redraw)))
+      p.sections.length ? h("ol", { class: "lp-sections" }, p.sections.map((s, i) => sectionBox(prefix, lang, p.sections, i, errors, redraw)))
         : h("p", { class: "muted" }, "No section yet: the page would show only its header and footer."),
       h("div", { class: "inline-form lp-add" }, h("label", { for: "lp-add-type-" + lang }, "New section"), kind, add,
         h("span", { class: "hint" }, "At most 20 sections.")));
@@ -308,7 +313,7 @@ window.Maity = window.Maity || {};
   // top-level page under the page's own policy. The tab is opened at the
   // click, before the hub answers, so no pop-up blocker stops it.
   const PREVIEW = /^(\/api\/v1)?\/admin\/settings\/(landing|legal)\/preview\/[A-Za-z0-9_-]+$/;
-  async function preview(path, body, lang, status, errors) {
+  async function preview(path, body, lang, status, errors, variant) {
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
     status.busy("Preparing the preview…");
@@ -317,6 +322,8 @@ window.Maity = window.Maity || {};
       const at = new URL(String((answer && answer.url) || ""), window.location.href);
       if (at.origin !== window.location.origin || !PREVIEW.test(at.pathname)) throw new Error("the hub answered no preview address of its own");
       if (lang && !at.searchParams.has("lang")) at.searchParams.set("lang", lang);
+      // A variant's draft (§16.7.2); without it the main page.
+      if (variant) at.searchParams.set("variant", variant);
       if (tab) tab.location.href = at.href; else window.open(at.href, "_blank", "noopener");
       status.done();
       append(status.el, h("span", { class: "ok" }, "The preview opened in a new tab; it is kept for 10 minutes."));
@@ -333,11 +340,22 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, "What a visitor without a session sees at the root of this instance, per language. The hub renders it itself, "
         + "without a script; sign-in and registration stay one click away."), status.el, box);
     let saved = await M.api.get(LANDING);
-    let draft = JSON.parse(JSON.stringify(saved));
-    draft.pages = draft.pages || {};
-    // No operator line is none, never an empty one, which the hub refuses (§16.7).
-    draft.footer = draft.footer || { social: [] };
+    // The setting as the editor holds it: every part present, variants and campaigns included (§16.7.2).
+    const editable = (x) => {
+      const d = JSON.parse(JSON.stringify(x));
+      d.pages = d.pages || {};
+      // No operator line is none, never an empty one, which the hub refuses (§16.7).
+      d.footer = d.footer || { social: [] };
+      d.variants = isObject(d.variants) ? d.variants : {};
+      d.campaigns = Array.isArray(d.campaigns) ? d.campaigns : [];
+      return d;
+    };
+    let draft = editable(saved);
     let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
+    // The page being edited: the main page (null) or a variant's slug.
+    let which = null;
+    const pagesOf = () => (which ? draft.variants[which].pages : draft.pages);
+    const prefixOf = () => (which ? "variants." + which + ".pages" : "pages");
     // The fields drawn last, by the hub's path: an import's check marks them.
     let errors = {};
     // Where the step-up asks for the second factor, kept across redraws.
@@ -345,7 +363,9 @@ window.Maity = window.Maity || {};
     stepSlot.hidden = true;
     const draw = () => {
       errors = {};
-      const langs = Object.keys(draft.pages);
+      if (which && !draft.variants[which]) which = null;
+      const pages = pagesOf();
+      const langs = Object.keys(pages);
       if (!langs.includes(lang)) lang = langs[0] || null;
       const enabled = h("input", { type: "checkbox", id: "lp-enabled" });
       enabled.checked = !!draft.enabled;
@@ -359,9 +379,9 @@ window.Maity = window.Maity || {};
       const addLang = h("button", { type: "button", class: "small" }, "Add the language");
       addLang.addEventListener("click", () => {
         const tag = newLang.value.trim();
-        if (!LANG.test(tag) || draft.pages[tag]) { newLang.focus(); return; }
-        draft.pages[tag] = { title: "", description: "", sections: [] };
-        if (!draft.default_language || !draft.pages[draft.default_language]) draft.default_language = tag;
+        if (!LANG.test(tag) || pages[tag]) { newLang.focus(); return; }
+        pages[tag] = { title: "", description: "", sections: [] };
+        if (!which && (!draft.default_language || !draft.pages[draft.default_language])) draft.default_language = tag;
         lang = tag;
         draw();
       });
@@ -375,18 +395,71 @@ window.Maity = window.Maity || {};
       const social = h("ol", { class: "lp-items" }, footer.social.map((x, k) => h("li", { class: "lp-item" },
         control(f("link", "Link " + (k + 1), "cta"), { link: x }, "footer.social." + k, errors, draw),
         small("Remove", () => footer.social.splice(k, 1), false, draw))));
+      // Variants (§16.7.2): the main page and up to 5 more, each at /for/<slug>,
+      // edited here one at a time with the same page editor.
+      const variantsPart = () => {
+        const slugs = Object.keys(draft.variants);
+        const pick = h("div", { class: "lp-variant-tabs", role: "group", "aria-label": M.t("landing.variant.pages") },
+          [[null, M.t("landing.variant.main")]].concat(slugs.map((v) => [v, "/for/" + v])).map(([v, label]) => {
+            const b = h("button", { type: "button", "aria-pressed": String(v === which), "data-variant": v || "" }, label);
+            // The language shown stays where the other page has it too.
+            b.addEventListener("click", () => { which = v; if (!pagesOf()[lang]) lang = draft.default_language; draw(); });
+            return b;
+          }));
+        const slug = h("input", { id: "lp-new-variant", maxlength: "40", autocomplete: "off", spellcheck: "false",
+          "aria-describedby": ["lp-new-variant-hint", "lp-new-variant-error"].join(" ") });
+        const slugError = h("p", { class: "field-error", id: "lp-new-variant-error", role: "alert" });
+        errors.variants = slugError;
+        const add = h("button", { type: "button", class: "small" }, M.t("landing.variant.add"));
+        add.disabled = slugs.length >= 5;
+        add.addEventListener("click", () => {
+          const v = slug.value.trim();
+          if (!SLUG.test(v) || v === "default" || draft.variants[v]) { slugError.textContent = M.t("landing.variant.bad_slug"); slug.focus(); return; }
+          const dl = draft.default_language || "en";
+          draft.variants[v] = { pages: { [dl]: { title: "", description: "", sections: [] } } };
+          which = v;
+          lang = dl;
+          draw();
+        });
+        // A saved variant is seen as a visitor sees it, in a page of its own (never the app's router).
+        const savedOne = which && saved.enabled && isObject(saved.variants) && saved.variants[which];
+        return h("section", { class: "lp-variant-box", "aria-labelledby": "lp-variants-title" },
+          h("h4", { id: "lp-variants-title" }, M.t("landing.variant.title")),
+          h("p", { class: "hint" }, M.t("landing.variant.hint")),
+          pick,
+          h("div", { class: "inline-form" }, h("label", { for: "lp-new-variant" }, M.t("landing.variant.slug")), slug, add,
+            h("span", { class: "hint", id: "lp-new-variant-hint" }, M.t("landing.variant.slug_hint"))), slugError,
+          which ? h("div", { class: "actions" },
+            small(M.t("landing.variant.remove", { slug: which }), () => { delete draft.variants[which]; which = null; }, false, draw),
+            savedOne ? h("a", { href: "/for/" + encodeURIComponent(which), target: "_blank", rel: "noopener" }, M.t("landing.variant.open", { slug: which })) : null) : null);
+      };
+      // Campaigns (§16.7.2): the codes the hub counts, each with a label for the admin.
+      const campaignsPart = () => {
+        const list = draft.campaigns;
+        return h("section", { class: "lp-campaigns", "aria-labelledby": "lp-campaigns-title" },
+          h("h4", { id: "lp-campaigns-title" }, M.t("landing.campaign.title")),
+          h("p", { class: "hint" }, M.t("landing.campaign.hint")),
+          h("p", { class: "hint lp-privacy" }, M.t("landing.campaign.privacy")),
+          list.length ? h("ol", { class: "lp-items lp-campaign-list" }, list.map((c, k) => h("li", { class: "lp-item" },
+            control(f("code", M.t("landing.campaign.code"), "text", 40), c, "campaigns." + k + ".code", errors, draw),
+            control(f("label", M.t("landing.campaign.label"), "text", 120), c, "campaigns." + k + ".label", errors, draw),
+            CODE.test(c.code || "") ? h("p", { class: "muted lp-campaign-param" }, "?c=" + c.code) : null,
+            small(M.t("landing.campaign.remove"), () => list.splice(k, 1), false, draw))))
+            : h("p", { class: "muted" }, M.t("landing.campaign.none")),
+          small(M.t("landing.campaign.add"), () => list.push({ code: "", label: "" }), list.length >= 200, draw));
+      };
       const form = h("form", {
         class: "lp-form project-form",
         onsubmit: async (e) => {
           e.preventDefault();
           status.busy("Saving…");
-          const body = { enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer };
+          const body = { enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer,
+            variants: draft.variants, campaigns: draft.campaigns };
           try {
             // A sensitive call (§2.8.4): the second factor asked for here when the hub wants it.
             saved = await M.stepUp.run(() => M.api.patch(LANDING, body), stepSlot, M.t("landing.save.step_up"));
-            draft = JSON.parse(JSON.stringify(saved));
-            draft.pages = draft.pages || {};
-            draft.footer = draft.footer || { social: [] };
+            draft = editable(saved);
+            if (which && !draft.variants[which]) which = null;
             draw();
             status.done();
             append(status.el, h("span", { class: "ok" }, "Saved. Visitors see it within a minute."));
@@ -397,19 +470,22 @@ window.Maity = window.Maity || {};
         },
       },
       h("p", { class: "check" }, enabled, h("label", { for: "lp-enabled" }, " Show the landing page to visitors without a session")), errors.enabled,
+      variantsPart(),
       h("div", { class: "inline-form" }, h("label", { for: "lp-new-language" }, "Languages"), tabs, newLang, addLang),
-      langs.length ? [h("label", { for: "lp-default-language" }, "Default language"), def, errors.default_language,
-        lang ? [small("Remove this language", () => { delete draft.pages[lang]; if (draft.default_language === lang) draft.default_language = Object.keys(draft.pages)[0] || "en"; }, false, draw),
-          pageEditor(draft, lang, errors, draw)] : null]
+      langs.length ? [which ? h("p", { class: "hint" }, M.t("landing.variant.fallback", { lang: draft.default_language || "en" }))
+        : [h("label", { for: "lp-default-language" }, "Default language"), def, errors.default_language],
+        lang ? [small("Remove this language", () => { delete pages[lang]; if (!which && draft.default_language === lang) draft.default_language = Object.keys(draft.pages)[0] || "en"; }, false, draw),
+          pageEditor(pages, prefixOf(), lang, errors, draw)] : null]
         : h("p", { class: "muted" }, "No language yet: add one to write its page."),
       h("h4", null, "Footer, for every language"),
       control(f("operator", "Operator line (name, country)", "text", 120, { optional: true }), footer, "footer.operator", errors, draw),
       social, small("Add a social link", () => footer.social.push({ label: "", href: "" }), footer.social.length >= 8, draw),
       h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
+      campaignsPart(),
       stepSlot,
       h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
-        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
-          "Preview the draft"),
+        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer, variants: draft.variants },
+          lang, status, errors, which) }, which ? M.t("landing.variant.preview", { slug: which }) : "Preview the draft"),
         // The saved page as a visitor sees it (§16.7, ?as=public), only while it is on.
         saved.enabled ? h("a", { href: "/?as=public" + (lang ? "&lang=" + encodeURIComponent(lang) : ""), target: "_blank", rel: "noopener" }, "View as a visitor") : null),
       saved.updated_at ? h("p", { class: "muted" }, "Last saved " + formatTime(saved.updated_at) + ".") : null);
@@ -431,7 +507,8 @@ window.Maity = window.Maity || {};
         if (!chosen) return;
         try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("landing.json.file_failed"), err); }
       });
-      const bodyOf = () => ({ enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer });
+      const bodyOf = () => ({ enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer,
+        variants: draft.variants, campaigns: draft.campaigns });
       const exportIt = () => {
         area.value = JSON.stringify(bodyOf(), null, 2);
         io.done();
@@ -457,10 +534,14 @@ window.Maity = window.Maity || {};
           // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).
           next = { enabled: "enabled" in data ? !!data.enabled : !!draft.enabled,
             default_language: data.default_language || Object.keys(data.pages)[0] || "en",
-            pages: data.pages, footer: isObject(data.footer) ? data.footer : draft.footer };
+            pages: data.pages, footer: isObject(data.footer) ? data.footer : draft.footer,
+            variants: isObject(data.variants) ? data.variants : draft.variants, campaigns: Array.isArray(data.campaigns) ? data.campaigns : draft.campaigns };
         } else {
-          next = Object.assign({}, draft, { pages: Object.assign({}, draft.pages,
-            { [target]: { title: data.title || "", description: data.description || "", sections: data.sections } }) });
+          // One language's page goes into the page being edited: the main page or a variant's.
+          const one = { [target]: { title: data.title || "", description: data.description || "", sections: data.sections } };
+          next = which
+            ? Object.assign({}, draft, { variants: Object.assign({}, draft.variants, { [which]: { pages: Object.assign({}, draft.variants[which].pages, one) } }) })
+            : Object.assign({}, draft, { pages: Object.assign({}, draft.pages, one) });
           if (!next.default_language || !next.pages[next.default_language]) next.default_language = target;
         }
         // The hub checks it first: a part of the wrong kind (a list that is no list) is its to
@@ -468,18 +549,19 @@ window.Maity = window.Maity || {};
         status.busy(M.t("landing.json.checking"));
         let refused = null;
         try {
-          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer });
+          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer, variants: next.variants });
         } catch (err) {
           refused = err;
         }
         // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
-        if (!drawable(next.pages, next.footer)) {
+        if (!drawable(next.pages, next.footer) || !Object.values(next.variants || {}).every((v) => isObject(v) && isObject(v.pages) && drawable(v.pages, next.footer))) {
           draft = before.draft;
           lang = before.lang;
           showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));
           return;
         }
-        draft = next;
+        draft = editable(next);
+        if (whole) which = null;
         lang = whole ? next.default_language : target;
         draw();
         if (refused) { showErrors(errors, refused, status, M.t("landing.json.refused")); return; }

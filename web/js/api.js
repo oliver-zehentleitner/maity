@@ -635,6 +635,31 @@ window.Maity = window.Maity || {};
       }
     });
   }
+  // §16.7.2: at most 5 variants by slug, each {pages} as the main page's;
+  // at most 200 campaigns {code, label}, codes unique.
+  function landingVariants(vs, errors) {
+    if (!vs || typeof vs !== "object" || Array.isArray(vs)) { errors.variants = "invalid"; return; }
+    const slugs = Object.keys(vs);
+    if (slugs.length > 5) errors.variants = "too_many";
+    slugs.forEach((slug) => {
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(slug) || slug === "default") { errors["variants." + slug] = "invalid"; return; }
+      const x = vs[slug];
+      if (!x || typeof x !== "object" || !x.pages || typeof x.pages !== "object") { errors["variants." + slug + ".pages"] = "invalid"; return; }
+      Object.entries(x.pages).forEach(([lang, pg]) => landingPage(pg, "variants." + slug + ".pages." + lang, errors));
+    });
+  }
+  function landingCampaigns(cs, errors) {
+    if (!Array.isArray(cs)) { errors.campaigns = "invalid"; return; }
+    if (cs.length > 200) errors.campaigns = "too_many";
+    const seen = new Set();
+    cs.forEach((c, k) => {
+      const code = c && c.code;
+      if (typeof code !== "string" || !/^[a-z0-9-]{1,40}$/.test(code)) errors["campaigns." + k + ".code"] = "invalid";
+      else if (seen.has(code)) errors["campaigns." + k + ".code"] = "duplicate";
+      seen.add(code);
+      landingText(c && c.label, "campaigns." + k + ".label", 120, true, errors);
+    });
+  }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
     if (ft.operator === "") errors["footer.operator"] = "invalid";
@@ -2236,6 +2261,23 @@ window.Maity = window.Maity || {};
     // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
     // instance; a window beyond the fixture's days reads zero days, with
     // reviews unknown before the hub kept history, as the hub answers.
+    // §16.7.2: the campaign counts per UTC day, variant and campaign; views approximate.
+    ["GET", /^\/admin\/statistics\/campaigns$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const n = Number(query.get("days") || 30);
+      if (!Number.isInteger(n) || n < 1 || n > 400) fail(400, "invalid", "the request does not validate", path, { fields: { days: "invalid" } });
+      const land = fixtures()["landing.json"] || {};
+      const configured = (land.campaigns || []).map((c) => ({ code: c.code, label: c.label, removed: false }));
+      const rows = [
+        { date: "2026-10-31", variant: "default", campaign: null, views: 140, registrations: 3, activations: 1 },
+        { date: "2026-10-31", variant: "maintainers", campaign: "x-h1-w1", views: 212, registrations: 9, activations: 4 },
+        { date: "2026-10-30", variant: "maintainers", campaign: "old-mail", views: 31, registrations: 1, activations: 0 },
+      ];
+      const known = new Set(configured.map((c) => c.code));
+      const campaigns = configured.concat([...new Set(rows.map((r) => r.campaign).filter((c) => c && !known.has(c)))].map((code) => ({ code, label: null, removed: true })));
+      return { as_of: "2026-10-31T10:00:00Z", window_days: n, views_approximate: true,
+        variants: ["default"].concat(Object.keys(land.variants || {})), campaigns, rows };
+    }],
     ["GET", /^\/admin\/statistics$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const n = Number(query.get("days") || 30);
@@ -2260,12 +2302,19 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      Object.keys(body).forEach((k) => { if (!["enabled", "default_language", "pages", "footer"].includes(k)) errors[k] = "extra_forbidden"; });
+      const KEYS = ["enabled", "default_language", "pages", "footer", "variants", "campaigns"];
+      Object.keys(body).forEach((k) => { if (!KEYS.includes(k)) errors[k] = "extra_forbidden"; });
       if ("enabled" in body && typeof body.enabled !== "boolean") errors.enabled = "invalid";
       if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
       if ("footer" in body) landingFooter(body.footer || {}, errors);
-      ["enabled", "default_language", "pages", "footer"].forEach((k) => { if (k in body) v[k] = body[k]; });
+      if ("variants" in body) landingVariants(body.variants, errors);
+      if ("campaigns" in body) landingCampaigns(body.campaigns, errors);
+      KEYS.forEach((k) => { if (k in body) v[k] = body[k]; });
       if (!Object.keys(errors).length && v.enabled && !(v.pages || {})[v.default_language]) errors.default_language = "default_language_missing";
+      // A variant's page in the default language is required while the page is on (§16.7.2).
+      if (!Object.keys(errors).length && v.enabled) {
+        Object.entries(v.variants || {}).forEach(([slug, x]) => { if (!(x.pages || {})[v.default_language]) errors["variants." + slug + ".pages"] = "default_language_missing"; });
+      }
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
@@ -2311,6 +2360,7 @@ window.Maity = window.Maity || {};
       const errors = {};
       if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
       if ("footer" in body) landingFooter(body.footer || {}, errors);
+      if ("variants" in body) landingVariants(body.variants, errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lpv");
       return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
@@ -3641,6 +3691,9 @@ window.Maity = window.Maity || {};
     // A project's path segments from its full name (§6.25): `<owner>/<slug>`,
     // each part encoded, the slash between them kept.
     projectPath,
+    // The campaign counts as the hub's CSV file (§16.7.2), for a download link: the hub
+    // names it and sends it as an attachment; the fixture hub serves no file, so none.
+    campaignsCsvUrl: (days) => (source === "fixtures" ? null : API_BASE + "/admin/statistics/campaigns?days=" + encodeURIComponent(days) + "&format=csv"),
     attachmentUrl: (full, id, download) => {
       if (source === "fixtures") return attachmentBlobs[fixtureSlug(full) + "/" + id] || null;
       return API_BASE + "/projects/" + projectPath(full) + "/attachments/" + encodeURIComponent(id) + "/content" + (download ? "?download=1" : "");

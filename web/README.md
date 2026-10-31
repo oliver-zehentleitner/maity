@@ -1674,3 +1674,17 @@ edits the imprint, the privacy notice and the terms per language; each
 save is one page and a new version, the earlier ones linked, and each
 draft can be previewed the same way; **Take the page down** sends it as
 `null`.
+
+**Variants and campaigns** (`docs/api.md` §16.7.2), in the same editor.
+**Variants** lists the main page and up to five more by slug. **Add the
+variant** makes one with an empty page in the default language, and
+picking a variant edits its pages with the same page editor; refusals
+land at `variants.<slug>.pages.…`. **Preview /for/<slug>** opens that
+variant's draft, and **Open /for/<slug> as a visitor** opens the saved
+one in a page of its own. **Campaigns** holds up to 200 codes, each with
+a label, next to the privacy hint the contract asks for. Both are saved
+with the setting and are part of the JSON import and export.
+**Statistics** shows a campaign table for the same window: per day,
+page and campaign, the views (marked approximate), registrations and
+those with an agent, a removed code said so, and the hub's CSV linked.
+The registration page sends the link's `v` and `c` as `origin`.

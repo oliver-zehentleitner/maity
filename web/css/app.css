@@ -1396,6 +1396,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
 .lp-section.kept { opacity: 0.8; }
+.lp-campaign-param { font-family: var(--mono); }
+.lp-variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .lp-section-title { margin: 0; flex: 1 1 auto; }
 .lp-tabs { display: flex; flex-wrap: wrap; gap: 4px; }

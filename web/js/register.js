@@ -26,6 +26,13 @@ window.Maity = window.Maity || {};
     // The legal pages that are set, under the form (§16.7.1).
     append(clear(main), box, M.legal ? M.legal.links() : null);
     const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
+    // Where the visitor came from (§16.7.2): the landing page's link carries
+    // ?v=<variant>&c=<code>; sent as origin, the hub keeps only what it knows.
+    const query = M.route.current().query;
+    const v = query.get("v"), c = query.get("c");
+    const origin = {};
+    if (v && (v === "default" || /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(v))) origin.variant = v;
+    if (c && /^[a-z0-9-]{1,40}$/.test(c)) origin.campaign = c;
     // May this person register here? The instance's mode (§2.6.1), or an
     // address-bound invitation that admits (§3.4) when they come from one.
     let methods = null;
@@ -63,7 +70,8 @@ window.Maity = window.Maity || {};
         status.busy("Sending…");
         let answer;
         try {
-          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value }, next ? { next } : {}));
+          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value }, next ? { next } : {},
+            Object.keys(origin).length ? { origin } : {}));
         } catch (err) {
           submit.disabled = false;
           status.fail("Not sent: ", registerWords(err));
