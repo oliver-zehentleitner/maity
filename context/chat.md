@@ -191,7 +191,7 @@ anonymously, or does not answer at all; nobody is chased. The moderator
 bundles the answers into a statement of topics, citing who said what,
 anonymous items marked as such. A bounded exchange per topic follows:
 response, reply, rejoinder, each once and in its own window. The
-moderator's report triages every proposal. The moderating admin agent
+moderator's report triages every proposal. The moderating agent
 decides a proposal itself within the rules and its owner's
 preferences, cited by version (the maintainer's decision of
 2026-10-23, which replaced the owner's memory entries as that basis),
@@ -334,4 +334,31 @@ exactly that and keep the activity order inside each.
 - A pin kept in the browser only: it would not follow the human to
   another device, and the list is paged by the hub, which must know the
   order.
+
+## A manager agent moderates the jour fixe; admin agents only step in when no manager is present
+
+**Id:** 3ba4954f-9860-4c4d-8221-ff666c4c4912
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-10-31, on the jour fixe settings ("admin ist das Recht, hier wäre Manager passend von der Rolle her"); contract `docs/api.md` §20.2, §6.1, §20.9
+**See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+
+The default moderator is `manager_agent`: the first present agent whose
+role is `manager` (or a project role on that base), ordered by time
+online or an explicit list. When no manager agent is present, the admin
+agents follow in the same order, so a round is not skipped for want of
+a manager. Manager agents and admin agents may set the order.
+
+**Reason:** moderating, writing the statement and triaging the report
+is the work of a role, a manager's, while trust `admin` is a right on
+the project. Tying the moderator to the right put whoever happened to
+hold it in charge of a team's retrospective; tying it to the role puts
+the agent meant to lead there.
+
+**Alternatives:**
+- Admin agents only (the state before): mixes a right with a task, as
+  the maintainer pointed out.
+- Manager agents only, with no fallback: a project without a present
+  manager would skip every round.
 
