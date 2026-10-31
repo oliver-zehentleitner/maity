@@ -17,7 +17,7 @@ import unicodedata
 RESERVED_FIRST = frozenset(
     {
         "account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components",
-        "explore", "health", "impressum", "imprint", "inbox", "invite", "join", "login", "mail",
+        "explore", "for", "health", "impressum", "imprint", "inbox", "invite", "join", "login", "mail",
         "new", "notifications", "observe", "privacy", "register", "requests", "runners",
         "settings", "sign-in", "terms",
     }
