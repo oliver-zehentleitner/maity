@@ -1302,6 +1302,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .sign-in-options { display: grid; gap: 12px; margin: 16px auto 0; max-width: 32rem; }
 /* Sign-in and registration lay out alike: a label on its own line, the field full width under it, the button below. */
 .sign-in-form, .register-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+/* A field's wrapper inside a form (a label and its control, a hint, an error): one column, the label above the
+   control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
+.field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sign-in-form button, .register-form button { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
