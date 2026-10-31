@@ -297,7 +297,8 @@ split.
 
 **Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** none — the shared-budget working mode ended when the team moved to its own subscriptions (2026-10-27)
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
 **Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
@@ -305,8 +306,9 @@ split.
 
 **Revisit:** the condition triggered on 2026-10-27: a new team runs on new
 subscriptions, several Claude agents in parallel, on the maintainer's
-instruction (coordinator, 2026-10-27). This is not today's rule; the entry
-stays as the record of the earlier stretch until a person re-checks it.
+instruction (coordinator, 2026-10-27). The coordinator re-checked this on
+2026-11-01. This is not today's rule; the entry stays as the record of the
+earlier stretch.
 
 When the maintainer announced that the Claude-based agents would soon
 hit their usage limit, the coordinator set a working mode for the
