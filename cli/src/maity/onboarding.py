@@ -325,6 +325,18 @@ def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Availability", *lines, ""] if lines else []
 
 
+def _chat_meat_proxy(chat: dict[str, Any]) -> list[str]:
+    """The note of each human for whom the meat-proxy mode holds in this chat (§5.2, §9.3),
+    quoted under `<handle> here:`; a chat where it holds for nobody prints nothing."""
+    lines = []
+    for person in _items(chat.get("meat_proxy")):
+        note = person.get("meat_proxy_note")
+        if isinstance(note, str) and note.strip():
+            lines.append(f"    {inline(person.get('handle') or '?')} here:")
+            lines += [f"    {line}" for line in quote(note)]
+    return lines
+
+
 def _unread_chats(packet: dict[str, Any]) -> list[str]:
     """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
     a group chat's messages wake nobody unless they mention you, so the resume says so."""
@@ -339,6 +351,7 @@ def _unread_chats(packet: dict[str, Any]) -> list[str]:
         name = inline(c.get("title")) if c.get("title") else inline(c.get("kind") or "chat")
         counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
         lines.append(f"  {name} {chat} ({counts}): maity chat {chat}")
+        lines += _chat_meat_proxy(c)
     if len(unread) > UNREAD_CHATS:
         lines.append(f"  … {len(unread) - UNREAD_CHATS} more: maity chats")
     return lines
