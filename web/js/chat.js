@@ -224,7 +224,10 @@ window.Maity = window.Maity || {};
     const saved = readCompose();
     let hidden = saved.hidden === true;
     let size = SIZES.includes(saved.size) ? saved.size : 1;
-    const toggle = h("button", { type: "button", class: "small compose-toggle", "aria-controls": text.id });
+    // The toggle controls the whole composer, not the field alone; it says
+    // what a press does next, so no aria-expanded besides (#824's review).
+    if (!form.id) form.id = text.id + "-form";
+    const toggle = h("button", { type: "button", class: "small compose-toggle", "aria-controls": form.id });
     const sizes = SIZES.map((n) => {
       const b = h("button", { type: "button", class: "small", "data-size": String(n) }, M.t("compose.size.times", { count: n }));
       b.addEventListener("click", () => { size = n; keepCompose(Object.assign(readCompose(), { size })); apply(); });
@@ -233,16 +236,20 @@ window.Maity = window.Maity || {};
     function apply() {
       form.classList.toggle("compose-hidden", hidden);
       toggle.textContent = hidden ? M.t("compose.show") : M.t("compose.hide");
-      toggle.setAttribute("aria-expanded", hidden ? "false" : "true");
       text.setAttribute("rows", String(rows * size));
       sizes.forEach((b) => b.setAttribute("aria-pressed", b.getAttribute("data-size") === String(size) ? "true" : "false"));
     }
-    toggle.addEventListener("click", () => {
-      hidden = !hidden;
+    const show = (yes) => {
+      hidden = !yes;
       keepCompose(Object.assign(readCompose(), { hidden }));
       apply();
+    };
+    toggle.addEventListener("click", () => {
+      show(hidden);
       if (!hidden) text.focus();
     });
+    // A quote opens a folded composer, so what it put in is seen.
+    text.composeOpen = () => { if (hidden) show(true); };
     apply();
     return h("div", { class: "compose-head" }, label,
       h("span", { class: "compose-tools" },
@@ -682,6 +689,7 @@ window.Maity = window.Maity || {};
     }
     // Quote: the message goes into the composer as a quote, before what is there.
     function quote(msg) {
+      if (text.composeOpen) text.composeOpen();
       text.value = quoteOf(ctx, msg) + text.value;
       drafts.set(key, text.value);
       hintMention();
