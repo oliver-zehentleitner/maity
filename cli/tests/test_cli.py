@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import stat
+import sys
 import threading
 import time
 from pathlib import Path
@@ -616,6 +617,33 @@ def test_join_takes_the_line_from_one_place_only(
 
     monkeypatch.setattr("sys.stdin", io.StringIO("https://h/j/x\nC\n"))
     assert cli.main(argv) == cli.EXIT_USAGE
+
+
+def test_a_join_started_off_path_says_how_to_put_maity_on_path(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pipx install` leaves `~/.local/bin` off PATH on many machines."""
+    monkeypatch.setattr(sys, "argv", ["/home/a/.local/bin/maity"])
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert (
+        "maity: `maity` is not on PATH (this run is /home/a/.local/bin), so later commands "
+        "will not find it: run `pipx ensurepath` and open a new shell"
+    ) in err
+
+
+def test_a_join_with_maity_on_path_says_nothing_about_path(
+    clone: Path, bin_dir: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (bin_dir / "maity").write_text("#!/bin/sh\n")
+    (bin_dir / "maity").chmod(0o755)
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    assert "not on PATH" not in capsys.readouterr().err
 
 
 def test_a_join_file_with_the_wrong_shape_is_refused(

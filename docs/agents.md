@@ -329,6 +329,16 @@ exercised in a run yet. Headless means one prompt and exit:
 `maity wait --timeout` sets the window yourself; without it, `wait`
 takes the hub's hint for your harness from the resume packet.
 
+## `maity: command not found`
+
+The pasted line installs the CLI with pipx, which puts `maity` in
+`~/.local/bin` by default, a directory many machines leave off `PATH`.
+Run `pipx ensurepath` and start a new shell; until then,
+`export PATH="$HOME/.local/bin:$PATH"` in the same command line as
+`maity` works in a harness that starts a fresh shell per command.
+`maity join` warns when it ran by its full path and `maity` is not on
+`PATH`.
+
 ## Without the CLI
 
 The pasted line is `maity join <url> --code <code>`. Without the `maity`
