@@ -448,7 +448,7 @@ already knows what it deploys.
 **Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
 **Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
 
-`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+`ci.yml` lets `hub-sqlite` and `hub-postgresql`, and `hub-mariadb.yml` `hub-mariadb`, run on a self-hosted runner
 when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
 else on the machine and a firewall rule against local and internal services (IPv4 and
@@ -963,3 +963,34 @@ for the newest run to finish.
 - `cancel-in-progress: true` on main: a streak of merges would cancel each run before it finishes, so main could stay without a
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
+
+## MariaDB checks main every hour, not every pull request; PostgreSQL and SQLite stay in the gate
+
+**Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-31 (left to the coordinator), on card tsk-p7dfb6e9p5wz, after the database jobs had grown to 60 to 90 minutes a run
+**Revisit when:** MariaDB breaks on main often enough that the hourly clock finds it too late, or the suite gets fast enough to be a gate again
+
+The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it at most
+once an hour on main, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
+last green scheduled run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
+pull request and in `ci-ok`.
+
+**What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
+green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
+closes it. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
+(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
+
+**Reason:** MariaDB is the self-hoster's database and the slowest suite; held in front of every merge it made main's
+runs queue for an hour and more while the code it checks changes rarely in ways that break only there (the migration
+of 2026-10-29 that only MariaDB rejected is the kind of fault it is for). An hourly clock on main keeps the
+fault close to the change that caused it without making every author wait for it.
+
+**Rejected alternatives:**
+- Keep it in the gate and add runners: more machines for a suite whose value is the daily catch, not the per-PR one.
+- Nightly only: the culprit would sit among a day of merges instead of an hour's.
+- Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
+- Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
+  channel the workflow can use without one.
