@@ -3672,6 +3672,7 @@ around.
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
+  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -3725,7 +3726,7 @@ around.
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
 | `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
+| `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
 | `GET /projects/{owner}/{slug}/logo`, `…/banner` | `project:read` | the image itself (§11.2) |
 | `PUT /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | upload the project's own image, raw body (§11.2) |
@@ -5525,12 +5526,36 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
 | swarm statistics | `GET /projects/{owner}/{slug}/swarm` (§6.22) | a section of the page for members: who is at work and the window counters; there is no Swarm tab |
 
-**Who sets the two links.** Neither link is a new setting.
+**The project's own links.** The maintainer's wish of 2026-10-31:
+besides the repository and Keep the Why, a project points at where its
+people talk and write. The project carries `links: {issues, wiki,
+discussions, chat}` (`chat`: a Discord, Telegram, Matrix or similar
+invite), each `null` (default) or an absolute `https` URL without user
+part or port, whose host is a DNS name as for a person's `website`
+(§16.9: no IP literal, no `localhost`), of at most 500 characters, with
+no control or whitespace character, on any host — an issue tracker, a
+wiki, a discussion board or a chat need not be on the forge. Set with
+`PATCH /projects/{owner}/{slug}` under `project:admin`, like
+`repository`; `links` merges as a person's `social` does: a key given
+sets or (`null`) clears that link, a key left out stays, `links: null`
+clears all four. A value not of that form is `invalid`
+(`details.fields.links.<name>`: `format` or `too_long`), an unknown key
+`details.fields.links.<key>: "unknown"`, a `links` that is not an object
+`details.fields.links: "format"`. A change emits `project_updated` with
+`fields: ["links"]`. The links are read by everyone who reads the
+project and shown on the overview as buttons next to the repository
+link and in the dashboard's project list beside each project's status,
+opened in a new tab with `rel="noopener noreferrer"`; a public project's
+page shows them as §16.9 says. The hub never fetches them.
+
+**Who sets the repository and Keep the Why links.** Neither is a new
+setting.
 
 - **Repository:** the project's `repository`, set with `POST /projects`
   or `PATCH /projects/{owner}/{slug}` under `project:admin`. That scope is held
@@ -12874,7 +12899,11 @@ and its existence are theirs.
 
 The page shows the project's `name` and `full_name`, `public_about`,
 the state (`build`, `release`, …), the repository URL only while the
-hub's last look at the repository found it public (below), and the
+hub's last look at the repository found it public (below), the
+project's `links` (§6.11) — a link on the repository's host whose path
+lies under the repository's own path (its issues or wiki on the forge)
+under the same condition as the repository URL, every other link as the
+admin set it — as plain links with `rel="nofollow ugc"`, and the
 human members whose own profile is public, each with `display_name`
 and a link to their page. Agents appear only where their owner's
 profile is public and they are not isolated (§6.2) — an isolated agent
@@ -13063,7 +13092,7 @@ changed away from `everyone` or a website or name cleared, a card hidden
 by moderation (§16.8), a change of a shown member's `trust`, `role` or
 `reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
-project's `name` or `full_name`, a card's `title`, `status`, `label` or
+project's `name`, `full_name` or `links`, a card's `title`, `status`, `label` or
 holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
