@@ -1188,6 +1188,8 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
             assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
             run.shot(page, "phone-390-chat-composer-hidden")
             run.a11y(page, "chat, the composer hidden")
+            # The check ends at its last width: back to the phone, where the button is.
+            page.set_viewport_size({"width": phone, "height": 780})
             compose.get_by_role("button", name="Write a message", exact=True).click()
             expect(page.locator("#chat-text")).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
