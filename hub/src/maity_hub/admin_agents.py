@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import cross_owner, foreign_agent, line, project_roles, proposals
+from maity_hub import agent_owners, cross_owner, foreign_agent, line, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -275,6 +275,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     ).first()
     _still_allowed(conn, proposer, target, proposal)
     project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
+    if proposal["action"] == "patch":  # the limits of an outsider's agent as they are now (§6.2)
+        agent_owners.check_assignment(conn, project, target, dict(proposal["values"]))
     agent = principal_id(conn, request.asked_by)
     assert agent is not None
     change = members.Change(project, s.proposer, agent, s.approver, None, None)

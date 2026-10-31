@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Literal
 
 from fastapi import APIRouter, Request
@@ -255,6 +256,26 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
     return {"repository_url": url, "repository_default_branch": repository.default_branch}
 
 
+def _refuse_outside_roles(
+    conn: Connection, project: Any, new_policy: dict[str, Any], values: dict[str, Any]
+) -> None:
+    """A narrower `outside_roles` is `invalid` while an outsider's agent at work holds a role
+    it leaves out (§6.2). It binds only where the project still reads `anyone` after the whole
+    PATCH: the same call may switch to `members`, and the pass that follows isolates them."""
+    after = SimpleNamespace(
+        **{
+            **project._mapping,
+            "agent_owners": new_policy["agent_owners"],
+            "public_page": values.get("public_page", project.public_page),
+        }
+    )
+    if agent_owners.effective(conn, after) != "anyone":
+        return
+    problem = agent_owners.check_policy(conn, project, new_policy["outside_roles"])
+    if problem is not None:
+        raise invalid({"outside_roles": problem}, "an agent of an owner from outside holds a role")
+
+
 def _apply_policy(
     conn: Connection,
     project_id: str,
@@ -299,9 +320,7 @@ def _apply_policy(
         roles = list(dict.fromkeys(change.outside_roles))
         found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
         # The contract names the field plain here, not under `policy.` (§6.1, §6.2).
-        problem = agent_owners.role_errors(found, roles) or agent_owners.check_policy(
-            conn, found, roles
-        )
+        problem = agent_owners.role_errors(found, roles)
         if problem is not None:
             errors["outside_roles"] = problem
         proposed["outside_roles"] = roles
@@ -757,6 +776,11 @@ def patch_project(
         if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         _refuse_against_a_hold(conn, project, state_changes, new_policy)
+        if (
+            new_policy is not None
+            and new_policy["outside_roles"] != policy.of(project)["outside_roles"]
+        ):
+            _refuse_outside_roles(conn, project, new_policy, values)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
         if settings_changed:

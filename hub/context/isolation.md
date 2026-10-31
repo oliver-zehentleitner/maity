@@ -134,6 +134,12 @@ off) and a moderation hold or suspension that stops the project being served. Wh
 `agent_owners` when set, else `anyone` while `public_projects.served` is true and `members` otherwise, so an
 archived project, which is not served, reads `members` although its `public_page` column may still say `on`.
 
+The limits of an outside owner's agent are read on every path that can change them, not at one: the member `PATCH`
+(each field judged by its own new value, isolated or not, so an isolated agent is brought within them one field
+after the other), the owner's `go` on a waiting change (checked again as things stand then), `PUT …/roles` (a role
+in `outside_roles` keeps a base that works and cannot be removed) and a narrower `outside_roles` (refused while
+an outsider at work holds a role it leaves out, unless the same call switches the project to `members`).
+
 **Reason:** the answer depends on rows in three places (the setting, the public page and the memberships), so
 isolating at each write would repeat the rule and miss one; one idempotent pass called after each write cannot
 disagree with itself. The lift check (`refuse_lift`) reads the same rule, so an admin cannot undo what the next

@@ -296,3 +296,116 @@ def test_the_joins_a_leaving_human_created_are_revoked(
         revoked = {r.id: r.revoked_at for r in conn.execute(select(t.join_link))}
     assert revoked[made["id"]] is not None  # the person who issued it is gone
     assert revoked[mine["id"]] is None  # another's stays
+
+
+# --- the limits hold on every path ----------------------------------------------------------------
+
+
+def _pending(engine: Engine) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(
+                select(t.request)
+                .where(t.request.c.proposal.is_not(None), t.request.c.status == "open")
+                .order_by(t.request.c.created_at, t.request.c.id)
+            )
+        )
+
+
+def test_an_isolated_outsider_is_set_within_the_limits_never_beyond_them(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    lead = factory.agent(migrated, _project(migrated), friend.id, "admin").agent_id
+    _set(owner, agent_owners="anyone")
+    _remove(owner, migrated, friend.id)
+    assert _isolated(migrated, lead)
+    path = f"{PROJECT}/members/{lead}"
+    for body, field in (
+        ({"trust": "admin"}, "trust"),
+        ({"role": "reviewer"}, "role"),
+        ({"role": "ops"}, "role"),
+    ):
+        refused = owner.patch(path, body)
+        assert refused.status_code == 400 and _fields(refused) == {field: "outside_owner"}
+    # one field after the other is a way within the limits: the owner's go follows
+    assert owner.patch(path, {"trust": "member"}).status_code == 202
+
+
+def test_the_go_checks_the_limits_as_they_are_then(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    worker = factory.agent(migrated, _project(migrated), friend.id, "member").agent_id
+    _set(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    asked = owner.patch(f"{PROJECT}/members/{worker}", {"role": "designer"})
+    assert asked.status_code == 202, asked.text  # its owner is a member: the change waits
+    [waiting] = _pending(migrated)
+    _remove(owner, migrated, friend.id)  # the worker stays: a coder, within the limits
+    assert not _isolated(migrated, worker)
+    answered = friend.post(f"/requests/{waiting.id}/answer", {"reply_id": "go"})
+    assert answered.status_code == 200, answered.text
+    assert _row(migrated, worker).role == "designer"
+    narrowed = _set(owner, outside_roles=["coder"])
+    assert narrowed.status_code == 400 and _fields(narrowed) == {"outside_roles": "outside_owner"}
+
+
+def test_the_go_after_the_list_narrowed_is_refused(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    worker = factory.agent(migrated, _project(migrated), friend.id, "member").agent_id
+    _set(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    asked = owner.patch(f"{PROJECT}/members/{worker}", {"role": "designer"})
+    assert asked.status_code == 202, asked.text
+    [waiting] = _pending(migrated)
+    assert _set(owner, outside_roles=["coder"]).status_code == 200  # no outsider holds designer
+    _remove(owner, migrated, friend.id)
+    answered = friend.post(f"/requests/{waiting.id}/answer", {"reply_id": "go"})
+    assert answered.status_code == 400 and _fields(answered) == {"role": "outside_owner"}
+    assert _row(migrated, worker).role == "coder"
+
+
+def test_a_project_role_in_outside_roles_keeps_a_working_base(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    _roles(owner, [{"name": "doc-writer", "base": "writer"}])
+    assert _set(owner, outside_roles=["doc-writer"]).status_code == 200
+    rebased = owner.client.put(
+        f"/api/v1{PROJECT}/roles",
+        json={"custom": [{"name": "doc-writer", "base": "reviewer"}]},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert rebased.status_code == 400
+    assert _fields(rebased) == {"custom[0].base": "outside_roles"}
+    removed = owner.client.put(
+        f"/api/v1{PROJECT}/roles", json={"custom": []}, headers={"X-CSRF-Token": owner.csrf}
+    )
+    assert removed.status_code == 409
+    assert removed.json()["error"]["details"]["uses"] == ["outside_roles"]
+    other = owner.client.put(
+        f"/api/v1{PROJECT}/roles",
+        json={"custom": [{"name": "doc-writer", "base": "designer"}]},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert other.status_code == 200, other.text  # another base that works
+
+
+def test_a_narrower_list_in_the_call_that_switches_to_members_is_not_refused(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    worker = factory.agent(migrated, _project(migrated), friend.id, "member").agent_id
+    _set(owner, agent_owners="anyone", outside_roles=["coder", "designer"])
+    _remove(owner, migrated, friend.id)
+    owner.patch(f"{PROJECT}/members/{worker}", {"role": "designer"})  # waits for its owner
+    with migrated.begin() as conn:  # as the owner's go would leave it
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == worker)
+            .values(role="designer", role_base="designer")
+        )
+    assert _set(owner, outside_roles=["coder"]).status_code == 400
+    both = _set(owner, agent_owners="members", outside_roles=["coder"])
+    assert both.status_code == 200, both.text
+    assert _isolated(migrated, worker)
