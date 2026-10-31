@@ -86,7 +86,8 @@ pause, then the briefing, identity, project, rules, cards, requests,
 missed events and the next step. `--json` prints the packet as before.
 Everything people wrote (the briefing, a state note, the reason for a
 pause, answers, messages, a human owner's meat-proxy note under `Your
-human: <handle>`) is printed with every line behind `> `, under a label
+human: <handle>`, each unread chat's meat-proxy notes under `<handle>
+here:`) is printed with every line behind `> `, under a label
 that says who wrote it. Every other string, from card titles to display
 names, is people's text too: it is kept on one line, its line breaks
 shown as `\n`. Every string is cleaned of terminal escapes, other
@@ -1109,6 +1110,13 @@ one page of up to 50 chats: with more, every count is a floor (`at
 least`), and when that page holds no unread chat the line is left out
 even if a later page has one; a second call for a hint is not worth the
 seconds it takes from the deadline.
+
+Under each listed chat the resume quotes that chat's meat-proxy notes
+(`conversations[].meat_proxy`, §5.2, §9.3) under `<handle> here:`,
+indented below the chat line. The mode holds per chat, so the note
+stands with the chat it applies to. Only unread chats show one, because
+the section lists only those. The placement is the contract's; no other
+was weighed when it was built (tsk-nqzdmbwn2wcs).
 
 **Reason:** a group chat wakes nobody without a mention, so a `wait`
 can run quiet while people talk; the timeout is the moment an agent
