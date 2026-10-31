@@ -12880,11 +12880,31 @@ their fields:
 | `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
 | `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (optional, ≤ 300), `cta` (`{label ≤ 40, href}`) | always; without `text` only the title and the button |
+| `works_with` | `label` (≤ 40, e.g. "Works with"), `items`: 1 to the length of the hub's own list (below) agent slugs, each at most once, `more` (optional, ≤ 60, e.g. "+ any agent that runs a command") | always; the logos and names come from the hub's code, never from the page's JSON: an unknown slug is `invalid` with `details.fields.<path>: "unknown_agent"`, a repeated one with `"duplicate"` |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
 | `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
 | `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
+
+**The agents a `works_with` section names** are a fixed list in the
+hub's code, each with its display name and logo: `claude-code`,
+`codex`, `opencode`, `gemini`, `antigravity`, `copilot`, `cursor`,
+`pi`, `goose`, `cline`, `roo`, `kilo`, `amp`, `droid`, `windsurf`,
+`zed`, `kiro-cli`, `trae`, `openclaw` (the maintainer's decision of
+2026-10-31, the same set as Keep the Why's). The logos are third-party
+marks, one file per agent at `/assets/landing/agents/<slug>.svg`,
+answered like the other landing assets (below). They are not under the
+project's MIT licence: the folder's `NOTICE` names each mark's origin
+and the terms of its use, the repository's `LICENSE` and README point
+to that exception, and the `NOTICE` ships in every package with the
+files. The page's JSON cannot add, replace or point to any logo; a new
+agent is added to the list in the code. The section draws the label
+and a band of the logos, each named once for screen readers (the copy
+of the list that makes the loop seamless is `aria-hidden`) and shown
+by name on hover and focus; the stylesheet moves the band, pauses it on
+hover and focus, and under reduced motion shows the logos in one
+wrapping row without the copy. Without script nothing is lost.
 
 Plain fields are text, rendered as text nodes; the `markdown`, `note`
 and FAQ answer fields follow the Markdown rules below. A `href` is an
@@ -12973,19 +12993,20 @@ out.
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
-- **Progressive enhancement.** The page references three kinds of
+- **Progressive enhancement.** The page references four kinds of
   files from the hub's own code, the same for every instance and never
   from the database: `/assets/landing/landing.css`,
-  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB)
-  and the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
-  under their OFL licences, `font-display: swap`). Their URLs carry
+  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB),
+  the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
+  under their OFL licences, `font-display: swap`) and the agent logos
+  of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
   pictures of the design are inline SVG in the template. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
-  animates the hero's rings and the band's loader by itself, script or
-  not. The script only adds the demo's typing, the counters, the
+  animates the hero's rings, the band's loader and the `works_with`
+  band by itself, script or not. The script only adds the demo's typing, the counters, the
   `scales` section as tabs (the columns stay readable without it), the
   theme switch (`data-theme` on the root, remembered in the visitor's
   browser, never sent to the hub; the switch is in the HTML with its
@@ -13001,8 +13022,8 @@ out.
   font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
   'none'; frame-ancestors 'none'`, so it runs only scripts from the
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
-  covers the instance's logo and favicon, the design's pictures are
-  inline SVG. The preview of a draft (below) answers with the same
+  covers the instance's logo and favicon and the agent logos of a
+  `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
   policy. The legal pages (§16.7.1) carry no script and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these

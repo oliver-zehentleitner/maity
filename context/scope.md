@@ -784,6 +784,37 @@ script files was only ever a workaround for a page drawn by script.
   no longer carry the words.
 
 
+## A "Works with" band names agents from a list in the code; their logos are third-party marks, never page content
+
+**Id:** d09cf943-1cca-42cc-8c5c-ac953105ecba
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish of 2026-10-31 through the designer (a band like keepthewhy.com's under the hero buttons, the logos cleared in his Keep the Why project); contract `docs/api.md` §16.7
+**See:** scope.md#the-landing-page-is-enhanced-by-a-first-party-script-and-fonts-from-the-code-never-needed-to-read-it — e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37 — as of 2026-10-31
+
+The landing may show a `works_with` section: a label, a band of agent
+logos and an optional line for the rest. The section names agents by
+slug from a fixed list in the hub's code, which also holds each name
+and logo; the page's JSON chooses which and in what order, nothing
+more.
+
+**Reason:** the logos are other companies' marks. Keeping them as files
+in the code, with a notice of where they come from and on what terms,
+keeps them out of the instance's editable content and out of the MIT
+licence, and stops an operator from pointing the band at arbitrary
+images. They are one file per mark, not inline SVG, so that each sits
+beside its notice and the licence exception has a clear boundary
+(chosen in review). The list follows what Keep the Why already ships, where the
+maintainer settled their use.
+
+**Rejected alternatives:**
+- Logo URLs or uploads in the page's JSON: arbitrary images on the
+  landing, and third-party marks entering instance content without
+  their terms.
+- Names only, without logos: the maintainer asked for the band as on
+  keepthewhy.com.
+
 ## The landing page is enhanced by a first-party script and fonts from the code, never needed to read it
 
 **Id:** e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37
