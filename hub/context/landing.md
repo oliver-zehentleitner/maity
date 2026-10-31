@@ -315,6 +315,14 @@ a counter shows none of it. Rejected: showing every online counter as soon as an
 the operator took off. In a test the naming rule can only be seen with at least five online, since below the floor the counter is
 left out anyway.
 
+The board's last details are drawn by the same renderer: an online counter in the strip has the live dot before its number, the hero line
+puts the online numbers before the note, a `github.com` link is left out of the Follow column when the Open source column has one (the
+host is compared, not the whole URL), and the scales' two-column container is `.scales-body` with the panels left and the rings in
+`.scales-art` right, the tab bar a sibling placed before it by `landing.js`. The route loads the stats only when a main page's enabled
+`stats` section names a counter (`routes/pages.py`, `landing_stats.named` reads `pages`, not `variants`), so a variant with a `stats`
+section and no main page that has one shows neither the strip nor the hero numbers; kept as it is, since `GET /landing` publishes by the
+same rule.
+
 **Reason:** the live header wrapped to two lines because the five section titles were its link texts, so a short label of its own,
 chosen by the operator, is the only way to keep one line without a fixed list in the code. The footer needs no field of its own
 because every link it shows already exists elsewhere on the page, so a new contract field would only repeat them. The numbers come

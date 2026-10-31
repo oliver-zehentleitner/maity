@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 from html import escape, unescape
 from typing import Any
+from urllib.parse import urlsplit
 
 from maity_hub import landing_files
 from maity_hub.landing import FENCE, safe_target
@@ -290,7 +291,12 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
         return None  # below the floor, or public pages off: the counter is left out (§16.7)
-    return f'<div class="stat"><b><span data-lp-count>{int(value)}</span></b>{label}</div>'
+    dot = (
+        '<span class="dot pulse" aria-hidden="true"></span>'
+        if key in ("people_online", "agents_online")
+        else ""
+    )  # the board has a live dot before an online number
+    return f'<div class="stat"><b>{dot}<span data-lp-count>{int(value)}</span></b>{label}</div>'
 
 
 def _button(cta: dict[str, Any], kind: str) -> str:
@@ -382,7 +388,7 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
         return _wrap(
             index,
             "section section-alt scales",
-            f'{heading}<div class="scales-layout"><div class="scales-grid">{cards}</div>'
+            f'{heading}<div class="scales-body"><div class="scales-grid">{cards}</div>'
             f'<div class="scales-art hide-m">{rings}</div></div>',
         )
     if kind == "demo":
@@ -454,8 +460,8 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str], stats: Any
     parts.append(f'<div class="cta">{"".join(buttons)}</div>')
     note = f'<div class="note">{markdown(section["note"])}</div>' if section.get("note") else ""
     online = _online(stats, words)
-    if note or online:  # the note is one plain line, the online numbers beside it (§16.7)
-        parts.append(f'<div class="hero-meta">{note}{online}</div>')
+    if note or online:  # the online numbers first, then the note: one plain line (§16.7)
+        parts.append(f'<div class="hero-meta">{online}{note}</div>')
     rings = (
         landing_files.svg("hero-rings.svg")
         .replace("{label}", escape(words["rings"], quote=True))
@@ -574,6 +580,12 @@ def landing_document(
     )
 
 
+def _on_github(href: str) -> bool:
+    """Whether a link points at github.com, the host compared without case."""
+    host = urlsplit(href).hostname or ""
+    return host.lower() in ("github.com", "www.github.com")
+
+
 def _column(title: str, items: list[str]) -> str:
     if not items:
         return ""
@@ -603,6 +615,8 @@ def _landing_footer(
         if legal["pages"].get(key)
     ]
     footer = setting["footer"]
+    # A GitHub link belongs once, in Open source: it is left out of Follow when that column has one.
+    github_in_source = any(_on_github(item["href"]) for item in open_source or [])
     social = [
         _link(
             item["label"],
@@ -610,6 +624,7 @@ def _landing_footer(
             me="mastodon" in item["label"].lower() or "/@" in item["href"],
         )
         for item in footer.get("social", [])
+        if not (github_in_source and _on_github(item["href"]))
     ]
     columns = (
         _column(words["platform"], platform)
