@@ -68,7 +68,7 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; points 4 and 5 have cards of their own (tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31; point 4 has a card of its own (tsk-5mspd6ftkacq)
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -127,10 +127,26 @@ design:
    where `team_wakes` asks for many instances). A crashed pod's rows stop counting after 45 s and
    are removed by the next pod's sweep.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
-   move onto the same wake-up: a notification-relevant write (event, account record, read mark)
-   notifies `maity_bell` with the human's id, and a device-code write (`redeem`, `approve`,
-   `deny`, `void_open`) notifies `maity_device` with the code's key. With 20 000 open dashboards the 0.5-second poll alone
-   would be 40 000 stamp reads a second; on the wake-up it is a read per change.
+   move onto the wake-ups on PostgreSQL (`wakeups.held`, `Held.pause`): a held wait sleeps until
+   something wakes it, at the latest `FALLBACK_SECONDS` (2 s), and then compares its stamp or
+   status as before. With 20 000 open dashboards the 0.5-second poll alone would be 40 000 stamp
+   reads a second; on the wake-up it is a read per change plus one per wait every 2 s.
+   - **The bell rides on the event wake-ups:** it registers in `longpoll.registry` with the
+     human's member projects, so every event in them wakes it, locally and across replicas
+     (`maity_events`, point 1). That wakes more bells than needed, every event of the project
+     and not only those that make an item for this human; the stamp comparison absorbs it, at
+     a few aggregate reads per wake. `maity_bell` (the SHA-256 of the human id) is rung only by
+     the human's own rows that no event announces: a new account record (`records.write`), a
+     mark read (`listing.mark`) and a chat read mark (`routes/events.remember_read`).
+     Rejected: ringing `maity_bell` for every reached human on each `emit`, as first written,
+     which would resolve every audience twice, once to store the event and once to ring it.
+   - **The device codes:** `redeem`, `approve`, `deny` and `complete` ring `maity_device` with
+     the SHA-256 of both waits' keys, the creator's (`code:<session_hash>`) and the redeeming
+     browser's (`pending:<pending_hash>`). `void_open`, rare (a method switched off, a session
+     ended), and expiry, which nothing writes, are left to the fallback.
+   - What wakes nothing, such as a membership that changes the bell's projects (written in many
+     places), shows at the fallback, at most 2 s late. SQLite and MariaDB keep the polls.
+   - Built in card tsk-az67x29mc2yg, 2026-10-31.
 
 **Constraint:** PostgreSQL keeps notices in one queue (8 GB by default) until every listening
 session has read them. A session that listens and stops reading, such as a listener whose

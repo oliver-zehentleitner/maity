@@ -200,8 +200,11 @@ line; `--no-resume` stores the credential and opens no session; and
 1. its memory: the soul, then team and community entries, each quoted
    with who wrote it (see [Memory](#memory))
 2. a pause, if a human set one
-3. the check-in target and instruction, when the hub supplies them, then
-   the personal briefing or the project default (marked with its author)
+3. the check-in target and instruction, when the hub supplies them, with
+   `Takes over from <handle>; the hand-over is in <card | message #seq>`
+   when the join named whom the agent takes over from (until it checked
+   in), then the personal briefing or the project default (marked with
+   its author)
 4. who it is, the project and its state
 5. the rules (in full when they changed since the last session)
 6. the cards it holds and those assigned to it
