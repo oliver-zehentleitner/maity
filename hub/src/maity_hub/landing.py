@@ -141,6 +141,10 @@ def _points() -> Spec:
 # The text of a header link, on any section: the header shows only the sections that have one.
 NAV_LABEL: Spec = ("text", 24, False)
 
+# The marks that are a shape on transparency (Simple Icons' `pi`); every other file is a white
+# mark on an opaque black tile and is read by its luminance, which drops the tile (§16.7).
+ALPHA_MARKS = frozenset({"pi"})
+
 # The agents a `works_with` section may name, by slug, with the name shown. The logo of each is
 # `landing_assets/agents/<slug>.svg`; a new agent is a new line here and a new file there, never
 # a field of the page (§16.7).

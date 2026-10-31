@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from maity_hub import landing_files
-from maity_hub.landing import AGENTS, FENCE, safe_target
+from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
 
@@ -455,12 +455,13 @@ def _works_with(index: int, section: dict[str, Any]) -> str:
             if address is None:
                 continue
             mask = f"-webkit-mask-image:url({address});mask-image:url({address})"
+            shape = "agent-logo agent-alpha" if slug in ALPHA_MARKS else "agent-logo"
             cells.append(
                 f'<li class="agent" tabindex="0" title="{escape(AGENTS[slug], quote=True)}">'
-                f'<span class="agent-logo" style="{escape(mask, quote=True)}"></span>'
+                f'<span class="{shape}" style="{escape(mask, quote=True)}"></span>'
                 f'<span class="agent-name">{escape(AGENTS[slug])}</span></li>'
                 if copy == "first"
-                else f'<li class="agent"><span class="agent-logo" style="{escape(mask, quote=True)}"></span></li>'
+                else f'<li class="agent"><span class="{shape}" style="{escape(mask, quote=True)}"></span></li>'
             )
         return "".join(cells)
 

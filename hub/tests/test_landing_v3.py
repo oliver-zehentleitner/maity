@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Engine
 
 from maity_hub import landing_files, landing_stats
-from maity_hub.landing import AGENTS
+from maity_hub.landing import AGENTS, ALPHA_MARKS
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_pages import ADMIN, SECTIONS, hero, publish
@@ -497,3 +497,21 @@ def test_the_licence_and_readme_point_to_the_notice() -> None:
     root = Path(__file__).resolve().parents[2]
     for name in ("LICENSE", "README.md"):
         assert "landing_assets/agents" in (root / name).read_text(encoding="utf-8"), name
+
+
+def test_the_marks_are_read_by_luminance_except_the_one_on_transparency(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The skills.sh files are white marks on an opaque black tile: read by alpha they are solid
+    squares, so the mask uses luminance; `pi` is a black shape on transparency and is read by alpha.
+    """
+    css = make_client().get("/assets/landing/landing.css").text
+    assert re.search(r"\.agent-logo\{[^}]*mask-mode:luminance", css)
+    assert re.search(r"\.agent-alpha\{[^}]*mask-mode:alpha", css)
+    html = page(owner, make_client, WORKS_WITH)
+    assert html.count('class="agent-logo agent-alpha"') == 2  # `pi`, in both copies
+    assert html.count('class="agent-logo"') == 4
+    for slug in AGENTS:
+        source = (landing_files.HERE / "agents" / f"{slug}.svg").read_text(encoding="utf-8")
+        tile = re.search(r'fill="(#000|black)"', source) is not None
+        assert tile or slug in ALPHA_MARKS, slug

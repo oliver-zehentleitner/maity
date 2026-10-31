@@ -169,9 +169,10 @@ code{font-family:var(--font-mono);font-size:.92em}
 .works-with{padding:40px 0;text-align:center}
 .agents-label{margin:0 0 20px;font:600 12px/1 var(--font);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .agents-band{display:flex;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
-.agents-list{display:flex;flex:none;align-items:center;gap:48px;margin:0;padding:0 24px;list-style:none;min-width:100%;justify-content:space-around;animation:agents-scroll 60s linear infinite}
+.agents-list{display:flex;flex:none;align-items:center;gap:48px;margin:0;padding:0 24px 32px;list-style:none;min-width:100%;justify-content:space-around;animation:agents-scroll 60s linear infinite}
 .agent{position:relative;display:flex;flex:none;align-items:center;color:var(--muted)}
-.agent-logo{display:block;width:36px;height:36px;background:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
+.agent-logo{display:block;width:36px;height:36px;background:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:200%;mask-size:200%;-webkit-mask-source-type:luminance;mask-mode:luminance}
+.agent-alpha{-webkit-mask-size:contain;mask-size:contain;-webkit-mask-source-type:alpha;mask-mode:alpha;opacity:.66}
 .agent-name{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:6px;padding:2px 8px;border-radius:6px;background:var(--surface2);color:var(--text);font-size:.8rem;white-space:nowrap;opacity:0;pointer-events:none}
 .agents-first .agent:hover,.agents-first .agent:focus-visible{color:var(--text)}
 .agents-first .agent:hover .agent-name,.agents-first .agent:focus-visible .agent-name{opacity:1}
