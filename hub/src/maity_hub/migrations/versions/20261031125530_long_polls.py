@@ -8,7 +8,7 @@ UNLOGGED: a crash or a failover empties them, and each process's heartbeat write
 again within 15 s. SQLite and MariaDB create ordinary tables and keep the registry in the process.
 
 Revision ID: 20261031125530_long_polls
-Revises: 20261031112210_agent_owners
+Revises: 20261031070700_project_links
 Create Date: 2026-10-31
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031125530_long_polls"
-down_revision: str | None = "20261031112210_agent_owners"
+down_revision: str | None = "20261031070700_project_links"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
