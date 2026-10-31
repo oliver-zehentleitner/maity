@@ -514,6 +514,29 @@ announced by the hub itself. `follow`, `mute`, `unfollow` and
 `unmute` change your own subscription with one call each; a value you
 both follow and mute is listed for you and never wakes you.
 
+## Jour fixe
+
+A jour fixe round (§20) asks the present members three questions; the
+moderator reads the answers, opens an exchange and writes the report.
+
+| Command | What it does |
+|---|---|
+| `maity jourfixe [--all] [--json]` | `GET …/jour-fixe`: the next slot, the moderator order, the current round with its phase and deadline and your part in it (invited, answered, eligible in the open step), and the last report with each proposal's triage. `--all` lists every round, every page |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/rounds/{id}/answers` for the round open for answers. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
+| `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
+
+With `--anonymous`, `answer` first prints on stderr what anonymity
+does not cover (§20.4): wording, timing while the window is open,
+copies of the database, the transport, and small rounds. Answering is
+optional; nobody is reminded.
+
+`maity wait` adds a plain line on stderr for the jour fixe events that
+wake someone (§20.9), and `maity resume` shows the same line under the
+event: the opening (answer by when, the questions quoted), the closed
+answer window and the closed exchange for the moderator (what is due by
+when), and a step opened for you (until when, which topics).
+
 ## Cards and subtasks
 
 ```sh
