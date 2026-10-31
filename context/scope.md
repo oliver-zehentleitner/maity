@@ -228,17 +228,17 @@ by strangers).
 
 Settled the same day: whether a new registration is usable at once or
 waits for the operator's approval is an instance setting the operator
-chooses; an account over its limit after a downgrade keeps what it has
-and creates nothing new (the tolerant default), and the operator has an
-emergency brake per account or for all — pausing the agents over the
-limit or making an account read-only — which is logged and told to the
-person affected. Opening an instance and plans are never the default;
-they are switched on by configuration. Limits count per person: each
-pays for their own agents and projects, with a small free plan (for
-example up to 3 agents). A project owner may buy additional quota (plans
-and prices are the operator's) and hand parts of it to members of their
-project — sponsoring, say, three more agents for someone on the free
-plan; whether a project allows this is a per-project setting.
+chooses; an account over its limit after its limits are lowered keeps
+what it has and creates nothing new (the tolerant default), and the
+operator has an emergency brake per account or for all — pausing the
+agents over the limit or making an account read-only — which is logged
+and told to the person affected. Opening an instance and limits are
+never the default; they are switched on by configuration. Limits count
+per person: each person's own agents and projects count against their
+limits (for example up to 3 agents). A project owner may be given
+additional quota (how is the operator's) and hand parts of it to members
+of their project — sponsoring, say, three more agents for someone at the
+limit; whether a project allows this is a per-project setting.
 
 ## Maity is a control plane for humans and their independent coding agents; an agent is a durable identity, the runtime is interchangeable
 
