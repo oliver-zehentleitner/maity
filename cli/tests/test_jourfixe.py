@@ -339,12 +339,14 @@ OPENED = {
     [
         ("jour_fixe_answers_closed", {"answers_received": 3, "statement_due_at": "T1"},
          "answers closed, 3 received; you moderate: read them with `maity jourfixe answers "
-         "jfx-0013`, the statement is due by T1"),
+         "jfx-0013`, the statement is due by T1 (`maity jourfixe statement jfx-0013 --file …`)"),
         ("jour_fixe_step_opened", {"step": 2, "kind": "response", "closes_at": "T2",
                                    "topics": ["t1", "t2"]},
-         "step 2 (response) is open for you until T2, topics t1, t2"),
+         "step 2 (response) is open for you until T2, topics t1, t2: `maity jourfixe post "
+         'jfx-0013 --step response --topic <topic> "…"`'),
         ("jour_fixe_exchange_closed", {"report_due_at": "T3"},
-         "the exchange closed; you moderate: the report is due by T3"),
+         "the exchange closed; you moderate: the report is due by T3 "
+         "(`maity jourfixe report jfx-0013 --file …`)"),
     ],
 )  # fmt: skip
 def test_each_waking_event_says_what_it_asks(
@@ -379,3 +381,221 @@ def test_wait_prints_the_opening_on_stderr(
     assert json.loads(out)[0]["kind"] == "jour_fixe_opened"
     assert "maity: jour fixe jfx-0013 is open: answer by 2026-10-31T11:00:01Z" in err
     assert "maity: > 1. What went well?" in err
+
+
+# --- moderation: statement, post, step, report, start, moderators -------------------------------
+
+
+def _sent(fake: fakehub.FakeHub, method: str, path: str) -> list[Any]:
+    return [r.json() for r in fake.signed() if r.method == method and r.path == path]
+
+
+STATEMENT = {
+    "topics": [{"title": "Reviews wait overnight", "summary": "One reviewer.",
+                "items": [{"text": "The limit resets at night.", "from": "anonymous"}],
+                "proposals": [{"title": "A second reviewer", "reason": "Speed."}]}]
+}  # fmt: skip
+
+
+def test_the_statement_is_sent_as_read_and_the_given_ids_printed(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    path = tmp_path / "statement.json"
+    path.write_text(json.dumps(STATEMENT))
+    topic = {**STATEMENT["topics"][0], "id": "t1", "proposals": [{"id": "t1.s1"}]}
+    fake.routes[("POST", f"{ROUND}/statement")] = lambda seen: (
+        201,
+        _round("exchange", statement={"by": ME, "topics": [topic]}),
+    )
+    assert cli.main(["jourfixe", "statement", "jfx-0013", "--file", str(path)]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/statement") == [STATEMENT]
+    out = capsys.readouterr().out
+    assert out == "statement posted to jfx-0013\n  t1 Reviews wait overnight (proposals t1.s1)\n"
+
+
+def test_the_statement_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(STATEMENT)))
+    fake.routes[("POST", f"{ROUND}/statement")] = lambda seen: (201, _round("exchange"))
+    assert cli.main(["jourfixe", "statement", "jfx-0013", "--file", "-"]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/statement") == [STATEMENT]
+
+
+@pytest.mark.parametrize(("text", "says"), [("not json", "not JSON"), ("[]", "one JSON object")])
+def test_a_body_that_is_no_json_object_is_a_usage_error_before_any_call(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], tmp_path: Path,
+    text: str, says: str,
+) -> None:  # fmt: skip
+    path = tmp_path / "report.json"
+    path.write_text(text)
+    assert cli.main(["jourfixe", "report", "jfx-0013", "--file", str(path)]) == cli.EXIT_USAGE
+    assert says in capsys.readouterr().err
+    assert not fake.signed()
+
+
+def test_a_post_resolves_its_addressees_by_handle(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", f"{ROUND}/posts")] = lambda seen: (201, {"id": "p1", "step": "response"})
+    argv = ["jourfixe", "post", "jfx-0013", "--step", "response", "--topic", "t1",
+            "--to", "agent-b", "--to", "m", "Agreed."]  # fmt: skip
+    assert cli.main(argv) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/posts") == [
+        {"step": "response", "topic_id": "t1", "body": "Agreed.", "to": ["agt-b", "hum-1"]}
+    ]
+    assert capsys.readouterr().out == "posted p1\n"
+
+
+def test_a_reply_names_its_responses_and_reads_its_text_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO("Use `make check`.\n"))
+    fake.routes[("POST", f"{ROUND}/posts")] = lambda seen: (201, {"id": "p4"})
+    argv = ["jourfixe", "post", "jfx-0013", "--step", "reply", "--topic", "t1",
+            "--reply-to", "p1", "-"]  # fmt: skip
+    assert cli.main(argv) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/posts") == [
+        {"step": "reply", "topic_id": "t1", "body": "Use `make check`.", "in_reply_to": ["p1"]}
+    ]
+
+
+def test_an_unknown_step_is_a_usage_error(joined: Path, fake: fakehub.FakeHub) -> None:
+    argv = ["jourfixe", "post", "jfx-0013", "--step", "statement", "--topic", "t1", "x"]
+    with pytest.raises(SystemExit) as exited:
+        cli.main(argv)
+    assert exited.value.code == cli.EXIT_USAGE
+    assert not fake.signed()
+
+
+def test_a_further_step_for_named_members_and_topics(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pending = {"n": None, "kind": "further", "opened_at": None, "closes_at": None}
+    fake.routes[("POST", f"{ROUND}/steps")] = lambda seen: (
+        201,
+        _round("exchange", steps=[{"n": 2, "kind": "response", "opened_at": "x"}, pending]),
+    )
+    argv = ["jourfixe", "step", "jfx-0013", "--reason", "Open question", "--member", "m",
+            "--topic", "t2"]  # fmt: skip
+    assert cli.main(argv) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/steps") == [
+        {"reason": "Open question", "members": ["hum-1"], "topics": ["t2"]}
+    ]
+    out = capsys.readouterr().out
+    assert out == "further step added to jfx-0013; it opens when the last step closes\n"
+
+
+def test_a_further_step_by_default_sends_only_the_reason(
+    joined: Path, fake: fakehub.FakeHub
+) -> None:
+    fake.routes[("POST", f"{ROUND}/steps")] = lambda seen: (201, _round("exchange"))
+    assert cli.main(["jourfixe", "step", "jfx-0013", "--reason", "More"]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/steps") == [{"reason": "More"}]
+
+
+def test_the_report_prints_each_triage_with_its_request_or_card(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    body = {"summary": "S", "findings": [], "proposals": []}
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps(body))
+    report = {
+        "proposals": [
+            {"id": "r1", "title": "Second reviewer", "triage": "to_owner",
+             "request_id": "req-0091", "task_id": None},
+            {"id": "r2", "title": "Widen reviewers", "triage": "decided",
+             "decision": {"outcome": "adopt"}, "request_id": None, "task_id": "tsk-77"},
+            {"id": "r3", "title": "Drop CI", "triage": "decided",
+             "decision": {"outcome": "reject"}, "request_id": None, "task_id": None},
+        ],
+        "proposals_not_carded": [{"proposal_id": "r4", "reason": "project_closed"}],
+    }  # fmt: skip
+    fake.routes[("POST", f"{ROUND}/report")] = lambda seen: (
+        200,
+        {"round": _round("reported", report=report), "requests": ["req-0091"],
+         "tasks": ["tsk-77"]},
+    )  # fmt: skip
+    assert cli.main(["jourfixe", "report", "jfx-0013", "--file", str(path)]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{ROUND}/report") == [body]
+    assert capsys.readouterr().out == (
+        "reported jfx-0013\n"
+        "  - Second reviewer [to_owner] -> req-0091\n"
+        "  - Widen reviewers [decided: adopt] -> tsk-77\n"
+        "  - Drop CI [decided: reject]\n"
+        "  not carded: r4 (project_closed)\n"
+    )
+
+
+def test_start_prints_the_new_round(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", f"{BASE}/rounds")] = lambda seen: (201, _round())
+    assert cli.main(["jourfixe", "start", "--reason", "Reviews stall"]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{BASE}/rounds") == [{"reason": "Reviews stall"}]
+    assert capsys.readouterr().out.startswith("started jfx-0013: answering")
+
+
+@pytest.mark.parametrize(
+    ("code", "details", "says"),
+    [
+        ("jour_fixe_open", {"round": "jfx-0012"}, "an earlier round is not final yet (jfx-0012)"),
+        ("project_closed", {}, "the project is archived"),
+        ("no_moderator", {}, "nobody who may moderate is present"),
+        ("too_few", {}, "fewer than two members are present"),
+    ],
+)
+def test_a_start_that_cannot_open_names_why_and_exits_1(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
+    code: str, details: dict[str, Any], says: str,
+) -> None:  # fmt: skip
+    fake.routes[("POST", f"{BASE}/rounds")] = lambda seen: (
+        409,
+        {"error": {"code": code, "message": code, "details": details}},
+    )
+    assert cli.main(["jourfixe", "start", "--reason", "now"]) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert f"no round started: {code}, {says}; nothing recorded" in err
+
+
+def test_moderators_shows_the_resolved_order(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _overview(fake, None)
+    assert cli.main(["jourfixe", "moderators"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "agt-a, agt-c\n"
+
+
+def test_moderators_set_resolves_handles_and_reset_sends_null(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("PUT", f"{BASE}/moderators")] = lambda seen: (
+        200,
+        {"order": ["agt-b"], "moderators": ["agt-b", "agt-a"]},
+    )
+    argv = ["jourfixe", "moderators", "--set", "agent-b", "--reason", "Online most"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert capsys.readouterr().out == "moderator order: agt-b, agt-a\n"
+    assert cli.main(["jourfixe", "moderators", "--reset", "--reason", "Default"]) == cli.EXIT_OK
+    assert _sent(fake, "PUT", f"{BASE}/moderators") == [
+        {"order": ["agt-b"], "reason": "Online most"},
+        {"order": None, "reason": "Default"},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("argv", "says"),
+    [
+        (["--set", "agent-b"], "--reason is required"),
+        (["--set", "agent-b", "--reset", "--reason", "r"], "not both"),
+        (["--reason", "r"], "--reason goes with --set or --reset"),
+        (["--set", " , ", "--reason", "r"], "at least one agent"),
+    ],
+)
+def test_moderators_usage_errors_send_nothing(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
+    argv: list[str], says: str,
+) -> None:  # fmt: skip
+    assert cli.main(["jourfixe", "moderators", *argv]) == cli.EXIT_USAGE
+    assert says in capsys.readouterr().err
+    assert not [r for r in fake.signed() if r.method == "PUT"]

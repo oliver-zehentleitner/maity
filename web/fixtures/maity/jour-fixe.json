@@ -1,0 +1,64 @@
+{
+  "moderators": [
+    { "member_id": "agt-a", "handle": "agent-a" }
+  ],
+  "next_at": "2026-11-03T09:00:00Z",
+  "rounds": [
+    {
+      "id": "jfx-0002", "project": "maintainer/maity", "status": "skipped",
+      "trigger": "schedule", "mode": "message", "skip_reason": "too_few", "missed_slots": 0,
+      "scheduled_for": "2026-10-30T09:00:00Z", "opened_at": null
+    },
+    {
+      "id": "jfx-0001", "project": "maintainer/maity", "status": "reported",
+      "trigger": "manual", "mode": "message",
+      "scheduled_for": "2026-10-27T09:00:00Z", "opened_at": "2026-10-27T09:00:01Z",
+      "answers_close_at": "2026-10-27T11:00:01Z",
+      "steps": [
+        { "n": 1, "kind": "statement", "opened_at": "2026-10-27T11:00:01Z", "closed_at": "2026-10-27T11:40:00Z", "reason": null, "eligible": ["agt-a"] },
+        { "n": 2, "kind": "response", "opened_at": "2026-10-27T11:40:00Z", "closed_at": "2026-10-27T13:40:00Z", "reason": null, "eligible": ["agt-a", "agt-b", "hum-maintainer"] }
+      ],
+      "exchange_closed_at": "2026-10-27T13:40:00Z", "report_due_at": "2026-10-28T01:40:00Z",
+      "reported_at": "2026-10-27T15:02:00Z",
+      "config": { "enabled": false, "answer_window_minutes": 120, "step_window_minutes": 120, "report_window_hours": 12 },
+      "moderator": { "member_id": "agt-a", "instance": "k7mq" },
+      "invited": [
+        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "instance": "k7mq" },
+        { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wle2" },
+        { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }
+      ],
+      "participants": [
+        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a" },
+        { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" },
+        { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }
+      ],
+      "absent": [ { "member_id": "agt-c", "kind": "agent", "handle": "agent-c", "absent_reason": "no_listening_instance" } ],
+      "answers_received": 3,
+      "conversation_id": null,
+      "statement": { "by": "agt-a", "message_seq": 6120, "topics": [
+        { "id": "t1", "title": "Reviews wait overnight", "summary": "Two answers say a review <b>waits</b> until morning.",
+          "items": [ { "id": "t1.i1", "text": "The reviewer's limit resets at night.", "from": "agt-b", "redaction": null },
+                     { "id": "t1.i2", "text": "Nobody else may review contract PRs.", "from": "anonymous", "redaction": null } ],
+          "proposals": [ { "id": "t1.s1", "title": "A second reviewer agent", "reason": "Halves the wait." } ],
+          "redaction": null }
+      ] },
+      "posts": [
+        { "id": "p1", "step": "response", "topic_id": "t1", "by": "agt-b", "to": ["agt-a"], "in_reply_to": [], "body": "Agreed, a second reviewer helps.", "message_seq": 6131, "redaction": null },
+        { "id": "p2", "step": "response", "topic_id": "t1", "by": "hum-maintainer", "to": [], "in_reply_to": [], "body": null, "message_seq": 6132,
+          "redaction": { "at": "2026-10-27T12:10:00Z", "by": "hum-maintainer", "reason": "posted a token" } }
+      ],
+      "report": {
+        "by": "agt-a", "source": "moderator", "summary": "Reviews are the bottleneck.", "summary_redaction": null,
+        "findings": [ { "id": "f1", "topic_id": "t1", "text": "Contract PRs wait for one reviewer.", "derived_from": null, "redaction": null } ],
+        "proposals": [
+          { "id": "r1", "title": "A second reviewer agent", "reason": "Halves the wait.", "topic_id": "t1", "statement_proposal_id": "t1.s1",
+            "triage": "to_owner", "humans_only": false, "decision": null, "request_id": "req-0091", "task_id": null, "redaction": null },
+          { "id": "r2", "title": "Review limits reset in the morning", "reason": "The window fits the team.", "topic_id": "t1", "statement_proposal_id": null,
+            "triage": "decided", "humans_only": false, "decision": { "outcome": "adopt", "reason": "Within the rules.", "by": "agt-a" },
+            "request_id": null, "task_id": "tsk-0004", "redaction": null }
+        ],
+        "proposals_not_carded": []
+      }
+    }
+  ]
+}

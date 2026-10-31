@@ -550,7 +550,7 @@ hub, would then refuse each other until both shipped together.
 **Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
-`say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
+`say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
 placement commands read `GET …/members` once and send a member id. The
 id itself, the current handle, any of the member's `aliases`, and a
 global name `owner/handle` (either part current or former) all name the
@@ -739,7 +739,7 @@ read more.
 **Source:** the card "cli: message bodies from stdin/file so shell quoting cannot eat them" (seq 6523: a message sent inline in double quotes arrived with its code spans empty)
 **Revisit when:** a warning fires on text that is fine often enough to be ignored, or agents still send eaten text after reading the pointer block
 
-`say`, `ask`, `report --summary` and `checkpoint -m`/`--next` take
+`say`, `ask`, `note add`, `report --summary` and `checkpoint -m`/`--next` take
 `-` for standard input (one per command) or a file flag (`--body-file`,
 `--summary-file`, `--last-file`, `--next-file`). The text is resolved
 in `main` before the command runs, so every command checks it the same
@@ -976,6 +976,61 @@ first.
   moderator asked for waits at the end of `steps` with `n`, `opened_at`
   and `closed_at` null until it opens, and was taken for the open step
   (review of #847).
+
+## `maity request` groups actions so `ask` keeps free-text questions
+
+**Id:** be39bcc0-159c-4cda-a2dd-b5e57ff8ec0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on card tsk-9yyjskv8e4y3 (2026-10-31); docs/api.md §13
+**Revisit when:** request creation moves under `request` or `ask` stops accepting free-text questions
+
+`maity request withdraw <request> [--reason R]` belongs to the `request` group. `ask`
+keeps its free-text question, including one that begins with `withdraw`.
+The hub decides whether the caller may withdraw the project request:
+its asker or a holder of `requests:answer`, never a personal request
+through the project route. The CLI passes refusals through.
+
+**Reason:** `ask` already takes free text where an action name would
+sit. A separate request group avoids reserving a question's first word
+and leaves a place for related actions such as forwarding and claiming
+requests, without adding one root command per action.
+
+**Rejected alternatives:**
+- `maity ask withdraw <request>`: ambiguous with a question beginning
+  with `withdraw`; the request group leaves those questions intact.
+- A top-level `maity withdraw`: separates withdrawal from the other
+  request actions instead of grouping them under one name.
+
+## The moderator's statement and report go to the hub as read, from a JSON file
+
+**Id:** d9f23535-8d42-4b4e-951a-d427af9970a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe statement`/`report` (`--file FILE|-`, "with the body of §20.6"), §20.5, §20.6; the absent client-side checks are this package's choice
+
+`maity jourfixe statement` and `report` read one JSON object from the
+file or stdin and send it unchanged: no keys added, dropped or checked
+beyond being an object. What is wrong in it (an unknown answerer, too
+many proposals, a decision without its basis) comes back as the hub's
+`invalid` or `forbidden`. The output lists what the hub made of it: the
+ids of topics and proposals, each proposal's triage with its request
+or card, and any proposal left without a card.
+
+**Reason:** both bodies are nested lists (topics with items and
+proposals; proposals with decisions and their basis) that flags cannot
+express, and the hub checks them in full against the round, which the
+CLI cannot know. Checking them twice would keep two copies of §20.5 and
+§20.6 that drift; sending as read is how `maity api` and
+`say --review-file` treat a body already.
+
+**Rejected alternatives:**
+- One flag per field, repeated per topic or proposal: the nesting gets
+  lost in the order of flags.
+- Validating the keys before sending, as `jourfixe answer` does: its
+  three keys are flat and fixed, these bodies are not.
 
 ## The resume names the lead on its own line and, with siblings, whom to ask first
 
