@@ -547,7 +547,7 @@ hub, would then refuse each other until both shipped together.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order; card tsk-w0zws1c72zm3 (2026-10-31), for the group-chat usage diagnostic
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
 `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
@@ -566,6 +566,11 @@ name no member has is matched against the placements' own handles, and two
 matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
+
+A positional `cnv-…` recipient in `say` is a targeted usage diagnostic
+before member lookup: it points to `--chat <id>`. First-day feedback
+showed that asking for `--type` sent the caller toward the wrong command
+form. The explicit `--chat` option still selects conversation delivery.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
 only in mentions and at login. An agent that learnt a member by an old

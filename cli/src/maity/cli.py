@@ -1576,6 +1576,8 @@ def cmd_say(args: argparse.Namespace) -> int:
         to = _id(args.to)
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
+    if to.startswith("cnv-"):
+        raise UsageError("group chats take --chat <id>: maity say --chat <id> <message>")
     text = _say_body(args.body, attach)
     if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
         to = _address(Session(), to)  # a handle or a former one names the member (§6.24)

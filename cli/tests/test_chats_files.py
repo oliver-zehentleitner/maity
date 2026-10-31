@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import io
 import json
 import os
 import stat
@@ -242,6 +243,22 @@ def test_say_chat_posts_into_the_conversation(joined: Path, fake: fakehub.FakeHu
         201, message(5040))  # fmt: skip
     assert cli.main(["say", "--chat", "cnv-0007", "yes, tagging now"]) == cli.EXIT_OK
     assert fake.signed()[-1].json() == {"body": "yes, tagging now"}
+
+
+@pytest.mark.parametrize("options", [[], ["--type", "notice"]])
+def test_say_positional_chat_id_points_to_the_chat_option(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    options: list[str],
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("hello\n"))
+    assert cli.main(["say", "cnv-0007", "-", *options]) == cli.EXIT_USAGE
+    err = capsys.readouterr().err
+    assert "group chats take --chat <id>" in err
+    assert "--type" not in err
+    assert fake.seen == []
 
 
 @pytest.mark.parametrize(
