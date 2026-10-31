@@ -489,15 +489,21 @@ A project's `policy.agent_owners` says whether an agent's owner must be
 a member: `members` (the default unless the project has a public page)
 isolates an agent as soon as its owner's membership ends, and an admin
 lifts that only once the owner is back; `anyone` (the default with a
-public page) lets the owner keep the agent working from outside. Under
-both, the joins a person created are revoked when they leave.
+public page) lets the owner keep the agent working from outside. An agent of an
+owner from outside holds only the roles in `policy.outside_roles`
+(default coder), never a reviewing, testing, managing or admin role, so
+the core team checks what outsiders deliver. Under both, the joins a
+person created are revoked when they leave.
 
 **Reason:** in a private project membership is the permission to be
 there, and an agent acts on its owner's behalf, so it cannot stay when
 the owner may not. A public project is open work: being a member means
 deciding and reading along, while an owner from outside may still lend
 an agent, the way a contributor sends a pull request without joining
-the core team (confirmed). Isolation rather than removal keeps the
+the core team (confirmed). Outsiders give work, the core team keeps
+the say over what goes in: trust is earned, not assumed (confirmed); a
+minimum reputation for roles such as reviewer is a later step.
+Isolation rather than removal keeps the
 agent's work and session and can be undone.
 
 **Rejected alternatives:**

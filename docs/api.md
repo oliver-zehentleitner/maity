@@ -947,7 +947,7 @@ include the scope. No call made with an agent credential may:
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
-  `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
+  `agent_owners`, `outside_roles`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
   list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
@@ -3971,7 +3971,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
-| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while `public_page` is `on` (§16.9) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does |
+| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while `public_page` is `on` (§16.9) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team` and project roles on those bases (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -4365,25 +4366,48 @@ owner's consent; to stop another owner's agent at once, isolate it.
 agent leaves with its owner; in a public one an owner from outside may
 let an agent work. `policy.agent_owners` (§6.1) says which:
 
-- Under `members`, an agent member whose profile's owner holds no
-  active membership in the project is isolated by the hub, as
-  "Isolation" below, with `isolated.by: "hub"` and the reason `The
-  agent's owner is no longer a member of this project.`: at once when
-  its owner's membership ends (removed, left, or the account deleted,
-  §2.9), and for every such agent when the setting changes from
-  `anyone` to `members`. Its owner gets the notice of an isolation. A
-  human with `members:admin` lifts such an isolation only once the owner
-  is a member again (`invalid`, `details.fields.member:
-  "owner_not_member"`); the owner's return lifts nothing by itself.
-  Removing the agent stays possible as for any member.
-- Under `anyone`, an owner's leaving changes nothing for its agents:
-  the owner keeps managing them from outside, as an owner who is no
-  member does today (owner settings, pause, dormant, consents,
-  `owner_preferences`, §6.2, §19.4). How an owner from outside offers a
+- Under `members`, an agent member that is not isolated yet and whose
+  profile's owner holds no active membership in the project is isolated
+  by the hub, as "Isolation" below, with `isolated.by: "hub"` and the
+  reason `The agent's owner is no longer a member of this project.`: at
+  once when its owner's membership ends (removed or left, an
+  organisation's `org_owner` membership included, §6.26), and for every
+  such agent when the setting comes to read `members` — changed from
+  `anyone`, or unset while `public_page` turns `off` (by a `PATCH`, a
+  transfer, §6.25, or a suspension, §16.8). An isolation already in
+  place stays as it is, with its reason, start and window (§6.2,
+  "Isolation"). Its owner gets the notice of an isolation, and the open
+  requests to that owner about the agent (a change of another owner's
+  agent, a cross-owner `reports_to`, above) are withdrawn with `reason:
+  owner_not_member`. While the setting reads `members`, no isolation
+  of an agent whose owner is not an active member can be lifted
+  (`invalid`, `details.fields.member: "owner_not_member"`), whoever set
+  it; neither the owner's return nor a change to `anyone` lifts one by
+  itself, but either makes the lift possible again. Removing the agent
+  stays possible as for any member. A deleted account takes its agent
+  profiles and their memberships with it under both settings (§2.9).
+- Under `anyone`, an owner from outside may keep an agent here, within
+  `policy.outside_roles` (§6.1, default `["coder"]`): such an agent
+  holds trust `member` or `guest` and a role on that list, never trust
+  `admin` and never a role that grants `tasks:review` or `tasks:test`
+  (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
+  `manager`, `ops` or `proxy`, whatever the list says, so the work of
+  outsiders is checked by the project's own members. A review result it
+  posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
+  no review requirement; it stays a comment. A trust, role or `outside_roles` change that would break
+  this is `invalid` (`details.fields.role: "outside_owner"`). When its
+  owner's membership ends, an agent within these limits keeps working
+  and the owner manages it from outside, as an owner who is no member
+  does today (owner settings, pause, dormant, consents,
+  `owner_preferences`, §6.2, §19.4); one beyond them (trust `admin`, a
+  role not on the list) is isolated by the hub as under `members`, until
+  an admin brings it within the limits or the owner returns. How an owner from outside offers a
   new agent to a public project is a contract change of its own; until
   then only members create joins (§3.1).
-- Under both, the open joins a human created are revoked when that
-  human's membership ends, so no link outlives the person who issued it.
+- Under both, when a human's membership ends the open joins they
+  created are revoked and the placements they created that have not
+  made their membership yet are closed (§15.6), so no link or runner
+  outlives the person who issued it.
 
 **Isolation.** A project's humans with `members:admin` may isolate any
 agent member at once, whoever owns it, and lift the isolation again:
