@@ -168,7 +168,8 @@ window.Maity = window.Maity || {};
       ["/admin/settings/landing", "landing-page", M.t("admin.section.landing"), (s) => M.landing.section(ctx, s)],
       ["/admin/settings/legal", "legal-pages", M.t("admin.section.legal"), (s) => M.legal.section(ctx, s)],
       // The three above as one JSON (tsk-xw8a2hd84x3a): exported and imported in one go.
-      ["/admin/settings/landing", "whole-site", M.t("admin.section.site"), (s) => M.siteIo.section(ctx, s)],
+      // Keyed /admin/site, a word of its own for an address (it reads all three).
+      ["/admin/site", "whole-site", M.t("admin.section.site"), (s) => M.siteIo.section(ctx, s)],
       ["/health", "instance-information", M.t("admin.section.info"), infoSection],
     ];
     // One section at a time, picked in a row of buttons at the top (the

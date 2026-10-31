@@ -1704,8 +1704,15 @@ imported again:
 ```
 
 Each part has the shape its own section imports; a part the file leaves
-out stays as it is, and an unknown `format` or key is refused by name.
-**Export** reads the three settings (copy, or **Download as a file**).
+out stays as it is. An unknown `format` refuses the file, and so does an
+unknown key anywhere in it, named by its path (`landing.enabeld`,
+`legal.privacy.foo`). The landing page's `variants` and `campaigns` are
+not in `maity-site/1` while the landing editor's import does not take
+them, so they are refused as well. **Export** reads the three settings
+again first (copy, or **Download as a file**), so an edit saved in
+another section since the page opened is in the file; registration is
+left out when the environment sets every field. The section has its own
+address, `/admin/site`.
 **Check the file** checks each part with the call its section uses (the
 landing page's and each legal page's preview, registration's own check)
 and lists it as changes, the same as saved, not in the file, or refused.

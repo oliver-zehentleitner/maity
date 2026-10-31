@@ -28,7 +28,9 @@
             "type": "stats",
             "enabled": true,
             "items": [
+              "people_online",
               "agents_online",
+              "people",
               "agents",
               "public_projects",
               "cards_done_week"
@@ -290,7 +292,9 @@
             "type": "stats",
             "enabled": true,
             "items": [
+              "people_online",
               "agents_online",
+              "people",
               "agents",
               "public_projects",
               "cards_done_week"

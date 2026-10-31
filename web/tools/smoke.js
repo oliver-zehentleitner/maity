@@ -8342,6 +8342,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siUnknown = await SI.check({ format: "maity-site/1", landing: siNow.landing, colours: {} }, siNow);
     const siFormat = await SI.check({ format: "maity-site/9" }, siNow);
     expect(/colours/.test(siUnknown.refused || "") && /maity-site\/9/.test(siFormat.refused || ""), "site: an unknown key and an unknown format are refused, by name");
+    // An unknown key inside a part refuses the whole file too, by its path; variants and campaigns are not in maity-site/1.
+    const siDeep = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, { enabeld: true, variants: {} }),
+      legal: { privacy: { languages: template.legal.privacy.languages, foo: 1 }, faq: {} }, registration: { colour: "red" } }, siNow);
+    expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
+      "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
+    // Registration all from the environment: the export leaves the part out, and imports again.
+    const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
+    const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);
+    expect(!("registration" in siNoReg) && !siNoRegCheck.refused && siNoRegCheck.parts.registration.state === "missing",
+      "site: with every registration field from the environment the export leaves registration out and imports again");
     // In the admin: Check, then one Save; the second PATCH fails, so the message says what is saved and what is not.
     await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
     btn(main.querySelector("nav.admin-nav"), "Import or export everything").click(); for (let k = 0; k < 4; k++) await tick();
@@ -8358,7 +8368,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     btn(siBox(), "Save all changes").click(); for (let k = 0; k < 10; k++) await tick();
     expect(siPatches.length === 2 && /Stopped at/.test(text(siBox())) && /Saved: the imprint\./.test(text(siBox())) && /Not saved: the privacy notice/.test(text(siBox())),
       "site: a save that stops after the first PATCH says what is saved and what is not, and goes no further " + JSON.stringify(siPatches) + " " + text(siBox()).slice(-260));
+    // Export reads the settings again: an edit saved in another section since the page opened is in the file.
+    const siGetReal = win.Maity.api.get;
+    win.Maity.api.get = (p, ...rest) => (p === "/admin/settings/landing"
+      ? siGetReal(p, ...rest).then((l) => Object.assign({}, l, { footer: Object.assign({}, l.footer, { operator: "Edited elsewhere" }) })) : siGetReal(p, ...rest));
+    btn(siBox().querySelector("details.json-io"), "Export").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.parse(byId("site-json").value).landing.footer.operator === "Edited elsewhere",
+      "site: Export reads the settings again, so an edit saved since the page opened is in the file");
+    win.Maity.api.get = siGetReal;
     win.Maity.api.patch = siPatchReal; win.confirm = siConfirm;
+    // Its own address: /admin/site opens this section, not the landing page's.
+    await go("#/admin/site"); for (let k = 0; k < 6; k++) await tick();
+    expect(siBox() && !siBox().hidden, "site: /admin/site opens Import or export everything");
   }
   await go("#/all");
 

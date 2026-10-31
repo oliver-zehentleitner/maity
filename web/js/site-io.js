@@ -18,6 +18,9 @@ window.Maity = window.Maity || {};
   const REGISTRATION = "/admin/settings/registration";
   const PAGES = ["imprint", "privacy", "terms"];
   const KEYS = ["format", "landing", "legal", "registration"];
+  // The landing part takes what the landing editor imports; variants and campaigns
+  // are not in maity-site/1 while that import does not know them.
+  const LANDING_KEYS = ["enabled", "default_language", "pages", "footer"];
   const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   // Getters: the words are the catalog's when said.
@@ -39,7 +42,22 @@ window.Maity = window.Maity || {};
       fixed: M.adminRegistration.FIELDS.filter(fixed),
     };
   }
-  const bundleOf = (now) => ({ format: FORMAT, landing: now.landing, legal: now.legal, registration: now.registration });
+  // Registration left out when the environment sets every field: an empty part is
+  // refused, and one's own file must always import again.
+  const bundleOf = (now) => Object.assign({ format: FORMAT, landing: now.landing, legal: now.legal },
+    Object.keys(now.registration).length ? { registration: now.registration } : {});
+
+  // Every key a site file does not have, by its path (landing.enabeld, legal.privacy.foo).
+  // One refuses the whole file: a key dropped without a word looks saved to whoever wrote it.
+  function unknownPaths(data) {
+    const out = Object.keys(data).filter((k) => !KEYS.includes(k));
+    const under = (part, known) => (isObject(data[part]) ? Object.keys(data[part]).filter((k) => !known.includes(k)).map((k) => part + "." + k) : []);
+    out.push(...under("landing", LANDING_KEYS), ...under("legal", PAGES), ...under("registration", M.adminRegistration.FIELDS));
+    if (isObject(data.legal)) {
+      PAGES.filter((p) => isObject(data.legal[p])).forEach((p) => Object.keys(data.legal[p]).filter((k) => k !== "languages").forEach((k) => out.push("legal." + p + "." + k)));
+    }
+    return out;
+  }
 
   // The hub's refusal in a few words: the fields it names, or its message.
   const refusalWords = (err) => {
@@ -60,8 +78,6 @@ window.Maity = window.Maity || {};
 
   async function checkLegal(d, now) {
     if (!isObject(d)) return { state: "refused", words: M.t("site.refused.legal_shape") };
-    const unknown = Object.keys(d).filter((k) => !PAGES.includes(k));
-    if (unknown.length) return { state: "refused", words: M.t("site.refused.legal_unknown", { pages: M.fmt.list(unknown) }) };
     const steps = [], changed = [], words = [];
     for (const page of PAGES.filter((p) => Object.hasOwn(d, p))) {
       const langs = isObject(d[page]) ? d[page].languages : null;
@@ -95,7 +111,7 @@ window.Maity = window.Maity || {};
   async function check(data, now) {
     if (!isObject(data)) return { refused: M.t("site.refused.shape") };
     if (data.format !== FORMAT) return { refused: M.t("site.refused.format", { format: String(data.format), expected: FORMAT }) };
-    const unknown = Object.keys(data).filter((k) => !KEYS.includes(k));
+    const unknown = unknownPaths(data);
     if (unknown.length) return { refused: M.t("site.refused.unknown", { keys: M.fmt.list(unknown) }) };
     const parts = {
       landing: Object.hasOwn(data, "landing") ? await checkLanding(data.landing, now) : { state: "missing" },
@@ -151,7 +167,9 @@ window.Maity = window.Maity || {};
       id: "site-json",
       hint: M.t("site.hint", { format: FORMAT }),
       loadLabel: M.t("site.check"),
-      body: () => bundleOf(now),
+      // Read again first: the admin page builds every section when it opens, so the
+      // first read would miss an edit saved since in another section.
+      body: async () => bundleOf(now = await readNow()),
       load: async (data, io) => {
         io.busy(M.t("site.checking"));
         try { now = await readNow(); } catch (err) { io.fail(M.t("site.read_failed"), err); return false; }
@@ -162,7 +180,11 @@ window.Maity = window.Maity || {};
         return true;
       },
     });
-    const download = h("button", { type: "button", onclick: () => { if (M.yourData) M.yourData.save("maity-site.json", JSON.stringify(bundleOf(now), null, 2) + "\n"); } }, M.t("site.download"));
+    const download = h("button", { type: "button", onclick: async () => {
+      try { now = await readNow(); } catch (err) { status.fail(M.t("site.read_failed"), err); return; }
+      status.done();
+      if (M.yourData) M.yourData.save("maity-site.json", JSON.stringify(bundleOf(now), null, 2) + "\n");
+    } }, M.t("site.download"));
     append(root, h("h3", null, M.t("site.title")), h("p", { class: "hint" }, M.t("site.intro")), json.el,
       h("div", { class: "actions" }, download), overview, stepSlot, status.el);
   }

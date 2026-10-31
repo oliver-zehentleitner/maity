@@ -3392,7 +3392,7 @@ editor behind.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
@@ -3412,9 +3412,21 @@ template `web/tools/maity-site.json` replaces `landing-v3-complete.json`.
 Its placeholders are in square brackets: the hub's Markdown rules read
 `<Operator>` as an HTML tag and refuse the text.
 
+An unknown key anywhere in the file refuses the whole file, named by its
+path; `variants` and `campaigns` are not in `maity-site/1` while the
+landing editor's import does not know them, and are refused the same
+way. Export and Download read the three settings again first: the admin
+page builds every section when it opens, so a file exported from that
+first read would carry the state from before an edit in another section,
+and importing it again would revert that edit.
+
 **Reason:** one file for the whole site is what the maintainer works with,
 and the dashboard can do it with the calls the sections already have, so
-it needs no contract change and comes a day sooner.
+it needs no contract change and comes a day sooner. The site file is
+refused as a whole when any key is unknown, at the top or inside a part:
+a key the dashboard drops without a word looks saved to the person who
+wrote it, and a typo in `enabled` would leave the public page in the
+wrong state.
 
 **Rejected alternative:** a hub endpoint that saves all parts in one
 transaction, a day later and a contract change. Keeping the three imports

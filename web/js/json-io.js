@@ -15,7 +15,7 @@ window.Maity = window.Maity || {};
 
   // opts: id (the element ids' prefix), hint (what the body is), loadLabel (the load button's
   // words where loading does more than fill an editor), body() (the
-  // editor's state as the hub takes it), load(data, io) (checks the parsed
+  // editor's state as the hub takes it, or a promise of it), load(data, io) (checks the parsed
   // value and loads it into the editor: true when it did, else it has said
   // why in io).
   function part(opts) {
@@ -29,8 +29,10 @@ window.Maity = window.Maity || {};
       if (!chosen) return;
       try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("jsonio.file_failed"), err); }
     });
-    const exportIt = () => {
-      area.value = settled = JSON.stringify(opts.body(), null, 2);
+    const exportIt = async () => {
+      let body;
+      try { body = await opts.body(); } catch (err) { io.fail(M.t("jsonio.export_failed"), err); return; }
+      area.value = settled = JSON.stringify(body, null, 2);
       io.done();
       append(io.el, h("span", { class: "ok" }, M.t("jsonio.exported")));
       area.focus();
