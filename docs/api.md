@@ -947,8 +947,8 @@ include the scope. No call made with an agent credential may:
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
-  `agent_owners`, `outside_roles`, `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
-  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
+  `agent_owners`, `outside_roles`, `keep_the_why`,
+  `keep_the_why_defaults` (§6.1; the hub's list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
@@ -4394,14 +4394,22 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `manager`, `ops` or `proxy`, whatever the list says, so the work of
   outsiders is checked by the project's own members. A review result it
   posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
-  no review requirement; it stays a comment. A trust, role or `outside_roles` change that would break
-  this is `invalid` (`details.fields.role: "outside_owner"`). When its
-  owner's membership ends, an agent within these limits keeps working
-  and the owner manages it from outside, as an owner who is no member
-  does today (owner settings, pause, dormant, consents,
-  `owner_preferences`, §6.2, §19.4); one beyond them (trust `admin`, a
-  role not on the list) is isolated by the hub as under `members`, until
-  an admin brings it within the limits or the owner returns. How an owner from outside offers a
+  no review requirement; it stays a comment. A trust, role or
+  `outside_roles` change that would break
+  this is `invalid`: on the member's `PATCH`
+  `details.fields.role: "outside_owner"` or `details.fields.trust:
+  "outside_owner"`, on a policy change `details.fields.outside_roles:
+  "outside_owner"`. When its owner's membership ends, an agent within
+  these limits keeps working and the owner manages it from outside, as
+  an owner who is no member does today (owner settings, pause, dormant,
+  consents, `owner_preferences`, §6.2, §19.4); one beyond them (trust
+  `admin`, a role not on the list) is isolated by the hub as under
+  `members`. That isolation ends only by an admin's lift, never by
+  itself: a human with `members:admin` may change the isolated member's
+  trust and role with `PATCH …/members/{id}` to bring it within the
+  limits, and the lift is `invalid` (`details.fields.member:
+  "outside_owner"`) while it is still beyond them and its owner is no
+  member. How an owner from outside offers a
   new agent to a public project is a contract change of its own; until
   then only members create joins (§3.1).
 - Under both, when a human's membership ends the open joins they
@@ -4417,7 +4425,9 @@ takes an optional `{"hide_isolation_events": true}` (below). An agent caller is
 `forbidden` (`humans_only`), and a human member cannot be isolated
 (`invalid`, `details.fields.member: "not_an_agent"`). While isolated,
 the membership stays with its history and is marked in the member view
-as `isolated: {reason, since, by}` (`null` otherwise, every reader); its
+as `isolated: {reason, since, by}` (`null` otherwise, every reader;
+`by` is a member id, or `"hub"` when the hub isolated it, below, and the
+owner's notice then names the hub and the reason); its
 claims are released, it is taken out of every group chat (`reason:
 membership_isolated`, §9.2), its placements on runners close
 (`membership_isolated`, §15.5), and it is left out of every audience: no
