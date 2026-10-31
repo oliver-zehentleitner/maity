@@ -217,6 +217,8 @@ def _heartbeat(engine: Engine) -> None:
     w, p = t.long_poll.c, t.hub_pod.c
     with engine.begin() as conn:
         write_guard.exempt(conn)  # the registry is no write of an account
+        # `now()` itself, aware, not `_DB_NOW`: bound back into `UtcDateTime` it is turned into
+        # UTC once; `_DB_NOW` is already UTC without a zone and is for comparisons in SQL.
         now = conn.execute(select(func.now())).scalar_one()
         statement = postgresql.insert(t.hub_pod).values(pod=POD, seen_at=now)
         conn.execute(statement.on_conflict_do_update(index_elements=["pod"], set_={"seen_at": now}))

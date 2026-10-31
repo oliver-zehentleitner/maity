@@ -137,6 +137,8 @@ design:
      heartbeat would otherwise count each other as gone. In SQL it is `timezone('UTC', now())`:
      the columns hold UTC without a zone, and a bare `now()` compared with them is shifted by
      the server's `TimeZone` (a server on `Europe/Vienna` made a live pod an hour stale).
+     `now()` is the start of the caller's transaction, so `which` inside a long transaction
+     compares with a slightly older moment; against 45 seconds of staleness that is harmless.
    - `which(keys, conn)` answers for many keys in one read, on the caller's connection: the
      member views, the instance lists, the team wakes, the jour fixe and the statistics ask it
      once per call instead of once per instance.
