@@ -274,7 +274,7 @@ def statement_redacted(
 
 
 def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
-    """§20.3's readers by `member:`: the moderator, the human owners and admins, and a
+    """§20.3's readers by `member:`: the moderator, the humans of the admin team (no proxy), and a
     named answer's author; never the author of an anonymous one."""
     humans = conn.execute(
         select(t.membership.c.human_id).where(
@@ -282,6 +282,7 @@ def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
             t.membership.c.active.is_(True),
             t.membership.c.human_id.isnot(None),
             t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.role != "proxy",
         )
     ).scalars()
     tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
