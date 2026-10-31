@@ -21,9 +21,11 @@ on:
 permissions:
   contents: read
 
-# One at a time, none cancelled: an hourly run that overlaps the previous one waits.
+# One at a time per kind, none cancelled. GitHub keeps one running and one waiting run per group
+# and replaces a waiting run by a newer one, so a hand start for a deploy candidate has its own
+# group: the next hourly run would otherwise displace it while it waits behind a running one.
 concurrency:
-  group: hub-mariadb
+  group: hub-mariadb-${{ github.event_name }}
   cancel-in-progress: false
 
 defaults:
@@ -61,6 +63,15 @@ jobs:
         run: |
           sha="$(git rev-parse HEAD)"
           base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status success --json headSha --jq '.[0].headSha // ""')"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            # sha is free text, and a commit of a fork's pull request can be checked out by its sha: the
+            # self-hosted runner only runs what is on main, which is what the approval of outside
+            # collaborators protects (context/process.md, the runner entry).
+            git fetch -q origin main
+            if ! git merge-base --is-ancestor "$sha" origin/main; then
+              echo "::error::$sha is not on main: only commits of main are tested here"; exit 1
+            fi
+          fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi

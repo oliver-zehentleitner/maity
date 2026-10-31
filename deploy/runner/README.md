@@ -22,7 +22,7 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
 - Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
   fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
   rerun them after deleting the variable.
-- Set: **only a push (to `main`) uses the runners; every pull request runs on a hosted runner.** One
+- Set: **only what runs on `main` uses the runners (a push, the hourly `hub-mariadb` run, and a hand start of it for a commit of `main`); every pull request runs on a hosted runner.** One
   runner per job type does one job at a time (about 12 minutes for the MariaDB job); with pull requests
   on it the queue grew to eleven jobs and the oldest waited an hour and a half, which held up `main`
   as well. On the hosted side pull requests run in parallel. This is about the queue, not about trust
