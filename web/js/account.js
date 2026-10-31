@@ -86,7 +86,7 @@ window.Maity = window.Maity || {};
     return h("div", { class: "picture" },
       h("div", { class: "picture-now" }, M.avatar(who, 64),
         h("p", { class: "muted" }, Object.hasOwn(SOURCE_WORDS, who.avatar_source) ? SOURCE_WORDS[who.avatar_source] : M.t("picture.source.generated"))),
-      h("div", { class: "picture-controls" },
+      h("div", { class: "picture-controls field-stack" },
         h("label", { for: id }, own ? M.t("picture.upload_own") : M.t("picture.upload_for", { name: who.display_name })),
         input,
         h("p", { class: "hint" }, M.t("picture.hint")),

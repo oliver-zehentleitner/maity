@@ -137,7 +137,39 @@ function expect(cond, what) { console.log((cond ? "ok   " : "FAIL ") + what); if
 
 ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 (async () => {
-  async function go(hash) { win.location.hash = hash; win.onhashchange(); await tick(); await tick(); }
+  // A label beside its control (tsk-jpaqk8m7j52v, after the registration form on prod): a label for= and its
+  // control in one parent that the CSS lays out neither as grid nor as flex run inline. Every page smoke
+  // shows is walked, before leaving it (what clicks opened) and after arriving; none may be found.
+  const LAYOUT_CLASSES = new Set();
+  fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").replace(/([^{}@]+)\{([^{}]*)\}/g, (all, sel, body) => {
+    if (/display:\s*(grid|flex|inline-flex|inline-grid)/.test(body)) {
+      sel.split(",").forEach((one) => (one.trim().split(/[\s>+~]+/).pop().match(/\.[\w-]+/g) || []).forEach((c) => LAYOUT_CLASSES.add(c.slice(1))));
+    }
+    return all;
+  });
+  const inlineFields = new Map();
+  function checkFields(at) {
+    if (typeof main === "undefined" || !main) return;
+    main.querySelectorAll("label").forEach((label) => {
+      const target = label.getAttribute("for");
+      const cls = (label.className || "").split(/\s+/);
+      if (!target || cls.includes("visually-hidden") || cls.includes("check")) return;
+      const parent = label.parentNode;
+      const control = parent && parent.childNodes ? parent.childNodes.find((c) => c.attrs && c.attrs.id === target) : null;
+      // A checkbox or a radio stands beside its label on purpose.
+      if (!control || ["checkbox", "radio"].includes(control.attrs.type)) return;
+      // Known and with E (the jour fixe settings and its action page, tsk-39sjeqre25gw): named here, so
+      // that anything else that runs inline still fails. Take a prefix out once its forms have a layout.
+      if (["jf-", "jfa-"].some((prefix) => target.startsWith(prefix))) return;
+      if ((parent.className || "").split(/\s+/).some((c) => LAYOUT_CLASSES.has(c))) return;
+      if (!inlineFields.has(target)) inlineFields.set(target, at + " in <" + (parent.tagName || "?").toLowerCase() + " class=\"" + (parent.className || "") + "\">");
+    });
+  }
+  async function go(hash) {
+    checkFields("before leaving " + (win.location.hash || "/"));
+    win.location.hash = hash; win.onhashchange(); await tick(); await tick();
+    checkFields(hash);
+  }
   // A chip's text starts with its monogram (or nothing, for a logo), then the name.
   const chip = (label) => header.querySelectorAll(".switcher a").find((a) => a.textContent.replace(/^[A-Z?]{1,2}(?=[A-Z+])/, "").startsWith(label)
     || a.querySelectorAll(".project-mark").length && a.textContent.slice(a.querySelector(".project-mark").textContent.length).startsWith(label));
@@ -8706,6 +8738,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !rtLink("/all", { download: "x" }) && rtPushed.length === rtBefore + 1,
     "route: a click on a dashboard link stays in the page; a hub path, another site, a new tab, a modified click or a download is the browser's");
 
+  checkFields("at the end");
+  expect(!inlineFields.size, "forms: no label runs inline beside its field on any page smoke shows " + JSON.stringify([...inlineFields]));
   console.log(failures ? failures + " failure(s)" : "all ok");
   process.exit(failures ? 1 : 0);
 })().catch((e) => { console.log("CRASH", e.stack); process.exit(2); });
