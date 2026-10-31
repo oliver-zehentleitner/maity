@@ -183,6 +183,31 @@ def _link(conn: Connection, ids: list[str]) -> None:
         )
 
 
+def withdraw_requests(
+    conn: Connection, row: Any, actor: Actor | None, reason: str, sides: tuple[str, ...] = SIDES
+) -> None:
+    """Withdraw the grant's consent requests that are still open (ap44 at #947): a grant that
+    ends, takes effect or goes with its series leaves none behind in an inbox."""
+    from maity_hub.routes.requests import close_request
+
+    for side in sides:
+        request_id = getattr(row, f"{side}_request_id", None)
+        if request_id is None:
+            continue
+        status = conn.execute(
+            select(t.request.c.status).where(t.request.c.id == request_id)
+        ).scalar()
+        if status == "open":
+            close_request(conn, request_id, "withdrawn", actor, reason=reason)
+
+
+def _open(conn: Connection, request_id: str | None) -> bool:
+    if request_id is None:
+        return False
+    status = conn.execute(select(t.request.c.status).where(t.request.c.id == request_id)).scalar()
+    return status == "open"
+
+
 def grant(
     conn: Connection,
     project: Any,
@@ -193,7 +218,9 @@ def grant(
     actor: Actor,
 ) -> tuple[int, dict[str, Any]]:
     """`POST …/series/{jfs}/moderators` (§20.2): `201` with the series when the grant takes
-    effect, `202` with the consent requests when a consent is still missing."""
+    effect, `202` with the consent requests when a consent is still missing. A second call
+    on a pending grant adds the caller's consent: the missing side's makes it active, and a
+    side already asked is not asked again."""
     owner = _owner(conn, member)
     if not may_grant(series, mine, member, owner):
         raise series_mod.keeper_refused()
@@ -202,10 +229,32 @@ def grant(
     existing = _row(conn, series.id, member.id)
     if existing is not None and existing.state == "active":
         return 201, series_mod.view(conn, series)
-    if owner_side and keeper_side:
+    owner_ok = owner_side or bool(existing is not None and existing.owner_consent)
+    keeper_ok = keeper_side or bool(existing is not None and existing.keeper_consent)
+    g = t.jour_fixe_moderator.c
+    where = (g.series_id == series.id, g.membership_id == member.id)
+    if owner_ok and keeper_ok:
+        if existing is not None:
+            conn.execute(
+                update(t.jour_fixe_moderator)
+                .where(*where)
+                .values(state="active", owner_consent=True, keeper_consent=True)
+            )
+            # The consent that was asked for came directly: its request is no longer needed.
+            # Withdrawn after the row is active, so its settlement leaves the right alone.
+            withdraw_requests(conn, existing, actor, "consented_directly")
+            series_mod.announce(
+                conn,
+                project,
+                series,
+                "moderator_granted",
+                actor,
+                mine.principal_id,
+                _principal(member),
+            )
+            return 201, series_mod.view(conn, series)
         row = series_mod.grant_at_once(conn, project, series, mine, member, actor)
         return 201, series_mod.view(conn, row)
-    now = clock.now()
     if existing is None:
         conn.execute(
             insert(t.jour_fixe_moderator).values(
@@ -213,35 +262,51 @@ def grant(
                 membership_id=member.id,
                 state="pending",
                 granted_by=mine.principal_id,
-                granted_at=now,
+                granted_at=clock.now(),
                 owner_consent=owner_side,
                 keeper_consent=keeper_side,
             )
         )
+    else:
+        conn.execute(
+            update(t.jour_fixe_moderator)
+            .where(*where)
+            .values(owner_consent=owner_ok, keeper_consent=keeper_ok)
+        )
+    asked = {
+        side: getattr(existing, f"{side}_request_id")
+        for side in SIDES
+        if existing is not None and _open(conn, getattr(existing, f"{side}_request_id"))
+    }
     missing = [
         side
-        for side, given in (("owner", owner_side), ("keeper", keeper_side))
-        if not given and not (existing is not None and getattr(existing, f"{side}_consent"))
+        for side, given in (("owner", owner_ok), ("keeper", keeper_ok))
+        if not given and side not in asked
     ]
     ids = [_file(conn, series, member, side, owner, mine, caller) for side in missing]
-    _link(conn, ids)
-    conn.execute(
-        update(t.jour_fixe_moderator)
-        .where(
-            t.jour_fixe_moderator.c.series_id == series.id,
-            t.jour_fixe_moderator.c.membership_id == member.id,
+    if ids:
+        _link(conn, [*asked.values(), *ids])
+        conn.execute(
+            update(t.jour_fixe_moderator)
+            .where(*where)
+            .values(
+                **{
+                    f"{side}_request_id": request_id
+                    for side, request_id in zip(missing, ids, strict=True)
+                }
+            )
         )
-        .values(
-            **{
-                f"{side}_request_id": request_id
-                for side, request_id in zip(missing, ids, strict=True)
-            }
+    if existing is None:
+        series_mod.announce(
+            conn,
+            project,
+            series,
+            "moderator_pending",
+            actor,
+            mine.principal_id,
+            _principal(member),
         )
-    )
-    series_mod.announce(
-        conn, project, series, "moderator_pending", actor, mine.principal_id, _principal(member)
-    )
-    return 202, {"series": series_mod.view(conn, series), "requests": ids}
+    return 202, {"series": series_mod.view(conn, series), "requests": [*asked.values(), *ids]}
 
 
 def file_missing(conn: Connection, project: Any) -> None:
@@ -274,7 +339,6 @@ def file_missing(conn: Connection, project: Any) -> None:
 def end_gone(conn: Connection, project: Any) -> None:
     """Rights that end without a call (§20.2): the membership removed, the agent isolated, or
     its owner no member any more."""
-    from maity_hub.routes.requests import close_request
 
     m, g = t.membership.c, t.jour_fixe_moderator.c
     rows = conn.execute(
@@ -301,18 +365,12 @@ def end_gone(conn: Connection, project: Any) -> None:
         )
         if not gone:
             continue
-        for request_id in (row.owner_request_id, row.keeper_request_id):
-            if request_id is not None:
-                open_ = conn.execute(
-                    select(t.request.c.status).where(t.request.c.id == request_id)
-                ).scalar()
-                if open_ == "open":
-                    close_request(conn, request_id, "withdrawn", None, reason="member_removed")
         conn.execute(
             delete(t.jour_fixe_moderator).where(
                 g.series_id == row.series_id, g.membership_id == row.membership_id
             )
         )
+        withdraw_requests(conn, row, None, "member_removed")  # after: settles nothing more
         series = series_mod.find(conn, project.id, row.series_id)
         series_mod.announce(
             conn, project, series, "moderator_ended", None, None, _principal(member)

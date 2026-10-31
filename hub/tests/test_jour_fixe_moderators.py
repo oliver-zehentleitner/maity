@@ -195,3 +195,81 @@ def test_a_human_online_counts_its_minutes_too(
             select(t.membership.c.id).where(t.membership.c.human_id == owner.id)
         ).scalar_one()
     assert human_member in counted
+
+
+def _status(engine: Engine, request_id: str) -> str:
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                select(t.request.c.status).where(t.request.c.id == request_id)
+            ).scalar_one()
+        )
+
+
+def test_no_consent_request_outlives_its_grant_or_its_series(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """ap44 at #947: ending a pending grant, or deleting its series, withdraws its consent
+    request; a second grant from the same side asks nobody again."""
+    friend = _human(make_client, migrated, "friend", "member")
+    first, second = flow.agent(make_client, friend), flow.agent(make_client, friend)
+    sid = ensure_series(owner)
+    [ended] = grant(owner, sid, first.id).json()["requests"]
+    again = grant(owner, sid, first.id)
+    assert again.status_code == 202 and again.json()["requests"] == [ended]  # not asked twice
+    gone = owner.delete(f"{BASE}/jour-fixe/series/{sid}/moderators/{first.id}")
+    assert gone.status_code == 200, gone.text
+    assert _status(migrated, ended) == "withdrawn"
+    [orphan] = grant(owner, sid, second.id).json()["requests"]
+    deleted = owner.client.request(
+        "DELETE",
+        f"/api/v1{BASE}/jour-fixe/series/{sid}",
+        json={"reason": "t"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert _status(migrated, orphan) == "withdrawn"
+
+
+def test_the_missing_side_granting_too_makes_the_right_active(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """ap44 at #947: the agent's owner granting a grant the keeper made pending gives the
+    missing consent: the right takes effect and the request it no longer needs is withdrawn."""
+    friend = _human(make_client, migrated, "friend", "member")
+    agent = flow.agent(make_client, friend)
+    sid = ensure_series(owner)
+    [asked] = grant(owner, sid, agent.id).json()["requests"]
+    done = grant(friend, sid, agent.id)
+    assert done.status_code == 201, done.text
+    assert [m["member_id"] for m in series(owner, sid)["moderators"]] == [agent.id]
+    assert _status(migrated, asked) == "withdrawn"
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.jour_fixe_moderator.c.state)).scalars().all()
+    assert rows == ["active"]  # the withdrawal left the right as it is
+
+
+def test_the_no_moderator_item_goes_with_its_series(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    member = flow.agent(make_client, owner)
+    listen(member)
+    sid = ensure_series(owner)
+    owner.patch(f"{BASE}/jour-fixe/series/{sid}", {**DAILY_UTC, "reason": "t"})
+    next_at = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    now[0] = next_at + timedelta(seconds=30)
+    owner.get("/me")
+    worker.sweep(migrated)
+
+    def items() -> list[Any]:
+        found = owner.get("/me/notifications").json()["items"]
+        return [i for i in found if (i.get("target") or {}).get("type") == "jour_fixe_series"]
+
+    assert len(items()) == 1
+    owner.client.request(
+        "DELETE",
+        f"/api/v1{BASE}/jour-fixe/series/{sid}",
+        json={"reason": "t"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert items() == []  # §18.1: dropped once the series cannot be read

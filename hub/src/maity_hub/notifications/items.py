@@ -523,15 +523,18 @@ def _classify(
         and payload.get("skip_reason") == "no_moderator"
         and f"member:{principal}" in (row.audience or [])
     ):
-        # Nobody holding the right was there, and only the keepers can grant it (§20.9).
-        topic = look.conn.execute(
-            select(t.jour_fixe_series.c.topic).where(
-                t.jour_fixe_series.c.id == payload.get("series_id")
-            )
-        ).scalar()
+        # Nobody holding the right was there, and only the keepers can grant it (§20.9);
+        # dropped once the human can no longer see the series (§18.1).
+        from maity_hub.jourfixe import series as series_mod
+
+        found = look.conn.execute(
+            select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == payload.get("series_id"))
+        ).first()
+        if found is None or series_mod.sight(look.conn, found, mine) != "full":
+            return None
         return Item(
             kind="inbox",
-            title=_cut(where.say("jf_no_moderator", topic=topic or "jour fixe")),
+            title=_cut(where.say("jf_no_moderator", topic=found.topic)),
             target={"type": "jour_fixe_series", "id": str(payload.get("series_id"))},
             url=_url(where, f"{home}/jour-fixe"),
             **base,

@@ -377,11 +377,16 @@ def delete_series(
     series' id, topic and circle in the `config` they opened with (`views.series_fields`)."""
     if not may_delete(series, mine):
         raise keeper_refused()
+    from maity_hub.jourfixe import moderators as rights
+
     final = view(conn, series)
     audience = seen_by(conn, series)
+    rows = grants(conn, series.id)
     conn.execute(
         delete(t.jour_fixe_moderator).where(t.jour_fixe_moderator.c.series_id == series.id)
     )
+    for row in rows:  # no consent request outlives its series; withdrawn after the rows go
+        rights.withdraw_requests(conn, row, actor, "series_deleted")
     conn.execute(delete(t.jour_fixe_opt_out).where(t.jour_fixe_opt_out.c.series_id == series.id))
     conn.execute(
         delete(t.jour_fixe_recipient).where(t.jour_fixe_recipient.c.series_id == series.id)
@@ -457,11 +462,14 @@ def end_right(
     ) or is_keeper(series, mine)
     if not allowed:
         raise keeper_refused()
+    from maity_hub.jourfixe import moderators as rights
+
     conn.execute(
         delete(t.jour_fixe_moderator).where(
             t.jour_fixe_moderator.c.series_id == series.id,
             t.jour_fixe_moderator.c.membership_id == member.id,
         )
     )
+    rights.withdraw_requests(conn, row, actor, "grant_ended")  # after: settles nothing more
     announce(conn, project, series, "moderator_ended", actor, mine.principal_id, principal)
     return find(conn, project.id, series.id)
