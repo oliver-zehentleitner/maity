@@ -203,6 +203,8 @@ def _replay_series(conn: Connection, series_id: str, request: Request) -> dict[s
     return series_view(conn, series_id)
 
 
+idempotency.LOADERS["jour_fixe_round"] = _replay_round
+idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
 idempotency.LOADERS["jour_fixe_series"] = _replay_series
 
 

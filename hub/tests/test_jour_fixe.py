@@ -112,51 +112,51 @@ def answer(who: Any, round_id: str, **body: Any) -> Any:
                 "timezone": "Europe/Vienna",
                 "recurrence": {"freq": "weekly"},
             },
-            {"policy.jour_fixe.recurrence.weekdays": "required"},
+            {"recurrence.weekdays": "required"},
         ),
-        ({**DAILY, "timezone": "Mars/Olympus"}, {"policy.jour_fixe.timezone": "unknown_timezone"}),
+        ({**DAILY, "timezone": "Mars/Olympus"}, {"timezone": "unknown_timezone"}),
         (
             {"enabled": True, "timezone": "Europe/Vienna", "recurrence": {"freq": "daily"}},
-            {"policy.jour_fixe.time": "required"},
+            {"time": "required"},
         ),
         (
             {**DAILY, "recurrence": {"freq": "daily", "weekdays": ["mon"]}},
-            {"policy.jour_fixe.recurrence.weekdays": "not_for_freq"},
+            {"recurrence.weekdays": "not_for_freq"},
         ),
-        (
-            {**DAILY, "recurrence": {"freq": "monthly"}},
-            {"policy.jour_fixe.recurrence.month_day": "one_of"},
-        ),
-        (
-            {**DAILY, "answer_window_minutes": 10},
-            {"policy.jour_fixe.answer_window_minutes": "out_of_range"},
-        ),
-        ({**DAILY, "moderator": "agt-nobody"}, {"policy.jour_fixe.moderator": "not_a_member"}),
+        ({**DAILY, "recurrence": {"freq": "monthly"}}, {"recurrence.month_day": "one_of"}),
+        ({**DAILY, "answer_window_minutes": 10}, {"answer_window_minutes": "out_of_range"}),
     ],
 )
 def test_the_schedule_the_contract_refuses_is_invalid(
     owner: flow.Human, change: dict[str, Any], fields: dict[str, str]
 ) -> None:
-    response = owner.patch(
-        "/projects/maintainer/maity", {"policy": {"jour_fixe": change}, "reason": "t"}
-    )
+    body = {"topic": "How we work", "circle": "all", "reason": "t", **change}
+    response = owner.post(f"{BASE}/jour-fixe/series", body)
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == fields
 
 
-def test_a_schedule_is_stored_whole_and_kept_by_a_preset(owner: flow.Human) -> None:
-    response = owner.patch(
-        "/projects/maintainer/maity", {"policy": {"jour_fixe": DAILY}, "reason": "t"}
+def test_a_series_is_stored_with_its_defaults_and_patched_field_by_field(
+    owner: flow.Human,
+) -> None:
+    made = owner.post(
+        f"{BASE}/jour-fixe/series", {"topic": " How we work ", "circle": "all", "reason": "t"}
     )
-    assert response.status_code == 200, response.text
-    stored = response.json()["policy"]["jour_fixe"]
-    assert stored["answer_window_minutes"] == 120 and stored["moderator"] == "admin_agent"
-    kept = owner.patch(
-        "/projects/maintainer/maity", {"policy": {"preset": "solo"}, "reason": "t"}
-    ).json()
-    assert kept["policy"]["jour_fixe"] == stored
-    overview = owner.get("/projects/maintainer/maity/jour-fixe").json()
-    assert overview["policy"] == stored and overview["next_at"] is not None
+    assert made.status_code == 201, made.text
+    series = made.json()
+    assert series["topic"] == "How we work" and series["enabled"] is False
+    assert series["answer_window_minutes"] == 120 and series["circle_owner"] is None
+    assert series["moderators"] == [] and series["pending_moderators"] == []
+    patched = owner.patch(f"{BASE}/jour-fixe/series/{series['id']}", {**DAILY, "reason": "t"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["time"] == "10:00" and patched.json()["topic"] == "How we work"
+    fixed = owner.patch(
+        f"{BASE}/jour-fixe/series/{series['id']}", {"circle": "humans", "reason": "t"}
+    )
+    assert fixed.json()["error"]["details"]["fields"] == {"circle": "fixed"}
+    overview = owner.get(f"{BASE}/jour-fixe").json()
+    assert [s["id"] for s in overview["series"]] == [series["id"]]
+    assert overview["series"][0]["next_at"] is not None
 
 
 # --- opening a round (§20.1–§20.3) ---------------------------------------------------------------
@@ -180,7 +180,8 @@ def test_a_manual_start_invites_the_present_and_asks_once(
     assert reasons == {offline.id: "not_available", deaf.id: "no_listening_instance"}
     [opened] = events(migrated, "jour_fixe_opened")
     assert f"instance:{member.id}#{member.instance}" in opened.audience
-    assert f"member:{owner.id}" in opened.audience and "trust:owner" in opened.audience
+    assert f"member:{owner.id}" in opened.audience  # invited, and the series' keeper
+    assert opened.payload["series_id"] and opened.payload["topic"] == "How we work"
     woken = member.get(f"/projects/maintainer/maity/events?after={opened.seq - 1}&wait=1").json()
     assert [e["kind"] for e in woken["items"]][:1] == ["jour_fixe_opened"]  # its instance
     assert "Your answer goes to the moderator only." in opened.payload["questions"]
@@ -195,9 +196,11 @@ def test_a_round_needs_a_moderator_and_two_present_members(
     member = flow.agent(make_client, owner)
     listen(member)
     owner.get("/me")
-    nobody = start(owner)
+    sid = ensure_series(owner)
+    nobody = start(owner, sid)  # nobody holds the series' moderator right
     assert nobody.status_code == 409 and nobody.json()["error"]["code"] == "no_moderator"
     lead = flow.agent(make_client, owner, role="admin")
+    assert grant(owner, sid, lead.id).status_code == 201
     listening.reset()
     listen(lead)  # the moderator alone: the human declares itself away
     owner.post("/me/limit", {"until": clock.rfc3339(clock.now() + timedelta(hours=1))})
@@ -211,6 +214,7 @@ def test_only_owners_and_admins_start_and_at_most_two_a_day(
     lead, member = team(owner, make_client)
     refused = start(member)
     assert refused.status_code == 403
+    sid = series_id(owner)
     with migrated.begin() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
         for n in range(2):
@@ -218,6 +222,7 @@ def test_only_owners_and_admins_start_and_at_most_two_a_day(
                 insert(t.jour_fixe_round).values(
                     id=f"jfx-old{n}",
                     project_id=project_id,
+                    series_id=sid,
                     status="reported",
                     trigger="manual",
                     mode="message",
@@ -396,9 +401,10 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
     lead, member = team(owner, make_client)
     # UTC: a day later is the same wall-clock time, whatever DST does in Vienna.
     daily_utc = {**DAILY, "timezone": "UTC"}
-    owner.patch("/projects/maintainer/maity", {"policy": {"jour_fixe": daily_utc}, "reason": "t"})
+    sid = series_id(owner)
+    owner.patch(f"{BASE}/jour-fixe/series/{sid}", {**daily_utc, "reason": "t"})
     next_at = datetime.fromisoformat(
-        owner.get("/projects/maintainer/maity/jour-fixe").json()["next_at"]
+        owner.get("/projects/maintainer/maity/jour-fixe").json()["series"][0]["next_at"]
     )
     now[0] = next_at + timedelta(seconds=30)
     lead.get("/me")
@@ -428,28 +434,51 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
 # --- the moderator order and the observer (§20.2, §20.7) -----------------------------------------
 
 
-def test_admin_agents_order_themselves(owner: flow.Human, make_client: ClientFactory) -> None:
-    first = flow.agent(make_client, owner, role="admin")
-    second = flow.agent(make_client, owner, role="admin")
-    member = flow.agent(make_client, owner)
-    path = "/projects/maintainer/maity/jour-fixe/moderators"
-    set_ = second.client.put(
-        f"/api/v1{path}",
-        json={"order": [second.id], "reason": "I have time"},
-        headers=second.auth | second.key(),
+def test_who_keeps_and_who_sees_a_series(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§20.1: an owner's series is that owner's own; the admins see that it exists, not its
+    topic; an agent keeps none; at most 10 series."""
+    agent = flow.agent(make_client, owner, role="admin")
+    other = flow.human(make_client, migrated, handle="other")
+    project_id = owner.get(BASE).json()["id"]
+    factory.membership(migrated, project_id, role="member", human_id=other.id)
+    refused = agent.post(f"{BASE}/jour-fixe/series", {"topic": "x", "circle": "all", "reason": "t"})
+    assert refused.json()["error"]["details"]["reason"] == "not_series_keeper"
+    mine = other.post(
+        f"{BASE}/jour-fixe/series",
+        {"topic": "My agents", "circle": "owner", "circle_owner": other.id, "reason": "t"},
     )
-    assert set_.status_code == 200, set_.text
-    assert set_.json()["moderators"][0] == second.id and first.id in set_.json()["moderators"]
-    wrong = second.client.put(
-        f"/api/v1{path}",
-        json={"order": [member.id], "reason": "x"},
-        headers=second.auth | second.key(),
+    assert mine.status_code == 201, mine.text
+    seen = owner.get(f"{BASE}/jour-fixe/series").json()["items"]
+    assert seen == [{k: v for k, v in mine.json().items() if k in seen[0]}]
+    assert "topic" not in seen[0]
+    assert agent.get(f"{BASE}/jour-fixe/series").json()["items"] == []
+    patched = owner.patch(
+        f"{BASE}/jour-fixe/series/{mine.json()['id']}", {"topic": "y", "reason": "t"}
     )
-    assert wrong.json()["error"]["details"]["fields"] == {"order": "not_admin_agent"}
-    refused = member.client.put(
-        f"/api/v1{path}", json={"order": None, "reason": "x"}, headers=member.auth | member.key()
+    assert patched.json()["error"]["details"]["reason"] == "not_series_keeper"
+    not_own = owner.post(
+        f"{BASE}/jour-fixe/series/{mine.json()['id']}/moderators",
+        {"member_id": agent.id, "reason": "t"},
     )
-    assert refused.status_code == 403
+    assert not_own.status_code == 403
+    for n in range(9):
+        made = owner.post(
+            f"{BASE}/jour-fixe/series", {"topic": f"t{n}", "circle": "all", "reason": "t"}
+        )
+        assert made.status_code == 201, made.text
+    full = owner.post(
+        f"{BASE}/jour-fixe/series", {"topic": "one more", "circle": "all", "reason": "t"}
+    )
+    assert full.json()["error"]["details"]["fields"] == {"series": "too_many"}
+    gone = owner.client.request(
+        "DELETE",
+        f"/api/v1{BASE}/jour-fixe/series/{mine.json()['id']}",
+        json={"reason": "t"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert gone.status_code == 200, gone.text  # an admin deletes an owner's series too
 
 
 def test_an_agents_owner_outside_the_project_reads_the_minimal_round(
@@ -537,7 +566,7 @@ def test_a_replay_answers_only_a_member(
     factory.membership(migrated, project_id, "admin", human_id=other.id)
     other.get("/me")
     headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": "jour-fixe-start-replay-1"}
-    path = "/api/v1/projects/maintainer/maity/jour-fixe/rounds"
+    path = f"/api/v1/projects/maintainer/maity/jour-fixe/series/{series_id(owner)}/rounds"
     first = other.client.post(path, json={"reason": "r"}, headers=headers)
     assert first.status_code == 201, first.text
     removed = owner.delete(f"/projects/maintainer/maity/members/{other.id}")

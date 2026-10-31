@@ -269,12 +269,14 @@ def test_an_owner_outside_the_thread_reads_it_along_in_the_events(
     factory.membership(migrated, project_id, "owner", human_id=other.id)
     lead = flow.agent(make_client, other, role="admin")
     member = flow.agent(make_client, other)
+    from tests.test_jour_fixe import ensure_series, grant, start
+
+    sid = ensure_series(owner)
+    assert grant(other, sid, lead.id).status_code == 201  # a keeper's own agent
     now[0] += timedelta(minutes=5)  # the owner's own calls are long past: not online
     listen(lead)
     listen(member)
-    round_id = lead.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "r"}).json()[
-        "id"
-    ]
+    round_id = start(lead, sid).json()["id"]
     member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
     now[0] += STEP
     worker.sweep(migrated)
@@ -308,7 +310,9 @@ def test_redacting_a_round_message_tombstones_the_round_copy(round_: Round) -> N
     for seen in (
         round_.lead.get(rounds_path(round_.id)).json(),
         round_.lead.get("/projects/maintainer/maity/jour-fixe/rounds").json()["items"][0],
-        round_.lead.get("/projects/maintainer/maity/jour-fixe").json()["current_round"],
+        round_.lead.get("/projects/maintainer/maity/jour-fixe").json()["series"][0][
+            "current_round"
+        ],
     ):
         assert seen["posts"][0]["redaction"]["reason"] is None
         assert seen["posts"][0]["redaction"]["by"] == round_.owner.id
