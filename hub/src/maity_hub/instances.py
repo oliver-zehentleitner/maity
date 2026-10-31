@@ -330,13 +330,14 @@ def views(
     sessions = _live_sessions(conn, [c.id for c in credentials])
     latest = _latest_sessions(conn, [c.id for c in credentials if c.id not in sessions])
     claims = _claim_counts(conn, list(rows))
+    heard = listening.which((s.id for s in sessions.values()), conn)  # one read for all
     found: dict[int, list[dict[str, Any]]] = {m: [] for m in rows}
     for c in credentials:
         member = rows[c.membership_id]
         handle = handles[member.agent_id]
         session = sessions.get(c.id)
         shown = session or latest.get(c.id)
-        is_listening = session is not None and listening.is_listening(session.id)
+        is_listening = session is not None and session.id in heard
         view: dict[str, Any] = {
             "id": c.instance,
             "address": address(member.agent_id, c.instance),
@@ -508,11 +509,12 @@ def round_robin(conn: Connection, member: Any) -> str | None:
     after = [c for c in candidates if last is not None and (c.created_at, c.id) > tuple(last)]
     order = after + [c for c in candidates if c not in after]
     sessions = _live_sessions(conn, [c.id for c in order])
+    heard = listening.which((s.id for s in sessions.values()), conn)
     now = clock.now()
 
     def online(c: Any) -> bool:
         session = sessions.get(c.id)
-        if session is not None and listening.is_listening(session.id):
+        if session is not None and session.id in heard:
             return True
         seen = c.last_used_at
         return (
@@ -566,11 +568,12 @@ def team_wakes(
         )
     ).all()
     sessions = _live_sessions(conn, [c.id for c in credentials])
+    heard = listening.which((s.id for s in sessions.values()), conn)
     listening_now = [
         c
         for c in credentials
         if c.id in sessions
-        and listening.is_listening(sessions[c.id].id)
+        and sessions[c.id].id in heard
         and c.dormant_since is None  # a dormant instance is never chosen (§6.17)
     ]
     claims = _claim_counts(conn, [m.id for m in teams]) if listening_now else {}
