@@ -390,6 +390,11 @@ human_session = Table(
     Column("password_at", UtcDateTime),
     Column("second_factor_at", UtcDateTime),
     Column("second_factor", String(16)),
+    # The mail factor of a second-factor session (§2.8.8): the HMACs of the mailed token and
+    # code, which only this session's browser can use, and how many mails it was sent.
+    Column("mail_token_mac", String(HEX_SHA256)),
+    Column("mail_code_mac", String(HEX_SHA256)),
+    Column("mail_sent", Integer, nullable=False, server_default="0"),
     Column("next", String(512)),
     **MYSQL_TABLE,
 )
@@ -2070,6 +2075,9 @@ notification_settings = Table(
     Column("address_normalized", String(254), unique=True),
     Column("address_status", String(16), nullable=False),  # none pending verified disabled
     Column("verified_at", UtcDateTime),
+    # Set at the first verification, never cleared: the account has had a verified address, so
+    # a lost one fails closed under `second_factor: email` instead of enrolling (§2.8.8).
+    Column("address_ever_verified", Boolean, nullable=False, server_default=false()),
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),

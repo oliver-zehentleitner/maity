@@ -389,7 +389,7 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
     return tuple(networks)
 
 
-SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
+SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins", "email")
 
 
 def parse_second_factor(env: dict[str, str]) -> str | None:
@@ -401,7 +401,8 @@ def parse_second_factor(env: dict[str, str]) -> str | None:
         return None
     if value not in SECOND_FACTOR_POLICIES:
         raise ConfigError(
-            f"MAITY_SIGN_IN_SECOND_FACTOR must be off, optional or required_admins, got {value!r}"
+            "MAITY_SIGN_IN_SECOND_FACTOR must be off, optional, required_admins or email, "
+            f"got {value!r}"
         )
     if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
         raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
