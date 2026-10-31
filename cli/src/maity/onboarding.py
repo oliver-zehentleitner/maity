@@ -719,13 +719,34 @@ def _memory(packet: dict[str, Any]) -> list[str]:
     return [*out, ""]
 
 
+def _takes_over(packet: dict[str, Any]) -> list[str]:
+    """`Takes over from <handle>; the hand-over is in <card | message #seq>.` when the join
+    named them (§3.1, §5.2). Never the hand-over's text: it is read as any card or message."""
+    ms = _dict(packet.get("membership"))
+    who = ms.get("takes_over")
+    if not isinstance(who, dict):
+        return []
+    line = f"Takes over from @{label(who)}"
+    handover = _dict(ms.get("handover"))
+    kind, ref = handover.get("kind"), handover.get("id")
+    if kind == "task" and ref:
+        line += f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
+    elif kind == "message" and isinstance(ref, int):
+        line += f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
+    return [line + "."]
+
+
 def _check_in(packet: dict[str, Any]) -> list[str]:
+    """The `Check in` block, with the takeover line before the hint (§5.2); a takeover without
+    a check-in target stands alone where the block would."""
+    takes_over = _takes_over(packet)
     block = _dict(packet.get("onboarding"))
     target = _dict(block.get("check_in_with"))
-    if not target.get("handle"):
-        return []  # Old hubs omit the block; tolerate a partial packet as elsewhere.
+    if not target.get("handle"):  # Old hubs omit the block; tolerate a partial packet.
+        return [*takes_over, ""] if takes_over else []
     lines = [
         "Check in:",
+        *takes_over,
         f"Report to @{label(target)} ({inline(target.get('kind'))}) "
         "with a message before you take any work.",
     ]
@@ -826,12 +847,15 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         # handover would be, so a replacement does not start blind.
         lead = ms.get("reports_to")
         ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
-        out += [
-            "No briefing was given with this join. If you replace someone, look for the handover "
-            f"before you take work: read `maity messages`, check the cards below and {ask}. "
-            "Otherwise your work comes from the board.",
-            "",
-        ]
+        if isinstance(ms.get("takes_over"), dict):
+            line = f"No briefing was given with this join: read the hand-over above and {ask}."
+        else:
+            line = (
+                "No briefing was given with this join. If you replace someone, look for the "
+                f"handover before you take work: read `maity messages`, check the cards below "
+                f"and {ask}. Otherwise your work comes from the board."
+            )
+        out += [line, ""]
     out += _who(packet, names)
     out += _project(packet)
     rules = _dict(packet.get("rules"))
