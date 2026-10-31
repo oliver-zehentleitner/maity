@@ -196,7 +196,7 @@ puts in it, kept at a length a phone user still types.
 **Evidence:** confirmed
 **Source:** the maintainer's direction in the project chat, 2026-10-23, recorded in `scope.md`; contract in `docs/api.md` §2.7 and §16.4
 **Revisit when:** a registration path is added that verifies the address elsewhere (OAuth with a provider's verified address), or pending registrations are found to be abused as stored state
-**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-23
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-23
 
 `POST /auth/register` creates no account. It stores a pending
 registration for at most 24 hours and mails a signed link; the account
