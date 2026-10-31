@@ -7,7 +7,7 @@ the agent may never read, null for none.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261031064012_isolation_windows
-Revises: 20261030180344_request_nonces
+Revises: 20261031052946_dormant_agent_ins
 Create Date: 2026-10-31
 """
 
@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261031064012_isolation_windows"
-down_revision: str | None = "20261030180344_request_nonces"
+down_revision: str | None = "20261031052946_dormant_agent_ins"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
