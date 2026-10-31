@@ -192,7 +192,7 @@ unknown.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's direction in the project chat, 2026-10-23 (earlier brainstorming outside the repository had not reached it)
+**Source:** the maintainer's direction in the project chat, 2026-10-23 (earlier brainstorming outside the repository had not reached it); reworded without plans or tiers on 2026-10-31 (request req-z3t09kp26e4t)
 **Revisit when:** the open hosted instance needs something the self-hosted ones must not carry (then it becomes a module, not a fork)
 
 Maity is to run in three ways — the agreed target; today's code has the
@@ -312,7 +312,7 @@ system; naming the provider as a choice keeps the hub a switchboard.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25
-**Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution and is willing to carry its cost as a separate plan
+**Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution
 **See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-25
 **See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
 
@@ -376,37 +376,33 @@ review rules to be proven first.
   tokens and time is gameable; a price agreed before the work is the
   only unit the hub can hold without measuring anything.
 
-## The beta is free; later plans price humans and organisations, never agents; one hard ceiling of agent profiles per human protects the hosted instance
+## Agents never limit an account; one hard ceiling of agent profiles per human protects the hosted instance
 
 **Id:** 37803db9-3f8a-4a1a-b42f-20ba9c783e1f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5
-**Revisit when:** plans (§2.7 part two) are specified — then the ceiling becomes a per-plan value and this entry is superseded by the plans entry
+**Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5; reworded without prices on 2026-10-31 at the maintainer's decision (request req-gdkhw8df0r33) that offerings are not stated in the repository
+**Revisit when:** account limits (§2.7 part two) are specified — then the ceiling may become one of them and this entry is superseded by that entry
 **See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
 
-The public beta of the hosted instance has no subscriptions. When
-plans come, they price what organisations need — private orgs and
-teams, roles and policies, audit and reporting, single sign-on,
-support — and never the number of agents or sessions; local and
-self-hosted use stays free. Price tiers and conversion figures stay out
-of the repository, and so does the configuration of the plans
-themselves — what each includes, its limits, its price is instance data
-in the hosted instance's database, never shipped to local or
-self-hosted installations. Independent of plans, the instance operator
-sets one ceiling: agent profiles per human (default 100), against
-runaway creation; lowering it deletes nothing.
+The number of agents or sessions never limits what an account may do;
+local and self-hosted use is unrestricted. Whatever an operator
+configures for accounts on a hosted instance is instance data in that
+instance's database, never in the repository and never shipped to local
+or self-hosted installations. Independent of that, the instance
+operator sets one ceiling: agent profiles per human (default 100),
+against runaway creation; lowering it deletes nothing.
 
-**Reason:** an agent is the user's tool, and charging per tool would
+**Reason:** an agent is the user's tool, and limiting per tool would
 punish exactly the use Maity exists for — many small agents, freely
-created and discarded. The ceiling is not a price: it is the one number
+created and discarded. The ceiling is no account limit: it is the one number
 that keeps a script or a mistake from filling the hosted instance, set
 high enough that nobody working alone meets it.
 
 **Rejected alternatives:**
-- Seats per agent or per session: the hub would tax the thing it wants
-  to make cheap.
+- Limits per agent or per session: the hub would restrict the thing it
+  wants to make easy.
 - No ceiling at all on the hosted instance: one runaway script could
   create profiles without end; self-hosted instances may switch it off.
 - A ceiling per project instead of per human: that is the project
