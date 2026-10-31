@@ -45,39 +45,44 @@ def _digest(kind: str, key: str) -> str:
     return hashlib.sha256(f"{kind}:{key}".encode()).hexdigest()
 
 
-def _announce(engine: Engine, digest: str) -> int:
-    """Tell every replica a wait opens now; its start, read from the database's clock, which
-    every replica shares, unlike their own."""
-    with engine.begin() as conn:
-        now = conn.execute(select(func.clock_timestamp())).scalar_one()
-        started = (now - _EPOCH) // timedelta(microseconds=1)
-        conn.execute(select(func.pg_notify(SUPERSEDE, f"{digest}:{started}")))
-    return int(started)
+def _forget(digest: str, token: object) -> None:
+    with _held_lock:
+        waits = _held.get(digest)
+        if waits is not None:
+            waits.pop(token, None)
+            if not waits:
+                del _held[digest]
+
+
+def _announce(engine: Engine, digest: str, token: object, end: Callable[[], None]) -> None:
+    """Tell every replica a wait opens now, its start read from the database's clock, which
+    every replica shares, unlike their own. The wait is held from the moment its start is
+    known, before the notice commits: a newer wait's notice arriving right after the commit
+    finds it (c47w at #877), and its own notice ends nothing, not being older."""
+    try:
+        with engine.begin() as conn:
+            now = conn.execute(select(func.clock_timestamp())).scalar_one()
+            started = int((now - _EPOCH) // timedelta(microseconds=1))
+            with _held_lock:
+                _held.setdefault(digest, {})[token] = (started, end)
+            conn.execute(select(func.pg_notify(SUPERSEDE, f"{digest}:{started}")))
+    except BaseException:
+        _forget(digest, token)
+        raise
 
 
 async def opened(
     engine: Engine, kind: str, key: str, on_superseded: Callable[[], None]
 ) -> Callable[[], None]:
     """A wait of `kind` and `key` opens: on PostgreSQL announce it, and end it with
-    `on_superseded` when a newer one of the same key opens on another replica. Returns what
+    `on_superseded` when a newer one of the same key opens on another replica, which may
+    happen before this returns, so the caller holds the wait before it calls. Returns what
     the wait calls when it closes. Superseding inside the process stays the caller's."""
     if engine.dialect.name != "postgresql":
         return lambda: None
-    digest = _digest(kind, key)
-    started = await run_in_threadpool(_announce, engine, digest)
-    token = object()
-    with _held_lock:
-        _held.setdefault(digest, {})[token] = (started, on_superseded)
-
-    def closed() -> None:
-        with _held_lock:
-            waits = _held.get(digest)
-            if waits is not None:
-                waits.pop(token, None)
-                if not waits:
-                    del _held[digest]
-
-    return closed
+    digest, token = _digest(kind, key), object()
+    await run_in_threadpool(_announce, engine, digest, token, on_superseded)
+    return lambda: _forget(digest, token)
 
 
 def supersede(payload: str) -> None:

@@ -110,11 +110,12 @@ async def _hold(
         if _holding.get(key) is token:
             del _holding[key]
 
-    closed = await wakeups.opened(engine, "device", key, taken_over)
-    _holding[key] = token
+    _holding[key] = token  # held before the announcement, which may supersede it at once
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     current = first
     try:
+        closed = await wakeups.opened(engine, "device", key, taken_over)
         # A stopping hub answers with what it has; the client simply waits again (§8.3).
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
@@ -125,7 +126,8 @@ async def _hold(
                 break
         return current
     finally:
-        closed()
+        if closed is not None:
+            closed()
         if _holding.get(key) is token:
             del _holding[key]
 

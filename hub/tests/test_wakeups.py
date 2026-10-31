@@ -162,7 +162,12 @@ def test_a_newer_wait_on_another_replica_supersedes_this_one(
     _notify(postgres, "prj-marker:1")  # after both announcements, in commit order
     assert _until(lambda: ("prj-marker", 1) in heard)
     assert ended == []  # its own announcement ends nothing
-    wakeups._announce(postgres, wakeups._digest("events", "cred-1"))  # the other replica
+    elsewhere = wakeups._digest("events", "cred-1")
+    with postgres.begin() as conn:  # what the other replica's `opened` sends, a moment later
+        conn.execute(
+            text("SELECT pg_notify(:channel, :payload)"),
+            {"channel": wakeups.SUPERSEDE, "payload": f"{elsewhere}:{2**62}"},
+        )
     assert _until(lambda: ended == ["cred-1"])  # the bell's wait of that key is another kind
     closed()
     other()
@@ -209,3 +214,28 @@ def test_the_listener_notices_a_dead_connection(postgres: Engine) -> None:
         engine.dispose()
     assert parameters["keepalives"] == "1"
     assert parameters["keepalives_idle"] == "30"
+
+
+def test_a_newer_notice_right_after_the_commit_finds_the_wait(
+    postgres: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """c47w at #877: the wait is held before its announcement commits, so a newer wait's
+    notice arriving before `opened` has returned still ends it; else both stayed open."""
+    monkeypatch.setattr(wakeups, "_held", {})
+    digest, ended = wakeups._digest("events", "cred-2"), []
+    wakeups._announce(postgres, digest, object(), lambda: ended.append("older"))
+    ((started, _),) = wakeups._held[digest].values()
+    wakeups.supersede(f"{digest}:{started}")  # its own notice: not older, nothing ends
+    assert ended == []
+    wakeups.supersede(f"{digest}:{started + 1}")  # a newer wait elsewhere, at once
+    assert ended == ["older"]
+
+
+def test_a_failed_announcement_holds_nothing(
+    postgres: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(wakeups, "_held", {})
+    monkeypatch.setattr(wakeups, "SUPERSEDE", "")  # PostgreSQL refuses an empty channel
+    with pytest.raises(Exception, match="channel"):
+        wakeups._announce(postgres, wakeups._digest("events", "x"), object(), lambda: None)
+    assert wakeups._held == {}

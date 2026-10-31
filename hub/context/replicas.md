@@ -109,6 +109,12 @@ design:
      was rejected too.
    - **The key's hash, not the key:** the channel then carries no credential or session id, and
      every notice has the same length. The raw key was rejected for that reason.
+   A wait is held from the moment its start is read, before its notice commits, so a newer
+   wait's notice arriving in between still finds it. Only a wait that started strictly earlier
+   ends: two starts in the same microsecond end neither, where `<=` would end both, the case the
+   order exists to prevent. A notice that arrives while the listener is disconnected is lost
+   and not caught up: the older wait then stays open until its own timeout (at most 55 s), as
+   before this point existed. Catching up would need the waits in a table, which point 4 brings.
    Each opening wait costs that one transaction on PostgreSQL; SQLite and MariaDB announce nothing.
 4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(wait_id,
    listening_key, pod, opened_at)`, one row per open wait, keyed by a fresh `wait_id`, inserted

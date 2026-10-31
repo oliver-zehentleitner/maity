@@ -165,10 +165,11 @@ async def list_notifications(
         if _holding.get(session) is token:
             del _holding[session]
 
-    closed = await wakeups.opened(engine_of(request), "bell", session, taken_over)
-    _holding[session] = token
+    _holding[session] = token  # held before the announcement, which may supersede it at once
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     try:
+        closed = await wakeups.opened(engine_of(request), "bell", session, taken_over)
         # A stopping hub answers with what it has; the dashboard simply waits again.
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
@@ -183,7 +184,8 @@ async def list_notifications(
         last, _ = await _limited(request, answer)
         return JSONResponse(last)
     finally:
-        closed()
+        if closed is not None:
+            closed()
         if _holding.get(session) is token:
             del _holding[session]
 
