@@ -186,7 +186,12 @@ window.Maity = window.Maity || {};
     ask.hidden = true;
     const status = M.statusLine();
     const by = repo.confirmed_by;
-    const confirm = repo.owner_confirmed || !ctx.isOwner || ctx.me.kind !== "human" ? null : h("button", {
+    // Only the namespace owner confirms — for an organisation's project any of
+    // its owners (§11.4, §6.26) — as js/project-names.js decides a transfer.
+    const self = (ctx.members || []).find((m) => m.id === ctx.me.id);
+    const ofOrg = !!(ctx.project.owner && /^org-/.test(ctx.project.owner.id));
+    const namespaceOwner = !!ctx.project.owner && (ofOrg ? !!(self && self.org_owner) : ctx.project.owner.id === ctx.me.id);
+    const confirm = repo.owner_confirmed || !namespaceOwner || ctx.me.kind !== "human" ? null : h("button", {
       type: "button",
       onclick: async (e) => {
         e.target.disabled = true;
