@@ -64,6 +64,14 @@ window.Maity = window.Maity || {};
   }
 
   const CONTRACT_PATH = "docs/api.md";
+  const LINK_KEYS = ["issues", "wiki", "discussions", "chat"];
+  function overviewLinkLabel(k) {
+    if (k === "issues") return M.t("overview.project.link.issues");
+    if (k === "wiki") return M.t("overview.project.link.wiki");
+    if (k === "discussions") return M.t("overview.project.link.discussions");
+    if (k === "chat") return M.t("overview.project.link.chat");
+    return k;
+  }
   // A file's page on the forge at the default branch: GitHub and GitLab
   // only, whose path shapes are known; anything else gets no link.
   function contractUrl(repo) {
@@ -92,9 +100,22 @@ window.Maity = window.Maity || {};
     const admin = ctx.canAdmin || ctx.isOwner;
     const repo = p.repository && p.repository.url;
     const exp = p.keep_the_why_export;
-    const rows = [h("dt", null, M.t("overview.project.repository")),
-      h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : M.t("overview.project.no_repository"),
-        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null)];
+    const extraButtons = [];
+    LINK_KEYS.forEach((k) => {
+      const u = p.links && p.links[k] && safeUrl(p.links[k]);
+      if (u) {
+        const btn = out(u, overviewLinkLabel(k), "link-" + k);
+        if (btn && btn.classList) {
+          btn.classList.toggle("button", true);
+          btn.classList.toggle("small", true);
+        }
+        extraButtons.push(" ", btn);
+      }
+    });
+    const repoDd = repo
+      ? [out(repo, String(repo).replace(/^https:\/\//, ""), "repo"), ...extraButtons]
+      : [M.t("overview.project.no_repository"), ...extraButtons, !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null];
+    const rows = [h("dt", null, M.t("overview.project.repository")), h("dd", null, ...repoDd)];
     rows.push(h("dt", null, M.t("overview.project.state")), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, M.t("overview.project.policy")), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's

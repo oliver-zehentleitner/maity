@@ -2750,6 +2750,12 @@ window.MAITY_FIXTURES = {
         }
       }
     },
+    "links": {
+      "chat": null,
+      "discussions": null,
+      "issues": null,
+      "wiki": null
+    },
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",
@@ -5393,6 +5399,12 @@ window.MAITY_FIXTURES = {
     "full_name": "maintainer/sample",
     "id": "prj-sample000001",
     "keep_the_why_export": null,
+    "links": {
+      "chat": null,
+      "discussions": null,
+      "issues": null,
+      "wiki": null
+    },
     "logo": {
       "available": false,
       "source": null

@@ -15,6 +15,12 @@
     "forge": "github",
     "probe_configured": false
   },
+  "links": {
+    "issues": null,
+    "wiki": null,
+    "discussions": null,
+    "chat": null
+  },
   "memory": { "provider": "none" },
   "setup": { "keep_the_why_init": false, "keep_the_why_badge": false, "maity_badge": false, "cards": [] },
   "policy": {

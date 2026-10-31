@@ -29,6 +29,7 @@ from maity_hub import (
     orgs,
     placements,
     policy,
+    project_links,
     project_names,
     public_pages,
     public_projects,
@@ -175,6 +176,7 @@ class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
+    links: Any = None
     memory: MemoryIn | None = None
     setup: Any = None
     state: str | None = None
@@ -671,6 +673,12 @@ def patch_project(
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
                 values["repository_public"] = None  # the forge has not said anything of this one
+        links_changed = False
+        if "links" in given:
+            merged_links = project_links.checked(body.links, project.links)
+            if merged_links != (project.links or {}):
+                values["links"] = merged_links or None
+                links_changed = True
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -753,6 +761,16 @@ def patch_project(
                 "project_updated",
                 BROADCAST,
                 {"fields": settings_changed},
+                actor=actor,
+                subject=("project", namespace.full_name(conn, project)),
+            )
+        if links_changed:
+            emit(
+                conn,
+                project.id,
+                "project_updated",
+                BROADCAST,
+                {"fields": ["links"]},
                 actor=actor,
                 subject=("project", namespace.full_name(conn, project)),
             )
@@ -902,7 +920,10 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
-        if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
+        if (
+            given & {"public_page", "public_about", "name", "slug", "state", "repository"}
+            or links_changed
+        ):
             # What the page shows, or whether it exists, changed: at once (§16.9).
             public_pages.touch(conn, public_projects.KIND, project.id)
         return idempotency.Outcome(
