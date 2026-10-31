@@ -146,3 +146,47 @@ def test_a_spread_wake_reaches_every_waiter_within_the_spread() -> None:
         return [bool(w) for w in woken]
 
     assert asyncio.run(waiting()) == [True, True, True]
+
+
+# --- superseding a wait across replicas (point 3) ------------------------------------------
+
+
+def test_a_newer_wait_on_another_replica_supersedes_this_one(
+    postgres: Engine, listener: wakeups.Listener, heard: list[tuple[str, int]]
+) -> None:
+    ended: list[str] = []
+    closed = asyncio.run(
+        wakeups.opened(postgres, "events", "cred-1", lambda: ended.append("cred-1"))
+    )
+    other = asyncio.run(wakeups.opened(postgres, "bell", "cred-1", lambda: ended.append("bell")))
+    _notify(postgres, "prj-marker:1")  # after both announcements, in commit order
+    assert _until(lambda: ("prj-marker", 1) in heard)
+    assert ended == []  # its own announcement ends nothing
+    wakeups._announce(postgres, wakeups._digest("events", "cred-1"))  # the other replica
+    assert _until(lambda: ended == ["cred-1"])  # the bell's wait of that key is another kind
+    closed()
+    other()
+
+
+def test_only_a_wait_that_started_earlier_is_superseded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two waits opening at almost the same moment on two replicas: each announcement may
+    arrive after the other wait opened; only the older one ends, never both."""
+    monkeypatch.setattr(wakeups, "_held", {})
+    digest = wakeups._digest("events", "cred-1")
+    ended: list[str] = []
+    wakeups._held[digest] = {
+        object(): (100, lambda: ended.append("older")),
+        object(): (300, lambda: ended.append("newer")),
+    }
+    wakeups.supersede(f"{digest}:200")
+    wakeups.supersede(f"{digest}:200")  # told twice: ended once
+    wakeups.supersede("not a notice")
+    assert ended == ["older"]
+
+
+def test_a_wait_without_postgresql_announces_nothing(migrated: Engine) -> None:
+    if migrated.dialect.name == "postgresql":
+        pytest.skip("the announcement is PostgreSQL's")
+    closed = asyncio.run(wakeups.opened(migrated, "events", "cred-1", lambda: None))
+    assert wakeups._held == {}
+    closed()

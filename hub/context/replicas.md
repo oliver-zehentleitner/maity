@@ -68,7 +68,7 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; points 3 to 5 have cards of their own (tsk-ywss353vk5q2, tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; points 4 and 5 have cards of their own (tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -88,14 +88,26 @@ design:
    event. The waiters re-read spread over a random 0–2 s, not all at once: a pod holding 10 000
    waits must not send 10 000 reads in the same instant. The 2-second fallback stays as the safety net and
    can be raised to about 10 s once the load test shows the listener reliable.
-3. **Superseding across pods:** a new long-poll of a key (`credential_id`, `session:<cookie>`,
-   runner key) sends `pg_notify('maity_supersede', key || ':' || token)` when it starts; a pod
-   holding an older wait of that key ends it with `superseded`. The rule of §8.3, "the wait that
+3. **Superseding across pods:** a new long-poll of a key (`credential_id`, `session:<id_hash>`,
+   runner key) announces itself when it opens, in a short transaction of its own:
+   `pg_notify('maity_supersede', '<sha256 of kind:key>:<start>')`, the start read from the
+   database's `clock_timestamp()` in microseconds (`wakeups.opened`). A pod holding a wait of that
+   kind and key that started earlier ends it with `superseded`; a wait that started later, or the
+   announcing wait itself when its own notice comes back, stays. The rule of §8.3, "the wait that
    took over owns what came in", holds again across pods. The bell's and the device codes' own
    "newer wait supersedes" maps (`routes/notifications._holding`, `routes/device_codes._holding`)
-   move onto the same channel. A closing wait removes only what it owns: its own `wait_id`
-   (point 4), never the row or the holder entry of the wait that superseded it, as
-   `longpoll.Registry` already checks today in the one process.
+   use the same channel, each as a kind of its own (`bell`, `device`, `events` for agents and
+   runners). A closing wait removes only what it owns: its own `wait_id` (point 4), never the row
+   or the holder entry of the wait that superseded it, as `longpoll.Registry` already checks in
+   the one process. Built with two departures from the first wording, `key || ':' || token`:
+   - **The start on the database clock, not a token:** with a token alone, two waits of one key
+     opening almost together on two pods can each receive the other's notice after opening, and
+     both end, leaving the client without a wait. The order decides instead, read from the one
+     clock every pod shares; the pods' own clocks differ, so a start each pod reads for itself
+     was rejected too.
+   - **The key's hash, not the key:** the channel then carries no credential or session id, and
+     every notice has the same length. The raw key was rejected for that reason.
+   Each opening wait costs that one transaction on PostgreSQL; SQLite and MariaDB announce nothing.
 4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(wait_id,
    listening_key, pod, opened_at)`, one row per open wait, keyed by a fresh `wait_id`, inserted
    when a wait opens and deleted by that `wait_id` when it closes, so two waits of one key (today

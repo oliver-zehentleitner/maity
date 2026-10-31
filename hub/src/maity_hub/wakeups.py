@@ -3,19 +3,25 @@
 `events.emit` adds `pg_notify('maity_events', '<project_id>:<seq>')` to the writing transaction;
 PostgreSQL delivers it at commit. Each process holds one connection outside the pool that runs
 `LISTEN maity_events` in a thread and hands every wake-up to the notifier, as a commit in this
-process does, so a long-poll on one replica wakes when another writes. When that connection
-drops, every waiter reads once (spread over `RESPREAD_SECONDS`), since what was announced
-meanwhile is lost, and the listener connects again with a growing pause. The long-poll's
-2-second fallback read stays as the safety net. SQLite and MariaDB run one replica and have
-no listener.
+process does, so a long-poll on one replica wakes when another writes. The same connection
+listens on `maity_supersede`: a wait that opens announces itself there (`opened`), and a replica
+holding an older wait of the same key ends it as superseded (§8.3, point 3 of 387c2409).
+When that connection drops, every waiter reads once (spread over `RESPREAD_SECONDS`), since
+what was announced meanwhile is lost, and the listener connects again with a growing pause.
+The long-poll's 2-second fallback read stays as the safety net. SQLite and MariaDB run one
+replica and have no listener.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, func, select
+from starlette.concurrency import run_in_threadpool
 
 from maity_hub import events, longpoll
 from maity_hub.db import make_listener_engine
@@ -25,6 +31,72 @@ log = logging.getLogger(__name__)
 POLL_SECONDS = 1.0  # how often the listening thread looks whether it should stop
 RESPREAD_SECONDS = 2.0  # the waiters' reads after a lost connection, spread over this
 BACKOFF_FIRST, BACKOFF_MAX = 1.0, 30.0  # the pause before connecting again, doubling
+SUPERSEDE = "maity_supersede"  # `<sha256 of kind:key>:<start in µs on the database clock>`
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+# The waits this process holds, by the hash of their kind and key: per wait its start on the
+# database clock and what ends it.
+_held: dict[str, dict[object, tuple[int, Callable[[], None]]]] = {}
+_held_lock = threading.Lock()
+
+
+def _digest(kind: str, key: str) -> str:
+    """Only the hash goes through the channel, never a credential or session id."""
+    return hashlib.sha256(f"{kind}:{key}".encode()).hexdigest()
+
+
+def _announce(engine: Engine, digest: str) -> int:
+    """Tell every replica a wait opens now; its start, read from the database's clock, which
+    every replica shares, unlike their own."""
+    with engine.begin() as conn:
+        now = conn.execute(select(func.clock_timestamp())).scalar_one()
+        started = (now - _EPOCH) // timedelta(microseconds=1)
+        conn.execute(select(func.pg_notify(SUPERSEDE, f"{digest}:{started}")))
+    return int(started)
+
+
+async def opened(
+    engine: Engine, kind: str, key: str, on_superseded: Callable[[], None]
+) -> Callable[[], None]:
+    """A wait of `kind` and `key` opens: on PostgreSQL announce it, and end it with
+    `on_superseded` when a newer one of the same key opens on another replica. Returns what
+    the wait calls when it closes. Superseding inside the process stays the caller's."""
+    if engine.dialect.name != "postgresql":
+        return lambda: None
+    digest = _digest(kind, key)
+    started = await run_in_threadpool(_announce, engine, digest)
+    token = object()
+    with _held_lock:
+        _held.setdefault(digest, {})[token] = (started, on_superseded)
+
+    def closed() -> None:
+        with _held_lock:
+            waits = _held.get(digest)
+            if waits is not None:
+                waits.pop(token, None)
+                if not waits:
+                    del _held[digest]
+
+    return closed
+
+
+def supersede(payload: str) -> None:
+    """A wait opened somewhere: every wait of the same key here that started before it ends.
+    This process's own announcement comes back too and ends nothing (it is not older)."""
+    digest, _, started = payload.rpartition(":")
+    if not digest or not started.isdigit():
+        log.warning("a supersede notice that is not <hash>:<start> was ignored")
+        return
+    with _held_lock:
+        older = [
+            (token, end)
+            for token, (begun, end) in _held.get(digest, {}).items()
+            if begun < int(started)
+        ]
+        for token, _ in older:
+            _held[digest].pop(token, None)
+    for _, end in older:
+        end()
 
 
 def handle(payload: str) -> None:
@@ -75,12 +147,16 @@ class Listener:
                 raise RuntimeError("the listener's connection has no driver connection")
             conn.autocommit = True
             conn.execute(f"LISTEN {events.CHANNEL}")
+            conn.execute(f"LISTEN {SUPERSEDE}")
             self.listening.set()
             if catch_up:
                 # What was announced while nobody listened is lost: every waiter reads once.
                 longpoll.registry.wake_all(spread=RESPREAD_SECONDS)
             while not self._stop.is_set():
                 for note in conn.notifies(timeout=POLL_SECONDS):
-                    handle(note.payload)
+                    if note.channel == SUPERSEDE:
+                        supersede(note.payload)
+                    else:
+                        handle(note.payload)
         finally:
             raw.close()
