@@ -525,6 +525,9 @@ def member_views(
         if human_ids
         else {}
     )
+    from maity_hub import bridges  # it builds member views itself
+
+    bridged = bridges.views(conn, [r.id for r in rows if r.agent_id is not None])
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
@@ -660,6 +663,8 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # The agents that lend it their hands and those it lends them to (§2.3).
+            view.update(bridged.get(row.id, {"bridges": [], "bridging_for": []}))
             # Whose work this agent continues and where the hand-over is, never a text (§3.1).
             view["takes_over"] = row.takes_over
             view["handover"] = row.handover

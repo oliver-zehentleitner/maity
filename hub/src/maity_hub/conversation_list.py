@@ -359,6 +359,9 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
     if not found:
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
+    carried = group_chats.carriers(
+        conn, {s.membership_id for _, chat in found for s in stays[chat]}
+    )
     windows = _windows(conn, by_project, found, stays)
     lasts = _latest(conn, windows, by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
@@ -376,7 +379,9 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "kind": "group",
                 "title": group.title,
                 "participants": [short(people[s.membership_id]) for s in current],
-                "observers": group_chats.observers_of(current, owners_of),
+                "observers": group_chats.shown_observers(
+                    current, group_chats.observers_of(current, owners_of), carried
+                ),
                 "access": access,
                 "closed_at": ts(group.closed_at),
                 "last_message_at": ts(last.at) if last is not None else None,
