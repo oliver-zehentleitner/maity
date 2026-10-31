@@ -68,13 +68,28 @@ def test_the_line_follows_the_answer_not_the_request(
     assert capsys.readouterr().out == "awake\n"
 
 
-def test_without_an_instance_entry_the_request_and_the_handle_say_it(
-    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("stored", "answer"),
+    [
+        ("wqe2", {"handle": "agent-b"}),  # an answer without this instance's entry
+        (None, _member(ASLEEP)),  # no instance id stored: no entry is this instance's
+    ],
+)
+def test_without_its_own_entry_no_state_and_no_address_is_printed(
+    stored: str | None,
+    answer: dict[str, Any],
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    _instance(joined)
-    fake.routes[("PATCH", ME)] = lambda seen: (200, {"handle": "agent-b"})
-    assert cli.main(["dormant"]) == cli.EXIT_OK
-    assert capsys.readouterr().out == "dormant: only @agent-b#wqe2 wakes this instance\n"
+    """The member address does not wake a dormant instance, so it is never printed as if."""
+    if stored:
+        _instance(joined, stored)
+    fake.routes[("PATCH", ME)] = lambda seen: (200, answer)
+    assert cli.main(["dormant"]) == cli.EXIT_OK  # the hub stored it; the call did not fail
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert "the hub's answer does not show this instance; run `maity resume`" in err
 
 
 def test_json_prints_the_answer(

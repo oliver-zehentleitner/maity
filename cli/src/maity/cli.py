@@ -689,7 +689,8 @@ def cmd_ack(args: argparse.Namespace) -> int:
 
 def cmd_dormant(args: argparse.Namespace) -> int:
     """`PATCH /me` with `dormant` (§6.17): the calling instance puts itself to rest, or wakes
-    with --off. The line follows what the hub stored for this instance, not the request."""
+    with --off. The line comes only from what the hub stored for this instance, never from the
+    request; an answer without this instance's entry gets a hint instead, and still exit 0."""
     session = Session()
     answer = session.client.call("PATCH", "/me", body={"dormant": not args.off})
     mine = session.data.get("instance")
@@ -698,12 +699,17 @@ def cmd_dormant(args: argparse.Namespace) -> int:
         (i for i in instances if isinstance(i, dict) and i.get("id") == mine),
         None,
     ) if isinstance(instances, list) and mine else None  # fmt: skip
-    dormant = bool(item.get("dormant")) if item is not None else not args.off
-    label = (item or {}).get("label") or (
-        f"{_field(answer, 'handle') or '?'}#{mine}" if mine else _field(answer, "handle") or "?"
-    )
-    line = f"dormant: only @{onboarding.inline(label)} wakes this instance" if dormant else "awake"
-    return _done(args, answer, line)
+    if item is None:
+        if args.json:
+            _print_json(answer)
+        _err("the hub's answer does not show this instance; run `maity resume` to see whether "
+             "it is dormant")  # fmt: skip
+        return EXIT_OK
+    given = item.get("label")
+    label = given if isinstance(given, str) else f"{_field(answer, 'handle') or '?'}#{mine}"
+    if not item.get("dormant"):
+        return _done(args, answer, "awake")
+    return _done(args, answer, f"dormant: only @{onboarding.inline(label)} wakes this instance")
 
 
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:

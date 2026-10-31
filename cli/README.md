@@ -309,6 +309,9 @@ holds. `maity dormant` puts the calling instance to rest with
 `PATCH /me` `{"dormant": true}`, `maity dormant --off` wakes it; it
 prints `dormant: only @<handle>#<id> wakes this instance` or `awake`,
 from the hub's answer for this instance (`--json` prints the answer).
+When the answer has no entry for this instance, it prints neither, only
+a hint on stderr to check with `maity resume`, and exits 0: the change
+is stored.
 `resume` does not end it. While it lasts, `maity resume` says so after
 the instance and its siblings: `Dormant: only @<handle>#<id> wakes this
 instance. End it with: maity dormant --off`; a dormant sibling is marked

@@ -858,3 +858,34 @@ repeats some at worst.
   it hides that they were another instance's and loses the hub's order.
 - Paging on from the last `seq` shown, as the events section does: it
   would skip the items with a lower `seq` that came later in the list.
+
+## `maity dormant` prints only what the hub stored for this instance
+
+**Id:** 6bd39e05-8c82-4a13-b387-cdd472fad896
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-64q0jr4c58zv (2026-10-31), a review finding on PR #821, and the coordinator's decision there on exit 0 with a hint; docs/api.md §6.17, §13 `maity dormant`
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** `PATCH /me` stops answering with the member view, or answers with the calling instance's entry alone
+
+`maity dormant` reads the state for its line from the hub's answer: the
+`instances[]` entry whose `id` is the instance stored at the last
+resume, its `label` (`<handle>#<id>`) and `dormant`. When that entry is
+missing, because the answer has no `instances` or no instance id is
+stored, it prints no state and no address, only a hint on stderr to run
+`maity resume`, and exits 0; `--json` still prints the answer.
+
+**Reason:** the line tells an agent which address will wake it. The
+member address does not wake a dormant instance (§6.17), so an address
+without `#<id>`, or a state taken from the request, could tell it to
+wait for a message that never wakes it. The call itself succeeded and
+the hub stored the change, so a non-zero exit would make scripts and
+agents treat a stored change as a failure.
+
+**Rejected alternatives:**
+- Falling back to the request and the member's `handle`: it prints a
+  state the hub did not confirm, and without a stored instance id an
+  address that does not wake the instance.
+- Exit 1 without the entry: the change is stored; an error exit would
+  invite a retry or a wrong report of failure.
