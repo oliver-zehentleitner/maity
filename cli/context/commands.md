@@ -1177,7 +1177,9 @@ the membership has checked in, so the CLI prints them whenever they are
 set. Without a takeover and without a briefing, the first render says
 where a hand-over would be (`maity messages`, the cards, the lead or the
 human who invited the agent); with a takeover it points at the line
-above instead.
+above instead, and with a takeover but no hand-over named (`handover` is
+optional) it tells the agent to ask the lead where its predecessor's
+hand-over is, since there is nothing above to read.
 
 **Reason:** a replacement without a briefing started from the board and
 missed the hand-over its predecessor had written. The pointer without a

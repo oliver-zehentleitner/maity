@@ -843,12 +843,18 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             "",
         ]
     elif first:
-        # A link does not say yet whom it replaces (tsk-f32nnh1de7gn): point at where a
-        # handover would be, so a replacement does not start blind.
+        # Without a briefing, point at the hand-over: the one the join named, or where one
+        # would be when the join named no takeover, so a replacement does not start blind.
         lead = ms.get("reports_to")
         ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
-        if isinstance(ms.get("takes_over"), dict):
+        takes_over = ms.get("takes_over")
+        if isinstance(takes_over, dict) and ms.get("handover"):
             line = f"No briefing was given with this join: read the hand-over above and {ask}."
+        elif isinstance(takes_over, dict):
+            line = (
+                f"No briefing was given with this join and no hand-over named: {ask} where the "
+                f"hand-over of @{label(takes_over)} is before you take work."
+            )
         else:
             line = (
                 "No briefing was given with this join. If you replace someone, look for the "
