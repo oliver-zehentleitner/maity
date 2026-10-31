@@ -51,8 +51,10 @@ window.Maity = window.Maity || {};
     if (t0.type === "settings") return "/account/notifications";
     // Agent instances not listening (agents_not_listening, §5.3): one's agents.
     if (t0.type === "agents") return "/agents";
-    // A registration waiting for the instance admin (§16.4): Admin.
-    if (t0.type === "registration") return "/admin";
+    // A registration waiting for the instance admin (§16.4): Admin → Registration;
+    // a new abuse report (§16.8): Admin → Reports with that report opened.
+    if (t0.type === "registration") return "/admin/registration";
+    if (t0.type === "report") return "/admin/reports/" + encodeURIComponent(t0.id);
     const full = item.project && item.project.full_name;
     if (!full || item.project.member === false) return "/all";
     const base = "/" + M.api.projectPath(full) + "/";

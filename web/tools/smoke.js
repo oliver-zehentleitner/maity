@@ -6262,7 +6262,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const bellItem = (title) => bellPanel().querySelectorAll(".bell-items li").find((li) => text(li).includes(title));
   const bellLinks = bellPanel().querySelectorAll(".bell-items a").map((a) => a.getAttribute("href"));
   expect(!bellPanel().hidden && bellBtn().getAttribute("aria-expanded") === "true"
-    && JSON.stringify(bellLinks) === JSON.stringify(["#/admin", "#/account/sessions", "#/maintainer/maity/tasks/tsk-0004", "#/maintainer/maity/chat/agt-a", "#/all", "#/maintainer/sample/inbox/req-s001"])
+    && JSON.stringify(bellLinks) === JSON.stringify(["#/admin/registration", "#/account/sessions", "#/maintainer/maity/tasks/tsk-0004", "#/maintainer/maity/chat/agt-a", "#/all", "#/maintainer/sample/inbox/req-s001"])
     && bellPanel().querySelectorAll(".bell-items li.unread").length === 5 && text(bellPanel()).includes("Mentions 1"),
     "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked");
   // Escape closes it with the focus still on the bell.
@@ -7074,10 +7074,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "notifications: the sign-in alert's Mark read sends its id " + JSON.stringify(waitWrites));
   // The chat item marked in place: the row stays, read, its button gone; the pages read so far stay.
   const waitBefore = waitItems().length;
+  const wfProto = Object.getPrototypeOf(main), wfFocus = wfProto.focus;
+  wfProto.focus = function () { document.activeElement = this; };
   waitMark("ntf-4237").click(); for (let k = 0; k < 8; k++) await tick();
+  wfProto.focus = wfFocus;
   expect(JSON.stringify(waitWrites[2]) === JSON.stringify({ ids: ["ntf-4237"] }) && waitRow("ntf-4237").classList.contains("read")
     && !text(waitRow("ntf-4237")).includes("(unread)") && !waitMark("ntf-4237") && waitItems().length === waitBefore,
     "notifications: Mark read marks the row in place, its button and its (unread) gone, the list kept " + JSON.stringify(waitWrites));
+  // The button is gone, so the focus goes to the row's link, not to the page.
+  expect(document.activeElement === waitRow("ntf-4237").querySelector("a"), "notifications: after Mark read the focus is on the row's link");
+  document.activeElement = undefined;
   // From the reported session itself the alert is not offered.
   waitCurrent = "hss-41d2"; waitWrites.length = 1;
   await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
@@ -7439,6 +7445,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(rpItems()) === JSON.stringify(["rpt-0003", "rpt-0001"]) && rpOpen() && btn(rpOpen(), "Resolve again"),
     "reports: the resolved ones listed, one resolved again to replace its action");
   win.Maity.api.post = rpPost; win.confirm = rpConfirm;
+  // A report_open notification leads to /admin/reports/<id>: Reports shown, that report opened (§16.8, §18.2).
+  expect(win.Maity.notify.linkOf({ kind: "inbox", target: { type: "report", id: "rpt-0002" }, project: null }) === "/admin/reports/rpt-0002"
+    && win.Maity.notify.linkOf({ kind: "inbox", target: { type: "registration", id: "hum-x" }, project: null }) === "/admin/registration",
+    "reports: a new report's notification links to it in Admin → Reports, a registration's to Admin → Registration");
+  await go("#/admin/reports/rpt-0002"); for (let k = 0; k < 10; k++) await tick();
+  expect(rpSection() && !rpSection().hidden && rpOpen() && text(rpOpen()).includes("Spam")
+    && main.querySelectorAll("nav.admin-nav button").find((b) => b.textContent === "Reports").getAttribute("aria-pressed") === "true",
+    "reports: /admin/reports/<id> opens the Reports section with that report");
+  await go("#/admin/registration"); for (let k = 0; k < 6; k++) await tick();
+  const regShown = main.querySelectorAll(".admin-section").find((x) => !x.hidden);
+  expect(regShown && regShown.getAttribute("aria-label") === "Registration", "admin: /admin/registration opens the Registration section");
+  await go("#/admin/reports/rpt-0002/more"); await tick();
+  expect(text(main).includes("No such view"), "admin: no deeper address under /admin/reports/<id>");
+  await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
   // Limits per person (§16.5, tsk-d4ppa9jsj0d7): each value with its source, the people at it; only what changed is sent.
   const lmPatches = [];
   const lmPatch = win.Maity.api.patch;

@@ -119,6 +119,10 @@ window.Maity = window.Maity || {};
     if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
+    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened.
+    if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3])) {
+      return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
+    }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -1547,7 +1551,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "orgs") {
         await M.views.orgs(ctx, root, where.args);
       } else if (where.scope === "instance-admin") {
-        await M.views.instanceAdmin(ctx, root);
+        await M.views.instanceAdmin(ctx, root, where);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
       } else if (where.scope === "agents") {
