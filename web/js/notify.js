@@ -168,7 +168,7 @@ window.Maity = window.Maity || {};
               },
             }, x.redacted ? M.t("bell.removed") : x.title),
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
-            x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
+            x.read ? null : h("span", { class: "visually-hidden" }, " ", M.t("bell.item.unread")))))
           : h("p", { class: "muted" }, M.t("bell.none")),
         h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, M.t("bell.all")), " · ",
           h("a", { href: "/account/notifications", onclick: () => close(false) }, M.t("bell.settings"))),

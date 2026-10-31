@@ -23,11 +23,15 @@ window.Maity = window.Maity || {};
   function duration(s) {
     if (s === null || s === undefined) return "–";
     const min = Math.round(s / 60);
-    if (min < 60) return M.t("swarm.duration.min", { min });
+    // Each unit counts with its own plural forms; two units stand in the
+    // order the catalog gives them.
+    const mins = (count) => M.t("swarm.duration.min", { count });
+    const hrs = (count) => M.t("swarm.duration.h", { count });
+    if (min < 60) return mins(min);
     const hours = Math.floor(min / 60);
-    if (hours < 48) return min % 60 ? M.t("swarm.duration.h_min", { h: hours, min: min % 60 }) : M.t("swarm.duration.h", { h: hours });
-    const days = Math.floor(hours / 24);
-    return hours % 24 ? M.t("swarm.duration.d_h", { d: days, h: hours % 24 }) : M.t("swarm.duration.d", { d: days });
+    if (hours < 48) return min % 60 ? M.t("swarm.duration.h_min", { h: hrs(hours), min: mins(min % 60) }) : hrs(hours);
+    const days = M.t("swarm.duration.d", { count: Math.floor(hours / 24) });
+    return hours % 24 ? M.t("swarm.duration.d_h", { d: days, h: hrs(hours % 24) }) : days;
   }
 
   // The cards done per day as a small line, oldest left. Decorative: the

@@ -2398,8 +2398,10 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
     expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
     expect(page.locator("#ktw-policy-select")).to_be_enabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("required")
     shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
-    assert shown["memory"]["provider"] == "keep-the-why", shown
+    # Nobody set the commitment in e2e-alpha: back under Keep the Why it reads required (§6.23).
+    assert shown["memory"]["provider"] == "keep-the-why" and shown["policy"]["keep_the_why"] == "required", shown
     run.a11y(page, "project settings, memory")
     no_problems(run, "memory provider")
 
