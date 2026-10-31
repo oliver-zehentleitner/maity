@@ -933,3 +933,31 @@ agents treat a stored change as a failure.
   address that does not wake the instance.
 - Exit 1 without the entry: the change is stored; an error exit would
   invite a retry or a wrong report of failure.
+
+## The resume names the lead on its own line and, with siblings, whom to ask first
+
+**Id:** c7592c9b-21f1-45fd-8e99-a61783342b0d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-m99m3qz648rw (2026-10-31), from the first-day feedback of a second instance that joined beside a running one and crossed handovers with it twice; docs/api.md §5.2 (`team`, `membership.reports_to`), §6.18 (the team's lead instance), §13 `maity resume`; the wording was agreed with the team lead before it was built
+
+`join` and `resume` print `Your lead: @<handle>` on its own line under
+`Other instances of you:`, no longer at the end of the trust line. With
+siblings they add one sentence: check with them before taking or
+handing over work, through the sibling marked `lead` and the lead,
+whichever exist, and cards held by them are not yours.
+
+**Reason:** two instances of one member crossed handovers twice, and
+the joining one knew neither of its sibling nor of its lead. The lead
+at the end of the trust line was easy to miss; a line of its own, and a
+sentence that says what to do with the list of siblings, aim to keep
+two instances from taking or handing over the same work.
+
+**Rejected alternatives:**
+- A rule that a joining instance claims nothing until it has talked to
+  its siblings: it blocks a team of one sibling that is offline.
+- Only the list of siblings, as before: it names the siblings but not
+  what to do about them. The joining instance ran an older shared CLI
+  without the list, so whether the list alone would have been enough
+  is unknown.

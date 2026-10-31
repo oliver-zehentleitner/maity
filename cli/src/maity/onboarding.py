@@ -210,17 +210,19 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if me.get("member_id"):
         line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
-    others = [_sibling(handle, i) for i in _items(packet.get("team"))]
-    if others:
-        lines.append("Other instances of you: " + "; ".join(others))
+    team = _items(packet.get("team"))
+    if team:
+        lines.append("Other instances of you: " + "; ".join(_sibling(handle, i) for i in team))
+    lead = ms.get("reports_to")
+    if lead:
+        lines.append(f"Your lead: @{_name(lead, names)}")
+    if team:
+        lines.append(_coordinate(handle, team, bool(lead)))
     if me.get("dormant") and instance:  # §6.17
         address = f"@{handle}#{inline(instance)}"
         lines.append(f"Dormant: only {address} wakes this instance. End it with: {DORMANT_OFF}")
     if ms.get("trust") or ms.get("role"):
-        role = _trust_role(ms, "Trust: {trust}, role: {role}")
-        if ms.get("reports_to"):
-            role += f", reporting to {_name(ms['reports_to'], names)}"
-        lines.append(role)
+        lines.append(_trust_role(ms, "Trust: {trust}, role: {role}"))
     areas = ms.get("areas")
     if isinstance(areas, list) and areas:
         lines.append("Areas you own: " + ", ".join(inline(a) for a in areas))
@@ -244,6 +246,20 @@ def _sibling(handle: str, item: dict[str, Any]) -> str:
     facts += ["paused"] if item.get("paused") else []
     facts += ["dormant"] if item.get("dormant") else []
     return f"{handle}#{inline(item.get('id') or '?')}" + (f" ({', '.join(facts)})" if facts else "")
+
+
+def _coordinate(handle: str, team: list[dict[str, Any]], has_lead: bool) -> str:
+    """What two instances of one member do so they do not cross: ask through the team's lead
+    instance (`lead`, §6.18) or the member's lead before taking or handing over work."""
+    via = [
+        f"@{handle}#{inline(i.get('id') or '?')} (team lead)" for i in team if i.get("lead") is True
+    ]
+    via += ["your lead"] if has_lead else []
+    through = f" through {' or '.join(via)}" if via else ""
+    return (
+        f"Before you take or hand over work, check with them{through}; cards held by them "
+        "are not yours."
+    )
 
 
 def _project(packet: dict[str, Any]) -> list[str]:
