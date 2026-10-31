@@ -206,7 +206,7 @@ def test_the_header_has_the_theme_switch_hidden_and_in_the_pages_language(
     )
     german = make_client().get("/?lang=de").text
     assert 'aria-label="Zwischen hellem und dunklem Farbschema wechseln"' in german
-    assert 'aria-label="Menschen und Agenten in drei Ringen' in german
+    assert 'aria-label="Menschen und Agents in drei Ringen' in german
 
 
 def test_the_hero_is_a_dark_zone_with_the_rings_as_inline_svg(
@@ -239,7 +239,10 @@ def test_the_demo_has_every_line_the_inbox_item_and_the_steps_in_the_html(
     assert re.search(
         r'<div class="inbox-item card d5" data-lp-inbox>.*Merge it\?.*CI is green\.', html
     )
-    assert 'class="yes" aria-hidden="true">Approve</span>' in html
+    assert (
+        '<span class="yes">Yes</span><span class="no">No</span><span class="reply">Reply</span>'
+        in html
+    )
     assert [m for m in re.findall(r'<li class="step (s\d)">', html)] == ["s1", "s2", "s3"]
     assert "The agent asks." in html and "One question, one answer." in html
 
@@ -294,12 +297,12 @@ def test_the_faq_is_details_and_the_band_carries_the_loader(
     )
 
 
-def test_a_counter_is_its_number_for_the_script_and_a_floor_stays_text(
+def test_a_counter_is_its_number_for_the_script_and_a_floor_is_left_out(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     html = page(owner, make_client, SECTIONS[1])
     assert re.search(r'<b><span data-lp-count>1</span></b><span class="label">People</span>', html)
-    assert re.search(r'<b>&lt; 5</b><span class="label">People online</span>', html)
+    assert "People online" not in html and "&lt; 5" not in html  # a floor is left out (§16.7)
 
 
 def test_an_operators_words_are_escaped_in_every_new_section(

@@ -309,3 +309,64 @@ both set a password).
   (reason inferred). The device code was a close call, since its
   approval already comes from a signed-in device; the maintainer
   accepted asking after it too.
+
+## An instance may make mail the second factor for everyone; then the sign-in link is off as a first factor
+
+**Id:** 04a233ef-5d92-43f3-a3b6-0421171027f8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on 2026-10-31 (a magic link by mail after every sign-in, switched on in the instance settings) and his go the same day on five proposed defaults; contract in `docs/api.md` §2.8.8
+**Revisit when:** passkeys arrive and could replace mail as the factor for everyone, or mail outages lock humans out in practice
+**See:** sign-in.md#a-second-factor-for-humans-starts-with-totp-and-recovery-codes-asked-after-every-first-factor-passkeys-come-later — 3ec96221-b8f8-49d4-951f-9cbc9fc39d91 — as of 2026-10-31
+
+The setting `second_factor: email` asks every human for a second factor
+at every sign-in without anyone enrolling: after the password or the
+device code, the hub mails a link and a six-digit code to the verified
+address, and only that completes the session. The five defaults, all
+confirmed: every new session of every human; TOTP where enrolled
+instead of mail; sign-in links by mail off as a first factor while it
+holds; step-up by a code by mail for humans without TOTP; switchable
+only with complete mail settings and a mail that arrived, with TOTP
+and the environment as the way back in when mail fails.
+
+**Reason:** TOTP protects only those who enrol; the maintainer wants a
+factor for everyone on an instance without asking each human to set up
+an app. Mail is what every account already has, verified at
+registration. Turning the sign-in link off is what answers the earlier
+entry's objection to a code by mail (both factors would be the same
+mailbox): with the link off, the first factor is always the password or
+a device approved on a signed-in device. The rest of the shape is this
+contract's reading: the link works only in the browser that did the
+first factor, so whoever holds the password cannot get the human to
+complete the attacker's sign-in with a click; the switch-on mails the
+admin a code, because a server accepting a test mail (§16.3) does not
+show that mails arrive; a mail outage fails closed rather than falling
+back to no factor.
+
+**Rejected alternatives:**
+- Mail as the second factor with the sign-in link left on: for a mail
+  sign-in both factors would be one mailbox (the earlier entry's
+  objection); proposed as rule 3 and confirmed.
+- Mail instead of TOTP for everyone: TOTP is the stronger factor (an
+  agent reading the mailbox cannot read the app); proposed as rule 2
+  and confirmed.
+- A link that confirms the sign-in from any device, as a device-code
+  approval does: one careless click on a phone would complete a sign-in
+  started by whoever holds the password (this contract's reading).
+- Falling back to no second factor while mail is down: silently weaker
+  than the setting promises (this contract's reading).
+- The mail factor giving good standing: it is the mailbox, which good
+  standing exists to distrust (§2.6.5; this contract's reading).
+- Enrolling TOTP on the first factor alone when a verified address is
+  lost (bounced to `disabled`, or removed): whoever holds the password
+  would install their own TOTP exactly where the mail was the factor.
+  Such an account fails closed and the operator lets it enrol once; only
+  an account that never had a verified address enrols on the first
+  factor, an accepted risk as under `required_admins` (this contract's
+  reading, after review).
+- `MAITY_SIGN_IN_SECOND_FACTOR=email` taking effect while the mail
+  settings are incomplete: it would lock out every human without TOTP,
+  the admins included; the hub refuses to start with that combination
+  instead (this contract's reading, after review).
+

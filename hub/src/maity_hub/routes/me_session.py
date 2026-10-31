@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, StrictBool
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, func, insert, literal, select, update
 
 from maity_hub import (
     API_VERSION,
@@ -219,7 +219,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             .where(t.credential.c.id == caller.credential_id)
             .values(
                 last_used_at=now,
-                resumed_at=func.coalesce(t.credential.c.resumed_at, now),
+                resumed_at=func.coalesce(
+                    t.credential.c.resumed_at, literal(now, t.credential.c.resumed_at.type)
+                ),
             )
         )
         # The instance's own pause ends with its next session too (§5.3).
@@ -554,6 +556,11 @@ def _packet(
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
+            # The dashboard address of its direct conversation with its owner, on the public
+            # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
+            "chat_url": "/".join(
+                (settings.public_url, namespace.full_name(conn, project), "chat", agent.id)
+            ),
             # Until the membership has checked in; the member view keeps them (§5.2).
             "takes_over": None if mine.row.onboarded_at else mine.row.takes_over,
             "handover": None if mine.row.onboarded_at else mine.row.handover,
