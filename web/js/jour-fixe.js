@@ -62,11 +62,12 @@ window.Maity = window.Maity || {};
     ordinal.value = String((r.month_weekday || {}).ordinal || 1);
     const monthWeekday = h("select", { id: id("month-weekday") }, WEEKDAYS.map((d) => h("option", { value: d }, DAY_WORDS[d]())));
     monthWeekday.value = (r.month_weekday || {}).weekday || "mon";
-    const time = h("input", { id: id("time"), type: "time", value: (jf && jf.time) || "" });
+    const time = h("input", { id: id("time"), type: "time" });
+    time.value = (jf && jf.time) || "";
     const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
     const zoneList = h("datalist", { id: id("zones") }, zones.map((z) => h("option", { value: z })));
-    const zone = h("input", { id: id("timezone"), list: id("zones"), autocomplete: "off", spellcheck: "false",
-      value: (jf && jf.timezone) || (Intl.DateTimeFormat().resolvedOptions().timeZone || "") });
+    const zone = h("input", { id: id("timezone"), list: id("zones"), autocomplete: "off", spellcheck: "false" });
+    zone.value = (jf && jf.timezone) || (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
     const live = (ctx.members || []).filter((x) => !x.removed_at);
     const moderator = h("select", { id: id("moderator") }, h("option", { value: "admin_agent" }, M.t("jf.moderator.admin_agent")),
       live.map((x) => h("option", { value: x.id }, "@" + (x.handle || x.id))));
@@ -81,11 +82,37 @@ window.Maity = window.Maity || {};
     const reportWin = num("report_window_hours", 1, 72, 12);
     const reason = h("input", { id: id("reason"), placeholder: M.t("jf.reason.placeholder") });
     const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
-    const weekly = h("div", { class: "jf-weekly" }, h("label", { for: id("interval") }, M.t("jf.interval")), interval,
-      h("fieldset", { class: "jf-days" }, h("legend", null, M.t("jf.weekdays")), days.map((d) => d[1])));
+    // The hub's refusals at the field each names (policy.jour_fixe.<path>, §20.1).
+    const fieldErrors = {};
+    const at = (path, input) => {
+      const e = h("p", { class: "field-error", id: id(path.replace(/\W/g, "-")) + "-error", role: "alert" });
+      fieldErrors["policy.jour_fixe." + path] = [e, input];
+      input.setAttribute("aria-describedby", e.id);
+      return e;
+    };
+    const FIELD_WORDS = { required: () => M.t("jf.field.required"), format: () => M.t("jf.field.format"), unknown_timezone: () => M.t("jf.field.unknown_timezone"),
+      not_a_member: () => M.t("jf.field.not_a_member"), out_of_range: () => M.t("jf.field.out_of_range"), one_of: () => M.t("jf.field.one_of"),
+      not_for_freq: () => M.t("jf.field.not_for_freq"), unknown: () => M.t("jf.field.unknown"), invalid: () => M.t("jf.field.invalid") };
+    function atFields(err) {
+      Object.values(fieldErrors).forEach(([e]) => { e.textContent = ""; });
+      const fields = err.code === "invalid" && err.details && err.details.fields;
+      if (!fields) return false;
+      let first = null;
+      Object.entries(fields).forEach(([path, why]) => {
+        const hit = fieldErrors[path];
+        if (!hit) return;
+        hit[0].textContent = Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why]() : why;
+        if (!first) first = hit[1];
+      });
+      if (first) first.focus();
+      return !!first;
+    }
+    const weekly = h("div", { class: "jf-weekly" }, h("label", { for: id("interval") }, M.t("jf.interval")), interval, at("recurrence.interval", interval),
+      h("fieldset", { class: "jf-days" }, h("legend", null, M.t("jf.weekdays")), days.map((d) => d[1])), at("recurrence.weekdays", days[0][0]));
     const monthly = h("div", { class: "jf-monthly" }, h("label", { for: id("month-by") }, M.t("jf.month.by")), monthBy,
-      h("label", { for: id("month-day") }, M.t("jf.month.day")), monthDay,
-      h("label", { for: id("ordinal") }, M.t("jf.month.ordinal")), ordinal, h("label", { for: id("month-weekday") }, M.t("jf.month.weekday")), monthWeekday);
+      h("label", { for: id("month-day") }, M.t("jf.month.day")), monthDay, at("recurrence.month_day", monthDay),
+      h("label", { for: id("ordinal") }, M.t("jf.month.ordinal")), ordinal, h("label", { for: id("month-weekday") }, M.t("jf.month.weekday")), monthWeekday,
+      at("recurrence.month_weekday", ordinal));
     const shape = () => {
       weekly.hidden = freq.value !== "weekly";
       monthly.hidden = freq.value !== "monthly";
@@ -114,19 +141,19 @@ window.Maity = window.Maity || {};
         if (b.enabled && (!b.time || !b.timezone)) { error.textContent = M.t("jf.error.time"); (b.time ? zone : time).focus(); return; }
         if (b.recurrence.freq === "weekly" && !b.recurrence.weekdays.length) { error.textContent = M.t("jf.error.weekdays"); days[0][0].focus(); return; }
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { jour_fixe: b }, reason: reason.value.trim() }, M.t("jf.title"));
+        save({ policy: { jour_fixe: b }, reason: reason.value.trim() }, M.t("jf.title"), atFields);
       },
     },
     h("h2", { class: "panel-title" }, M.t("jf.title")),
     h("p", { class: "hint" }, M.t("jf.settings.hint")),
     h("p", { class: "check" }, enabled, h("label", { for: id("enabled") }, " " + M.t("jf.enabled"))),
-    h("label", { for: id("freq") }, M.t("jf.freq")), freq, weekly, monthly,
-    h("label", { for: id("time") }, M.t("jf.time")), time,
-    h("label", { for: id("timezone") }, M.t("jf.timezone")), zone, zoneList,
-    h("label", { for: id("moderator") }, M.t("jf.moderator")), moderator,
-    h("label", { for: id("answer_window_minutes") }, M.t("jf.answer_window")), answerWin,
-    h("label", { for: id("step_window_minutes") }, M.t("jf.step_window")), stepWin,
-    h("label", { for: id("report_window_hours") }, M.t("jf.report_window")), reportWin,
+    h("label", { for: id("freq") }, M.t("jf.freq")), freq, at("recurrence.freq", freq), weekly, monthly,
+    h("label", { for: id("time") }, M.t("jf.time")), time, at("time", time),
+    h("label", { for: id("timezone") }, M.t("jf.timezone")), zone, zoneList, at("timezone", zone),
+    h("label", { for: id("moderator") }, M.t("jf.moderator")), moderator, at("moderator", moderator),
+    h("label", { for: id("answer_window_minutes") }, M.t("jf.answer_window")), answerWin, at("answer_window_minutes", answerWin),
+    h("label", { for: id("step_window_minutes") }, M.t("jf.step_window")), stepWin, at("step_window_minutes", stepWin),
+    h("label", { for: id("report_window_hours") }, M.t("jf.report_window")), reportWin, at("report_window_hours", reportWin),
     h("label", { for: id("reason") }, M.t("jf.reason")), reason, error,
     h("div", { class: "actions" }, h("button", { type: "submit" }, M.t("jf.save")),
       jf ? h("button", { type: "button", onclick: () => {
@@ -149,6 +176,12 @@ window.Maity = window.Maity || {};
       return box;
     }
     let order = (state.moderators || []).map((x) => x.member_id);
+    let loaded = order.slice();
+    // Whether an explicit order is stored, or the default by time online (§20.2).
+    let explicit = Array.isArray((ctx.project.policy || {}).jour_fixe_moderators);
+    const kind = h("p", { class: "muted jf-order-kind" });
+    const sayKind = () => { kind.textContent = explicit ? M.t("jf.moderators.explicit") : M.t("jf.moderators.default"); };
+    sayKind();
     const list = h("ol", { class: "jf-order" });
     const reason = h("input", { id: "jf-order-reason", placeholder: M.t("jf.reason.placeholder") });
     const draw = () => append(clear(list), order.length ? order.map((mid, i) => h("li", null, M.dom.memberRef(ctx, mid), " ",
@@ -159,11 +192,17 @@ window.Maity = window.Maity || {};
       : h("li", { class: "muted" }, M.t("jf.moderators.none")));
     draw();
     const put = async (value) => {
+      // Saving the order shown unchanged would freeze the default as an explicit list.
+      if (value !== null && JSON.stringify(value) === JSON.stringify(loaded)) { status.done(); append(status.el, h("span", null, M.t("jf.moderators.unchanged"))); return; }
+      if (value === null && !explicit) { status.done(); append(status.el, h("span", null, M.t("jf.moderators.unchanged"))); return; }
       if (!reason.value.trim()) { reason.focus(); return; }
       status.busy(M.t("jf.moderators.saving"));
       try {
         const answer = await M.api.put(ctx.base + "/jour-fixe/moderators", { order: value, reason: reason.value.trim() });
         order = (answer.moderators || []).map((x) => x.member_id);
+        loaded = order.slice();
+        explicit = value !== null;
+        sayKind();
         draw();
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("jf.moderators.saved")));
@@ -171,7 +210,7 @@ window.Maity = window.Maity || {};
         status.fail(M.t("jf.moderators.not_saved"), err);
       }
     };
-    append(box, list, h("label", { for: "jf-order-reason" }, M.t("jf.reason")), reason,
+    append(box, kind, list, h("label", { for: "jf-order-reason" }, M.t("jf.reason")), reason,
       h("div", { class: "actions" }, h("button", { type: "button", onclick: () => put(order.slice()) }, M.t("jf.moderators.save")),
         h("button", { type: "button", onclick: () => put(null) }, M.t("jf.moderators.reset"))));
     return box;
@@ -201,7 +240,24 @@ window.Maity = window.Maity || {};
     }
     status.done();
     const policy = state.policy;
-    const startable = MANAGERS.includes(ctx.trust) && !["accepted", "archived"].includes(ctx.project.state);
+    // The rounds are paged (§1.4, §20.9): older ones by the hub's cursor.
+    const list = h("ul", { class: "jf-rounds" }, (rounds.items || []).map((r) => roundLine(ctx, r)));
+    const more = h("div", { class: "actions" });
+    const moreStatus = M.statusLine();
+    function showMore(cursor) {
+      clear(more);
+      if (!cursor) return;
+      append(more, h("button", { type: "button", onclick: async () => {
+        moreStatus.busy(M.t("jf.rounds.reading"));
+        try {
+          const page = await M.api.get(ctx.base + "/jour-fixe/rounds?cursor=" + encodeURIComponent(cursor));
+          append(list, (page.items || []).map((r) => roundLine(ctx, r)));
+          moreStatus.done();
+          showMore(page.next_cursor);
+        } catch (err) { moreStatus.fail(M.t("jf.unread"), err); append(more, moreStatus.el); }
+      } }, M.t("jf.rounds.more")), moreStatus.el);
+    }
+    const startable = MANAGERS.includes(ctx.trust) && ctx.project.state !== "archived";
     const startStatus = M.statusLine();
     const reason = h("input", { id: "jf-start-reason", placeholder: M.t("jf.reason.placeholder") });
     const start = startable ? h("form", {
@@ -226,7 +282,8 @@ window.Maity = window.Maity || {};
       state.current_round ? h("p", { class: "jf-current" }, M.t("jf.current"), " ", h("a", { href: roundLink(ctx, state.current_round) }, words(STATUS, state.current_round.status))) : null,
       start,
       h("h3", null, M.t("jf.rounds")),
-      (rounds.items || []).length ? h("ul", { class: "jf-rounds" }, rounds.items.map((r) => roundLine(ctx, r))) : h("p", { class: "muted" }, M.t("jf.rounds.none")));
+      (rounds.items || []).length ? list : h("p", { class: "muted" }, M.t("jf.rounds.none")), more);
+    showMore(rounds.next_cursor);
   }
 
   // ---- One round, as a member reads it (§20.7) ---------------------------

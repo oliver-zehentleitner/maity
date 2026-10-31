@@ -511,13 +511,16 @@ window.Maity = window.Maity || {};
 
   function projectPanel(ctx) {
     const status = statusLine();
-    const save = async (body, label) => {
+    // atFields: a form's own handler of the hub's field refusals; when it says
+    // them at its fields, the status line only says that nothing was saved.
+    const save = async (body, label, atFields) => {
       status.busy("Saving…");
       try {
         await M.api.patch(ctx.base, body);
         settingsSaved = label + " saved.";
         render();
       } catch (err) {
+        if (atFields && atFields(err)) { status.fail(label + " not saved: ", { message: M.t("settings.see_fields") }); return; }
         status.fail(label + " not saved: ", err);
       }
     };

@@ -638,25 +638,42 @@ window.Maity = window.Maity || {};
   // §20.1: policy.jour_fixe as the hub checks it, each refusal at its field path.
   const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   function jourFixeErrors(jf, members) {
+    // As hub/jourfixe/schedule.py names each refusal (§20.1).
     const e = {};
     const at = (k) => "policy.jour_fixe." + k;
-    const r = jf.recurrence || {};
-    if (jf.enabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(jf.time || "")) e[at("time")] = "required";
-    if (jf.enabled && !jf.timezone) e[at("timezone")] = "required";
-    if (jf.timezone && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(jf.timezone)) e[at("timezone")] = "unknown_timezone";
-    if (jf.recurrence) {
-      if (!["daily", "weekly", "monthly"].includes(r.freq)) e[at("recurrence.freq")] = "unknown";
-      if (r.freq === "weekly" && !(Array.isArray(r.weekdays) && r.weekdays.length)) e[at("recurrence.weekdays")] = "required";
-      if (r.freq !== "weekly" && r.weekdays) e[at("recurrence.weekdays")] = "not_for_freq";
-      if ((r.weekdays || []).some((d) => !WEEKDAYS.includes(d))) e[at("recurrence.weekdays")] = "unknown";
-      const n = r.interval === undefined ? 1 : r.interval;
-      if (!Number.isInteger(n) || n < 1 || n > (r.freq === "weekly" ? 8 : 1)) e[at("recurrence.interval")] = "out_of_range";
-      if (r.freq === "monthly" && (("month_day" in r) === ("month_weekday" in r))) e[at("recurrence")] = "one_of";
+    const zone = jf.timezone;
+    if (typeof jf.enabled !== "boolean") e[at("enabled")] = "not_a_boolean";
+    if (zone != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(zone)) e[at("timezone")] = "unknown_timezone";
+    if (jf.enabled === true) {
+      if (jf.time == null) e[at("time")] = "required";
+      if (zone == null) e[at("timezone")] = "required";
+      if (jf.recurrence == null) e[at("recurrence")] = "required";
     }
-    if (jf.moderator && jf.moderator !== "admin_agent" && !members.some((x) => x.id === jf.moderator && !x.removed_at)) e[at("moderator")] = "not_a_member";
+    if (jf.time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(jf.time)) e[at("time")] = "format";
     [["answer_window_minutes", 30, 1440], ["step_window_minutes", 30, 1440], ["report_window_hours", 1, 72]].forEach(([k, lo, hi]) => {
-      if (k in jf && !(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
+      if (!(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
     });
+    if (jf.moderator !== "admin_agent" && !members.some((x) => x.id === jf.moderator && !x.removed_at)) e[at("moderator")] = "not_a_member";
+    const r = jf.recurrence;
+    if (r != null) {
+      const key = (k) => at("recurrence." + k);
+      if (typeof r !== "object" || Array.isArray(r)) e[at("recurrence")] = "not_an_object";
+      else if (!["daily", "weekly", "monthly"].includes(r.freq)) e[key("freq")] = "unknown";
+      else {
+        const n = r.interval === undefined ? 1 : r.interval;
+        if (!Number.isInteger(n) || n < 1 || n > (r.freq === "weekly" ? 8 : 1)) e[key("interval")] = "out_of_range";
+        if (r.freq === "weekly") {
+          if (!r.weekdays || !r.weekdays.length) e[key("weekdays")] = "required";
+          else if (!Array.isArray(r.weekdays) || r.weekdays.some((d) => !WEEKDAYS.includes(d))) e[key("weekdays")] = "unknown";
+        } else if (r.weekdays != null) e[key("weekdays")] = "not_for_freq";
+        const day = r.month_day, nth = r.month_weekday;
+        if (r.freq === "monthly") {
+          if ((day == null) === (nth == null)) e[key("month_day")] = "one_of";
+          else if (day != null && !(Number.isInteger(day) && day >= 1 && day <= 31)) e[key("month_day")] = "out_of_range";
+          else if (nth != null && !(nth && [1, 2, 3, 4, -1].includes(nth.ordinal) && WEEKDAYS.includes(nth.weekday))) e[key("month_weekday")] = "invalid";
+        } else if (day != null || nth != null) e[key(day != null ? "month_day" : "month_weekday")] = "not_for_freq";
+      }
+    }
     return e;
   }
   function landingFooter(ft, errors) {
