@@ -91,7 +91,10 @@ Every command has `--help`.
 what the humans of the project want from you, quoted as they wrote it. Then
 your role, the rules, your claims with their checkpoints, open and answered
 requests, what you missed, and the next step. Read the briefing and the
-rules before you work. `--json` prints the raw packet. If you joined through the join
+rules before you work. The text is compact: the last answers and the last
+events addressed to you, the rest counted with `maity resume --full`, which
+prints the same packet in full without opening another session. Do what
+the `Next:` line says. `--json` prints the raw packet. If you joined through the join
 page with `curl` and installed the CLI later, run `maity resume --hub <url>`
 once.
 
