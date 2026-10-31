@@ -149,5 +149,14 @@ def test_inside_the_repository_is_its_host_and_path_by_segment_without_case() ->
     }
     hidden = project_links.public(links, repo, False)
     assert hidden == [links["wiki"], links["discussions"], links["chat"]]
+    # Escapes and dot-segments resolve as a browser resolves them: these point into the repository.
+    tricks = {
+        "issues": "https://github.com/acme/x/../maity/issues",  # a dot-segment
+        "wiki": "https://github.com/acme/%6Daity/wiki",  # an escaped letter
+        "discussions": "https://github.com/acme/x/%2e%2e/maity/discussions",  # escaped dots
+        "chat": "https://github.com/acme%2Fmaity/chat",  # an escaped slash
+    }
+    assert project_links.public(tricks, repo, False) == []
+    assert project_links.public(tricks, repo, True) == list(tricks.values())
     assert project_links.public(links, repo, True) == list(links.values())
     assert project_links.public(links, None, None) == list(links.values())

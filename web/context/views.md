@@ -3398,7 +3398,10 @@ only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
 forge. The overview's Project tab shows the same links as buttons
-beside the repository. Project settings have four fields that send only
+beside the repository. They are not in the header's list of projects:
+each entry there is itself a link, which cannot hold four more, and `/me`
+does not carry a project's links; §6.11 was changed to name the header
+beside the project's state instead (review of #884). Project settings have four fields that send only
 the links that changed; an empty field clears its link, and each refusal
 of the hub is said at its field.
 

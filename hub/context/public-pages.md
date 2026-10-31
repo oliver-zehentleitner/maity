@@ -410,8 +410,9 @@ link). A PATCH merges by key as a person's `social` does. A change puts
 settings it changed; the links are read from the project, not the
 event. The public page asks `project_links.public` which links to show:
 a link on the repository's host whose path starts with the repository's
-path, compared segment by segment and without case, only while the
-repository is public; every other link as set. The page's digest holds
+path, compared segment by segment and without case after decoding
+percent-escapes and resolving `.` and `..` as a browser does, only while
+the repository is public; every other link as set. The page's digest holds
 the shown links, so a change renders it again.
 
 **Reason:** §6.11 says "as for a person's `website`", and two copies of
@@ -425,4 +426,7 @@ a list just for links, would make readers handle two shapes.
   first wording): the only `project_updated` with a list.
 - Comparing the path as a string prefix: `acme/maity-other` would count
   as inside `acme/maity`.
+- Comparing the raw segments (review of #884): `x/../maity`, `%6Daity`,
+  `%2e%2e` and `%2F` resolve into the repository's path in a browser but
+  not in the comparison, so a private repository's issues would show.
 

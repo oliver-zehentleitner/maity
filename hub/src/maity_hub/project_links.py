@@ -9,8 +9,9 @@ own path only while the repository is public, every other link as the admin set 
 
 from __future__ import annotations
 
+import posixpath
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from maity_hub.errors import invalid
 from maity_hub.person_links import website_problem
@@ -53,7 +54,10 @@ def checked(given: Any, stored: dict[str, Any] | None) -> dict[str, str]:
 
 
 def _segments(path: str) -> list[str]:
-    return [part.lower() for part in path.split("/") if part]
+    """A path's segments as a browser resolves them: percent-escapes decoded, `.` and `..`
+    resolved, compared without case; so `x/../maity` and `%6Daity` are `maity`."""
+    resolved = posixpath.normpath("/" + unquote(path))
+    return [part.lower() for part in resolved.split("/") if part]
 
 
 def public(
