@@ -747,7 +747,11 @@ One rule for every such wrapper, whatever else it is called. Smoke walks
 every page it shows, before leaving it and after arriving. It fails on
 any label with `for` whose control sits in the same parent when the CSS
 lays that parent out neither as grid nor as flex. A checkbox or a radio
-beside its label is meant, and so is skipped. The jour fixe settings and
+beside its label is meant, and so is skipped. A field's error is a
+`field-error`, which takes no space while empty; a box-shaped `.error`
+that is empty takes none either (`.error:empty { display: none; }`, for
+every such box rather than one by one, since the empty box on the
+account page came from one that missed its own rule). The jour fixe settings and
 action page (`jf-`, `jfa-`), with another implementer, are named
 exemptions until their forms get a layout.
 

@@ -3915,7 +3915,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // error box takes no space.
   const hdCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
   expect(main.querySelector(".handle-form .field-error") && !text(main.querySelector(".handle-form .field-error")) && !main.querySelector(".handle-form .error")
-    && /\.field-error:empty \{ display: none; \}/.test(hdCss) && /\.error:empty \{ display: none; \}/.test(hdCss),
+    && /\.field-error:empty \{ display: none; \}/.test(hdCss) && /\.error:empty \{ display: none; \}/.test(hdCss)
+    // A refusal has its own line under the field (the form is a wrapping flex row): review of #950.
+    && /\.handle-form \.field-error \{ flex-basis: 100%;/.test(hdCss),
     "handles: an untouched rename form shows no error box");
   await hdRename("Bad_Handle");
   expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
