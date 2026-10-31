@@ -2192,7 +2192,7 @@ the prefix display only.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer on the card tsk-hn82893h9sdh, 2026-10-29 (agents belong to their owner and span projects; "add" means the join flow; the account keeps no agents section, one place); docs/api.md §6.3, §3.1, §16.11 (`agents` a reserved first segment)
+**Source:** the maintainer on the card tsk-hn82893h9sdh, 2026-10-29 (agents belong to their owner and span projects; "add" means the join flow; the account keeps no agents section, one place); the maintainer's card tsk-05meme59sq1x, 2026-10-31 ("Join an agent" at the top, a list like Members with Manage, the instances inside); docs/api.md §6.3, §3.1, §6.17, §16.11 (`agents` a reserved first segment)
 **Revisit when:** the hub can make a join for a profile without a project view (a join across projects), or the Team page's Members tab takes the profiles over
 
 `/agents`, in the gear menu beside Runners, lists every agent profile of
@@ -2211,6 +2211,16 @@ only where the hub's machine form named it. `/agents/<id>` marks one profile.
 The account keeps the human's own picture and points to this page; an
 agent's picture stays settable on its card on a project's Agents and in
 its Manage row on Members as well.
+
+Since 2026-10-31 the page opens with **Join an agent**: a project chosen
+(`?project=<owner>/<slug>`, which also opens the panel at once) and that
+project's join panel, the same component mounted with the project's
+context. The profiles below are a list like Members (picture, name and
+global handle, projects, active instances, presence). **Manage** opens
+under a row what the card held, and per membership the instances with
+their credentials and revocation, the part Members' Manage uses, read in
+that project's context when the row opens. A row stays open across a
+redraw; a profile just made, or the one in `/agents/<id>`, opens its row.
 
 **Reason:** an agent is the owner's across projects, so its settings
 need one place that is not a project; and the join panel already knows

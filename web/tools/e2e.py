@@ -897,6 +897,7 @@ def scenario(run: Run, page: Page) -> None:
     members_step(run, page)
     my_settings_step(run, page)
     invitations_step(run, page)
+    agents_page_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
@@ -2560,6 +2561,23 @@ def isolate_step(run: Run, page: Page) -> None:
         expect(page.locator("li.entry.current", has_text=seen[-1])).to_have_count(0)
     assert any("was isolated" in x for x in seen) and any("was lifted" in x for x in seen), seen
     no_problems(run, "isolation")
+
+
+def agents_page_step(run: Run, page: Page) -> None:
+    """Your agents (/agents, tsk-05meme59sq1x): Join an agent at the top; the profiles as rows,
+    Manage opening a row with the instances of each membership read on the real hub."""
+    run.step("agents page: the profiles as rows; Manage shows the instances in each project")
+    page.goto(f"{run.base}/agents")
+    expect(page.locator("section.agents-join")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    expect(row).to_be_visible()
+    row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    expect(row.get_by_role("button", name=re.compile(r"^Manage "))).to_have_attribute("aria-expanded", "true")
+    inside = page.locator("tr.agent-manage").first
+    expect(inside.locator(".agent-instances", has_text="Instances in E2E Alpha").first).to_be_visible()
+    expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()
+    run.a11y(page, "agents page, a row opened")
+    no_problems(run, "agents page")
 
 
 def invitations_step(run: Run, page: Page) -> None:
