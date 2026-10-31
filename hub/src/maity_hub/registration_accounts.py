@@ -24,6 +24,7 @@ from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    campaigns,
     clock,
     handle_register,
     handles,
@@ -232,6 +233,7 @@ def complete(
         _void(conn, pending.id, now)  # a loser: as an expired link, never why (§2.7.1)
         return Completion("gone")
     made.commit()
+    campaigns.registered(conn, human_id, pending.origin)  # §16.7.2: counted, kept 30 days
     if status == "pending":
         conn.execute(
             insert(t.account_registration).values(
@@ -496,5 +498,6 @@ class Worker:
             try:
                 with self.engine.begin() as conn:
                     expire(conn, self.hub)
+                    campaigns.purge(conn)  # the origins after 30 days, the sums after 400
             except Exception:
                 log.exception("the registration expiry sweep failed")
