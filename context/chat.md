@@ -338,3 +338,38 @@ exactly that and keep the activity order inside each.
   is paged (§1.4), so a pinned chat on a later page would stay hidden;
   the hub orders, and the cursor follows the bands.
 
+## A human switches the meat-proxy mode per chat; the profile gives the default
+
+**Id:** 1bdcfac7-9bf9-4ae3-9ad6-23b7f8e9a535
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (a meat-proxy button next to "Attach" and "Send" that switches the mode on and off for this chat; with "I am a meat proxy" in the settings the chat starts in that mode); contract `docs/api.md` §9.3
+
+A human sets the meat-proxy mode for one conversation: `true`, `false`,
+or `null` to follow the profile. The value that holds in a chat is on the
+human's entry in that chat's participants, with the profile's note while
+it is on, so the agents in the chat read it next to the person. Only the
+human sets it, for itself; it is context, never a permission.
+
+**Reason:** the same person may want to be led step by step with one
+agent and talk briefly with another, or in one project and not in the
+next. Changing the profile for every chat would switch it for all of
+them at once. Putting the value on the participant entry means the
+agents see it where they already see who is in the chat, without a new
+field elsewhere.
+
+**Alternatives:**
+- Only the profile switch (the state before): all or nothing across
+  every chat and project.
+- A per-project switch: still too coarse for the case of one chat with
+  one agent, which is the one the maintainer described.
+- Both parts per chat (`{lead, hands}` per conversation): the button the
+  maintainer asked for is one on/off switch; whoever wants one part only
+  sets it in the profile and leaves the chat on `null` (this contract's
+  reading).
+- A change as an event that wakes the agents in the chat: it would cost
+  a model run per agent for context that matters only at their next
+  turn; a change emits no event, and the agents read it on their next
+  resume or read of the chat (this contract's reading).
+
