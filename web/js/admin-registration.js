@@ -13,39 +13,48 @@ window.Maity = window.Maity || {};
   const SETTINGS = "/admin/settings/registration";
   const PENDING = "/admin/registrations";
 
-  const MODES = [
-    ["closed", "Closed: only invitations"],
-    ["allowlist", "Allowlist: the listed domains and addresses"],
-    ["open", "Open: anyone with an address"],
-  ];
-  const APPROVALS = [
-    ["operator", "I approve each new account"],
-    ["automatic", "New accounts are usable at once"],
-  ];
-  const SOURCES = { env: "set by the environment", admin: "set here", default: "the default", legal_pages: "from the legal pages" };
+  // Getters: the words are the catalog's when shown.
+  const MODES = ["closed", "allowlist", "open"];
+  const MODE_LABELS = {
+    get closed() { return M.t("reg.mode.closed"); },
+    get allowlist() { return M.t("reg.mode.allowlist"); },
+    get open() { return M.t("reg.mode.open"); },
+  };
+  const APPROVALS = ["operator", "automatic"];
+  const APPROVAL_LABELS = {
+    get operator() { return M.t("reg.approval.operator"); },
+    get automatic() { return M.t("reg.approval.automatic"); },
+  };
+  const SOURCES = {
+    get env() { return M.t("reg.source.env"); },
+    get admin() { return M.t("reg.source.admin"); },
+    get default() { return M.t("reg.source.default"); },
+    get legal_pages() { return M.t("reg.source.legal_pages"); },
+  };
   // What keeps registration from working (§16.4 `missing`), in words.
   const MISSING = {
-    mail: "Mail is not complete and enabled, so registration stays closed whatever the mode. Set it up under Mail settings.",
-    allowlist: "The allowlist is empty: nobody can register, and the login page offers no registration.",
+    get mail() { return M.t("reg.missing.mail"); },
+    get allowlist() { return M.t("reg.missing.allowlist"); },
   };
   // The hub's refusals of a field, in words.
   const REASONS = {
-    mail_required: "needs complete, enabled mail (Mail settings)",
-    set_by_environment: "set by the environment; change it there",
-    invalid: "not a valid value",
-    extra_forbidden: "not known to this hub",
+    get mail_required() { return M.t("reg.refused.mail_required"); },
+    get set_by_environment() { return M.t("reg.refused.set_by_environment"); },
+    get invalid() { return M.t("reg.refused.invalid"); },
+    get extra_forbidden() { return M.t("reg.refused.extra_forbidden"); },
   };
+  const reason = (r) => (Object.hasOwn(REASONS, r) ? REASONS[r] : r);
   // A list entry the hub refuses is named `domains.<index>` or
   // `addresses.<index>` (§16.4): said as "entry N is not valid".
   const ENTRY = /^(domains|addresses)\.(\d+)$/;
   const fieldWords = (f, r) => {
     const entry = ENTRY.exec(f);
-    return entry ? "entry " + (Number(entry[2]) + 1) + " is not valid" : REASONS[r] || r;
+    return entry ? M.t("reg.refused.entry", { n: String(Number(entry[2]) + 1) }) : reason(r);
   };
   const said = (err) => {
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
-    return { message: Object.entries(fields).map(([f, r]) => f.replace(ENTRY, "$1").replace(/_/g, " ") + ": " + fieldWords(f, r)).join("; ") };
+    return { message: Object.entries(fields).map(([f, r]) => M.t("reg.refused.field", { field: f.replace(ENTRY, "$1").replace(/_/g, " "), why: fieldWords(f, r) })).join("; ") };
   };
   // A list typed one per line or comma separated, trimmed, without blanks.
   const listOf = (text) => [...new Set(text.split(/[\n,]/).map((x) => x.trim().toLowerCase()).filter(Boolean))];
@@ -53,8 +62,8 @@ window.Maity = window.Maity || {};
   async function section(ctx, root) {
     const status = M.statusLine();
     const body = h("div");
-    append(root, h("h2", null, "Registration"),
-      h("p", { class: "hint" }, "Who may create an account on this hub by themselves (§2.7). Invitations work in every mode."),
+    append(root, h("h2", null, M.t("reg.title")),
+      h("p", { class: "hint" }, M.t("reg.intro")),
       status.el, body);
     let current = await M.api.get(SETTINGS);
     const stepSlot = h("div", { class: "step-up-slot" });
@@ -64,23 +73,28 @@ window.Maity = window.Maity || {};
     function drawSummary() {
       const set = (current.mode || {}).value, effective = current.effective_mode;
       append(clear(summary),
-        h("p", { class: "reg-effective" }, "Registration now: ", h("strong", null, effective),
-          effective !== set ? " (set: " + set + ")" : "", "."),
-        (current.missing || []).map((m) => h("p", { class: "flag reg-missing", "data-missing": m }, MISSING[m] || "Missing: " + m)),
-        h("p", { class: "muted reg-counts" }, current.pending + " waiting for approval · " + current.registered_last_hour
-          + " registered in the last hour · " + current.requests_dropped_last_hour + " requests dropped in the last hour"));
+        h("p", { class: "reg-effective" }, effective !== set
+          ? M.tn("reg.effective_set", { mode: h("strong", null, effective), set })
+          : M.tn("reg.effective", { mode: h("strong", null, effective) })),
+        (current.missing || []).map((m) => h("p", { class: "flag reg-missing", "data-missing": m }, Object.hasOwn(MISSING, m) ? MISSING[m] : M.t("reg.missing.other", { what: m }))),
+        // Facts with a middle dot between them, each one whole.
+        h("p", { class: "muted reg-counts" }, [M.t("reg.count.pending", { count: current.pending }), M.t("reg.count.registered", { count: current.registered_last_hour }),
+          M.t("reg.count.dropped", { count: current.requests_dropped_last_hour })].join(" · ")));
     }
 
     function draw(words) {
       const v = (name) => (current[name] || {}).value;
       const fromEnv = (name) => (current[name] || {}).source === "env";
-      const source = (name) => h("span", { class: "muted reg-source" }, " (" + (SOURCES[(current[name] || {}).source] || (current[name] || {}).source) + ")");
+      const source = (name) => {
+        const from = (current[name] || {}).source;
+        return h("span", { class: "muted reg-source" }, " " + M.t("reg.source.said", { source: Object.hasOwn(SOURCES, from) ? SOURCES[from] : from }));
+      };
       const id = (k) => "reg-" + k;
       const errorOf = (k) => h("p", { class: "field-error", id: id(k) + "-error", role: "alert" });
       const errors = { mode: errorOf("mode"), domains: errorOf("domains"), addresses: errorOf("addresses"), terms: errorOf("terms"), max: errorOf("max") };
 
       const mode = h("select", { id: id("mode"), disabled: fromEnv("mode") ? true : null, "aria-describedby": id("mode") + "-error" },
-        MODES.map(([k, l]) => h("option", { value: k }, l)));
+        MODES.map((k) => h("option", { value: k }, MODE_LABELS[k])));
       mode.value = v("mode");
       const domains = h("textarea", { id: id("domains"), rows: "3", placeholder: "@example.com", disabled: fromEnv("domains") ? true : null,
         "aria-describedby": id("domains") + "-hint " + id("domains") + "-error" });
@@ -89,7 +103,7 @@ window.Maity = window.Maity || {};
         "aria-describedby": id("addresses") + "-error" });
       addresses.value = (v("addresses") || []).join("\n");
       const approval = h("select", { id: id("approval"), disabled: fromEnv("approval") ? true : null },
-        APPROVALS.map(([k, l]) => h("option", { value: k }, l)));
+        APPROVALS.map((k) => h("option", { value: k }, APPROVAL_LABELS[k])));
       approval.value = v("approval");
       const terms = v("terms");
       const termsOff = fromEnv("terms") || (current.terms || {}).source === "legal_pages";
@@ -102,7 +116,7 @@ window.Maity = window.Maity || {};
       const max = h("input", { id: id("max"), type: "number", min: "1", step: "1", disabled: fromEnv("max_new_accounts_per_hour") ? true : null,
         "aria-describedby": id("max") + "-error" });
       max.value = String(v("max_new_accounts_per_hour"));
-      const save = h("button", { type: "submit" }, "Save");
+      const save = h("button", { type: "submit" }, M.t("reg.save"));
       const formStatus = M.statusLine();
 
       const form = h("form", {
@@ -120,57 +134,55 @@ window.Maity = window.Maity || {};
           if (!fromEnv("approval") && approval.value !== v("approval")) patch.approval = approval.value;
           if (!termsOff) {
             const url = termsUrl.value.trim(), version = termsVersion.value.trim();
-            if (!!url !== !!version) { errors.terms.textContent = "The terms need both an https address and a version, or neither."; (url ? termsVersion : termsUrl).focus(); return; }
-            if (url && !M.dom.safeUrl(url)) { errors.terms.textContent = "The terms' address must be plain https."; termsUrl.focus(); return; }
-            if (/\s/.test(version)) { errors.terms.textContent = "The version has no spaces."; termsVersion.focus(); return; }
+            if (!!url !== !!version) { errors.terms.textContent = M.t("reg.terms.both"); (url ? termsVersion : termsUrl).focus(); return; }
+            if (url && !M.dom.safeUrl(url)) { errors.terms.textContent = M.t("reg.terms.https"); termsUrl.focus(); return; }
+            if (/\s/.test(version)) { errors.terms.textContent = M.t("reg.terms.no_spaces"); termsVersion.focus(); return; }
             const now = url ? { url, version } : null;
             if (JSON.stringify(now) !== JSON.stringify(terms || null)) patch.terms = now;
           }
           if (!fromEnv("max_new_accounts_per_hour")) {
             const n = Number(max.value);
-            if (!Number.isInteger(n) || n < 1) { errors.max.textContent = "A whole number, at least 1."; max.focus(); return; }
+            if (!Number.isInteger(n) || n < 1) { errors.max.textContent = M.t("reg.max.invalid"); max.focus(); return; }
             if (n !== v("max_new_accounts_per_hour")) patch.max_new_accounts_per_hour = n;
           }
-          if (!Object.keys(patch).length) { formStatus.done(); append(formStatus.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+          if (!Object.keys(patch).length) { formStatus.done(); append(formStatus.el, h("span", { class: "ok" }, M.t("reg.unchanged"))); return; }
           save.disabled = true;
-          formStatus.busy("Saving…");
+          formStatus.busy(M.t("reg.saving"));
           try {
             // A settings change asks for the password or a code where the hub requires it (§2.8.4).
-            current = await M.stepUp.run(() => M.api.patch(SETTINGS, patch), stepSlot, "Changing the registration settings");
-            draw("Saved.");
+            current = await M.stepUp.run(() => M.api.patch(SETTINGS, patch), stepSlot, M.t("reg.step_up"));
+            draw(M.t("reg.saved"));
             return;
           } catch (err) {
             save.disabled = false;
             if (err.code === "cancelled") { formStatus.done(); return; }
             const fields = err.code === "invalid" && err.details && err.details.fields;
             if (fields) {
-              if (fields.mode) errors.mode.textContent = REASONS[fields.mode] || fields.mode;
+              if (fields.mode) errors.mode.textContent = reason(fields.mode);
               // A list's own refusal or one of its entries' (`domains.<index>`), at the list.
               Object.entries(fields).forEach(([f, r]) => {
                 const list = f === "domains" || f === "addresses" ? f : (ENTRY.exec(f) || [])[1];
                 if (list) errors[list].textContent = fieldWords(f, r);
               });
-              if (fields.terms) errors.terms.textContent = REASONS[fields.terms] || fields.terms;
-              if (fields.max_new_accounts_per_hour) errors.max.textContent = REASONS[fields.max_new_accounts_per_hour] || fields.max_new_accounts_per_hour;
+              if (fields.terms) errors.terms.textContent = reason(fields.terms);
+              if (fields.max_new_accounts_per_hour) errors.max.textContent = reason(fields.max_new_accounts_per_hour);
             }
-            formStatus.fail("Not saved: ", said(err));
+            formStatus.fail(M.t("reg.not_saved"), said(err));
           }
         },
       },
-      h("label", { for: id("mode") }, "Mode", source("mode")), mode, errors.mode,
-      h("label", { for: id("domains") }, "Domains", source("domains")), domains,
-      h("p", { class: "hint", id: id("domains") + "-hint" }, "One per line, with @, like @example.com. Used only in the allowlist mode."),
+      h("label", { for: id("mode") }, M.t("reg.field.mode"), source("mode")), mode, errors.mode,
+      h("label", { for: id("domains") }, M.t("reg.field.domains"), source("domains")), domains,
+      h("p", { class: "hint", id: id("domains") + "-hint" }, M.t("reg.field.domains_hint")),
       errors.domains,
-      h("label", { for: id("addresses") }, "Addresses", source("addresses")), addresses, errors.addresses,
-      h("label", { for: id("approval") }, "New accounts", source("approval")), approval,
-      h("fieldset", { class: "reg-terms" }, h("legend", null, "Terms", source("terms")),
-        h("label", { for: id("terms-url") }, "Address (https)"), termsUrl,
-        h("label", { for: id("terms-version") }, "Version"), termsVersion,
-        h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages"
-          ? "These come from the legal pages (Legal pages → Terms)."
-          : "Shown on the registration form and accepted when an account is completed. Leave both empty for none."),
+      h("label", { for: id("addresses") }, M.t("reg.field.addresses"), source("addresses")), addresses, errors.addresses,
+      h("label", { for: id("approval") }, M.t("reg.field.approval"), source("approval")), approval,
+      h("fieldset", { class: "reg-terms" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
+        h("label", { for: id("terms-url") }, M.t("reg.terms.url")), termsUrl,
+        h("label", { for: id("terms-version") }, M.t("reg.terms.version")), termsVersion,
+        h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages" ? M.t("reg.terms.from_legal") : M.t("reg.terms.hint")),
         errors.terms),
-      h("label", { for: id("max") }, "New accounts per hour at most", source("max_new_accounts_per_hour")), max, errors.max,
+      h("label", { for: id("max") }, M.t("reg.field.max"), source("max_new_accounts_per_hour")), max, errors.max,
       save, formStatus.el, stepSlot);
       if (words) append(formStatus.el, h("span", { class: "ok" }, words));
 
@@ -189,13 +201,13 @@ window.Maity = window.Maity || {};
   async function pendingPart(box, countsChanged) {
     const status = M.statusLine();
     const list = h("ul", { class: "reg-pending-list" });
-    append(box, h("h3", null, "Waiting for approval"), status.el, list);
+    append(box, h("h3", null, M.t("reg.pending.title")), status.el, list);
     async function load() {
       clear(list);
       let items;
-      try { items = (await M.api.getAll(PENDING)).items; } catch (err) { status.fail("Could not read them: ", err); return; }
+      try { items = (await M.api.getAll(PENDING)).items; } catch (err) { status.fail(M.t("reg.pending.read_failed"), err); return; }
       status.done();
-      if (!items.length) { append(list, h("li", { class: "muted" }, "Nobody waits for approval.")); return; }
+      if (!items.length) { append(list, h("li", { class: "muted" }, M.t("reg.pending.none"))); return; }
       items.forEach((r) => append(list, row(r)));
     }
     async function decided(text) {
@@ -205,34 +217,38 @@ window.Maity = window.Maity || {};
     }
     function row(r) {
       const reasonId = "reg-reason-" + r.id;
-      const reason = h("input", { id: reasonId, maxlength: "1024", autocomplete: "off", placeholder: "Why, mailed to them" });
+      const why = h("input", { id: reasonId, maxlength: "1024", autocomplete: "off", placeholder: M.t("reg.pending.why_placeholder") });
       const rowStatus = M.statusLine();
-      const approve = h("button", { type: "button", class: "primary" }, "Approve");
-      const reject = h("button", { type: "submit", class: "danger" }, "Reject");
-      const fail = (err) => rowStatus.fail("Not done: ", err.code === "invalid_transition"
-        ? { message: "decided meanwhile (" + ((err.details || {}).from || "decided") + ")" } : err);
+      const approve = h("button", { type: "button", class: "primary" }, M.t("reg.pending.approve"));
+      const reject = h("button", { type: "submit", class: "danger" }, M.t("reg.pending.reject"));
+      const fail = (err) => rowStatus.fail(M.t("reg.pending.not_done"), err.code === "invalid_transition"
+        ? { message: M.t("reg.pending.decided", { from: (err.details || {}).from || "decided" }) } : err);
       approve.addEventListener("click", async () => {
         approve.disabled = true;
-        rowStatus.busy("Approving…");
-        try { await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/approve", {}); await decided("@" + r.handle + " is approved."); }
+        rowStatus.busy(M.t("reg.pending.approving"));
+        try { await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/approve", {}); await decided(M.t("reg.pending.approved", { handle: r.handle })); }
         catch (err) { approve.disabled = false; fail(err); if (err.code === "invalid_transition") load(); }
       });
       return h("li", { class: "reg-pending-item", "data-registration": r.id },
         h("p", null, h("strong", null, r.display_name), " ", h("span", { class: "muted" }, "@" + r.handle + " · " + r.address)),
-        h("p", { class: "muted" }, "Asked " + formatTime(r.created_at) + " · expires " + formatTime(r.expires_at)
-          + (r.source_ip ? " · from " + r.source_ip : "") + (r.terms ? " · accepted terms " + (r.terms.version || r.terms) : "")),
+        // Facts with a middle dot between them, each one whole.
+        h("p", { class: "muted" }, [M.t("reg.pending.asked", { time: formatTime(r.created_at) }), M.t("reg.pending.expires", { time: formatTime(r.expires_at) }),
+          r.source_ip ? M.t("reg.pending.from", { ip: r.source_ip }) : null,
+          r.terms ? M.t("reg.pending.terms", { version: String(r.terms.version || r.terms) }) : null].filter(Boolean).join(" · ")),
         h("div", { class: "actions" }, approve),
         h("form", {
           class: "inline-form reg-reject",
           onsubmit: async (e) => {
             e.preventDefault();
-            if (!reason.value.trim()) { rowStatus.fail("Not rejected: ", { message: "a reason is needed; it is mailed to them" }); reason.focus(); return; }
+            if (!why.value.trim()) { rowStatus.fail(M.t("reg.pending.not_rejected"), { message: M.t("reg.pending.reason_needed") }); why.focus(); return; }
             reject.disabled = true;
-            rowStatus.busy("Rejecting…");
-            try { await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/reject", { reason: reason.value.trim() }); await decided("@" + r.handle + " is rejected; the address is blocked for 30 days."); }
-            catch (err) { reject.disabled = false; fail(err); if (err.code === "invalid_transition") load(); }
+            rowStatus.busy(M.t("reg.pending.rejecting"));
+            try {
+              await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/reject", { reason: why.value.trim() });
+              await decided(M.t("reg.pending.rejected", { handle: r.handle, count: 30 }));
+            } catch (err) { reject.disabled = false; fail(err); if (err.code === "invalid_transition") load(); }
           },
-        }, h("label", { for: reasonId }, "Reject with a reason"), reason, reject),
+        }, h("label", { for: reasonId }, M.t("reg.pending.reject_label")), why, reject),
         rowStatus.el);
     }
     await load();
@@ -243,7 +259,7 @@ window.Maity = window.Maity || {};
   function blockPart() {
     const address = h("input", { id: "reg-block-address", type: "email", autocomplete: "off", placeholder: "ada@example.com" });
     const status = M.statusLine();
-    const go = h("button", { type: "submit" }, "Lift the block");
+    const go = h("button", { type: "submit" }, M.t("reg.block.lift"));
     return h("form", {
       class: "inline-form reg-block",
       onsubmit: async (e) => {
@@ -251,18 +267,18 @@ window.Maity = window.Maity || {};
         const a = address.value.trim();
         if (!a) { address.focus(); return; }
         go.disabled = true;
-        status.busy("Lifting…");
+        status.busy(M.t("reg.block.lifting"));
         try {
           await M.api.del("/admin/registrations/blocks/" + encodeURIComponent(a));
           status.done();
-          append(status.el, h("span", { class: "ok" }, a + " may register again (if it was blocked)."));
+          append(status.el, h("span", { class: "ok" }, M.t("reg.block.lifted", { address: a })));
           address.value = "";
-        } catch (err) { status.fail("Not lifted: ", err); }
+        } catch (err) { status.fail(M.t("reg.block.failed"), err); }
         go.disabled = false;
       },
-    }, h("h3", null, "Blocked addresses"),
-    h("p", { class: "hint" }, "A rejected or expired registration blocks its address for 30 days. Lift it early here."),
-    h("label", { for: "reg-block-address" }, "Address"), address, go, status.el);
+    }, h("h3", null, M.t("reg.block.title")),
+    h("p", { class: "hint" }, M.t("reg.block.hint", { count: 30 })),
+    h("label", { for: "reg-block-address" }, M.t("reg.block.address")), address, go, status.el);
   }
 
   M.adminRegistration = { section };
