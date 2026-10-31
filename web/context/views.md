@@ -686,6 +686,18 @@ address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 does nothing would look broken. The sessions are read for that only
 when the page shows an unread security item.
 
+Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
+6e357e0c "An inbox answer carries a note with any button", §7) each open
+request has one free-text field **above** its buttons, always writable:
+every reply button sends `{reply_id, text}` when the field has text, and
+**Talk** sends `{talk: true, text}`; a request without replies keeps
+**Send** for the plain text next to Talk. "Talk" is one word in every
+language (a language file leaves `inbox.talk` out rather than translating
+it). Talk is offered inside a project only where the asker is an agent
+the reader owns; across projects and for a personal request the web
+cannot tell, so it shows Talk and the hub decides. `canTalk()` in
+`js/inbox.js` is the one place to change if the request ever says it.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
