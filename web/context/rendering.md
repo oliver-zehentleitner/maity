@@ -621,7 +621,12 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. A language offered for choice
+or "an" in code, which only English has. In "X of Y" the plural form
+follows the total, Y ("1 of 3 instances active"), as English writes it.
+Rejected: the form of X, which read "1 of 3 instance active". Facts
+put side by side with a middle dot between them are allowed where each
+is a whole text of its own ("3 waiting for approval · 1 registered in
+the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
 is named in itself ("English", "Deutsch"), never through the catalog: a
 reader looks for their own language's name, not its name in the
 language shown now. Still the hub's words: an

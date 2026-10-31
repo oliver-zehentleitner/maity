@@ -120,7 +120,7 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
 
 
 STAT_DAYS = 30
-_STAT_LABELS = (
+STAT_LABELS = (
     ("cards_done", "Cards done"),
     ("reviews_given", "Reviews given"),
     ("prs_merged", "Pull requests merged"),
@@ -170,7 +170,7 @@ def _duration(seconds: int | None) -> str:
     return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
 
 
-def _value(key: str, value: Any) -> str:
+def stat_value(key: str, value: Any) -> str:
     if key.endswith("seconds"):
         return _duration(value)
     return "-" if value is None else str(value)
@@ -191,16 +191,16 @@ def _per_day_html(series: list[dict[str, Any]]) -> str:
 def _statistics_html(stats: dict[str, Any]) -> str:
     totals = stats["totals"]
     items = "".join(
-        f"<li>{escape(label)}: {escape(_value(key, totals[key]))}</li>"
-        for key, label in _STAT_LABELS
+        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>"
+        for key, label in STAT_LABELS
     )
     html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
     html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
     if stats["members"]:
-        head = "".join(f"<th>{escape(label)}</th>" for _, label in _STAT_LABELS)
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in STAT_LABELS)
         body = "".join(
             f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
-            + "".join(f"<td>{escape(_value(key, row[key]))}</td>" for key, _ in _STAT_LABELS)
+            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in STAT_LABELS)
             + "</tr>"
             for row in stats["members"]
         )
@@ -325,8 +325,24 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
 
 
 def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
-    """The views of a project follow its page: served, named and shown alike."""
-    return [(VIEWS, project_id)]
+    """The pages that show a project: its views (Board, Members, Organisation, which follow its
+    page: served, named and shown alike), its agents' pages, and the person pages that list it
+    or its agents: its human members' and the owners' of its agent members, who need not be
+    members themselves (§16.9)."""
+    from maity_hub import public_agents
+
+    m = t.membership.c
+    members = conn.execute(
+        select(m.human_id, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.project_id == project_id)
+    ).all()
+    people = sorted({h for h, _ in members if h} | {o for _, o in members if o})
+    return [
+        (VIEWS, project_id),
+        *public_agents.pages_of_project(conn, project_id),
+        *[("person", person) for person in people],
+    ]
 
 
 public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

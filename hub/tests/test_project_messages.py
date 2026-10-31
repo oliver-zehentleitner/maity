@@ -100,6 +100,11 @@ def test_an_agent_message_names_the_instance_that_wrote_it(
         (by_agent, agent.instance),
     ]
     assert agent.instance
+    # A tombstone keeps it, as it keeps `from` (§8.8): both come from the event's actor.
+    redact = f"/projects/maintainer/maity/events/{by_agent}/redact"
+    assert owner.post(redact, {"reason": "spam"}).status_code == 200
+    tomb = next(i for i in listed(owner).json()["items"] if i["seq"] == by_agent)
+    assert tomb["redacted"] is True and tomb["from_instance"] == agent.instance
 
 
 def test_type_filters_as_a_set_and_chat_or_unknown_is_refused(owner: flow.Human) -> None:
