@@ -898,6 +898,7 @@ def scenario(run: Run, page: Page) -> None:
     why_step(run, page, alpha)
     runners_step(run, page)
     isolate_step(run, page)
+    memory_provider_step(run, page, alpha)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -960,6 +961,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    jour_fixe_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1851,6 +1853,16 @@ def notifications_step(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
     run.a11y(page, "chats across projects")
+    run.step("all projects: Inbox and Chats are its two pages; Inbox leads back to the requests")
+    pages = page.locator("header nav.views a")
+    expect(pages).to_have_count(2)
+    expect(pages.nth(1)).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    pages.nth(0).click()
+    expect(page).to_have_url(re.compile(r"/all$"))
+    expect(page.locator("header nav.views a").nth(0)).to_have_attribute("aria-current", "page")
+    expect(page.locator("main section.view-all")).to_be_visible()
+    run.shot(page, "all-projects-pages")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     run.step("notifications: the owner opens the bell, reads the list, closes it with Escape")
@@ -2150,6 +2162,41 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def jour_fixe_step(run: Run, page: Page) -> None:
+    """The jour fixe (docs/api.md §20): the series saved in Project settings against the
+    real hub, the view says the next slot, and a start by hand opens a round or says why
+    not (on this hub no admin agent may be present to moderate)."""
+    run.step("jour fixe: the series saved in Project settings, the next slot shown, a start by hand")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.jf-settings")
+    expect(form).to_be_visible()
+    page.locator("#jf-enabled").check()
+    page.locator("#jf-time").fill("10:00")
+    page.locator("#jf-timezone").fill("Europe/Vienna")
+    page.locator("#jf-day-mon").check()
+    page.locator("#jf-reason").fill("e2e: a weekly look back")
+    form.get_by_role("button", name="Save the jour fixe", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Jour fixe saved.")
+    expect(page.locator("ol.jf-order")).to_be_visible()
+    page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
+    expect(page.locator("main")).to_contain_text("Next round:")
+    page.locator("#jf-start-reason").fill("e2e: before the launch")
+    page.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
+    opened = re.compile(r"/owner/e2e-alpha/jour-fixe/jfx-")
+    expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
+    if opened.search(page.url):
+        expect(page.locator("main")).to_contain_text("answering")
+    else:
+        # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
+        refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"
+        run.problems = [p for p in run.problems if p != refused]
+    run.shot(page, "jour-fixe")
+    run.a11y(page, "jour fixe")
+    no_problems(run, "jour fixe")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+
+
 def landing_json_step(run: Run, page: Page) -> None:
     """Instance administration → Landing page (docs/api.md §16.7, tsk-36d575f5yybz): a draft
     imported as JSON, checked by the hub's preview call, saved only by Save."""
@@ -2331,6 +2378,30 @@ def join_expiry_step(run: Run, page: Page) -> None:
     second.unroute_all(behavior="ignoreErrors")
     other.close()
     no_problems(run, "joins")
+
+
+def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
+    """The memory provider in Project settings (docs/api.md §6.1, §6.21, tsk-41hpr02cvej8): to None and back."""
+    run.step("memory: the owner switches the provider to None and back; the commitment follows")
+    project_settings(page)
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    page.locator("#memory-provider").select_option("none")
+    page.locator("#memory-reason").fill("e2e: without a memory provider")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("main p.ok")).to_have_text("Project memory saved.")
+    expect(page.locator("#ktw-policy-select")).to_be_disabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("optional")
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    assert shown["memory"]["provider"] == "none" and shown["policy"]["keep_the_why"] == "optional", shown
+    page.locator("#memory-provider").select_option("keep-the-why")
+    page.locator("#memory-reason").fill("e2e: back to Keep the Why")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    expect(page.locator("#ktw-policy-select")).to_be_enabled()
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    assert shown["memory"]["provider"] == "keep-the-why", shown
+    run.a11y(page, "project settings, memory")
+    no_problems(run, "memory provider")
 
 
 def isolate_step(run: Run, page: Page) -> None:

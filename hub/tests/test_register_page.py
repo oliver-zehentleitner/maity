@@ -39,12 +39,21 @@ def hub(**env: str) -> Settings:
 
 
 def start(
-    make_client: ClientFactory, migrated: Engine, settings: Settings, address: str = "ada@x.org"
+    make_client: ClientFactory,
+    migrated: Engine,
+    settings: Settings,
+    address: str = "ada@x.org",
+    language: str | None = None,
 ) -> tuple[TestClient, str]:
-    """A client of the instance and the link of a registration the way §2.7.1 makes one."""
+    """A client of the instance and the link of a registration the way §2.7.1 makes one;
+    `language` is the asking browser's `Accept-Language`."""
     factory.human(migrated, "maintainer")  # the first human: the instance admin
     client = make_client(mail=settings.mail, registration=settings.registration)
-    asked = client.post("/api/v1/auth/register", json={"address": address, "password": PASSWORD})
+    asked = client.post(
+        "/api/v1/auth/register",
+        json={"address": address, "password": PASSWORD},
+        headers={"Accept-Language": language} if language else {},
+    )
     assert asked.status_code == 202, asked.text
     with migrated.connect() as conn:
         mail = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id.desc())).first()
@@ -460,3 +469,43 @@ def test_the_page_links_the_legal_pages_the_instance_serves(
     # (§16.7.1); a page that is not set is no link.
     assert '<a href="/privacy">Privacy notice</a> · <a href="/terms">Terms of use</a>' in page.text
     assert 'href="/impressum"' not in page.text
+
+
+def serve_legal(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            t.legal_page.insert(),
+            [
+                {"page": "imprint", "current": "v1"},
+                {"page": "privacy", "current": "v2"},
+                {"page": "terms", "current": None},
+            ],
+        )
+
+
+def test_the_legal_links_are_in_the_page_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub(), language="de-AT")
+    serve_legal(migrated)
+    page = client.get(link)
+    # In the order of legal.PAGES, each label in the registration's language (§2.7.1).
+    assert (
+        '<a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutzerklärung</a>'
+        in page.text
+    )
+    assert 'href="/terms"' not in page.text
+
+
+def test_a_refused_answer_draws_the_page_again_with_its_legal_links(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub())
+    serve_legal(migrated)
+    page = client.get(link)
+    refused = answer(client, link, page, handle="x")  # a bad handle: the form comes back
+    assert refused.status_code == 400, refused.text
+    assert (
+        '<a href="/impressum">Imprint</a> · <a href="/privacy">Privacy notice</a>' in refused.text
+    )
+    assert humans(migrated) == []

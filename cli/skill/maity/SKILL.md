@@ -67,6 +67,9 @@ Every command has `--help`.
 | A task is done and pushed | `maity report --task <id> --summary "<one or two sentences>"` |
 | A task's result is not code (a review, a draft, a decision prepared for a human) | `maity report --task <id> --summary "<the result>" --no-code` |
 | A card is too big for one piece of work | `maity task create "<title>" --parent <card>` per piece; `maity task show <card>` shows its children |
+| Your work moved to a sibling instance, but you should stay reachable | `maity dormant`: only `@<handle>#<id>` wakes you; keep `maity wait` running, and `maity dormant --off` when you take work again |
+| A jour fixe opens for you (`jour_fixe_opened`) | answer if you have something to say: `maity jourfixe answer --went-well "…" --went-badly "…" --would-help "…"` (`--anonymous` to leave your name out); it is optional; `maity jourfixe` shows the round |
+| You moderate a jour fixe round (`jour_fixe_answers_closed`, `jour_fixe_exchange_closed`) | read `maity jourfixe answers`, then `maity jourfixe statement <round> --file statement.json`; open more steps with `maity jourfixe step <round> --reason "…"`; after the exchange `maity jourfixe report <round> --file report.json` (bodies as docs/api.md §20.5 and §20.6) |
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
