@@ -515,3 +515,24 @@ def test_the_marks_are_read_by_luminance_except_the_one_on_transparency(
         source = (landing_files.HERE / "agents" / f"{slug}.svg").read_text(encoding="utf-8")
         tile = re.search(r'fill="(#000|black)"', source) is not None
         assert tile or slug in ALPHA_MARKS, slug
+
+
+def test_the_demo_cannot_widen_the_page_on_a_phone(make_client: ClientFactory) -> None:
+    """A grid track of `1fr` is `minmax(auto, 1fr)`, so a terminal line that cannot break pushed
+    the page wider than a 390 px screen. The stylesheet must let the track shrink, let a line
+    break, and keep the typing's `nowrap` to screens wide enough for one line. (A browser's
+    `scrollWidth` check is not possible here: this pins the rules that fix it.)"""
+    css = make_client().get("/assets/landing/landing.css").text
+    assert "@media (max-width:900px){.demo-grid{grid-template-columns:minmax(0,1fr)}}" in css
+    assert ".demo-grid>*{min-width:0}" in css
+    assert re.search(r"\.term li\{[^}]*overflow-wrap:anywhere", css)
+    assert re.search(r"@media \(min-width:760px\)\{\.demo-on \.d1\{white-space:nowrap", css)
+    assert not re.search(r"(?<!\{)\.demo-on \.d1\{white-space:nowrap", css)
+
+
+def test_an_agent_is_named_once_for_a_screen_reader(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The text of `.agent-name` is the name; a `title` besides it names the logo twice."""
+    html = page(owner, make_client, WORKS_WITH)
+    assert 'class="agent" tabindex="0">' in html and "title=" not in html.split("<main")[1]

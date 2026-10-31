@@ -457,7 +457,7 @@ def _works_with(index: int, section: dict[str, Any]) -> str:
             mask = f"-webkit-mask-image:url({address});mask-image:url({address})"
             shape = "agent-logo agent-alpha" if slug in ALPHA_MARKS else "agent-logo"
             cells.append(
-                f'<li class="agent" tabindex="0" title="{escape(AGENTS[slug], quote=True)}">'
+                f'<li class="agent" tabindex="0">'
                 f'<span class="{shape}" style="{escape(mask, quote=True)}"></span>'
                 f'<span class="agent-name">{escape(AGENTS[slug])}</span></li>'
                 if copy == "first"
