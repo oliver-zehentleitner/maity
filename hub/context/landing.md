@@ -359,3 +359,29 @@ not depend on how the object was saved is the same everywhere.
 - The order in which the admin created the languages: it cannot be stored in a `jsonb` object without carrying a list of its own,
   and the contract has no field for one.
 - Fixing the test to expect the database's order: the page would still differ between databases, and an operator could not predict it.
+
+## The agents of a `works_with` section are a list in the hub's code, with their logos beside it
+
+**Id:** fd53bea7-4f81-4b2c-99f7-1d3803f585b0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.7; the maintainer's decision of 2026-10-31 on the card tsk-6g1jxzk1xh1b (the set of agents, the designer's file with the marks' origins)
+**See:** landing.md#the-landing-pages-look-is-the-hubs-own-files-served-from-the-package-under-their-digest-the-page-reads-without-them — 7c22ec9b-0c71-4079-998e-a0900d395ac1 — as of 2026-10-31
+**Revisit when:** an operator needs an agent the list does not have, or an owner of a mark asks for its removal
+
+`landing.AGENTS` maps a slug to the name shown; `landing_assets/agents/<slug>.svg` is its logo, served under
+`/assets/landing/agents/` like the stylesheet. The page names slugs only: an unknown one is `unknown_agent`, a repeated one
+`duplicate`, and the JSON cannot carry a logo, an address or a name. The logos are third-party marks stored as received, so the
+folder has a `NOTICE` (origin, terms, how to ask for removal) that `LICENSE` and the README point to and that ships with the files
+in the package. The band recolors the files with a CSS mask, so the files stay unedited and one color serves both themes; it
+needs no script.
+
+**Reason:** `img-src 'self'` and the rule that the page's JSON never becomes markup or a request leave no place for a logo
+address in the page; a fixed list also keeps the marks' terms in one reviewable place.
+
+**Rejected alternatives:**
+- A logo or URL field per item: it would open the page to any image and put third-party marks under the operator's own
+  responsibility with no record of their terms.
+- Redrawing or recoloring the files: the designer's source keeps them byte for byte so a removal or replacement is file by file.
+- The list in the stylesheet or script: the band would then depend on the script, and validation could not know the names.

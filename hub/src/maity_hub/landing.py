@@ -123,7 +123,8 @@ def _control(value: object) -> bool:
 # A field is `(kind, …, required)`: ("text", maximum, required), ("md", bytes, required),
 # ("link", required), ("int", low, high, required), ("object", {name: field}, required),
 # ("list", item, low, high, required), ("choice", options, low, high, required),
-# ("enum", options, required) and ("names", pattern, high, required). An absent optional field
+# ("enum", options, required), ("names", pattern, high, required) and ("agents", high, required:
+# slugs of `AGENTS`, each once). An absent optional field
 # is left out of the stored page.
 
 Spec = tuple[Any, ...]
@@ -139,6 +140,31 @@ def _points() -> Spec:
 
 # The text of a header link, on any section: the header shows only the sections that have one.
 NAV_LABEL: Spec = ("text", 24, False)
+
+# The agents a `works_with` section may name, by slug, with the name shown. The logo of each is
+# `landing_assets/agents/<slug>.svg`; a new agent is a new line here and a new file there, never
+# a field of the page (§16.7).
+AGENTS: dict[str, str] = {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "opencode": "OpenCode",
+    "gemini": "Gemini",
+    "antigravity": "Antigravity",
+    "copilot": "Copilot",
+    "cursor": "Cursor",
+    "pi": "Pi",
+    "goose": "Goose",
+    "cline": "Cline",
+    "roo": "Roo Code",
+    "kilo": "Kilo Code",
+    "amp": "Amp",
+    "droid": "Droid",
+    "windsurf": "Windsurf",
+    "zed": "Zed",
+    "kiro-cli": "Kiro CLI",
+    "trae": "Trae",
+    "openclaw": "OpenClaw",
+}
 NAV_LABELS_MAX = 4
 
 SECTIONS: dict[str, dict[str, Spec]] = {
@@ -246,6 +272,11 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         "text": ("text", 300, False),
         "cta": _link(),
     },
+    "works_with": {
+        "label": ("text", 40, True),
+        "items": ("agents", len(AGENTS), True),
+        "more": ("text", 60, False),
+    },
     "text": {"title": ("text", 120, False), "markdown": ("md", 16 * 1024, True)},
     "activity": {"title": ("text", 120, False), "count": ("int", 1, 20, True)},
     "profiles": {
@@ -344,6 +375,20 @@ def _field(value: Any, spec: Spec, path: str, found: Problems) -> Any:
             found.add(path, "invalid")
             return None
         return list(picked)
+    if kind == "agents":
+        slugs = value if isinstance(value, list) else None
+        if slugs is None or not 1 <= len(slugs) <= spec[1]:
+            found.add(path, "invalid")
+            return None
+        seen: set[str] = set()
+        for index, slug in enumerate(slugs):
+            if not isinstance(slug, str) or slug not in AGENTS:
+                found.add(f"{path}.{index}", "unknown_agent")
+            elif slug in seen:
+                found.add(f"{path}.{index}", "duplicate")
+            else:
+                seen.add(slug)
+        return list(slugs) if not any(p.startswith(path + ".") for p in found.fields) else None
     names = value if isinstance(value, list) else None  # "names"
     if (
         names is None

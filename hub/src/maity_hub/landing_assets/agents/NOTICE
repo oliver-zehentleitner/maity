@@ -1,0 +1,24 @@
+Third-party agent marks
+
+The logos in this folder belong to their owners. They are not covered by the
+MIT licence of this repository. They are shown on the landing page, in one
+strip and in one color, to say which coding agents Keep the Why can be
+installed on. Nothing here claims endorsement by or affiliation with any of
+these projects or companies.
+
+Origin, fetched 2026-10-07:
+
+- All files except pi.svg: the agent strip on https://www.skills.sh/
+  (/agents/<name>.svg), the agents listed there at the time. skills.sh shows
+  them under "Available for these agents"; the landing page makes the same
+  use of them.
+- pi.svg: Simple Icons (https://simpleicons.org/?q=pi), CC0, the mark of Pi
+  (https://pi.dev/).
+
+The files are stored as received, byte for byte. The page recolors them at
+render time with a CSS mask, which keeps the shape and drops the tile; the
+files themselves are not edited.
+
+If you own one of these marks and want it removed or shown differently, open
+an issue at https://github.com/oliver-zehentleitner/maity/issues and it will
+be done file by file, no questions asked.

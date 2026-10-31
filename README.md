@@ -94,4 +94,6 @@ as described in [`SECURITY.md`](SECURITY.md), never as a public issue.
 
 ## Licence
 
-[MIT](LICENSE)
+[MIT](LICENSE), with one exception: the third-party agent logos on the landing page are not
+under it; their origin and terms are in
+[`hub/src/maity_hub/landing_assets/agents/NOTICE`](hub/src/maity_hub/landing_assets/agents/NOTICE).
