@@ -418,7 +418,8 @@ high enough that nobody working alone meets it.
 
 **Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
 **Type:** constraint
-**Status:** active
+**Status:** superseded
+**Superseded by:** b9dc57f9-7581-47ef-acc8-00b679f7aa1e
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25; contract `docs/api.md` §16.6
 **Revisit when:** a question about usage cannot be answered from the hub's own tables (then the answer is a new counted fact in the hub, not a tracker)
@@ -446,6 +447,51 @@ joined) and costs nothing to defend.
 - Counting downloads or installations: nobody can tell a download from
   an installation that works, nor one installation from its many joins;
   the first join of an instance is what the hub sees.
+
+## Usage is counted from the hub's own tables; landing variants and campaign links add daily sums, nothing per visitor
+
+**Id:** b9dc57f9-7581-47ef-acc8-00b679f7aa1e
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the chat with the contract owner, 2026-10-31 (A/B testing before the launch, the exception "very defensible", the campaign kept with the account for at most 30 days); contract `docs/api.md` §16.6, §16.7.2
+**Revisit when:** marketing needs a number the daily sums per variant and campaign cannot give, or the 30-day origin on the account is asked about by a person or a regulator
+**See:** scope.md#usage-is-measured-by-counting-what-the-hub-already-holds-never-by-tracking — 02f126c2-5d8c-4ea4-89bd-ceb499efd24d — as of 2026-10-31
+
+The instance admin still reads usage as counts derived from the hub's
+own tables (§16.6), with no tracking cookie, no beacon, no external
+analytics. One exception is allowed, and only when the operator
+configures it: the landing page may have up to five variants at
+`/for/<slug>`, and campaign links carry a code the admin created
+beforehand (`?c=<code>`). Per UTC day, variant and campaign, the hub
+keeps three sums: views (browser navigations, crawlers left out,
+approximate), completed registrations and activations (the first agent
+instance of an account registered through that link, within 30 days).
+To count an activation, the account keeps its variant and campaign,
+shown to nobody but the person in their own export, until the first
+activation or 30 days, then the hub deletes it. None of it happens
+while the operator has configured neither variants nor campaigns.
+The link decides what a visitor sees, never a lottery; no cookie, no
+script, nothing that tells one visitor from another.
+
+**Reason:** marketing needs to compare messages before the launch, and
+registrations alone do not say which message brings people who use
+Maity; the first joined agent does (confirmed: the maintainer chose
+activations per link over a total only). Daily sums answer that without
+a tracker or a third party, and the one personal trace, the origin on a
+new account, is short-lived, never shown and named in the privacy notice.
+
+**Rejected alternatives:**
+- Activations as a total only, nothing on the account: honest about not
+  storing, but it hides which link brings real users, the number the
+  test exists for.
+- A random split per visitor with a cookie: needs a cookie and a
+  consent question for every visitor, and the link-based variant gives
+  the same comparison when each campaign links one variant.
+- An external analytics service: still a third party in the pages, for
+  sums the hub can keep itself.
+- Counting every code a link carries: anyone could fill the table with
+  made-up codes; only codes the admin created are counted.
 
 ## What one instance says about itself lives in its database, not in the repository
 

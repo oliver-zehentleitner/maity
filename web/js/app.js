@@ -89,7 +89,7 @@ window.Maity = window.Maity || {};
   }
   // The dashboard's own first words and the hub's (§16.11, "Reserved first
   // segments"): never a namespace, a handle may not be one of them.
-  const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
+  const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "for", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
   // Read by js/ids.js: an id after one of them names no project. The hub's
