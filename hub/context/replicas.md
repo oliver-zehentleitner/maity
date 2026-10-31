@@ -68,8 +68,8 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; points 3 to 5 have cards of their own (tsk-ywss353vk5q2, tsk-5mspd6ftkacq, tsk-az67x29mc2yg)
-**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31; point 4 has a card of its own (tsk-5mspd6ftkacq)
+**Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
 `engine.begin()`); a waiter on another pod sees the row at its 2-second fallback re-read. The
@@ -80,7 +80,9 @@ design:
    precedes its row and never announces a row that does not exist. The local `notifier.notify`
    after commit stays, so the writing pod wakes without the round trip; its own notification,
    which comes back through the listener, is skipped (the notifier remembers the last 4096
-   events it announced), so a write does not wake the writing pod's waiters twice. The payload
+   events it announced), so a write usually does not wake the writing pod's waiters twice; when
+   the listener hears the notice before the commit's own announcement has run, they are woken
+   twice, which costs one read more. The payload
    says where to look, never what happened: the waiter reads the row with its own rights.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
@@ -88,14 +90,32 @@ design:
    event. The waiters re-read spread over a random 0–2 s, not all at once: a pod holding 10 000
    waits must not send 10 000 reads in the same instant. The 2-second fallback stays as the safety net and
    can be raised to about 10 s once the load test shows the listener reliable.
-3. **Superseding across pods:** a new long-poll of a key (`credential_id`, `session:<cookie>`,
-   runner key) sends `pg_notify('maity_supersede', key || ':' || token)` when it starts; a pod
-   holding an older wait of that key ends it with `superseded`. The rule of §8.3, "the wait that
+3. **Superseding across pods:** a new long-poll of a key (`credential_id`, `session:<id_hash>`,
+   runner key) announces itself when it opens, in a short transaction of its own:
+   `pg_notify('maity_supersede', '<sha256 of kind:key>:<start>')`, the start read from the
+   database's `clock_timestamp()` in microseconds (`wakeups.opened`). A pod holding a wait of that
+   kind and key that started earlier ends it with `superseded`; a wait that started later, or the
+   announcing wait itself when its own notice comes back, stays. The rule of §8.3, "the wait that
    took over owns what came in", holds again across pods. The bell's and the device codes' own
    "newer wait supersedes" maps (`routes/notifications._holding`, `routes/device_codes._holding`)
-   move onto the same channel. A closing wait removes only what it owns: its own `wait_id`
-   (point 4), never the row or the holder entry of the wait that superseded it, as
-   `longpoll.Registry` already checks today in the one process.
+   use the same channel, each as a kind of its own (`bell`, `device`, `events` for agents and
+   runners). A closing wait removes only what it owns: its own `wait_id` (point 4), never the row
+   or the holder entry of the wait that superseded it, as `longpoll.Registry` already checks in
+   the one process. Built with two departures from the first wording, `key || ':' || token`:
+   - **The start on the database clock, not a token:** with a token alone, two waits of one key
+     opening almost together on two pods can each receive the other's notice after opening, and
+     both end, leaving the client without a wait. The order decides instead, read from the one
+     clock every pod shares; the pods' own clocks differ, so a start each pod reads for itself
+     was rejected too.
+   - **The key's hash, not the key:** the channel then carries no credential or session id, and
+     every notice has the same length. The raw key was rejected for that reason.
+   A wait is held from the moment its start is read, before its notice commits, so a newer
+   wait's notice arriving in between still finds it. Only a wait that started strictly earlier
+   ends: two starts in the same microsecond end neither, where `<=` would end both, the case the
+   order exists to prevent. A notice that arrives while the listener is disconnected is lost
+   and not caught up: the older wait then stays open until its own timeout (at most 55 s), as
+   before this point existed. Catching up would need the waits in a table, which point 4 brings.
+   Each opening wait costs that one transaction on PostgreSQL; SQLite and MariaDB announce nothing.
 4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(wait_id,
    listening_key, pod, opened_at)`, one row per open wait, keyed by a fresh `wait_id`, inserted
    when a wait opens and deleted by that `wait_id` when it closes, so two waits of one key (today
@@ -107,10 +127,34 @@ design:
    where `team_wakes` asks for many instances). A crashed pod's rows stop counting after 45 s and
    are removed by the next pod's sweep.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
-   move onto the same wake-up: a notification-relevant write (event, account record, read mark)
-   notifies `maity_bell` with the human's id, and a device-code write (`redeem`, `approve`,
-   `deny`, `void_open`) notifies `maity_device` with the code's key. With 20 000 open dashboards the 0.5-second poll alone
-   would be 40 000 stamp reads a second; on the wake-up it is a read per change.
+   move onto the wake-ups on PostgreSQL (`wakeups.held`, `Held.pause`): a held wait sleeps until
+   something wakes it, at the latest `FALLBACK_SECONDS` (2 s), and then compares its stamp or
+   status as before. With 20 000 open dashboards the 0.5-second poll alone would be 40 000 stamp
+   reads a second; on the wake-up it is a read per change plus one per wait every 2 s.
+   - **The bell rides on the event wake-ups:** it registers in `longpoll.registry` with the
+     human's member projects, so every event in them wakes it, locally and across replicas
+     (`maity_events`, point 1). That wakes more bells than needed, every event of the project
+     and not only those that make an item for this human; the stamp comparison absorbs it, at
+     a few aggregate reads per wake. `maity_bell` (the SHA-256 of the human id) is rung only by
+     the human's own rows that no event announces: a new account record (`records.write`), a
+     mark read (`listing.mark`) and a chat read mark (`routes/events.remember_read`).
+     Rejected: ringing `maity_bell` for every reached human on each `emit`, as first written,
+     which would resolve every audience twice, once to store the event and once to ring it.
+   - **The device codes:** `redeem`, `approve`, `deny` and `complete` ring `maity_device` with
+     the SHA-256 of both waits' keys, the creator's (`code:<session_hash>`) and the redeeming
+     browser's (`pending:<pending_hash>`). `void_open`, rare (a method switched off, a session
+     ended), and expiry, which nothing writes, are left to the fallback.
+   - What wakes nothing, such as a membership that changes the bell's projects (written in many
+     places), shows at the fallback, at most 2 s late. SQLite and MariaDB keep the polls.
+   - Built in card tsk-az67x29mc2yg, 2026-10-31.
+
+**Constraint:** PostgreSQL keeps notices in one queue (8 GB by default) until every listening
+session has read them. A session that listens and stops reading, such as a listener whose
+connection died half-open, holds the queue; once it is full, every commit that notifies fails,
+which here is every write with an event. The listener's connection therefore sets TCP keepalives
+(`db.LISTENER_KEEPALIVES`, a dead connection noticed after about a minute, then a new one), and
+the server's own keepalive ends the dead session. What is left to watch is
+`pg_notification_queue_usage()`, which the operator's monitoring should alert on well before 1.
 
 **Reason:** `NOTIFY` inside the transaction makes the wake-up exactly as durable as the write;
 one listener per pod costs one connection, and fan-out to the waiters stays in memory as today.

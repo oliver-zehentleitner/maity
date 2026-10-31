@@ -8,7 +8,6 @@ redeems, approves or completes a code.
 
 from __future__ import annotations
 
-import asyncio
 import secrets
 import time
 from collections.abc import Callable
@@ -17,9 +16,19 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import Engine
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration, shared_counts
+from maity_hub import (
+    API_VERSION,
+    clock,
+    longpoll,
+    moderation,
+    paths,
+    registration,
+    shared_counts,
+    wakeups,
+)
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -87,19 +96,32 @@ def _require_enabled(request: Request) -> None:
             )
 
 
-async def _hold(read: Callable[[], dict[str, Any]], wait: int, key: str) -> dict[str, Any]:
+async def _hold(
+    engine: Engine, read: Callable[[], dict[str, Any]], wait: int, key: str
+) -> dict[str, Any]:
     """Answer at once, or with `wait` hold until the status changes (§8.3)."""
     first = await run_in_threadpool(read)
     if wait == 0 or first["status"] in ("used", "denied", "expired"):
         return first
     token = object()
-    _holding[key] = token
+    _holding[key] = token  # held before the announcement, which may supersede it at once
+    # The code's writers ring the key (`ring_code`); expiry, which nothing writes, is the
+    # fallback's to see.
+    hold = wakeups.held(engine, "device", wait_key=key, ring_key=key, poll=POLL)
+
+    def taken_over() -> None:  # a newer wait of the key on another replica (`wakeups`)
+        if _holding.get(key) is token:
+            del _holding[key]
+        hold.wake()
+
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     current = first
     try:
+        closed = await wakeups.opened(engine, "device", key, taken_over)
         # A stopping hub answers with what it has; the client simply waits again (§8.3).
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
-            await asyncio.sleep(POLL)
+            await hold.pause(deadline - time.monotonic())
             if _holding.get(key) is not token:
                 return {**current, "superseded": True}
             current = await run_in_threadpool(read)
@@ -107,6 +129,9 @@ async def _hold(read: Callable[[], dict[str, Any]], wait: int, key: str) -> dict
                 break
         return current
     finally:
+        hold.close()
+        if closed is not None:
+            closed()
         if _holding.get(key) is token:
             del _holding[key]
 
@@ -150,7 +175,7 @@ async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONRes
                 raise not_found()
             return device_codes.creator_view(row, clock.now())
 
-    return JSONResponse(await _hold(read, wait, f"code:{session_hash}"))
+    return JSONResponse(await _hold(engine, read, wait, f"code:{session_hash}"))
 
 
 @router.post("/device-codes/{code_id}/approve")
@@ -280,7 +305,7 @@ async def watch_redemption(request: Request) -> JSONResponse:
             return device_codes.pending_view(conn, row, clock.now())
 
     key = f"pending:{device_codes.digest(pending or secrets.token_hex(8))}"
-    return JSONResponse(await _hold(read, wait, key))
+    return JSONResponse(await _hold(engine, read, wait, key))
 
 
 @router.post("/device-login/complete")

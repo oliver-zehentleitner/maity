@@ -43,6 +43,7 @@ CHOICES = {
     "keep_the_why_defaults": ("adopt", "ask"),
     "merged_closes": ("notify", "auto"),
     "member_agents": ("off", "on"),
+    "agent_owners": ("members", "anyone"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
 MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
@@ -60,6 +61,8 @@ FIELDS = (
     "jour_fixe_moderators",
     "takeover_window_minutes",
     "member_agents_max",
+    "agent_owners",
+    "outside_roles",
 )
 # Kept when a preset changes: a preset must not quietly loosen signing or who may start
 # agents, reset the placement limit, the coordinator seats or the takeover window, or
@@ -83,7 +86,14 @@ KEPT_ON_PRESET = (
     "merged_closes",
     "member_agents",
     "member_agents_max",
+    "agent_owners",
+    "outside_roles",
 )
+
+# What an owner from outside may let an agent do (§6.1 `outside_roles`, §6.2): the built-in
+# roles that work, and project roles on them. Whatever else a list names is `invalid`.
+OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team")
+OUTSIDE_DEFAULT = ["coder"]
 
 
 def keep_the_why_effective(project: Any) -> str:
@@ -113,6 +123,8 @@ def filled(preset: str, owner_id: str) -> dict[str, Any]:
         "merged_closes": "notify",
         "member_agents": "on",
         "member_agents_max": MEMBER_AGENTS_MAX_DEFAULT,
+        "agent_owners": None,  # unset: it follows the public page (§6.1)
+        "outside_roles": list(OUTSIDE_DEFAULT),
     }
     if preset == "solo":
         policy["contract_arbiter"] = owner_id
@@ -146,7 +158,15 @@ def of(project: Any) -> dict[str, Any]:
         "takeover_window_minutes": project.takeover_window_minutes,
         "member_agents": project.member_agents,
         "member_agents_max": project.member_agents_max,
+        "agent_owners": project.agent_owners,
+        "outside_roles": outside_roles(project),
     }
+
+
+def outside_roles(project: Any) -> list[str]:
+    """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one."""
+    stored = project.outside_roles
+    return list(OUTSIDE_DEFAULT) if stored is None else list(stored)
 
 
 def columns(policy: dict[str, Any]) -> dict[str, Any]:
@@ -177,6 +197,8 @@ def columns(policy: dict[str, Any]) -> dict[str, Any]:
         "takeover_window_minutes": policy["takeover_window_minutes"],
         "member_agents": policy["member_agents"],
         "member_agents_max": policy["member_agents_max"],
+        "agent_owners": policy["agent_owners"],
+        "outside_roles": policy["outside_roles"],
     }
 
 

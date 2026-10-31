@@ -21,6 +21,7 @@ from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    allowed_projects,
     availability,
     clock,
     events,
@@ -29,6 +30,7 @@ from maity_hub import (
     instances,
     longpoll,
     namespace,
+    wakeups,
 )
 from maity_hub import placements as pl
 from maity_hub import tables as t
@@ -295,6 +297,9 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
         items, cursor = await run_in_threadpool(read, after)
         return answer(items, cursor, superseded=False)
 
+    closed = await wakeups.opened(
+        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+    )
     longpoll.registry.enter(waiter)
     try:
         deadline = time.monotonic() + wait
@@ -318,6 +323,7 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
+        closed()
         longpoll.registry.leave(waiter)
 
 
@@ -457,6 +463,12 @@ def pick_up(
             raise _pickup_refused("stale_generation")
         if placement.credential_id is not None and not placement.rejoin:
             raise _pickup_refused("credential_issued")
+        project = conn.execute(
+            select(t.project).where(t.project.c.id == placement.project_id)
+        ).one()
+        if not allowed_projects.admits_membership(conn, placement.membership_id, project):
+            # a rejoin included: a member its owner unticked keeps its membership (§6.3)
+            raise _pickup_refused("project_not_allowed")
         j = t.join_link.c
         earlier = conn.execute(
             select(j.id, j.used_at, j.revoked_at).where(

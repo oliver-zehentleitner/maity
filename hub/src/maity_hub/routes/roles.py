@@ -8,11 +8,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select, update
 
-from maity_hub import events, idempotency, project_roles, rules
+from maity_hub import events, idempotency, policy, project_roles, rules
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, invalid
 from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 
@@ -55,6 +55,15 @@ def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -
         project = events.lock_project(conn, mine.project.id)
         parsed = project_roles.parse(body.custom)
         old = {r["name"]: r for r in project_roles.of(project)}
+        listed = policy.outside_roles(project)
+        for index, role in enumerate(parsed):
+            if role["name"] in listed and role["base"] not in policy.OUTSIDE_BASES:
+                # An outsider's agent may hold it (`outside_roles`, §6.1): never one that
+                # reviews, tests or manages, and the base is what grants those.
+                raise invalid(
+                    {f"custom[{index}].base": "outside_roles"},
+                    f"the role {role['name']} is in policy.outside_roles",
+                )
         for name in old.keys() - {r["name"] for r in parsed}:
             found = project_roles.uses(conn, project, name)
             if found:

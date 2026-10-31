@@ -85,6 +85,21 @@ def test_create_revision_names_the_migration_by_time_and_slug(
     assert len(revision_id("x" * 80, now)) == 32
 
 
+def test_every_revision_id_fits_the_version_column() -> None:
+    """`alembic_version.version_num` is 32 characters on PostgreSQL, which SQLite and MariaDB do
+    not enforce: a longer id passes everywhere but there, and fails every test's setup."""
+    import re
+
+    pattern = re.compile(r'^(?:revision|down_revision)(?:: str(?: \| None)?)? = "([^"]+)"$', re.M)
+    too_long = [
+        (path.name, found)
+        for path in Path(str(files("maity_hub") / "migrations" / "versions")).glob("*.py")
+        for found in pattern.findall(path.read_text())
+        if len(found) > 32
+    ]
+    assert not too_long, f"revision ids over 32 characters: {too_long}"
+
+
 def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engine) -> None:
     """0032 down: deleted profiles whose handle a live one took get their id appended, so
     the old `(owner_id, handle)` key holds again and is enforced."""

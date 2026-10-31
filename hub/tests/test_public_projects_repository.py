@@ -192,10 +192,15 @@ def test_an_answer_for_a_repository_that_changed_meanwhile_is_dropped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     github.answers["/repos/acme/maity"] = {"private": False}
+    github.answers["/repos/acme/other"] = {"private": False}  # the PATCH looks at it too
     original = forge.Forge.repository_public
+    moves = [True]  # once: the PATCH's own look at the new repository passes through here too
 
     def patched_meanwhile(self: forge.Forge, repository: str) -> bool:
         found = original(self, repository)
+        if not moves:
+            return found
+        moves.pop()
         moved = public.patch(
             "/projects/maintainer/maity",
             {"repository": {"url": "https://github.com/acme/other", "default_branch": "main"}},

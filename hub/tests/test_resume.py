@@ -73,6 +73,8 @@ def test_the_packet_has_every_part_of_the_contract(
         "isolated": None,  # §6.2
         "briefing": None,
         "briefing_source": None,
+        "takes_over": None,  # §3.1: the join named none
+        "handover": None,
         "team": {
             "max_instances": 1,
             "distribution": "free",

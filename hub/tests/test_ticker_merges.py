@@ -40,7 +40,7 @@ def settings(settings: Settings) -> Settings:
 @pytest.fixture
 def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     fake = FakeGitHub()
-    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path: fake(path))
+    monkeypatch.setattr(forge.Forge, "_get", lambda _self, path, **_: fake(path))
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)
     return fake
 

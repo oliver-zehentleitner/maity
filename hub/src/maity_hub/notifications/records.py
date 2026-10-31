@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, wakeups
 from maity_hub import tables as t
 
 KEPT = timedelta(days=90)
@@ -57,6 +57,7 @@ def write(conn: Connection, human_id: str, kind: str, data: dict[str, Any]) -> i
     key = result.inserted_primary_key
     if key is None:
         raise RuntimeError("the record insert returned no number")
+    wakeups.ring(conn, "bell", human_id)  # a held bell of the human looks again
     return int(key[0])
 
 

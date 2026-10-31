@@ -38,11 +38,11 @@ def shown(client: Any, path: str = PATH) -> str | None:
 @pytest.fixture
 def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     human = flow.human(pages(make_client), migrated)
-    flow.project(human)
+    flow.project(human, public_page="off")  # most of this file starts from a private project
     return human
 
 
-def test_a_project_is_private_until_its_owner_turns_the_page_on(
+def test_a_project_asked_private_is_private_until_its_owner_turns_the_page_on(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     view = owner.get("/projects/maintainer/maity").json()

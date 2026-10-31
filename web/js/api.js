@@ -3458,7 +3458,7 @@ window.Maity = window.Maity || {};
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
       });
       return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",
+        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],

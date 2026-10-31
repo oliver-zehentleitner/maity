@@ -11,15 +11,21 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime, formatAgo } = M.dom;
 
-  const FIELD_WORDS = { title: "the title", body: "the description", label: "the label", area: "the area", status: "the status",
-    depends_on: "the dependencies", ships_with: "ships with", parent: "the parent", related: "the related cards",
-    assigned_to: "the assignee", ktw_ref: "the Keep the Why reference", links: "the links",
-    "contract.state": "the contract's state", "contract.path": "the contract's path", "contract.section": "the contract's section" };
+  const FIELD_WORDS = {
+    title: () => M.t("cardpanel.field.title"), body: () => M.t("cardpanel.field.body"), label: () => M.t("cardpanel.field.label"),
+    area: () => M.t("cardpanel.field.area"), status: () => M.t("cardpanel.field.status"),
+    depends_on: () => M.t("cardpanel.field.depends_on"), ships_with: () => M.t("cardpanel.field.ships_with"),
+    parent: () => M.t("cardpanel.field.parent"), related: () => M.t("cardpanel.field.related"),
+    assigned_to: () => M.t("cardpanel.field.assigned_to"), ktw_ref: () => M.t("cardpanel.field.ktw_ref"), links: () => M.t("cardpanel.field.links"),
+    "contract.state": () => M.t("cardpanel.field.contract_state"), "contract.path": () => M.t("cardpanel.field.contract_path"),
+    "contract.section": () => M.t("cardpanel.field.contract_section"),
+  };
+  const fieldWord = (f) => (Object.hasOwn(FIELD_WORDS, f) ? FIELD_WORDS[f]() : f);
 
   // A value of the history as a short text; a body or title as its diff.
   function shortValue(v) {
     if (v === null || v === undefined || v === "") return "–";
-    if (Array.isArray(v)) return v.length ? v.join(", ") : "–";
+    if (Array.isArray(v)) return v.length ? M.fmt.list(v.map(String)) : "–";
     if (typeof v === "object") return v.url || v.forge_url || v.label || JSON.stringify(v);
     return String(v);
   }
@@ -32,22 +38,30 @@ window.Maity = window.Maity || {};
   function historyLine(ctx, e) {
     const who = h("span", null, byline(ctx, e.actor));
     const when = h("span", { class: "muted" }, " · " + formatAgo(e.at, M.api.now()));
-    if (e.field === "created") return h("li", null, who, " created the card", when);
-    if (e.redacted) return h("li", null, who, " changed " + (FIELD_WORDS[e.field] || e.field) + " (removed)", when);
+    const field = fieldWord(e.field);
+    if (e.field === "created") return h("li", null, M.tn("cardpanel.history.created", { who }), when);
+    if (e.redacted) return h("li", null, M.tn("cardpanel.history.changed_removed", { who, field }), when);
     if (e.diff) {
-      return h("li", null, who, " changed " + (FIELD_WORDS[e.field] || e.field), when,
-        h("details", null, h("summary", null, "What changed"), h("pre", { class: "history-diff" }, e.diff)));
+      return h("li", null, M.tn("cardpanel.history.changed", { who, field }), when,
+        h("details", null, h("summary", null, M.t("cardpanel.history.what_changed")), h("pre", { class: "history-diff" }, e.diff)));
     }
-    return h("li", null, who, " changed " + (FIELD_WORDS[e.field] || e.field) + ": ",
-      h("span", { class: "history-before" }, shortValue(e.before)), " → ", h("span", { class: "history-after" }, shortValue(e.after)), when);
+    return h("li", null, M.tn("cardpanel.history.changed_value", { who, field,
+      before: h("span", { class: "history-before" }, shortValue(e.before)), after: h("span", { class: "history-after" }, shortValue(e.after)) }), when);
+  }
+
+  // A pull request or an issue: its reference, with the title and state the hub observed.
+  function forgeWords(l, url) {
+    const ref = l.repository ? l.repository + "#" + l.number : String(url);
+    let words = l.kind === "pr" ? M.t("cardpanel.link.pr", { ref }) : M.t("cardpanel.link.issue", { ref });
+    if (l.observed && l.observed.title) words = M.t("cardpanel.link.titled", { link: words, title: l.observed.title });
+    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: l.observed.state });
+    return words;
   }
 
   function linkItem(l) {
     const url = l.kind === "url" ? l.url : l.forge_url;
     const safe = typeof url === "string" && /^https:\/\//.test(url);
-    const words = l.kind === "url" ? (l.label || url)
-      : (l.kind === "pr" ? "Pull request " : "Issue ") + (l.repository ? l.repository + "#" + l.number : url)
-        + (l.observed && l.observed.title ? ": " + l.observed.title : "") + (l.observed && l.observed.state ? " (" + l.observed.state + ")" : "");
+    const words = l.kind === "url" ? (l.label || url) : forgeWords(l, url);
     return h("li", null, safe ? h("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, words) : h("span", null, words));
   }
 
@@ -66,15 +80,15 @@ window.Maity = window.Maity || {};
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, "Close")),
+        h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close"))),
       heading,
       cardSlot,
-      h("h3", null, "Description"),
+      h("h3", null, M.t("cardpanel.description")),
       c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
-        : h("p", { class: "muted" }, "No description."),
-      (c.links || []).length ? [h("h3", null, "Links"), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
-      h("h3", null, "Notes"), notesBox,
-      h("h3", null, "History"), historyBox);
+        : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
+      (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
+      h("h3", null, M.t("cardpanel.notes")), notesBox,
+      h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
 
     async function notes() {
@@ -83,19 +97,19 @@ window.Maity = window.Maity || {};
       try {
         list = (await M.api.getAll(base + "/notes?state=open")).items;
       } catch (err) {
-        append(notesBox, h("p", { class: "send-status failed" }, "Could not read the notes: " + err.message));
+        append(notesBox, h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
         return;
       }
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
           h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
-        : h("p", { class: "muted" }, "No open notes."));
+        : h("p", { class: "muted" }, M.t("cardpanel.notes.none")));
       const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
-      const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: "A finding, a missing case, a pointer (Markdown)" }));
+      const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
       const status = M.statusLine();
-      const submit = h("button", { type: "submit" }, "Post the note");
+      const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
       // One post at a time: a second tap or Ctrl+Enter while the first is
       // on its way sends nothing; a refusal makes the button usable again.
       let posting = false;
@@ -107,21 +121,21 @@ window.Maity = window.Maity || {};
           if (!text.value.trim()) { text.focus(); return; }
           posting = true;
           submit.disabled = true;
-          status.busy("Posting…");
+          status.busy(M.t("cardpanel.notes.posting"));
           try {
             await M.api.post(base + "/notes", { body: text.value });
           } catch (err) {
             posting = false;
             submit.disabled = false;
-            status.fail("Not posted: ", M.boardEdit ? M.boardEdit.said(err) : err);
+            status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
           await notes();
           if (noteField) noteField.focus();
         },
       },
-      h("label", { for: "card-note-body" }, "Add a note"), text,
-      h("p", { class: "hint" }, "A note does not change the card; whoever may edit it works it in."),
+      h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text,
+      h("p", { class: "hint" }, M.t("cardpanel.notes.hint")),
       submit, status.el));
     }
 
@@ -131,9 +145,9 @@ window.Maity = window.Maity || {};
         const page = await M.api.get(base + "/history");
         append(historyBox, page.items.length
           ? h("ul", { class: "card-history-list" }, page.items.map((e) => historyLine(ctx, e)))
-          : h("p", { class: "muted" }, "No changes recorded."));
+          : h("p", { class: "muted" }, M.t("cardpanel.history.none")));
       } catch (err) {
-        append(historyBox, h("p", { class: "send-status failed" }, "Could not read the history: " + err.message));
+        append(historyBox, h("p", { class: "send-status failed" }, M.t("cardpanel.history.read_failed", { reason: err.message })));
       }
     }
 
