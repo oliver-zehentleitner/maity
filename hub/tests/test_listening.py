@@ -129,3 +129,27 @@ def test_one_writer_however_many_apps_start_it(shared: Engine) -> None:
     assert [th.name for th in threading.enumerate()].count("maity-listening") == 1
     listening.stop()  # that app ends; the first still holds the registry
     assert listening._engine[0] is shared and writer is not None and writer.is_alive()
+
+
+def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """c47w at #903: with the database gone (a failover) a failed beat was retried at once, in
+    a loop without a pause, on every pod."""
+    import threading
+
+    beats: list[float] = []
+
+    def failing(_engine: Engine) -> None:
+        beats.append(time.monotonic())
+        raise RuntimeError("the database is gone")
+
+    monkeypatch.setattr(listening, "_heartbeat", failing)
+    monkeypatch.setattr(listening, "HEARTBEAT", timedelta(seconds=0.2))
+    writer = threading.Thread(target=listening._write, args=(migrated,), daemon=True)
+    writer.start()
+    time.sleep(1.0)
+    listening._writes.put(None)
+    writer.join(timeout=5)
+    assert not writer.is_alive()
+    assert 2 <= len(beats) <= 7  # one per interval, not thousands

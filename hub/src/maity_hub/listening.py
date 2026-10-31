@@ -20,8 +20,18 @@ import socket
 import threading
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import Connection, Engine, delete, func, insert, select
+from sqlalchemy import (
+    ColumnElement,
+    Connection,
+    Engine,
+    delete,
+    func,
+    insert,
+    literal_column,
+    select,
+)
 from sqlalchemy.dialects import postgresql
 
 from maity_hub import tables as t
@@ -32,6 +42,12 @@ log = logging.getLogger(__name__)
 POD = f"{socket.gethostname()[:40]}-{secrets.token_hex(4)}"  # this process, in `hub_pod`
 HEARTBEAT = timedelta(seconds=15)
 STALE = timedelta(seconds=45)  # three heartbeats missed: the pod is gone
+# Every moment of the registry is the database's (c47w at #903): pods whose clocks differ by
+# more than a heartbeat would otherwise count each other as gone.
+_STALE_SQL: ColumnElement[Any] = literal_column(f"interval '{int(STALE.total_seconds())} seconds'")
+# The columns hold UTC without a zone (`UtcDateTime`): the database's `now()` compared with them
+# must be taken in UTC, or a server not on UTC shifts it by its offset.
+_DB_NOW: ColumnElement[Any] = func.timezone("UTC", func.now())
 
 _open: dict[str, int] = {}  # this process's open waits per key
 _rows: dict[str, str] = {}  # this process's waits as they should stand in `long_poll`
@@ -59,7 +75,7 @@ def which(keys: Iterable[str], conn: Connection | None = None) -> set[str]:
     query = (
         select(w.listening_key)
         .join(t.hub_pod, p.pod == w.pod)
-        .where(w.listening_key.in_(rest), p.seen_at > _now() - STALE)
+        .where(w.listening_key.in_(rest), p.seen_at > _DB_NOW - _STALE_SQL)
         .distinct()
     )
     if conn is not None:
@@ -155,19 +171,23 @@ def stop(*, every: bool = False) -> None:
 
 
 def _write(engine: Engine) -> None:
-    due = _now() + HEARTBEAT
+    due = _now() + HEARTBEAT  # when the next heartbeat is owed, on this process's clock
     while True:
         try:
             item = _writes.get(timeout=max(0.0, (due - _now()).total_seconds()))
             queued = True
         except queue.Empty:
             item, queued = ("beat", "", ""), False
+        beat = item is not None and (item[0] == "beat" or _now() >= due)
+        if beat:
+            # Owed again a whole interval from now, whether this one succeeds or not: with the
+            # database gone (a failover) a failed beat must not be retried at once, on every pod.
+            due = _now() + HEARTBEAT
         try:
             if item is None:
                 return
-            if item[0] == "beat" or _now() >= due:
+            if beat:
                 _heartbeat(engine)
-                due = _now() + HEARTBEAT
             if item[0] in ("open", "close"):
                 _apply(engine, *item)
         except Exception:
@@ -183,7 +203,7 @@ def _apply(engine: Engine, kind: str, wait_id: str, key: str) -> None:
         if kind == "open":
             conn.execute(
                 postgresql.insert(t.long_poll)
-                .values(wait_id=wait_id, listening_key=key, pod=POD, opened_at=_now())
+                .values(wait_id=wait_id, listening_key=key, pod=POD, opened_at=_DB_NOW)
                 .on_conflict_do_nothing()
             )
         else:
@@ -192,11 +212,12 @@ def _apply(engine: Engine, kind: str, wait_id: str, key: str) -> None:
 
 def _heartbeat(engine: Engine) -> None:
     """This pod is alive; the waits of pods gone longer than `STALE` go; this pod's own rows
-    are written again when what the table holds differs from what is open here."""
-    now = _now()
+    are written again when what the table holds differs from what is open here (the same
+    `wait_id`s, not merely as many: a lost open and a lost close would cancel out)."""
     w, p = t.long_poll.c, t.hub_pod.c
     with engine.begin() as conn:
         write_guard.exempt(conn)  # the registry is no write of an account
+        now = conn.execute(select(func.now())).scalar_one()
         statement = postgresql.insert(t.hub_pod).values(pod=POD, seen_at=now)
         conn.execute(statement.on_conflict_do_update(index_elements=["pod"], set_={"seen_at": now}))
         gone = select(p.pod).where(p.seen_at <= now - STALE).scalar_subquery()
@@ -204,10 +225,8 @@ def _heartbeat(engine: Engine) -> None:
         conn.execute(delete(t.hub_pod).where(p.seen_at <= now - STALE))
         with _lock:
             expected = dict(_rows)
-        held = conn.execute(
-            select(func.count()).select_from(t.long_poll).where(w.pod == POD)
-        ).scalar_one()
-        if held != len(expected):
+        held = set(conn.execute(select(w.wait_id).where(w.pod == POD)).scalars())
+        if held != set(expected):
             conn.execute(delete(t.long_poll).where(w.pod == POD))
             if expected:
                 conn.execute(

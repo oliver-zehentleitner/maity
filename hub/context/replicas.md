@@ -80,9 +80,9 @@ design:
    precedes its row and never announces a row that does not exist. The local `notifier.notify`
    after commit stays, so the writing pod wakes without the round trip; its own notification,
    which comes back through the listener, is skipped (the notifier remembers the last 4096
-   events it announced), so a write usually does not wake the writing pod's waiters twice; when
-   the listener hears the notice before the commit's own announcement has run, they are woken
-   twice, which costs one read more. The payload
+   events it wrote, taken when the event is written, before the commit), so a write does not
+   wake the writing pod's waiters twice, also when the listener hears the notice before the
+   commit's own announcement has run; an event rolled back leaves an entry naming no row. The payload
    says where to look, never what happened: the waiter reads the row with its own rights.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
@@ -126,7 +126,17 @@ design:
    removes the rows of pods gone longer. Built in `listening` (card tsk-5mspd6ftkacq):
    - The writes go through one thread per process, so opening a wait, which happens on the
      event loop, never waits for the database; this process's own waits count at once from
-     memory, another pod's from the moment its thread has written the row.
+     memory, another pod's from the moment its thread has written the row. Rejected: writing
+     the row synchronously when the wait opens and closes, which would put a database round
+     trip on the event loop (or a worker thread) of every long-poll, twice per wait, and make a
+     slow database slow every long-poll; the queue costs a short delay before another pod sees
+     the wait, which the 45-second staleness already tolerates. A failed heartbeat (the
+     database gone, a failover) is tried again after a whole interval, not at once.
+   - Every moment in the registry is the database's (`now()`): `seen_at`, `opened_at` and the
+     staleness compared in `which` and in the sweep. Pods whose clocks differ by more than a
+     heartbeat would otherwise count each other as gone. In SQL it is `timezone('UTC', now())`:
+     the columns hold UTC without a zone, and a bare `now()` compared with them is shifted by
+     the server's `TimeZone` (a server on `Europe/Vienna` made a live pod an hour stale).
    - `which(keys, conn)` answers for many keys in one read, on the caller's connection: the
      member views, the instance lists, the team wakes, the jour fixe and the statistics ask it
      once per call instead of once per instance.
