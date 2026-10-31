@@ -198,8 +198,11 @@ the overlap). A take over the limit is subtracted again, so a refusal records no
 process; two takes at once may both be refused where one would have fitted, the strict side.
 The wait a refusal names (`Retry-After`) follows the same estimate: when the current window alone
 is over the limit it runs into the next window, where this window's attempts count as the
-previous ones and fall by weight, so it can be somewhat longer than the exact answer in the
-process (621 s instead of 600 s for the mentions test), never shorter.
+previous ones and fall by weight. The estimate assumes the attempts spread evenly over the
+window, so the wait can differ from the exact answer in the process either way: longer when the
+attempts came early in the window (621 s instead of 600 s for the mentions test), shorter when
+they came late (29 pings at 594 s of 600, then 2 more: 27 s instead of 600 s). It is no
+conservative bound; what each backend names is the moment its own take fits again.
 `give_back` and `release` subtract from the window they counted in. Every `Limiter` now has a
 `name`, its bucket (`<module>.<variable>`). The breakers keep their "shut until" as a row of the
 same table (`set_until`, `until`), `_wrong_in_session` counts the current and the previous window
