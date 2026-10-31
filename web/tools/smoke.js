@@ -781,10 +781,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && agRow("agt-b").querySelector(".badge.member-isolated").getAttribute("title") === "Isolated: loops on the board"
       && isoAfter && text(isoAfter.querySelector(".member-isolate")).includes("loops on the board") && btn(isoAfter, "Lift isolation"),
       "isolate: the badge on the row with the reason, the Manage row says who and why and offers Lift isolation");
-    btn(isoAfter, "Lift isolation").click(); for (let k = 0; k < 6; k++) await tick();
+    // Lifting (tsk-zwxtdfmdscf7): the box to hide the isolation's events, unticked; unticked, no body is sent.
+    const isoDels = [];
+    const isoDel = win.Maity.api.del;
+    win.Maity.api.del = (p, b) => { isoDels.push([p, b]); return isoDel(p, b); };
+    const liftHide = byId("member-lift-hide-agt-b");
+    expect(liftHide && !liftHide.checked && text(isoAfter.querySelector("form.member-lift")).includes("Hide what happened while it was isolated")
+      && text(isoAfter.querySelector("form.member-lift")).includes("stay hidden from it for good"),
+      "isolate: the lift form offers to hide what happened meanwhile, unticked, with what it means");
+    isoAfter.querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
     expect(text(main).includes("The isolation of Agent B is lifted.") && !agRow("agt-b").querySelector(".badge.member-isolated")
-      && main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate"),
-      "isolate: lifted, the badge gone, the form back");
+      && main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate")
+      && isoDels.length === 1 && isoDels[0][0] === "/projects/maintainer/maity/members/agt-b/isolate" && isoDels[0][1] === undefined
+      && !agRow("agt-b").querySelector(".member-hidden-windows"),
+      "isolate: lifted unticked, no body sent, nothing hidden; the badge gone, the form back");
+    // Again, something happens meanwhile, and the box is ticked: the window is sent and shown on the row.
+    win.confirm = () => true;
+    byId("member-isolate-agt-b").value = "again"; byId("member-isolate-agt-b").dispatch("input");
+    main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    win.confirm = isoConfirm;
+    await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "while it was isolated" });
+    const isoAgain = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+    byId("member-lift-hide-agt-b").checked = true;
+    isoAgain.querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const isoWin = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b").isolation_windows || [];
+    expect(isoDels.length === 2 && JSON.stringify(isoDels[1][1]) === JSON.stringify({ hide_isolation_events: true })
+      && text(main).includes("The isolation of Agent B is lifted; what happened meanwhile stays hidden from it.")
+      && isoWin.length === 1 && isoWin[0].from_seq <= isoWin[0].to_seq
+      && text(agRow("agt-b").querySelector(".member-hidden-windows")) === "Hidden from it after an isolation: events " + isoWin[0].from_seq + "–" + isoWin[0].to_seq + ".",
+      "isolate: lifted with the box ticked, hide_isolation_events sent, the hidden window on the row " + JSON.stringify(isoWin));
+    win.Maity.api.del = isoDel;
     const isoHuman = await win.Maity.api.post("/projects/maintainer/maity/members/hum-maintainer/isolate", { reason: "x" }).catch((e) => e);
     expect(isoHuman.status === 400 && isoHuman.details.fields.member === "not_an_agent", "isolate: the fixture hub refuses a human, as the hub does");
   }

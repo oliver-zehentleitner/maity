@@ -3096,8 +3096,8 @@ contract change for a list filter is out of proportion.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's
-**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), or another owner's agent gets Propose change beside it
+**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's; the card tsk-zwxtdfmdscf7 (the maintainer, 2026-10-31: a box in the lift dialog, unticked by default, hides the isolation's events; contract #826, the hub's reason in `context/members.md`)
+**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), another owner's agent gets Propose change beside it, or the hub lets a hidden window be shown again
 
 In an agent's **Manage** row, for a human with `members:admin`, after
 the pause: **Isolate with a reason** (1–500 characters), sent as
@@ -3108,12 +3108,21 @@ name cell carries an **Isolated** badge with the reason in its title, on
 every reader's list, since the member view carries `isolated` for all.
 An agent's own caller and a member without `members:admin` get no
 control. The fixture hub answers both routes as §6.2 describes.
+Lift isolation sits in a small form with one box, **Hide what happened
+while it was isolated**, unticked, and a line on what it means; ticked,
+the `DELETE` carries `{"hide_isolation_events": true}`, unticked it
+carries no body. A member with hidden windows (`isolation_windows`)
+shows them under its name, as event ranges, to every reader of the
+list, as `isolated` is shown; a seq is written as the hub gives it, not
+formatted as a number.
 
 **Reason:** isolation is the project's lever against a misbehaving
 agent, beside the pause and the removal that already live in that row;
 it takes effect at once for an agent another human owns, so the
 confirmation says so before it is sent. Lifting gives access back and
-loses nothing more, so it needs no question.
+loses nothing more, so it needs no question; whether the agent may read
+the isolation's events again is the one choice it carries, and the box
+starts unticked because the hub's default keeps them readable (§6.2).
 
 **Rejected alternative:** a separate Isolate button on the list row:
 the row holds Chat and Manage only (54a49af9), every other member action
