@@ -78,6 +78,9 @@ def human(make_client: ClientFactory, engine: Engine, handle: str = "maintainer"
 
 
 def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:
+    # A new project is public by default (§6.1); most tests mean a private one, as they always
+    # did, and say `public_page="on"` when they do not.
+    body.setdefault("public_page", "off")
     response = owner.post("/projects", {"slug": slug, "name": slug.title(), **body})
     assert response.status_code == 201, response.text
     result: dict[str, Any] = response.json()
