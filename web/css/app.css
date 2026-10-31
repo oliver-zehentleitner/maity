@@ -703,6 +703,12 @@ tr.member-level-3 > th { padding-inline-start: 84px; }
   text-decoration: none;
 }
 .conv { position: relative; }
+/* A row with its pin button beside the link (§9.3): the link takes the room. */
+.chat-list > li { display: flex; align-items: flex-start; gap: 2px; }
+.chat-list > li > .conv { flex: 1; min-width: 0; }
+.pin-toggle { align-self: center; opacity: 0.45; filter: grayscale(1); }
+.pin-toggle:hover, .pin-toggle:focus-visible, .pin-toggle[aria-pressed="true"] { opacity: 1; filter: none; }
+.pin-mark { margin-inline-end: 4px; }
 .conv:hover { background: var(--surface); }
 /* Read by a screen reader, not shown. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

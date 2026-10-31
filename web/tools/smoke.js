@@ -3111,6 +3111,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const convOrder = () => convs().map((a) => a.querySelector(".conv-title").textContent + (a.classList.contains("unread") ? "*" : ""));
   expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
     "chat: unread first, then the newest, the ones without messages after " + JSON.stringify(convOrder()));
+  // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (quiet pinned after the unread, before the rest).
+  {
+    const pinBtn = (name) => conv(name).parentNode.querySelector("button.pin-toggle");
+    const pinCalls = [];
+    const pnPut = win.Maity.api.put, pnDel = win.Maity.api.del;
+    win.Maity.api.put = (p, b) => { if (p.endsWith("/pin")) pinCalls.push(["PUT", p]); return pnPut(p, b); };
+    win.Maity.api.del = (p) => { if (p.endsWith("/pin")) pinCalls.push(["DELETE", p]); return pnDel(p); };
+    expect(pinBtn("Agent B") && pinBtn("Agent B").getAttribute("aria-pressed") === "false" && pinBtn("Agent B").getAttribute("aria-label") === "Pin Agent B",
+      "pins: each chat has a pin button beside its link, not pressed");
+    pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(pinCalls) === JSON.stringify([["PUT", "/projects/maintainer/maity/conversations/agt-b/pin"]])
+      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent B", "Agent D", "Agent C", "Reviewer"])
+      && conv("Agent B").querySelector(".pin-mark") && text(conv("Agent B")).includes("pinned") && pinBtn("Agent B").getAttribute("aria-pressed") === "true",
+      "pins: a pinned quiet chat rises above the other quiet ones, never above unread ones, and shows its mark " + JSON.stringify(convOrder()));
+    // The hub's refusal of a 21st pin, in words.
+    win.Maity.api.put = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pin: "too_many" } }));
+    pinBtn("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("Not pinned: you have 20 pinned chats already") && !conv("Agent C").querySelector(".pin-mark"), "pins: the 20-limit refusal is said, nothing pinned");
+    pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(pinCalls.slice(-1)[0][0] === "DELETE" && !conv("Agent B").querySelector(".pin-mark")
+      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
+      "pins: unpinned, the chat goes back to its place");
+    win.Maity.api.put = pnPut; win.Maity.api.del = pnDel;
+  }
   const convA = conv("Agent A");
   expect(convA.getAttribute("href") === "#/maintainer/maity/chat/agt-a" && text(convA).includes("Endpoints for join, tasks and requests are drafted.")
     && convA.querySelector(".count") && convA.querySelector(".count").textContent === "1" && convA.classList.contains("unread")

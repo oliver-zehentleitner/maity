@@ -1238,6 +1238,18 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page).to_have_url(re.compile(rf"/chats/owner/e2e-alpha/{agent_id}$"))
     expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
     expect(page.locator(".chat-list a.conv[aria-current=page]")).to_have_count(1)
+    # A pin (§9.3, tsk-645p1nw2v7y4): kept by the hub, shown as a mark, the button pressed; then taken off again.
+    pin = page.locator(".chat-list li").filter(has_text="E2E Agent").first.locator("button.pin-toggle")
+    expect(pin).to_have_attribute("aria-pressed", "false")
+    pin.click()
+    expect(pin).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".chat-list a.conv.with-project", has_text="E2E Agent").first.locator(".pin-mark")).to_be_visible()
+    mine = page.request.get(f"{run.base}/api/v1/me/conversations").json()["items"]
+    assert any(c["id"] == agent_id and c["pinned"] for c in mine), mine
+    pin.click()
+    expect(pin).to_have_attribute("aria-pressed", "false")
+    mine = page.request.get(f"{run.base}/api/v1/me/conversations").json()["items"]
+    assert not any(c["pinned"] for c in mine), mine
     page.locator("#chat-text").fill("Hello from the global chat.")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("ol.messages li.msg.out").last).to_contain_text("Hello from the global chat.")
