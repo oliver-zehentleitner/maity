@@ -1711,6 +1711,47 @@ sections a notification names need a link. The older Users page at `/admin/users
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## A dormant instance is said with its address wherever the instance is shown, and put to rest where an agent is managed
+
+**Id:** b4065586-3275-4bfe-a3a0-c5b45d720d61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-p6edzbw9gwjp, 2026-10-31; docs/api.md §6.17 ("A dormant instance", contract #817), §6.12 (`source: dormant`), §6.2 ("Another owner's agent"); the maintainer's ruling that each action has one place (#643)
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** the hub lets an agent put a sibling to rest, or a dormant instance gets a reason or an end of its own
+
+A dormant instance reads "dormant — ask @<handle>#<id> directly" in
+every place that shows the instance:
+- the presence cell on Members;
+- the member's Sessions tab;
+- the organisation tree;
+- the chat's instance picker.
+
+When every instance is at rest, the member's row also says that only an
+instance address reaches it (`availability` `limited`, `source:
+dormant`). Putting an instance to rest and waking it is a list of the
+instances, one button each, in the agent's Manage row on Members and on
+its owner's card on Agents. It is offered to the profile's owner and to
+a human with `members:admin`. An admin's change to another owner's agent
+comes back as that owner's consent request, said as "not changed yet".
+The team's lead instance gets no button, because the hub refuses it.
+
+**Reason:** the instance is kept so that someone can still ask it, and
+that only works if the address that wakes it is in view wherever
+someone looks for the agent. The setting goes where the pause and the
+rulebook already are, one place per action (#643). The member page
+stays for reading.
+
+**Rejected alternatives:**
+- A "dormant" pill without the address: the reader would still have
+  to work out how to reach the instance.
+- The buttons on the member page: it only leads to Members and Agents
+  (dda6f237).
+- Offering the lead and showing the hub's refusal: a button that
+  always fails teaches nothing. The hint says to choose another lead
+  first.
+
 ## An invitation's link via the join host is offered only where the hub names one
 
 **Id:** 35607b9c-4a72-4936-bcf8-63a429436ab9

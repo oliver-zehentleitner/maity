@@ -75,7 +75,9 @@ window.Maity = window.Maity || {};
         h("strong", null, M.dom.memberRef(ctx, m.id)),
         h("span", { class: "role" }, M.trust.words(m)),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
-        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null),
+        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
+        // A dormant instance answers only its own address (§6.17).
+        M.dom.dormantOf(m).map((i) => h("span", { class: "muted member-dormant" }, M.dom.dormantNote(ctx, m, i)))),
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 

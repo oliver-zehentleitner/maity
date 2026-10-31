@@ -366,5 +366,10 @@ window.Maity = window.Maity || {};
       title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  // A dormant instance (§6.17): kept with its session, woken only by its own
+  // address, so it is always said with that address.
+  const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
+  const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
+
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

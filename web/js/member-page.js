@@ -161,6 +161,8 @@ window.Maity = window.Maity || {};
         h("span", { class: "muted" }, [i.revoked_at ? "revoked " + formatAgo(i.revoked_at) : PRESENCE[i.presence] || i.presence,
           i.harness, i.model, i.last_seen_at ? "seen " + formatAgo(i.last_seen_at) : null,
           i.claims ? i.claims + (i.claims === 1 ? " claim" : " claims") : null].filter(Boolean).join(" · ")),
+        // Kept with its session, woken only by its own address (§6.17).
+        !i.revoked_at && i.dormant ? h("p", { class: "member-dormant" }, M.dom.dormantNote(ctx, m, i)) : null,
         // Its open session (§6.17): id, since when, and since when it has not been listening.
         i.session ? h("p", { class: "muted member-session" }, "Session ", h("span", { class: "mono" }, i.session.id),
           i.session.started_at ? " · since " + formatTime(i.session.started_at) : "",

@@ -67,12 +67,17 @@ window.Maity = window.Maity || {};
   const isConsent = (answer) => !!answer && answer.class === "consent" && /^req-/.test(answer.id || "");
 
   // A presence the page knows gets its dot; anything else is said as it comes.
-  function presenceNodes(m, warn) {
+  function presenceNodes(m, warn, ctx) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
+    const asleep = M.dom.dormantOf(m);
+    const allAsleep = !!(m.availability && m.availability.state === "limited" && m.availability.source === "dormant");
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence] : String(m.presence || "unknown"),
       M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
-        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null];
+        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · seen " + formatAgo(m.last_seen_at)) : null,
+      // Each dormant instance with the address that reaches it (§6.17); every one at rest is the team's limit (§6.12).
+      asleep.map((i) => h("span", { class: "member-dormant" }, " · ", M.dom.dormantNote(ctx, m, i))),
+      allAsleep ? h("span", { class: "member-dormant" }, " · ", M.t("instance.all_dormant")) : null];
   }
 
   // What a member's row and an own agent's card on Agents share (js/agents-page.js):
@@ -281,6 +286,29 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, words.effect));
     }
 
+    // Put an instance to rest or wake it (§6.17): its owner, or a human with
+    // members:admin, whose change to another owner's agent waits for that
+    // owner's consent. The lead instance is not offered: the hub refuses it.
+    function dormantPart(m, memberPath) {
+      if (m.kind !== "agent" || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      if (!active.length) return null;
+      const lead = (m.team || {}).lead_instance;
+      const address = (i) => "@" + (M.dom.handleOf(ctx, m) || m.handle) + "#" + i.id;
+      return h("div", { class: "member-dormant-part" },
+        h("h4", null, M.t("instance.rest.title")),
+        h("p", { class: "hint" }, M.t("instance.rest.hint")),
+        h("ul", { class: "member-dormant-list" }, active.map((i) => h("li", null,
+          h("span", { class: "mono" }, address(i)), " ",
+          i.dormant ? h("span", { class: "muted" }, M.dom.dormantNote(ctx, m, i)) : null, " ",
+          i.dormant
+            ? keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.wake.busy"), M.t("instance.wake.done", { address: address(i) }),
+              () => M.api.patch(memberPath, { dormant: false, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.wake", { address: address(i) })))
+            : i.id === lead ? h("span", { class: "muted" }, M.t("instance.rest.lead"))
+              : keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.rest.busy"), M.t("instance.rest.done", { address: address(i) }),
+                () => M.api.patch(memberPath, { dormant: true, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.rest", { address: address(i) })))))));
+    }
+
     // Isolation (§6.2): a human with members:admin stops any agent member at
     // once, whoever owns it, with a reason; lifted again by Lift isolation.
     function isolatePart(m, memberPath) {
@@ -382,7 +410,7 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("members.reports.hint")));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -453,14 +481,15 @@ window.Maity = window.Maity || {};
         return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
           P.reportsToPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
-          P.teamForm(m, memberPath)));
+          P.teamForm(m, memberPath),
+          P.dormantPart(m, memberPath)));
       }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; sent only to whom may see it.
         if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
       return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
@@ -668,7 +697,7 @@ window.Maity = window.Maity || {};
       const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
       const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
       const role = { title: "Trust and role", cell: (m) => M.trust.words(m) };
-      const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
+      const presence = { title: "Presence", presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin, ctx) };
       const joined = { title: "Joined", cell: (m) => formatTime(m.joined_at) };
       const owner = { title: "Owner", cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: "Paused", cell: (m) => pausedText(m) || "—" };
@@ -722,7 +751,7 @@ window.Maity = window.Maity || {};
           redraw();
           return;
         }
-        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
+        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin, ctx)); });
         status.done();
       } catch (err) {
         status.fail("Could not refresh: ", err);
