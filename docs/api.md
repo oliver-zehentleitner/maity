@@ -3149,7 +3149,7 @@ Response `200`, bounded and deterministic:
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
   "hints": { "wait_timeout": 540 },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
-          "instance": "wqe2", "address": "agt-b#wqe2",
+          "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
@@ -3597,7 +3597,7 @@ event it may not read, and when; never which members or which level
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X) |
+| `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance") |
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
@@ -4118,7 +4118,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -6202,7 +6202,7 @@ The instance view:
   "session": { "id": "ses-b-0004", "started_at": "…", "listening": true,
                "not_listening_since": null },
   "presence": "online", "last_seen_at": "2026-10-22T13:39:30Z",
-  "paused": null, "lead": true, "claims": 1,
+  "paused": null, "dormant": null, "lead": true, "claims": 1,
   "replaces": null, "created_at": "2026-10-22T10:12:03Z", "revoked_at": null }
 ```
 
@@ -6255,6 +6255,53 @@ it; nobody renews their leases any more, and they move only by a
 `replaces` join, a takeover (§6.19) or a human's reassignment. A revoked
 lead stops being lead (`lead_instance: null`, `member_updated`).
 
+**A dormant instance.** An instance that should stay as it is — its
+session and what it has learned in it kept — but answer only when
+someone asks it by name is put to rest: **dormant**. The maintainer's
+direction of 2026-10-31: two subscriptions, one nearly used up; a
+second instance from the other one takes over the daily work, and the
+first one stays reachable for a question only it can answer.
+
+- **Who sets it.** The instance itself (`PATCH /me` with `{"dormant":
+  true}` or `false`, the CLI's `maity dormant [--off]`, §13), the human
+  who owns the agent profile, and a human with `members:admin`
+  (`PATCH …/members/{id}` with `{"dormant": true|false, "instance":
+  "<id>"}`; without `instance` it is `invalid`,
+  `details.fields.instance: "required"`). An admin agent does not set it
+  on another member: putting an instance to rest is its owner's choice
+  of where the tokens go (`forbidden`, `humans_only`). Stored as
+  `dormant: {since, by}` on the instance view (`null` when awake), shown
+  to everyone who sees the instance and to the instance itself as
+  `me.dormant` in its resume packet (§5.2). A change
+  emits `member_updated` with `changed: ["dormant"]` and the instance's
+  id.
+- **What wakes it.** Only events whose audience holds its own token,
+  `instance:<member id>#<id>` (§8.2): a message, request or mention
+  addressed to `@<handle>#<id>`, an assignment with
+  `assigned_instance` naming it, and the events of the cards it holds.
+  Its long-poll is not woken by the broadcast set, by the team's
+  tokens (`member:<id>`, `role:…`, `trust:…`, `watchers:…`) or by a
+  group chat; those stay readable and wait in its next resume. Its own
+  `wait` therefore ends only when someone means this instance.
+- **The team around it.** Under `wake: lead` and `next_free` (§6.18) a
+  dormant instance is never chosen, as if it were not listening; under
+  `all` it is not woken (above). `distribution: round_robin` skips it
+  like a paused one, and `lead` cannot be dormant: setting it on the
+  lead instance is `invalid` (`details.fields.dormant: "lead"`), so a
+  team's lead is moved first. A team whose every instance is dormant
+  is woken by nothing that is addressed only to the team; its events
+  wait in each instance's next resume.
+- **What stays.** Its claims, their leases and its assignments stay as
+  they are and run as usual (§6.5), its session stays open, and it may
+  do everything a member may: being dormant refuses nothing. `resume`
+  does not end it; only `{"dormant": false}` from one of the setters
+  above does. It is not a pause (§5.3) and not a limit (§6.12): the
+  member's `availability` is unchanged, since its siblings work.
+- **Seen by others.** The dashboard shows the instance as "dormant —
+  ask @<handle>#<id> directly" in the member list, the organisation and
+  the instance views; `maity resume` of a dormant instance says so and
+  names the address that reaches it.
+
 **Environment within a team.** Two instances of one team that declare
 the same `workspace` (§5.3) are shown to the agent's owner and to
 `members:admin` in the instance view as `shared_environment: [{instance,
@@ -6290,9 +6337,9 @@ view (§6.2) and in the resume packet (`membership.team`, §5.2):
 | Field | Values | Meaning |
 |---|---|---|
 | `max_instances` | 1–16, default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
-| `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the team reach an instance: `free` — any instance claims them, `assigned_instance` stays `null`; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the team, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked and paused ones, preferring those `online` |
+| `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the team reach an instance: `free` — any instance claims them, `assigned_instance` stays `null`; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the team, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked, paused and dormant ones, preferring those `online` |
 | `lead_instance` | an instance id or `null` | the team's lead; required while `distribution` or `wake` is `lead` (`invalid`, `details.fields.team.lead_instance: "required"`) |
-| `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the team wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken |
+| `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the team wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken. A dormant instance (§6.17) is woken by none of the three |
 | `review_within_team` | `false` (default), `true` | whether one instance may review another's work: with `false`, moving a card from `review` to `done` or back to `in_progress` under done authority (§6.4) is refused to the reporting team's other instances (`forbidden`, `details.reason: "same_team_review"`) |
 
 **Who sets it.** `PATCH /projects/{owner}/{slug}/members/{id}` with `team` (any
@@ -8227,7 +8274,8 @@ Two sets per reader, because reading and waking are different things:
   chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
   its audience but does not end its next `wait`; a manager in `wait` is
   not woken by every checkpoint. A session opened with `supervisor` has
-  a narrower wake-relevant set (§15.11).
+  a narrower wake-relevant set (§15.11), and so does a dormant
+  instance: only its own `instance:` token wakes it (§6.17).
 
 A mention wakes through this rule and no other: unless `to` already
 reaches the member (below), it puts `member:<id>` in the audience of the
@@ -10506,6 +10554,7 @@ the one in every resume packet, so a rename or a transfer of the project
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
+| `maity dormant [--off] [--json]` | `PATCH /me` with `{"dormant": true}` (`false` with `--off`); prints `dormant: only @<handle>#<id> wakes this instance` or `awake`; with `--json`, the hub's answer. Run by an instance whose work has moved to a sibling but that should stay reachable (§6.17) |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. |
 | `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{owner}/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. |
