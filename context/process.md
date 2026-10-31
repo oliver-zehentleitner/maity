@@ -936,3 +936,29 @@ second review alone.
 - Merging when no check is red — the hub and end-to-end jobs report only
   after the change detection, so a pull request can look clean with only
   the quick checks run.
+
+## The ci runs on main share one group: one runs, the newest waits, none is cancelled
+
+**Id:** fc23b250-320b-4f5b-b9a9-87fdcb01d727
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's approval, 2026-10-31 (request req-8zh1rkez993w), after twelve main runs queued at once, one per merge
+**Revisit when:** the runs on main get so short that a queue cannot form, or a deploy needs a green run for a specific older commit
+
+`.github/workflows/ci.yml` gives every push to main the same concurrency group and does not cancel a run
+that has started. GitHub then keeps the running run and replaces a run still waiting by the newest one, so at
+most one main run runs and one waits. Pull requests keep their own group per pull request, as before, and a new
+push to a pull request still cancels its older run.
+
+**Reason:** every merge started its own run, each checking an outdated commit, and the database jobs on the rented
+runners held the machines that the pull requests behind them waited for; the coordinator cancelled twelve runs by hand.
+Only the newest main commit matters for a deploy, so the runs in between were work nobody read.
+
+**Consequence:** a commit that merged while a run was waiting has no `ci-ok` of its own. A deploy takes the newest
+commit with a green run, or waits for the newest run to finish.
+
+**Rejected alternatives:**
+- `cancel-in-progress: true` on main: a streak of merges would cancel each run before it finishes, so main could stay without a
+  green run for as long as the streak lasts, and a deploy needs a green one.
+- A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
