@@ -134,7 +134,9 @@ window.Maity = window.Maity || {};
         put("addresses", listOf(addresses.value));
         put("approval", approval.value);
         if (!termsOff) out.terms = termsUrl.value.trim() ? { url: termsUrl.value.trim(), version: termsVersion.value.trim() } : null;
-        put("max_new_accounts_per_hour", Number(max.value));
+        // An empty or broken limit is left out, as Save would refuse it: the export stays importable.
+        const n = Number(max.value);
+        if (max.value.trim() && Number.isInteger(n) && n >= 1) put("max_new_accounts_per_hour", n);
         return out;
       };
       const save = h("button", { type: "submit" }, M.t("reg.save"));
@@ -244,7 +246,8 @@ window.Maity = window.Maity || {};
         // A value the environment sets stays as it is (the hub refuses it, set_by_environment).
         const fixed = keys.filter((k) => (current[k] || {}).source === "env" || (k === "terms" && (current.terms || {}).source === "legal_pages"));
         if (!window.confirm(fixed.length ? M.t("jsonio.reg.confirm_fixed", { fields: M.fmt.list(fixed) }) : M.t("jsonio.reg.confirm"))) return false;
-        loaded = {};
+        // What the form shows and the JSON does not name stays, typed or not: the form as it is, the import over it.
+        loaded = formBody();
         keys.filter((k) => !fixed.includes(k)).forEach((k) => { loaded[k] = data[k]; });
         draw();
         io.done();

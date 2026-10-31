@@ -606,6 +606,9 @@ window.Maity = window.Maity || {};
         if (refused) { showErrors(errors, refused, status, M.t("jsonio.refused")); return true; }
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("jsonio.loaded")));
+        // A file of several pages loads only this one (a PATCH changes one page): the others named.
+        const others = PAGES.map(([k]) => k).filter((k) => k !== key && M.jsonIo.isObject(data) && Object.hasOwn(data, k));
+        if (others.length) append(status.el, " ", h("span", { class: "muted" }, M.t("jsonio.legal.others", { pages: M.fmt.list(others) })));
         return true;
       },
     });
