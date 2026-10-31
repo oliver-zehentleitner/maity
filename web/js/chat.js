@@ -206,6 +206,49 @@ window.Maity = window.Maity || {};
   // at the start, the keys and Send at the end.
   const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
 
+  // The composer's head (tsk-k6nakahy6fnj): its label, and on a phone a
+  // button that folds the composer away for reading and brings it back;
+  // on a wider screen three buttons for the field's height, one, two or
+  // three times its rows. Both are this browser's choice, kept for every
+  // chat; the hub has no field for them. CSS shows each on its own screen.
+  const COMPOSE_KEY = "maity.compose";
+  const SIZES = [1, 2, 3];
+  function readCompose() {
+    try { const v = JSON.parse(window.localStorage.getItem(COMPOSE_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (err) { return {}; }
+  }
+  function keepCompose(v) {
+    try { window.localStorage.setItem(COMPOSE_KEY, JSON.stringify(v)); } catch (err) { /* this browser keeps nothing */ }
+  }
+  function composeHead(form, text, label) {
+    const rows = Number(text.getAttribute("rows")) || 3;
+    const saved = readCompose();
+    let hidden = saved.hidden === true;
+    let size = SIZES.includes(saved.size) ? saved.size : 1;
+    const toggle = h("button", { type: "button", class: "small compose-toggle", "aria-controls": text.id });
+    const sizes = SIZES.map((n) => {
+      const b = h("button", { type: "button", class: "small", "data-size": String(n) }, M.t("compose.size.times", { count: n }));
+      b.addEventListener("click", () => { size = n; keepCompose(Object.assign(readCompose(), { size })); apply(); });
+      return b;
+    });
+    function apply() {
+      form.classList.toggle("compose-hidden", hidden);
+      toggle.textContent = hidden ? M.t("compose.show") : M.t("compose.hide");
+      toggle.setAttribute("aria-expanded", hidden ? "false" : "true");
+      text.setAttribute("rows", String(rows * size));
+      sizes.forEach((b) => b.setAttribute("aria-pressed", b.getAttribute("data-size") === String(size) ? "true" : "false"));
+    }
+    toggle.addEventListener("click", () => {
+      hidden = !hidden;
+      keepCompose(Object.assign(readCompose(), { hidden }));
+      apply();
+      if (!hidden) text.focus();
+    });
+    apply();
+    return h("div", { class: "compose-head" }, label,
+      h("span", { class: "compose-tools" },
+        h("span", { class: "compose-size", role: "group", "aria-label": M.t("compose.size.label") }, sizes), toggle));
+  }
+
   // In the global chat (ctx.projectsOf, js/chats.js) an agent's message
   // names the projects it is in, each by its logo with the name on hover;
   // only projects the reader is in, whose member lists the page has read.
@@ -238,7 +281,8 @@ window.Maity = window.Maity || {};
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
-    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx)));
+    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
+      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("members", id) : null), ctx }));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
@@ -397,7 +441,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -714,6 +758,7 @@ window.Maity = window.Maity || {};
     M.dom.sendOnCtrlEnter(text, send, button);
 
     const heading = h("h2", { tabindex: "-1" }, "Chat with ", M.dom.memberRef(ctx, agent.id));
+    const composeForm = h("form", { class: "compose", onsubmit: send });
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },
@@ -727,8 +772,8 @@ window.Maity = window.Maity || {};
       messages,
       jump,
       pollStatus.el,
-      h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)")),
+      append(composeForm,
+        composeHead(composeForm, text, h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)"))),
         text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.

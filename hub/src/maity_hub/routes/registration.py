@@ -42,11 +42,13 @@ router = APIRouter()
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 PASSWORD_MIN = 12  # §2.1
-BY_SOURCE = Limiter(10, 3600)  # POST /auth/register per source address (§2.7.3), 429
+BY_SOURCE = Limiter(
+    10, 3600, name="routes.registration.BY_SOURCE"
+)  # POST /auth/register per source address (§2.7.3), 429
 # Silent limits: over them the answer is still 202 and nothing is sent (§2.7.3).
-BY_PAIR_SHORT = Limiter(3, 900)
-BY_PAIR_DAY = Limiter(10, 86400)
-BY_ADDRESS_DAY = Limiter(20, 86400)
+BY_PAIR_SHORT = Limiter(3, 900, name="routes.registration.BY_PAIR_SHORT")
+BY_PAIR_DAY = Limiter(10, 86400, name="routes.registration.BY_PAIR_DAY")
+BY_ADDRESS_DAY = Limiter(20, 86400, name="routes.registration.BY_ADDRESS_DAY")
 
 
 class RegisterIn(BaseModel):

@@ -483,6 +483,30 @@ def test_the_resume_packet_lists_requests(owner: flow.Human, make_client: Client
     assert packet["answered_since_cursor"][0]["answer"]["text"] == "done"
 
 
+def test_the_resume_packet_keeps_the_newest_answers_when_it_cuts(
+    owner: flow.Human, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse at #835: the cut at `PACKET_REQUESTS` (100) keeps the latest answers, in the order
+    they were answered, not the requests asked first."""
+    from maity_hub.routes import me_session
+
+    monkeypatch.setattr(me_session, "PACKET_REQUESTS", 3)  # the cut at 100, cheaper
+    agent = flow.agent(make_client, owner)
+    cursor = agent.resume().json()["events"]["cursor"]
+    asked_first = asked(agent)
+    others = [asked(agent) for _ in range(3)]
+    for request in others:
+        assert answer(owner, request, text="ok").status_code == 200
+    assert answer(owner, asked_first, text="late").status_code == 200  # answered last
+    packet = agent.resume(cursor=cursor).json()["requests"]
+    assert [r["id"] for r in packet["answered_since_cursor"]] == [
+        others[1]["id"],
+        others[2]["id"],
+        asked_first["id"],
+    ]
+    assert packet["truncated"] is True
+
+
 def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

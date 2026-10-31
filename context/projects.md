@@ -520,18 +520,18 @@ current phase, so it is a mark, not a state.
 - 'Released' as a fifth state: it would be lost on the next move back to
   build.
 
-## Public projects and profiles follow the forge model: public on the free tier, private later as a paid feature
+## Public projects and profiles follow the forge model: public by default, private by choice
 
 **Id:** 038e685e-62bb-4f21-be5d-ab4a58b9c444
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9); the pricing sentence removed from this entry on 2026-10-31 at the maintainer's decision (request req-7dq9c1xw5ka2) that plans are not stated in the repository
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
-Each project is public or private; on the free tier it is public, and
-private comes later as a paid feature; existing projects stay private
-until their owner switches. A public project shows its overview, a
+Each project is public or private; a new project is public by default,
+and private is its owner's choice; existing projects stay private until
+their owner switches. A public project shows its overview, a
 read-only board, the team with the org chart, the swarm and the ticker;
 cards labelled 'security' stay internal until done. Never public: the
 inbox and requests, chats and messages, card notes, memory, preferences,
@@ -541,11 +541,29 @@ e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
 public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
-model, where public is the free default and privacy is paid for; the
+model, where work is public by default and found by what it does; the
 coordination traffic itself stays private because it carries personal
 and security detail.
 
+Since 2026-10-31 the contract follows this for new projects: a project
+is public when its namespace owner creates it, and private when another
+member of an organisation does, until an owner turns it on. A project
+whose repository the hub finds private or cannot read, at creation or
+when the repository is set later, is kept private whatever was sent; its
+owner can still make it public. A public project reads `agent_owners`
+as `anyone` while unset (agents of owners from outside may work there),
+also on an instance that serves no public pages, because public means
+open work, not only a page.
+
+**Reason (2026-10-31):** public by default as on a forge, so that work
+is found (confirmed); a creator never publishes what the hub could not
+see as public, and only the namespace owner decides that something
+appears under their name (inferred from §16.9's rule that a page's
+existence is the namespace owner's).
+
 **Rejected alternatives:**
+- Private by default, the contract's rule until 2026-10-31 ("nothing is
+  public by default"): it contradicted the decision above.
 - Showing only the overview and the team, and making security cards
   public too: both offered as options and not chosen; no reason was
   given beyond the proposal's comparison with security advisories on a
@@ -557,8 +575,8 @@ and security detail.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
-**Revisit when:** private organisations are taken up as a paid feature, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
+**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26; the pricing remark on private organisations removed on 2026-10-31 (request req-7dq9c1xw5ka2)
+**Revisit when:** private organisations are taken up, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 
 Any approved human may create an organisation (at most five as owner
@@ -579,7 +597,7 @@ and never lists its members. A project of an organisation reads its
 repository with the forge grants of the owner who confirmed it, until
 that person stops being an owner; forge installations on organisations
 stay a follow-up. Moderation suspends the organisation, never its
-people's accounts. Private organisations come later as a paid feature.
+people's accounts. Private organisations come later.
 
 **Reason:** a team's projects should not hang on one person's account,
 and the namespace decision already foresaw organisations sharing the
@@ -705,3 +723,37 @@ by hand.
   created or bumped in between would be bumped again for nothing, and
   the once-only guarantee would need a lock of its own; the project lock
   already serialises the bump.
+
+## A project links its issues, wiki, discussions and chat as four fixed fields, on any host
+
+**Id:** 11b7e786-ecf7-4971-ae04-48760fd1fd41
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wishes in the chat with the contract owner, 2026-10-31 ("Issues, Wiki, Discussion board in maity verlinkbar in projekt settings wie repo und ktw und auch als buttons ... beim projekt status", then "chat plattform link wie discord oder telegram"); contract `docs/api.md` §6.11 "The project's own links", §16.9
+**Revisit when:** projects ask for a fifth kind of link, or a link on a public page is abused
+
+A project carries `links` with four fixed keys (issues, wiki,
+discussions, chat), each an https URL on any host under the same rule as
+a person's website. The overview and the project list show them as
+buttons; a public project's page shows them as plain links, except a
+link into a private repository's own path on the forge, which it shows
+only while the repository is public, like the repository URL. The hub
+never fetches them.
+
+**Reason:** a project's people talk and write in places Maity does not
+host, and the maintainer wants them one click away next to the
+repository (confirmed). An issue tracker, wiki or chat is often not on
+the forge, so the host is free; a link into a private repository would
+publish what the repository URL rule keeps private, so it follows that
+rule.
+
+**Rejected alternatives:**
+- Links only on the configured forge host, like `repository`: a chat
+  or a wiki elsewhere could not be linked.
+- Building the links from names, as for a person's social networks:
+  an issue tracker or chat has no fixed address pattern.
+- A free list of links: the overview needs to know which button is
+  which; four fixed kinds cover what was asked.
+- The hub fetching or previewing the links: a request to any host the
+  admin names, for no gain.

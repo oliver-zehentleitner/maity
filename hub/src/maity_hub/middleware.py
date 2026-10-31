@@ -56,7 +56,13 @@ CSP = "default-src 'self'"
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
 # own answer that names it so, as `GET /people/{handle}` (§6.27).
 ROUTE_CACHE = frozenset(
-    {b"private, max-age=21600", b"private, no-cache", b"no-cache", b"private, no-store"}
+    {
+        b"private, max-age=21600",
+        b"private, max-age=60",  # the landing page and its variants while campaigns count (§16.7.2)
+        b"private, no-cache",
+        b"no-cache",
+        b"private, no-store",
+    }
 )
 # The answers a visitor without a session may cache: the badge and the instance's landing
 # page (§16.7).

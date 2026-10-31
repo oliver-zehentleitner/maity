@@ -208,6 +208,7 @@ def test_the_packet_lists_this_instances_claims_and_its_siblings(
         "model",
         "presence",
         "paused",
+        "dormant",
         "lead",
         "claims",
     }

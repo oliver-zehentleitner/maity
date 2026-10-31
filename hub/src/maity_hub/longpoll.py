@@ -10,6 +10,7 @@ goes through `call_soon_threadsafe`.
 from __future__ import annotations
 
 import asyncio
+import random
 import threading
 from dataclasses import dataclass, field
 
@@ -33,6 +34,9 @@ class Waiter:
 
     def wake(self) -> None:
         self.loop.call_soon_threadsafe(self.event.set)
+
+    def wake_later(self, seconds: float) -> None:
+        self.loop.call_soon_threadsafe(self.loop.call_later, seconds, self.event.set)
 
 
 class Registry:
@@ -75,11 +79,16 @@ class Registry:
             waiter.ended = True
             waiter.wake()
 
-    def wake_all(self) -> None:
+    def wake_all(self, spread: float = 0.0) -> None:
+        """Wake every waiter to read once; with `spread`, each at a random moment within
+        that many seconds, so many waits do not all read the database in the same instant."""
         with self._lock:
             waiting = list(self._by_key.values())
         for waiter in waiting:
-            waiter.wake()
+            if spread > 0:
+                waiter.wake_later(random.uniform(0, spread))
+            else:
+                waiter.wake()
 
     def __len__(self) -> int:
         with self._lock:

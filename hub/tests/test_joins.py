@@ -410,7 +410,10 @@ def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
     factory.membership(migrated, project_id, "admin", human_id=deputy.id)
     agent = flow.agent(make_client, deputy, "maintainer/maity")
     members = "/projects/maintainer/maity/members"
-    assert owner.patch(f"{members}/{agent.id}", {"trust": "admin"}).status_code == 200
+    asked = owner.patch(f"{members}/{agent.id}", {"trust": "admin"})
+    assert asked.status_code == 202, asked.text  # the deputy's agent: its owner agrees first
+    go = deputy.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
     deputy.patch(f"{members}/{agent.id}", {"team": {"max_instances": 3}})
     refused = deputy.post(
         "/projects/maintainer/maity/joins", {"agent": {"id": agent.id}, "new_instance": True}

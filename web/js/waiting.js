@@ -14,7 +14,7 @@ window.Maity = window.Maity || {};
   // confirm it (§2.6.5, M.sessions.mayConfirm), else the hub would skip it.
   function row(ctx, x, mark, sessions) {
     let li = null;
-    const title = x.redacted ? "Removed" : x.title || M.notify.KIND_WORDS[x.kind] || "Notification";
+    const title = x.redacted ? M.t("waiting.removed") : x.title || M.notify.KIND_WORDS[x.kind] || M.t("waiting.untitled");
     const security = x.kind === "security";
     const reported = security && sessions && (x.target || {}).type === "session" ? sessions.list.find((s) => s.id === x.target.id) || null : null;
     const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayConfirm(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
@@ -22,10 +22,10 @@ window.Maity = window.Maity || {};
       if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
       mark({ ids: [x.id] });
     } }, title);
-    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " (unread)");
+    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " ", M.t("waiting.unread"));
     // Marked read in place: the row, its words and its button change, the
     // focus goes to its link, the pages read so far stay.
-    const markButton = markable ? h("button", { type: "button", class: "small mark-read", "aria-label": "Mark read: " + title }, "Mark read") : null;
+    const markButton = markable ? h("button", { type: "button", class: "small mark-read", "aria-label": M.t("waiting.mark_read.label", { title }) }, M.t("waiting.mark_read")) : null;
     if (markButton) {
       markButton.addEventListener("click", async () => {
         markButton.disabled = true;
@@ -46,11 +46,11 @@ window.Maity = window.Maity || {};
 
   async function full(ctx, root) {
     const list = h("ul", { class: "waiting-items" }), status = M.statusLine();
-    const older = h("button", { type: "button" }, "Older");
+    const older = h("button", { type: "button" }, M.t("waiting.older"));
     // Mark all read marks up to the head of the first page (§18.3, as the
     // bell does); a sign-in or address alert stays unread (§2.6.5). Always
     // there, off while nothing it would mark is unread.
-    const markAll = h("button", { type: "button", class: "small" }, "Mark all read");
+    const markAll = h("button", { type: "button", class: "small" }, M.t("waiting.mark_all"));
     let cursor = null, top = null, disposed = false, items = [];
     // The sessions, read only when the page shows an unread security item.
     let sessions = null;
@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
       try {
         await M.api.post("/me/notifications/read", body);
       } catch (err) {
-        status.fail("Not marked: ", err);
+        status.fail(M.t("waiting.not_marked"), err);
         return false;
       }
       M.notify.changed();
@@ -86,20 +86,20 @@ window.Maity = window.Maity || {};
         page.forEach((x) => append(list, row(ctx, x, mark, sessions)));
         cursor = answer.next_cursor; older.hidden = !cursor; status.done();
         markAllOff();
-        if (!list.children.length) append(list, h("li", { class: "empty" }, "No notifications."));
+        if (!list.children.length) append(list, h("li", { class: "empty" }, M.t("waiting.none")));
       } catch (err) {
-        if (!disposed) status.fail("Could not read notifications: ", err);
+        if (!disposed) status.fail(M.t("waiting.read_failed"), err);
       } finally { older.disabled = false; }
     }
     markAll.addEventListener("click", async () => {
       markAll.disabled = true;
-      status.busy("Marking…");
+      status.busy(M.t("waiting.marking"));
       await mark({ up_to: top });
       markAllOff();
     });
     older.addEventListener("click", load);
-    append(root, h("div", { class: "toolbar" }, h("h2", null, "Notifications"), markAll),
-      h("p", { class: "hint" }, "Mark all read leaves sign-in and address alerts unread: confirm them with This was me under Sessions in your account."),
+    append(root, h("div", { class: "toolbar" }, h("h2", null, M.t("waiting.title")), markAll),
+      h("p", { class: "hint" }, M.t("waiting.mark_all.hint")),
       list, older, status.el);
     markAllOff();
     await load();

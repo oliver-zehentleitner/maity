@@ -68,6 +68,7 @@ def test_the_member_view_has_the_contract_shape(
         "presence",
         "paused",
         "isolated",  # §6.2
+        "isolation_windows",  # §6.2
         "availability",  # §6.12
         "availability_policy",
         "covered_by",
@@ -184,7 +185,13 @@ def test_only_an_owner_grants_admin_or_proxy_and_touches_an_owner(
     refused(admin.patch(f"{path}/{co_owner.id}", {"trust": "admin"}))
     refused(admin.delete(f"{path}/{co_owner.id}"))
     # Below admin it manages as before; the owner may do all of it.
-    assert admin.patch(f"{path}/{agent.id}", {"role": "reviewer"}).status_code == 200
+    # An admin's change of the owner's agent waits for the owner's go (§6.2, "Another owner's
+    # agent"); the owner changes their own agent at once.
+    asked = admin.patch(f"{path}/{agent.id}", {"role": "reviewer"})
+    assert asked.status_code == 202, asked.text
+    assert (
+        owner.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"}).status_code == 200
+    )
     assert owner.patch(f"{path}/{agent.id}", {"trust": "admin"}).status_code == 200
     assert owner.patch(f"{path}/{co_owner.id}", {"trust": "admin"}).status_code == 200
 

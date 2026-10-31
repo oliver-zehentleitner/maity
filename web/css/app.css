@@ -790,8 +790,19 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
 .msg-project { display: inline-flex; }
 
-.compose { display: grid; gap: 6px; }
+.compose { display: grid; gap: 4px; }
 .compose label { font-size: 0.85rem; color: var(--muted); }
+/* The composer's head (tsk-k6nakahy6fnj): its label, the field's height on a
+   wide screen, hiding it on a phone; each control shown on its own screen. */
+.compose-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.compose-tools { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+.compose-size { display: inline-flex; gap: 2px; }
+.compose-size button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.compose-toggle { display: none; }
+/* Nothing empty takes room between the field and its buttons: a status line
+   or a list of files says nothing until it holds something. */
+.compose .send-status:empty, .compose .attach-pending:empty { display: none; }
+.compose .attach .send-status { margin: 0; }
 .compose button { justify-self: end; }
 /* The keys that send, right before the button that sends, the two one
    group (dom.js showSendKeys); in a grid at its end, as the button was. */
@@ -897,6 +908,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
   /* No keys to press on a phone, mostly: the hint goes, the button is laid out as it was. */
   .compose-actions { flex-wrap: wrap; }
+  /* On a phone the field keeps its rows; the composer folds away for reading instead. */
+  .compose-size { display: none; }
+  .compose-toggle { display: inline-flex; }
+  .compose.compose-hidden > :not(.compose-head) { display: none; }
   .send-with-keys { display: contents; }
   .send-keys { display: none; }
   .send-with-keys > button { flex: 1 1 100%; justify-self: stretch; }
@@ -1436,6 +1451,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
+/* The instance an address's #id leads to (tsk-bczgjkfpw1wg). */
+.member-instances li.chosen { border-left: 3px solid var(--accent); padding-left: 8px; }
 /* Phone: avatar, text, then the buttons at full width (the handover). */
 @media (max-width: 600px) {
   .member-head { grid-template-columns: minmax(0, 1fr); }

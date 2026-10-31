@@ -303,11 +303,11 @@ def test_the_log_masks_the_token(
 def test_requests_for_one_human_are_limited(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
-    second_factor_reset.BY_HUMAN._hits.clear()
+    second_factor_reset.BY_HUMAN.reset()
     admin, grace, _ = world(make_client, migrated, moment)
     answers = [ask(admin, grace).status_code for _ in range(4)]
     assert answers == [202, 202, 202, 429]
-    second_factor_reset.BY_HUMAN._hits.clear()
+    second_factor_reset.BY_HUMAN.reset()
 
 
 def test_the_operator_resets_by_an_alias_of_the_handle(

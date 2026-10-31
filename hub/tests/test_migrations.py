@@ -615,6 +615,8 @@ def test_a_carried_landing_passes_the_checks_of_the_setting(
         "default_language": "en",
         "pages": {},
         "footer": {"operator": None, "social": []},
+        "variants": {},
+        "campaigns": [],
     }
     checked = landing.check({"enabled": True, "pages": row.pages}, current)
     assert checked["pages"] == row.pages  # the editor can write it back unchanged

@@ -121,10 +121,9 @@ def test_two_admins_at_once_get_two_versions(
     its read for the other to read too; under the lock the other cannot, and the wait
     gives up."""
     agent = flow.agent(make_client, owner, briefing="v1")
-    with migrated.connect() as conn:
-        project_id = conn.execute(select(t.project.c.id)).scalar_one()
-    admin = flow.human(make_client, migrated, "co-admin")
-    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    # An admin agent of the same owner writes directly; another owner's admin would wait for
+    # the owner's consent (§6.2, "Another owner's agent").
+    admin = flow.agent(make_client, owner, role="admin")
     both_read = threading.Barrier(2)
     real_update = update
 

@@ -213,19 +213,20 @@ window.Maity = window.Maity || {};
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at, ctx);
-    if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
-    if (req.tried) append(body, h("h3", { class: "sub" }, M.t("inbox.tried")), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
+    // Drawn by the one renderer of chats, cards and messages (js/markdown.js): code with its Copy, links, mentions.
+    const said = (field, text, mentions) => M.markdown(text, at, { mentions, field, hrefOf: memberHref, ctx });
+    if (req.summary) append(body, h("div", { class: "md summary" }, said("summary", req.summary, req.mentions)));
+    if (req.tried) append(body, h("h3", { class: "sub" }, M.t("inbox.tried")), h("div", { class: "md" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {
       append(body, h("h3", { class: "sub" }, M.t("inbox.options")),
         h("ul", { class: "options" }, req.options.map((o) =>
-          h("li", null, h("strong", null, M.ids.link(o.label, at)), o.detail ? [" — ", M.ids.link(o.detail, at)] : ""))));
+          h("li", null, h("strong", null, M.ids.link(o.label, at)), o.detail ? h("div", { class: "md option-detail" }, M.markdown(o.detail, at)) : null))));
     }
     const nis = req.needs_in_session;
     if (nis) {
       append(body, h("p", { class: "flag", role: "note" },
         h("strong", null, M.t("inbox.needs_session")), " ",
-        ref(ctx, req, nis), (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
+        ref(ctx, req, nis), (nis.session_id ? " · " + M.t("inbox.session", { id: nis.session_id }) : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
         nis.reason));
     }
 
@@ -237,10 +238,13 @@ window.Maity = window.Maity || {};
       if (preference) append(body, M.preferences.outcome(req));
       append(body, h("p", { class: "answered" },
         (req.status === "withdrawn" ? M.t("inbox.withdrawn") : M.t("inbox.answered", { answer: answerLabel(req) })),
-        a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
-        a ? [" · ", ref(ctx, req, { member_id: a.by, display_name: names.member(a.by) }),
-          a.on_behalf_of ? [" ", M.tn("inbox.answered_for", { who: ref(ctx, req, { member_id: a.on_behalf_of, display_name: names.member(a.on_behalf_of) }) })] : null,
-          " · " + formatTime(a.at)] : null));
+        a ? [" · ", a.on_behalf_of
+          // Who answered, and for whom: one sentence, both members in it.
+          ? M.tn("inbox.answered_by_for", { by: ref(ctx, req, { member_id: a.by, display_name: names.member(a.by) }),
+            who: ref(ctx, req, { member_id: a.on_behalf_of, display_name: names.member(a.on_behalf_of) }) })
+          : ref(ctx, req, { member_id: a.by, display_name: names.member(a.by) }),
+          " · " + formatTime(a.at)] : null),
+        a && a.text ? h("div", { class: "md answer-text" }, said("text", a.text, a.mentions)) : null);
       return body;
     }
 
@@ -523,7 +527,7 @@ window.Maity = window.Maity || {};
         h("h2", null, ctx.scope === "all" ? M.t("inbox.title.all") : M.t("inbox.title")),
         h("label", { for: "inbox-sort" }, M.t("inbox.sort_by")), sortSelect,
         showSelect ? [h("label", { for: "inbox-show" }, M.t("inbox.show")), showSelect] : null,
-        projectSelect ? [h("label", { for: "inbox-project" }, M.t("inbox.fact.project")), projectSelect,
+        projectSelect ? [h("label", { for: "inbox-project" }, M.t("inbox.filter.project")), projectSelect,
           h("label", { class: "check", for: "inbox-group" }, groupBox, " " + M.t("inbox.group"))] : null),
       listStatus.el,
       wanted && !wantedReq ? h("p", { class: "muted wanted-note", role: "status" }, M.t("inbox.not_here", { id: wanted })) : null,

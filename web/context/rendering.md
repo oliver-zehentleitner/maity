@@ -621,7 +621,12 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. A language offered for choice
+or "an" in code, which only English has. In "X of Y" the plural form
+follows the total, Y ("1 of 3 instances active"), as English writes it.
+Rejected: the form of X, which read "1 of 3 instance active". Facts
+put side by side with a middle dot between them are allowed where each
+is a whole text of its own ("3 waiting for approval · 1 registered in
+the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
 is named in itself ("English", "Deutsch"), never through the catalog: a
 reader looks for their own language's name, not its name in the
 language shown now. Still the hub's words: an
@@ -635,7 +640,16 @@ form chosen by `Intl.PluralRules` is there to be translated. A key per value als
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
-checks as written, with commands and product names. Still put together from
+checks as written, with commands and product names. A text the
+dashboard writes into the hub for the reader (the title of a chat the
+Lead button makes) is taken from the catalog in the writer's language
+and stays as written, as a title they typed would: the hub keeps no
+language beside it, the other participants read it as it is, and the
+chat is found again by its participants, never by its title; its
+maker may rename it (§9.2). Rejected: a chat without a title (the
+hub allows one), named from its participants when read: every list
+that shows the chat would need that naming, and the participants alone
+do not say what the chat is for. Still put together from
 pieces: a status line's prefix and its reason ("Not saved: " + the
 hub's words, `status.fail`), for a later part of stage 2.
 
@@ -652,4 +666,46 @@ first-party scripts only. A check that fails on every prose literal: it
 would fail on today's code until every view had moved. Sentences put
 together from translated pieces: word order differs between languages,
 so those pieces cannot be translated on their own.
+
+## One renderer draws every text people and agents write, its stored mentions linked where they stand
+
+**Id:** 4315382f-022b-47f2-b23b-b4eeccbdb315
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request that formatting is the same in the chat and the inbox, the copy button included, relayed by the coordinator on the card tsk-8n1p6h3zypwp, 2026-10-31; docs/api.md §8.6 (stored mentions by code-point offset)
+**See:** rendering.md#chat-messages-are-markdown-drawn-as-dom-nodes-by-a-small-renderer-of-our-own-never-an-html-producing-library — 854c8122-770c-4c80-be9f-0ce9c90c0d2e — as of 2026-10-31
+**Revisit when:** a text needs Markdown inside an interactive control, or the hub stores mentions in a form other than offsets
+
+`js/markdown.js` draws the texts of:
+- chats and project messages;
+- a request's summary, what was tried, its options' details and its
+  answer;
+- a card's description and notes, and a report's summary.
+
+All of them get the same code with its copy, links and ids. The mentions
+the hub stored for a text are taken in where they stand
+(`M.dom.mentionSpans`, the same check as before: offsets in code points,
+the text there is the handle). They are marked as private-use
+placeholders that no Markdown rule reads, drawn as member links in text
+and restored as written inside code, a link's label and address and a
+fence's info string; a mention the hub stored inside a link stays the
+link's text, never a member link inside it. `M.dom.withMentions`, the inbox's
+and the board's own plain-text path, is gone. A project message's
+separate line of mentions is gone as well, because the mentions are now
+links in its text. A request's title stays plain text: it is the label
+of the entry's button, which can hold neither a link nor a copy control.
+Its ids are offered beside it, as before (3274d199).
+
+**Reason:** two ways of drawing the same kind of text drifted. The
+inbox showed code as text that could not be copied with one click,
+while the chat could. Placeholders keep the stored offsets valid against
+the source while Markdown rewrites it, so a mention is never re-detected
+from what someone typed.
+
+**Rejected alternatives:**
+- Linking any `@handle` the renderer finds: a typed name that the hub
+  did not store as a mention would become a link (§8.6).
+- Drawing a request's title as Markdown inside its button: a link or a
+  copy control inside a button is not operable.
 

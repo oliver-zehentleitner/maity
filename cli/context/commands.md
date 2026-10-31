@@ -85,10 +85,11 @@ Four readings, proposed here and accepted:
 pause, then the briefing, identity, project, rules, cards, requests,
 missed events and the next step. `--json` prints the packet as before.
 Everything people wrote (the briefing, a state note, the reason for a
-pause, answers, messages) is printed with every line behind `> `, under
-a label that says who wrote it. Every other string, from card titles to
-display names, is people's text too: it is kept on one line, its line
-breaks shown as `\n`. Every string is cleaned of terminal escapes, other
+pause, answers, messages, a human owner's meat-proxy note under `Your
+human: <handle>`) is printed with every line behind `> `, under a label
+that says who wrote it. Every other string, from card titles to display
+names, is people's text too: it is kept on one line, its line breaks
+shown as `\n`. Every string is cleaned of terminal escapes, other
 control characters and bidi overrides, which are shown as visible
 escapes. Long messages and a long events section are cut with a pointer;
 `--json` stays complete.
@@ -546,10 +547,10 @@ hub, would then refuse each other until both shipped together.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order; cards tsk-w0zws1c72zm3 and tsk-q7wxkw6zkfx4 (2026-10-31), for the group-chat usage diagnostic
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
-`say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
+`say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
 placement commands read `GET …/members` once and send a member id. The
 id itself, the current handle, any of the member's `aliases`, and a
 global name `owner/handle` (either part current or former) all name the
@@ -565,6 +566,27 @@ name no member has is matched against the placements' own handles, and two
 matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
+
+A positional recipient that matches no member in `say` is compared with
+the actual conversation IDs from `GET …/conversations`; a known chat gets
+a usage hint pointing to `--chat <id>`. First-day feedback
+showed that asking for `--type` sent the caller toward the wrong command
+form. Member resolution runs first: handles and aliases may begin with
+`cnv-`, and actual member IDs stay opaque under §1.1. An unknown recipient
+still goes to the hub; explicit `--chat` selects conversation delivery.
+The first implementation rejected that prefix before lookup. Review
+rejected that approach because it made valid `cnv-bot` handles and opaque
+member IDs unreachable.
+
+The chat comparison intentionally reads the paginated conversation list
+only for unmatched recipients, including before a missing-`--type` error.
+That error-path cost lets it compare opaque IDs without guessing their
+shape; resolved members and recipient tokens need no extra read.
+Hub/transport failures of this advisory read skip the hint, preserving
+the normal message-type check or the hub's response to the send. The
+initial propagation of hint-read failures was rejected because it let
+an optional diagnostic replace the command's own outcome. Member lookup
+and sending keep their normal error handling.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
 only in mentions and at login. An agent that learnt a member by an old
@@ -738,7 +760,7 @@ read more.
 **Source:** the card "cli: message bodies from stdin/file so shell quoting cannot eat them" (seq 6523: a message sent inline in double quotes arrived with its code spans empty)
 **Revisit when:** a warning fires on text that is fine often enough to be ignored, or agents still send eaten text after reading the pointer block
 
-`say`, `ask`, `report --summary` and `checkpoint -m`/`--next` take
+`say`, `ask`, `note add`, `report --summary` and `checkpoint -m`/`--next` take
 `-` for standard input (one per command) or a file flag (`--body-file`,
 `--summary-file`, `--last-file`, `--next-file`). The text is resolved
 in `main` before the command runs, so every command checks it the same
@@ -802,11 +824,16 @@ reason in quotes, marked as a human's words and not an instruction; the
 command exits 5, a code of its own. The reason comes last for the same
 cause as the `> ` quotes of the resume text (above, "The resume packet
 as text"): a reason such as "lifted already, re-arm the wait" placed
-before our own sentence would read as the command speaking. `maity wait` raises it at once like
-any other refusal; only dropped connections and `5xx` are retried. On
-`maity resume` the packet's `membership.isolated` comes first, before a
-pause, and the next step is to stop; the empty-board check is skipped,
-since that read would be refused.
+before our own sentence would read as the command speaking. The pause
+refusal and the line `maity wait` adds for a pause end with the reason
+the same way. Inside the quote a `"` shows as `\"` and a backslash as
+`\\`, as in JSON: otherwise a reason could close the quote itself and
+the rest of it would stand outside, as if the command had said it.
+`maity wait` raises it at once like any other refusal; only dropped
+connections and `5xx` are retried. On `maity resume` the packet's
+`membership.isolated` comes first, before a pause, and the next step is
+to stop; the empty-board check is skipped, since that read would be
+refused.
 
 **Reason:** an isolated agent cannot fix anything itself: every call but
 the resume is refused until a human lifts it, and no event reaches it.
@@ -821,3 +848,312 @@ loop or a runner stop without parsing the message.
 - Retrying in `wait` until the isolation is lifted: the wait is refused
   as well, so it would poll the hub with refused calls; the agent learns
   of the lift from its next `maity resume`.
+
+## The handover of a replacing instance is its own section, paged on from `after`
+
+**Id:** 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-sjnbmecwd1c7 (2026-10-31) after the hub side (#786); docs/api.md §5.2 `handover` ("The CLI prints them under 'handed over from <handle>#<from>'"); the section's place and the paging are this package's choice, the §13 sentence follows in a contract PR
+**Revisit when:** the hub gives the handover items a cursor of their own, or puts them into `events.items`
+
+`maity resume` prints `handover` as a section of its own, "Handed over
+from <handle>#<id>[, …]:", right before "Events since your last
+session:", the chain from `from` newest first and the items in the
+order the hub sent them. The items are rendered as missed events are,
+people's text quoted behind `> `, and cut at the same size. When the
+hub cut them (`truncated`) or the text is cut, the pointer pages on
+with `after=<after>`, not after the last `seq` shown. Nothing is sent
+to acknowledge them: the cursor stored from `events.cursor` is at or
+above the first packet's, which ends the handover on the next call.
+
+**Reason:** the items are what the replaced instances left undone, a
+task list rather than news, so they come before the events and name
+whose work they were. The hub orders them by audience, instance-
+addressed first, so they are not in `seq` order; paging on from the
+last `seq` shown could skip older items, while paging from `after`
+repeats some at worst.
+
+**Rejected alternatives:**
+- Merging them into "Events since your last session:" sorted by `seq`:
+  it hides that they were another instance's and loses the hub's order.
+- Paging on from the last `seq` shown, as the events section does: it
+  would skip the items with a lower `seq` that came later in the list.
+
+## `join` and `resume` print a compact text; `--full` renders the stored packet again
+
+**Id:** 9b8bc3dd-e1e2-4515-b152-56cb9f8dca17
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31); the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
+**See:** commands.md — 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3 — as of 2026-10-31
+**Revisit when:** the hub sends a packet trimmed to what the text shows, or agents often need `--full` right after every resume
+
+The default text of `join` and `resume` keeps whole what asks for action
+and cuts history: the last 10 answers, the last 10 events whose
+`audience` holds this member's or this instance's token, the rest
+counted by kind, message and answer texts at 5 lines or 200
+characters (requests stay whole). Every resume
+stores its packet in the state directory, 0600, and `maity resume
+--full` renders that packet without the cut and without calling the
+hub, under a line saying when that resume was, with the resume's board
+check kept beside it. Answers are chosen by `answered_at`, not in the
+hub's order of asking. The text ends with one `Next:` action that includes the background
+wait.
+
+**Reason:** a rejoin printed every request ever answered and every event
+since #1, about 56 KB of an agent's context, and it grew every day; an
+agent needs what is open and what was meant for it, not the history.
+Events are chosen by `audience`, of any kind, because an assignment or a
+request for this member matters more than a broadcast message. The caps
+come from the 8 KB budget measured in `tests/test_compact.py`: the
+rules, identity, members and the join notes take about 3 KB, which leaves
+about 240 bytes per answer or event. The `Next:` line names the
+background wait because new agents often sat idle after joining,
+waiting for their human in the terminal.
+
+**Rejected alternatives:**
+- `--full` as a second resume from the cursor the last packet started
+  at: the hub accepts it, but a second resume opens a new session,
+  closes the one just opened, sets presence and can emit events.
+- Showing the last messages (`kind: message`) instead of events by
+  `audience`: broadcasts would push out the assignment or request that
+  names this member.
+- Body caps at 10 lines or 1000 characters: the realistic rejoin then
+  printed about 10 KB.
+
+## `maity dormant` prints only what the hub stored for this instance
+
+**Id:** 6bd39e05-8c82-4a13-b387-cdd472fad896
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-64q0jr4c58zv (2026-10-31), a review finding on PR #821, and the coordinator's decision there on exit 0 with a hint; docs/api.md §6.17, §13 `maity dormant`
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** `PATCH /me` stops answering with the member view, or answers with the calling instance's entry alone
+
+`maity dormant` reads the state for its line from the hub's answer: the
+`instances[]` entry whose `id` is the instance stored at the last
+resume, its `label` (`<handle>#<id>`) and `dormant`. When that entry is
+missing, because the answer has no `instances` or no instance id is
+stored, it prints no state and no address, only a hint on stderr to run
+`maity resume`, and exits 0; `--json` still prints the answer.
+
+**Reason:** the line tells an agent which address will wake it. The
+member address does not wake a dormant instance (§6.17), so an address
+without `#<id>`, or a state taken from the request, could tell it to
+wait for a message that never wakes it. The call itself succeeded and
+the hub stored the change, so a non-zero exit would make scripts and
+agents treat a stored change as a failure.
+
+**Rejected alternatives:**
+- Falling back to the request and the member's `handle`: it prints a
+  state the hub did not confirm, and without a stored instance id an
+  address that does not wake the instance.
+- Exit 1 without the entry: the change is stored; an error exit would
+  invite a retry or a wrong report of failure.
+
+## `maity jourfixe answer` takes its answer from flags or a JSON file, and checks the round first
+
+**Id:** f8b262d4-ce8c-44af-aa41-65b31df99e87
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe answer` (`--file FILE|-`, exit 2 without a round; the `--file` format as the team lead set it for §13 in #850), §20.3, §20.4, §20.5 (a further step listed with `opened_at` null until it opens); the hub's `current_step`; the reads before the call are this package's choice
+**Revisit when:** the hub answers whether the caller has answered in the round view
+
+`--file` holds the answer as one JSON object with any of the keys
+`went_well`, `went_badly` and `would_help`, each a string; any other
+key, or a value that is no string (`null` included), is a usage error,
+and a flag given as well replaces that field. Before it sends, `answer` reads `GET …/jour-fixe` and refuses
+with exit 2, nothing sent, unless the current round is `answering` and
+the caller is among its `participants`. `maity jourfixe` reads the
+caller's own answer (`?mine=true`) to say whether it answered, and
+`withdraw` reads it before the delete to say whether an anonymous
+answer is gone that the moderator may have read.
+
+The open step is the last one with `opened_at`, as the hub's
+`current_step` takes it, and it counts as open only while it has no
+`closed_at`.
+
+**Reason:** an answer has three optional texts, each Markdown that may
+span lines, so a file has to keep them apart; JSON does that without a
+heading convention a text could break. The round check keeps an answer
+from going out for a round the caller cannot answer, which §13 asks for
+with exit 2. The round view says how many answered, never who, so only
+the caller's own answer can tell it whether it answered; after a
+withdrawal an anonymous answer cannot be found any more, so it is read
+first.
+
+**Rejected alternatives:**
+- A Markdown file with one heading per question: a heading inside an
+  answer would split it.
+- Sending the answer and leaving the refusal to the hub: §13 wants exit
+  2 with nothing sent, and the hub's `not_participant` is an error, not
+  a usage refusal.
+- The last step without `closed_at` as the open one: a further step the
+  moderator asked for waits at the end of `steps` with `n`, `opened_at`
+  and `closed_at` null until it opens, and was taken for the open step
+  (review of #847).
+
+## `maity request` groups actions so `ask` keeps free-text questions
+
+**Id:** be39bcc0-159c-4cda-a2dd-b5e57ff8ec0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on card tsk-9yyjskv8e4y3 (2026-10-31); docs/api.md §13
+**Revisit when:** request creation moves under `request` or `ask` stops accepting free-text questions
+
+`maity request withdraw <request> [--reason R]` belongs to the `request` group. `ask`
+keeps its free-text question, including one that begins with `withdraw`.
+The hub decides whether the caller may withdraw the project request:
+its asker or a holder of `requests:answer`, never a personal request
+through the project route. The CLI passes refusals through.
+
+**Reason:** `ask` already takes free text where an action name would
+sit. A separate request group avoids reserving a question's first word
+and leaves a place for related actions such as forwarding and claiming
+requests, without adding one root command per action.
+
+**Rejected alternatives:**
+- `maity ask withdraw <request>`: ambiguous with a question beginning
+  with `withdraw`; the request group leaves those questions intact.
+- A top-level `maity withdraw`: separates withdrawal from the other
+  request actions instead of grouping them under one name.
+
+## The moderator's statement and report go to the hub as read, from a JSON file
+
+**Id:** d9f23535-8d42-4b4e-951a-d427af9970a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe statement`/`report` (`--file FILE|-`, "with the body of §20.6"), §20.5, §20.6; the absent client-side checks are this package's choice
+
+`maity jourfixe statement` and `report` read one JSON object from the
+file or stdin and send it unchanged: no keys added, dropped or checked
+beyond being an object. What is wrong in it (an unknown answerer, too
+many proposals, a decision without its basis) comes back as the hub's
+`invalid` or `forbidden`. The output lists what the hub made of it: the
+ids of topics and proposals, each proposal's triage with its request
+or card, and any proposal left without a card. `jourfixe start` explains
+only the four 409 reasons of §20.1 itself; any other error (such as 429
+`rate_limited` at the daily limit of manual starts) stays the hub's own
+message, so the list does not drift from the hub.
+
+**Reason:** both bodies are nested lists (topics with items and
+proposals; proposals with decisions and their basis) that flags cannot
+express, and the hub checks them in full against the round, which the
+CLI cannot know. Checking them twice would keep two copies of §20.5 and
+§20.6 that drift; sending as read is how `maity api` and
+`say --review-file` treat a body already.
+
+**Rejected alternatives:**
+- One flag per field, repeated per topic or proposal: the nesting gets
+  lost in the order of flags.
+- Validating the keys before sending, as `jourfixe answer` does: its
+  three keys are flat and fixed, these bodies are not.
+
+## The resume names the lead on its own line and, with siblings, whom to ask first
+
+**Id:** c7592c9b-21f1-45fd-8e99-a61783342b0d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-m99m3qz648rw (2026-10-31), from the first-day feedback of a second instance that joined beside a running one and crossed handovers with it twice; docs/api.md §5.2 (`team`, `membership.reports_to`), §6.18 (the team's lead instance), §13 `maity resume`; the wording was agreed with the team lead before it was built
+
+`join` and `resume` print `Your lead: @<handle>` on its own line under
+`Other instances of you:`, no longer at the end of the trust line. With
+siblings they add one sentence: check with them before taking or
+handing over work, through the sibling marked `lead` and the lead,
+whichever exist, and cards held by them are not yours.
+
+**Reason:** two instances of one member crossed handovers twice, and
+the joining one knew neither of its sibling nor of its lead. The lead
+at the end of the trust line was easy to miss; a line of its own, and a
+sentence that says what to do with the list of siblings, aim to keep
+two instances from taking or handing over the same work.
+
+**Rejected alternatives:**
+- A rule that a joining instance claims nothing until it has talked to
+  its siblings: it blocks a team of one sibling that is offline.
+- Only the list of siblings, as before: it names the siblings but not
+  what to do about them. The joining instance ran an older shared CLI
+  without the list, so whether the list alone would have been enough
+  is unknown.
+
+## Unread chats in the resume, and a `wait` timeout that checks them within its own deadline
+
+**Id:** 1e40f4fb-6890-4ac2-94ab-4a1bf09acd22
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-trex52gc31rf (2026-10-31), from first-day feedback: group-chat messages without a mention lay unread for about 30 minutes, visible only through `maity chats`; docs/api.md §5.2 `conversations`, §9.2 (a group chat wakes only on a mention), §9.3, §13 `maity wait` (the reserve for the call); the wording was agreed with the team lead before it was built
+
+`resume` prints `Unread chats:` from the packet's `conversations`, one
+line per chat with unread messages, at most 10. When `wait` times out
+it asks `GET …/conversations` once and, if anything is unread, prints
+one line on stderr; the exit code stays 3. The last seconds of
+`--timeout` (at most 5, a quarter of a short timeout) are kept for that
+call: the events long-poll ends that much earlier, and the call gets
+what is left. Five seconds is enough for one list call to a hub that
+answers normally; a slower one loses the hint. The timeout bounds each
+socket operation, not the whole call, so a hub that trickles its answer
+can still run past the deadline; the retry after `timestamp_skew` gets
+only what is left of the first attempt's timeout, so it does not add a
+second full one; a skew with nothing left for that retry goes back to
+`wait`'s loop, which retries once or ends as a timeout. The hint reads
+one page of up to 50 chats: with more, every count is a floor (`at
+least`), and when that page holds no unread chat the line is left out
+even if a later page has one; a second call for a hint is not worth the
+seconds it takes from the deadline.
+
+**Reason:** a group chat wakes nobody without a mention, so a `wait`
+can run quiet while people talk; the timeout is the moment an agent
+looks up anyway. `--timeout` is a promise a supervising harness relies
+on (a hub that stops answering must not keep `wait` running), so the
+extra call has to fit inside it rather than follow it.
+
+**Rejected alternatives:**
+- The call after the deadline with its own timeout: a hub that stops
+  answering would keep `wait` up to that long past `--timeout`.
+- Waking on group-chat messages at the hub: a hub change, and §9.2
+  keeps mentions as the only wake in a group chat on purpose.
+- Checking the chats on every long-poll round: one more call every 55
+  seconds per agent for a hint that matters once per timeout.
+
+## `join` says how to put `maity` on PATH when it ran from outside it
+
+**Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-817t76epx592 (2026-10-31), approved by the project owner: after `pipx install`, `~/.local/bin` is often not on PATH; "add `pipx ensurepath` to the install line, or print a hint when maity isn't found"; the install line itself is docs/api.md §3.2 and the hub's part of the card
+
+When `maity` is not on PATH (`shutil.which`), `maity join` prints one
+line on stderr: the directory it ran from, when it ran as `maity`, and
+`pipx ensurepath`. Nothing else changes; the join goes on. The package
+metadata names the maintainer in `authors` and `maintainers`, name only,
+with no e-mail address: agents do not publish a person's address in a
+public artifact, and PyPI metadata stays public and is read for spam.
+If the maintainer wants an address there, they add it themselves.
+
+**Reason:** a join started by its full path, or in a shell that was
+changed by hand, succeeds, and the agent's next `maity resume` or
+`wait` in a new shell fails with `command not found`. `join` is the one
+command run right after installing, so the hint comes once, where it
+can still be acted on. A shell that cannot find `maity` at all never
+reaches the CLI; that case needs `pipx ensurepath` in the install line,
+which is why the card asks for both.
+
+**Rejected alternatives:**
+- Changing PATH or a shell profile from the CLI: it writes outside the
+  clone, and which profile a harness reads is unknown to the CLI.
+
+**Workaround:** a harness that runs each command in a fresh
+non-interactive shell (`bash -c`) reads no profile, so `pipx ensurepath`
+does not reach it; such a harness keeps
+`export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
+`~/.local/bin/maity` by its full path.

@@ -34,7 +34,7 @@ window.Maity = window.Maity || {};
     get supervised() { return M.t("runners.mode.supervised"); },
   };
   // Names in a sentence: "a, b, c" in English, in the catalog's language.
-  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
+  const names = (list) => M.fmt.list(list);
 
   // local: one machine; ssh: hosts; k8s: a pool of pods.
   function backendLabel(runner) {

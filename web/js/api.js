@@ -247,6 +247,9 @@ window.Maity = window.Maity || {};
   const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
   const IMAGE_MAX = 1024 * 1024;
   const uploaded = {};  // "<slug>/<kind>" -> object URL
+  // Whether a human set policy.keep_the_why on a project, and to what (§6.23): a switch
+  // of memory.provider back to keep-the-why reads `required` only where nobody did.
+  const ktwSet = new WeakMap();
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
   let uploadSerial = 0;
@@ -418,23 +421,42 @@ window.Maity = window.Maity || {};
     const mine = me().projects.find((p) => p.slug === slug);
     return governing(mine);
   };
-  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  // The first seq of each running isolation, as the hub keeps isolated_from_seq (§6.2).
+  const isolatedFrom = new WeakMap();
   function isolate(m, body, path, on) {
     const who = caller(m[1], path);
     if (who.member.kind !== "human") fail(403, "forbidden", "a human's call", path, { reason: "humans_only" });
     if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
     const target = member(m[1], m[2], path);
     if (target.kind !== "agent") fail(400, "invalid", "only an agent is isolated", path, { fields: { member: "not_an_agent" } });
-    if (!on) { target.isolated = null; return Object.assign({}, target); }
+    if (!on) {
+      // Lifting with hide_isolation_events: the window from the isolation to now, both ends
+      // included, joins isolation_windows; the agent reads none of it again (§6.2).
+      const log = eventsOf(m[1]);
+      const head = log.length ? log[log.length - 1].seq : 0;
+      // An isolation the fixture did not start (loaded as isolated): as the hub does for one
+      // made before it kept the first seq, the first event at or after it began.
+      const from = isolatedFrom.has(target) ? isolatedFrom.get(target)
+        : (log.find((e) => target.isolated && target.isolated.since && e.at >= target.isolated.since) || {}).seq;
+      if (target.isolated && (body || {}).hide_isolation_events === true && from !== undefined && from <= head) {
+        target.isolation_windows = (target.isolation_windows || []).concat([{ from_seq: from, to_seq: head }]);
+      }
+      target.isolated = null;
+      isolatedFrom.delete(target);
+      return Object.assign({}, target);
+    }
     const reason = typeof (body || {}).reason === "string" ? body.reason.trim() : "";
     if (!reason || reason.length > 500) fail(400, "invalid", "a reason of 1 to 500 characters", path, { fields: { reason: reason ? "too_long" : "required" } });
     if (!target.isolated) {
       target.isolated = { reason, since: nowIso(), by: who.member.id };
+      const log = eventsOf(m[1]);
+      isolatedFrom.set(target, (log.length ? log[log.length - 1].seq : 0) + 1);
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
     }
     return Object.assign({}, target);
   }
 
+  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);
@@ -580,7 +602,7 @@ window.Maity = window.Maity || {};
     if (sections.length > 20) errors[at + ".sections"] = "too_many";
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
-      const known = LANDING_TYPES[s.type];
+      const known = Object.hasOwn(LANDING_TYPES, s.type) ? LANDING_TYPES[s.type] : null;
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       const items = s.items || [];
@@ -635,8 +657,56 @@ window.Maity = window.Maity || {};
       }
     });
   }
+  function jfRound(slug, id, path) {
+    const r = file(slug, "jour-fixe.json", path).rounds.find((x) => x.id === id);
+    if (!r) fail(404, "not_found", "Not found", path);
+    return r;
+  }
+  // §20.1: policy.jour_fixe as the hub checks it, each refusal at its field path.
+  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  function jourFixeErrors(jf, members) {
+    // As hub/jourfixe/schedule.py names each refusal (§20.1).
+    const e = {};
+    const at = (k) => "policy.jour_fixe." + k;
+    const zone = jf.timezone;
+    if (typeof jf.enabled !== "boolean") e[at("enabled")] = "not_a_boolean";
+    if (zone != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(zone)) e[at("timezone")] = "unknown_timezone";
+    if (jf.enabled === true) {
+      if (jf.time == null) e[at("time")] = "required";
+      if (zone == null) e[at("timezone")] = "required";
+      if (jf.recurrence == null) e[at("recurrence")] = "required";
+    }
+    if (jf.time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(jf.time)) e[at("time")] = "format";
+    [["answer_window_minutes", 30, 1440], ["step_window_minutes", 30, 1440], ["report_window_hours", 1, 72]].forEach(([k, lo, hi]) => {
+      if (!(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
+    });
+    if (jf.moderator !== "admin_agent" && !members.some((x) => x.id === jf.moderator && !x.removed_at)) e[at("moderator")] = "not_a_member";
+    const r = jf.recurrence;
+    if (r != null) {
+      const key = (k) => at("recurrence." + k);
+      if (typeof r !== "object" || Array.isArray(r)) e[at("recurrence")] = "not_an_object";
+      else if (!["daily", "weekly", "monthly"].includes(r.freq)) e[key("freq")] = "unknown";
+      else {
+        const n = r.interval === undefined ? 1 : r.interval;
+        if (!Number.isInteger(n) || n < 1 || n > (r.freq === "weekly" ? 8 : 1)) e[key("interval")] = "out_of_range";
+        if (r.freq === "weekly") {
+          if (!r.weekdays || !r.weekdays.length) e[key("weekdays")] = "required";
+          else if (!Array.isArray(r.weekdays) || r.weekdays.some((d) => !WEEKDAYS.includes(d))) e[key("weekdays")] = "unknown";
+        } else if (r.weekdays != null) e[key("weekdays")] = "not_for_freq";
+        const day = r.month_day, nth = r.month_weekday;
+        if (r.freq === "monthly") {
+          if ((day == null) === (nth == null)) e[key("month_day")] = "one_of";
+          else if (day != null && !(Number.isInteger(day) && day >= 1 && day <= 31)) e[key("month_day")] = "out_of_range";
+          else if (nth != null && !(nth && [1, 2, 3, 4, -1].includes(nth.ordinal) && WEEKDAYS.includes(nth.weekday))) e[key("month_weekday")] = "invalid";
+        } else if (day != null || nth != null) e[key(day != null ? "month_day" : "month_weekday")] = "not_for_freq";
+      }
+    }
+    return e;
+  }
   function landingFooter(ft, errors) {
-    landingText(ft.operator, "footer.operator", 120, false, errors);
+    // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
+    if (ft.operator === "") errors["footer.operator"] = "invalid";
+    else landingText(ft.operator, "footer.operator", 120, false, errors);
     const social = ft.social || [];
     if (social.length > 8) errors["footer.social"] = "too_many";
     social.forEach((x, k) => landingCta(x, "footer.social." + k, true, errors));
@@ -1049,6 +1119,14 @@ window.Maity = window.Maity || {};
     });
   }
 
+  // §11.4 the signed-in human's forge access: one linked installation of the
+  // instance's GitHub App, no token of their own; never a token in an answer.
+  const forgeAccess = {
+    app_configured: true,
+    links: [{ id: "fgl-0001", forge: "github", installation_id: 51234, account: { login: "maintainer", type: "User" }, repository_selection: "selected",
+      repositories_shown: ["maintainer/maity", "maintainer/sample"], status: "active", linked_at: "2026-10-30T09:00:00Z", checked_at: "2026-10-31T06:00:00Z" }],
+    token: { configured: false, login: null, status: null, checked_at: null },
+  };
   // §16.5: the limits per human as the fixture hub holds them.
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
@@ -1100,6 +1178,9 @@ window.Maity = window.Maity || {};
       mine.sort((a, b) => (a.full_name < b.full_name ? -1 : 1));
       const member = !!orgRole(org);
       if (!member && org.public_page !== "on" && !mine.length) fail(404, "not_found", "no such person or organisation", path);
+      // The switch stands in for the hub's store here: the real hub serves no
+      // organisation page yet and answers page_served false (hub/context/public-pages.md
+      // 4423561d); the fixture keeps the true branch drawn (views.md, the entry after 63efb194).
       const out = Object.assign({ kind: "organisation", handle: org.handle, display_name: org.display_name, avatar_url: member ? org.avatar_url || null : null,
         page_served: org.public_page === "on" }, listed(mine));
       // Members read each other's names, not each other's pictures (§6.10).
@@ -1526,6 +1607,35 @@ window.Maity = window.Maity || {};
       const item = orgsData().invitations[org.id].find((x) => x.id === m[2]);
       if (item && item.role === "owner" && orgRole(org) !== "owner") fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
       orgsData().invitations[org.id] = orgsData().invitations[org.id].filter((x) => x.id !== m[2]);
+      return null;
+    }],
+    // §11.4 forge access, the human's own: links and token, never the token itself.
+    // The fixture hub needs no proof: the step-up is the smoke test's to answer.
+    ["GET", /^\/me\/forge$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      return JSON.parse(JSON.stringify(forgeAccess));
+    }],
+    ["POST", /^\/me\/forge\/github\/link$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      if (!forgeAccess.app_configured) fail(409, "forge_app_missing", "no GitHub App on this instance", path);
+      return { url: "https://github.com/apps/maity-fixture/installations/new?state=fixture-state" };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/links\/([^/]+)$/, (m, body, path) => {
+      if (!forgeAccess.links.some((l) => l.id === m[1])) fail(404, "not_found", "no such link", path);
+      forgeAccess.links = forgeAccess.links.filter((l) => l.id !== m[1]);
+      return null;
+    }],
+    ["PUT", /^\/me\/forge\/github\/token$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      if (!token) fail(400, "invalid", "the request does not validate", path, { fields: { token: "required" } });
+      // A classic token reads a private repository only with the repo scope, which writes (§11.4).
+      if (/^gh[pousr]_/.test(token) && !token.startsWith("github_pat_")) fail(400, "invalid", "the request does not validate", path, { fields: { token: "classic_token" } });
+      forgeAccess.token = { configured: true, login: me().member.handle, status: "active", checked_at: nowIso() };
+      return { configured: true, login: me().member.handle };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/token$/, () => {
+      forgeAccess.token = { configured: false, login: null, status: null, checked_at: null };
       return null;
     }],
     // §2.9 Your data: the export, and a deletion request withdrawn or asked again.
@@ -2019,12 +2129,15 @@ window.Maity = window.Maity || {};
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
+          probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).
           badge: setup.maity_badge ? "members" : "off",
+          // The commitment reads required under Keep the Why, optional under None (§6.23).
+          keep_the_why: provider === "none" ? "optional" : "required",
         }),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
@@ -2140,11 +2253,25 @@ window.Maity = window.Maity || {};
         // export follows the repository, and a new one has not been read yet.
         if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
         const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
-        p.repository = back ? back.repository
-          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        p.repository = back ? Object.assign({}, back.repository, { owner_confirmed: false, confirmed_by: null })
+          // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
+          : url ? (same ? Object.assign({}, p.repository)
+            : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+      }
+      // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
+      // made or cancelled. The commitment reads optional under none, and required
+      // under keep-the-why unless a human set it (§6.23).
+      if (body.memory) {
+        const provider = body.memory.provider;
+        if (!["keep-the-why", "none"].includes(provider)) fail(400, "invalid", "the request does not validate", path, { fields: { "memory.provider": "unknown_provider" } });
+        if (provider !== (p.memory || {}).provider) {
+          p.memory = { provider };
+          p.rules_version = (p.rules_version || 1) + 1;
+          p.policy = Object.assign({}, p.policy, { keep_the_why: provider === "none" ? "optional" : ktwSet.get(p) || "required" });
+        }
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
@@ -2170,9 +2297,176 @@ window.Maity = window.Maity || {};
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
+        if ("jour_fixe" in body.policy && body.policy.jour_fixe !== null) {
+          // Checked and stored with the defaults filled in, as the hub does (schedule.filled, §20.1).
+          const filled = Object.assign({ enabled: false, moderator: "admin_agent", answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 },
+            body.policy.jour_fixe);
+          const errors = jourFixeErrors(filled, file(m[1], "members.json", path).items);
+          if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+          body.policy = Object.assign({}, body.policy, { jour_fixe: filled });
+        }
         p.policy = Object.assign({}, p.policy, body.policy);
+        if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
       return p;
+    }],
+    // §20.9 the jour fixe: the series, the moderator order, the rounds; members only.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const jf = file(m[1], "jour-fixe.json", path);
+      const policy = (p.policy || {}).jour_fixe || null;
+      const rounds = jf.rounds;
+      return { policy, moderators: jf.moderators, next_at: policy && policy.enabled ? jf.next_at : null,
+        current_round: rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status)) || null,
+        last_round: rounds.find((r) => r.status === "reported") || null };
+    }],
+    ["PUT", /^\/projects\/([^/]+)\/jour-fixe\/moderators$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const all = file(m[1], "members.json", path).items;
+      const adminAgents = all.filter((x) => x.kind === "agent" && x.trust === "admin" && x.role !== "proxy" && !x.removed_at);
+      const human = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
+      if (!human && !adminAgents.some((x) => x.id === me().member.id)) fail(403, "forbidden", "project:admin or an admin agent", path);
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const order = body.order;
+      if (order !== null && !(Array.isArray(order) && order.every((id) => adminAgents.some((x) => x.id === id)))) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { order: "not_admin_agent" } });
+      }
+      p.policy = Object.assign({}, p.policy, { jour_fixe_moderators: order });
+      // The resolved order: the named ones first, the other admin agents after them.
+      const named = (order || []).map((id) => adminAgents.find((x) => x.id === id));
+      const rest = adminAgents.filter((x) => !(order || []).includes(x.id)).sort((a, b) => (a.handle < b.handle ? -1 : 1));
+      const jf = file(m[1], "jour-fixe.json", path);
+      jf.moderators = named.concat(rest).map((x) => ({ member_id: x.id, handle: x.handle }));
+      return { moderators: jf.moderators };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path, query) => {
+      project(m[1], path);
+      const status = query.get("status");
+      return { items: file(m[1], "jour-fixe.json", path).rounds.filter((r) => !status || r.status === status), next_cursor: null };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => {
+      const r = file(m[1], "jour-fixe.json", path).rounds.find((x) => x.id === m[2]);
+      if (!r) fail(404, "not_found", "Not found", path);
+      return r;
+    }],
+    // §20.3–§20.8 the round's writes, as the hub checks them: one answer per member, the
+    // statement, posts once per topic and step, a further step, the report, redaction.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path, query) => {
+      const r = jfRound(m[1], m[2], path);
+      const all = r.answers || [];
+      // The author's own: a named one at any time, an anonymous one only while the window is open (§20.4).
+      if (query.get("mine") === "true") {
+        return { items: all.filter((a) => a.mine && (!a.anonymous || r.status === "answering"))
+          .map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+      }
+      const reader = (r.moderator || {}).member_id === me().member.id || (me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])));
+      if (!reader) fail(404, "not_found", "Not found", path);
+      return { items: all.map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!(r.participants || []).some((p) => p.member_id === me().member.id)) fail(403, "forbidden", "not a participant", path, { reason: "not_participant" });
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      r.answers = r.answers || [];
+      if (r.answers.some((a) => a.mine)) fail(409, "jour_fixe_answered", "one answer per round", path);
+      const texts = ["went_well", "went_badly", "would_help"].map((k) => body[k] || "");
+      if (!texts.some(Boolean)) fail(400, "invalid", "the request does not validate", path, { fields: { answer: "empty" } });
+      const id = "jfa-f" + String(r.answers.length + 1).padStart(3, "0");
+      r.answers.push({ id, anonymous: !!body.anonymous, author: body.anonymous ? null : me().member.id, withdrawn: false,
+        went_well: body.went_well || null, went_badly: body.went_badly || null, would_help: body.would_help || null, redaction: null, mine: true });
+      r.answers_received = (r.answers_received || 0) + 1;
+      return body.anonymous ? { round_id: r.id, anonymous: true } : { round_id: r.id, anonymous: false, id };
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers\/mine$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      const own = (r.answers || []).find((a) => a.mine && !a.withdrawn);
+      if (!own) fail(404, "not_found", "no answer", path);
+      // An anonymous one is gone outright; a named one keeps its record (§20.3, §20.4).
+      if (own.anonymous) r.answers = r.answers.filter((a) => a !== own);
+      else Object.assign(own, { withdrawn: true, went_well: null, went_badly: null, would_help: null });
+      return { round_id: r.id, withdrawn: true };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/statement$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "statement" || r.statement) fail(409, "jour_fixe_state", "not in step 1", path, { status: r.status });
+      const named = new Set((r.answers || []).filter((a) => !a.anonymous && !a.withdrawn).map((a) => a.author));
+      if ((body.topics || []).some((t) => (t.items || []).some((it) => it.from !== "anonymous" && !named.has(it.from)))) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { items: "not_an_answerer" } });
+      }
+      r.statement = { by: me().member.id, message_seq: null, topics: (body.topics || []).map((t, i) => ({ id: "t" + (i + 1), title: t.title, summary: t.summary || null,
+        items: (t.items || []).map((it, k) => ({ id: "t" + (i + 1) + ".i" + (k + 1), text: it.text, from: it.from, redaction: null })),
+        proposals: (t.proposals || []).map((x, k) => ({ id: "t" + (i + 1) + ".s" + (k + 1), title: x.title, reason: x.reason || null })), redaction: null })) };
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/posts$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      const open = (r.steps || []).find((x) => x.opened_at && !x.closed_at && x.kind !== "statement");
+      if (!open || open.kind !== body.step) fail(409, "jour_fixe_state", "not this step", path, { step: open ? open.kind : null });
+      if (!(open.eligible || []).includes(me().member.id)) fail(403, "forbidden", "not eligible", path, { reason: "not_eligible" });
+      r.posts = r.posts || [];
+      if (r.posts.some((x) => x.by === me().member.id && x.topic_id === body.topic_id && x.step === body.step)) fail(409, "jour_fixe_state", "once per topic", path, { step: body.step });
+      const post = { id: "p-f" + (r.posts.length + 1), step: body.step, topic_id: body.topic_id, by: me().member.id, to: body.to || [], in_reply_to: body.in_reply_to || [],
+        body: body.body, message_seq: null, redaction: null };
+      r.posts.push(post);
+      return post;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/steps$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "exchange" || (r.steps || []).filter((x) => x.kind === "further").length >= 3) fail(409, "jour_fixe_state", "no further step now", path, { status: r.status });
+      r.steps.push({ n: null, kind: "further", opened_at: null, closes_at: null, closed_at: null, reason: body.reason, eligible: (r.participants || []).map((p) => p.member_id) });
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/report$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "reporting") fail(409, "jour_fixe_state", "not reporting", path, { status: r.status });
+      const decider = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
+      if ((body.proposals || []).some((x) => x.triage === "decided") && !decider) fail(403, "forbidden", "may not decide", path, { reason: "may_not_decide" });
+      r.report = { by: me().member.id, source: "moderator", summary: body.summary || null, summary_redaction: null,
+        findings: (body.findings || []).map((f, i) => ({ id: "f" + (i + 1), topic_id: f.topic_id || null, text: f.text, derived_from: null, redaction: null })),
+        proposals: (body.proposals || []).map((x, i) => Object.assign({ id: "r" + (i + 1), humans_only: false, decision: null, request_id: null, task_id: null, redaction: null }, x,
+          x.triage === "to_owner" ? { request_id: "req-jf" + (i + 1) } : x.decision && x.decision.outcome === "adopt" ? { task_id: "tsk-jf" + (i + 1) } : {})),
+        proposals_not_carded: [] };
+      Object.assign(r, { status: "reported", reported_at: nowIso() });
+      return { round: r, requests: r.report.proposals.filter((x) => x.request_id).map((x) => x.request_id), tasks: r.report.proposals.filter((x) => x.task_id).map((x) => x.task_id) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/redact$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const tomb = { at: nowIso(), by: me().member.id, reason: body.reason };
+      const [kind, id] = String(body.target || "").split(":");
+      const rep = r.report || {};
+      if (kind === "answer") { const a = (r.answers || []).find((x) => x.id === id); if (!a) fail(404, "not_found", "Not found", path); Object.assign(a, { went_well: null, went_badly: null, would_help: null, redaction: tomb }); }
+      else if (kind === "summary") Object.assign(rep, { summary: null, summary_redaction: tomb });
+      else if (kind === "finding" || kind === "proposal") {
+        const x = (kind === "finding" ? rep.findings : rep.proposals || []).find((y) => y.id === id);
+        if (!x) fail(404, "not_found", "Not found", path);
+        if (kind === "finding") Object.assign(x, { text: null, redaction: tomb }); else Object.assign(x, { title: null, reason: null, redaction: tomb });
+      } else fail(400, "invalid", "the request does not validate", path, { fields: { target: "redact_the_message" } });
+      return r;
+    }],
+    // §20.1: started by hand with a reason, by trust owner or admin; one round at a time.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "jour_fixe:start needed", path, { scope: "jour_fixe:start" });
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const jf = file(m[1], "jour-fixe.json", path);
+      const open = jf.rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status));
+      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
+      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const cfg = Object.assign({ answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 }, (p.policy || {}).jour_fixe || {});
+      const now = nowIso();
+      const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
+      const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", trigger: "manual", mode: "message",
+        scheduled_for: now, opened_at: now, answers_close_at: new Date(Date.now() + cfg.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config: cfg,
+        moderator: { member_id: (jf.moderators[0] || {}).member_id || null, instance: null },
+        invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
+      jf.rounds.unshift(round);
+      return round;
     }],
     // The log in fixture mode: fixtures/<slug>/events.json, the project
     // messages there and the ones posted in this tab (§8.3, oldest first).
@@ -2913,6 +3207,20 @@ window.Maity = window.Maity || {};
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
       return target;
+    }],
+    // §11.4: the namespace owner confirms the repository for their grants, only
+    // the URL the project carries now; a changed one is a conflict.
+    ["POST", /^\/projects\/([^/]+)\/repository\/confirm$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (me().member.kind !== "human") fail(403, "forbidden", "the namespace owner, acting directly", path, { reason: "humans_only" });
+      const from = p.owner && orgsData().items.find((o) => o.id === p.owner.id);
+      if (!p.owner || (from ? orgRole(from) !== "owner" : p.owner.id !== me().member.id)) fail(403, "forbidden", "only the namespace owner confirms", path);
+      if (!p.repository) fail(404, "not_found", "the project has no repository", path);
+      if (body.url !== p.repository.url) fail(409, "conflict", "the repository changed", path, { reason: "repository_changed", url: p.repository.url });
+      // The owner's grants now serve it: the fixture's linked installation covers it.
+      Object.assign(p.repository, { owner_confirmed: true, confirmed_by: { id: me().member.id, handle: me().member.handle },
+        probe_via: forgeAccess.links.length ? "app" : forgeAccess.token.configured ? "owner_token" : p.repository.probe_via });
+      return p.repository;
     }],
     // §6.25: the namespace owner hands the project to another human owner, a
     // consent request to them; the fixture hub files it and answers 202.

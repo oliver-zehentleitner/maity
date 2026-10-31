@@ -140,19 +140,21 @@ window.Maity = window.Maity || {};
       else status.fail("Instance health could not be read: ", err);
     }
   }
-  M.views.instanceAdmin = async (ctx, root) => {
+  M.views.instanceAdmin = async (ctx, root, where) => {
+    const into = (where && where.section) || null;
     append(root, h("h2", null, "Instance administration"));
     if (!ctx.me.instance_admin) { append(root, h("p", null, "Only the instance admin can open this area.")); return; }
-    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.adminUsers.section(ctx, s)], ["/admin/settings/limits", M.t("limits.section"), (s) => M.adminLimits.section(ctx, s)], ["/admin/reports", M.t("reports.section"), (s) => M.adminReports.section(ctx, s)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/registration", "Registration", (s) => M.adminRegistration.section(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/admin/settings/legal", "Legal pages", (s) => M.legal.section(ctx, s)], ["/health", "Instance information", infoSection]];
+    const parts = [["/admin/statistics", "Statistics", (s) => M.statistics.section(ctx, s)], ["/admin/users", "Users", (s) => M.adminUsers.section(ctx, s)], ["/admin/settings/limits", M.t("limits.section"), (s) => M.adminLimits.section(ctx, s)], ["/admin/reports", M.t("reports.section"), (s) => M.adminReports.section(ctx, s, into === "reports" ? where.args[0] || null : null)], [MAIL, "Mail settings", (s) => mailSection(ctx, s)], ["/admin/settings/registration", "Registration", (s) => M.adminRegistration.section(ctx, s)], ["/admin/settings/landing", "Landing page", (s) => M.landing.section(ctx, s)], ["/admin/settings/legal", "Legal pages", (s) => M.legal.section(ctx, s)], ["/health", "Instance information", infoSection]];
     // One section at a time, picked in a row of buttons at the top (the
     // designer's pass part 3: the page was one 5,000 px scroll); it opens
-    // on the first, Statistics.
+    // on the first, Statistics, or on the section the address names
+    // (/admin/registration, /admin/reports[/<id>]: where a notification leads).
     const nav = h("nav", { class: "admin-nav", "aria-label": "Sections" });
     append(root, nav);
     const shown = [];
-    for (const [, label, load] of parts) {
+    for (const [path, label, load] of parts) {
       const section = h("section", { class: "panel admin-section", "aria-label": label, id: "admin-" + label.toLowerCase().replace(/\W+/g, "-") }); append(root, section);
-      shown.push([label, section]);
+      shown.push([label, section, path]);
       try { await load(section); }
       catch (err) { const status = M.statusLine(); status.fail(label + " could not be read: ", err); append(section, status.el); }
     }
@@ -165,7 +167,9 @@ window.Maity = window.Maity || {};
       });
     }
     append(nav, buttons);
-    if (shown.length) pick(shown[0][1]);
+    // Matched by the hub path the section reads, not its label, which is translated.
+    const named = into && shown.find(([, , path]) => path.endsWith("/" + into));
+    if (shown.length) pick(named ? named[1] : shown[0][1]);
     else nav.remove();
   };
 })(window.Maity);

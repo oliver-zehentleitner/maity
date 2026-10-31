@@ -24,12 +24,14 @@ from maity_hub import (
     public_pages,
     public_people,
     render,
+    swarm,
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
 KIND = "project"
+VIEWS = "project_views"  # the kind of its Board, Members and Organisation pages
 ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
 
 
@@ -117,6 +119,95 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
     return humans, shown, len(agents) - len(shown)
 
 
+STAT_DAYS = 30
+STAT_LABELS = (
+    ("cards_done", "Cards done"),
+    ("reviews_given", "Reviews given"),
+    ("prs_merged", "Pull requests merged"),
+    ("handovers", "Handovers"),
+    ("claim_to_done_median_seconds", "Median, claim to done"),
+    ("review_to_done_median_seconds", "Median, review to done"),
+)
+
+
+def agent_statistics(
+    conn: Connection, project_id: str, named: list[Any] | None = None
+) -> dict[str, Any]:
+    """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
+    the agents only, so that no human's contribution appears. `totals` (with
+    `cards_done_per_day`) count every agent that is not isolated; `members` has a row, with its
+    counters, for each agent the page names (a public owner profile, no hold). `named` is what
+    `team` found, when the caller has it already."""
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id).where(
+            m.project_id == project_id,
+            m.active.is_(True),
+            m.agent_id.is_not(None),
+            m.isolated_since.is_(None),  # an isolated agent is not counted
+        )
+    ).all()
+    agents = {row.id for row in rows}
+    by_agent = {row.agent_id: row.id for row in rows}
+    if named is None:
+        _, named, _ = team(conn, project_id)
+    people = {
+        by_agent[a.id]: {"handle": a.handle, "name": a.display_name, "display_name": a.display_name}
+        for a in named
+        if a.id in by_agent
+    }
+    found = swarm.CACHE.get(conn, project_id)
+    folded: dict[str, Any] = swarm.fold(
+        found, people, days=STAT_DAYS, include=lambda member: member in agents
+    )
+    return {"totals": folded["totals"], "members": folded["members"]}
+
+
+def _duration(seconds: int | None) -> str:
+    if seconds is None:
+        return "-"
+    hours, rest = divmod(seconds, 3600)
+    return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
+
+
+def stat_value(key: str, value: Any) -> str:
+    if key.endswith("seconds"):
+        return _duration(value)
+    return "-" if value is None else str(value)
+
+
+def _per_day_html(series: list[dict[str, Any]]) -> str:
+    """The cards done per day as bars: inline style only, the text of each day in its title."""
+    peak = max((day["count"] for day in series), default=0) or 1
+    bars = "".join(
+        f'<span title="{escape(day["date"])}: {day["count"]}" style="display:inline-block;'
+        f"width:6px;margin-right:2px;background:currentColor;opacity:.6;"
+        f'height:{1 + 40 * day["count"] // peak}px"></span>'
+        for day in series
+    )
+    return f'<p aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</p>'
+
+
+def _statistics_html(stats: dict[str, Any]) -> str:
+    totals = stats["totals"]
+    items = "".join(
+        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>"
+        for key, label in STAT_LABELS
+    )
+    html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
+    html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
+    if stats["members"]:
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in STAT_LABELS)
+        body = "".join(
+            f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
+            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in STAT_LABELS)
+            + "</tr>"
+            for row in stats["members"]
+        )
+        html += f"<h3>Per agent</h3><table><tr><th>Agent</th>{head}</tr>{body}</table>"
+    return html
+
+
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
     is one (a person's profile turning private or public changes them, §16.9)."""
@@ -133,7 +224,7 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    return [(KIND, project_id) for project_id in ids]
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
 
 
 def render_project(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
@@ -164,9 +255,10 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
         f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
     )
+    statistics_html = _statistics_html(agent_statistics(conn, project.id, agents))
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
-        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}'
+        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}{statistics_html}'
     )
     path = f"/{full}"
     body = render.page_document(
@@ -184,6 +276,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
                 project.public_about or "",
                 shown_url or "",
                 team_html,
+                statistics_html,
             )
         ).encode()
     )
@@ -231,4 +324,25 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
         public_pages.touch(conn, KIND, project_id, removal=removal)
 
 
-public_pages.register(public_pages.Kind(KIND, render_project, targets))
+def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
+    """The pages that show a project: its views (Board, Members, Organisation, which follow its
+    page: served, named and shown alike), its agents' pages, and the person pages that list it
+    or its agents: its human members' and the owners' of its agent members, who need not be
+    members themselves (§16.9)."""
+    from maity_hub import public_agents
+
+    m = t.membership.c
+    members = conn.execute(
+        select(m.human_id, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.project_id == project_id)
+    ).all()
+    people = sorted({h for h, _ in members if h} | {o for _, o in members if o})
+    return [
+        (VIEWS, project_id),
+        *public_agents.pages_of_project(conn, project_id),
+        *[("person", person) for person in people],
+    ]
+
+
+public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

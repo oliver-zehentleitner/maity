@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
   // Getters: the words are the catalog's when said.
   const REFUSED = {
     get too_few() { return M.t("group.refused.too_few"); },
-    get too_many() { return M.t("group.refused.too_many"); },
+    get too_many() { return M.t("group.refused.too_many", { count: MAX_PEOPLE }); },
     get not_a_member() { return M.t("group.refused.not_a_member"); },
     get use_direct() { return M.t("group.refused.use_direct"); },
   };
@@ -69,7 +69,7 @@ window.Maity = window.Maity || {};
         const chosen = boxes.filter((b) => b.box.checked).map((b) => b.m);
         // As the hub counts (§9.2): you and two to eleven others.
         if (!chosen.length) { error.textContent = M.t("group.new.choose"); return; }
-        if (chosen.length + 1 > MAX_PEOPLE) { error.textContent = M.t("group.new.too_many"); return; }
+        if (chosen.length + 1 > MAX_PEOPLE) { error.textContent = M.t("group.new.too_many", { count: MAX_PEOPLE }); return; }
         if (chosen.length === 1 && chosen[0].kind === "agent" && chosen[0].owner_id === ctx.me.id) {
           append(clear(error), M.tn("group.new.direct", { name: chosen[0].display_name,
             link: h("a", { href: ctx.link("chat", chosen[0].id) }, M.t("group.new.open_it")) }));
@@ -421,8 +421,9 @@ window.Maity = window.Maity || {};
         }
       };
       M.dom.sendOnCtrlEnter(text, sendIt, button);
-      compose = h("form", { class: "compose", onsubmit: sendIt },
-        h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) })),
+      compose = h("form", { class: "compose", onsubmit: sendIt });
+      append(compose,
+        parts.composeHead(compose, text, h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) }))),
         text, hint, files ? files.el : null, parts.actionRow(files, button));
     }
 

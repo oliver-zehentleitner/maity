@@ -14,18 +14,22 @@ window.Maity = window.Maity || {};
   const HANDLE = M.dom.NAME_RULES.handle;
 
   // The hub's refusals of a profile's fields (§6.3, §6.24), in words.
+  // Getters: the words are the catalog's when said.
   const FIELD_WORDS = {
-    taken: "you have a profile with this handle already, or had one by that name",
-    reserved: "a word the dashboard uses itself",
-    string_pattern_mismatch: HANDLE.text,
-    string_too_short: "required",
-    invalid: "a name and an address like name@example.org, or both empty",
+    get taken() { return M.t("agents.field.taken"); },
+    get reserved() { return M.t("agents.field.reserved"); },
+    get string_pattern_mismatch() { return HANDLE.text; },
+    get string_too_short() { return M.t("agents.field.required"); },
+    get invalid() { return M.t("agents.field.git"); },
   };
   function said(err) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
-    if (fields) return { message: Object.entries(fields).map(([k, v]) => k.replace("_", " ") + ": " + (FIELD_WORDS[v] || v)).join("; ") };
-    if (err.code === "alias_limit") return { message: "the profile has kept as many earlier handles as it may" };
-    if (err.code === "rate_limited") return { message: "too many changes just now; try again later" };
+    if (fields) {
+      return { message: Object.entries(fields).map(([k, v]) => M.t("agents.refused.field", { field: k.replace("_", " "),
+        why: Object.hasOwn(FIELD_WORDS, v) ? FIELD_WORDS[v] : v })).join("; ") };
+    }
+    if (err.code === "alias_limit") return { message: M.t("agents.refused.aliases") };
+    if (err.code === "rate_limited") return { message: M.t("agents.refused.rate") };
     return err;
   }
 
@@ -38,25 +42,25 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const handle = h("input", { id: "agent-new-handle", required: true, autocomplete: "off", spellcheck: "false", pattern: HANDLE.pattern, maxlength: "31" });
     const name = h("input", { id: "agent-new-name", required: true, maxlength: "100", autocomplete: "off" });
-    const go = h("button", { type: "submit" }, "Create the profile");
+    const go = h("button", { type: "submit" }, M.t("agents.new.create"));
     return h("form", {
       class: "agent-new project-form",
       onsubmit: async (e) => {
         e.preventDefault();
         go.disabled = true;
-        status.busy("Creating…");
+        status.busy(M.t("agents.new.creating"));
         try {
           const made = await M.api.post("/agents", { handle: handle.value.trim().replace(/^@/, ""), display_name: name.value.trim() });
-          done(made, "The profile @" + made.handle + " was created. Add it to a project to give it a join line.");
+          done(made, M.t("agents.new.done", { handle: made.handle }));
         } catch (err) {
-          status.fail("Not created: ", said(err));
+          status.fail(M.t("agents.new.failed"), said(err));
           go.disabled = false;
         }
       },
     },
-    h("h3", null, "New agent profile"),
-    h("label", { for: "agent-new-handle" }, "Handle"), handle, h("p", { class: "hint" }, HANDLE.text),
-    h("label", { for: "agent-new-name" }, "Display name"), name,
+    h("h3", null, M.t("agents.new.title")),
+    h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle, h("p", { class: "hint" }, HANDLE.text),
+    h("label", { for: "agent-new-name" }, M.t("agents.display_name")), name,
     go, status.el);
   }
 
@@ -68,17 +72,17 @@ window.Maity = window.Maity || {};
     return h("li", { class: "agent-membership" },
       h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project),
       h("span", { class: "muted" }, " · " + M.trust.words(m)),
-      active === null ? null : h("span", { class: "muted" }, " · " + active + (max ? " of " + max : "") + (active === 1 ? " instance" : " instances") + " active"),
-      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, "Team rulebook"));
+      active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { active, count: max }) : M.t("agents.instances", { count: active }))),
+      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook")));
   }
 
   function addToProject(ctx, a) {
     const projects = (ctx.projects || []).filter(mayBring);
-    if (!projects.length) return h("p", { class: "muted" }, "You are in no project you may bring an agent into.");
+    if (!projects.length) return h("p", { class: "muted" }, M.t("agents.add.none"));
     const id = "agent-add-" + a.id;
-    const pick = h("select", { id }, projects.map((p) => h("option", { value: p.full_name }, p.name + " (" + p.full_name + ")")));
+    const pick = h("select", { id }, projects.map((p) => h("option", { value: p.full_name }, M.t("agents.add.option", { name: p.name, full: p.full_name }))));
     pick.value = projects[0].full_name;
-    const go = h("button", { type: "submit" }, "Add to the project");
+    const go = h("button", { type: "submit" }, M.t("agents.add.submit"));
     return h("form", {
       class: "agent-add inline-form",
       onsubmit: (e) => {
@@ -86,9 +90,8 @@ window.Maity = window.Maity || {};
         // The project's own join panel, this profile chosen: there its rules apply.
         M.route.go("/" + M.api.projectPath(pick.value) + "/agents/join?agent=" + encodeURIComponent(a.id));
       },
-    }, h("label", { for: id }, "Add to a project"), pick, go,
-    h("p", { class: "hint" }, "Opens the project's Agents with the join panel, this profile chosen. "
-      + "In a project it is already in, the line starts another instance or replaces one."));
+    }, h("label", { for: id }, M.t("agents.add.label")), pick, go,
+    h("p", { class: "hint" }, M.t("agents.add.hint")));
   }
 
   function editForm(a, done) {
@@ -102,7 +105,7 @@ window.Maity = window.Maity || {};
     gitName.value = (a.git_identity && a.git_identity.name) || "";
     const gitMail = h("input", { id: key("git-email"), type: "email", autocomplete: "off" });
     gitMail.value = (a.git_identity && a.git_identity.email) || "";
-    const go = h("button", { type: "submit" }, "Save");
+    const go = h("button", { type: "submit" }, M.t("agents.edit.save"));
     return h("form", {
       class: "agent-edit project-form",
       onsubmit: async (e) => {
@@ -113,24 +116,24 @@ window.Maity = window.Maity || {};
         if (wanted !== a.handle) body.handle = wanted;
         const git = gitName.value.trim() || gitMail.value.trim() ? { name: gitName.value.trim(), email: gitMail.value.trim() } : null;
         if (JSON.stringify(git) !== JSON.stringify(a.git_identity || null)) body.git_identity = git;
-        if (!Object.keys(body).length) { status.busy("Nothing changed."); return; }
+        if (!Object.keys(body).length) { status.busy(M.t("agents.edit.unchanged")); return; }
         go.disabled = true;
-        status.busy("Saving…");
+        status.busy(M.t("agents.edit.saving"));
         try {
           const now = await M.api.patch("/agents/" + encodeURIComponent(a.id), body);
-          done(now, "Saved." + ("handle" in body ? " The old handle @" + a.handle + " still names it as an earlier one." : ""));
+          done(now, "handle" in body ? M.t("agents.edit.saved_renamed", { handle: a.handle }) : M.t("agents.edit.saved"));
         } catch (err) {
           go.disabled = false;
-          status.fail("Not saved: ", said(err));
+          status.fail(M.t("agents.edit.failed"), said(err));
         }
       },
     },
-    h("label", { for: key("name") }, "Display name"), name,
-    h("label", { for: key("handle") }, "Handle"), handle,
-    h("p", { class: "hint" }, HANDLE.text + " A new handle keeps the old one as an earlier name (§6.24)."),
-    h("label", { for: key("git-name") }, "Git name (optional)"), gitName,
-    h("label", { for: key("git-email") }, "Git email (optional)"), gitMail,
-    h("p", { class: "hint" }, "The identity its commits carry, given to the agent with its resume."),
+    h("label", { for: key("name") }, M.t("agents.display_name")), name,
+    h("label", { for: key("handle") }, M.t("agents.handle")), handle,
+    h("p", { class: "hint" }, HANDLE.text + " " + M.t("agents.edit.handle_hint")),
+    h("label", { for: key("git-name") }, M.t("agents.edit.git_name")), gitName,
+    h("label", { for: key("git-email") }, M.t("agents.edit.git_email")), gitMail,
+    h("p", { class: "hint" }, M.t("agents.edit.git_hint")),
     go, status.el);
   }
 
@@ -154,11 +157,11 @@ window.Maity = window.Maity || {};
         h("h3", { class: "agent-card-title", tabindex: marked ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle)))),
       (a.memberships || []).length
         ? h("ul", { class: "agent-memberships" }, a.memberships.map((m) => membershipLine(ctx, a, m, o.views[m.project + " " + a.id])))
-        : h("p", { class: "muted" }, "In no project yet."),
+        : h("p", { class: "muted" }, M.t("agents.card.no_project")),
       o.here || null,
       o.add ? addToProject(ctx, a) : null,
       h("details", { class: "agent-settings", open: marked && !o.here ? true : null },
-        h("summary", null, "Name, handle, picture and deletion"),
+        h("summary", null, M.t("agents.card.settings")),
         editForm(a, o.changed),
         M.pictureEditor ? M.pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, o.changed) : null,
         M.profileDelete ? M.profileDelete(a, o.changed) : null));
@@ -166,25 +169,23 @@ window.Maity = window.Maity || {};
 
   M.views.agentsPage = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
-      append(root, h("h2", null, "Your agents"), h("p", null, "Agent profiles belong to humans."));
+      append(root, h("h2", null, M.t("agents.title")), h("p", null, M.t("agents.humans_only")));
       return;
     }
     const wanted = args && args[0] ? args[0] : null;
     const note = h("div");
     const body = h("div", { class: "agents-page" });
-    const heading = h("h2", { id: "agents-heading", tabindex: "-1" }, "Your agents");
-    append(root, heading,
-      h("p", { class: "hint" }, "Your agent profiles across every project: each is one identity, with its picture, its handle and the "
-        + "memberships it holds. Add one to a project to make a join line there."), note, body);
+    const heading = h("h2", { id: "agents-heading", tabindex: "-1" }, M.t("agents.title"));
+    append(root, heading, h("p", { class: "hint" }, M.t("agents.intro")), note, body);
     const draw = async (words) => {
       const profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       const views = await memberViews(profiles);
-      const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, "Your agents could not be read again: " + err.message)));
+      const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
       clear(note);
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
       append(clear(body),
         profiles.length ? h("ul", { class: "agent-cards" }, profiles.map((a) => profileCard(ctx, a, { wanted, views, changed: redraw, add: true })))
-          : h("p", { class: "muted" }, "You have no agent profile yet."),
+          : h("p", { class: "muted" }, M.t("agents.none")),
         newProfile(redraw));
       // /agents/<id> (a link to one profile): that card's title focused, once.
       const title = wanted && !words ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
@@ -204,7 +205,7 @@ window.Maity = window.Maity || {};
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
   M.views.projectAgents = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
-      append(root, h("h2", null, "Agents"), h("p", null, "Agent profiles belong to humans: each manages their own agents here."));
+      append(root, h("h2", null, M.t("agents.project.title")), h("p", null, M.t("agents.project.humans_only")));
       return;
     }
     const joinAsked = !!(args && args[0] === "join");
@@ -239,12 +240,13 @@ window.Maity = window.Maity || {};
     const P = M.memberParts(ctx, { status, keyed, edits, open, reload, redraw });
     const memberOf = (a) => items.find((m) => m.id === a.id && !m.removed_at);
     // A profile's own save (name, picture, deletion): read again, said once.
-    const changed = (answer, said) => reload().then(() => { words = said; redraw(); }, (err) => status.fail("Could not read your agents again: ", err));
+    const changed = (answer, said) => reload().then(() => { words = said; redraw(); }, (err) => status.fail(M.t("agents.project.reread_failed"), err));
 
     function here(m) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
-      return h("section", { class: "agent-here", "aria-label": "In " + (ctx.project.name || ctx.slug) },
-        h("h4", null, "In " + (ctx.project.name || ctx.slug)),
+      const inHere = M.t("agents.project.in", { name: ctx.project.name || ctx.slug });
+      return h("section", { class: "agent-here", "aria-label": inHere },
+        h("h4", null, inHere),
         h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin),
           m.paused && !ctx.canAdmin ? [" · ", P.pausedText(m)] : null),
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
@@ -264,10 +266,10 @@ window.Maity = window.Maity || {};
       const list = profiles.filter(memberOf);
       // Profiles not read are no "none": the failure is said where the cards go.
       append(clear(cards), unread
-        ? h("p", { class: "send-status failed" }, "Your agents could not be read: " + unread.message)
+        ? h("p", { class: "send-status failed" }, M.t("agents.project.read_failed", { reason: unread.message }))
         : list.length
           ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, changed, here: here(memberOf(a)) })))
-          : h("p", { class: "muted" }, "None of your agents is in this project yet.", J || mayAdd ? " Add one: its join line is made here." : ""));
+          : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none")));
       drawJoins();
     }
 
@@ -275,7 +277,7 @@ window.Maity = window.Maity || {};
     // opens the panel at the head; the open joins stand as seats under the
     // cards, the others folded at the end. The panel, its form and a line
     // shown once live outside the redrawn cards, so a redraw loses neither.
-    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? "+ Add my agent" : "+ Add an agent");
+    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? M.t("agents.project.add_mine") : M.t("agents.project.add"));
     const seatsBox = h("div", { class: "profiles join-seats" });
     const earlierBox = h("div", { class: "earlier-box" });
     let J = null;
@@ -296,15 +298,17 @@ window.Maity = window.Maity || {};
     function drawCount() {
       const own = ownMembers();
       const joins = J ? J.openCount() : 0;
-      countLine.textContent = own.length + (own.length === 1 ? " agent of yours" : " agents of yours") + " · "
-        + own.filter((m) => m.presence === "online").length + " online"
-        + (J ? " · " + joins + (joins === 1 ? (memberAdds ? " open join of yours" : " open join") : (memberAdds ? " open joins of yours" : " open joins")) : "");
+      // Facts with a middle dot between them, each one whole.
+      const facts = [M.t("agents.count.own", { count: own.length }), M.t("agents.count.online", { count: own.filter((m) => m.presence === "online").length })];
+      if (J) facts.push(memberAdds ? M.t("agents.count.joins_mine", { count: joins }) : M.t("agents.count.joins", { count: joins }));
+      countLine.textContent = facts.join(" · ");
       if (memberAdds) {
         const n = ownCount();
         const full = n >= maxOwn;
         // At the limit the panel still makes an instance of one of them.
-        limitNote.textContent = n + " of " + maxOwn + " agents of yours"
-          + (full ? (own.length ? " · no new one; another instance or a replacement still" : " · the project allows no more") : "");
+        const limit = [M.t("agents.limit", { n, count: maxOwn })];
+        if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : M.t("agents.limit.no_more"));
+        limitNote.textContent = limit.join(" · ");
         addButton.disabled = full && !own.length;
         addButton.setAttribute("aria-describedby", "member-agents-limit");
       }
@@ -321,10 +325,11 @@ window.Maity = window.Maity || {};
     const panelSlot = h("div", { class: "join-panel-slot" });
     addButton.hidden = true;
     const placementsSlot = h("div", { class: "placements-slot" });
-    append(root, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, "Agents"), memberAdds ? limitNote : null, mayAdd ? addButton : null),
-      h("p", { class: "hint" }, "Your own agents in " + (ctx.project.name || ctx.slug) + ": each profile as on ",
-        h("a", { href: "/agents" }, "Your agents"), ", with its rulebook, its instances and their credentials here."
-        + (ctx.canAdmin ? " Pause or remove one under its card." : "")),
+    append(root, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null, mayAdd ? addButton : null),
+      h("p", { class: "hint" }, (() => {
+        const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
+        return ctx.canAdmin ? M.tn("agents.project.hint_admin", values) : M.tn("agents.project.hint", values);
+      })()),
       countLine, status.el, panelSlot, note, cards, seatsBox, placementsSlot, earlierBox);
     try {
       await readProfiles();
@@ -347,7 +352,7 @@ window.Maity = window.Maity || {};
         // Asked for, or no agent of one's own here yet: the panel is the way
         // in, open at once. ?agent=<id> (Your agents' Add to a project): that profile chosen.
         if (joinAsked || !ownMembers().length) J.open(addButton, joinAsked ? M.route.current().query.get("agent") : null);
-      }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, "Could not read the joins: " + err.message)));
+      }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, M.t("agents.project.joins_failed", { reason: err.message }))));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.
       ctx.onEvents((events) => {
@@ -369,7 +374,7 @@ window.Maity = window.Maity || {};
     if (wanted) {
       const at = rulebookAsked ? focusables.get("team-max:" + wanted) : Array.from(cards.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0];
       if (at) window.setTimeout(() => at.focus(), 0);
-      else append(status.el, h("span", null, "No agent of yours with the id " + wanted + " in this project."));
+      else append(status.el, h("span", null, M.t("agents.project.not_here", { id: wanted })));
     }
   };
 })(window.Maity);

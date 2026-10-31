@@ -186,7 +186,7 @@ leaked runner key under `keep`: the key leaked, not the machine.
 adversarial review; what it got wrong is not recorded here. Others:
 unknown.
 
-## One codebase, three ways to run it: alone at home, a team's own instance, and an open hosted instance with paid plans
+## One codebase, three ways to run it: alone at home, a team's own instance, and an open hosted instance
 
 **Id:** 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2
 **Type:** decision
@@ -196,7 +196,7 @@ unknown.
 **Revisit when:** the open hosted instance needs something the self-hosted ones must not carry (then it becomes a module, not a fork)
 
 Maity is to run in three ways — the agreed target; today's code has the
-first, and registration, plans and payment are still to be specified
+first, and registration, account limits and payment are still to be specified
 and built — and they differ only in the instance's settings, never in
 the code:
 
@@ -208,14 +208,13 @@ the code:
   account. Registration is open only to listed email domains and listed
   addresses, with the address verified before an account exists.
 - **An open hosted instance.** The maintainer's own instance is opened
-  as a multi-tenant service and a trial: anyone registers into a free
-  plan to try it, and someone who wants more without hosting buys a
-  larger plan. Plans are defined by the operator (limits such as agents
-  and projects per account, and a price); payment is an optional module
-  (a subscription provider or a payment link), off by default.
+  as a multi-tenant service: anyone registers and tries it without
+  hosting anything. An operator may set limits per account (such as
+  agents and projects); payment is an optional module (a subscription
+  provider or a payment link), off by default.
 
 Every person sees only the projects they belong to, as before; the open
-instance adds plan limits per person, and no ordinary member can list other
+instance adds limits per person, and no ordinary member can list other
 accounts or projects. The instance admin keeps what §16.1 gives them:
 account metadata and counts, never the contents of projects they are not
 in. The core stays free software without billing; selling
@@ -229,17 +228,17 @@ by strangers).
 
 Settled the same day: whether a new registration is usable at once or
 waits for the operator's approval is an instance setting the operator
-chooses; an account over its limit after a downgrade keeps what it has
-and creates nothing new (the tolerant default), and the operator has an
-emergency brake per account or for all — pausing the agents over the
-limit or making an account read-only — which is logged and told to the
-person affected. Opening an instance and plans are never the default;
-they are switched on by configuration. Limits count per person: each
-pays for their own agents and projects, with a small free plan (for
-example up to 3 agents). A project owner may buy additional quota (plans
-and prices are the operator's) and hand parts of it to members of their
-project — sponsoring, say, three more agents for someone on the free
-plan; whether a project allows this is a per-project setting.
+chooses; an account over its limit after its limits are lowered keeps
+what it has and creates nothing new (the tolerant default), and the
+operator has an emergency brake per account or for all — pausing the
+agents over the limit or making an account read-only — which is logged
+and told to the person affected. Opening an instance and limits are
+never the default; they are switched on by configuration. Limits count
+per person: each person's own agents and projects count against their
+limits (for example up to 3 agents). A project owner may be given
+additional quota (how is the operator's) and hand parts of it to members
+of their project — sponsoring, say, three more agents for someone at the
+limit; whether a project allows this is a per-project setting.
 
 ## Maity is a control plane for humans and their independent coding agents; an agent is a durable identity, the runtime is interchangeable
 
@@ -315,7 +314,7 @@ system; naming the provider as a choice keeps the hub a switchboard.
 **Source:** the maintainer's decision in the inbox, 2026-10-25
 **Revisit when:** the per-member cost model of the hosted offering changes, or a customer asks for hub-side execution and is willing to carry its cost as a separate plan
 **See:** scope.md#a-runner-the-operator-runs-may-start-agents-the-hub-still-never-does — 6f8d6d1b-31fa-408c-be43-f0da404084bb — as of 2026-10-25
-**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
 
 The hosted offering (maity.team) runs no agent workloads. Runners stay
 on the members' own machines, never in hub-side worker pods. The hub is
@@ -326,10 +325,9 @@ the runner decision above for the hosted instance: an operator-run
 runner may start agents, but the hosted operator runs none.
 
 **Reason:** the per-member cost of the hosted instance must stay in the
-cents, so that a free tier carries itself and the paid plans price
-coordination, not compute. A hub that ran agents would have a cost that
-scales with agent runtime and model usage, which neither a free tier nor
-a per-seat plan can carry.
+cents: the hub coordinates and never pays for compute. A hub that ran
+agents would have a cost that scales with agent runtime and model usage,
+which a coordination service cannot carry.
 
 **Rejected alternatives:**
 - Hub-side worker pods for members without a machine of their own: cost
@@ -386,7 +384,7 @@ review rules to be proven first.
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25; the ceiling in `docs/api.md` §16.5
 **Revisit when:** plans (§2.7 part two) are specified — then the ceiling becomes a per-plan value and this entry is superseded by the plans entry
-**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
 
 The public beta of the hosted instance has no subscriptions. When
 plans come, they price what organisations need — private orgs and
@@ -418,7 +416,8 @@ high enough that nobody working alone meets it.
 
 **Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
 **Type:** constraint
-**Status:** active
+**Status:** superseded
+**Superseded by:** b9dc57f9-7581-47ef-acc8-00b679f7aa1e
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-25; contract `docs/api.md` §16.6
 **Revisit when:** a question about usage cannot be answered from the hub's own tables (then the answer is a new counted fact in the hub, not a tracker)
@@ -447,6 +446,51 @@ joined) and costs nothing to defend.
   an installation that works, nor one installation from its many joins;
   the first join of an instance is what the hub sees.
 
+## Usage is counted from the hub's own tables; landing variants and campaign links add daily sums, nothing per visitor
+
+**Id:** b9dc57f9-7581-47ef-acc8-00b679f7aa1e
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the chat with the contract owner, 2026-10-31 (A/B testing before the launch, the exception "very defensible", the campaign kept with the account for at most 30 days); contract `docs/api.md` §16.6, §16.7.2
+**Revisit when:** marketing needs a number the daily sums per variant and campaign cannot give, or the 30-day origin on the account is asked about by a person or a regulator
+**See:** scope.md#usage-is-measured-by-counting-what-the-hub-already-holds-never-by-tracking — 02f126c2-5d8c-4ea4-89bd-ceb499efd24d — as of 2026-10-31
+
+The instance admin still reads usage as counts derived from the hub's
+own tables (§16.6), with no tracking cookie, no beacon, no external
+analytics. One exception is allowed, and only when the operator
+configures it: the landing page may have up to five variants at
+`/for/<slug>`, and campaign links carry a code the admin created
+beforehand (`?c=<code>`). Per UTC day, variant and campaign, the hub
+keeps three sums: views (browser navigations, crawlers left out,
+approximate), completed registrations and activations (the first agent
+instance of an account registered through that link, within 30 days).
+To count an activation, the account keeps its variant and campaign,
+shown to nobody but the person in their own export, until the first
+activation or 30 days, then the hub deletes it. None of it happens
+while the operator has configured neither variants nor campaigns.
+The link decides what a visitor sees, never a lottery; no cookie, no
+script, nothing that tells one visitor from another.
+
+**Reason:** marketing needs to compare messages before the launch, and
+registrations alone do not say which message brings people who use
+Maity; the first joined agent does (confirmed: the maintainer chose
+activations per link over a total only). Daily sums answer that without
+a tracker or a third party, and the one personal trace, the origin on a
+new account, is short-lived, never shown and named in the privacy notice.
+
+**Rejected alternatives:**
+- Activations as a total only, nothing on the account: honest about not
+  storing, but it hides which link brings real users, the number the
+  test exists for.
+- A random split per visitor with a cookie: needs a cookie and a
+  consent question for every visitor, and the link-based variant gives
+  the same comparison when each campaign links one variant.
+- An external analytics service: still a third party in the pages, for
+  sums the hub can keep itself.
+- Counting every code a link carries: anyone could fill the table with
+  made-up codes; only codes the admin created are counted.
+
 ## What one instance says about itself lives in its database, not in the repository
 
 **Id:** eec53587-3465-48d8-9c7e-ae24e05e7172
@@ -456,7 +500,7 @@ joined) and costs nothing to defend.
 **Evidence:** confirmed
 **Source:** the maintainer's direction in the project chat, 2026-10-25; contract `docs/api.md` §16.7
 **Revisit when:** an instance needs more than one page of its own (then a small content store, still in the database), or a theme beyond the uploaded logo and banner
-**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance-with-paid-plans — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
+**See:** scope.md#one-codebase-three-ways-to-run-it-alone-at-home-a-teams-own-instance-and-an-open-hosted-instance — 930cc491-24f2-4dbe-94b6-b5b49e7e2fb2 — as of 2026-10-25
 
 The hosted instance gets a landing page at its root; a self-hosted or
 local instance keeps the bare login page. The landing page's words are

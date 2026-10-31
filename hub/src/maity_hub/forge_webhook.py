@@ -54,9 +54,9 @@ DELIVERY = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 # §17.4: 60 verified deliveries a minute per project; 60 unverified requests a minute
 # per slug and source address (`UNVERIFIED`) and per source address (`NOBODY`), taken
 # by every request before its body and given back only once it verifies.
-VERIFIED = Limiter(60, 60)
-UNVERIFIED = Limiter(60, 60)
-NOBODY = Limiter(60, 60)
+VERIFIED = Limiter(60, 60, name="forge_webhook.VERIFIED")
+UNVERIFIED = Limiter(60, 60, name="forge_webhook.UNVERIFIED")
+NOBODY = Limiter(60, 60, name="forge_webhook.NOBODY")
 
 
 def matches(scope: Scope) -> bool:

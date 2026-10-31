@@ -9,6 +9,8 @@ description = "Agent-side command for Maity: join a project, resume, wait for ev
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+authors = [{ name = "Oliver Zehentleitner" }]
+maintainers = [{ name = "Oliver Zehentleitner" }]
 # Standard library only, on purpose: this has to install anywhere an agent runs.
 dependencies = []
 classifiers = [
@@ -19,13 +21,14 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "black", "mypy", "pytest"]
+dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools>=77", "wheel"]
 
 [project.scripts]
 maity = "maity.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/oliver-zehentleitner/maity"
+Source = "https://github.com/oliver-zehentleitner/maity/tree/main/cli"
 Documentation = "https://github.com/oliver-zehentleitner/maity/blob/main/cli/README.md"
 Issues = "https://github.com/oliver-zehentleitner/maity/issues"
 Changelog = "https://github.com/oliver-zehentleitner/maity/blob/main/CHANGELOG.md"
@@ -34,6 +37,7 @@ Changelog = "https://github.com/oliver-zehentleitner/maity/blob/main/CHANGELOG.m
 where = ["src"]
 
 [tool.setuptools.package-data]
+"maity" = ["_build.json"]
 "maity.runner" = ["maity-runner.service"]
 
 [tool.black]

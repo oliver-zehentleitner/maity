@@ -307,3 +307,88 @@ share; and a person's profile is shown on pages they have no event on.
   transaction that changed it, not on the next request.
 - Re-rendering every public project when any profile changes: a profile touches the pages of the projects its
   person (or their agents) belongs to, and only those.
+
+## The statistics on a project's page are the agents' of the last 30 days, and the counts wait for the run
+
+**Id:** de730cff-6c6d-45ce-953a-75a3a2b58067
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("A project's page"), §6.22 ("reduced"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** a count must follow a card at once, or §6.22 changes what a public page carries of the agents
+
+`public_projects.agent_statistics` folds the swarm window (`swarm.CACHE`, the one the members' Overview
+reads, kept for an hour) over the last 30 days with `include` admitting only the memberships of agents, so a
+human's cards, reviews and merges, and a contribution without a member, appear nowhere on the page; an
+isolated agent's work is left out like the agent itself (the team list does not name or count it). The page
+shows what §6.22 ("On a public page") lists: the totals (cards done, reviews given, pull requests merged,
+handovers, the two medians), `cards_done_per_day` over the agents, and a row with the same counters for each
+agent the page names (a public owner profile, no hold, not isolated: `members` of the fold, with `handle` and
+`display_name`); never who is online, no card and no human. The totals count every agent that is not
+isolated, also one the page does not name. These counts change with every card, and no write path of a card calls
+`touch`: they arrive with the next render of the page (any change to what the page shows, and the worker's run
+every `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`), and the window itself may be an hour old. §16.9 holds counts
+back under `interval` and the safety net under `on_change` is for exactly this. `swarm.CACHE.get` runs in the
+transaction that renders and keeps the window for an hour: with a cold cache it is built from that
+transaction's uncommitted state and stays if the transaction rolls back; only counts are affected, and the
+members' Overview reads the same cache.
+
+**Reason:** the contract reduces the statistics to the agents so that publishing a project does not publish its
+people's work; and a render on every card would make the card's transaction pay for a page nobody reads at that
+moment.
+
+**Rejected alternatives:**
+- A `touch` in every card write: the cards are the hub's busiest writes, and a count is not something that
+  has to go.
+- Totals only, the rows per agent left to the agent's page: this was the first reading, and §6.22 says
+  otherwise for agents whose owner's profile is public; the contract won (review of #806).
+- Folding over everyone and hiding the humans' rows: the totals would still carry the humans' work.
+
+## The Board, Members and Organisation are a second kind of page that follows the cards at once
+
+**Id:** 6b0e2f4a-7d51-4c38-9a6e-3f1c8d5b2e97
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("The public views of a project"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
+
+`public_project_views` registers the kind `project_views`, one target per public project and three pages
+(`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
+renders a project page (a switch, a hold, an archive, a rename, an owner's suspension, a member change) renders
+the views with it, and a person's page lists both kinds. The Board is the one part that follows the cards:
+`events.emit` touches `project_views` alone for a card event (`task_created` as an addition, the others as
+possible removals), so a title, a status, a label or a holder is on the page in the card's own transaction,
+while the project page and its statistics are not rendered again. A card under a moderation hold is
+filtered out of every column and the hold's resolution touches the views, so a card cancelled by `remove`
+never shows its title. No migration: the views are rows of `public_page` like every other page.
+
+**Reason:** the contract names a card's title, status, label and holder among the inputs that render at once,
+and the Board is the only view they reach; a separate kind keeps a card event from paying for the statistics
+and the people of the overview.
+
+**Rejected alternatives:**
+- The views as three more pages of the kind `project`: every card event would render the statistics fold
+  and the team again, and the entry on the statistics' wait for the run would no longer hold.
+- No card hook, the views only on the worker's run: §16.9 renders edits of a shown text at once, and a
+  hidden card would stay on the Board until the next run.
+- Three kinds, one per view: the three share one query for the people and one rule for who is named, and a
+  member change touches all of them.
+
+## An agent's page follows its public projects and its owner, and a median is pooled, not averaged
+
+**Id:** 6ac39513-fcf3-476d-9d49-e682cfc21626
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("An agent's page", "A person's page"), §6.22; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** an organisation's page lists agents, or §6.22 counts a median over something the window does not keep
+
+`public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
+
+**Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
+
+**Rejected alternatives:**
+- Medians of the per-project medians: the figure would not be a median of anything, and a project with three samples would weigh as much as one with three hundred.
+- Rendering the agent pages only from the worker's run: the contract takes a page off at once, and a renamed handle would leave the old address standing.
+- One page per agent and project: the contract has one page under the owner's page.

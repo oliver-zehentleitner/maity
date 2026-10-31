@@ -639,12 +639,18 @@ def member_views(
                 "presence": shown_presence,
                 "paused": stopped,
                 "isolated": isolated(row),
+                # The windows of events it may never read, after a lift with
+                # `hide_isolation_events`; the readers of `isolated` read them (§6.2).
+                "isolation_windows": list(row.isolation_windows or []),
                 "availability": availability.view(
                     row,
                     shown_presence,
                     humans.get(row.human_id),
                     projects[row.project_id],
                     project_name=names[row.project_id],
+                    # Every active instance dormant: only an instance address reaches it (§6.17).
+                    dormant=bool(team_of.get(row.id))
+                    and all(i["dormant"] for i in team_of[row.id]),
                 ),
                 "availability_policy": availability.policy_of(row),
                 "covered_by": covered_by.get(row.id),
