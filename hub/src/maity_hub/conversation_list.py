@@ -355,7 +355,8 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 )
             ).scalars()
         )
-    found = _access(by_project, pairs, stays, owners_of, rounds)
+    keepers = group_chats.round_keepers(conn, {c for _, c in pairs})
+    found = _access(by_project, pairs, stays, owners_of, rounds, keepers)
     if not found:
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
@@ -376,7 +377,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "kind": "group",
                 "title": group.title,
                 "participants": [short(people[s.membership_id]) for s in current],
-                "observers": group_chats.observers_of(current, owners_of),
+                "observers": group_chats.thread_observers(current, owners_of, keepers.get(chat)),
                 "access": access,
                 "closed_at": ts(group.closed_at),
                 "last_message_at": ts(last.at) if last is not None else None,
@@ -396,14 +397,19 @@ def _access(
     stays: dict[str, list[Any]],
     owners: dict[str, str],
     rounds: set[str],
+    keepers: dict[str, str],
 ) -> dict[Key, str]:
     """`group_chats.access` of each chat, from the rows already read: the chats that
     exist for the caller, with how it sees them."""
     found: dict[Key, str] = {}
     for key in sorted(pairs):
         mine, current = mines[key[0]], stays[key[1]]
+        keeper = keepers.get(key[1])
         if any(s.membership_id == mine.id for s in current):
             found[key] = "participant"
+        elif keeper is not None:  # an owner's round: only its `circle_owner` reads along
+            if mine.kind == "human" and mine.principal_id == keeper:
+                found[key] = "observer"
         elif mine.kind == "human" and mine.principal_id in group_chats.observers_of(
             current, owners
         ):

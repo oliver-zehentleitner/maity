@@ -24,7 +24,13 @@ WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
-EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned", "jour_fixe_skipped")
+EVENT_KINDS = (
+    *REQUEST_EVENTS,
+    "message",
+    "mentioned",
+    "jour_fixe_skipped",
+    "jour_fixe_reported",
+)
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
@@ -33,6 +39,7 @@ WORDS: dict[str, dict[str, str]] = {
     "en": {
         "asks": "{who} asks: {title}",
         "jf_no_moderator": "Jour fixe skipped, nobody to moderate: {topic}",
+        "jf_reported": "Jour fixe report: {topic}",
         "answered": "{who} answered: {title}",
         "withdrew": "{who} withdrew: {title}",
         "asks_you": "{who} asks you: {title}",
@@ -61,6 +68,7 @@ WORDS: dict[str, dict[str, str]] = {
     "de": {
         "asks": "{who} fragt: {title}",
         "jf_no_moderator": "Jour fixe ausgefallen, niemand moderiert: {topic}",
+        "jf_reported": "Jour-fixe-Bericht: {topic}",
         "answered": "{who} hat geantwortet: {title}",
         "withdrew": "{who} hat zurückgezogen: {title}",
         "asks_you": "{who} fragt dich: {title}",
@@ -537,6 +545,22 @@ def _classify(
             title=_cut(where.say("jf_no_moderator", topic=found.topic)),
             target={"type": "jour_fixe_series", "id": str(payload.get("series_id"))},
             url=_url(where, f"{home}/jour-fixe"),
+            **base,
+        )
+    if row.kind == "jour_fixe_reported" and f"member:{principal}" in (row.audience or []):
+        # The report for its human recipients (§20.2), while they are on the list.
+        from maity_hub.jourfixe import choices
+
+        found = look.conn.execute(
+            select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == payload.get("series_id"))
+        ).first()
+        if found is None or not choices.receives(look.conn, found, mine.row):
+            return None
+        return Item(
+            kind="inbox",
+            title=_cut(where.say("jf_reported", topic=found.topic)),
+            target={"type": "jour_fixe_round", "id": str(payload.get("round_id"))},
+            url=_url(where, f"{home}/jour-fixe/{payload.get('round_id')}"),
             **base,
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):

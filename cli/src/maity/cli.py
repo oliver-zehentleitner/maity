@@ -3057,8 +3057,50 @@ def _report_lines(round_: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _series(overview: dict[str, Any]) -> list[dict[str, Any]]:
+    return [x for x in overview.get("series") or [] if isinstance(x, dict)]
+
+
+def _series_lines(session: Session, entry: dict[str, Any]) -> list[str]:
+    """One series of `GET …/jour-fixe` (§20.1, §20.9): its topic and circle, next slot,
+    moderators, current round with the caller's part, last report, and the caller's own
+    choices (§20.2)."""
+    sid = onboarding.inline(entry.get("id"))
+    if "topic" not in entry:  # an owner's series an admin sees only exists (§20.1)
+        owner = onboarding.inline(entry.get("circle_owner"))
+        return [f"Series {sid}: the own series of {owner} (you see only that it exists)"]
+    topic, circle = onboarding.inline(entry.get("topic")), onboarding.inline(entry.get("circle"))
+    next_at = entry.get("next_at")
+    lines = [
+        f"Series {sid}: {topic} (circle {circle})",
+        f"  Next: {onboarding.inline(next_at) if next_at else 'none scheduled'}",
+    ]
+    moderators = [onboarding.inline(m) for m in _member_ids(entry.get("moderators"))]
+    pending = [onboarding.inline(m) for m in _member_ids(entry.get("pending_moderators"))]
+    line = f"  Moderators: {', '.join(moderators) if moderators else 'nobody'}"
+    lines.append(line + (f" (pending: {', '.join(pending)})" if pending else ""))
+    current = _obj(entry.get("current_round"))
+    if current:
+        lines.append(f"  Current round {onboarding.inline(current.get('id'))}: {_phase(current)}")
+        lines.append(f"    {_my_part(session, current)}")
+    else:
+        lines.append("  No round open")
+    last = _obj(entry.get("last_round"))
+    if last:
+        lines += ["  " + x for x in _report_lines(last)]
+    mine = []
+    if entry.get("opted_out"):
+        mine.append("you opted out (`maity jourfixe opt-out " + sid + " --back` to return)")
+    if entry.get("report_recipient"):
+        mine.append("you receive the report")
+    if mine:
+        lines.append("  " + "; ".join(mine))
+    return lines
+
+
 def cmd_jourfixe(args: argparse.Namespace) -> int:
-    """`GET …/jour-fixe` (§20.9); `--all` lists every round, every page."""
+    """`GET …/jour-fixe` (§20.9): every series the caller sees; `--all` lists every round,
+    every page."""
     session = Session()
     if args.all:
         rounds: list[dict[str, Any]] = []
@@ -3080,25 +3122,17 @@ def cmd_jourfixe(args: argparse.Namespace) -> int:
             print("no jour fixe rounds yet")
         for r in rounds:
             when = onboarding.inline(r.get("scheduled_for") or r.get("opened_at") or "?")
-            print(f"{onboarding.inline(r.get('id'))} {when}: {_phase(r)}")
+            topic = f" [{onboarding.inline(r['topic'])}]" if r.get("topic") else ""
+            print(f"{onboarding.inline(r.get('id'))} {when}{topic}: {_phase(r)}")
         return EXIT_OK
     overview = _jour_fixe(session)
     if args.json:
         _print_json(overview)
         return EXIT_OK
-    next_at = overview.get("next_at")
-    print(f"Next jour fixe: {onboarding.inline(next_at) if next_at else 'none scheduled'}")
-    moderators = [onboarding.inline(m) for m in overview.get("moderators") or []]
-    print(f"Moderator order: {', '.join(moderators) if moderators else 'nobody'}")
-    current = _obj(overview.get("current_round"))
-    if current:
-        print(f"Current round {onboarding.inline(current.get('id'))}: {_phase(current)}")
-        print(f"  {_my_part(session, current)}")
-    else:
-        print("No round open")
-    last = _obj(overview.get("last_round"))
-    if last:
-        print("\n".join(_report_lines(last)))
+    series = _series(overview)
+    if not series:
+        print("no jour fixe series")
+    print("\n\n".join("\n".join(_series_lines(session, entry)) for entry in series))
     return EXIT_OK
 
 
@@ -3130,14 +3164,7 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
     first."""
     body = _answer_body(args)  # a usage error before any call
     session = Session()
-    current = _obj(_jour_fixe(session).get("current_round"))
-    me = session.data.get("member_id")
-    if current.get("status") != "answering" or not isinstance(current.get("id"), str):
-        raise UsageError("no jour fixe round is open for answers; nothing sent")
-    if me not in _member_ids(current.get("participants")):
-        raise UsageError(
-            f"you are not a participant of {onboarding.inline(current['id'])}; nothing sent"
-        )
+    current = _to_answer(session)
     if body["anonymous"]:
         for line in ANONYMITY_LIMITS:
             _err(line)
@@ -3155,15 +3182,37 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
     return _done(args, answer, f"answered {onboarding.inline(named)}" if named else "answered")
 
 
+def _to_answer(session: Session) -> dict[str, Any]:
+    """The round the caller answers: of the rounds open for answers that it takes part in
+    and has not answered, the one whose window closes first; exit 2 without one."""
+    me = session.data.get("member_id")
+    open_ = [
+        r
+        for r in (_obj(e.get("current_round")) for e in _series(_jour_fixe(session)))
+        if r.get("status") == "answering" and isinstance(r.get("id"), str)
+    ]
+    if not open_:
+        raise UsageError("no jour fixe round is open for answers; nothing sent")
+    mine = [r for r in open_ if me in _member_ids(r.get("participants"))]
+    if not mine:
+        names = ", ".join(onboarding.inline(r["id"]) for r in open_)
+        raise UsageError(f"you are not a participant of {names}; nothing sent")
+    left = [r for r in mine if _my_answer(session, r["id"]) is None] or mine
+    return min(left, key=lambda r: str(r.get("answers_close_at") or ""))
+
+
 def _round_for(session: Session, given: str | None) -> str:
-    """The round named, else the current one, else the last reported one."""
+    """The round named, else a current one, else the newest reported one."""
     if given:
         return given
-    overview = _jour_fixe(session)
-    for key in ("current_round", "last_round"):
-        found = _field(overview, key, "id")
+    series = _series(_jour_fixe(session))
+    for entry in series:
+        found = _field(entry, "current_round", "id")
         if isinstance(found, str):
             return found
+    last = [_obj(e.get("last_round")) for e in series if _obj(e.get("last_round")).get("id")]
+    if last:
+        return str(max(last, key=lambda r: str(r.get("reported_at") or ""))["id"])
     raise UsageError("there is no jour fixe round yet")
 
 
@@ -3303,18 +3352,22 @@ START_REFUSALS = {
 }
 
 
+def _series_path(session: Session, series_id: str, *rest: str) -> str:
+    return session.project_path("jour-fixe", "series", series_id, *rest)
+
+
 def cmd_jourfixe_start(args: argparse.Namespace) -> int:
-    """`POST …/jour-fixe/rounds` (§20.1): a round now. A start that cannot open is the hub's
-    409 with its reason, printed as such with exit 1."""
+    """`POST …/jour-fixe/series/{jfs}/rounds` (§20.1): a round of the series now. A start that
+    cannot open is the hub's 409 with its reason, printed as such with exit 1."""
     session = Session()
     try:
         round_ = session.client.call(
-            "POST", session.project_path("jour-fixe", "rounds"), body={"reason": args.reason}
+            "POST", _series_path(session, args.series, "rounds"), body={"reason": args.reason}
         )
     except hub.HubError as exc:
-        if exc.code in START_REFUSALS:
+        if exc.code in START_REFUSALS or exc.details.get("reason") == "circle_owner_gone":
             open_round = exc.details.get("round")
-            why = START_REFUSALS[exc.code] + (
+            why = START_REFUSALS.get(exc.code or "", "the series' owner left the project") + (
                 f" ({onboarding.inline(open_round)})" if open_round else ""
             )
             raise CommandError(f"no round started: {exc.code}, {why}; nothing recorded") from None
@@ -3324,36 +3377,76 @@ def cmd_jourfixe_start(args: argparse.Namespace) -> int:
 
 
 def cmd_jourfixe_moderators(args: argparse.Namespace) -> int:
-    """The resolved moderator order (`GET …/jour-fixe`), or `PUT …/jour-fixe/moderators`
-    with --set or --reset (§20.2), which needs --reason."""
+    """The series' moderators (`GET …/jour-fixe`), or `--grant` / `--end` one (§20.2); a
+    grant needs --reason and may wait for an owner's consent."""
     session = Session()
-    if args.set is None and not args.reset:
+    if args.grant is None and args.end is None:
         if args.reason:
-            raise UsageError("--reason goes with --set or --reset")
-        order = _jour_fixe(session).get("moderators") or []
+            raise UsageError("--reason goes with --grant")
+        entry = next((e for e in _series(_jour_fixe(session)) if e.get("id") == args.series), None)
+        if entry is None:
+            raise CommandError(f"no series {onboarding.inline(args.series)} you can see")
+        shown = {k: entry.get(k) or [] for k in ("moderators", "pending_moderators")}
         if args.json:
-            _print_json(order)
+            _print_json(shown)
             return EXIT_OK
-        print(", ".join(onboarding.inline(m) for m in order) or "nobody")
+        names = [onboarding.inline(m) for m in _member_ids(shown["moderators"])]
+        pending = [onboarding.inline(m) for m in _member_ids(shown["pending_moderators"])]
+        print(
+            (", ".join(names) or "nobody")
+            + (f" (pending: {', '.join(pending)})" if pending else "")
+        )
         return EXIT_OK
-    if args.set is not None and args.reset:
-        raise UsageError("give --set or --reset, not both")
+    if args.grant is not None and args.end is not None:
+        raise UsageError("give --grant or --end, not both")
+    members = _members(session)
+    if args.end is not None:
+        member_id = resolve_member(members, args.end)
+        answer = session.client.call(
+            "DELETE", _series_path(session, args.series, "moderators", member_id)
+        )
+        return _done(args, answer, f"moderator right of {onboarding.inline(member_id)} ended")
     if not args.reason:
-        raise UsageError("--reason is required to change the moderator order")
-    order_ids: list[str] | None = None
-    if args.set is not None:
-        names = [n.strip() for n in args.set.split(",") if n.strip()]
-        if not names:
-            raise UsageError("--set names at least one agent")
-        members = _members(session)
-        order_ids = [resolve_member(members, name) for name in names]
+        raise UsageError("--reason is required to grant the moderator right")
+    member_id = resolve_member(members, args.grant)
     answer = session.client.call(
-        "PUT", session.project_path("jour-fixe", "moderators"),
-        body={"order": order_ids, "reason": args.reason},
+        "POST", _series_path(session, args.series, "moderators"),
+        body={"member_id": member_id, "reason": args.reason},
     )  # fmt: skip
-    resolved = _field(answer, "moderators") or []
-    line = "moderator order: " + (", ".join(onboarding.inline(m) for m in resolved) or "nobody")
+    requests = _field(answer, "requests")
+    if isinstance(requests, list) and requests:
+        waiting = ", ".join(onboarding.inline(r) for r in requests)
+        line = f"the grant to {onboarding.inline(member_id)} waits for consent: {waiting}"
+    else:
+        line = f"{onboarding.inline(member_id)} may moderate {onboarding.inline(args.series)}"
     return _done(args, answer, line)
+
+
+def _choice(args: argparse.Namespace, tail: str, off: bool, on_line: str, off_line: str) -> int:
+    """`PUT` or `DELETE …/series/{jfs}/<tail>` for the calling member (§20.2)."""
+    session = Session()
+    answer = session.client.call(
+        "DELETE" if off else "PUT", _series_path(session, args.series, tail)
+    )
+    return _done(args, answer, off_line if off else on_line)
+
+
+def cmd_jourfixe_opt_out(args: argparse.Namespace) -> int:
+    """Out of a series, or back in with --back (§20.2)."""
+    sid = onboarding.inline(args.series)
+    return _choice(args, "opt-out", args.back, f"opted out of {sid}", f"back in {sid}")
+
+
+def cmd_jourfixe_report_to(args: argparse.Namespace) -> int:
+    """On a series' report list, or off it with --off (§20.2)."""
+    sid = onboarding.inline(args.series)
+    return _choice(
+        args,
+        "report",
+        args.off,
+        f"you receive the reports of {sid}",
+        f"you no longer receive the reports of {sid}",
+    )
 
 
 def cmd_release_show(args: argparse.Namespace) -> int:
@@ -4125,10 +4218,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "jourfixe",
         "the project's jour fixe: the round, your answer, the answers",
-        "The jour fixe (§20): a round asks the present members three questions; the moderator "
-        "reads the answers, opens the exchange and reports. Without an action it shows the next "
-        "slot, the moderator order, the current round with its phase and deadline and your part "
-        "in it, and the last report. Answering is optional, and nobody is reminded.",
+        "The jour fixe (§20): a project has several series, each with a topic, a circle and a "
+        "schedule; a round asks the present members of its circle three questions, the "
+        "moderator reads the answers, opens the exchange and reports. Without an action it "
+        "shows each series with its next slot, its moderators, its current round with its "
+        "phase and deadline and your part in it, and its last report. Answering is optional, "
+        "and nobody is reminded.",
     )
     p.add_argument("--all", action="store_true", help="list every round instead, newest first")
     _json_flag(p)
@@ -4237,28 +4332,53 @@ def build_parser() -> argparse.ArgumentParser:
     r.set_defaults(handler=cmd_jourfixe_report)
     r = jsub.add_parser(
         "start",
-        help="start a round now (jour_fixe:start)",
-        description="`POST …/jour-fixe/rounds` (§20.1). A start that cannot open is printed "
-        "with the hub's reason (jour_fixe_open, project_closed, no_moderator, too_few), exit 1; "
-        "no round is recorded.",
+        help="start a round of a series now (its keepers and moderators)",
+        description="`POST …/jour-fixe/series/{jfs}/rounds` (§20.1). A start that cannot open "
+        "is printed with the hub's reason (jour_fixe_open, project_closed, no_moderator, "
+        "too_few, circle_owner_gone), exit 1; no round is recorded.",
         formatter_class=fmt,
     )
+    r.add_argument("series", type=_id, help="the series id")
     r.add_argument("--reason", required=True, metavar="R", help="why a round now")
     _json_flag(r)
     r.set_defaults(handler=cmd_jourfixe_start)
     r = jsub.add_parser(
         "moderators",
-        help="the moderator order, or set it",
-        description="Without options, the resolved order (`GET …/jour-fixe`). --set H,H… "
-        "(agents, by handle or id) or --reset (back to the default order) with --reason: "
-        "`PUT …/jour-fixe/moderators` (§20.2).",
+        help="a series' moderators, or grant or end the right",
+        description="Without options, the series' moderators and pending ones (`GET "
+        "…/jour-fixe`). --grant H with --reason: `POST …/series/{jfs}/moderators`; a grant "
+        "that waits for an owner's consent prints the requests. --end H: `DELETE "
+        "…/series/{jfs}/moderators/{member_id}` (§20.2).",
         formatter_class=fmt,
     )
-    r.add_argument("--set", metavar="H,H…", help="the order, comma-separated")
-    r.add_argument("--reset", action="store_true", help="back to the default order")
-    r.add_argument("--reason", metavar="R", help="why, required with --set or --reset")
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--grant", metavar="H", help="a member, by handle or id")
+    r.add_argument("--end", metavar="H", help="a member, by handle or id")
+    r.add_argument("--reason", metavar="R", help="why, required with --grant")
     _json_flag(r)
     r.set_defaults(handler=cmd_jourfixe_moderators)
+    r = jsub.add_parser(
+        "opt-out",
+        help="leave a series, or come back with --back",
+        description="`PUT …/series/{jfs}/opt-out`, or `DELETE` with --back (§20.2). Out of a "
+        "series you are not invited and never its moderator; you still read its reports.",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--back", action="store_true", help="come back")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_opt_out)
+    r = jsub.add_parser(
+        "report-to",
+        help="receive a series' reports, or stop with --off",
+        description="`PUT …/series/{jfs}/report`, or `DELETE` with --off (§20.2): the report "
+        "then wakes you once.",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--off", action="store_true", help="take yourself off the list")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_report_to)
 
     p = add(
         "limit",

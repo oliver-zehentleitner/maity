@@ -43,10 +43,17 @@ REPORTED = {
 }
 
 
+SERIES = "jfs-7k2m"
+SERIES_PATH = f"{BASE}/series/{SERIES}"
+
+
 def _overview(fake: fakehub.FakeHub, current: dict[str, Any] | None, **more: Any) -> None:
-    body = {"policy": {}, "moderators": ["agt-a", "agt-c"], "next_at": "2026-11-05T09:00:00Z",
-            "current_round": current, "last_round": REPORTED, **more}  # fmt: skip
-    fake.routes[("GET", BASE)] = lambda seen: (200, body)
+    series = {"id": SERIES, "topic": "How we work", "circle": "all",
+              "moderators": [{"member_id": "agt-a"}, {"member_id": "agt-c"}],
+              "pending_moderators": [], "next_at": "2026-11-05T09:00:00Z",
+              "current_round": current, "last_round": REPORTED, "opted_out": False,
+              "report_recipient": False, **more}  # fmt: skip
+    fake.routes[("GET", BASE)] = lambda seen: (200, {"series": [series]})
 
 
 def _mine(fake: fakehub.FakeHub, items: list[dict[str, Any]]) -> None:
@@ -67,15 +74,37 @@ def test_the_overview_shows_slot_order_round_part_and_report(
     _mine(fake, [])
     assert cli.main(["jourfixe"]) == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert "Next jour fixe: 2026-11-05T09:00:00Z\n" in out
-    assert "Moderator order: agt-a, agt-c\n" in out
-    assert "Current round jfx-0013: answering, answers close at 2026-10-31T11:00:01Z\n" in out
+    assert out.startswith("Series jfs-7k2m: How we work (circle all)\n")
+    assert "  Next: 2026-11-05T09:00:00Z\n" in out
+    assert "  Moderators: agt-a, agt-c\n" in out
+    assert "  Current round jfx-0013: answering, answers close at 2026-10-31T11:00:01Z\n" in out
     assert (
-        "  you were invited, not answered, or withdrawn, which still counts "
+        "    you were invited, not answered, or withdrawn, which still counts "
         "(`maity jourfixe answer`, or not at all)\n"
     ) in out
-    assert "Last report: jfx-0012, 2026-10-29T15:02:00Z\n  > Reviews took too long.\n" in out
-    assert "  - Two reviewers per PR [to_owner] -> req-0091\n" in out
+    assert "  Last report: jfx-0012, 2026-10-29T15:02:00Z\n    > Reviews took too long.\n" in out
+    assert "    - Two reviewers per PR [to_owner] -> req-0091\n" in out
+
+
+def test_the_overview_shows_an_owners_series_as_existing_and_own_choices(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hidden = {"id": "jfs-9", "circle": "owner", "circle_owner": "hum-x", "enabled": True}
+    shown = {"id": SERIES, "topic": "Mine", "circle": "owner", "moderators": [],
+             "pending_moderators": [{"member_id": "agt-c"}], "next_at": None,
+             "current_round": None, "last_round": None, "opted_out": True,
+             "report_recipient": True}  # fmt: skip
+    fake.routes[("GET", BASE)] = lambda seen: (200, {"series": [hidden, shown]})
+    assert cli.main(["jourfixe"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == (
+        "Series jfs-9: the own series of hum-x (you see only that it exists)\n\n"
+        "Series jfs-7k2m: Mine (circle owner)\n"
+        "  Next: none scheduled\n"
+        "  Moderators: nobody (pending: agt-c)\n"
+        "  No round open\n"
+        "  you opted out (`maity jourfixe opt-out jfs-7k2m --back` to return); "
+        "you receive the report\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -122,7 +151,7 @@ def test_the_callers_part(
     _overview(fake, current)
     _mine(fake, mine)
     assert cli.main(["jourfixe"]) == cli.EXIT_OK
-    assert f"  {part}\n" in capsys.readouterr().out
+    assert f"    {part}\n" in capsys.readouterr().out
 
 
 def test_the_phase_names_the_open_step_and_when_it_closes(
@@ -135,7 +164,7 @@ def test_the_phase_names_the_open_step_and_when_it_closes(
     _overview(fake, _round("exchange", steps=steps))
     assert cli.main(["jourfixe"]) == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert "Current round jfx-0013: exchange, step 2 (response), closes at T2\n" in out
+    assert "  Current round jfx-0013: exchange, step 2 (response), closes at T2\n" in out
 
 
 def test_no_round_and_no_slot(
@@ -144,7 +173,16 @@ def test_no_round_and_no_slot(
     _overview(fake, None, next_at=None, moderators=[], last_round=None)
     assert cli.main(["jourfixe"]) == cli.EXIT_OK
     out = capsys.readouterr().out
-    assert out == "Next jour fixe: none scheduled\nModerator order: nobody\nNo round open\n"
+    assert out == (
+        "Series jfs-7k2m: How we work (circle all)\n  Next: none scheduled\n"
+        "  Moderators: nobody\n  No round open\n"
+    )
+
+
+def test_no_series(joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]) -> None:
+    fake.routes[("GET", BASE)] = lambda seen: (200, {"series": []})
+    assert cli.main(["jourfixe"]) == cli.EXIT_OK
+    assert capsys.readouterr().out.startswith("no jour fixe series\n")
 
 
 def test_all_lists_every_page(
@@ -530,9 +568,9 @@ def test_the_report_prints_each_triage_with_its_request_or_card(
 def test_start_prints_the_new_round(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("POST", f"{BASE}/rounds")] = lambda seen: (201, _round())
-    assert cli.main(["jourfixe", "start", "--reason", "Reviews stall"]) == cli.EXIT_OK
-    assert _sent(fake, "POST", f"{BASE}/rounds") == [{"reason": "Reviews stall"}]
+    fake.routes[("POST", f"{SERIES_PATH}/rounds")] = lambda seen: (201, _round())
+    assert cli.main(["jourfixe", "start", SERIES, "--reason", "Reviews stall"]) == cli.EXIT_OK
+    assert _sent(fake, "POST", f"{SERIES_PATH}/rounds") == [{"reason": "Reviews stall"}]
     assert capsys.readouterr().out.startswith("started jfx-0013: answering")
 
 
@@ -543,59 +581,81 @@ def test_start_prints_the_new_round(
         ("project_closed", {}, "the project is archived"),
         ("no_moderator", {}, "nobody who may moderate is present"),
         ("too_few", {}, "fewer than two members are present"),
+        ("jour_fixe_state", {"reason": "circle_owner_gone"}, "the series' owner left the project"),
     ],
 )
 def test_a_start_that_cannot_open_names_why_and_exits_1(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
     code: str, details: dict[str, Any], says: str,
 ) -> None:  # fmt: skip
-    fake.routes[("POST", f"{BASE}/rounds")] = lambda seen: (
+    fake.routes[("POST", f"{SERIES_PATH}/rounds")] = lambda seen: (
         409,
         {"error": {"code": code, "message": code, "details": details}},
     )
-    assert cli.main(["jourfixe", "start", "--reason", "now"]) == cli.EXIT_ERROR
+    assert cli.main(["jourfixe", "start", SERIES, "--reason", "now"]) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert f"no round started: {code}, {says}; nothing recorded" in err
 
 
-def test_moderators_shows_the_resolved_order(
+def test_moderators_shows_the_series_moderators(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _overview(fake, None)
-    assert cli.main(["jourfixe", "moderators"]) == cli.EXIT_OK
-    assert capsys.readouterr().out == "agt-a, agt-c\n"
+    _overview(fake, None, pending_moderators=[{"member_id": "agt-d"}])
+    assert cli.main(["jourfixe", "moderators", SERIES]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "agt-a, agt-c (pending: agt-d)\n"
+    assert cli.main(["jourfixe", "moderators", "jfs-none"]) == cli.EXIT_ERROR
 
 
-def test_moderators_set_resolves_handles_and_reset_sends_null(
+def test_moderators_grant_and_end_resolve_handles(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake.routes[("PUT", f"{BASE}/moderators")] = lambda seen: (
-        200,
-        {"order": ["agt-b"], "moderators": ["agt-b", "agt-a"]},
+    fake.routes[("POST", f"{SERIES_PATH}/moderators")] = lambda seen: (
+        202,
+        {"series": {"id": SERIES}, "requests": ["req-1"]},
     )
-    argv = ["jourfixe", "moderators", "--set", "agent-b", "--reason", "Online most"]
+    fake.routes[("DELETE", f"{SERIES_PATH}/moderators/agt-b")] = lambda seen: (200, {"id": SERIES})
+    argv = ["jourfixe", "moderators", SERIES, "--grant", "agent-b", "--reason", "Online most"]
     assert cli.main(argv) == cli.EXIT_OK
-    assert capsys.readouterr().out == "moderator order: agt-b, agt-a\n"
-    assert cli.main(["jourfixe", "moderators", "--reset", "--reason", "Default"]) == cli.EXIT_OK
-    assert _sent(fake, "PUT", f"{BASE}/moderators") == [
-        {"order": ["agt-b"], "reason": "Online most"},
-        {"order": None, "reason": "Default"},
+    assert capsys.readouterr().out == "the grant to agt-b waits for consent: req-1\n"
+    assert _sent(fake, "POST", f"{SERIES_PATH}/moderators") == [
+        {"member_id": "agt-b", "reason": "Online most"}
     ]
+    assert cli.main(["jourfixe", "moderators", SERIES, "--end", "agent-b"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "moderator right of agt-b ended\n"
 
 
 @pytest.mark.parametrize(
     ("argv", "says"),
     [
-        (["--set", "agent-b"], "--reason is required"),
-        (["--set", "agent-b", "--reset", "--reason", "r"], "not both"),
-        (["--reason", "r"], "--reason goes with --set or --reset"),
-        (["--set", " , ", "--reason", "r"], "at least one agent"),
+        (["--grant", "agent-b"], "--reason is required"),
+        (["--grant", "agent-b", "--end", "agent-b", "--reason", "r"], "not both"),
+        (["--reason", "r"], "--reason goes with --grant"),
     ],
 )
 def test_moderators_usage_errors_send_nothing(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
     argv: list[str], says: str,
 ) -> None:  # fmt: skip
-    assert cli.main(["jourfixe", "moderators", *argv]) == cli.EXIT_USAGE
+    assert cli.main(["jourfixe", "moderators", SERIES, *argv]) == cli.EXIT_USAGE
     assert says in capsys.readouterr().err
-    assert not [r for r in fake.signed() if r.method == "PUT"]
+    assert not [r for r in fake.signed() if r.method in ("POST", "DELETE")]
+
+
+@pytest.mark.parametrize(
+    ("argv", "method", "tail", "said"),
+    [
+        (["opt-out", SERIES], "PUT", "opt-out", f"opted out of {SERIES}"),
+        (["opt-out", SERIES, "--back"], "DELETE", "opt-out", f"back in {SERIES}"),
+        (["report-to", SERIES], "PUT", "report", f"you receive the reports of {SERIES}"),
+        (["report-to", SERIES, "--off"], "DELETE", "report",
+         f"you no longer receive the reports of {SERIES}"),
+    ],
+)  # fmt: skip
+def test_opting_out_and_the_report_list(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str],
+    argv: list[str], method: str, tail: str, said: str,
+) -> None:  # fmt: skip
+    fake.routes[(method, f"{SERIES_PATH}/{tail}")] = lambda seen: (200, {"id": SERIES})
+    assert cli.main(["jourfixe", *argv]) == cli.EXIT_OK
+    assert capsys.readouterr().out == f"{said}\n"
+    assert [r.method for r in fake.signed() if r.path == f"{SERIES_PATH}/{tail}"] == [method]

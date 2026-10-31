@@ -192,21 +192,16 @@ def keeper_tokens(conn: Connection, series: Any) -> list[str]:
 
 def seen_by(conn: Connection, series: Any) -> list[str]:
     """Who may see the series, as an audience: everyone, or for an owner's series its
-    `circle_owner`, that owner's agents in the project, and its moderators (§20.1)."""
+    `circle_owner`, that owner's agents in the project, its moderators, and the humans with
+    `project:admin`, who see that it exists (§20.1; its events carry no topic)."""
     if series.circle != "owner":
         return list(EVERYONE)
-    m, a = t.membership.c, t.agent_profile.c
-    agents = conn.execute(
-        select(m.agent_id)
-        .join(t.agent_profile, a.id == m.agent_id)
-        .where(
-            m.project_id == series.project_id,
-            m.active.is_(True),
-            a.owner_id == series.circle_owner,
-        )
-    ).scalars()
+    from maity_hub.jourfixe.circle import owner_agents
+
+    agents = owner_agents(conn, series.project_id, series.circle_owner)
     granted = [r.agent_id or r.human_id for r in grants(conn, series.id) if r.active]
-    members = dict.fromkeys([series.circle_owner, *agents, *granted])
+    admins = _human_admins(conn, series.project_id)
+    members = dict.fromkeys([series.circle_owner, *agents, *granted, *admins])
     return [f"member:{who}" for who in members if who]
 
 

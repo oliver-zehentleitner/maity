@@ -22,7 +22,7 @@ from maity_hub import clock, group_chats
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
-from maity_hub.jourfixe import rounds
+from maity_hub.jourfixe import circle, rounds
 from maity_hub.jourfixe.answers import refused
 from maity_hub.views import principal_ids
 
@@ -112,9 +112,14 @@ def _participants(conn: Connection, round_row: Any) -> list[str]:
 # --- the thread (§20.5) -----------------------------------------------------------------------
 
 
-def open_thread(conn: Connection, project: Any, title: str, invited: list[str]) -> str:
-    """The round's group chat, created by the hub with the invited members (§20.5)."""
-    return group_chats.create(conn, project, None, title, invited, None, hub_thread=True)
+def open_thread(
+    conn: Connection, project: Any, title: str, invited: list[str], keeper: str | None
+) -> str:
+    """The round's group chat, created by the hub with the invited members (§20.5);
+    `keeper` the `circle_owner` of an owner's series, who alone reads it along."""
+    return group_chats.create(
+        conn, project, None, title, invited, None, hub_thread=True, keeper=keeper
+    )
 
 
 def _post_message(
@@ -129,8 +134,12 @@ def _post_message(
 ) -> int:
     """One message in the round's thread, to its participants; it wakes nobody."""
     conversation = group_chats.find(conn, round_row.project_id, round_row.conversation_id)
-    # The participants, and every human owner, who reads along (§20.5).
-    audience = [*group_chats.audience(group_chats.stays(conn, conversation.id)), "trust:owner"]
+    # The participants, and every human owner, or an owner's series' `circle_owner`, who
+    # reads along (§20.5).
+    audience = [
+        *group_chats.audience(group_chats.stays(conn, conversation.id)),
+        *circle.owners(round_row),
+    ]
     payload = {
         "type": "chat",
         "to": conversation.id,
@@ -510,7 +519,7 @@ def _close_exchange(conn: Connection, round_row: Any, steps: list[dict[str, Any]
         "jour_fixe_exchange_closed",
         [
             *rounds.wake_now(conn, round_row.project_id, round_row.moderator["member_id"]),
-            "trust:owner",
+            *circle.owners(round_row),
         ],
         {"round_id": round_row.id, "report_due_at": clock.rfc3339(due)},
         subject=("jour_fixe", round_row.id),

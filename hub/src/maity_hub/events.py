@@ -515,6 +515,8 @@ NON_WAKING = frozenset(
         "request_claimed",  # a claim wakes nobody (§7)
         "keep_the_why_acknowledged",  # the owner's and the admins' record only (§6.23)
         "attachment_deleted",  # a deleted file wakes nobody (§8.7)
+        "jour_fixe_skipped",  # a skip and a series change wake nobody (§20.9)
+        "jour_fixe_series_changed",
     }
 )
 
@@ -599,6 +601,11 @@ def wakes(
         # A round's thread, its statement and its posts wake nobody: each step wakes its
         # eligible members once (§20.5).
         return False
+    if row.kind == "jour_fixe_reported":
+        # The report wakes each agent on the series' report list once, at the instance its
+        # team's rule selected; `all` and the round's readers read it unwoken (§20.9).
+        own = instance is not None and f"instance:{principal}#{instance}" in (row.audience or [])
+        return own and row.actor_membership != membership.id
     if row.kind == "request_forwarded":
         # Only a forward to a member wakes, and only that member; an opening to the
         # admins wakes no agent, it would wake every admin agent at once (§7).

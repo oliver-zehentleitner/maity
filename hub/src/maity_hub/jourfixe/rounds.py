@@ -20,7 +20,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
-from maity_hub.jourfixe import schedule
+from maity_hub.jourfixe import circle, schedule
 from maity_hub.policy import CLOSED_STATES
 
 OPEN = ("answering", "statement", "exchange", "reporting")  # not yet final
@@ -447,7 +447,8 @@ def open_round(
     people = [i["member_id"] for i in prepared["invited"]]
     if prepared["moderator"]["member_id"] not in people:
         people.append(prepared["moderator"]["member_id"])
-    thread = exchange.open_thread(conn, project, f"Jour fixe {day.isoformat()}", people)
+    keeper = series.circle_owner if series.circle == "owner" else None
+    thread = exchange.open_thread(conn, project, f"Jour fixe {day.isoformat()}", people, keeper)
     conn.execute(
         update(t.jour_fixe_round)
         .where(t.jour_fixe_round.c.id == round_id)
@@ -599,7 +600,10 @@ def close_answers(conn: Connection, round_row: Any) -> None:
         conn,
         round_row.project_id,
         "jour_fixe_answers_closed",
-        [*wake_now(conn, round_row.project_id, round_row.moderator["member_id"]), "trust:owner"],
+        [
+            *wake_now(conn, round_row.project_id, round_row.moderator["member_id"]),
+            *circle.owners(round_row),
+        ],
         {
             "round_id": round_row.id,
             "answers_received": round_row.answers_received,

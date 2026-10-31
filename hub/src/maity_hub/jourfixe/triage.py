@@ -22,6 +22,7 @@ from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
+from maity_hub.jourfixe import choices, circle, views
 from maity_hub.jourfixe.answers import refused
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.scopes import in_admin_team
@@ -63,10 +64,18 @@ def _membership_of(conn: Connection, project_id: str, member_id: str) -> Any:
 # --- the moderator's report -------------------------------------------------------------------
 
 
-def may_decide(mine: Any) -> bool:
+def may_decide(conn: Connection, round_row: Any, mine: Any) -> bool:
     """A member of the admin team, agent or human: trust `owner` or `admin`, never a
-    proxy (§20.6, §2.3)."""
-    return in_admin_team(mine.trust, mine.role)
+    proxy (§20.6, §2.3); in a round of an owner's series only its `circle_owner`, or an
+    admin agent of that owner, since the proposals are theirs to decide."""
+    owner = circle.owner_of(round_row)
+    if owner is None:
+        return in_admin_team(mine.trust, mine.role)
+    if mine.kind == "human":
+        return bool(mine.principal_id == owner)
+    return in_admin_team(mine.trust, mine.role) and mine.principal_id in circle.owner_agents(
+        conn, round_row.project_id, owner
+    )
 
 
 def _basis_errors(conn: Connection, mine: Any, basis: dict[str, Any]) -> dict[str, str]:
@@ -131,7 +140,7 @@ def submit_report(
         if p["triage"] == "decided":
             if p.get("humans_only"):
                 raise refused("humans_only", "only a human decides this: file it to the owner")
-            if not may_decide(mine):
+            if not may_decide(conn, round_row, mine):
                 raise refused("may_not_decide", "this moderator may not decide a proposal")
             decision = p.get("decision")
             if decision is None:
@@ -252,7 +261,18 @@ def build_report(conn: Connection, round_row: Any) -> None:
 def _file_request(
     conn: Connection, round_row: Any, proposal: dict[str, Any], asker: int, actor: Actor | None
 ) -> str:
-    """A `decision` request to the owner for one proposal (§20.6, §7)."""
+    """A `decision` request to the owner for one proposal (§20.6, §7); in a round of an
+    owner's series to its `circle_owner`, personal when that human is no longer a member."""
+    from maity_hub.routes.requests import _member_of
+
+    keeper = circle.owner_of(round_row)
+    member = _member_of(conn, round_row.project_id, keeper) if keeper else None
+    personal = keeper is not None and member is None
+    to: dict[str, Any] = {"to_kind": "owner"}
+    if member is not None:
+        to = {"to_kind": "member", "to_member": member.id}
+    elif personal:
+        to = {"to_kind": "human", "to_human": keeper, "personal": True}
     request_id = new_id("request")
     round_line = f"From the jour fixe of {_day(round_row).isoformat()} (round {round_row.id})."
     summary = f"{proposal['reason']}\n\n{round_line}" if proposal.get("reason") else round_line
@@ -267,7 +287,7 @@ def _file_request(
                 "mentions": [],
                 "options": OPTIONS,
                 "priority": "normal",
-                "to_kind": "owner",
+                **to,
                 "asked_by": asker,
                 "while_open": "proceed_provisionally",
                 "humans_only": proposal["humans_only"],
@@ -279,12 +299,21 @@ def _file_request(
     )
     from maity_hub.routes.requests import load_request
 
-    owner = inbox.owner_membership(conn, round_row.project_id)
+    if keeper is not None:
+        audience = [] if personal else [f"member:{keeper}"]
+        if personal:
+            from maity_hub.notifications import records
+            from maity_hub.routes.requests import _row
+
+            records.personal_request(conn, _row(conn, request_id))
+    else:
+        owner = inbox.owner_membership(conn, round_row.project_id)
+        audience = [f"member:{owner.human_id}"] if owner else ["trust:owner"]
     emit(
         conn,
         round_row.project_id,
         "request_created",
-        [f"member:{owner.human_id}"] if owner else ["trust:owner"],
+        audience,
         load_request(conn, request_id),
         actor=actor,
         subject=("request", request_id),
@@ -394,13 +423,22 @@ def _finish(
         .where(t.jour_fixe_round.c.id == round_row.id)
         .values(status="reported", reported_at=now, report=report)
     )
+    found = (
+        conn.execute(
+            select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == round_row.series_id)
+        ).first()
+        if round_row.series_id
+        else None
+    )
+    recipients = choices.tokens(conn, found) if found is not None else []
     emit(
         conn,
         round_row.project_id,
         "jour_fixe_reported",
-        ["all"],
+        list(dict.fromkeys([*circle.audience(conn, round_row, ["all"]), *recipients])),
         {
             "round_id": round_row.id,
+            **{k: v for k, v in views.series_fields(round_row).items() if k != "circle"},
             "source": report["source"],
             "proposals": [
                 {
@@ -421,8 +459,9 @@ def _finish(
 
 
 def _ticker(conn: Connection, project: Any, round_row: Any, report: dict[str, Any]) -> None:
-    """One item when the report is final, counts only, `all` alone, no wake (§20.9)."""
-    if not ticker.settings(project)["enabled"]:
+    """One item when the report is final, counts only, `all` alone, no wake (§20.9); none
+    for an owner's series, whose round stays with its owner (§20.7)."""
+    if not ticker.settings(project)["enabled"] or circle.owner_of(round_row) is not None:
         return
     decided = sum(1 for p in report["proposals"] if p["triage"] == "decided")
     to_owner = len(report["proposals"]) - decided
