@@ -3593,12 +3593,24 @@ def build_parser() -> argparse.ArgumentParser:
 STILL_WORKS = "checkpoint, report, unclaim, ask, answer, say, the chat, resume and wait"
 
 
-def _pause_text(paused: dict[str, Any]) -> str:
-    who = onboarding.inline(paused.get("by") or "a human")
-    since = paused.get("since")
-    when = f" since {onboarding.inline(since)}" if since else ""
-    reason = onboarding.inline(paused.get("reason") or "no reason given")
-    return f"by {who}{when}: {reason}"
+def _by_since(stop: dict[str, Any]) -> str:
+    """`by <who> since <when>` of a pause or an isolation."""
+    who = onboarding.inline(stop.get("by") or "a human")
+    since = stop.get("since")
+    return f"by {who}" + (f" since {onboarding.inline(since)}" if since else "")
+
+
+def _reason_last(stop: dict[str, Any]) -> str:
+    """The reason a human gave for a pause or an isolation, to end the line with: quoted and
+    last, so that nothing of ours follows it and an instruction in it cannot pass for the
+    command's own (cli/context/commands.md). A `"` in it shows as `\\"` and a backslash as
+    `\\\\`, as in JSON, so the reason cannot close the quote and go on as our text. Empty
+    without a reason: the line then ends with our sentence."""
+    reason = stop.get("reason")
+    if not reason:
+        return ""
+    escaped = str(reason).replace("\\", "\\\\").replace('"', '\\"')
+    return f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(escaped)}"'
 
 
 def _isolated(exc: Exception) -> dict[str, Any] | None:
@@ -3617,27 +3629,17 @@ def _explain(exc: Exception) -> str:
     that means."""
     isolated = _isolated(exc)
     if isolated is not None:
-        # The reason is people's text: quoted and last, so that nothing of ours follows it
-        # and an instruction in it cannot pass for the refusal's own (cli/context/commands.md).
-        who = onboarding.inline(isolated.get("by") or "a human")
-        since = isolated.get("since")
-        when = f" since {onboarding.inline(since)}" if since else ""
-        reason = isolated.get("reason")
-        quoted = (
-            f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(reason)}"'
-            if reason
-            else ""
-        )
         return (
-            f"refused: you are isolated in this project by {who}{when}. "
-            f"{onboarding.ISOLATED_STOP}{quoted}"
+            f"refused: you are isolated in this project {_by_since(isolated)}. "
+            f"{onboarding.ISOLATED_STOP}{_reason_last(isolated)}"
         )
     if isinstance(exc, hub.HubError) and exc.code == "paused":
         paused = exc.details.get("paused")
-        detail = _pause_text(paused) if isinstance(paused, dict) else "by a human"
+        paused = paused if isinstance(paused, dict) else {}
         return (
-            f"refused: you are paused {detail}. You take no new work until the pause is "
-            f"lifted; {STILL_WORKS} still work. Park what you hold, then `maity wait`."
+            f"refused: you are paused {_by_since(paused)}. You take no new work until the "
+            f"pause is lifted; {STILL_WORKS} still work. Park what you hold, then "
+            f"`maity wait`.{_reason_last(paused)}"
         )
     if isinstance(exc, hub.HubError) and exc.code == "client_outdated":
         minimum = onboarding.inline(exc.details.get("minimum") or "a newer version")
@@ -3658,8 +3660,8 @@ def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
     paused = onboarding.get(event, "payload", "paused")
     if isinstance(paused, dict):
         return (
-            f"you were paused {_pause_text(paused)}. Park what you hold (checkpoint, report or "
-            "unclaim), then `maity wait` for the lift."
+            f"you were paused {_by_since(paused)}. Park what you hold (checkpoint, report or "
+            f"unclaim), then `maity wait` for the lift.{_reason_last(paused)}"
         )
     return "your pause was lifted; you can take new work again."
 
