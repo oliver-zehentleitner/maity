@@ -7721,6 +7721,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("reg-json").value = JSON.stringify({ mode: "open", colour: "red" }); btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
     expect(text(rj()).includes("fields the registration settings do not have: colour") && byId("reg-mode").value === "allowlist",
       "registration JSON: a field the setting does not have is named, nothing loaded");
+    byId("reg-json").value = JSON.stringify({ domains: "@example.com", mode: "sometimes", terms: { url: "https://x.example/t" } });
+    btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(rj()).includes("values the form cannot take: domains, mode, terms") && byId("reg-mode").value === "allowlist" && byId("reg-domains").value === "@example.com",
+      "registration JSON: values of the wrong kind are named, nothing loaded");
     const rjBefore = rgPatches.length;
     byId("reg-json").value = JSON.stringify({ mode: "open", approval: "automatic", terms: { url: "https://x.example/t", version: "1" } });
     btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
@@ -8041,6 +8045,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "legal JSON: the page's languages (here under its key) are checked by the preview call and replace the draft, nothing saved");
     btn(lgImprint(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
     expect(pvTabs.length === ljTabs + 1, "legal JSON: once loaded, the preview opens");
+    // Saving a legal page is a sensitive call (§2.8.4): the second factor is asked for, then the save made again.
+    let ljNeed = true;
+    const ljPatch = win.Maity.api.patch, ljPost = win.Maity.api.post;
+    win.Maity.api.patch = (p, b) => (p === "/admin/settings/legal" && ljNeed
+      ? Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" })) : ljPatch(p, b));
+    win.Maity.api.post = (p, b) => { if (p === "/auth/second-factor/verify" && b.code === "123456") ljNeed = false; return ljPost(p, b); };
+    const ljSaves = lePatches.length;
+    lgImprint().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const ljStep = () => lgImprint().querySelector("form.step-up");
+    expect(ljStep() && text(ljStep()).includes("Saving the Imprint needs your second factor") && lePatches.length === ljSaves,
+      "legal: saving asks for the second factor where the hub wants the step-up, nothing saved yet");
+    byId("step-up-step_up_required").value = "123456"; ljStep().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(!ljStep() && lePatches.length === ljSaves + 1 && lePatches.slice(-1)[0][1].imprint.en.title === "Imported imprint"
+      && text(main).includes("Saved as a new version of the imprint."), "legal: proven, the save is made again with the loaded page");
+    win.Maity.api.patch = ljPatch; win.Maity.api.post = ljPost;
     win.confirm = ljConfirm;
   }
   win.open = pvOpen; win.location.href = pvHref; win.location.origin = pvOrigin; win.Maity.api.post = pvPost;

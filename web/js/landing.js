@@ -528,6 +528,11 @@ window.Maity = window.Maity || {};
     // It opens on the setting's default language where the page has it.
     let lang = draft[defaultLanguage] ? defaultLanguage : Object.keys(draft)[0] || null;
     const body = h("div");
+    // A sensitive call (§2.8.4: PATCH /admin/settings/*): the second factor asked for here when the hub wants it.
+    const stepSlot = h("div", { class: "step-up-slot" });
+    stepSlot.hidden = true;
+    const patchLegal = (value) => M.stepUp.run(() => M.api.patch(LEGAL, value), stepSlot, M.t("legal.save.step_up", { page: label }));
+    const failed = (err) => { if (err.code === "cancelled") status.done(); else showErrors(errors, err, status); };
     const draw = () => {
       Object.keys(errors).forEach((k) => delete errors[k]);
       const langs = Object.keys(draft);
@@ -552,7 +557,7 @@ window.Maity = window.Maity || {};
         unset.addEventListener("click", async () => {
           if (!window.confirm("Take the " + label.toLowerCase() + " down? Its earlier versions stay readable at their addresses.")) return;
           status.busy("Taking it down…");
-          try { done(await M.api.patch(LEGAL, { [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { showErrors(errors, err, status); }
+          try { done(await patchLegal({ [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { failed(err); }
         });
       }
       const form = h("form", {
@@ -560,7 +565,7 @@ window.Maity = window.Maity || {};
         onsubmit: async (e) => {
           e.preventDefault();
           status.busy("Saving…");
-          try { done(await M.api.patch(LEGAL, { [key]: draft }), "Saved as a new version of the " + label.toLowerCase() + "."); } catch (err) { showErrors(errors, err, status); }
+          try { done(await patchLegal({ [key]: draft }), "Saved as a new version of the " + label.toLowerCase() + "."); } catch (err) { failed(err); }
         },
       },
       h("div", { class: "inline-form" }, h("label", { for: "lg-" + key + "-new-language" }, "Languages"), tabs, newLang, addLang),
@@ -572,7 +577,7 @@ window.Maity = window.Maity || {};
           if (unloaded(json.pending, status, json.focus)) return;
           preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors);
         } }, "Preview the draft") : null,
-        unset), status.el);
+        unset), stepSlot, status.el);
       append(clear(body), form);
     };
     // Import and export of this page's languages (§16.7.1: a PATCH changes one page).

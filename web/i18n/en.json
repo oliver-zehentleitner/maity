@@ -1208,6 +1208,7 @@
   "jsonio.reg.loaded": "Loaded into the form. Nothing is saved yet: look it over, then save.",
   "jsonio.reg.shape": "not the registration settings: an object with at least one of their fields",
   "jsonio.reg.unknown": "fields the registration settings do not have: {fields}",
+  "jsonio.reg.wrong": "values the form cannot take: {fields} (mode and approval one of the offered choices, the lists as lists of text, terms with url and version or null, the limit a whole number from 1)",
   "jsonio.title": "Import or export JSON",
   "landing.json.checking": "Checking the imported draft…",
   "landing.json.confirm_all": "Replace the whole draft in the editor with the imported one? Nothing is saved until you press Save.",
@@ -1237,6 +1238,7 @@
   "lead.open_failed": "Could not open the chat: {reason}",
   "lead.proxy": "{name} (your proxy)",
   "lead.talk_to": "Talk to the lead: {name}",
+  "legal.save.step_up": "Saving the {page}",
   "limits.agents.at": {
     "one": "{count} person is at or over this limit.",
     "other": "{count} people are at or over this limit."

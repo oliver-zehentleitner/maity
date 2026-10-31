@@ -8,3 +8,8 @@
 - web: a preview while the JSON field holds text that was not loaded
   into the editor says so instead of opening and closing a tab, in the
   landing editor too.
+
+### Fixed
+- web: saving or taking down a legal page asks for the second factor
+  where the hub wants it (§2.8.4), instead of failing with
+  `step_up_required`.

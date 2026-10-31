@@ -226,6 +226,21 @@ window.Maity = window.Maity || {};
           io.fail(M.t("jsonio.not_loaded"), { message: unknown.length ? M.t("jsonio.reg.unknown", { fields: M.fmt.list(unknown) }) : M.t("jsonio.reg.shape") });
           return false;
         }
+        // Each value of the kind the form can show; the hub checks the rest on Save.
+        const strings = (x) => Array.isArray(x) && x.every((e) => typeof e === "string");
+        const KINDS = {
+          mode: (x) => MODES.includes(x),
+          domains: strings,
+          addresses: strings,
+          approval: (x) => APPROVALS.includes(x),
+          terms: (x) => x === null || (M.jsonIo.isObject(x) && typeof x.url === "string" && typeof x.version === "string"),
+          max_new_accounts_per_hour: (x) => Number.isInteger(x) && x >= 1,
+        };
+        const wrong = keys.filter((k) => !KINDS[k](data[k]));
+        if (wrong.length) {
+          io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.reg.wrong", { fields: M.fmt.list(wrong) }) });
+          return false;
+        }
         // A value the environment sets stays as it is (the hub refuses it, set_by_environment).
         const fixed = keys.filter((k) => (current[k] || {}).source === "env" || (k === "terms" && (current.terms || {}).source === "legal_pages"));
         if (!window.confirm(fixed.length ? M.t("jsonio.reg.confirm_fixed", { fields: M.fmt.list(fixed) }) : M.t("jsonio.reg.confirm"))) return false;
