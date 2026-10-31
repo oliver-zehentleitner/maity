@@ -177,6 +177,8 @@ def test_the_hero_shows_the_online_numbers_beside_a_one_line_note(
     meta = re.search(r'<div class="hero-meta">(.*?)</div></div><div class="hide-m">', html, re.S)
     assert meta is not None
     assert '<div class="note">' in meta.group(1)
+    # the online numbers first, then the note, as the board has it
+    assert meta.group(1).index('class="online"') < meta.group(1).index('class="note"')
     assert re.search(
         r'<span class="online"><span class="dot pulse" aria-hidden="true"></span>'
         r'<span class="online-item"><b><span data-lp-count>6</span></b> People online</span>',
@@ -287,7 +289,7 @@ def test_the_scales_have_rings_beside_them_and_stay_complete_without_script(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     html = page(owner, make_client, SCALES)
-    assert '<div class="scales-layout"><div class="scales-grid">' in html
+    assert '<div class="scales-body"><div class="scales-grid">' in html
     art = re.search(r'<div class="scales-art hide-m">(.*?)</div></div>', html, re.S)
     assert art is not None
     assert [m for m in re.findall(r'data-ring="(\d)"', art.group(1))] == ["3", "2", "1"]
@@ -381,3 +383,83 @@ def test_the_languages_are_listed_default_first_then_alphabetically(owner: flow.
     )
     assert '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a> ' in html
     assert re.findall(r'<link rel="alternate" hreflang="([a-z-]+)"', html) == ["en", "de", "fr"]
+
+
+def test_an_online_counter_in_the_strip_has_the_live_dot_before_its_number(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    many_online(make_client, migrated)
+    html = page(owner, make_client, STATS)
+    assert (
+        '<b><span class="dot pulse" aria-hidden="true"></span><span data-lp-count>6</span></b>'
+        '<span class="label">People online</span>'
+    ) in html
+    assert '<b><span data-lp-count>6</span></b><span class="label">People</span>' in html  # none
+
+
+def footer_page(owner: flow.Human, make_client: ClientFactory, opensource: dict[str, Any]) -> str:
+    social = [
+        {"label": "GitHub", "href": "https://github.com/acme/maity"},
+        {"label": "Mastodon", "href": "https://m.example/@maity"},
+    ]
+    answer = owner.patch(
+        ADMIN,
+        {
+            "enabled": True,
+            "default_language": "en",
+            "pages": {
+                "en": {"title": "Maity", "description": "", "sections": [hero(), opensource]}
+            },
+            "footer": {"operator": "x", "social": social},
+        },
+    )
+    assert answer.status_code == 200, answer.text
+    html = make_client().get("/").text
+    footer = re.search(r'<footer class="site-footer">(.*)</footer>', html, re.S)
+    assert footer is not None
+    return footer.group(1)
+
+
+def test_a_github_link_is_in_the_open_source_column_only(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    links = [{"label": "GitHub", "href": "https://GitHub.com/acme/maity"}]
+    footer = footer_page(owner, make_client, {**OPENSOURCE, "links": links})
+    assert footer.lower().count("github.com/acme/maity") == 1  # once, whatever the case
+    follow = re.search(r'aria-label="Follow">(.*?)</nav>', footer, re.S)
+    assert follow is not None and "GitHub" not in follow.group(1) and "Mastodon" in follow.group(1)
+
+
+def test_a_github_link_stays_in_follow_when_open_source_has_none(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    footer = footer_page(owner, make_client, OPENSOURCE)  # its link is on example.com
+    follow = re.search(r'aria-label="Follow">(.*?)</nav>', footer, re.S)
+    assert follow is not None and "GitHub" in follow.group(1)
+
+
+def test_one_helper_orders_the_languages_for_every_use() -> None:
+    from maity_hub import render
+
+    assert render.ordered_languages(["de", "en", "fr"], "en") == ["en", "de", "fr"]
+    assert render.ordered_languages(["fr", "de"], "en") == ["de", "fr"]  # the default not offered
+    assert render.ordered_languages({"fr": 1, "en": 2, "de": 3}, "de") == ["de", "en", "fr"]
+    # nothing matches: the default, and only then the first of the fixed order
+    ordered = render.ordered_languages(["de", "fr"], "en")
+    assert render.choose_language(ordered, "en", None, "ja") == "de"
+    assert (
+        render.choose_language(render.ordered_languages(["de", "en"], "en"), "en", None, "ja")
+        == "en"
+    )
+
+
+def test_the_script_puts_the_tab_bar_before_the_two_columns(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The tab bar sits above `.scales-body` (the panels and the rings), not inside it; the
+    script is checked as text, like the other assets, since no browser runs here."""
+    script = make_client().get("/assets/landing/landing.js").text
+    assert 'classList.contains("scales-body")' in script
+    assert "body.parentNode.insertBefore(list, body);" in script
+    assert "grid.parentNode.insertBefore(list, grid)" not in script  # the old place, in the columns
+    assert len(script.encode()) <= 10 * 1024  # the contract's cap on the file (§16.7)

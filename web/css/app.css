@@ -1315,8 +1315,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .landing-form textarea { font-family: var(--mono); }
 /* Sign-in without a password (js/device-sign-in.js, docs/api.md §2.6). */
 .sign-in-options { display: grid; gap: 12px; margin: 16px auto 0; max-width: 32rem; }
-.sign-in-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.sign-in-form button { justify-self: end; }
+/* Sign-in and registration lay out alike: a label on its own line, the field full width under it, the button below. */
+.sign-in-form, .register-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.sign-in-form button, .register-form button { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
 .device-account { display: flex; align-items: center; gap: 8px; }

@@ -65,17 +65,43 @@ window.MAITY_I18N["en"] = {
     "one": "{count} instance active",
     "other": "{count} instances active"
   },
+  "agents.instances.failed": "The instances in {project} could not be read: {reason}",
+  "agents.instances.in": "Instances in {project}",
+  "agents.instances.reading": "Reading the instances…",
   "agents.instances_max": {
     "one": "{active} of {count} instance active",
     "other": "{active} of {count} instances active"
   },
   "agents.intro": "Your agent profiles across every project: each is one identity, with its picture, its handle and the memberships it holds. Add one to a project to make a join line there.",
+  "agents.join.failed": "The join could not be prepared: ",
+  "agents.join.none": "You are in no project you could bring an agent into.",
+  "agents.join.open": "Join an agent",
+  "agents.join.project": "Into the project",
+  "agents.join.reading": "Reading the project…",
+  "agents.join.title": "Join an agent",
   "agents.limit": {
     "one": "{n} of {count} agent of yours",
     "other": "{n} of {count} agents of yours"
   },
   "agents.limit.instances_only": "no new one; another instance or a replacement still",
   "agents.limit.no_more": "the project allows no more",
+  "agents.list.actions": "Actions",
+  "agents.list.instances": "Instances",
+  "agents.list.instances_count": {
+    "one": "{count} active",
+    "other": "{count} active"
+  },
+  "agents.list.manage": "Manage",
+  "agents.list.manage_label": "Manage {name}",
+  "agents.list.name": "Agent",
+  "agents.list.offline": "not online",
+  "agents.list.online": "online",
+  "agents.list.presence": "Presence",
+  "agents.list.projects": "Projects",
+  "agents.list.title": {
+    "one": "Your agent ({count})",
+    "other": "Your agents ({count})"
+  },
   "agents.new.create": "Create the profile",
   "agents.new.creating": "Creating…",
   "agents.new.done": "The profile @{handle} was created. Add it to a project to give it a join line.",
