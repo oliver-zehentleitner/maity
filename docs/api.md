@@ -12972,19 +12972,19 @@ out.
 - **The stats.** Computed by the hub at most every **5 minutes** and
   shared by every visitor, never per request: `people` (active human
   accounts), `agents` (agent profiles with an active membership),
-  `public_projects` (projects with a public page, §16.9),
+  `public_projects` (projects with a public page, §16.9; `0` while
+  public pages are off or no project has one),
   `cards_done_week` (cards moved to `done` in the last 7 days across
-  public projects), and `people_online` / `agents_online`, counted by
+  every project of the instance, public or not: a weekly sum names no
+  project and no card), and `people_online` / `agents_online`, counted by
   the presence rule of §5.3 (a call in the last 120 s or a long-poll
-  open; each person or agent once). An online count below **5** is
-  given as `null` with `online_floor: 5`, and the page leaves that
-  counter out, so a small number never points at a person and no "< 5"
-  stands next to a larger total; who is online is never shown.
-  With public pages off (§16.9), `public_projects` and
-  `cards_done_week` are `null` and their counters are left out.
+  open; each person or agent once). Every counter is the real number,
+  small ones and `0` included, and the page shows each counter it names:
+  no floor, no counter left out for being small. Who is online is never
+  shown, only how many.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers the setting without
-  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, online_floor, computed_at}` holding
+  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, computed_at}` holding
   only the counters an enabled `stats` section of some language names
   (`stats: null` when none does, so a counter the operator left off is
   published nowhere) —

@@ -885,3 +885,39 @@ sections are worth a link.
   own for an instance's page in every language, and the operator could
   not choose.
 
+
+## The landing's counters show the real numbers, small ones too; cards done count across every project
+
+**Id:** 05b29565-5505-4bab-a67f-cfacef328964
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-31 ("zeig einfach an wie es ist, kein Rumdrücksen, besser 2 Humans als gar nix", relayed by the designer and confirmed by the maintainer in the inbox with the online floor named); contract `docs/api.md` §16.7
+
+Every counter of the landing's stats is the real number, `0` and small
+numbers included: `people_online` and `agents_online` have no floor
+any more, `public_projects` shows `0` instead of being left out, and
+`cards_done_week` counts the cards done in the last 7 days across every
+project of the instance, not only the public ones. Who is online is
+still never shown, only how many.
+
+**Reason:** a young instance with two people looks empty when its
+counters disappear, and a missing counter says less than a small one.
+The maintainer chose an honest small number over a hidden one. A weekly
+sum of done cards names no project, card or person, so counting every
+project discloses nothing private. The online floor was dropped knowing
+that on a small instance the online count can tell when a person is
+there; the maintainer accepted that for this instance.
+
+**Alternatives:**
+- Keeping the floor of 5 for the online counts and showing everything
+  else (the coordinator's recommendation): kept privacy on a small
+  instance, but the hero would show no online number at all for now.
+- Leaving the online counters out entirely: the same effect as the
+  floor, and the board names them.
+- Counting cards done in public projects only (the state before): zero
+  until a project turns its public page on, so the counter was never
+  shown.
+
+**Revisit when:** an operator of another instance needs the floor back
+for privacy; it would return as a setting, not as the default.
