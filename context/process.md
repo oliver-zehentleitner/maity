@@ -955,8 +955,9 @@ push to a pull request still cancels its older run.
 runners held the machines that the pull requests behind them waited for; the coordinator cancelled twelve runs by hand.
 Only the newest main commit matters for a deploy, so the runs in between were work nobody read.
 
-**Consequence:** a commit that merged while a run was waiting has no `ci-ok` of its own. A deploy takes the newest
-commit with a green run, or waits for the newest run to finish.
+**Consequence:** a commit that merged while a run was waiting has no `ci-ok` of its own: GitHub cancels its waiting
+run and shows it as cancelled, which is not a failure. A deploy takes the newest commit with a green run, or waits
+for the newest run to finish.
 
 **Rejected alternatives:**
 - `cancel-in-progress: true` on main: a streak of merges would cancel each run before it finishes, so main could stay without a
