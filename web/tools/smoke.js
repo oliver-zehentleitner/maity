@@ -1576,11 +1576,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Linter counts per field; an entry link outside its part's dashboard is no link.
   const odd2 = JSON.parse(JSON.stringify(baseAnswer));
   odd2.members[1].summary.findings = { errors: 2, warnings: null };
+  odd2.members[2].summary.findings = { errors: 1, warnings: 1 };
   odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
     link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
   expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
+  expect(text(main.querySelectorAll(".why-members tbody tr")[2]).includes("1 error, 1 warning"), "why: a linter count of one reads in the singular");
   const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
   expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
   win.Maity.api.get = realGet6;

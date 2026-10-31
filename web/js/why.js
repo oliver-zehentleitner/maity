@@ -72,8 +72,10 @@ window.Maity = window.Maity || {};
   function findings(summary) {
     const f = summary && summary.findings;
     if (!f || (f.errors === null && f.warnings === null)) return "—";
-    const n = (v) => (v === null || v === undefined ? "—" : v);
-    return M.t("why.findings", { errors: n(f.errors), warnings: n(f.warnings) });
+    // Each count with its own plural form; a missing one has none.
+    const errors = typeof f.errors === "number" ? M.t("why.findings.errors", { count: f.errors }) : M.t("why.findings.errors_unknown");
+    const warnings = typeof f.warnings === "number" ? M.t("why.findings.warnings", { count: f.warnings }) : M.t("why.findings.warnings_unknown");
+    return M.t("why.findings", { errors, warnings });
   }
 
   function summaryBox(answer) {

@@ -2968,7 +2968,17 @@ window.MAITY_I18N["en"] = {
   "why.empty": "This project publishes no Keep the Why dashboard yet.",
   "why.empty.no_line": "The hub reads the dashboard-state line of the repository's root .keep-the-why, and that line is missing (or the file is).",
   "why.empty.no_repository": "It needs a repository first: the hub reads the dashboard-state line of the repository's root .keep-the-why.",
-  "why.findings": "{errors} errors, {warnings} warnings",
+  "why.findings": "{errors}, {warnings}",
+  "why.findings.errors": {
+    "one": "{count} error",
+    "other": "{count} errors"
+  },
+  "why.findings.errors_unknown": "— errors",
+  "why.findings.warnings": {
+    "one": "{count} warning",
+    "other": "{count} warnings"
+  },
+  "why.findings.warnings_unknown": "— warnings",
   "why.intro": "The project's decisions and their reasons, as its published Keep the Why dashboard shows them. The hub reads them from the repository; nothing here changes them.",
   "why.no_read": "no read yet",
   "why.parts.attention": "Attention",
