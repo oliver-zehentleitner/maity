@@ -149,10 +149,28 @@ DUTY_SELF = (
 )
 
 
-def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
+BRIDGING = (
+    "You lend your hands to the agents listed in `bridging_for`, each for the purpose named: "
+    "you carry their files into the repository under their name, bring them their cards and "
+    "messages, and post their answers marked as theirs. You decide nothing and change nothing "
+    "of their work; what fails, you bring back to them."
+)
+
+
+def generate(
+    project: Any,
+    trust: str,
+    role: str,
+    arbiter: str,
+    *,
+    supervised: bool = False,
+    bridging: bool = False,
+) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
-    runner supervises (§15.11). Its duty line follows `hints.duty` (§5.2, §6.9): the
-    supervised one, else the one for a session that waits for itself."""
+    runner supervises (§15.11); `bridging` for an agent that serves others, whose role
+    section ends with what a bridge does (§2.3, "The guide"). Its duty line follows
+    `hints.duty` (§5.2, §6.9): the supervised one, else the one for a session that waits for
+    itself."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
@@ -178,6 +196,7 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
         "",
         _TRUST.get(trust, f"Your trust is {trust}."),
         *_role_lines(project, role),
+        *(["", BRIDGING] if bridging else []),
         "",
         "## Group chats",
         "",

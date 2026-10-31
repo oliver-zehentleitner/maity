@@ -30,6 +30,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## B
 - [board.md](board.md) — batched forge reads; event-linked and authored-only mirror history; final-state subtask approval and graph checks; computed child counts; completion-error compatibility; the import is a create through the same path, its own rules before it; an import authorizes, replays, reads the forge, checks the forge's text, then creates; an imported issue is one issue in any case
+- [bridges.md](bridges.md) — a pending connection is only its request pair, the `bridge` table holds what exists; a chat shows a bridge across owners as an observer without `access` making it one; a proxy neither lists nor answers the project's consent
 
 ## C
 

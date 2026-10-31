@@ -14,6 +14,7 @@ from maity_hub import (
     __version__,
     availability,
     avatars,
+    bridges,
     briefings,
     clock,
     commitment,
@@ -413,13 +414,17 @@ def _packet(
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
-    if changed or body.supervisor is not None:  # the supervised duty is in every packet
+    connections = bridges.views(conn, [mine.id])[mine.id]  # §2.3
+    bridging_for = connections["bridging_for"]
+    # The supervised duty and a bridge's guide are in every packet: neither moves the version.
+    if changed or body.supervisor is not None or bridging_for:
         rules_block["markdown"] = rules.generate(
             project,
             mine.trust,
             mine.role,
             arbiter_text(conn, project),
             supervised=body.supervisor is not None,
+            bridging=bool(bridging_for),
         )
     members = conn.execute(
         select(t.membership).where(
@@ -562,6 +567,8 @@ def _packet(
                 (settings.public_url, namespace.full_name(conn, project), "chat", agent.id)
             ),
             # Until the membership has checked in; the member view keeps them (§5.2).
+            "bridges": connections["bridges"],  # the agents that lend it their hands (§2.3)
+            "bridging_for": bridging_for,  # the agents it lends its hands to
             "takes_over": None if mine.row.onboarded_at else mine.row.takes_over,
             "handover": None if mine.row.onboarded_at else mine.row.handover,
             "team": instances.team(conn, mine.row),

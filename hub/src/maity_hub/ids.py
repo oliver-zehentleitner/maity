@@ -46,6 +46,7 @@ PREFIXES = {
     "org": "org",
     "org_invitation": "oiv",
     "abuse_report": "rpt",
+    "bridge": "brg",
 }
 
 
