@@ -742,6 +742,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = realGetAll;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && main.querySelectorAll(".members-agents tr.member").length === 5, "agents in Members: five agent rows");
+  // Whose work an agent continues and where its hand-over is (§6.2): links to the member and to the messages.
+  const takeOverP = agRow("agt-d").querySelector(".member-takes-over");
+  expect(takeOverP && text(takeOverP) === "Takes over from @agent-c; the hand-over is in message #6001."
+    && takeOverP.querySelectorAll("a").map((a) => a.getAttribute("href")).join(" ") === "#/maintainer/maity/members/agt-c #/maintainer/maity/messages"
+    && !agRow("agt-a").querySelector(".member-takes-over"), "members: an agent that took over says from whom and where the hand-over is " + (takeOverP && text(takeOverP)));
   const agCRow = await agOpen("agt-c");
   expect(text(agCRow).includes("never resumed") && text(agCRow).includes("revoked") && text(agCRow).includes("replaced by a new clone"), "never resumed and revoked credentials");
   expect(text(agCRow).includes("Areas") && text(agCRow).includes("Capabilities"), "areas and capabilities");
@@ -3379,6 +3384,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".agents-count")).includes("1 open join"), "joins: the title's count line says how many joins are open");
   expect(text(joinRow("join-0009")).startsWith("expired join-0009") && text(joinRow("join-0009")).includes("· expired ")
     && joinRow("join-0009").classList.contains("join-expired"), "joins: an expired join says expired, not open");
+  const j9Over = joinRow("join-0009").querySelector(".join-takes-over");
+  expect(j9Over && text(j9Over) === "Takes over from @agent-a; the hand-over is in tsk-0001."
+    && j9Over.querySelectorAll("a").map((a) => a.getAttribute("href")).join(" ") === "#/maintainer/maity/members/agt-a #/maintainer/maity/tasks/tsk-0001",
+    "joins: a join that named takes_over and handover says both, as links");
   expect(text(joinRow("join-0008")).startsWith("burned") && text(joinRow("join-0008")).includes("refused after three wrong codes"), "joins: a burned join");
   expect(text(joinRow("join-0007")).startsWith("revoked") && text(joinRow("join-0007")).includes("· revoked "), "joins: a revoked join");
   expect(text(joinRow("join-0006")).startsWith("used") && text(joinRow("join-0006")).includes("· used "), "joins: a used join");
@@ -3395,13 +3404,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.i18n.locale = joinLocale;
   expect(!joinPosts.length && text(main).includes("the briefing is longer than 16,384 characters"), "a join briefing over 16 KiB is refused before sending");
   byId("join-briefing").value = "  You review hub/.  ";
+  // A first join may name whom it takes over from (the project's agent members) and the hand-over (§3.1).
+  const overOptions = byId("join-takes-over").querySelectorAll("option").map((o) => o.getAttribute("value"));
+  expect(!byId("join-takes-over").parentNode.hidden && overOptions[0] === "" && overOptions.includes("agt-a") && !overOptions.includes("agt-x")
+    && !overOptions.includes("hum-maintainer"), "join: Takes over from offers the project's agent members " + JSON.stringify(overOptions));
+  byId("join-takes-over").value = "agt-a";
+  for (const [typed, says] of [["tsk-nope", "neither a card of this project nor one of its messages"], ["6003", "not addressed to everyone"]]) {
+    byId("join-handover").value = typed;
+    main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
+    expect(text(main).includes(says) && main.querySelector("form.join-form"), "join: a hand-over the hub refuses is said in words (" + typed + ")");
+  }
+  joinPosts.length = 0;
+  byId("join-handover").value = " 6001 ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
+  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("installs the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
-  expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
+  expect(ctx.copied && ctx.copied.startsWith("pipx install maity && ") && / && maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied),
+    "copy puts the line as the hub gave it on the clipboard: install and join in one");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
   expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
