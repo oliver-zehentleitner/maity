@@ -530,7 +530,12 @@ def _unread_note(session: Session, budget: float) -> None:
     unread = [(n, m) for n, m in counts if isinstance(n, int) and n > 0 and isinstance(m, int)]
     if unread:
         total, mentions = sum(n for n, _ in unread), sum(m for _, m in unread)
-        _err(f"unread chats: {total} in {len(unread)} chats ({mentions} mentions): maity chats")
+        # One page only, within the budget: past it the counts are a floor.
+        more = "at least " if _field(page, "next_cursor") else ""
+        _err(
+            f"unread chats: {more}{total} in {more}{len(unread)} chats ({mentions} mentions): "
+            "maity chats"
+        )
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
