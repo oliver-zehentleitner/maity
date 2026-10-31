@@ -14,13 +14,16 @@ replica and have no listener.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hashlib
 import logging
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Connection, Engine, func, select
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import events, longpoll
@@ -32,6 +35,9 @@ POLL_SECONDS = 1.0  # how often the listening thread looks whether it should sto
 RESPREAD_SECONDS = 2.0  # the waiters' reads after a lost connection, spread over this
 BACKOFF_FIRST, BACKOFF_MAX = 1.0, 30.0  # the pause before connecting again, doubling
 SUPERSEDE = "maity_supersede"  # `<sha256 of kind:key>:<start in µs on the database clock>`
+# `<sha256 of kind:key>`: what a held bell or device-code wait shows changed (point 5).
+RINGS = {"bell": "maity_bell", "device": "maity_device"}
+FALLBACK_SECONDS = 2.0  # a rung wait looks again at the latest after this, as the events do
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 # The waits this process holds, by the hash of their kind and key: per wait its start on the
@@ -76,13 +82,97 @@ async def opened(
 ) -> Callable[[], None]:
     """A wait of `kind` and `key` opens: on PostgreSQL announce it, and end it with
     `on_superseded` when a newer one of the same key opens on another replica, which may
-    happen before this returns, so the caller holds the wait before it calls. Returns what
+    happen before this returns: the caller holds the wait before it calls, or, like the event
+    routes, keeps a flag that `on_superseded` sets and checks it first. Returns what
     the wait calls when it closes. Superseding inside the process stays the caller's."""
     if engine.dialect.name != "postgresql":
         return lambda: None
     digest, token = _digest(kind, key), object()
     await run_in_threadpool(_announce, engine, digest, token, on_superseded)
     return lambda: _forget(digest, token)
+
+
+# --- the bell and the device codes (point 5) ------------------------------------------------
+
+_rings: dict[str, set[Callable[[], None]]] = {}
+
+
+def ring(conn: Connection, kind: str, key: str) -> None:
+    """In the caller's transaction: on PostgreSQL, wake every held `kind` wait of `key` at
+    commit, on every replica this one included. Elsewhere those waits poll."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(select(func.pg_notify(RINGS[kind], _digest(kind, key))))
+
+
+def rung(payload: str) -> None:
+    with _held_lock:
+        wakes = list(_rings.get(payload, ()))
+    for wake in wakes:
+        wake()
+
+
+@dataclass
+class Held:
+    """What a held bell or device-code wait waits on between two looks: on PostgreSQL its
+    ring, an event in `project_ids` and the fallback; elsewhere the old poll."""
+
+    poll: float
+    waiter: longpoll.Waiter | None = None
+    digest: str = ""
+    _wake: Callable[[], None] = field(default=lambda: None)
+
+    async def pause(self, remaining: float) -> None:
+        if self.waiter is None:
+            await asyncio.sleep(max(0.0, min(self.poll, remaining)))
+            return
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(
+                self.waiter.event.wait(), max(0.0, min(FALLBACK_SECONDS, remaining))
+            )
+        self.waiter.event.clear()  # what rings from here on wakes the next pause
+
+    def wake(self) -> None:
+        if self.waiter is not None:
+            self.waiter.wake()
+
+    def close(self) -> None:
+        if self.waiter is None:
+            return
+        with _held_lock:
+            wakes = _rings.get(self.digest)
+            if wakes is not None:
+                wakes.discard(self._wake)
+                if not wakes:
+                    del _rings[self.digest]
+        longpoll.registry.leave(self.waiter)
+
+
+def held(
+    engine: Engine,
+    kind: str,
+    *,
+    wait_key: str,
+    ring_key: str,
+    poll: float,
+    project_ids: frozenset[str] = frozenset(),
+) -> Held:
+    """Hold a bell or device-code wait (`wait_key`, one per key as before), woken by `ring`
+    of `ring_key` and by every event in `project_ids`. A newer wait of the same key in this
+    process wakes the older one at once."""
+    if engine.dialect.name != "postgresql":
+        return Held(poll)
+    waiter = longpoll.Waiter(
+        key=f"{kind}:{wait_key}",
+        project_id=None,
+        session_id=None,
+        loop=asyncio.get_running_loop(),
+        project_ids=project_ids,
+    )
+    longpoll.registry.enter(waiter)
+    digest = _digest(kind, ring_key)
+    with _held_lock:
+        _rings.setdefault(digest, set()).add(waiter.wake)
+    return Held(poll, waiter, digest, waiter.wake)
 
 
 def supersede(payload: str) -> None:
@@ -153,6 +243,8 @@ class Listener:
             conn.autocommit = True
             conn.execute(f"LISTEN {events.CHANNEL}")
             conn.execute(f"LISTEN {SUPERSEDE}")
+            for channel in RINGS.values():
+                conn.execute(f"LISTEN {channel}")
             self.listening.set()
             if catch_up:
                 # What was announced while nobody listened is lost: every waiter reads once.
@@ -161,6 +253,8 @@ class Listener:
                 for note in conn.notifies(timeout=POLL_SECONDS):
                     if note.channel == SUPERSEDE:
                         supersede(note.payload)
+                    elif note.channel in RINGS.values():
+                        rung(note.payload)
                     else:
                         handle(note.payload)
         finally:
