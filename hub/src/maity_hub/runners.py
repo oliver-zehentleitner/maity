@@ -158,7 +158,7 @@ def runner_view(
         state = "active"
     else:
         state = "revoked"
-    is_listening = listening.is_listening(listening_key(row.id))
+    is_listening = listening.is_listening(listening_key(row.id), conn)
     view: dict[str, Any] = {
         "id": row.id,
         "name": row.name,

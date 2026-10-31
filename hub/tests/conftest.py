@@ -229,6 +229,7 @@ def _fresh_process_state() -> Iterator[None]:
         forge,
         images,
         ktw,
+        listening,
         mentions,
         not_listening,
         public_pages,
@@ -242,6 +243,8 @@ def _fresh_process_state() -> Iterator[None]:
     # The counts in the database belong to the previous test's app and engine; the tables
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
+    listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
+    listening.reset()
     badges.BY_ADDRESS.reset()
     public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
     badges.NOT_SERVED.reset()

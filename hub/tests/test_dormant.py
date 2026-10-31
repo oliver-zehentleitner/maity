@@ -27,17 +27,16 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 @pytest.fixture
-def listens() -> Iterator[list[str]]:
-    opened: list[str] = []
+def listens() -> Iterator[list[tuple[str, str]]]:
+    opened: list[tuple[str, str]] = []
     yield opened
-    for session_id in opened:
-        listening.closed(session_id)
+    for session_id, wait in opened:
+        listening.closed(session_id, wait)
 
 
-def _listen(listens: list[str], agent: flow.Agent) -> None:
+def _listen(listens: list[tuple[str, str]], agent: flow.Agent) -> None:
     session_id = agent.resume().json()["session"]["id"]
-    listening.opened(session_id)
-    listens.append(session_id)
+    listens.append((session_id, listening.opened(session_id)))
 
 
 def rest(who: flow.Agent, value: bool = True) -> Any:
@@ -232,7 +231,7 @@ def test_the_long_poll_of_a_dormant_instance_ends_only_for_its_own_address(
 
 
 def test_the_team_rules_pass_over_a_dormant_instance(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[tuple[str, str]]
 ) -> None:
     first, second = _pair(make_client, owner)
     _team(owner, first.id, wake="next_free")
@@ -436,7 +435,7 @@ def test_a_further_request_supersedes_and_what_changes_nothing_or_is_refused_ask
 
 
 def test_the_jour_fixe_never_picks_a_dormant_instance(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[tuple[str, str]]
 ) -> None:
     from maity_hub.jourfixe import rounds
 
