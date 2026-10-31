@@ -125,6 +125,12 @@ vm.runInContext(fs.readFileSync(path.join(WEB, "fixtures/fixtures.js"), "utf8"),
 function expect0(cond, what) { if (!cond) { console.log("FAIL " + what); process.exitCode = 1; } else console.log("ok   " + what); }
 const tick = () => new Promise((r) => setTimeout(r, 20));
 const text = (el) => el.textContent.replace(/\s+/g, " ");
+// One paragraph drawn by the one renderer (js/markdown.js) with a text's stored mentions, as a list of
+// strings (its text) and nodes (its links), the shape the mention cases read.
+const mentionsDrawn = (t, ms, f, hrefOf, at, ctx) => {
+  const first = win.Maity.markdown(t, at, { mentions: ms, field: f, hrefOf, ctx })[0];
+  return first ? first.childNodes.map((c) => (c instanceof Text_ ? c.t : c)) : [];
+};
 let failures = 0;
 const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
 function expect(cond, what) { console.log((cond ? "ok   " : "FAIL ") + what); if (!cond) failures++; }
@@ -246,6 +252,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hashEntry = main.querySelector(".current");
   const triedLink = hashEntry.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-b");
   expect(triedLink && triedLink.getAttribute("href") === "#/maintainer/maity/members/agt-b", "mentions: a request's tried links its stored mention");
+  // One renderer (tsk-8n1p6h3zypwp): a request's texts as a chat's, inline code copied with a click, a mention linked in place.
+  const hashSummary = hashEntry.querySelector(".md.summary");
+  expect(hashSummary && hashSummary.querySelector("code.md-inline-copy") && text(hashSummary.querySelector("code.md-inline-copy")) === "maity join"
+    && hashEntry.querySelector(".md a.mention"), "inbox: a request's summary and tried drawn by the chat's renderer, code with its copy, the mention as a link");
+  {
+    // A fenced block in a summary gets the chat's Copy button; a mention inside code stays code.
+    const fenced = win.Maity.markdown("Run this:\n```sh\nmaity join @agent-b\n```\nthen ask @agent-b.", null,
+      { mentions: [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 27, length: 8 }, { member_id: "agt-b", handle: "agent-b", field: "summary", offset: 49, length: 8 }],
+        field: "summary", hrefOf: (id) => "/m/" + id });
+    const box = document.createElement("div"); fenced.forEach((n) => box.appendChild(n));
+    expect(box.querySelector("button.md-copy") && text(box.querySelector("pre")) === "maity join @agent-b" && box.querySelectorAll("a.mention").length === 1
+      && text(box.querySelector("a.mention")) === "@agent-b", "markdown: a fenced block keeps its Copy; a mention inside code is code, one outside a link");
+  }
+  {
+    // A mention the hub stored inside a link's address, its label or a fence's info string is the text as written there:
+    // no placeholder left in an href or a text, no member link inside a link (review of #860).
+    const src = "See https://x.example/?by=@agent-b and [ask @agent-b](https://x.example/#@agent-b)\n   ```sh@agent-b\nls\n   ```";
+    const at = (k) => [...src].findIndex((c, i) => c === "@" && [...src].slice(0, i).filter((x) => x === "@").length === k);
+    const ms = [0, 1, 2, 3].map((k) => ({ member_id: "agt-b", handle: "agent-b", field: "body", offset: at(k), length: 8 }));
+    const box = document.createElement("div"); win.Maity.markdown(src, null, { mentions: ms, hrefOf: (id) => "/m/" + id }).forEach((n) => box.appendChild(n));
+    const hrefs = box.querySelectorAll("a").map((a) => a.getAttribute("href") || "");
+    expect(!/[\uE000\uE001]/.test(text(box) + hrefs.join("")) && hrefs.includes("https://x.example/?by=@agent-b") && hrefs.includes("https://x.example/#@agent-b")
+      && text(box).includes("ask @agent-b") && !box.querySelector("a.mention"),
+      "markdown: a stored mention inside a link or a fence's info string stays as written, no placeholder, no member link " + JSON.stringify(hrefs));
+  }
   const freeText = hashEntry.querySelector(".free-text textarea");
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
@@ -320,7 +351,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gnRefused && gnRefused.message === "@agent-b is 2 agents here: write @anna/agent-b or @oliver/agent-b."
     && win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid", { fields: { body: "too_many_mentions" } })) === null,
     "global names: the hub's ambiguous_mention in words with the long forms");
-  const gnStored = idBoxGn(win.Maity.dom.withMentions("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
+  const gnStored = idBoxGn(mentionsDrawn("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
     "summary", (id) => "/m/" + id));
   expect(gnStored.querySelector("a.mention") && text(gnStored.querySelector("a.mention")) === "@anna/shop-dev" && gnStored.querySelector("a.mention").getAttribute("href") === "#/m/agt-s2",
     "global names: a stored long mention is a link to its member");
@@ -362,7 +393,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gnPosts.length === 2 && text(main).includes("mentioned and notified: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
   win.Maity.api.post = gnPost;
   await go("#/maintainer/sample/messages"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelectorAll(".pmsg-mentions a").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
+  expect(main.querySelectorAll(".pmsg a.mention").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
   await go("#/maintainer/maity/inbox");
 
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
@@ -527,7 +558,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Mentions (docs/api.md §8.6): stored ones become member links, nothing typed does.
   const reportMention = main.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-d");
   expect(reportMention && reportMention.getAttribute("href") === "#/maintainer/maity/members/agt-d", "mentions: a report's stored mention links to the member");
-  const wm = (t, ms, f) => win.Maity.dom.withMentions(t, ms, f || "body", (id) => "/m/" + id);
+  const wm = (t, ms, f) => mentionsDrawn(t, ms, f || "body", (id) => "/m/" + id);
   const linkOf = (nodes) => nodes.filter((n) => typeof n !== "string");
   const emoji = wm("\u{1F642} hi @agent-b!", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 5, length: 8 }]);
   expect(linkOf(emoji).length === 1 && linkOf(emoji)[0].textContent === "@agent-b" && emoji[emoji.length - 1] === "!",
@@ -2635,7 +2666,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(IDS.forgeBase("https://github.com/o/r/tree/main") === "https://github.com/o/r" && IDS.forgeBase("https://GitHub.com/o/r") === "https://github.com/o/r"
     && IDS.forgeBase("https://github.com/o/r.git") === "https://github.com/o/r" && IDS.forgeBase("https://gitlab.com/o/r") === null && IDS.forgeBase("https://github.com/o") === null,
     "ids: the repository read as the hub reads it — any case of github.com, owner and name the first two segments");
-  const wmIds = idBox(win.Maity.dom.withMentions("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
+  const wmIds = idBox(mentionsDrawn("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
     "body", (id) => "/m/" + id, idAt));
   expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab",
     "ids: between mentions the text's ids are links, the mention stays the hub's");
@@ -2684,7 +2715,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const cpNotes = () => cpPanel().querySelectorAll(".card-note-list li").map((li) => text(li));
   expect(cpPanel() && cpPanel().querySelector(".card-panel-card article.card") && cpPanel().querySelector(".card-panel-card article.card .card-actions")
     && !cpPanel().querySelector(".card-panel-card a.card-open") && !cpPanel().querySelector(".card-panel-card article.card").getAttribute("draggable")
-    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against."
+    && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
+    // Its stored mention a link where it stands (the one renderer, review of #860).
+    && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
     && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
     && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
@@ -3700,18 +3733,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".handle-form .error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
   win.Maity.api.patch = realPatch6;
   const aliasCtx = { memberById: { "agt-b": { handle: "b-new", aliases: ["agent-b"] } } };
-  const aliasMention = (t, len, ctx) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
+  const aliasMention = (t, len, ctx) => mentionsDrawn(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
   expect(aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: a mention typed as an alias of the member is a link");
   expect(typeof aliasMention("@agent-b hi", 8, null)[0] === "string" && typeof aliasMention("@other hi", 6, aliasCtx)[0] === "string", "mentions: without the alias, or with another name, it stays text");
   // The owner renamed, the agent has no alias: the old owner name still leads to it (§6.24).
   const ownerCtx = { memberById: {
     "agt-b": { handle: "agent-b", aliases: [], name: "neo/agent-b", owner_id: "hum-o" },
     "hum-o": { handle: "neo", aliases: ["old"] } } };
-  const ownerMention = (t, len) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
+  const ownerMention = (t, len) => mentionsDrawn(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
   expect(ownerMention("@old/agent-b hi", 12)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: the owner's old handle before an agent without aliases is a link");
   expect(typeof ownerMention("@stranger/agent-b hi", 17)[0] === "string", "mentions: an owner part that is none of the owner's names stays text");
   const noOwner = { memberById: { "agt-b": { handle: "agent-b", aliases: [], owner_id: "hum-o" } } };  // no name to take the owner from
-  expect(typeof win.Maity.dom.withMentions("@/agent-b hi", [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: 9 }], "body", (id) => "/m/" + id, null, noOwner)[0] === "string", "mentions: an empty owner part is no link");
+  expect(typeof mentionsDrawn("@/agent-b hi", [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: 9 }], "body", (id) => "/m/" + id, null, noOwner)[0] === "string", "mentions: an empty owner part is no link");
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
@@ -3923,12 +3956,227 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
     expect(fgRepo() && text(fgRepo()).includes("Not confirmed by the namespace owner") && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: a project owner who is not the namespace owner gets no Confirm button");
+    // An organisation's project (§11.4, §6.26): another owner of the organisation may replace a confirmation
+    // with their own grants; the owner who confirmed it is offered nothing.
+    // The project's view and its members, as an owner of the organisation reads them (org_owner, §6.26).
+    const fgOrgRepo = (by) => (p) => (p === "/projects/maintainer/sample"
+      ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "org-acme", handle: "acme" },
+        repository: Object.assign({}, x.repository, { owner_confirmed: true, confirmed_by: by }) }))
+      : p === "/projects/maintainer/sample/members"
+        ? fgGet(p).then((x) => Object.assign({}, x, { items: x.items.map((m) => (m.id === "hum-maintainer" ? Object.assign({}, m, { org_owner: true }) : m)) }))
+        : fgGet(p));
+    win.Maity.api.get = fgOrgRepo({ id: "hum-someone", handle: "someone" });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    const fgOther = !!btn(fgRepo(), "Confirm this repository for my grants") && text(fgRepo()).includes("Confirmed for the grants of @someone");
+    win.Maity.api.get = fgOrgRepo({ id: "hum-maintainer", handle: "maintainer" });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgOther && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: on an organisation's project another owner may confirm with their own grants; the one who confirmed is offered nothing");
     win.Maity.api.get = fgGet;
     await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
     btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
     expect(text(fgBox()).includes("The installation is unlinked.") && text(fgBox()).includes("No installation is linked."), "forge: unlinked");
     win.Maity.api.post = fgPost;
     delete win.location.assign;
+  }
+  // The jour fixe (§20, tsk-6h70epze0906): the series in Project settings, the moderator order, the rounds,
+  // one round as a member reads it, and a round started by hand.
+  {
+    const jfPatches = [], jfPuts = [], jfPosts = [];
+    const jfPatch = win.Maity.api.patch, jfPut = win.Maity.api.put, jfPost = win.Maity.api.post;
+    win.Maity.api.patch = (p, b) => { if (b && b.policy && "jour_fixe" in b.policy) jfPatches.push(b); return jfPatch(p, b); };
+    win.Maity.api.put = (p, b) => { if (p.endsWith("/jour-fixe/moderators")) jfPuts.push(b); return jfPut(p, b); };
+    win.Maity.api.post = (p, b) => { if (p.endsWith("/jour-fixe/rounds")) jfPosts.push(b); return jfPost(p, b); };
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    const jfRounds = () => main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
+    expect(JSON.stringify(jfRounds()) === JSON.stringify(["jfx-0002", "jfx-0001"]) && text(main).includes("fewer than two members were present")
+      && text(main).includes("No scheduled rounds"),
+      "jour fixe: a tab of its own; the rounds newest first, a skipped one with its reason; no schedule said so");
+    // Paged (§1.4): older rounds by the hub's cursor, appended.
+    const jfGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/jour-fixe/rounds"
+      ? jfGet(p).then((x) => Object.assign({}, x, { items: x.items.slice(0, 1), next_cursor: "c2" }))
+      : p === "/projects/maintainer/maity/jour-fixe/rounds?cursor=c2"
+        ? jfGet("/projects/maintainer/maity/jour-fixe/rounds").then((x) => Object.assign({}, x, { items: x.items.slice(1), next_cursor: null }))
+        : jfGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    const jfFirst = JSON.stringify(jfRounds());
+    btn(main, "Load older rounds").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(jfFirst === JSON.stringify(["jfx-0002"]) && JSON.stringify(jfRounds()) === JSON.stringify(["jfx-0002", "jfx-0001"]) && !btn(main, "Load older rounds"),
+      "jour fixe: the rounds are paged; older ones loaded by the hub's cursor, then no more offered");
+    win.Maity.api.get = jfGet;
+    await go("#/maintainer/maity/jour-fixe/jfx-0001"); for (let k = 0; k < 6; k++) await tick();
+    const jfTopic = () => main.querySelector("li.jf-topic");
+    expect(text(main).includes("reported") && text(main).includes("3 answers received") && text(main).includes("no instance listening")
+      && jfTopic() && text(jfTopic()).includes("Reviews wait overnight") && text(jfTopic()).includes("anonymous") && !jfTopic().querySelector("b")
+      && text(jfTopic()).includes("Agreed, a second reviewer helps.") && text(jfTopic()).includes("Reason: posted a token") && !text(jfTopic()).includes("token</")
+      && text(main.querySelector("section.jf-report")).includes("to the owner") && text(main.querySelector("section.jf-report")).includes("adopted: Within the rules.")
+      && main.querySelector("section.jf-report").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/inbox/req-0091"),
+      "jour fixe: a round shows its phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
+    // Project settings: the series, sent whole with a reason; the moderator order set and reset.
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+    const jfForm = () => main.querySelector("form.jf-settings");
+    expect(jfForm() && byId("jf-freq").value === "weekly" && !byId("jf-enabled").checked, "jour fixe: the series in Project settings, off by default");
+    byId("jf-enabled").checked = true; byId("jf-time").value = ""; byId("jf-reason").value = "every second Monday";
+    jfForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(!jfPatches.length && text(byId("jf-error")).includes("A time and a time zone"), "jour fixe: switched on, a time is needed before anything is sent");
+    byId("jf-time").value = "10:00"; byId("jf-timezone").value = "Europe/Vienna"; byId("jf-interval").value = "2";
+    byId("jf-day-mon").checked = true; byId("jf-day-thu").checked = true;
+    jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    const jfSent = jfPatches[0] && jfPatches[0].policy.jour_fixe;
+    expect(jfSent && jfSent.enabled === true && JSON.stringify(jfSent.recurrence) === JSON.stringify({ freq: "weekly", interval: 2, weekdays: ["mon", "thu"] })
+      && jfSent.time === "10:00" && jfSent.timezone === "Europe/Vienna" && jfSent.moderator === "admin_agent" && jfPatches[0].reason === "every second Monday",
+      "jour fixe: the series sent whole with its reason " + JSON.stringify(jfPatches[0]));
+    const jfOrder = () => main.querySelector("ol.jf-order");
+    expect(jfOrder() && text(jfOrder()).includes("Agent A"), "jour fixe: the moderator order, the admin agents in their resolved order");
+    // The default order is said as such; saving it unchanged, or resetting it, sends nothing (it would freeze the default).
+    const jfMods = () => main.querySelector("section.jf-moderators");
+    byId("jf-order-reason").value = "agent-a knows the team";
+    btn(jfMods(), "Save the order").click(); await tick();
+    btn(jfMods(), "Back to the default order").click(); await tick();
+    expect(text(jfMods()).includes("The default order: by time online") && !jfPuts.length && text(jfMods()).includes("Nothing changed."),
+      "jour fixe: the default order said as such; unchanged, neither save nor reset sends anything");
+    // An explicit order stored: said so, and reset to the default with a reason.
+    await win.Maity.api.put("/projects/maintainer/maity/jour-fixe/moderators", { order: ["agt-a"], reason: "set elsewhere" });
+    jfPuts.length = 0;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(jfMods()).includes("An explicit order is set"), "jour fixe: an explicit order is said as such");
+    byId("jf-order-reason").value = "back to time online";
+    btn(jfMods(), "Back to the default order").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(jfPuts[0]) === JSON.stringify({ order: null, reason: "back to time online" }) && text(jfMods()).includes("The order is saved.")
+      && text(jfMods()).includes("The default order"), "jour fixe: the explicit order reset to the default with a reason");
+    // The hub's refusal of a field is said at that field.
+    byId("jf-timezone").value = "Not a zone!"; byId("jf-reason").value = "a typo";
+    jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("jf-timezone-error")) === "not a time zone the hub knows" && text(main).includes("see the fields marked below"),
+      "jour fixe: the hub's refusal of the time zone said at its field");
+    // A refusal of a path with no field of its own is named in the status line, beside the fields marked.
+    const jfPatchNow = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => (b && b.policy && "jour_fixe" in b.policy
+      ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "policy.jour_fixe.time": "format", "policy.jour_fixe.recurrence": "not_an_object" } }))
+      : jfPatchNow(p, b));
+    byId("jf-timezone").value = "Europe/Vienna"; jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("jf-time-error")) === "a time as HH:MM, 24-hour" && text(main).includes("see the fields marked below; recurrence: not_an_object"),
+      "jour fixe: a refusal with no field of its own is named in the status line, the others at their fields");
+    win.Maity.api.patch = jfPatchNow;
+    // Started by hand: a reason, then the new round; a second start while it is open is refused in words.
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("Next round:"), "jour fixe: with the series on, the next slot is said");
+    byId("jf-start-reason").value = "before the launch"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    win.onhashchange(); for (let k = 0; k < 6; k++) await tick(); // the shim's hash change, as a browser's
+    expect(JSON.stringify(jfPosts[0]) === JSON.stringify({ reason: "before the launch" }) && /^#\/maintainer\/maity\/jour-fixe\/jfx-/.test(win.location.hash)
+      && text(main).includes("answering"), "jour fixe: started by hand with a reason, the new round opened " + win.location.hash);
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    byId("jf-start-reason").value = "again"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(main).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round while one is open is refused in words");
+    win.Maity.api.patch = jfPatch; win.Maity.api.put = jfPut; win.Maity.api.post = jfPost;
+  }
+  // The round's actions (§20.3–§20.8, tsk-6h70epze0906 part 2): an answer, by name or anonymously with the
+  // limits said first, read back and withdrawn; the answers for their readers; the statement; a post; the report.
+  {
+    const raPosts = [], raDels = [];
+    const raPost = win.Maity.api.post, raDel = win.Maity.api.del;
+    win.Maity.api.post = (p, b) => { if (/\/jour-fixe\/rounds\/[^/]+\//.test(p)) raPosts.push([p.replace(/^.*\/rounds\//, ""), JSON.parse(JSON.stringify(b))]); return raPost(p, b); };
+    win.Maity.api.del = (p, b) => { if (p.includes("/jour-fixe/")) raDels.push(p); return raDel(p, b); };
+    const raLast = () => raPosts[raPosts.length - 1];
+    const opened = (await win.Maity.api.get("/projects/maintainer/maity/jour-fixe/rounds?status=answering")).items[0];
+    await go("#/maintainer/maity/jour-fixe/" + opened.id); for (let k = 0; k < 8; k++) await tick();
+    const raForm = () => main.querySelector("form.jfa-answer-form");
+    expect(raForm() && byId("jfa-limits").hidden && text(main).includes("What went well?"), "jour fixe answer: the three questions, the limits of anonymity not shown yet");
+    raForm().dispatch("submit"); await tick();
+    expect(!raPosts.length && text(raForm()).includes("write at least one of the three"), "jour fixe answer: an empty answer is said before anything is sent");
+    byId("jfa-anonymous").checked = true; byId("jfa-anonymous").dispatch("change");
+    expect(!byId("jfa-limits").hidden && text(byId("jfa-limits")).includes("Small rounds"), "jour fixe answer: answering anonymously shows what anonymity does not cover, first");
+    byId("jfa-went_well").value = "The board is clear.";
+    raForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify([opened.id + "/answers", { anonymous: true, went_well: "The board is clear." }])
+      && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
+      "jour fixe answer: sent anonymously with only what was written; read back while the window is open");
+    btn(main.querySelector("section.jfa-answer"), "Withdraw my answer").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(raDels.length === 1 && raDels[0].endsWith("/answers/mine") && !raForm() && text(main).includes("no new answer is possible in this round"),
+      "jour fixe answer: an anonymous answer withdrawn, and said that no second answer is possible (the hub keeps its tag)");
+    // A human moderator in step 1: the answers (an anonymous one names nobody, text never markup), one removed; the statement.
+    await go("#/maintainer/sample/jour-fixe/jfx-s3"); for (let k = 0; k < 8; k++) await tick();
+    const raAnswers = () => main.querySelector("section.jfa-answers");
+    expect(raAnswers() && raAnswers().querySelectorAll("li").filter((li) => li.getAttribute("data-answer")).length === 2 && text(raAnswers()).includes("anonymous") && !raAnswers().querySelector("b")
+      && text(raAnswers()).includes("<b>board</b>"), "jour fixe answers: read by the moderator, an anonymous one names nobody, no markup taken from them");
+    const raAnon = () => raAnswers().querySelectorAll("li").find((li) => li.getAttribute("data-answer") === "jfa-s2");
+    btn(raAnon(), "Remove").click(); await tick();
+    byId("jfa-redact-answer-jfa-s2").value = "names a person"; btn(raAnon(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/redact", { target: "answer:jfa-s2", reason: "names a person" }]) && text(raAnon()).includes("Removed."),
+      "jour fixe answers: one removed with its reason");
+    byId("jfa-t0-title").value = "Reviews wait"; byId("jfa-t0-title").dispatch("input");
+    btn(main.querySelector("section.jfa-statement"), "Add what was said").click(); await tick();
+    byId("jfa-t0-i0").value = "A second reviewer."; byId("jfa-t0-i0").dispatch("input");
+    const raFrom = main.querySelector("section.jfa-statement").querySelectorAll("select")[0];
+    raFrom.value = "agt-s1"; raFrom.dispatch("change");
+    btn(main.querySelector("section.jfa-statement"), "Add a proposal").click(); await tick();
+    byId("jfa-t0-s0").value = "A second reviewer agent"; byId("jfa-t0-s0").dispatch("input");
+    main.querySelector("section.jfa-statement form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/statement", { topics: [{ title: "Reviews wait", items: [{ text: "A second reviewer.", from: "agt-s1" }],
+      proposals: [{ title: "A second reviewer agent" }] }] }]) && main.querySelector("section.jf-statement"),
+      "jour fixe statement: the topics with who said what and the proposals, posted; the round shows it " + JSON.stringify(raLast()));
+    // An eligible member in the response step: once per topic, addressed to a participant.
+    await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 8; k++) await tick();
+    const raPostForm = () => main.querySelector("form.jfa-post-form");
+    byId("jfa-post-t1").value = "A second reviewer would help."; byId("jfa-post-t1-to-agt-s1").checked = true;
+    raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
+      && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");
+    // After the window, a participant who is neither moderator nor of the admin team reads their named answer and removes it
+    // (§20.3, §20.8); an anonymous one is no longer theirs to find (§20.4).
+    {
+      const asMember = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/me"
+        ? asMember(p).then((x) => Object.assign({}, x, { projects: x.projects.map((pr) => (pr.full_name === "maintainer/sample" ? Object.assign({}, pr, { trust: "member" }) : pr)) }))
+        : asMember(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const own = () => main.querySelector("section.jfa-answer");
+      expect(own() && text(own()).includes("The window has closed; you may still remove it.") && text(own()).includes("Short reviews.")
+        && !main.querySelector("section.jfa-answers"), "jour fixe answer: after the window a member reads their own named answer, not the others'");
+      btn(own(), "Remove").click(); await tick();
+      byId("jfa-redact-answer-jfa-s9").value = "too personal"; btn(own(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/redact", { target: "answer:jfa-s9", reason: "too personal" }]) && text(own()).includes("Removed."),
+        "jour fixe answer: the author removes their named answer after the window");
+      win.Maity.api.get = asMember;
+      const anonAfter = await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s1/answers?mine=true");
+      expect(anonAfter.items.length === 0, "jour fixe answer: an anonymous answer is not found as one's own after the window, in the fixture hub as in the hub");
+    }
+    // A reply step offers only the topics where a response addressed me, and names the responses answered (§20.5).
+    {
+      const rsGet = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/projects/maintainer/sample/jour-fixe/rounds/jfx-s2"
+        ? rsGet(p).then((x) => Object.assign({}, x, {
+          steps: x.steps.map((st) => (st.kind === "response" ? Object.assign({}, st, { closed_at: "2026-10-28T12:30:00Z" }) : st))
+            .concat([{ n: 3, kind: "reply", opened_at: "2026-10-28T12:30:00Z", closed_at: null, closes_at: "2026-10-28T14:30:00Z", reason: null, eligible: ["hum-maintainer"] }]),
+          statement: Object.assign({}, x.statement, { topics: x.statement.topics.concat([{ id: "t2", title: "Nights", summary: null, items: [], proposals: [], redaction: null }]) }),
+          posts: [{ id: "p-r1", step: "response", topic_id: "t1", by: "agt-s1", to: ["hum-maintainer"], in_reply_to: [], body: "You?", message_seq: null, redaction: null }] }))
+        : rsGet(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const forms = main.querySelectorAll("form.jfa-post-form").map((f) => f.getAttribute("data-topic"));
+      expect(JSON.stringify(forms) === JSON.stringify(["t1"]), "jour fixe reply: only the topic where a response addressed me is offered " + JSON.stringify(forms));
+      byId("jfa-post-t1").value = "Me, tomorrow."; main.querySelector("form.jfa-post-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "reply", topic_id: "t1", body: "Me, tomorrow.", in_reply_to: ["p-r1"] }]),
+        "jour fixe reply: sent naming the response it answers");
+      win.Maity.api.get = rsGet;
+    }
+    // A human moderator of the admin team writes the report: one proposal decided with a reason, one to the owner.
+    await go("#/maintainer/sample/jour-fixe/jfx-s1"); for (let k = 0; k < 8; k++) await tick();
+    const raRep = () => main.querySelector("section.jfa-report-form");
+    byId("jfa-report-summary").value = "Reviews are the bottleneck."; byId("jfa-report-findings").value = "Reviews wait.\n\nOne reviewer only.";
+    byId("jfa-triage-t1-s1").value = "adopt"; byId("jfa-triage-t1-s2").value = "to_owner";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(raLast()[0] !== "jfx-s1/report", "jour fixe report: a decision without its reason is not sent");
+    byId("jfa-triage-t1-s1-reason").value = "Within the rules.";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 12; k++) await tick();
+    const raSent = raLast()[1];
+    expect(raLast()[0] === "jfx-s1/report" && raSent.summary === "Reviews are the bottleneck." && raSent.findings.length === 2
+      && raSent.proposals[0].triage === "decided" && raSent.proposals[0].decision.outcome === "adopt" && raSent.proposals[0].decision.basis.human_id === "hum-maintainer"
+      && raSent.proposals[0].statement_proposal_id === "t1.s1" && raSent.proposals[1].triage === "to_owner" && text(main).includes("reported"),
+      "jour fixe report: findings, a decision with its reason and basis, one to the owner; the round reported " + JSON.stringify(raSent));
+    const raRedact = () => main.querySelector("details.jfa-report-redact");
+    expect(raRedact() && raRedact().querySelectorAll("li").length === 5, "jour fixe report: its summary, findings and proposals may be removed by an invited human");
+    win.Maity.api.post = raPost; win.Maity.api.del = raDel;
   }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
@@ -4471,10 +4719,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
     "create: the five setup cards on the new project's board, open, marked Setup");
   await projectSettings();
-  const memPanel = main.querySelector("section.memory-panel");
+  const memPanel = main.querySelector(".memory-panel");
   expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 5 && text(memPanel).includes("The dashboard is published under keep-the-why-dashboard.")
-    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
-    "settings: the memory provider read only, with links to its setup cards and the dashboard's path");
+    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href")))
+    && byId("memory-provider") && byId("memory-provider").value === "keep-the-why" && text(memPanel).includes("It makes no setup card and cancels none"),
+    "settings: the memory provider with links to its setup cards and the dashboard's path, changeable by the owner (tsk-41hpr02cvej8)");
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
@@ -4489,7 +4738,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(onSettings() && main.querySelector("form.badge-form") && byId("badge-select").value === "agents_online",
     "settings: after the save the page stays on Settings and shows the new badge (the maintainer's report)");
   win.Maity.api.patch = bgPatch;
-  if (main.querySelector("section.memory-panel")) await projectSettings();
+  if (main.querySelector(".memory-panel")) await projectSettings();
   // None: only the Maity badge is offered; without a repository the cards wait for one.
   await go("#/new");
   byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
@@ -4504,10 +4753,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: None sends the Keep the Why options false, no path, and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
-    && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+  expect(text(main.querySelector(".memory-panel")).includes("None: the project works without a memory provider.")
+    && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
     && text(main.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
     "settings: None, nothing chosen, the badge off");
+  // The provider changes in Project settings (tsk-41hpr02cvej8, §6.1): a reason first, then a PATCH of
+  // memory; under Keep the Why the commitment can be required, back under None it is optional and locked.
+  const memPatches = [];
+  const locked = (el) => el.disabled === true || (el.attrs && el.attrs.disabled !== undefined && el.attrs.disabled !== null);
+  const memPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { memPatches.push([p, b]); return memPatch(p, b); };
+  expect(locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "optional" && byId("memory-provider").value === "none",
+    "settings: under None the commitment is optional and locked");
+  byId("memory-provider").value = "keep-the-why";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(memPatches.length === 0, "settings: a provider change asks for its reason first");
+  byId("memory-reason").value = "We keep our reasons in the repository";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(memPatches.length === 1 && JSON.stringify(memPatches[0][1]) === JSON.stringify({ memory: { provider: "keep-the-why" }, reason: "We keep our reasons in the repository" })
+    && onSettings() && text(main).includes("Project memory saved.") && byId("memory-provider").value === "keep-the-why"
+    && text(main.querySelector(".memory-panel")).includes("Keep the Why: joining agents load the Keep the Why skill")
+    && !locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "required"
+    && byId("ktw-policy-select").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "required,optional",
+    "settings: switched to Keep the Why, the commitment is offered and reads required " + JSON.stringify(memPatches));
+  byId("memory-provider").value = "none";
+  byId("memory-reason").value = "Back to none";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(memPatches.length === 2 && JSON.stringify(memPatches[1][1]) === JSON.stringify({ memory: { provider: "none" }, reason: "Back to none" })
+    && locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "optional",
+    "settings: back under None the commitment is optional and locked again");
+  win.Maity.api.patch = memPatch;
   await projectSettings();
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
   await go("#/new");
@@ -4520,8 +4795,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: with the dashboard unticked, dashboard_path is not sent at all " + JSON.stringify(ltSent.setup));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
-    && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
+  expect(text(main.querySelector(".memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
+    && text(main.querySelector(".memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
   // The boolean keep_the_why alias of memory.provider is gone from the hub (#606): the mock refuses it too.
@@ -4535,7 +4810,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
   await go("#/maintainer/sample/inbox"); await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("None") && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.")
+  expect(text(main.querySelector(".memory-panel")).includes("None") && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.")
     && byId("badge-select").value === "members" && !main.querySelector("img.badge-preview")
     && text(main.querySelector("form.badge-form .paste-line")).includes("/badge/maintainer/sample.svg"),
     "settings: a project with None and its badge on; no preview without a hub to serve it");
@@ -5214,7 +5489,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
-  expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
+  expect(pmSeq(6001).querySelector("a.mention").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
   byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change");
   expect(pmItems().length === 1 && text(pmItems()[0]).includes("waits for the PyPI token"), "messages: filtered by type");
   byId("messages-type").value = ""; byId("messages-type").dispatch("change");
@@ -6211,6 +6486,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // All projects has two pages, Inbox and Chats (tsk-gw59z3w3fenf), each with the hub's count for it.
+  const apPages = () => header.querySelectorAll("nav.views a");
+  const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
+  const apCounts = win.Maity.notify.state.counts;
+  const apCount = (a) => (a.querySelector(".count") ? text(a.querySelector(".count")) : "");
+  expect(apPages().length === 2 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
+    && apPages()[1].getAttribute("href") === "#/chats" && text(apPages()[1]).startsWith("Chats")
+    && apPages()[1].getAttribute("aria-current") === "page" && !apPages()[0].getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page"
+    && apCount(apPages()[1]) === (apCounts.chat ? String(apCounts.chat) : "") && apCount(apPages()[0]) === (apCounts.inbox ? String(apCounts.inbox) : "")
+    && header.querySelector("nav.views").getAttribute("aria-label") === "Pages of all projects" && text(header.querySelector(".bar .project")) === "Everything waiting for you",
+    "all projects: Chats is its second page, current, with the unread count; All projects stays current in the switcher " + JSON.stringify(apPages().map((a) => text(a))));
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(apPages().length === 2 && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
+    && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
+  // A refresh of the counts updates the pages' badges in place, in the fixture's #/ links too (#844's review).
+  const apGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? apGet(p).then((r) => ({ ...r, counts: { ...r.counts, chat: 4 } })) : apGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(apCount(apPages()[1]) === "4" && apPages()[1].querySelector(".count").getAttribute("aria-label") === "4 unread",
+    "all projects: a refresh of the counts updates the Chats page's badge in place");
+  win.Maity.api.get = apGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // The project as a mark after the who line, its name on hover (no line of its own).
   const chMark = (a) => a.querySelector(".conv-sub .conv-project");
   expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"

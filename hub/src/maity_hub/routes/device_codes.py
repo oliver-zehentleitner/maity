@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration
+from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration, shared_counts
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -34,12 +34,12 @@ PENDING_PATH = f"/api/{API_VERSION}/auth"
 POLL = 0.25  # seconds between looks while a long-poll holds
 
 # §2.6.4
-CODES_BY_HUMAN = Limiter(5, 600)
-REDEEM_BY_ADDRESS = Limiter(10, 60)
+CODES_BY_HUMAN = Limiter(5, 600, name="routes.device_codes.CODES_BY_HUMAN")
+REDEEM_BY_ADDRESS = Limiter(10, 60, name="routes.device_codes.REDEEM_BY_ADDRESS")
 # Wrong codes across the instance; past 60 a minute every redemption is refused for a
 # minute. A known denial of service, accepted so that a distributed guess cannot run;
 # not to be "fixed" into a per-source limit (§2.6.4).
-WRONG_CODES = Limiter(60, 60)
+WRONG_CODES = Limiter(60, 60, name="routes.device_codes.WRONG_CODES")
 BREAKER_SECONDS = 60
 _breaker = {"until": 0.0}  # monotonic time until which every redemption is refused
 
@@ -201,12 +201,29 @@ def _creator_answer(request: Request, code_id: str, session_hash: str) -> JSONRe
 # --- the new device (B) --------------------------------------------------------------
 
 
+def _breaker_shut_for() -> float:
+    """Seconds the instance-wide breaker still refuses every redemption; across replicas on
+    PostgreSQL, where a trip on one shuts all of them (replicas.md 2bd65fec)."""
+    if shared_counts.active():
+        return shared_counts.until("routes.device_codes.breaker", "instance") - time.time()
+    return _breaker["until"] - time.monotonic()
+
+
+def _trip_breaker() -> None:
+    if shared_counts.active():
+        shared_counts.set_until(
+            "routes.device_codes.breaker", "instance", time.time() + BREAKER_SECONDS
+        )
+        return
+    _breaker["until"] = time.monotonic() + BREAKER_SECONDS
+
+
 @router.post("/device-login")
 def redeem_code(body: Redeem, request: Request) -> JSONResponse:
     _anonymous(request)
     _require_enabled(request)
     origin = origin_of(request)
-    tripped = _breaker["until"] - time.monotonic()
+    tripped = _breaker_shut_for()
     if tripped > 0:
         raise rate_limited(max(1, int(tripped + 0.999)))
     wait = REDEEM_BY_ADDRESS.hit(origin.address)
@@ -225,7 +242,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
         WRONG_CODES.hit("instance")
         if WRONG_CODES.blocked("instance"):
             # 60 wrong codes within a minute: every redemption is refused for a minute.
-            _breaker["until"] = time.monotonic() + BREAKER_SECONDS
+            _trip_breaker()
         raise device_codes.code_invalid()
     row, pending = redeemed
     response = JSONResponse(

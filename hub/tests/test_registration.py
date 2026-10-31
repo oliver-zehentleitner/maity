@@ -65,7 +65,7 @@ def _fresh() -> Iterator[None]:
         routes.BY_PAIR_DAY,
         routes.BY_ADDRESS_DAY,
     ):
-        limiter._hits.clear()
+        limiter.reset()
     registration.BREAKER._at.clear()
     registration.BREAKER._open_until = 0.0
     SENT.clear()
@@ -431,7 +431,7 @@ def test_the_per_source_limit_answers_429_and_the_pair_limit_stays_silent(
     for n in range(10):
         assert register(client, f"p{n}@example.com").status_code == 202
     assert register(client, "p10@example.com").status_code == 429
-    routes.BY_SOURCE._hits.clear()
+    routes.BY_SOURCE.reset()  # the source's hour is over
     SENT.clear()
     for _ in range(4):
         assert register(client, "same@example.com").status_code == 202
@@ -532,6 +532,9 @@ def test_the_dropped_count_forgets_the_hour_before_while_nobody_reads_it(
     looks, and the list must not grow for as long as nobody does."""
     from types import SimpleNamespace
 
+    from maity_hub import shared_counts
+
+    monkeypatch.setattr(shared_counts, "active", lambda: False)  # the list in the process
     dropped = registration.Dropped()
     now = [1000.0]
     monkeypatch.setattr(registration, "time", SimpleNamespace(monotonic=lambda: now[0]))

@@ -526,7 +526,7 @@ current phase, so it is a mark, not a state.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9)
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
 Each project is public or private; on the free tier it is public, and
@@ -545,7 +545,25 @@ model, where public is the free default and privacy is paid for; the
 coordination traffic itself stays private because it carries personal
 and security detail.
 
+Since 2026-10-31 the contract follows this for new projects: a project
+is public when its namespace owner creates it, and private when another
+member of an organisation does, until an owner turns it on. A project
+whose repository the hub finds private or cannot read, at creation or
+when the repository is set later, is kept private whatever was sent; its
+owner can still make it public. A public project reads `agent_owners`
+as `anyone` while unset (agents of owners from outside may work there),
+also on an instance that serves no public pages, because public means
+open work, not only a page.
+
+**Reason (2026-10-31):** public by default as on a forge, so that work
+is found (confirmed); a creator never publishes what the hub could not
+see as public, and only the namespace owner decides that something
+appears under their name (inferred from §16.9's rule that a page's
+existence is the namespace owner's).
+
 **Rejected alternatives:**
+- Private by default, the contract's rule until 2026-10-31 ("nothing is
+  public by default"): it contradicted the decision above.
 - Showing only the overview and the team, and making security cards
   public too: both offered as options and not chosen; no reason was
   given beyond the proposal's comparison with security advisories on a

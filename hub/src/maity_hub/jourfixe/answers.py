@@ -20,6 +20,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
+from maity_hub.scopes import in_admin_team
 
 TEXT_MAX = 4096  # bytes, per text
 TOTAL_MAX = 12288  # bytes, the three together
@@ -119,10 +120,10 @@ def _view(row: Any, authors: dict[int, str], reader: Any = None) -> dict[str, An
 
 
 def readers_see_all(round_row: Any, mine: Any) -> bool:
-    """The moderator and humans with `owner` or `admin` read every answer (§20.3)."""
+    """The moderator and the humans of the admin team, not a proxy, read every answer (§20.3)."""
     if mine.principal_id == round_row.moderator["member_id"]:
         return True
-    return mine.kind == "human" and mine.trust in ("owner", "admin")
+    return mine.kind == "human" and in_admin_team(mine.trust, mine.role)
 
 
 def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list[dict[str, Any]]:

@@ -94,19 +94,54 @@ def test_resume_names_this_instance_and_its_siblings() -> None:
 def test_a_team_of_one_shows_no_sibling_line() -> None:
     text = onboarding.render({**packet(), "team": []})
     assert "Other instances" not in text
+    assert "check with them" not in text
+    assert "Your lead: @agent-a\n" in text  # the lead line stands without siblings too
+
+
+def _sib(id_: str, lead: bool) -> dict[str, Any]:
+    return {"id": id_, "address": f"agt-b#{id_}", "presence": "online", "lead": lead}
+
+
+@pytest.mark.parametrize(
+    ("team", "lead", "sentence"),
+    [
+        ([_sib("k7mq", True)], True,
+         "check with them through @agent-b#k7mq (team lead) or your lead;"),
+        ([_sib("k7mq", False)], True, "check with them through your lead;"),
+        ([_sib("k7mq", True)], False, "check with them through @agent-b#k7mq (team lead);"),
+        ([_sib("k7mq", False)], False, "check with them; cards held by them are not yours."),
+    ],
+)  # fmt: skip
+def test_siblings_come_with_the_lead_and_whom_to_ask(
+    team: list[dict[str, Any]], lead: bool, sentence: str
+) -> None:
+    base = packet()
+    ms = dict(base["membership"])
+    if not lead:
+        ms.pop("reports_to")
+    text = onboarding.render({**base, "membership": ms, "team": team})
+    who = text.split("Other instances of you: ", 1)[1].splitlines()
+    assert who[0].startswith("agent-b#k7mq (online")
+    if lead:
+        assert who[1] == "Your lead: @agent-a"
+    assert "Before you take or hand over work, " + sentence in text
+    assert ("Your lead:" in text) is lead
 
 
 def test_identity_project_rules_and_next_step() -> None:
     text = onboarding.render(packet())
     assert "You are agent-b (Agent B), member id agt-b." in text
-    assert "Trust: member, role: coder, reporting to agent-a" in text
+    assert "Trust: member, role: coder\n" in text and "Your lead: @agent-a\n" in text
     assert "Areas you own: hub/" in text
     assert "Your human: maintainer" in text
     assert "Project: Maity (oliver/maity), state build" in text
     assert "Rules (version 7), read them before you work:\n> # Rules for Maity" in text
     assert "Keep the Why: Load the keep-the-why skill." in text
     assert "Members: agent-a [agt-a] (admin coder, online)" in text
-    assert text.rstrip().endswith("Next: `maity wait` until something is addressed to you.")
+    assert text.rstrip().endswith(
+        "Next: start maity wait in the background and keep working from what "
+        "it returns. Do not wait for your human in the terminal."
+    )
 
 
 def test_a_human_with_a_meat_proxy_note_shows_the_note_as_a_quote() -> None:
@@ -212,6 +247,7 @@ def test_work_answers_and_missed_messages() -> None:
         "kind": "message",
         "actor": {"member_id": "agt-a"},
         "payload": {"type": "handover", "to": "agt-b", "body": "take tsk-4\nit is yours"},
+        "audience": ["member:agt-b"],  # for this member: shown in the compact text too
     }
     text = onboarding.render(
         packet(
@@ -226,12 +262,13 @@ def test_work_answers_and_missed_messages() -> None:
     missed = "  #4300 message by agent-a (handover, to agent-b)"
     assert f"{missed}\n  > take tsk-4\n  > it is yours" in text
     assert "more events after #4300" in text
-    assert "Next: Continue tsk-4 from its checkpoint" in text
+    held_next = "Next: continue tsk-4 from its checkpoint, then start maity wait in the"
+    assert held_next in text
 
 
 def test_an_assigned_card_is_the_next_step() -> None:
     text = onboarding.render(packet(assigned=[{"id": "tsk-9", "status": "open", "title": "X"}]))
-    assert "Next: `maity claim tsk-9`, the card assigned to you." in text
+    assert "Next: maity claim tsk-9, then start maity wait in the background" in text
 
 
 def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
@@ -243,7 +280,7 @@ def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
 
 
 def test_a_minimal_packet_still_renders() -> None:
-    assert "Next: `maity wait`" in onboarding.render({})
+    assert "Next: start maity wait" in onboarding.render({})
 
 
 # --- through the commands ---------------------------------------------------------------------
@@ -364,7 +401,7 @@ def test_clean_shows_controls_and_keeps_text() -> None:
 
 def test_a_redacted_message_says_so() -> None:
     redacted = {"seq": 7, "kind": "message", "actor": {"member_id": "hum-1"}, "redacted": True}
-    text = onboarding.render(packet(events={"items": [redacted], "cursor": 7}))
+    text = onboarding.render(packet(events={"items": [redacted], "cursor": 7}), full=True)
     assert "  #7 message by hum-1 (redacted by an admin; its text is gone)" in text
 
 
@@ -386,7 +423,7 @@ def test_a_long_message_is_cut_with_a_pointer() -> None:
     body = "\n".join(f"line {i}" for i in range(100))
     payload = {"type": "notice", "to": "all", "body": body}
     message = {"seq": 50, "kind": "message", "payload": payload}
-    text = onboarding.render(packet(events={"items": [message], "cursor": 50}))
+    text = onboarding.render(packet(events={"items": [message], "cursor": 50}), full=True)
     assert "  > line 39\n" in text and "line 40" not in text
     assert (
         "… (cut, 60 more lines: `maity api GET /projects/oliver/maity/events --query after=49"
@@ -400,7 +437,7 @@ def test_the_events_section_is_capped() -> None:
         {"seq": n, "kind": "message", "payload": {"type": "chat", "to": "agt-b", "body": body}}
         for n in range(1, 41)
     ]
-    text = onboarding.render(packet(events={"items": items, "cursor": 40}))
+    text = onboarding.render(packet(events={"items": items, "cursor": 40}), full=True)
     assert len(text) < onboarding.MAX_EVENTS_CHARS + 8000
     assert "  … more events after #" in text
     assert "#40 message" not in text
@@ -408,7 +445,7 @@ def test_the_events_section_is_capped() -> None:
 
 def test_fields_of_the_wrong_type_do_not_crash() -> None:
     odd = {"session": "x", "membership": "y", "events": [], "requests": 3, "claims": {"a": 1}}
-    assert "Next: `maity wait`" in onboarding.render(odd)
+    assert "Next: start maity wait" in onboarding.render(odd)
 
 
 def test_a_failed_rendering_does_not_move_the_cursor(
@@ -416,7 +453,7 @@ def test_a_failed_rendering_does_not_move_the_cursor(
 ) -> None:
     from maity import state
 
-    def broken(packet: Any, first: bool = False, board_empty: bool = False) -> str:
+    def broken(packet: Any, *args: Any, **kwargs: Any) -> str:
         raise ValueError("renderer bug")
 
     monkeypatch.setattr(onboarding, "render", broken)
@@ -434,16 +471,17 @@ def test_members_are_named_by_handle_and_unknown_ids_stay_ids() -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner", "presence": "away"},
     ]
     text = onboarding.render(
-        packet(peers=peers, events={"items": [event], "cursor": 9, "truncated": False})
+        packet(peers=peers, events={"items": [event], "cursor": 9, "truncated": False}),
+        full=True,
     )
     assert "  #9 member_joined by maintainer on agt-new" in text
-    assert "reporting to agent-a" in text
+    assert "Your lead: @agent-a" in text
 
 
 def test_a_handle_is_still_cleaned() -> None:
     peers = [{"member_id": "agt-a", "handle": "evil\x1b[2Jname", "role": "admin"}]
     text = onboarding.render(packet(peers=peers))
-    assert "\x1b" not in text and "reporting to evil" in text
+    assert "\x1b" not in text and "Your lead: @evil" in text
 
 
 @pytest.mark.parametrize(
@@ -455,7 +493,7 @@ def test_a_handle_that_could_mislead_falls_back_to_the_id(handle: str) -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
     ]
     text = onboarding.render(packet(peers=peers))
-    assert "reporting to agt-a" in text
+    assert "Your lead: @agt-a" in text
     assert "Members: agt-a [agt-a]" in text
 
 
@@ -477,7 +515,7 @@ def test_handles_that_only_look_different_count_as_shared(alias: str) -> None:
         {"member_id": "hum-1", "handle": "maintainer", "role": "owner"},
     ]
     text = onboarding.render(packet(peers=peers))
-    assert "reporting to agt-a" in text
+    assert "Your lead: @agt-a" in text
 
 
 def test_a_peer_without_a_member_id_has_no_empty_brackets() -> None:

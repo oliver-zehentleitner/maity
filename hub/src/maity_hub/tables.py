@@ -711,6 +711,12 @@ membership = Table(
     Column("isolated_reason", String(500)),
     Column("isolated_since", UtcDateTime),
     Column("isolated_by", String(ID)),
+    # The project's newest event when it was isolated, plus one: where the window of an
+    # isolation lifted with `hide_isolation_events` starts (§6.2); null while free.
+    Column("isolated_from_seq", Integer),
+    # The windows of event seqs the agent may never read: `[{from_seq, to_seq}]`, both ends
+    # included, one per isolation lifted with `hide_isolation_events` (§6.2, §8.2).
+    Column("isolation_windows", JSON_VALUE),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -886,6 +892,10 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # Put to rest, answering only when asked by its own address (§6.17): since when and by
+    # whom (a member id); null while awake. Never moves with a `replaces` join.
+    Column("dormant_since", UtcDateTime),
+    Column("dormant_by", String(ID)),
     # What the resume packet's `handover` needs (§5.2): the project's newest event when the
     # exchange created this instance, and `events.after` and `events.cursor` of its first
     # packet (set by its first resume).
@@ -941,6 +951,21 @@ nonce_epoch = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=False),  # always 1
     Column("since", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The counts of the rate limits, breakers and guess counters, shared by every replica on
+# PostgreSQL, where the migration makes the table UNLOGGED (hub/context/replicas.md 2bd65fec,
+# `shared_counts`). A count per bucket, subject (the limit's key) and fixed window; a breaker's
+# "shut until" is a row whose `window_start` is the epoch and whose `count` is the moment in
+# seconds. SQLite and MariaDB keep the counts in the process.
+rate_count = Table(
+    "rate_count",
+    metadata,
+    Column("bucket", String(64), primary_key=True),
+    Column("subject", String(255), primary_key=True),
+    Column("window_start", UtcDateTime, primary_key=True),
+    Column("count", BigInteger, nullable=False),
     **MYSQL_TABLE,
 )
 

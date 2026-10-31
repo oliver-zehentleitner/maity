@@ -163,7 +163,7 @@ def test_the_page_is_rate_limited_by_source_address(
 ) -> None:
     from maity_hub.ratelimit import Limiter
 
-    monkeypatch.setattr(public_pages, "BY_ADDRESS", Limiter(2, 60))
+    monkeypatch.setattr(public_pages, "BY_ADDRESS", Limiter(2, 60, name="public_pages.BY_ADDRESS"))
     client = visitor(make_client)
     store(migrated)
     assert [client.get(PATH).status_code for _ in range(3)] == [200, 200, 429]
