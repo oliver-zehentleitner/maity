@@ -315,6 +315,14 @@ def post_message(
         audience = group_chats.audience(current)
     elif body.type == "chat":
         assert body.conversation_id is not None
+        if caller.bridge is not None:
+            # A bridge reads the direct conversation as an observer, on either route (§2.3).
+            raise ApiError(
+                403,
+                "forbidden",
+                "a bridge does not write in the direct conversation",
+                {"reason": "bridge_observer"},
+            )
         try:
             agent, human = chat_parties(conn, mine, body.conversation_id)
         except ApiError:

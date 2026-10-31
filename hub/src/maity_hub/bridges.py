@@ -664,11 +664,14 @@ def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | N
     if found.isolated_since is not None:
         raise refusal(found)
     assert caller.membership_id is not None and caller.agent_id is not None
+    # An instance id is per membership (§6.17): the served agent has none of its own here, so
+    # what it holds through the bridge is held without one, and `via` names the bridge's.
     return replace(
         caller,
         agent_id=found.agent_id,
         owner_id=found.served_owner,
         membership_id=found.id,
+        instance=None,
         bridge=Bridged(
             membership_id=caller.membership_id,
             agent_id=caller.agent_id,

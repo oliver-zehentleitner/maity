@@ -182,7 +182,9 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "seq": row.seq,
             "conversation_id": row.conversation_id,
             "from": principal_id(conn, row.actor_membership),
-            "from_instance": instance_of.get(row.actor_credential_id or ""),
+            "from_instance": (
+                None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+            ),
             "to": payload.get("to"),
             "to_instance": payload.get("to_instance"),  # a direct chat's, as written (§9.1)
             "body": None if row.redacted else payload.get("body"),

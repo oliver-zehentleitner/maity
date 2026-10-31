@@ -1162,7 +1162,10 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             actor = {
                 "kind": "member",
                 "member_id": actors[row.actor_membership],
-                "instance": instance_of.get(row.actor_credential_id or ""),
+                # Through a bridge the served agent has no instance; `via` names the bridge's.
+                "instance": (
+                    None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+                ),
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,

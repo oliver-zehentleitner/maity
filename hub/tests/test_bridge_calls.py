@@ -229,3 +229,40 @@ def test_an_isolated_served_agent_is_refused_and_keeps_its_bridge(
     assert (refused.status_code, _reason(refused)) == (403, "isolated")
     with migrated.connect() as conn:
         assert conn.execute(select(t.bridge)).first() is not None
+
+
+def test_a_claim_through_the_bridge_is_the_served_agents_without_an_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge, bridge_id = _pair(migrated, owner)
+    card = owner.post(f"{PROJECT}/tasks", {"title": "Carry the files"}).json()["id"]
+    calls = Calls(make_client(), bridge)
+    claimed = calls.post(f"{PROJECT}/tasks/{card}/claim", {}, served.agent_id)
+    assert claimed.status_code == 200, claimed.text
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.card).where(t.card.c.id == card)).one()
+    assert (row.claim_holder, row.claim_instance) == (served.membership_id, None)
+    events = owner.get(f"{PROJECT}/events").json()["items"]
+    [event] = [e for e in events if e["kind"] == "task_claimed"]
+    assert event["actor"]["instance"] is None
+    assert event["actor"]["via"] == {
+        "member_id": bridge.agent_id,
+        "instance": "brg1",
+        "bridge_id": bridge_id,
+    }
+    released = calls.post(f"{PROJECT}/tasks/{card}/release", {}, served.agent_id)
+    assert released.status_code == 200, released.text  # the holder, through its bridge
+
+
+def test_a_bridge_writes_no_chat_into_the_direct_conversation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge, _ = _pair(migrated, owner)
+    calls = Calls(make_client(), bridge)
+    chat = {"kind": "message", "type": "chat", "conversation_id": served.agent_id, "body": "x"}
+    refused = calls.post(f"{PROJECT}/events", chat, served.agent_id)
+    assert (refused.status_code, _reason(refused)) == (403, "bridge_observer")
+    refused = calls.post(
+        f"{PROJECT}/conversations/{served.agent_id}/messages", {"body": "x"}, served.agent_id
+    )
+    assert (refused.status_code, _reason(refused)) == (403, "bridge_observer")
