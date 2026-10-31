@@ -233,3 +233,58 @@ test noticed.
 - A table of variants: five small documents that are always read and written together with the page, so a column is simpler and keeps the setting one row with one lock.
 - A per-visitor choice of the variant: the contract has the link decide, no cookie, nothing that tells a visitor from another.
 - Rewriting the links in the renderer's helpers (`_button`, `_link`): every new place that links to `/register` would have to know; one rewrite of the finished page cannot miss one.
+
+## Campaign counts are daily sums with no visit behind them; the one thing kept with an account is its origin, until its first agent exchange or 30 days
+
+**Id:** ec6a2993-1651-4d36-8bdd-b330335db233
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.7.2, §2.7.1, §2.9; the maintainer's decision of 2026-10-31 (A/B tests before the launch); the card tsk-tk10nnqdh8h1
+**Revisit when:** a count is needed per hour or per anything but variant and campaign, or an activation must be told apart from a first exchange
+**Verification:** corroborated
+
+`campaigns.py` keeps one row per UTC day, variant and campaign in `campaign_count` (`views`, `registrations`, `activations`) and nothing about a visit: no address, session or account. A view is counted for a navigation by a browser to a page only (not for `HEAD`, a crawler, a fetch that is no navigation, the public view or a preview), and only while `landing.configured` is true. The origin of a registration travels in `pending_registration.origin` until the address is verified; the account then keeps it in `campaign_origin` (variant, campaign, day) for the one activation, which is counted at the first agent exchange (`routes/joins.py`) and ends the origin; an origin that nobody used ends after 30 days, the sums after 400. A variant or a campaign removed meanwhile is still counted under what the registration kept, a code that never existed is none, and when both are gone nothing is counted. The origin is the person's data: it is in the export (§2.9) while it exists and `account_deletion` deletes it with the account.
+
+**Reason:** the question is which variant and which link bring registrations that turn into a working agent, and the answer needs sums, not people; the origin is the smallest thing that lets an activation be counted days after the visit, so it is bounded in time and removed with its use.
+
+**Rejected alternatives:**
+- Keeping the origin on the account for good: it would be a profile of where a person came from, long after the count needed it.
+- Counting activations by looking at accounts later: that requires the permanent link between an account and its campaign.
+- A cookie or a visitor id to count unique visitors: nothing in the contract tells one visitor from another, and the sums do not need it.
+
+## A sum is raised by an increment in the database, the first of the day inserts the row inside a savepoint, and a lost insert race falls back to the increment
+
+**Id:** 8be346aa-c8c0-4461-a790-b0f2375c683a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `hub/src/maity_hub/campaigns.py` (`count`); `docs/api.md` §16.7.2; the review of #882
+**Verification:** corroborated
+**Revisit when:** the hub keeps the sums somewhere else than a table, or one dialect gives an upsert all three can share
+
+`campaigns.count` runs `UPDATE campaign_count SET views = views + n …` for the day, variant and campaign; when no row matched it inserts the row inside a savepoint, and when that insert loses to another request's (`IntegrityError`) it runs the same `UPDATE` again. Two visitors at once, also on different replicas of the hub, are both counted, because the addition happens in the database and no request holds a value it read.
+
+**Reason:** the sums are the whole point of the feature, and the hub may run several copies against one database; a sum that two requests read and write back loses a visit whenever they overlap.
+
+**Rejected alternatives:**
+- Reading the row and writing the sum back: loses counts under concurrency.
+- An upsert statement (`INSERT … ON CONFLICT`, `ON DUPLICATE KEY UPDATE`): one syntax per dialect, three code paths to keep right, for one statement that the update-then-insert fallback already makes correct on all three.
+
+## Every counted view is a write in the request that served it, not a buffer flushed later
+
+**Id:** bbc7f964-21e1-4153-910f-7a85203e37f5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `hub/src/maity_hub/routes/pages.py` (`_count_view`); `docs/api.md` §16.7.2; the review of #882
+**Verification:** corroborated
+**Revisit when:** the landing page takes enough traffic that the write shows in its latency, or the hub gets a place for a counter that every replica reads
+
+A navigation to the landing page or a variant that counts (`campaigns.is_view`) increments `campaign_count` before the response is sent, only while variants or campaigns are set. There is no in-memory buffer and no background flush.
+
+**Reason:** a buffer is lost when the process stops, differs between replicas and needs a flush the hub has no place for; one small write per view is exact, and the page is cached only privately (`private, max-age=60`) while counting, so a browser asks the hub at most once a minute.
+
+**Rejected alternatives:**
+- A buffer per process, flushed on a timer: the counts of a stopped process are lost and the statistics would be approximate in a way no one could bound.
+- Counting from the request log: the log is not a store the hub reads, and a count from it would tie the statistics to what the log happens to keep.
