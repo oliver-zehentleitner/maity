@@ -27,7 +27,12 @@ window.Maity = window.Maity || {};
     for (const m of s.matchAll(MARK)) {
       if (m.index > from) out.push(...plain(s.slice(from, m.index)));
       const x = marks[m[1]];
-      if (x) out.push(x.href ? h("a", { class: "mention", href: x.href, title: x.title }, x.said) : h("span", { class: "mention", title: x.title }, x.said));
+      // @handle#id: the handle and the #id are two links side by side (tsk-bczgjkfpw1wg).
+      if (x && x.href && x.instanceHref) {
+        const cut = x.said.length - x.instance.length - 1;
+        out.push(h("a", { class: "mention", href: x.href }, x.said.slice(0, cut)),
+          h("a", { class: "mention mention-instance", href: x.instanceHref, title: x.title }, x.said.slice(cut)));
+      } else if (x) out.push(x.href ? h("a", { class: "mention", href: x.href, title: x.title }, x.said) : h("span", { class: "mention", title: x.title }, x.said));
       from = m.index + m[0].length;
     }
     if (from < s.length) out.push(...plain(s.slice(from)));
@@ -213,7 +218,11 @@ window.Maity = window.Maity || {};
     marks = spans.map((x, n) => {
       marked += chars.slice(from, x.offset).join("") + "\uE000" + n + "\uE001";
       from = x.offset + x.length;
-      return { said: x.said, href: o.hrefOf ? o.hrefOf(x.member_id) : null, title: x.instance ? "instance " + x.instance : null };
+      const href = o.hrefOf ? o.hrefOf(x.member_id) : null;
+      // The instance's own link where the member's is one and the text says its #id.
+      const instanceHref = href && x.instance && o.ctx && typeof o.ctx.link === "function" && x.said.endsWith("#" + x.instance)
+        ? M.dom.instanceHref(o.ctx, x.member_id, x.instance) : null;
+      return { said: x.said, href, instance: x.instance, instanceHref, title: x.instance ? M.t("member.instance", { id: x.instance }) : null };
     });
     marked += chars.slice(from).join("");
     try { return render(marked, at, 0); } finally { marks = []; }
