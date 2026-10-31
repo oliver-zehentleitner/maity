@@ -266,3 +266,13 @@ def test_a_bridge_writes_no_chat_into_the_direct_conversation(
         f"{PROJECT}/conversations/{served.agent_id}/messages", {"body": "x"}, served.agent_id
     )
     assert (refused.status_code, _reason(refused)) == (403, "bridge_observer")
+
+
+def test_an_ended_connection_carries_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge, bridge_id = _pair(migrated, owner)
+    ended = owner.delete(f"{PROJECT}/members/{served.agent_id}/bridges/{bridge_id}")
+    assert ended.status_code == 200, ended.text
+    refused = _say(Calls(make_client(), bridge), served.agent_id)
+    assert (refused.status_code, _reason(refused)) == (403, "not_your_bridge")

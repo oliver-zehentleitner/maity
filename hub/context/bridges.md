@@ -74,14 +74,19 @@ leaves `bridge_project` out for a proxy, which then does not see a request it ma
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §2.3 ("The bridge") and §2.2 (the `for:` line); implementation session for card tsk-emy3a9vtqxym, 2026-10-31
-**Revisit when:** a route needs to tell the bridge's own call from the served agent's beyond `via`, or a claim made through a bridge has to belong to the served agent's instance
+**Revisit when:** a route needs to tell the bridge's own call from the served agent's beyond `via`, or the contract gives a served agent an instance of its own for what its bridge does
 
 The header is resolved in the authentication dependency, after the agent's own checks and its
 presence (the bridge's, as the caller): `bridges.carry` finds the direct connection from the
 caller's membership to the named agent and returns the `Caller` with the served agent's member id,
 owner and membership, the bridge kept in `caller.bridge`. Every route then reads the served agent
 without knowing about bridges, and `caller.actor()` adds `{member_id, instance, bridge_id}`. The
-instance stays the bridge's, so a claim made through it is held by the bridge's instance.
+caller's instance is null: an instance id belongs to one membership (§6.17), and the bridge's in
+the served agent's card would mix two. A claim through the bridge is held by the served agent
+without an instance, `cards.holds` counts that as the one holding instance for a bridged call, and
+the event's `actor.instance` and a message's `from_instance` are null while `via` names the
+bridge's instance (the coordinator's ruling on #933). A bridge writes no `chat` into the direct
+conversation, on either route (`bridge_observer`).
 
 `Membership.bridged` withholds the governance scopes and `line:lead`: `may` answers false, `require`
 refuses with `bridge_no_governance`, and `trust` reads `member` for a served agent with trust

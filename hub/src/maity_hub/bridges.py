@@ -683,6 +683,7 @@ def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | N
         .where(
             b.bridge == caller.membership_id,
             b.project_id == caller.project_id,
+            b.live.is_(True),
             m.agent_id == value.strip(),
             m.active.is_(True),
         )
