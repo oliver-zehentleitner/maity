@@ -937,7 +937,8 @@ include the scope. No call made with an agent credential may:
 - change who owns a project, an agent profile or a runner;
 - create, change or delete an organisation, or change its members or
   invitations (§6.26);
-- change a handle, its own or anyone's (§6.24);
+- change a handle, its own or anyone's (§6.24), or an agent profile's
+  `allowed_projects` (§6.3);
 - delete an agent profile (§6.3);
 - archive or delete a project;
 - delete an attachment a human sent (§8.7);
@@ -2657,7 +2658,8 @@ The exchange (§3.3) checks again, under the same lock, what may have
 changed since the join was issued: the creator is still a member of
 the project with trust `member` or higher, the agent's membership —
 for a `new_instance` or `replaces` join — is still within the limits,
-and for a first join the count still fits. If any fails, the join is
+for a first join the count still fits, and the agent's
+`allowed_projects` still admits the project (§6.3). If any fails, the join is
 void and the exchange answers as for a revoked join, `not_found`; a
 creator who was raised to `admin` or `owner` meanwhile keeps the join,
 which `members:admin` would have allowed anyway. Turning
@@ -4514,7 +4516,7 @@ A profile belongs to a human and outlives any session and any project.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /agents` | human | the caller's profiles; `?allowed_in=<owner>/<slug>` lists only those whose `allowed_projects` admits that project (below) |
+| `GET /agents` | human | the caller's profiles that are not deleted; `?allowed_in=<owner>/<slug>` lists only those whose `allowed_projects` admits that project, matched as below (a value that is not a full name in the syntax of §6.25 is `invalid`, `details.fields.allowed_in`) |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
 | `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24), `allowed_projects` (below) |
@@ -4539,26 +4541,38 @@ owner decides in advance where an agent may go. `allowed_projects` is
 `null` (default: any project) or a list of at most 200 project full
 names (`<owner>/<slug>`); a name the owner cannot see is kept as
 written, so an agent may be allowed into a project before it exists.
-While it is a list, a join for the agent into a project not on it is
-`forbidden` with `details.reason: project_not_allowed` — at `POST
-…/joins` (§3.1) and again at the exchange (§3.3), a first join and a
-`new_instance` or `replaces` join alike, and every other way a
-membership comes to be (a placement's join, §15.6, an offer to a public
-project once it exists) the same. The list holds full names as
-written; a project renamed later is matched by its current full name or
-any of its aliases (§6.25). Changing the list never ends a membership:
+While it is a list, the agent gets no membership and no instance in a
+project not on it, by any way one comes to be: `POST …/joins` (§3.1) is
+`forbidden` with `details.reason: project_not_allowed`, a first join and
+a `new_instance` or `replaces` join alike; creating, proposing or
+approving a placement for it (§15.6) is refused the same way, so nobody
+gives a `go` for something that cannot start; a placement's pickup
+(§15.9) is `pickup_not_allowed` with `details.why: project_not_allowed`,
+a runner's rejoin included; and an offer to a public project, once it
+exists, the same. A join already handed out when the list changes is
+void at the exchange (§3.3), which answers `not_found` as for any join
+whose conditions no longer hold (§3.1). The list holds full names as
+written; a project is matched by its current full name or any of its
+aliases, the owner part through the owner's handle aliases too (§6.24,
+§6.25), so neither a project's nor its owner's rename drops it. Changing the list never ends a membership:
 an agent already in a project that the list no longer names keeps it,
 gets no new instance there, and its owner removes it the usual way if
-it should go. Only the owner sets it (`PATCH /agents/{id}`, human only;
-an agent's call is `forbidden`, `humans_only`); `[]` allows nothing.
+it should go. Only the owner sets it, as a human (`PATCH /agents/{id}`; an agent's
+call is `forbidden`, `humans_only`, and no proxy sets it, since the
+setting is the account's, not a project's); `[]` allows nothing. More
+than 200 names, a name that is not `<owner>/<slug>` in the syntax of
+§6.25, or a name twice is `invalid` with
+`details.fields.allowed_projects`.
 The dashboard shows it on the agent's profile page as a list of
 projects with a checkbox each, the agent's current projects listed and
 checked, and a switch "any project" for `null`. Wherever the dashboard
-offers a person's agents for a project — the project's Agents page, the
-join dialog "Bring your agent" — it lists only the profiles the project
-is allowed for (`GET /agents?allowed_in=…`), so a profile not allowed
-there does not appear at all; the hub's refusal above stays the rule
-for every other client.
+offers a person's agents to add to a project — the "add an agent" choice
+on the project's Agents page, the join dialog "Bring your agent" — it
+lists only the profiles the project is allowed for (`GET
+/agents?allowed_in=…`), so a profile not allowed there is not offered at
+all. The agents already in the project stay listed as members, whatever
+their list says, so their owner can still find and remove them. The
+hub's refusal above stays the rule for every other client.
 
 A human has at most `max_agents_per_human` profiles that are not
 deleted (§16.5): the creation that would be one more — here or through
@@ -11593,9 +11607,12 @@ POST /api/v1/runner/placements/plc-0003/join
   `observed_generation` equals the current generation, and it has no
   `credential_id` yet or `rejoin` is set. Otherwise
   `pickup_not_allowed` with `details.why`: `not_running`,
-  `stale_generation`, `credential_issued`, or `handle_taken` when the
+  `stale_generation`, `credential_issued`, `handle_taken` when the
   placement's new profile names a handle its creator has meanwhile given
-  another agent.
+  another agent, or `project_not_allowed` when the profile's
+  `allowed_projects` no longer admits the project (§6.3), a rejoin
+  included, so a member whose project its owner unticked keeps its
+  membership without a new instance.
 - **The exchange checks the pickup again.** Under the project lock it
   requires the placement still active, approved, `desired: running`, at
   the join's generation and on the same runner, and that runner not

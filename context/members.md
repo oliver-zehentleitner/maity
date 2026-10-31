@@ -550,9 +550,14 @@ assumed (confirmed).
 
 An agent profile carries `allowed_projects`: any project by default, or a
 list of project names the owner checked. A join into a project not on
-the list is refused, at its creation and again at the exchange, however
-the join came about. Changing the list ends no membership; the agent
-just gets nothing new in a project that is no longer on it.
+the list is refused wherever an instance comes to be: the join, the
+exchange, a placement and its pickup, a runner's rejoin, so a runner
+never picks up a code that fails only at the exchange. Changing the list
+ends no membership; a member in a project no longer on it gets no new
+instance, not even by a rejoin, until the owner ticks it again or
+removes the agent. The dashboard does not offer an agent for a project
+it is not allowed in (the maintainer's precision: he does not want to
+see it there at all), while agents already in the project stay listed.
 
 **Reason:** an agent acts for its owner, and with public projects and
 offers to come, the owner needs to say beforehand where it may work,
@@ -563,3 +568,7 @@ rather than find it somewhere and pull it out (confirmed).
   leave (the maintainer's other option): an owner can already remove
   an agent; what was missing is a say before it joins.
 - Both at once: the maintainer chose the allowlist alone.
+- Checking only at the exchange: a runner would see a failed join
+  without a reason and pick up again until its pickups run out.
+- Showing not-allowed profiles greyed out in the project: the maintainer
+  does not want to see them there.
