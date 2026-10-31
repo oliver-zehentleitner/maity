@@ -3867,6 +3867,69 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // Forge access (§11.4, tsk-6pbe89e1yt50) on the account and at /settings/forge, where the hub's setup redirect lands:
+  // the linked installation with its repositories, linking (asked for proof first), unlinking, the own token stored and removed.
+  {
+    const fgAssigned = [];
+    win.location.assign = (u) => { fgAssigned.push(u); };
+    const fgPost = win.Maity.api.post;
+    let fgNeed = "step_up_required";
+    win.Maity.api.post = (p, b) => {
+      if ((p === "/auth/second-factor/verify" && b.code === "123456")) fgNeed = null;
+      if (p === "/me/forge/github/link" && fgNeed) { const r = fgNeed; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: r })); }
+      return fgPost(p, b);
+    };
+    await go("#/settings/forge?error=installation_not_yours"); for (let k = 0; k < 6; k++) await tick();
+    const fgBox = () => main.querySelector("section.forge-access");
+    expect(fgBox() && text(fgBox()).includes("That installation belongs to another GitHub account") && win.location.hash === "#/settings/forge"
+      && text(main).includes("Your account"),
+      "forge: /settings/forge is the account's Forge access; the hub's ?error= said in words, then dropped from the address");
+    expect(text(fgBox()).includes("@maintainer") && text(fgBox()).includes("active") && text(fgBox()).includes("2 repositories it covers")
+      && text(fgBox()).includes("maintainer/sample") && text(fgBox()).includes("No token is stored.") && !text(fgBox()).includes("ghp_"),
+      "forge: the linked installation with its status and repositories; no token stored");
+    btn(fgBox(), "Link the GitHub App").click(); for (let k = 0; k < 4; k++) await tick();
+    const fgForm = () => fgBox().querySelector("form.step-up");
+    expect(fgForm() && !fgAssigned.length, "forge: linking asks for the second factor first, nothing opened yet");
+    byId("step-up-step_up_required").value = "123456"; fgForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(fgAssigned) === JSON.stringify(["https://github.com/apps/maity-fixture/installations/new?state=fixture-state"]),
+      "forge: proven, the browser goes to the App's installation page the hub names " + JSON.stringify(fgAssigned));
+    // The own token: a classic one refused at its field, a fine-grained one stored, then removed.
+    byId("forge-token").value = "ghp_classic000"; fgBox().querySelector("form.forge-token-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(byId("forge-token-error")) === "This is a classic token; only a fine-grained token is taken." && byId("forge-token").getAttribute("aria-invalid") === "true",
+      "forge: a classic token is refused at its field, in words");
+    byId("forge-token").value = "github_pat_fixture"; fgBox().querySelector("form.forge-token-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The token is stored.") && text(fgBox()).includes("A token for @maintainer is stored.") && !text(fgBox()).includes("github_pat_fixture")
+      && btn(fgBox(), "Replace the token"), "forge: a fine-grained token stored, its login shown, never the token");
+    btn(fgBox(), "Remove the token").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The token is removed.") && text(fgBox()).includes("No token is stored."), "forge: the token removed");
+    expect(text(fgBox()).includes("it does not uninstall the App"), "forge: an unlink says it does not uninstall the App on GitHub");
+    // A project's settings: which grant reads its repository, and the namespace owner's confirmation for their grants.
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+    const fgRepo = () => main.querySelector(".forge-repository");
+    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, so only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
+      && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/settings/forge"),
+      "forge: the project's settings say which grant reads the repository, unconfirmed, with a link to Forge access");
+    const fgConfirms = [];
+    win.Maity.api.post = (p, b) => { if (p.endsWith("/repository/confirm")) fgConfirms.push(b); return fgPost(p, b); };
+    btn(fgRepo(), "Confirm this repository for my grants").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(fgConfirms) === JSON.stringify([{ url: "https://github.com/oliver-zehentleitner/maity" }])
+      && text(fgRepo()).includes("Confirmed for the grants of @maintainer") && text(fgRepo()).includes("GitHub App installation") && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: confirmed with the URL the owner saw; then read with the owner's installation");
+    // Another owner of the project, not its namespace owner, is offered no confirmation: the hub would refuse it.
+    const fgGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/sample"
+      ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "hum-someone", handle: "someone" }, repository: Object.assign({}, x.repository, { owner_confirmed: false, confirmed_by: null }) }))
+      : fgGet(p));
+    await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgRepo() && text(fgRepo()).includes("Not confirmed by the namespace owner") && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: a project owner who is not the namespace owner gets no Confirm button");
+    win.Maity.api.get = fgGet;
+    await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
+    btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(fgBox()).includes("The installation is unlinked.") && text(fgBox()).includes("No installation is linked."), "forge: unlinked");
+    win.Maity.api.post = fgPost;
+    delete win.location.assign;
+  }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
   await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();
