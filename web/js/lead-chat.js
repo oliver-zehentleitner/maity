@@ -58,7 +58,7 @@ window.Maity = window.Maity || {};
       && c.participants.some((p) => p.member_id === ctx.me.id)
       && c.participants.some((p) => p.member_id === member.id));
     const chat = existing || await M.api.post(ctx.base + "/conversations",
-      { title: "Talk to the lead", participants: [member.id] });
+      { title: M.t("lead.chat_title"), participants: [member.id] });
     M.route.go(ctx.link("chat", chat.id));
   }
 
@@ -92,7 +92,7 @@ window.Maity = window.Maity || {};
       && Array.isArray(c.participants) && c.participants.length === want.size
       && c.participants.every((p) => want.has(p.member_id)));
     const chat = existing || await M.api.post(ctx.base + "/conversations",
-      { title: "Talk to the leads", participants: members.map((m) => m.id) });
+      { title: M.t("lead.group_title"), participants: members.map((m) => m.id) });
     M.route.go(ctx.link("chat", chat.id));
   }
 
@@ -108,10 +108,12 @@ window.Maity = window.Maity || {};
       const header = document.getElementById("header");
       const old = header && header.querySelector(".chat-open-failed");
       if (old) old.remove();
-      if (header && err) append(header, h("p", { class: "send-status failed chat-open-failed", role: "alert" }, "Could not open the chat: " + err.message));
+      if (header && err) append(header, h("p", { class: "send-status failed chat-open-failed", role: "alert" }, M.t("lead.open_failed", { reason: err.message })));
     };
-    const name = (t) => t.member.display_name + (found.multiProject ? " · " + t.project.name : "")
-      + (t.member.role === "proxy" ? " (your proxy)" : "");
+    const name = (t) => {
+      const shown = t.member.display_name + (found.multiProject ? " · " + t.project.name : "");
+      return t.member.role === "proxy" ? M.t("lead.proxy", { name: shown }) : shown;
+    };
     // One opening at a time: a second click while a chat is being found or
     // made does nothing, so no second group chat is made (H on #459).
     let opening = false;
@@ -121,12 +123,12 @@ window.Maity = window.Maity || {};
       status(null);
       act().catch(status).finally(() => { opening = false; });
     };
-    const face = [M.icons && M.icons.lead ? M.icons.lead(18) : null, h("span", { class: "lead-button-label" }, "Lead")];
+    const face = [M.icons && M.icons.lead ? M.icons.lead(18) : null, h("span", { class: "lead-button-label" }, M.t("lead.button"))];
     if (list.length === 1) {
       const t = list[0];
       const own = t.member.owner_id === ctx.me.id;
       const a = h("a", { class: "bell lead-button", href: own ? t.ctx.link("chat", t.member.id) : t.ctx.link("chat"),
-        "aria-label": "Talk to the lead: " + name(t), title: "Talk to the lead: " + name(t) }, face);
+        "aria-label": M.t("lead.talk_to", { name: name(t) }), title: M.t("lead.talk_to", { name: name(t) }) }, face);
       if (!own) a.addEventListener("click", (e) => { e.preventDefault(); once(() => open(t.ctx, t.member)); });
       return a;
     }
@@ -138,7 +140,7 @@ window.Maity = window.Maity || {};
       p.members.push(t.member);
     });
     const menu = M.menuButton({
-      label: "Talk to the lead",
+      label: M.t("lead.menu"),
       class: "bell lead-button",
       face,
       items: () => {
@@ -147,7 +149,7 @@ window.Maity = window.Maity || {};
           if (i) items.push({ separator: true });
           list.filter((t) => t.project.full_name === p.slug).forEach((t) => items.push({ label: name(t), onSelect: () => once(() => open(t.ctx, t.member)) }));
           if (p.members.length > 1) {
-            items.push({ label: "Group chat with all leads" + (found.multiProject ? " · " + p.name : ""),
+            items.push({ label: M.t("lead.group") + (found.multiProject ? " · " + p.name : ""),
               onSelect: () => once(() => openGroup(p.ctx, p.members)) });
           }
         });

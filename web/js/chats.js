@@ -39,7 +39,7 @@ window.Maity = window.Maity || {};
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
     const failed = h("div");
-    const none = h("p", { class: "muted" }, "You own no agents in your projects, and are in no group chat.");
+    const none = h("p", { class: "muted" }, M.t("chats.none"));
     none.hidden = true;
     // slug -> { chats, groups } as last read.
     const read = {};
@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
         const name = pctx.project.name || x.slug;
         const who = a && a.querySelector(".conv-sub");
         if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
-        if (a) append(a, h("span", { class: "visually-hidden" }, ", in " + name));
+        if (a) append(a, h("span", { class: "visually-hidden" }, M.t("chats.in_project", { project: name })));
         append(ul, li);
       });
       none.hidden = all.length > 0 || Object.keys(read).length === 0;
@@ -87,7 +87,7 @@ window.Maity = window.Maity || {};
       try {
         list = await M.api.getAll("/me/conversations?observed=true");
       } catch (err) {
-        append(clear(failed), h("p", { class: "send-status failed" }, "Your chats could not be read: " + err.message));
+        append(clear(failed), h("p", { class: "send-status failed" }, M.t("chats.read_failed", { reason: err.message })));
         return;
       }
       const bySlug = {};
@@ -113,9 +113,9 @@ window.Maity = window.Maity || {};
       });
       return reading;
     };
-    const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
-      h("div", { class: "toolbar" }, h("h2", null, "Chats")),
-      h("p", { class: "muted" }, "Your chats in every project, unread first."),
+    const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
+      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title"))),
+      h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
     return { el, refresh, groups: () => (open && read[open.slug] ? read[open.slug].groups : []) };
   }
@@ -127,7 +127,7 @@ window.Maity = window.Maity || {};
     const pctxs = {};
     const unreadable = [];
     await Promise.all(ctx.projects.map((p) => M.projectContext(ctx, p.full_name, chatLink)
-      .then((pctx) => { pctxs[p.full_name] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, "Could not read " + p.name + ": " + err.message)); })));
+      .then((pctx) => { pctxs[p.full_name] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, M.t("chats.project_failed", { project: p.name, reason: err.message }))); })));
     append(root, unreadable);
     // The projects an agent is in, as far as the reader may see: those of
     // the reader's whose member list names it (tsk-p94e7njrmg1p), in the
@@ -183,8 +183,8 @@ window.Maity = window.Maity || {};
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,
-        open ? h("p", { class: "error", role: "alert" }, "No project of yours named " + open.slug + ".")
-          : h("p", { class: "chat-none muted" }, "Pick a conversation.")));
+        open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
+          : h("p", { class: "chat-none muted" }, M.t("chats.pick"))));
       await list.refresh();
       return;
     }

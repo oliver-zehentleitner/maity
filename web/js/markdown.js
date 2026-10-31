@@ -17,9 +17,9 @@ window.Maity = window.Maity || {};
   async function copied(text) {
     try {
       await navigator.clipboard.writeText(text);
-      return "Copied";
+      return M.t("md.copied");
     } catch (err) {
-      return "Copy failed — select the text";
+      return M.t("md.copy_failed");
     }
   }
 
@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
       const sel = window.getSelection ? window.getSelection() : null;
       return !!sel && !sel.isCollapsed && String(sel) !== "" && typeof sel.containsNode === "function" && sel.containsNode(code, true);
     };
-    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: "Click to copy", "aria-label": "Copy " + text,
+    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: M.t("md.click_to_copy"), "aria-label": M.t("md.copy.label", { what: text }),
       onclick: () => { if (!selectedHere()) copy(); },
       onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } } }, text);
     return [code, said];
@@ -83,7 +83,7 @@ window.Maity = window.Maity || {};
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
         // An https link opens apart, without an opener.
         out.push(!url ? m[0] : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
-        if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
+        if (url && looks) out.push(h("span", { class: "md-real-href" }, M.t("md.goes_to", { host: hostOf(m[2]) })));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
         out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);
@@ -112,21 +112,21 @@ window.Maity = window.Maity || {};
   let blocks = 0;
   function codeBlock(code, lang) {
     blocks += 1;
-    const name = "Code" + (lang ? " (" + lang + ")" : "") + ", block " + blocks;
+    const name = lang ? M.t("md.block.lang", { lang, n: blocks }) : M.t("md.block", { n: blocks });
     const pre = h("pre", { class: "md-code", tabindex: "0", role: "region", "aria-label": name }, h("code", null, code));
     const copy = h("button", {
       type: "button",
       class: "small md-copy",
-      "aria-label": "Copy " + name,
+      "aria-label": M.t("md.copy.label", { what: name }),
       onclick: async () => {
         copy.textContent = await copied(code);
-        window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
+        window.setTimeout(() => { copy.textContent = M.t("md.copy"); }, 2000);
       },
-    }, "Copy");
+    }, M.t("md.copy"));
     // The language and Copy sit inside the block's corner (the designer's
     // pass part 1); a warning about invisible characters stands above it.
     return h("div", { class: "md-code-box" },
-      INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, "This code contains invisible characters (bidi or zero-width); what you copy may differ from what you see.") : null,
+      INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, M.t("md.invisible")) : null,
       h("div", { class: "md-code-frame" },
         h("div", { class: "md-code-bar" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy),
         pre));
