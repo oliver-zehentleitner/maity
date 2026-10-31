@@ -18,6 +18,12 @@
     "owner_confirmed": false,
     "confirmed_by": null
   },
+  "links": {
+    "issues": null,
+    "wiki": null,
+    "discussions": null,
+    "chat": null
+  },
   "memory": {
     "provider": "keep-the-why"
   },

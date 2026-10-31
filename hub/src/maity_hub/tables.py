@@ -534,6 +534,8 @@ project = Table(
     Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # Four fixed links (§6.11): issues, wiki, discussions, chat (each an https URL or null).
+    Column("links", JSON_VALUE),
     # The project's public page and the text on it (§16.9): both belong to the namespace
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),

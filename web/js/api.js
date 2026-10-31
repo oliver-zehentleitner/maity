@@ -2063,6 +2063,7 @@ window.Maity = window.Maity || {};
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
           probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
+        links: { issues: null, wiki: null, discussions: null, chat: null },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
@@ -2190,6 +2191,37 @@ window.Maity = window.Maity || {};
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+      }
+      if ("links" in body) {
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        if (body.links === null) {
+          p.links = { issues: null, wiki: null, discussions: null, chat: null };
+        } else if (typeof body.links !== "object" || Array.isArray(body.links)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
+        } else {
+          const validKeys = ["issues", "wiki", "discussions", "chat"];
+          const cur = p.links || { issues: null, wiki: null, discussions: null, chat: null };
+          const next = Object.assign({}, cur);
+          const fields = {};
+          Object.keys(body.links).forEach((k) => {
+            if (!validKeys.includes(k)) {
+              fields["links." + k] = "unknown";
+            } else {
+              const val = body.links[k];
+              if (val === null) {
+                next[k] = null;
+              } else if (typeof val !== "string" || !/^https:\/\/[^\s/$.?#].[^\s]*$/.test(val)) {
+                fields["links." + k] = "format";
+              } else if (val.length > 500) {
+                fields["links." + k] = "too_long";
+              } else {
+                next[k] = val;
+              }
+            }
+          });
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+          p.links = next;
+        }
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the

@@ -1760,22 +1760,57 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hlLinks = () => header.querySelectorAll(".project-state a.header-link");
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
-    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|GitHub,"
+    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|Repository,"
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
     "header: the repository on its forge and the Keep the Why dashboard, beside the state, in tabs of their own");
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "GitHub", "header: a project without a Keep the Why dashboard shows the repository alone");
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Repository", "header: a project without a Keep the Why dashboard shows the repository alone");
   const hlGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
     { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }),
       keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Gitea" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
-    "header: another forge by its name; a dashboard that is not plain https gets no link");
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+    "header: another forge keeps the Repository label with its aria name; a dashboard that is not plain https gets no link");
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(!hlLinks().length, "header: neither where the project has neither");
+  // Project links: issues, wiki, discussions, chat (§6.11, §16.9, tsk-ayaav7naskbe).
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, {
+    links: {
+      issues: "https://github.com/oliver-zehentleitner/maity/issues",
+      wiki: "https://github.com/oliver-zehentleitner/maity/wiki",
+      discussions: "https://github.com/oliver-zehentleitner/maity/discussions",
+      chat: "https://discord.gg/example",
+    },
+  })) : hlGet(p));
+  await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  expect(hlLinks().map((a) => text(a)).join() === "Repository,Issues,Wiki,Discussions,Chat,Why",
+    "header: project links to issues, wiki, discussions and chat render beside repository and keep the why");
+  expect(hlLinks().find((a) => text(a) === "Issues").getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/issues"
+    && hlLinks().find((a) => text(a) === "Issues").getAttribute("target") === "_blank"
+    && hlLinks().find((a) => text(a) === "Issues").getAttribute("rel") === "noopener noreferrer",
+    "header: project links open in a new tab with rel noopener noreferrer");
+  // Project settings: links form
+  const linksPatch = win.Maity.api.patch;
+  const linksWrites = [];
+  win.Maity.api.patch = (path, body) => { linksWrites.push([path, body]); return linksPatch(path, body); };
+  await projectSettings();
+  expect(!!byId("link-issues") && byId("link-issues").value === "https://github.com/oliver-zehentleitner/maity/issues",
+    "settings: links form displays configured links");
+  byId("link-issues").value = "https://github.com/oliver-zehentleitner/maity/issues/new";
+  byId("link-chat").value = "";
+  main.querySelector("form.links-form").dispatch("submit"); await tick(); await tick();
+  expect(JSON.stringify(linksWrites[0]) === JSON.stringify(["/projects/maintainer/maity", {
+    links: {
+      issues: "https://github.com/oliver-zehentleitner/maity/issues/new",
+      wiki: "https://github.com/oliver-zehentleitner/maity/wiki",
+      discussions: "https://github.com/oliver-zehentleitner/maity/discussions",
+      chat: null,
+    },
+  }]), "settings: links form patches updated links with empty input mapped to null");
+  win.Maity.api.patch = linksPatch;
   win.Maity.api.get = hlGet;
   await go("#/maintainer/sample/board"); for (let k = 0; k < 4; k++) await tick();
   // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
@@ -5604,6 +5639,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const repoLink = ovPart("overview-links").querySelectorAll("a")[0];
   expect(repoLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity" && repoLink.getAttribute("rel") === "noopener noreferrer"
     && repoLink.getAttribute("target") === "_blank", "overview: the repository, linked in a new tab without an opener");
+  expect(ovPart("overview-links").querySelectorAll("a").some((a) => text(a) === "Issues"
+    && a.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/issues/new"
+    && a.classList.contains("button") && a.classList.contains("small")),
+    "overview: configured project link rendered as small button beside repository");
   const whyItems = ovPart("overview-links").querySelectorAll(".overview-why li");
   expect(whyItems.length >= 2 && whyItems[0].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/"
     && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")

@@ -19,6 +19,7 @@ from maity_hub import (
     namespace,
     onboarding,
     policy,
+    project_links,
     ticker_read,
 )
 from maity_hub import handles as handle_book
@@ -278,6 +279,7 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
+        "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),

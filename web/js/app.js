@@ -221,6 +221,20 @@ window.Maity = window.Maity || {};
     other: "M9.5 3.25a2.25 2.25 0 113 2.12V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.13a2.25 2.25 0 11-1.5 0V5.37a2.25 2.25 0 111.5 0v1.84A2.49 2.49 0 016 7h4a1 1 0 001-1v-.63A2.25 2.25 0 019.5 3.25z",
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
+  const LINK_KEYS = ["issues", "wiki", "discussions", "chat"];
+  const LINK_MARKS = {
+    issues: "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z",
+    wiki: BOOK,
+    discussions: "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z",
+    chat: "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z",
+  };
+  function headerLinkLabel(k) {
+    if (k === "issues") return M.t("header.link.issues");
+    if (k === "wiki") return M.t("header.link.wiki");
+    if (k === "discussions") return M.t("header.link.discussions");
+    if (k === "chat") return M.t("header.link.chat");
+    return k;
+  }
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -237,15 +251,29 @@ window.Maity = window.Maity || {};
     const exp = project.keep_the_why_export;
     const root = exp && (exp.members || []).find((m) => m.path === "");
     const why = root && M.dom.safeUrl(root.dashboard_url);
-    const name = FORGES[forge] || "Repository";
-    return [
-      repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": (FORGES[forge] ? "Repository on " + name : "Repository") + " (opens in a new tab)", title: repo },
-      mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
+    const repoLabel = M.t("header.link.repository");
+    const links = project.links || {};
+    const res = [];
+    if (repo) {
+      res.push(h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": (FORGES[forge] ? "Repository on " + FORGES[forge] : repoLabel) + " (opens in a new tab)", title: repo },
+      mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, repoLabel)));
+    }
+    LINK_KEYS.forEach((k) => {
+      const url = links[k] && M.dom.safeUrl(links[k]);
+      if (url) {
+        const label = headerLinkLabel(k);
+        res.push(h("a", { class: "header-link", href: url, target: "_blank", rel: "noopener noreferrer",
+          "aria-label": label + " (opens in a new tab)", title: url },
+        mark(LINK_MARKS[k] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, label)));
+      }
+    });
+    if (why) {
+      res.push(h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
-      mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
-    ];
+      mark(BOOK), h("span", { class: "header-link-text" }, M.t("header.link.why"))));
+    }
+    return res;
   }
 
   function releasedMark(project) {
@@ -418,6 +446,80 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  function linksForm(ctx) {
+    const current = (ctx.project && ctx.project.links) || {};
+    const status = statusLine();
+    const inputs = {
+      issues: h("input", { id: "link-issues", type: "url", placeholder: "https://github.com/owner/name/issues",
+        autocomplete: "off", spellcheck: "false", "aria-describedby": "links-hint links-error" }),
+      wiki: h("input", { id: "link-wiki", type: "url", placeholder: "https://github.com/owner/name/wiki",
+        autocomplete: "off", spellcheck: "false", "aria-describedby": "links-hint links-error" }),
+      discussions: h("input", { id: "link-discussions", type: "url", placeholder: "https://github.com/owner/name/discussions",
+        autocomplete: "off", spellcheck: "false", "aria-describedby": "links-hint links-error" }),
+      chat: h("input", { id: "link-chat", type: "url", placeholder: "https://discord.gg/invite",
+        autocomplete: "off", spellcheck: "false", "aria-describedby": "links-hint links-error" }),
+    };
+    Object.keys(inputs).forEach((k) => {
+      inputs[k].value = current[k] || "";
+    });
+    const error = h("p", { class: "field-error", id: "links-error", role: "alert" });
+    const fail = (text, input) => {
+      error.textContent = text;
+      if (input) { input.setAttribute("aria-invalid", "true"); input.focus(); }
+    };
+    return h("form", {
+      class: "inline-form links-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        Object.values(inputs).forEach((inp) => inp.removeAttribute("aria-invalid"));
+        const links = {};
+        let changed = false;
+        Object.keys(inputs).forEach((k) => {
+          const val = inputs[k].value.trim();
+          if (val !== (current[k] || "")) changed = true;
+          links[k] = val || null;
+        });
+        if (!changed) {
+          status.done();
+          append(status.el, h("span", { class: "ok" }, M.t("settings.links.nothing_changed")));
+          return;
+        }
+        status.busy(M.t("settings.links.saving"));
+        try {
+          await M.api.patch(ctx.base, { links });
+          render();
+        } catch (err) {
+          const fields = err.code === "invalid" && err.details && err.details.fields;
+          if (fields) {
+            status.done();
+            const badKey = Object.keys(inputs).find((k) => fields["links." + k]);
+            if (badKey) {
+              const code = fields["links." + badKey];
+              fail(code === "too_long" ? M.t("settings.links.too_long") : M.t("settings.links.invalid_url"), inputs[badKey]);
+            } else if (fields.links) {
+              fail(M.t("settings.links.invalid_format"));
+            } else {
+              status.fail(M.t("settings.links.failed"), err);
+            }
+          } else {
+            status.fail(M.t("settings.links.failed"), err);
+          }
+        }
+      },
+    },
+    h("h2", { class: "panel-title", id: "links-heading" }, M.t("settings.links.title")),
+    h("p", { class: "hint", id: "links-hint" }, M.t("settings.links.hint")),
+    h("label", { for: "link-issues" }, M.t("settings.links.issues")), inputs.issues,
+    h("label", { for: "link-wiki" }, M.t("settings.links.wiki")), inputs.wiki,
+    h("label", { for: "link-discussions" }, M.t("settings.links.discussions")), inputs.discussions,
+    h("label", { for: "link-chat" }, M.t("settings.links.chat")), inputs.chat,
+    error,
+    h("button", { type: "submit" }, M.t("settings.links.save")),
+    status.el);
+  }
+
   // §8.5's blind removal: an owner or admin removes a reported message of a
   // closed group chat by its number, without reading it; the hub answers
   // {seq, redacted} only, never the message.
@@ -563,7 +665,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null);
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), linksForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null);
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
