@@ -1,6 +1,6 @@
 // An agent's parts that Members shows in its row (tsk-7v2snhk002ak): its
 // credentials as id, dates and a revoke button, never their value; its
-// briefing; the words a pause says. #/<owner>/<slug>/agents leads to Members.
+// briefing; the words a pause says.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -135,12 +135,4 @@ window.Maity = window.Maity || {};
   // credentials and briefing too (tsk-7v2snhk002ak).
   M.pauseWords = { effect: PAUSE_EFFECT, paused: PAUSED_EFFECT };
   M.agentParts = { credentials, briefingControl, loadCredentials };
-
-  // #/<owner>/<slug>/agents, from before the agents moved into Members
-  // (tsk-7v2snhk002ak): Members, with the join panel open where it was asked.
-  M.views.agents = async function (ctx, root, args) {
-    const join = !!(args && args[0] === "join");
-    if (window.history && window.history.replaceState) window.history.replaceState(null, "", join ? ctx.link("members", "join") : ctx.link("members"));
-    await M.views.members(ctx, root, join ? ["join"] : []);
-  };
 })(window.Maity);

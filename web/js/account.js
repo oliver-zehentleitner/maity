@@ -1,8 +1,7 @@
-// The signed-in human's account (#/account): who they are, their picture
-// and the pictures of their agents no project of theirs shows
-// (#/account/picture, docs/api.md §6.10), their
-// preferences (#/account/preferences, js/preferences.js), your data
-// (#/account/data, js/your-data.js), and
+// The signed-in human's account (/account): who they are, their picture
+// (/account/picture, docs/api.md §6.10; their agents' are on /agents), their
+// preferences (/account/preferences, js/preferences.js), your data
+// (/account/data, js/your-data.js), and
 // changing the password (§2.1, POST /auth/password). A password change
 // ends every other session of this human; this one stays signed in.
 "use strict";
@@ -10,7 +9,7 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append } = M.dom;
+  const { h, append, clear } = M.dom;
 
   // The hub's minimum, counted in characters as the hub counts them.
   const MIN_LENGTH = 12;
@@ -31,8 +30,7 @@ window.Maity = window.Maity || {};
     const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
     if (why) return { message: REFUSED[why] || why };
     if (err.code === "rate_limited") return { message: "too many changes of this picture in the last hour, or the hub is busy; try again later" };
-    // /me/avatar is not_found only on a hub that has no pictures yet.
-    if (err.code === "not_found") return { message: own ? "this hub does not take pictures yet" : "this profile is not yours, or this hub does not take pictures yet" };
+    if (err.code === "not_found" && !own) return { message: "this profile is not yours" };
     return err;
   }
 
@@ -146,53 +144,76 @@ window.Maity = window.Maity || {};
       form);
   }
   M.profileDelete = profileDelete;
-  // §5.2 "Meat proxy": the human's own switch (PATCH /me). The hub tells the
-  // agents that deal with them a note, always the same text, and /me carries
-  // it (member.meat_proxy_note): the page shows exactly that under the switch,
-  // never a copy of its own; a hub that does not send it shows none. Where the
-  // hub's machine form does not name the field there is no switch; a machine
-  // form that cannot be read keeps it.
+  // §5.2 "Meat proxy": the human's own switch (PATCH /me) with its two
+  // parts under it, each a sentence the person says about themselves. The
+  // hub stores the parts; the switch is on while one of them is. Switching
+  // on sends `meat_proxy: true`, which ticks both; off, `false`, which
+  // clears both; a part alone sends only that part, so ticking one while
+  // off turns the mode on with it, and clearing the last turns it off.
+  // The hub's note (member.meat_proxy_note, §2) stands under the parts as
+  // /me and each answer carry it — what agents read now, or would read
+  // once it is on — never a copy of the page's own; a hub that does not
+  // send it shows none.
+  const MEAT_PARTS = [
+    ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
+    ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],
+  ];
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
-    const offered = await M.api.hubBody("PATCH", "/me").then((fields) => fields.has("meat_proxy"), () => true);
-    if (!offered) return null;
     const status = M.statusLine();
-    const note = typeof ctx.me.meat_proxy_note === "string" && ctx.me.meat_proxy_note ? ctx.me.meat_proxy_note : null;
-    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint" });
-    box.checked = !!ctx.me.meat_proxy;
-    box.addEventListener("change", async () => {
-      const want = box.checked;
-      box.disabled = true;
-      status.busy("Saving…");
+    const noteOf = (m) => (typeof m.meat_proxy_note === "string" && m.meat_proxy_note ? m.meat_proxy_note : null);
+    const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
+    const parts = MEAT_PARTS.map(([field, id]) => [field, h("input", { type: "checkbox", id })]);
+    const hint = h("p", { class: "hint", id: "meat-proxy-hint" });
+    const quote = h("div");
+    const inputs = [box].concat(parts.map(([, input]) => input));
+    // The switch, its parts and the note as the hub last said them.
+    function show() {
+      box.checked = !!ctx.me.meat_proxy;
+      parts.forEach(([field, input]) => { input.checked = !!ctx.me[field]; });
+      const note = noteOf(ctx.me);
+      hint.textContent = !note ? M.t("meat.hint") : ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
+      append(clear(quote), note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null);
+      box.setAttribute("aria-describedby", note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint");
+    }
+    async function send(body) {
+      inputs.forEach((x) => { x.disabled = true; });
+      status.busy(M.t("meat.saving"));
       try {
-        const answer = await M.api.patch("/me", { meat_proxy: want });
-        ctx.me.meat_proxy = answer && "meat_proxy" in answer ? answer.meat_proxy : want;
-        box.checked = !!ctx.me.meat_proxy;
+        // The answer is /me itself (§5.1), its member as GET /me has it.
+        const answer = await M.api.patch("/me", body);
+        const member = answer && answer.member;
+        ["meat_proxy", "meat_proxy_note"].concat(MEAT_PARTS.map(([field]) => field)).forEach((k) => {
+          if (member && k in member) ctx.me[k] = member[k];
+        });
+        show();
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? (note ? "Saved: your agents and the agents of your projects are told the text above." : "Saved: your agents and the agents of your projects are told.")
-          : "Saved: they are no longer told."));
+          ? (noteOf(ctx.me) ? M.t("meat.saved.on_note") : M.t("meat.saved.on"))
+          : M.t("meat.saved.off")));
       } catch (err) {
-        box.checked = !want;
-        status.fail("Not saved: ", err);
+        show();
+        status.fail(M.t("meat.not_saved"), err);
       } finally {
-        box.disabled = false;
+        inputs.forEach((x) => { x.disabled = false; });
       }
-    });
+    }
+    box.addEventListener("change", () => send({ meat_proxy: box.checked }));
+    parts.forEach(([field, input]) => input.addEventListener("change", () => send({ [field]: input.checked })));
+    show();
     return h("section", { class: "meat-proxy" },
-      h("h3", null, "Meat proxy"),
-      h("label", { class: "check", for: "meat-proxy" }, box, " I am a meat proxy"),
-      h("p", { class: "hint", id: "meat-proxy-hint" }, "While this is on, your own agents and the agents of every project you are a member of are told so when they resume"
-        + (note ? ", in these words:" : ".")),
-      note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null,
-      status.el);
+      h("h3", null, M.t("meat.title")),
+      h("label", { class: "check", for: "meat-proxy" }, box, " ", M.t("meat.switch")),
+      h("fieldset", { class: "meat-proxy-parts" }, h("legend", { class: "visually-hidden" }, M.t("meat.parts")),
+        MEAT_PARTS.map(([, id, sentence], i) => h("label", { class: "check", for: id }, parts[i][1], " ", sentence()))),
+      hint, quote, status.el);
   }
 
   // Set by a change; the next drawing of the view says it.
   let pictureNote = null;
 
   M.views.account = async function (ctx, root, args) {
-    // #/account/sign-in-device (the profile menu's Sign in another device).
+    // /account/sign-in-device (the profile menu's Sign in another device).
     if (args && args[0] === "sign-in-device" && M.deviceSignIn) { await M.deviceSignIn.anotherDevice(ctx, root); return; }
     const field = (id, label, autocomplete, hint) => {
       const input = h("input", { id, type: "password", autocomplete, required: true, "aria-describedby": id + "-error" });
@@ -259,22 +280,10 @@ window.Maity = window.Maity || {};
     // and /me come back with the hub's new avatar_url.
     const changed = (answer, words) => { pictureNote = words; ctx.refresh(); };
     const pictureHeading = h("h3", { class: "picture-heading", tabindex: "-1" }, "Your picture");
-    const wantedAgent = args && args[0] === "picture" ? args[1] || null : null;
     const note = pictureNote ? h("p", { class: "ok", role: "status" }, pictureNote) : null;
     pictureNote = null;
-    // An agent's picture is set on Members, in its row (tsk-th1yq0jtk3yf);
-    // here only the agents in no project one can open, which no other page
-    // reaches. Without memberships in the profile, every agent counts as such.
-    const opened = new Set((ctx.projects || []).map((p) => p.full_name));
-    const reachable = (a) => (Array.isArray(a.memberships) ? a.memberships : []).find((x) => opened.has(x.project)) || null;
-    const mine = await M.api.getAll("/agents").then((r) => r.items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at)).catch(() => null);
-    // A link to an agent's picture that Members reaches goes there.
-    const wantedThere = wantedAgent && mine && mine.find((a) => a.id === wantedAgent && reachable(a));
-    if (wantedThere) {
-      window.location.replace("#/" + M.api.projectPath(reachable(wantedThere).project) + "/members/" + encodeURIComponent(wantedThere.id) + "/picture");
-      return;
-    }
-    const agents = mine && mine.filter((a) => !reachable(a));
+    // The agents' pictures, names and deletion are on the Agents page
+    // (/agents, js/agents-page.js): one place for one's agents.
     const meatProxy = await meatProxySection(ctx);
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
@@ -296,19 +305,12 @@ window.Maity = window.Maity || {};
       h("dl", { class: "facts" },
         h("dt", null, "Name"), h("dd", null, ctx.me.display_name),
         h("dt", null, "Handle"), h("dd", null, "@" + ctx.me.handle)),
+      M.handles.editor(ctx.me, "/me", M.t("handles.what_own"), changed),
       pictureHeading,
       h("p", { class: "muted" }, "Shown next to your name in every project, to everyone who shares one with you."),
       note,
       pictureEditor(ctx.me, "/me/avatar", true, changed),
-      agents && agents.length ? [h("h3", null, "Agents in other projects"),
-        h("p", { class: "muted" }, "Your agents' pictures are set on Members, in each agent's row. These agents are in no project you are a member of, "
-          + "so their pictures are set here. Each agent can also set its own; the last change wins."),
-        // #/account/picture/<agent id> (a Keep the Why notice about an agent
-        // in a project one is not in) marks that agent and starts there.
-        h("ul", { class: "picture-list" }, agents.map((a) => h("li", { class: wantedAgent === a.id ? "wanted" : null, "data-agent": a.id },
-          h("h4", { class: "picture-name", tabindex: wantedAgent === a.id ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle))),
-          pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, changed),
-          profileDelete(a, changed))))] : null,
+      h("p", { class: "muted" }, "Your agents' pictures, names and handles are on ", h("a", { href: "/agents" }, "Your agents"), "."),
       meatProxy,
       themeBox ? [themeHeading, h("p", { class: "muted" }, "Kept in this browser only: another browser or device has its own. System follows the light or dark setting of your device."), themeBox] : null,
       preferences ? preferences.el : null,
@@ -318,20 +320,17 @@ window.Maity = window.Maity || {};
       h("h3", null, "Change password"),
       h("p", { class: "muted" }, "Changing it signs out every other browser and device where you are signed in."),
       form);
-    // #/account/picture (the profile menu's Picture) starts at the picture.
-    if (args && args[0] === "picture") {
-      const marked = wantedAgent && Array.from(root.querySelectorAll("li.wanted")).find((li) => li.getAttribute("data-agent") === wantedAgent);
-      window.setTimeout(() => (marked ? marked.querySelector(".picture-name") : pictureHeading).focus(), 0);
-    }
-    // #/account/theme (the profile menu's Theme) starts there.
+    // /account/picture (the profile menu's Picture) starts at the picture.
+    if (args && args[0] === "picture") window.setTimeout(() => pictureHeading.focus(), 0);
+    // /account/theme (the profile menu's Theme) starts there.
     if (themeBox && args && args[0] === "theme") window.setTimeout(() => themeHeading.focus(), 0);
-    // #/account/notifications (the bell's settings link) starts there.
+    // /account/notifications (the bell's settings link) starts there.
     if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
-    // #/account/preferences (the profile menu's Preferences) starts there.
+    // /account/preferences (the profile menu's Preferences) starts there.
     if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
-    // #/account/sessions (a sign-in alert's link) starts at the sessions.
+    // /account/sessions (a sign-in alert's link) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
-    // #/account/data (the mail's link to the export, §2.9) starts at Your data.
+    // /account/data (the mail's link to the export, §2.9) starts at Your data.
     if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
   };
 })(window.Maity);

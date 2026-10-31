@@ -271,11 +271,9 @@ def test_resume_shows_trust_and_role() -> None:
     assert "maint [hum-1] (owner coder, away)" in text
 
 
-def test_a_hub_before_trust_still_shows_its_role() -> None:
-    peers = [{"member_id": "agt-a", "handle": "agent-a", "role": "admin", "presence": "online"}]
-    text = onboarding.render(_packet(membership={"role": "member"}, peers=peers))
-    assert "Role: member" in text and "Trust:" not in text
-    assert "agent-a [agt-a] (admin, online)" in text
+def test_a_trust_the_hub_left_out_shows_as_a_question_mark() -> None:
+    text = onboarding.render(_packet(membership={"role": "reviewer", "reports_to": "agt-a"}))
+    assert "Trust: ?, role: reviewer" in text and "None" not in text
 
 
 def test_resume_shows_the_role_memory() -> None:
@@ -291,7 +289,7 @@ def test_resume_shows_the_role_memory() -> None:
         ({"trust": "admin", "role": "coder"}, True),
         ({"trust": "admin", "role": "proxy"}, False),  # never in the admin team
         ({"trust": "member", "role": "coder"}, False),
-        ({"role": "admin"}, True),  # a hub before trust × role
+        ({"role": "admin"}, False),  # no trust: never admin
         ({"trust": "member", "role": "admin"}, False),
     ],
 )

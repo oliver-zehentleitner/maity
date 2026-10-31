@@ -32,6 +32,7 @@ class Addressee:
     role: str | None = None  # role: the whole token, `trust:admin` or `role:designer`
     profile: str | None = None  # profile_owner: the agent profile whose owner is meant
     human: str | None = None  # human: the human asked in person (§19.4)
+    instance: str | None = None  # member: the one instance addressed, as written (§7)
 
     def text(self, conn: Connection) -> str:
         if self.kind == "owner":
@@ -46,11 +47,13 @@ class Addressee:
 
         member = principal_id(conn, self.member)
         assert member is not None
-        return member
+        return f"{member}#{self.instance}" if self.instance else member
 
 
 def addressee_of(row: Any) -> Addressee:
-    return Addressee(row.to_kind, row.to_member, row.to_role, row.to_profile, row.to_human)
+    return Addressee(
+        row.to_kind, row.to_member, row.to_role, row.to_profile, row.to_human, row.to_instance
+    )
 
 
 def owner_membership(conn: Connection, project_id: str) -> Any:
@@ -79,20 +82,25 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
     if request.holder_pool:
-        return "trust:admin" in tokens_of(mine.trust, mine.role)
+        return "trust:admin" in tokens_of(mine.trust, mine.role, mine.role_base)
     return originally_addressed(conn, request, mine)
 
 
 def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to` as filed: the caller's member id, `owner` for the owner, a role the caller
-    holds. A personal request is addressed to a human, never through a project (§7)."""
+    holds, or the substitute covering the addressee (§6.12). A personal request is
+    addressed to a human, never through a project (§7)."""
     if request.personal:
         return False
+    return covers(request, mine) or _in_own_right(request, mine)
+
+
+def _in_own_right(request: Any, mine: Membership) -> bool:
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
         return mine.trust == "owner"
-    return request.to_role in tokens_of(mine.trust, mine.role)
+    return request.to_role in tokens_of(mine.trust, mine.role, mine.role_base)
 
 
 def is_asker(request: Any, mine: Membership) -> bool:
@@ -156,8 +164,16 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     return getattr(request, "class") != "consent" and addressed_to(conn, request, mine)
 
 
+def covers(request: Any, mine: Membership) -> bool:
+    """The caller is the substitute answering for the addressee (§6.12): it reads the
+    request, finds it under `to=me` and answers as the addressee would."""
+    cover: dict[str, Any] | None = getattr(request, "cover", None)
+    return cover is not None and cover.get("by") == mine.principal_id
+
+
 def answered_in_own_right(conn: Connection, request: Any, mine: Membership) -> bool:
-    return addressed_to(conn, request, mine)
+    """Addressed to the caller itself, not only through a cover it holds."""
+    return not request.personal and _in_own_right(request, mine)
 
 
 def consent_target_ok(conn: Connection, project_id: str, to: Addressee) -> bool:
@@ -168,12 +184,15 @@ def consent_target_ok(conn: Connection, project_id: str, to: Addressee) -> bool:
         return to.role in CONSENT_TOKENS
     row = conn.execute(select(t.membership).where(t.membership.c.id == to.member)).one()
     kind = "agent" if row.agent_id else "human"
-    return has_scope(row.trust, row.role, kind, "requests:answer")
+    return has_scope(row.trust, row.role_base, kind, "requests:answer")
 
 
-def valid_token(token: str) -> bool:
-    """`trust:owner`, `trust:admin` or `role:<role>`; an old token is not (§2.3)."""
-    return token_known(token)
+def valid_token(token: str, project: Any) -> bool:
+    """`trust:owner`, `trust:admin` or `role:<role>`, the project's own roles included;
+    an old token is not (§2.3)."""
+    from maity_hub import project_roles
+
+    return token_known(token, project_roles.names(project))
 
 
 def humans_only(request: Any) -> bool:

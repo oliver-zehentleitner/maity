@@ -20,14 +20,20 @@ from maity_hub import (
     environment,
     events,
     group_chats,
+    handles,
+    handover,
     idempotency,
     instances,
     ktw_skill,
     memory,
     mentions,
+    moderation,
     namespace,
     onboarding,
+    person_links,
     preferences,
+    public_pages,
+    public_people,
     ranks,
     rules,
     setup_cards,
@@ -52,8 +58,10 @@ from maity_hub.routes.projects import arbiter_text
 from maity_hub.scopes import listed_scopes
 from maity_hub.views import (
     absence,
+    confirmed_by_of,
     event_views,
     git_identity,
+    isolated,
     meat_proxy_view,
     member_views,
     memory_of,
@@ -95,8 +103,9 @@ def wait_timeout(harness: str | None) -> int:
 
 KEEP_THE_WHY_INSTRUCTION = rules.KEEP_THE_WHY
 
-# The operations an agent may call, by scope; each slice adds its rows (§5.2).
-OPERATIONS: list[tuple[str, str, str | None]] = [
+# The operations an agent may call, by scope, or by any of several; each slice adds its
+# rows (§5.2).
+OPERATIONS: list[tuple[str, str, str | tuple[str, ...] | None]] = [
     ("GET", "/me", None),
     ("POST", "/me/resume", None),
     ("PATCH", "/me", None),
@@ -109,7 +118,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("GET", "/projects/{owner}/{slug}/members", "project:read"),
     ("GET", "/projects/{owner}/{slug}/members/{id}", "project:read"),
     # An admin agent within §2.3 ᵃ: member and reviewer agents, never itself.
-    ("PATCH", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
+    ("PATCH", "/projects/{owner}/{slug}/members/{id}", ("members:admin", "line:lead")),
     ("DELETE", "/projects/{owner}/{slug}/members/{id}", "members:admin"),
     ("GET", "/projects/{owner}/{slug}/tasks", "project:read"),
     ("GET", "/projects/{owner}/{slug}/tasks/{id}", "project:read"),
@@ -119,7 +128,7 @@ OPERATIONS: list[tuple[str, str, str | None]] = [
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/release", "tasks:write"),
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/checkpoint", "tasks:write"),
     ("POST", "/projects/{owner}/{slug}/tasks/{id}/report", "tasks:write"),
-    ("POST", "/projects/{owner}/{slug}/tasks/{id}/assign", "tasks:admin"),
+    ("POST", "/projects/{owner}/{slug}/tasks/{id}/assign", ("tasks:admin", "line:lead")),
     ("GET", "/projects/{owner}/{slug}/requests", "project:read"),
     ("GET", "/projects/{owner}/{slug}/requests/{id}", "project:read"),
     ("POST", "/projects/{owner}/{slug}/requests", "requests:ask"),
@@ -152,10 +161,32 @@ class ResumeIn(Strict):
 
 
 class MePatch(Strict):
-    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2)."""
+    """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
+    public page (`public_profile`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     meat_proxy: StrictBool | None = None
+    handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
+    meat_proxy_lead: StrictBool | None = None
+    meat_proxy_hands: StrictBool | None = None
+    public_profile: StrictBool | None = None
+    public_bio: str | None = None
+    website: str | None = None
+    social: Any = None  # an object, checked with the other fields: `social: "format"`
+    links_visible: str | None = None
+
+
+LINKS = ("website", "social", "links_visible")
+HUMAN_FIELDS = (
+    "meat_proxy",
+    "meat_proxy_lead",
+    "meat_proxy_hands",
+    "public_profile",
+    "public_bio",
+    "website",
+    "social",
+    "links_visible",
+)
 
 
 def _own_membership(conn: Connection, caller: Caller) -> Membership:
@@ -173,6 +204,8 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
+        if mine.row.isolated_since is not None:
+            return _isolated_packet(conn, mine, caller)  # no session, no event, no presence
         # Serialise with other writes to the project: two resumes of one
         # credential must not both open its live session.
         events.lock_project(conn, mine.project.id)
@@ -293,6 +326,57 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     return packet
 
 
+def _handover(
+    conn: Connection, mine: Membership, caller: Caller, after: int, cursor: int
+) -> dict[str, Any]:
+    """`{"handover": …}` for an instance that replaces another and has not yet acknowledged
+    its first packet (§5.2), else nothing: the key is not in the packet."""
+    found = handover.block(
+        conn,
+        mine,
+        caller.principal_id,
+        caller.credential_id or "",
+        after,
+        cursor,
+        group_chats.windows(conn, mine.id),
+    )
+    return (
+        {}
+        if found is None
+        else {"handover": {**found, "items": event_views(conn, found["items"], mine)}}
+    )
+
+
+def _isolated_packet(conn: Connection, mine: Membership, caller: Caller) -> dict[str, Any]:
+    """What an isolated agent gets of a resume: who it is, why every other call is refused,
+    and the project's head; nothing of the project's members, memory, work or events (§6.2)."""
+    agent = conn.execute(
+        select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
+    ).one()
+    owner = conn.execute(select(t.human).where(t.human.c.id == agent.owner_id)).one()
+    project = mine.project
+    return {
+        "server_time": clock.rfc3339(clock.now()),
+        "api_version": API_VERSION,
+        "hub_version": __version__,
+        "me": {
+            "member_id": agent.id,
+            "handle": agent.handle,
+            "name": mentions.global_name(owner.handle, agent.handle),
+            "display_name": agent.display_name,
+            "instance": caller.instance,
+        },
+        "membership": {"trust": mine.trust, "role": mine.role, "isolated": isolated(mine.row)},
+        "project": {
+            "id": project.id,
+            "full_name": namespace.full_name(conn, project),
+            "slug": project.slug,
+            "name": project.name,
+            "state": project.state,
+        },
+    }
+
+
 def _packet(
     conn: Connection,
     mine: Membership,
@@ -340,18 +424,21 @@ def _packet(
         )
     ).all()
     meat_proxies = {
-        row.id: row.meat_proxy
+        row.id: (row.meat_proxy_lead, row.meat_proxy_hands)
         for row in conn.execute(
-            select(t.human.c.id, t.human.c.meat_proxy).where(
+            select(t.human.c.id, t.human.c.meat_proxy_lead, t.human.c.meat_proxy_hands).where(
                 t.human.c.id.in_([m.human_id for m in members if m.human_id is not None])
             )
         )
     }
     peers = []
     areas = []
+    own_view: dict[str, Any] = {"covering": []}
     for row, view in zip(members, member_views(conn, members), strict=True):
         areas += [{"path": path, "owner": view["id"]} for path in row.areas]
-        if row.id != mine.id:
+        if row.id == mine.id:
+            own_view = view
+        else:
             peers.append(
                 {
                     "member_id": view["id"],
@@ -368,7 +455,9 @@ def _packet(
                     # Write to a human in their language (§5.2, §6.2).
                     **({"language": view["language"]} if "language" in view else {}),
                     **(
-                        meat_proxy_view(meat_proxies[view["id"]]) if view["kind"] == "human" else {}
+                        meat_proxy_view(*meat_proxies[view["id"]])
+                        if view["kind"] == "human"
+                        else {}
                     ),
                 }
             )
@@ -394,6 +483,8 @@ def _packet(
         )
     ).all()
     assigned = sorted(assigned, key=ranks.column_key)  # the card order, its priority (§6.4)
+    if mine.row.isolated_since is not None:
+        assigned = []  # nothing is handed to an isolated agent (§6.2)
     siblings = [
         {
             key: view[key]
@@ -402,7 +493,7 @@ def _packet(
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
     ]
-    scopes = listed_scopes(mine.trust, mine.role, "agent")
+    scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
     written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
@@ -432,7 +523,11 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
-            "owner": {"id": owner.id, "handle": owner.handle, **meat_proxy_view(owner.meat_proxy)},
+            "owner": {
+                "id": owner.id,
+                "handle": owner.handle,
+                **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+            },
             "git_identity": git_identity(agent),
         },
         "membership": {
@@ -444,11 +539,12 @@ def _packet(
             "scopes": scopes,
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
+            "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
-            "covering": [],  # cover by a substitute is not built yet (§6.12)
+            "covering": own_view["covering"],  # whom it covers (§6.12)
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
@@ -459,9 +555,12 @@ def _packet(
             "slug": project.slug,
             "name": project.name,
             "state": project.state,
+            "released_at": ts(project.released_at),
             "state_note": project.state_note,
             "state_changed_at": ts(project.state_changed_at),
-            "repository": repository(project, settings),
+            "repository": repository(
+                project, settings, confirmed_by_of(conn, [project])[project.id]
+            ),
             "policy": policy_of(project),
             "absence": absence(project),
             "memory": memory_of(project),
@@ -491,10 +590,11 @@ def _packet(
             "cursor": events_cursor,
             "truncated": truncated,
         },
+        **_handover(conn, mine, caller, cursor, events_cursor),
         "conversations": conversation_packet(conn, mine, caller),
         "peers": peers,
         "operations": operations(
-            project, mine.trust, mine.role, namespace.full_name(conn, project)
+            project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
     }
 
@@ -541,6 +641,8 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     from maity_hub import inbox
     from maity_hub.routes.requests import request_view
 
+    if mine.row.isolated_since is not None:  # no request reaches an isolated agent (§6.2)
+        return {"mine_open": [], "answered_since_cursor": [], "to_answer": [], "truncated": False}
     rows = conn.execute(
         select(t.request)
         .where(t.request.c.project_id == mine.project.id)
@@ -576,8 +678,10 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
 
 def operations(project: Any, trust: str, role: str, full_name: str) -> list[str]:
     allowed = []
+    held = listed_scopes(trust, role, "agent")
     for method, path, scope in OPERATIONS:
-        if scope is not None and scope not in listed_scopes(trust, role, "agent"):
+        wanted = (scope,) if isinstance(scope, str) else scope
+        if wanted is not None and not set(wanted) & set(held):
             continue
         if project.state in CLOSED_STATES and (
             path.endswith("/claim") or (method == "POST" and path.endswith("/tasks"))
@@ -661,21 +765,96 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     def human_action(conn: Connection) -> idempotency.Outcome:
         if "paused" in given:
             raise invalid({"paused": "agents_only"})
-        if body.meat_proxy is None:
-            raise invalid({"meat_proxy": "required"}, "nothing to change")
+        parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
+        public = {"public_profile", "public_bio"} & given
+        links = {"website", "social", "links_visible"} & given
+        if (
+            body.meat_proxy is None
+            and all(v is None for v in parts.values())
+            and not (public or links)
+            and body.handle is None
+        ):
+            raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
+        if body.meat_proxy is False and any(parts.values()):
+            raise invalid(
+                {"meat_proxy": "conflicts_with_parts"}, "off, and a part on, in one request"
+            )
         assert caller.human_id is not None
-        conn.execute(
-            update(t.human)
-            .where(t.human.c.id == caller.human_id)
-            .values(meat_proxy=body.meat_proxy)
-        )
+        if body.handle is not None:  # a human renames themselves (§6.24)
+            done = handles.rename(conn, caller.human_id, None, body.handle)
+            if done is not None:
+                handles.announce(conn, caller, caller.human_id, None, *done)
+        values: dict[str, Any] = {}
+        # §5.2, "Meat proxy": the switch first (it sets both parts), then each part given.
+        if body.meat_proxy is not None or any(v is not None for v in parts.values()):
+            row = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            values = {
+                "meat_proxy_lead": row.meat_proxy_lead,
+                "meat_proxy_hands": row.meat_proxy_hands,
+            }
+            if body.meat_proxy is not None:
+                values = {name: body.meat_proxy for name in values}
+            values |= {name: value for name, value in parts.items() if value is not None}
+        if "public_profile" in given:
+            if body.public_profile is None:
+                raise invalid({"public_profile": "required"})
+            values["public_profile"] = body.public_profile
+            if body.public_profile:
+                # A hidden or removed profile stays so until an admin lifts the hold (§16.8).
+                moderation.refuse_held(conn, "profile", caller.human_id)
+        if "public_bio" in given:
+            problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
+            if problem is not None:
+                raise invalid({"public_bio": problem})
+            values["public_bio"] = body.public_bio or None  # an empty text clears it
+        links_given = {"website", "social", "links_visible"} & given
+        changed = False
+        if links_given:
+            current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
+            # `social: null` clears every network; `links_visible: null` is no value (`unknown`).
+            social_in = (
+                {network: None for network in person_links.NETWORKS}
+                if "social" in given and body.social is None
+                else body.social
+            )
+            visible_in = body.links_visible if body.links_visible is not None else ""
+            website, social, visible = person_links.checked(
+                body.website if "website" in given else None,
+                social_in if "social" in given else None,
+                visible_in if "links_visible" in given else None,
+                current.social,
+            )
+            if "website" in given:
+                values["website"] = website
+            if "social" in given:
+                values["social"] = social or None
+            if "links_visible" in given:
+                values["links_visible"] = visible
+            changed = any(
+                getattr(current, name) != values[name] for name in values if name in LINKS
+            )
+        if values:
+            conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
+        if changed:  # an edit that stores what was there is no news to the projects
+            person_links.announce(conn, caller.human_id)
+        if public or links_given:
+            # Turning the page off or editing its text takes something off it: at once (§16.9).
+            # Turning the page on alone adds a page: under `interval` it waits for the run.
+            switched_on_only = values.get("public_profile") is True and set(values) <= {
+                "public_profile"
+            }
+            public_pages.touch(
+                conn, public_people.KIND, caller.human_id, removal=not switched_on_only
+            )
         return idempotency.Outcome(
             200, "human_profile", caller.human_id, load_human_profile(conn, caller.human_id)
         )
 
     def action(conn: Connection) -> idempotency.Outcome:
-        if "meat_proxy" in given:
+        if any(field in given for field in HUMAN_FIELDS):
             raise humans_only("only a human sets their own profile")
+        if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
+            raise humans_only("only the owner of an agent profile renames its handle")
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
@@ -686,12 +865,17 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             # Someone else's pause is not the agent's to lift or replace (§5.3): a
             # human's, or an admin agent's, which `by` names.
             by_agent = str(row.paused_by).startswith("agt-")
+            if row.paused_line:  # a manager's, whoever it is (§2.3 "The manager")
+                who, reason = "your manager", "paused_by_manager"
+            elif by_agent:
+                who, reason = "an admin agent", "paused_by_admin"
+            else:
+                who, reason = "a human", "paused_by_human"
             raise ApiError(
                 403,
                 "forbidden",
-                f"{'an admin agent' if by_agent else 'a human'} paused you; "
-                "only they or an admin can change it",
-                {"reason": "paused_by_admin" if by_agent else "paused_by_human"},
+                f"{who} paused you; only they or an admin can change it",
+                {"reason": reason},
             )
         # The calling instance's own pause; its siblings carry on (§5.3).
         set_paused(

@@ -8,13 +8,14 @@ for real.
 from __future__ import annotations
 
 import base64
+from collections import OrderedDict
 from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, forge, forge_access, github_app, probe, secretbox
+from maity_hub import clock, forge, forge_access, github_app, namespace, probe, secretbox
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import factory, flow
@@ -67,7 +68,7 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeForge:
     monkeypatch.setattr(github_app.GitHubApp, "installation_of", lambda _app, repo: fg.installation)
     monkeypatch.setattr(github_app.GitHubApp, "token", lambda _app, i: fg.token(_app, i))
     monkeypatch.setattr(forge, "_public", {})
-    monkeypatch.setattr(forge_access, "_last_via", {})
+    monkeypatch.setattr(forge_access, "_last_via", OrderedDict())
     monkeypatch.setattr(probe.Worker, "start", lambda self: None)  # the tests read themselves
     return fg
 
@@ -333,7 +334,7 @@ def test_a_refusal_after_a_transfer_marks_the_grant_it_was_read_with(
     anna = flow.human(make_client, migrated, "anna")
     _token(migrated, anna.id)
     with migrated.begin() as conn:
-        conn.execute(update(t.project).values(owner_id=anna.id))
+        conn.execute(update(t.project).values(**namespace.owner_values(anna.id)))
     fake.owner_token_status = 401
     with pytest.raises(forge.ForgeUnavailableError):
         reader.branch(REPO, "main")

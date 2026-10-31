@@ -1,5 +1,5 @@
 // Preferences (docs/api.md §19.4): how the human likes to work, one Markdown
-// text that they alone write. #/account/preferences edits it, with the
+// text that they alone write. /account/preferences edits it, with the
 // projects whose agents read it and the earlier versions. An agent only
 // proposes: the proposal is reviewed in the personal inbox (the current
 // text, the proposed one, a diff, the reason) and accepted as it is,
@@ -24,7 +24,15 @@ window.Maity = window.Maity || {};
     }
     return n;
   }
-  const kib = (n) => (n / 1024).toFixed(1).replace(/\.0$/, "");
+  // KiB with one decimal at most, in the reader's locale.
+  const kib = (n) => M.fmt.number(n / 1024, { maximumFractionDigits: 1 });
+  // "1.5 of 8 KiB", and over the cap the same with what it means.
+  // forSave: the editor's own text, which over the cap cannot be saved.
+  function sizeText(n, forSave) {
+    const values = { size: kib(n), cap: CAP / 1024 };
+    if (n <= CAP) return M.t("prefs.size", values);
+    return forSave ? M.t("prefs.size_over_save", values) : M.t("prefs.size_over", values);
+  }
 
   // A line diff: the common start and end as they are, the rest from the
   // longest common subsequence. 8 KiB can hold thousands of lines, so the
@@ -74,26 +82,31 @@ window.Maity = window.Maity || {};
 
   // Inline, one line per row: it reads the same at 390 px as at 1280.
   const SIGNS = { same: " ", del: "−", add: "+" };
-  const SAID = { same: "", del: "Removed: ", add: "Added: " };
+  // Getters: the words are the catalog's when shown.
+  const SAID = { same: "", get del() { return M.t("prefs.diff.removed"); }, get add() { return M.t("prefs.diff.added"); } };
   function diffView(before, after) {
-    if (before === after) return h("p", { class: "muted" }, "The proposed text is the same as yours.");
+    if (before === after) return h("p", { class: "muted" }, M.t("prefs.diff.same"));
     const lines = diffLines(before, after);
-    return [lines.coarse ? h("p", { class: "hint" }, "Too many changed lines to match them up one by one: the changed part shows your lines removed, then the proposed ones added.") : null,
-      h("ol", { class: "pref-diff", "aria-label": "Changes from your text to the proposed one" },
+    return [lines.coarse ? h("p", { class: "hint" }, M.t("prefs.diff.coarse")) : null,
+      h("ol", { class: "pref-diff", "aria-label": M.t("prefs.diff.label") },
       lines.map((d) => h("li", { class: "pref-" + d.op },
         h("span", { class: "pref-sign", "aria-hidden": "true" }, SIGNS[d.op]),
         SAID[d.op] ? h("span", { class: "visually-hidden" }, SAID[d.op]) : null,
         h("span", { class: "pref-line" }, d.text || " "))))];
   }
 
-  const handleOf = (who) => (who && who.handle ? "@" + who.handle : who && (who.member_id || who.id)) || "someone";
-  // Who wrote a version, who proposed it, who confirmed it.
+  const handleOf = (who) => (who && who.handle ? "@" + who.handle : who && (who.member_id || who.id)) || M.t("prefs.someone");
+  // Who wrote a version, who proposed it, who confirmed it: facts with a
+  // middle dot between them, each one whole.
   function provenance(v) {
-    if (!v || !v.version) return "Not written yet.";
-    const parts = ["Version " + v.version];
-    if (v.by) parts.push("written by " + handleOf(v.by) + (v.by.kind === "agent" ? " (agent)" : ""));
-    if (v.proposed_by) parts.push("proposed by " + handleOf(v.proposed_by) + (v.proposed_by.project ? " in " + v.proposed_by.project : ""));
-    if (v.confirmed_by) parts.push("confirmed by " + handleOf(v.confirmed_by));
+    if (!v || !v.version) return M.t("prefs.not_written");
+    const parts = [M.t("prefs.version", { version: String(v.version) })];
+    if (v.by) parts.push(v.by.kind === "agent" ? M.t("prefs.by_agent", { who: handleOf(v.by) }) : M.t("prefs.by", { who: handleOf(v.by) }));
+    if (v.proposed_by) {
+      parts.push(v.proposed_by.project ? M.t("prefs.proposed_in", { who: handleOf(v.proposed_by), project: v.proposed_by.project })
+        : M.t("prefs.proposed", { who: handleOf(v.proposed_by) }));
+    }
+    if (v.confirmed_by) parts.push(M.t("prefs.confirmed", { who: handleOf(v.confirmed_by) }));
     const at = v.updated_at || v.at;
     if (at) parts.push(formatTime(at));
     return parts.join(" · ");
@@ -102,21 +115,20 @@ window.Maity = window.Maity || {};
   // The hub's refusals, in words.
   function said(err) {
     const fields = err.details && err.details.fields;
-    if (err.code === "invalid" && fields && fields.markdown) return { message: "the text is over 8 KiB" };
-    if (err.code === "rate_limited") return { message: "too many changes just now; try again in a moment" };
+    if (err.code === "invalid" && fields && fields.markdown) return { message: M.t("prefs.refused.too_long", { cap: CAP / 1024 }) };
+    if (err.code === "rate_limited") return { message: M.t("prefs.refused.rate") };
     return err;
   }
 
-  // #/account/preferences: the editor, the projects, the earlier versions.
+  // /account/preferences: the editor, the projects, the earlier versions.
   async function section(ctx) {
-    const heading = h("h3", { class: "preferences-heading", tabindex: "-1" }, "Your preferences");
+    const heading = h("h3", { class: "preferences-heading", tabindex: "-1" }, M.t("prefs.title"));
     const el = h("section", { class: "preferences" }, heading);
     let mine;
     try {
       mine = await M.api.get("/me/preferences");
     } catch (err) {
-      if (await M.api.missingRoute(err, "GET", "/me/preferences")) append(el, M.dom.notOnHub("This hub keeps no preferences yet."));
-      else append(el, M.errorBox(err));
+      append(el, M.errorBox(err));
       return { el, heading };
     }
 
@@ -128,12 +140,12 @@ window.Maity = window.Maity || {};
     const line = h("p", { class: "muted preferences-version" });
     const status = M.statusLine();
     const conflictBox = h("div", { class: "preferences-conflict" });
-    const save = h("button", { type: "submit", class: "primary" }, "Save");
+    const save = h("button", { type: "submit", class: "primary" }, M.t("prefs.save"));
     let shown = mine;
 
     const drawState = () => {
       const n = utf8Length(text.value);
-      size.textContent = kib(n) + " of 8 KiB" + (n > CAP ? " — too long to save" : "");
+      size.textContent = sizeText(n, true);
       size.classList.toggle("over", n > CAP);
       save.disabled = n > CAP || text.value === (shown.markdown || "");
     };
@@ -142,16 +154,16 @@ window.Maity = window.Maity || {};
 
     async function put(baseVersion) {
       save.disabled = true;
-      status.busy("Saving…");
+      status.busy(M.t("prefs.saving"));
       clear(conflictBox);
       try {
         shown = await M.api.put("/me/preferences", { markdown: text.value, base_version: baseVersion });
         drawLine();
         status.done();
-        append(status.el, h("span", { class: "ok" }, "Saved as version " + shown.version + "."));
+        append(status.el, h("span", { class: "ok" }, M.t("prefs.saved", { version: String(shown.version) })));
       } catch (err) {
         if (err.code === "conflict") await conflicted();
-        else status.fail("Not saved: ", said(err));
+        else status.fail(M.t("prefs.not_saved"), said(err));
       } finally {
         drawState();
       }
@@ -163,17 +175,17 @@ window.Maity = window.Maity || {};
       try {
         now = await M.api.get("/me/preferences");
       } catch (err) {
-        status.fail("Not saved, and the newer version could not be read: ", err);
+        status.fail(M.t("prefs.conflict.unread"), err);
         return;
       }
       status.done();
       const takeTheirs = h("button", { type: "button", onclick: () => {
         shown = now; text.value = now.markdown || ""; clear(conflictBox); drawLine(); drawState(); text.focus();
-      } }, "Take version " + now.version);
-      const keepMine = h("button", { type: "button", onclick: () => { shown = now; drawLine(); put(now.version); } }, "Save mine over it");
+      } }, M.t("prefs.conflict.take", { version: String(now.version) }));
+      const keepMine = h("button", { type: "button", onclick: () => { shown = now; drawLine(); put(now.version); } }, M.t("prefs.conflict.keep"));
       append(clear(conflictBox),
-        h("p", { class: "flag", role: "alert" }, "Not saved: your preferences changed meanwhile, now " + provenance(now) + ". Your text is still in the editor."),
-        h("h4", { class: "sub" }, "From version " + now.version + " to your text"),
+        h("p", { class: "flag", role: "alert" }, M.t("prefs.conflict.said", { now: provenance(now) })),
+        h("h4", { class: "sub" }, M.t("prefs.conflict.diff", { version: String(now.version) })),
         diffView(now.markdown || "", text.value),
         h("div", { class: "actions" }, takeTheirs, keepMine));
     }
@@ -182,10 +194,8 @@ window.Maity = window.Maity || {};
       class: "preferences-form",
       onsubmit: (e) => { e.preventDefault(); if (!save.disabled) put(shown.version); },
     },
-    h("label", { for: "preferences-text" }, "How you like to work and be treated (Markdown)"),
-    h("p", { class: "hint", id: hintId },
-      "Tone, length, what you never want, how you decide. Every agent in your projects reads it in its resume, quoted as yours. "
-        + "It is context, never a permission: the project's rules win. The language agents write to you in is set under notifications."),
+    h("label", { for: "preferences-text" }, M.t("prefs.label")),
+    h("p", { class: "hint", id: hintId }, M.t("prefs.hint")),
     text, size,
     h("div", { class: "actions" }, save),
     status.el, conflictBox);
@@ -193,7 +203,7 @@ window.Maity = window.Maity || {};
     drawLine();
     drawState();
 
-    append(el, h("p", { class: "muted" }, "One text for all your projects. Agents may propose a change; it reaches you in your inbox and changes nothing until you accept it."),
+    append(el, h("p", { class: "muted" }, M.t("prefs.intro")),
       line, form, projectsBox(ctx, mine.projects || []), versionsBox());
     return { el, heading };
   }
@@ -204,7 +214,7 @@ window.Maity = window.Maity || {};
     const nameOf = (full) => (ctx.projects.find((p) => p.full_name === full) || { name: full }).name;
     const status = M.statusLine();
     return h("fieldset", { class: "preferences-projects" },
-      h("legend", null, "The agents of these projects read them"),
+      h("legend", null, M.t("prefs.projects.legend")),
       h("ul", null, projects.map((p) => {
         const id = "preferences-in-" + String(p.full_name).replace("/", "-");
         const box = h("input", { type: "checkbox", id, checked: p.include });
@@ -212,21 +222,21 @@ window.Maity = window.Maity || {};
         box.addEventListener("change", async () => {
           const want = box.checked;
           box.disabled = true;
-          status.busy("Saving…");
+          status.busy(M.t("prefs.saving"));
           try {
             await M.api.put("/me/preferences/projects/" + M.api.projectPath(p.full_name), { include: want });
             p.include = want;
             status.done();
           } catch (err) {
             box.checked = !want;
-            status.fail("Not changed for " + nameOf(p.full_name) + ": ", err);
+            status.fail(M.t("prefs.projects.failed", { name: nameOf(p.full_name) }), err);
           } finally {
             box.disabled = false;
           }
         });
         return h("li", null, box, h("label", { for: id }, nameOf(p.full_name)));
       })),
-      h("p", { class: "hint" }, "Off, that project's agents get no preferences of yours, except an agent you gave them to on its card."),
+      h("p", { class: "hint" }, M.t("prefs.projects.hint")),
       status.el);
   }
 
@@ -234,30 +244,30 @@ window.Maity = window.Maity || {};
   function versionsBox() {
     const list = h("ol", { class: "preferences-versions" });
     const status = M.statusLine();
-    const more = h("button", { type: "button", class: "small", hidden: true }, "Older versions");
+    const more = h("button", { type: "button", class: "small", hidden: true }, M.t("prefs.versions.older"));
     more.hidden = true;
     let cursor = null;
     let read = false;
     async function page() {
       more.disabled = true;
-      status.busy("Reading…");
+      status.busy(M.t("prefs.versions.reading"));
       try {
         const got = await M.api.get("/me/preferences/versions?limit=" + VERSIONS_PAGE + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
         append(list, got.items.map((v) => h("li", null,
           h("p", { class: "muted" }, provenance(v)),
-          v.markdown ? h("pre", { class: "preferences-text" }, v.markdown) : h("p", { class: "muted" }, "(empty)"))));
-        if (!got.items.length && !cursor) append(list, h("li", { class: "muted" }, "No versions yet."));
+          v.markdown ? h("pre", { class: "preferences-text" }, v.markdown) : h("p", { class: "muted" }, M.t("prefs.empty")))));
+        if (!got.items.length && !cursor) append(list, h("li", { class: "muted" }, M.t("prefs.versions.none")));
         cursor = got.next_cursor;
         more.hidden = !cursor;
         status.done();
       } catch (err) {
-        status.fail("The versions could not be read: ", err);
+        status.fail(M.t("prefs.versions.failed"), err);
       } finally {
         more.disabled = false;
       }
     }
     more.addEventListener("click", page);
-    const box = h("details", { class: "preferences-history" }, h("summary", null, "Earlier versions"), list, more, status.el);
+    const box = h("details", { class: "preferences-history" }, h("summary", null, M.t("prefs.versions.title")), list, more, status.el);
     box.addEventListener("toggle", () => { if (box.open && !read) { read = true; page(); } });
     return box;
   }
@@ -269,7 +279,7 @@ window.Maity = window.Maity || {};
   // hub's error, which this review says in its own words.
   function review(ctx, req, answer) {
     const box = h("div", { class: "pref-review", "aria-busy": "true" },
-      h("p", { class: "muted" }, "Reading your current preferences…"));
+      h("p", { class: "muted" }, M.t("prefs.review.reading")));
     // What the human typed outlives a redraw: a conflict shows the review
     // again against the newer version, with their edit and reason kept.
     const kept = { draft: null, editing: false, why: "" };
@@ -292,65 +302,64 @@ window.Maity = window.Maity || {};
           busy(false);
           if (err.code === "conflict") {
             status.done();
-            reload("Your preferences changed while you looked: shown again against version "
-              + ((err.details && err.details.current_version) || "the newer one") + ".");
+            const v = err.details && err.details.current_version;
+            reload(v ? M.t("prefs.review.changed", { version: String(v) }) : M.t("prefs.review.changed_newer"));
           } else {
-            status.fail("Not sent: ", said(err));
+            status.fail(M.t("prefs.review.not_sent"), said(err));
           }
         }
       };
 
-      const why = h("textarea", { id: "pref-why-" + req.id, rows: "2", placeholder: "Why not (optional; the agent reads it)" });
+      const why = h("textarea", { id: "pref-why-" + req.id, rows: "2", placeholder: M.t("prefs.review.why_placeholder") });
       why.value = kept.why;
       why.addEventListener("input", () => { kept.why = why.value; });
       const decline = h("button", { type: "button", class: "reply", onclick: () => {
         const text = why.value.trim();
-        sendIt(text ? { reply_id: "no", text } : { reply_id: "no" }, "Declining…");
-      } }, "Decline");
+        sendIt(text ? { reply_id: "no", text } : { reply_id: "no" }, M.t("prefs.review.declining"));
+      } }, M.t("prefs.review.decline"));
       const editor = h("textarea", { id: "pref-edit-" + req.id, rows: "10" });
       editor.value = kept.draft !== null ? kept.draft : p.markdown;
       const editSize = h("p", { class: "hint", "aria-live": "polite" });
-      const drawEditSize = () => { const n = utf8Length(editor.value); editSize.textContent = kib(n) + " of 8 KiB" + (n > CAP ? " — too long" : ""); };
+      const drawEditSize = () => { editSize.textContent = sizeText(utf8Length(editor.value), false); };
       editor.addEventListener("input", () => { kept.draft = editor.value; drawEditSize(); });
       drawEditSize();
       const acceptEdit = () => {
         if (utf8Length(editor.value) > CAP) { editor.focus(); return; }
-        sendIt({ reply_id: "go", markdown: editor.value, base_version: current.version }, "Accepting your edit…");
+        sendIt({ reply_id: "go", markdown: editor.value, base_version: current.version }, M.t("prefs.review.accepting_edit"));
       };
-      const acceptEditButton = h("button", { type: "button", class: "reply primary", onclick: acceptEdit }, "Accept my edit");
+      const acceptEditButton = h("button", { type: "button", class: "reply primary", onclick: acceptEdit }, M.t("prefs.review.accept_edit"));
       M.dom.sendOnCtrlEnter(editor, acceptEdit, acceptEditButton);
       const editPane = h("div", { class: "pref-edit", hidden: true },
-        h("label", { for: editor.id }, stale ? "Merge it with your current text, then accept (" + M.dom.SEND_KEYS + ")" : "Your edit of the proposal (" + M.dom.SEND_KEYS + " accepts)"),
+        h("label", { for: editor.id }, stale ? M.t("prefs.review.merge_label", { keys: M.dom.SEND_KEYS }) : M.t("prefs.review.edit_label", { keys: M.dom.SEND_KEYS })),
         editor, editSize,
         h("div", { class: "actions" },
           // Cancel drops the edit: the next Edit starts from the proposal again.
           h("button", { type: "button", onclick: () => {
             kept.editing = false; kept.draft = null; editor.value = p.markdown; drawEditSize();
             editPane.hidden = true; editButton.hidden = false; editButton.focus();
-          } }, "Cancel"),
+          } }, M.t("prefs.review.cancel")),
           acceptEditButton));
       editPane.hidden = !kept.editing;
       const editButton = h("button", { type: "button", class: "reply", onclick: () => {
         kept.editing = true; editPane.hidden = false; editButton.hidden = true; editor.focus();
-      } }, stale ? "Merge by hand" : "Edit, then accept");
+      } }, stale ? M.t("prefs.review.merge") : M.t("prefs.review.edit"));
       editButton.hidden = kept.editing;
       // A plain go on a stale base would drop the newer text unread (§19.4).
-      const accept = stale ? null : h("button", { type: "button", class: "reply primary", onclick: () => sendIt({ reply_id: "go" }, "Accepting…") }, "Accept");
+      const accept = stale ? null : h("button", { type: "button", class: "reply primary", onclick: () => sendIt({ reply_id: "go" }, M.t("prefs.review.accepting")) }, M.t("prefs.review.accept"));
       append(actions, decline, editButton, accept);
 
       append(clear(box),
-        h("h3", { class: "sub" }, "A change to your preferences"),
-        p.reason ? h("p", null, h("strong", null, "Why: "), p.reason) : null,
+        h("h3", { class: "sub" }, M.t("prefs.review.title")),
+        p.reason ? h("p", { class: "pref-why" }, M.t("prefs.review.why", { reason: p.reason })) : null,
         stale ? h("p", { class: "flag", role: "note" },
-          "Your preferences changed since this was proposed: it was written against version " + p.base_version
-            + ", yours is now version " + current.version + ". Accepting it as it is would drop the newer text, so merge it by hand or decline it.") : null,
-        h("h4", { class: "sub" }, "From your text (version " + current.version + ") to the proposed one"),
+          M.t("prefs.review.stale", { base: String(p.base_version), version: String(current.version) })) : null,
+        h("h4", { class: "sub" }, M.t("prefs.review.diff", { version: String(current.version) })),
         diffView(current.markdown, p.markdown),
-        h("details", { class: "pref-texts" }, h("summary", null, "Both texts in full"),
-          h("h4", { class: "sub" }, "Yours now"), current.markdown ? h("pre", { class: "preferences-text" }, current.markdown) : h("p", { class: "muted" }, "(empty)"),
-          h("h4", { class: "sub" }, "Proposed"), p.markdown ? h("pre", { class: "preferences-text" }, p.markdown) : h("p", { class: "muted" }, "(empty)")),
+        h("details", { class: "pref-texts" }, h("summary", null, M.t("prefs.review.both")),
+          h("h4", { class: "sub" }, M.t("prefs.review.yours")), current.markdown ? h("pre", { class: "preferences-text" }, current.markdown) : h("p", { class: "muted" }, M.t("prefs.empty")),
+          h("h4", { class: "sub" }, M.t("prefs.review.proposed")), p.markdown ? h("pre", { class: "preferences-text" }, p.markdown) : h("p", { class: "muted" }, M.t("prefs.empty"))),
         editPane,
-        h("div", { class: "free-text" }, h("label", { for: why.id }, "Reason for declining"), why),
+        h("div", { class: "free-text" }, h("label", { for: why.id }, M.t("prefs.review.why_declining")), why),
         actions,
         status.el);
       // Drawn again while editing: the focus goes back into the edit.
@@ -359,7 +368,7 @@ window.Maity = window.Maity || {};
     // A failed read leaves a drawn review as it was, the edit included.
     const fail = (err) => {
       box.removeAttribute("aria-busy");
-      if (drawn) box.insertBefore(h("p", { class: "send-status failed", role: "alert" }, "Your current preferences could not be read again: " + (err.message || err.code)), box.firstChild);
+      if (drawn) box.insertBefore(h("p", { class: "send-status failed", role: "alert" }, M.t("prefs.review.reread_failed", { reason: err.message || err.code })), box.firstChild);
       else append(clear(box), M.errorBox(err));
     };
     // The inbox read the request on its own (js/inbox.js): its proposal
@@ -379,7 +388,7 @@ window.Maity = window.Maity || {};
   function outcome(req) {
     const r = req.memory_proposal && req.memory_proposal.result;
     if (!r) return null;
-    return h("p", { class: "muted" }, "Applied as version " + r.version + (r.edited ? ", with your edit." : ", as proposed."));
+    return h("p", { class: "muted" }, r.edited ? M.t("prefs.outcome.edited", { version: String(r.version) }) : M.t("prefs.outcome.as_proposed", { version: String(r.version) }));
   }
 
   // On an agent's card, for its owner only (§19.4): its resume carries the
@@ -392,22 +401,21 @@ window.Maity = window.Maity || {};
     box.addEventListener("change", async () => {
       const want = box.checked;
       box.disabled = true;
-      status.busy("Saving…");
+      status.busy(M.t("prefs.saving"));
       try {
         await M.api.patch(ctx.base + "/members/" + encodeURIComponent(m.id), { owner_preferences: want });
         m.owner_preferences = want;
         status.done();
       } catch (err) {
         box.checked = !want;
-        status.fail("Not changed: ", err);
+        status.fail(M.t("prefs.owner.failed"), err);
       } finally {
         box.disabled = false;
       }
     });
     return h("div", { class: "owner-preferences" },
-      box, h("label", { for: id }, "Give my preferences to this agent"),
-      h("p", { class: "hint" }, "Its resume shows your current preferences next to its briefing, whatever this project's setting; "
-        + "no other member sees them. A later edit reaches it on its next resume."),
+      box, h("label", { for: id }, M.t("prefs.owner.label")),
+      h("p", { class: "hint" }, M.t("prefs.owner.hint")),
       status.el);
   }
 

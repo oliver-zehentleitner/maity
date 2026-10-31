@@ -1,0 +1,25 @@
+{
+  "default_language": "en",
+  "pages": {
+    "imprint": {
+      "version": "2026-10-28T19:30:00Z",
+      "languages": {
+        "en": {
+          "title": "Imprint",
+          "markdown": "Maintainer\n\nVienna, Austria"
+        },
+        "de": {
+          "title": "Impressum",
+          "markdown": "Maintainer\n\nWien, Österreich"
+        }
+      },
+      "versions": [
+        "2026-10-27T10:00:00Z"
+      ]
+    },
+    "privacy": null,
+    "terms": null
+  },
+  "updated_at": "2026-10-28T19:30:00Z",
+  "updated_by": "hum-maintainer"
+}

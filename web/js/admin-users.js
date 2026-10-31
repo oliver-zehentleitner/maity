@@ -1,4 +1,4 @@
-// Users of this hub, the Users section of #/admin (docs/api.md §16.1;
+// Users of this hub, the Users section of /admin (docs/api.md §16.1;
 // js/instance-admin.js shows it to the instance admin only): the humans of the
 // instance for its admin — counts and times, never content. Searchable by
 // handle or name and filterable by disabled; paged by the hub's cursor.
@@ -83,15 +83,7 @@ window.Maity = window.Maity || {};
         }
       } catch (err) {
         if (mine !== seq) return;
-        if (await M.api.missingRoute(err, "GET", "/admin/users")) {
-          M.api.absent.note("GET", "/admin/users");
-          if (root.classList.contains("admin-section")) { root.remove(); return; }
-          clear(box);
-          append(box, h("p", null, "This hub has no user list yet."));
-          status.done();
-        } else {
-          status.fail("The users could not be read: ", err);
-        }
+        status.fail("The users could not be read: ", err);
       }
     }
 

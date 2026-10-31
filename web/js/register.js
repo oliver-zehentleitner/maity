@@ -1,4 +1,4 @@
-// Registration (docs/api.md §2.7.1): #/register?next=…, signed out. The
+// Registration (docs/api.md §2.7.1): /register?next=…, signed out. The
 // form asks for the address and a password; the hub answers the same for
 // every address, and the account is made from the link it mails. Offered
 // where the instance registers (GET /auth/methods), or where the
@@ -19,20 +19,21 @@ window.Maity = window.Maity || {};
   async function register(main, header, next) {
     // Signed in, there is nothing to register: on to next, or the start.
     const session = await M.api.get("/auth/session").then(() => true, () => false);
-    if (session) { window.location.replace(next ? next.slice(1) : "#/all"); return; }
+    if (session) { M.route.go(next || "/all", { replace: true }); return; }
     bar(header);
     document.title = "Create an account · Maity";
     const box = h("article", { class: "register door" });
-    append(clear(main), box);
-    const signIn = next ? "#/login?next=" + encodeURIComponent(next) : "#/login";
+    // The legal pages that are set, under the form (§16.7.1).
+    append(clear(main), box, M.legal ? M.legal.links() : null);
+    const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
     // May this person register here? The instance's mode (§2.6.1), or an
     // address-bound invitation that admits (§3.4) when they come from one.
     let methods = null;
     let invitation = null;
     try {
-      if (await M.api.hubHas("GET", "/auth/methods")) methods = await M.api.get("/auth/methods");
+      methods = await M.api.get("/auth/methods");
       // Only a token of the hub's form (§3.4) is asked about.
-      const invited = next && /^\/#\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
+      const invited = next && /^\/invite\/([A-Za-z0-9_-]{22})$/.exec(next);
       if (invited) invitation = await M.api.get("/invitations/" + encodeURIComponent(invited[1])).catch(() => null);
     } catch (err) {
       append(box, h("p", { class: "send-status failed" }, "Could not read how this hub registers: " + err.message));
@@ -86,7 +87,16 @@ window.Maity = window.Maity || {};
     h("label", { for: "register-repeat" }, "The password again"), repeat,
     submit, status.el,
     h("p", { class: "muted" }, "Have an account? ", h("a", { href: signIn }, "Sign in"), "."));
-    append(box, h("p", { class: "muted" }, "We send a link to your address; the account is made only once you follow it."), form);
+    // The instance's terms (§2.7.2, from GET /auth/methods): accepted on the
+    // link's page, where their version is signed; named here so nobody is
+    // surprised there. A link only when it is plain https.
+    const terms = methods && methods.terms;
+    const termsUrl = terms && M.dom.safeUrl(terms.url);
+    append(box, h("p", { class: "muted" }, "We send a link to your address; the account is made only once you follow it."),
+      terms ? h("p", { class: "hint register-terms" }, "When you complete your account you accept this hub's ",
+        termsUrl ? h("a", { href: termsUrl, target: "_blank", rel: "noopener noreferrer" }, "terms") : "terms",
+        terms.version ? " (version " + terms.version + ")" : "", ".") : null,
+      form);
   }
 
   function registerWords(err) {

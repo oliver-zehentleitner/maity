@@ -165,12 +165,17 @@ def _once(key: Key, read: Callable[[], dict[str, Any]]) -> dict[str, Any]:
                 kept = _kept(key)
             if kept is None:
                 try:
-                    kept = read()
-                except ContractTextError as error:
-                    kept = error
-                with _lock:
-                    _remember(key, kept)
-                    _pending.pop(key, None)
+                    try:
+                        kept = read()
+                    except ContractTextError as error:
+                        kept = error
+                    with _lock:
+                        _remember(key, kept)
+                finally:
+                    # Also when the forge did not answer (nothing kept): otherwise every
+                    # failed read would leave its key's gate behind for good.
+                    with _lock:
+                        _pending.pop(key, None)
     if isinstance(kept, ContractTextError):
         raise kept
     return kept

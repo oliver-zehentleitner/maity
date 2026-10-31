@@ -27,6 +27,8 @@ from maity_hub import (
     mentions,
     namespace,
     not_listening,
+    project_roles,
+    reviews,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -61,6 +63,8 @@ class MessageIn(Written):
     body: str = markdown()
     task_id: str | None = None
     conversation_id: str | None = None
+    to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
+    review: Any = None  # a `review_result`'s object (§8.4), checked in `post_message`
 
     @field_validator("body")
     @classmethod
@@ -158,11 +162,16 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
 
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
         with engine.begin() as conn:
+            row = mine.row
+            if caller.kind == "agent":
+                # As of now, not as of the call's start: an isolation that committed since
+                # reads nothing more (§6.2, "Isolation").
+                row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
             if waking:
                 rows, examined = events.read_waking(
                     conn,
                     mine.project.id,
-                    mine.row,
+                    row,
                     mine.principal_id,
                     since,
                     limit,
@@ -172,7 +181,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 )
             else:
                 rows, examined, _ = events.read(
-                    conn, mine.project.id, mine.row, mine.principal_id, since, limit
+                    conn, mine.project.id, row, mine.principal_id, since, limit
                 )
             if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
                 events.mark_delivered(conn, rows, mine.principal_id)
@@ -188,6 +197,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         project_id=mine.project.id,
         session_id=caller.session_id,
         loop=asyncio.get_running_loop(),
+        membership_id=caller.membership_id,
     )
     longpoll.registry.enter(waiter)
     try:
@@ -198,7 +208,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 # Nothing read, nothing delivered, the cursor where it was: the wait that
                 # took over owns what came in (§8.3).
                 return answer([], after, superseded=True)
-            if await request.is_disconnected():
+            if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
             items, cursor = await run_in_threadpool(read, True, since)
@@ -273,6 +283,18 @@ def post_message(
         raise invalid({"type": "unknown"})
     me = mine.principal_id
     group: Any = None
+    review: dict[str, Any] | None = None
+    if body.type == "review_result":
+        review, problems = reviews.check(body.review)
+        if problems:
+            raise invalid(problems)
+    elif body.review is not None:
+        raise invalid({"review": "not_allowed"})
+    if body.to_instance is not None and (
+        body.type != "chat"
+        or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
+    ):
+        raise invalid({"to_instance": "direct_chat_only"}, "an instance is named in a direct chat")
     if body.type == "chat":
         if body.conversation_id is None:
             raise invalid({"conversation_id": "required_for_chat"})
@@ -296,7 +318,20 @@ def post_message(
         if me not in parties:
             raise forbidden(message="only the two parties write in a conversation")
         to = parties[1] if me == parties[0] else parties[0]
+        if agent.isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
+            raise invalid({"to": "isolated"}, "the agent is isolated")
         audience = [f"member:{p}" for p in parties]
+        if body.to_instance is not None:
+            # The human's message wakes exactly one instance of the agent, resolved as an
+            # address in a message's `to` is; the whole team still reads it (§9.1, §8.2).
+            if me != parties[1]:
+                raise invalid({"to_instance": "human_only"}, "only the human names an instance")
+            if not instances.INSTANCE_PATTERN.fullmatch(body.to_instance):
+                raise invalid({"to_instance": "not_an_instance"})
+            target = instances.addressed(
+                conn, agent.id, parties[0], body.to_instance, "to_instance"
+            )
+            audience = [target, f"member:{parties[1]}"]
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
@@ -308,7 +343,7 @@ def post_message(
         elif to.startswith(("role:", "trust:")):
             from maity_hub.scopes import token_known
 
-            if not token_known(to):
+            if not token_known(to, project_roles.names(mine.project)):
                 raise invalid({"to": "unknown_role"})
             target = to
         else:
@@ -317,10 +352,15 @@ def post_message(
                 addressee = member_row(conn, mine.project.id, principal)
             except ApiError:
                 raise invalid({"to": "not_a_member"}) from None
-            if instance is not None:
-                # One instance of a team: its token wakes only it, the team reads it (§8.2).
-                instances.require_active(conn, addressee, instance, "to")
-            target = instances.token(principal, instance)
+            if addressee.isolated_since is not None:
+                raise invalid({"to": "isolated"}, "the agent is isolated")
+            # One instance of a team: its token wakes only it, the team reads it; a replaced
+            # instance's address reaches its successor (§8.2).
+            target = (
+                instances.token(principal, None)
+                if instance is None
+                else instances.addressed(conn, addressee.id, principal, instance, "to")
+            )
         audience = list(dict.fromkeys([target, f"member:{me}"]))
     if body.task_id is not None:
         found = conn.execute(
@@ -337,6 +377,22 @@ def post_message(
         inside = {group_chats.principal(s) for s in current}
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
+        # An instance mention wakes the instance it comes down to, a successor when the one
+        # named was replaced (§8.2, §8.6): `events.wakes` reads that token, not the written id.
+        audience = list(
+            dict.fromkeys(
+                [
+                    *audience,
+                    *(
+                        mentions.instance_token(
+                            conn, mine.project.id, m["member_id"], m["instance"]
+                        )
+                        for m in mentioned
+                        if m["instance"] is not None
+                    ),
+                ]
+            )
+        )
     elif body.type != "chat":  # a direct chat stays between its two parties (§8.6)
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body")
         roles = _roles(conn, mine.project.id, mentions.members(mentioned))
@@ -347,7 +403,7 @@ def post_message(
         # mention stays either way.
         pinged: dict[str, str] = {}  # token -> member
         for m in mentioned:
-            token = instances.token(m["member_id"], m["instance"])
+            token = mentions.instance_token(conn, mine.project.id, m["member_id"], m["instance"])
             if not (
                 "all" in audience
                 or token in audience
@@ -368,6 +424,10 @@ def post_message(
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
+    if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
+        payload["to_instance"] = body.to_instance
+    if review is not None:  # what a review result judged and read (§8.4)
+        payload["review"] = review
     seq = events.emit(
         conn,
         mine.project.id,
@@ -446,13 +506,14 @@ def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str
             t.membership.c.human_id,
             t.membership.c.trust,
             t.membership.c.role,
+            t.membership.c.role_base,
         ).where(
             t.membership.c.project_id == project_id,
             t.membership.c.active.is_(True),
             t.membership.c.agent_id.in_(principals) | t.membership.c.human_id.in_(principals),
         )
     ).all()
-    return {(r.agent_id or r.human_id): tokens_of(r.trust, r.role) for r in rows}
+    return {(r.agent_id or r.human_id): tokens_of(r.trust, r.role, r.role_base) for r in rows}
 
 
 def writer(
@@ -581,12 +642,35 @@ def _tombstone(
 ) -> None:
     """The one mutation the log allows, itself on record (§8.5); a second redaction of
     the same event changes nothing."""
+    tombstone(
+        conn,
+        mine.project.id,
+        row,
+        reason,
+        audience,
+        mine.principal_id,
+        caller.actor(mine.id),
+        store,
+    )
+
+
+def tombstone(
+    conn: Connection,
+    project_id: str,
+    row: Any,
+    reason: str,
+    audience: list[str],
+    by: str | None,
+    actor: events.Actor,
+    store: attachment_store.LocalStore | None = None,
+) -> None:
+    """`_tombstone` by any actor: moderation redacts as the hub, `by` null (§16.8)."""
     if row.redacted:
         return
-    tombstone = {
+    stone = {
         "redacted": True,
         "reason": reason,
-        "by": mine.principal_id,
+        "by": by,
         "at": clock.rfc3339(clock.now()),
     }
     # Only the first of two concurrent redactions writes and is announced; the other
@@ -594,12 +678,12 @@ def _tombstone(
     won = conn.execute(
         update(t.event)
         .where(t.event.c.seq == row.seq, t.event.c.redacted.is_(False))
-        .values(payload=tombstone, redacted=True)
+        .values(payload=stone, redacted=True)
     ).rowcount
     if won != 1:
         return
     if row.kind == "message":
-        attachments.redact_message(conn, row.seq, mine.principal_id, store)
+        attachments.redact_message(conn, row.seq, by, store)
     marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
@@ -607,16 +691,16 @@ def _tombstone(
         exchange.redact_copy(
             conn,
             marker,
-            {k: v for k, v in tombstone.items() if k != "redacted"},
-            caller.actor(mine.id),
+            {k: v for k, v in stone.items() if k != "redacted"},
+            actor,
         )
     events.emit(
         conn,
-        mine.project.id,
+        project_id,
         "event_redacted",
         audience,
         {"seq": row.seq, "reason": reason},
-        actor=caller.actor(mine.id),
+        actor=actor,
         subject=("event", str(row.seq)),
         # A chat's notice is the chat's, as the message was: no see-all reaches it.
         conversation_id=row.conversation_id,

@@ -51,11 +51,15 @@ def _mine(conn: Connection, human_id: str) -> dict[str, Any]:
     shown = preferences.view(conn, human_id)
     # Each project by its full name (§6.25): two owners' projects may share a slug.
     rows = conn.execute(
-        select(t.project.c.slug, t.human.c.handle, t.membership.c.preferences_include)
-        .join(t.project, t.project.c.id == t.membership.c.project_id)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        namespace.join_owner(
+            select(
+                t.project.c.slug,
+                namespace.owner_handle().label("handle"),
+                t.membership.c.preferences_include,
+            ).join(t.project, t.project.c.id == t.membership.c.project_id)
+        )
         .where(t.membership.c.human_id == human_id, t.membership.c.active.is_(True))
-        .order_by(t.human.c.handle, t.project.c.slug)
+        .order_by(namespace.owner_handle(), t.project.c.slug)
     ).all()
     projects = [
         {"slug": r.slug, "full_name": f"{r.handle}/{r.slug}", "include": r.preferences_include}

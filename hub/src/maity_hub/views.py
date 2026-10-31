@@ -13,7 +13,6 @@ from maity_hub import (
     avatars,
     clock,
     commitment,
-    contract_text,
     forge,
     forge_access,
     mentions,
@@ -22,8 +21,11 @@ from maity_hub import (
     policy,
     ticker_read,
 )
+from maity_hub import handles as handle_book
 from maity_hub import tables as t
 from maity_hub.config import Settings
+from maity_hub.cover import still_with as cover_still_with
+from maity_hub.cover import view as cover_view
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -124,13 +126,41 @@ def human_member(row: Any, *, avatar_url: str | None) -> dict[str, Any]:
     }
 
 
-MEAT_PROXY_NOTE = "This person says: I am a meat proxy."
+MEAT_PROXY_INTRO = "This person says: I am a meat proxy."
+MEAT_PROXY_LEAD = "Lead me step by step rather than expecting me to explain."
+MEAT_PROXY_HANDS = "When you need a human's hands, come to me first."
 
 
-def meat_proxy_view(on: bool) -> dict[str, Any]:
-    """The resume packet's two fields (docs/api.md §5.2, "Meat proxy"): the flag, and while it is on
-    the one fixed sentence and nothing that says what it means."""
-    return {"meat_proxy": on, **({"meat_proxy_note": MEAT_PROXY_NOTE} if on else {})}
+def meat_proxy_note(lead: bool, hands: bool) -> str:
+    """The note for the parts that are on, in the person's own words: the sentence of each part,
+    the lead part first, after the intro (docs/api.md §5.2, "Meat proxy")."""
+    parts = [s for on, s in ((lead, MEAT_PROXY_LEAD), (hands, MEAT_PROXY_HANDS)) if on]
+    return " ".join([MEAT_PROXY_INTRO, *parts])
+
+
+def meat_proxy_member(lead: bool, hands: bool) -> dict[str, Any]:
+    """A human's own `GET /me`: the switch, both parts and the note, always. While the mode is
+    off the note is the one switching it on would send, with both parts."""
+    on = lead or hands
+    return {
+        "meat_proxy": on,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands) if on else meat_proxy_note(True, True),
+    }
+
+
+def meat_proxy_view(lead: bool, hands: bool) -> dict[str, Any]:
+    """The resume packet's fields (docs/api.md §5.2, "Meat proxy"): the switch, and while it is on
+    both parts and the note, nothing that says what it means."""
+    if not (lead or hands):
+        return {"meat_proxy": False}
+    return {
+        "meat_proxy": True,
+        "meat_proxy_lead": lead,
+        "meat_proxy_hands": hands,
+        "meat_proxy_note": meat_proxy_note(lead, hands),
+    }
 
 
 def owner_handles(conn: Connection, owner_ids: Iterable[str]) -> dict[str, str]:
@@ -160,7 +190,27 @@ def git_identity(row: Any) -> dict[str, str] | None:
     return {"name": row.git_name, "email": row.git_email}
 
 
-def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
+def confirmed_by_of(conn: Connection, projects: Sequence[Any]) -> dict[str, dict[str, str] | None]:
+    """`{id, handle}` of the human whose grants each project's confirmation put to use, or
+    None while it is not confirmed (§11.4)."""
+    ids = {p.repository_confirmed_by for p in projects if p.repository_owner_confirmed} - {None}
+    handles = {
+        row.id: row.handle
+        for row in conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(ids)))
+    }
+    return {
+        p.id: (
+            {"id": p.repository_confirmed_by, "handle": handles[p.repository_confirmed_by]}
+            if p.repository_owner_confirmed and p.repository_confirmed_by in handles
+            else None
+        )
+        for p in projects
+    }
+
+
+def repository(
+    project: Any, settings: Settings, confirmed_by: dict[str, str] | None = None
+) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
     via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
@@ -171,6 +221,7 @@ def repository(project: Any, settings: Settings) -> dict[str, Any] | None:
         "probe_configured": via is not None,
         "probe_via": via,
         "owner_confirmed": bool(project.repository_owner_confirmed),
+        "confirmed_by": confirmed_by,
     }
 
 
@@ -205,12 +256,13 @@ def project_view(
     export: dict[str, Any] | None = None,
     aliases: list[str] | None = None,
     stored: dict[str, int] | None = None,
+    confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """`owner_handle` is the namespace owner's current handle (§6.25), `shown` what
     `images.views` says the project shows as logo and banner, `export` the Keep the Why
     export as `ktw.export_for_view` holds it, `aliases` the former full names, oldest
     first, `stored` the attachments `{used, quota}` for a caller with `project:admin`
-    (§8.7) and None for anyone else."""
+    (§8.7) and None for anyone else, `confirmed_by` who confirmed the repository (§11.4)."""
     shown = shown or {}
     return {
         "id": project.id,
@@ -218,12 +270,14 @@ def project_view(
         "full_name": f"{owner_handle}/{project.slug}",
         "slug": project.slug,
         "aliases": aliases or [],
-        "legacy_slug": project.legacy_slug,
         "name": project.name,
         "state": project.state,
+        "released_at": ts(project.released_at),
         "state_note": project.state_note,
+        "public_page": project.public_page,
+        "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
-        "repository": repository(project, settings),
+        "repository": repository(project, settings, confirmed_by),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
@@ -249,6 +303,18 @@ def principal_id(conn: Connection, membership_id: int | None) -> str | None:
     return principal_ids(conn, [membership_id])[membership_id]
 
 
+def routing_boss(conn: Connection, membership_id: int | None) -> str | None:
+    """The boss events and notices are routed to: `principal_id`, but an isolated boss is
+    routed past as if the edge held its default after a removal, nobody (§6.2), without
+    the edge changing."""
+    if membership_id is None:
+        return None
+    isolated_since = conn.execute(
+        select(t.membership.c.isolated_since).where(t.membership.c.id == membership_id)
+    ).scalar()
+    return None if isolated_since is not None else principal_id(conn, membership_id)
+
+
 def principal_ids(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int, str]:
     """The member ids of several membership row ids, in one query. Lists build
     their views through this and the other `*_views`, so a page costs a fixed
@@ -272,6 +338,13 @@ def paused(row: Any) -> dict[str, Any] | None:
     if row.paused_since is None:
         return None
     return {"reason": row.paused_reason, "since": ts(row.paused_since), "by": row.paused_by}
+
+
+def isolated(row: Any) -> dict[str, Any] | None:
+    """`isolated: {reason, since, by}` of an agent member a human isolated (§6.2)."""
+    if row.isolated_since is None:
+        return None
+    return {"reason": row.isolated_reason, "since": ts(row.isolated_since), "by": row.isolated_by}
 
 
 # Best first: a member's presence is the best of its instances' (§5.3); an instance
@@ -363,14 +436,19 @@ def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any
 
 
 def member_view(
-    conn: Connection, row: Any, *, briefing: bool = False, details: bool = False
+    conn: Connection,
+    row: Any,
+    *,
+    briefing: bool = False,
+    details: bool = False,
+    links: Any = None,
 ) -> dict[str, Any]:
     """The member view of §6.2: the principal, the membership, the live session.
 
     `briefing` only for the member itself and for `members:admin` (§6.2), never in
     an event that goes to everyone; the caller decides. `details` adds `owner` and
     `credentials`, for `members:admin` and an agent's owner, never in an event."""
-    return member_views(conn, [row], briefing=briefing, details=details)[0]
+    return member_views(conn, [row], briefing=briefing, details=details, links=links)[0]
 
 
 def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, str]]]:
@@ -384,6 +462,19 @@ def _sharing(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, 
     for project_id, ids in by_project.items():
         found.update(environment.views(conn, project_id, ids))
     return found
+
+
+def _owners_of(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
+    """The owner of each membership: its agent's profile owner, or the human itself."""
+    if not membership_ids:
+        return {}
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id, m.human_id, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.id.in_(membership_ids))
+    )
+    return {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
 
 
 def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
@@ -409,9 +500,12 @@ def member_views(
     *,
     briefing: bool | Callable[[Any], bool] = False,
     details: bool | Callable[[Any], bool] = False,
+    links: Any = None,
 ) -> list[dict[str, Any]]:
     """`member_view` for several membership rows, with a fixed number of queries;
-    `briefing` for every row, or per row through a predicate."""
+    `briefing` for every row, or per row through a predicate. `links` is the reader
+    (`person_links.Reader`) of a human's `website` and `social`, which only the readers their
+    `links_visible` admits get (§16.9); without it a view has none, and no event does."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     agent_ids = {r.agent_id for r in rows if r.agent_id is not None}
@@ -432,7 +526,9 @@ def member_views(
         else {}
     )
     principals = principal_ids(conn, (r.reports_to for r in rows))
+    boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
+    aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -448,6 +544,7 @@ def member_views(
     team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
     counted = _credential_counts(conn, {r.id for r in detailed})
     sharing = _sharing(conn, detailed)
+    covered_by, covering = _covers(conn, rows)
     project_ids = {r.project_id for r in rows}
     projects = (
         {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
@@ -455,11 +552,28 @@ def member_views(
         else {}
     )
     names = namespace.full_names(conn, project_ids)
+    org_owners = _org_owners(conn, projects.values())
     from maity_hub import briefings  # briefings formats with this module's helpers
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
     writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
     languages = human_languages(conn, human_ids)
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    suspended = moderation.suspensions(conn, rows, {a.id: a.owner_id for a in agents.values()})
+    profile_holds = moderation.holds_of(
+        conn, "profile", [r.agent_id or r.human_id for r in rows if r.agent_id or r.human_id]
+    )
+    seen_links: set[str] = set()
+    if links is not None:
+        from maity_hub import person_links  # person_links reads views' tables
+
+        seen_links = person_links.admitted(
+            conn,
+            {h.id: h.links_visible for h in humans.values()},
+            links,
+            {h for h in humans if h in profile_holds},
+        )
     views = []
     for row in rows:
         head = (
@@ -473,12 +587,25 @@ def member_views(
         )
         view: dict[str, Any] = {
             **head,
+            "aliases": aliased[row.agent_id or row.human_id],
             "trust": row.trust,
             "role": row.role,
+            "role_base": row.role_base,  # the role itself for a built-in one (§2.3)
             "reports_to": principals.get(row.reports_to) if row.reports_to is not None else None,
+            # The edge's owners differ (§6.2 "The marker"); `owner_id` says whose it is.
+            "cross_owner": row.reports_to is not None
+            and boss_owners.get(row.reports_to)
+            != (agents[row.agent_id].owner_id if row.agent_id else row.human_id),
+            "line_consent": bool(row.line_consent),
             "areas": row.areas,
             "capabilities": row.capabilities,
         }
+        if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
+            view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())
+            if row.human_id in seen_links:
+                from maity_hub import person_links
+
+                view.update(person_links.shown(humans[row.human_id]))
         session = None
         if row.agent_id is not None:
             session = live.get(row.id)
@@ -501,11 +628,17 @@ def member_views(
         else:
             is_listening = False
         shown_presence = presence(row, session, is_listening)
+        stopped = paused(row) or suspended.get(row.id)
+        if stopped is not None:  # a suspended account's membership acts as paused (§16.8)
+            shown_presence = "paused"
+        if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
+            shown_presence = "offline"
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
                 "presence": shown_presence,
-                "paused": paused(row),
+                "paused": stopped,
+                "isolated": isolated(row),
                 "availability": availability.view(
                     row,
                     shown_presence,
@@ -514,9 +647,8 @@ def member_views(
                     project_name=names[row.project_id],
                 ),
                 "availability_policy": availability.policy_of(row),
-                # Cover by a substitute is not built yet (§6.12).
-                "covered_by": None,
-                "covering": [],
+                "covered_by": covered_by.get(row.id),
+                "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
                 "placement": placed.get(row.id),  # always null for a human
             }
@@ -527,7 +659,7 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and row.paused_since is None:
+            if view["instances"] and stopped is None and row.isolated_since is None:
                 # The best of its instances' (§5.3).
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
@@ -547,8 +679,81 @@ def member_views(
             view["shared_environment"] = sharing.get(row.id, [])
             if row.agent_id is not None:  # given its owner's preferences (§19.4)
                 view["owner_preferences"] = bool(row.owner_preferences)
+        held = profile_holds.get(row.agent_id or row.human_id or "")
+        if held is not None:  # only while a hold stands on the profile (§16.8)
+            view["moderation"] = held
         views.append(view)
     return views
+
+
+def _covers(
+    conn: Connection, rows: Sequence[Any]
+) -> tuple[dict[int, dict[str, Any]], dict[int, list[dict[str, Any]]]]:
+    """`covered_by` and `covering` of the rows (§6.12): `covering` from the items each
+    member holds as cover (`cover.by`), so every substitute of a run sees whom it
+    covers, not only the one the run started with. A card counts while the substitute
+    still holds it (`cover.still_with`), a request while it is open."""
+    covered_by: dict[int, dict[str, Any]] = {}
+    by_ids = {r.cover_by for r in rows if r.cover_state == "covered" and r.cover_by is not None}
+    principals = principal_ids(conn, by_ids)
+    for row in rows:
+        if row.cover_state == "covered" and row.cover_by is not None:
+            covered_by[row.id] = {
+                "member_id": principals[row.cover_by],
+                "since": ts(row.cover_since),
+            }
+    by_principal = {(r.project_id, r.agent_id or r.human_id): r.id for r in rows}
+    projects = list({r.project_id for r in rows})
+    found: dict[int, dict[str, str]] = {}  # the substitute's row -> covered member -> since
+    if projects:
+        held = [
+            item
+            for item in conn.execute(
+                select(t.card).where(t.card.c.project_id.in_(projects), t.card.c.cover.is_not(None))
+            )
+            if cover_still_with(item, by_principal.get((item.project_id, item.cover["by"])))
+        ]
+        held += conn.execute(
+            select(t.request).where(
+                t.request.c.project_id.in_(projects),
+                t.request.c.cover.is_not(None),
+                t.request.c.status == "open",
+            )
+        ).all()
+        for item in held:
+            row_id = by_principal.get((item.project_id, item.cover["by"]))
+            if row_id is not None:
+                of = found.setdefault(row_id, {})
+                since = item.cover["since"]
+                of[item.cover["for"]] = min(of.get(item.cover["for"], since), since)
+    covering = {
+        row_id: [
+            {"member_id": member_id, "since": since}
+            for member_id, since in sorted(of.items(), key=lambda item: (item[1], item[0]))
+        ]
+        for row_id, of in found.items()
+    }
+    return covered_by, covering
+
+
+def _org_owners(conn: Connection, projects: Iterable[Any]) -> dict[str, set[str]]:
+    """Per project the human ids that own the organisation that owns it: empty for a project
+    of a human."""
+    by_org: dict[str, list[str]] = {}
+    for project in projects:
+        if project.owner_org_id is not None:
+            by_org.setdefault(project.owner_org_id, []).append(project.id)
+    if not by_org:
+        return {}
+    found: dict[str, set[str]] = {}
+    for org_id, human_id in conn.execute(
+        select(t.org_member.c.org_id, t.org_member.c.human_id).where(
+            t.org_member.c.org_id.in_(list(by_org)), t.org_member.c.role == "owner"
+        )
+    ):
+        for project_id in by_org[org_id]:
+            found.setdefault(project_id, set()).add(human_id)
+    return found
 
 
 NO_CREDENTIALS = {
@@ -632,9 +837,13 @@ def agent_view(
     ).all()
     owner_handle = owner_handles(conn, [row.owner_id])[row.owner_id]
     names = namespace.full_names(conn, [m.id for m in memberships])
-    return {
+    shown = {
         "id": row.id,
         "handle": row.handle,
+        # §6.24; a tombstone keeps its aliases for the record, though they are free to take
+        "aliases": handle_book.aliases(conn, [row.id], include_retired=row.deleted_at is not None)[
+            row.id
+        ],
         "name": mentions.global_name(owner_handle, row.handle),  # §6.3, never stored
         "display_name": row.display_name,
         # avatar_url and avatar_source: only its owner reads this
@@ -647,6 +856,12 @@ def agent_view(
         "created_at": ts(row.created_at),
         "deleted_at": ts(row.deleted_at),  # a tombstone: handle and name kept (§6.3)
     }
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(conn, "profile", [row.id]).get(row.id)
+    if held is not None:  # only while a hold stands (§16.8)
+        shown["moderation"] = held
+    return shown
 
 
 def credential_view(conn: Connection, row: Any) -> dict[str, Any]:
@@ -733,6 +948,12 @@ def task_views(
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    for view in views:
+        if view["id"] in held:  # only while a hold stands (§16.8)
+            view["moderation"] = held[view["id"]]
     if viewer is not None:
         watched = watching(conn, [r.id for r in rows], viewer)
         for view in views:
@@ -820,7 +1041,9 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "jour_fixe": row.jour_fixe,
                 "report": row.report,
                 "release": _release(conn, row, fg, release_tags),
-                "contract": view_contract(row.contract) if row.contract is not None else None,
+                "contract": row.contract,
+                "imported_from": row.imported_from,
+                "cover": cover_view(row.cover),
                 "links": linked[row.id],
                 "notes": noted[row.id],
                 "created_at": ts(row.created_at),
@@ -937,6 +1160,8 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if who is not None and deleted(who):
                 actor.update(deleted_person())
+        elif row.actor_report_id is not None:  # §16.8: the admin is named in the report only
+            actor = {"kind": "moderation", "report_id": row.actor_report_id}
         elif row.actor_runner_id is not None:  # §15.10
             actor = {
                 "kind": "runner",
@@ -978,13 +1203,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
         views, shape_deleted(conn, [v["payload"] for v in views]), strict=True
     ):
         view["payload"] = payload
+    from maity_hub import moderation  # moderation reads views; imported here, not at the top
+
+    held = moderation.holds_of(
+        conn, "message", [f"{r.project_id}/{r.seq}" for r in rows if r.kind == "message"]
+    )
+    for row, view in zip(rows, views, strict=True):
+        found = held.get(f"{row.project_id}/{row.seq}") if row.kind == "message" else None
+        if found is not None:  # only while a hold stands on the message (§16.8)
+            view["moderation"] = found
     return views
-
-
-def view_contract(contract: dict[str, Any] | None) -> dict[str, Any]:
-    """A contract card's `contract` as shown: a card from before §6.8 named no place, so
-    it has the defaults."""
-    return {"path": contract_text.DEFAULT_PATH, "section": None, **(contract or {})}
 
 
 def _wakes(row: Any) -> dict[str, Any]:

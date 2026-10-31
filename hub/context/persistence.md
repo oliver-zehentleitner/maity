@@ -497,8 +497,8 @@ instance admin set, one row per name (`mail.host`, `sign_in.device_code`);
 no row means the environment's value or the default. Every name has an
 entry in the registry of `maity_hub.instance_settings`, which its section
 fills with a validator and a default; a write checks against it, and a
-stored row without an entry (left over after a downgrade or a rename) is
-ignored and logged, never served. Whether the environment wins is
+stored row without an entry is not read: every read names its fields, and a
+rename of a name is a migration of its row. Whether the environment wins is
 decided in one place, `instance_settings.effective`. A secret the admin
 may set (today only the SMTP password, §16.2) is never a setting: it has
 its own registry and lives sealed with `maity_hub.secretbox` in
@@ -527,6 +527,9 @@ reader.
   of settings could serve it by mistake.
 - The SMTP password from the environment or a file only: contradicts
   §16.2, which lets the admin of a single local install set it.
+- Ignoring and logging a stored row that has no registry entry (left over after a
+  downgrade or a rename): removed with the alpha clean-up; no read asks for a
+  name it does not know, and a rename of a name is a migration of its row.
 
 ## A database error is logged with a category of its cause, never with the driver's text
 
@@ -581,6 +584,89 @@ inferred from the log categories, not reproduced.
 - A DNS cache inside the hub: the address can change with the database's failover, and a stale cache would turn a blip into an outage.
 - A connection pooler (pgbouncer): one more component to run for a problem that reuse mostly solves.
 
+## The health check has its own connection, and the hub's PostgreSQL sessions have a statement and an idle-in-transaction timeout
+
+**Id:** 54a226b4-8866-4fab-b782-0404e52d388e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-e1tdj6sac2xf, step 1 of the overload follow-ups decided by the maintainer (req-v10nsyz26p78, 2026-10-27); the incident of 2026-10-26 (notifications.md, "a held long-poll compares a stamp"); live check against a local PostgreSQL, 2026-10-29
+**See:** persistence.md#the-pool-keeps-connections-warm-and-a-host-name-that-does-not-resolve-is-tried-once-more — 3b5f0c52-6d1e-4c7a-9a43-1e8d7f2a9b64 — as of 2026-10-29
+**Revisit when:** the load test (`tsk-ryas52q9k53z`) has run, or the first legitimate query is cancelled by the 30 s; also a statement the hub runs legitimately takes longer than 30 s, a request holds a transaction open across a slow call to somebody else, or the database sits behind a pooler that does not pass the `options` startup parameter
+
+On a server database `GET /api/v1/health` reads the revision over an engine of its own
+(`db.make_health_engine`): the same URL, no pool, a connection per check that is closed after it,
+the 5 s connect timeout and a 5 s `statement_timeout` (on MariaDB the driver's 5 s
+`read_timeout`). SQLite keeps one engine, since there is no pool wait to escape and a second
+in-memory engine would be a second, empty database. Every
+PostgreSQL connection of the serving hub is opened with `statement_timeout` 30 s and
+`idle_in_transaction_session_timeout` 60 s, as the `options` startup parameter
+(`MAITY_DB_STATEMENT_TIMEOUT`, `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT`; 0 turns one off). They are set
+per connection from the settings, and only where the hub serves: `maity-hub migrate` and the other
+commands take none, so a migration is never cut short. MariaDB gets neither.
+
+The serving engine is built in one place, `app.serving_engine(settings)`, which `create_app` and
+`maity-hub serve` both call. `serve` had built its own engine from the URL alone and passed it in,
+so none of the pool settings (`MAITY_DB_POOL_*`) reached a served hub, and the timeouts would not
+have either (found in review of #667); a test now reads the pool and the options off the engine
+that `serve` runs the app on.
+
+**Rejected alternative:** building the engine only inside `create_app` and dropping `_serve`'s:
+`_serve` needs the engine before the app, to check the schema (`require_current_schema`) and to
+answer with an exit code. The other CLI commands keep `make_engine(url)` on purpose, so a migration
+or an admin command is never cut short by the serving timeouts.
+
+On MariaDB there is no server-side statement timeout to set per session, so the probe's 5 s
+bound is the driver's `read_timeout`; without it a hung statement on `alembic_version` would hold
+the probe's thread for good.
+
+Every PostgreSQL connection sets `application_name` (`maity-hub` for the serving hub,
+`maity-hub-health` for the probe, `maity-hub-cli` for `migrate` and the other commands), so
+`pg_stat_activity` says who holds a connection. In the incident of 2026-10-26 the diagnosis was
+blocked and cost about 30 minutes (card tsk-ftnk7d1p5117); the name is the cheap half of that
+fix, the read access to the view is the operator's. MariaDB and SQLite set none. **Rejected
+alternative:** the pod name in the name now: the hub runs one pod until after the launch, and the
+name is one constant to extend when a second pod exists.
+
+An `application_name` the operator puts in `MAITY_DATABASE_URL` (`?application_name=...`) does not
+survive: SQLAlchemy lays `connect_args` over the URL's query, so the hub's own name wins on every
+connection (decided by the lead, 2026-10-29, on the review of #669). Only so does
+`pg_stat_activity` tell the serving hub, the probe and the commands apart. **Rejected
+alternative:** keeping the operator's name: all three would then show one name, and the view could
+no longer say which of them holds a connection. No workaround is needed: the role is always in
+the name.
+
+The probe test used to compare engines with `is`, which held on SQLite (one engine) and failed on
+MariaDB, where the probe has an engine of its own. It now takes a real pool of one connection,
+holds it, and expects `/health` to answer anyway; it is skipped on SQLite, which has nothing to
+escape to, and a separate SQLite test checks the one engine. **Rejected alternative:** faking the
+exhausted pool by swapping `app.state.engine`, because that never proves the probe stays off a
+pool that is really used up.
+
+**Reason:** in the incident the pool was used up and the readiness probe, which took a pooled
+connection like every call, failed with it; the only pod left the network because of the load it
+could have reported. A probe that does not queue for the pool answers 503 for what is wrong with the
+database, not for what is wrong with the pool. The two timeouts bound what one stuck request can
+hold: a statement that runs for minutes, or a transaction that is open and idle, keeps a pooled
+connection (and its locks) away from every other call. Neither number was measured and no
+statement of the hub was timed for them: 30 s and 60 s were chosen as round values well above any
+request a person waits for, and below the point where a stuck request has taken the pool. Which
+of the hub's own statements come nearest to 30 s, and whether any transaction stays open across a
+slow call, is not established; that is what the `Revisit when` watches. Both are settings so that
+an operator who finds a legitimate case can raise them without a release. The lead confirmed the
+values for the launch on 2026-10-29; that settles that they stay, not that they were derived from
+measurements, so the evidence stays inferred.
+
+**Rejected alternatives:**
+- A reserved slot in the shared pool for the probe: it still queues behind a pool that is used up
+  unless the pool is made larger, and it makes the pool's size depend on a second purpose.
+- Setting the timeouts as a role default (`ALTER ROLE`): they would also bind `maity-hub migrate`,
+  which runs long statements on purpose, and an operator's database role is not the hub's to change.
+- Setting them with `SET` after the connect: one more round trip per connection, and a pooled
+  connection that fails between the connect and the `SET` would run unbounded.
+- A MariaDB equivalent (`max_statement_time`): no idle-in-transaction counterpart there, and the
+  card asked for PostgreSQL, the production database.
+
 ## A briefing keeps every version in `member_briefing`; the membership row holds only the current one
 
 **Id:** 1db3938a-aaf1-4095-b168-6dc4cc541e08
@@ -614,3 +700,94 @@ chose versions over another form is not recorded.
 
 **Alternatives:** unknown. The weighing at the time is not recorded; this
 entry only follows the contract.
+
+## A downgrade drops a table whole, never its indexes first
+
+**Id:** cb582092-50db-499b-be5e-bef5c7f37135
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the `hub-mariadb` CI job on #653, 2026-10-29: `(1553) Cannot drop index 'ix_abuse_report_account_id': needed in a foreign key constraint` in `0095`'s downgrade; the same rule as a comment in migrations 0016, 0019, 0023, 0028, 0031, 0034, 0035, 0044, 0061, 0073 and 0077
+**Revisit when:** MySQL/MariaDB support is dropped
+
+A migration's `downgrade()` that removes a table calls `op.drop_table`
+alone: the table takes its indexes and foreign keys along on SQLite,
+PostgreSQL and MariaDB. MariaDB refuses to drop an index on its own
+while a foreign key still needs it, so the autogenerated pattern —
+`drop_index` for each index, then `drop_table` — passes on SQLite and
+PostgreSQL and fails only in the MariaDB job, where every test whose
+setup downgrades then fails with it. An index removed from a table that
+stays is still dropped on its own, once no foreign key needs it.
+
+**Rejected alternatives:**
+- Alembic's autogenerated downgrade, index by index and then the table:
+  the MariaDB failure above.
+- Dropping the foreign key first, then the indexes, then the table:
+  three steps for what `drop_table` does in one, and on SQLite a
+  foreign key goes only through `batch_alter_table`.
+
+## A card is written in one shape by a migration, and no read branch carries the old one
+
+**Id:** 87be2d15-0c4d-4292-b9dd-e713b0df3de6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up of the card tsk-wgg2t8ngx9xg (the maintainer's alpha rule: no compatibility layers), migration `0101`
+**Revisit when:** a column is added that older rows cannot have, and a default is cheaper than a backfill
+
+Two shapes of older cards were read through a branch of their own: a card reported before `0022` had
+`report` but no `reported_instances`, and a contract made before §6.8 named a place had no `path` and
+`section`. Migration `0101` writes both once: the instance of the report becomes the one entry of the list,
+and a contract without a place gets `path: docs/api.md` and `section: null`. `_reporters`,
+`cards.refuse_same_team_review`, `views.view_contract`, the comparison in the card's `PATCH` and
+`contract_text.read_contract` read the stored value as it is. The downgrade is deliberately empty: the full
+shape is also readable by the older code, so there is nothing to undo. §6.8 fixes the default place for the
+input only, so storing it changes no answer and is neutral to the contract.
+
+**Reason:** a default applied while reading is a second way to the same value, which the next reader of
+the code takes for a rule and every new writer has to keep in step; a backfill moves the knowledge of what
+an old card looked like into one migration that can be deleted with the others.
+
+**Rejected alternatives:**
+- Keeping the read branches: each would stay as a way to get an old shape back, and the clean-up would have
+  to be found again by the next survey.
+- Filling the defaults in a database default or a view: the card's JSON is not a column with a default, and
+  three databases do not share a JSON default.
+
+## A new migration is named by its time, and its author re-chains it onto main's head
+
+**Id:** c711af32-3678-406c-ac57-7a4fb3b3179f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-0p4p41g163y8 (the maintainer's go: collision-free ids, a re-chain tool, a CI check; existing numbers stay); `maity_hub.db.revision_id`, `tools/rechain.py`, the `rechain.py --check` step in `.github/workflows/ci.yml`
+**Revisit when:** pull requests with migrations are merged one at a time by a merge queue that rebases them, so no branch ever sees main move under it
+**See:** https://github.com/oliver-zehentleitner/maity — 65a9b523-fa1f-4f1f-966c-4f49a2660343 — as of 2026-10-30
+
+Migrations were numbered `0001_…` by hand, and the lead kept the order of the open pull requests in a
+text file: every branch made while another migration was open had to take a number and a
+`down_revision` from that list, and re-chain by hand when the order changed. `make revision` now names a
+new migration by the UTC second and its slug (`20261030102512_add_the_tasks`, cut to the 32 characters of
+`alembic_version.version_num`), so two branches never take the same id. Their `down_revision` can still
+point at the same head; after merging `origin/main` the author runs `make rechain`, which sets the one new
+migration's `down_revision` to main's head, and CI fails on two heads with that instruction. The numbered
+files stay as they are: renaming them would rewrite `alembic_version` in every database.
+
+This replaces the rule in 65a9b523 (`context/process.md`): numbers reserved in advance and a merge order
+set by the coordinator.
+
+**Limits:** the tool chains exactly one new migration; a branch with two orders them by hand, the first on
+main's head and the second on the first, or is split. The CI check runs on the pull request's merge
+checkout at the time of its run: a pull request that was green before another migration reached main turns
+red only on its next run, so the check does not replace a fresh CI run before the merge.
+
+The choice is the maintainer's (confirmed); the reasons below against the alternatives are inferred from the
+work they would take, not stated.
+
+**Rejected alternatives:**
+- A reservation on the hub that hands out the next number: a migration would depend on a running hub and a
+  network call while writing it, and a reserved number abandoned with its branch would leave a gap or a
+  second release step; the order between two open branches is still only known at merge time.
+- Keeping the numbers and the hand-kept queue: it is the work this replaces — each reorder changed several
+  branches, and a number taken twice was found only when the second branch merged.

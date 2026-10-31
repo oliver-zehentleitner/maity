@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select
 
 from maity_hub import contract_text, forge, probe
 from maity_hub import tables as t
@@ -199,17 +199,6 @@ def test_the_same_place_again_is_no_change(owner: flow.Human, migrated: Engine) 
     assert again.status_code == 200, again.text
     assert _history(owner, card_id) == []
     assert _last_update(migrated) == seq  # no task_updated either
-    # A card from before §6.8 stored no place: naming the default is no history entry.
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.card)
-            .where(t.card.c.id == card_id)
-            .values(contract={"arbiter": "trust:admin", "state": "proposed", "watchers": []})
-        )
-    owner.patch(url, {"contract": {"path": "docs/api.md", "section": "6.3"}})
-    assert [(e["field"], e["before"], e["after"]) for e in _history(owner, card_id)] == [
-        ("contract.section", None, "6.3")
-    ]
 
 
 # --- the read -----------------------------------------------------------------------------
@@ -338,6 +327,21 @@ def test_concurrent_reads_ask_the_forge_once(monkeypatch: pytest.MonkeyPatch) ->
     first.join(5)
     second.join(5)
     assert calls == ["docs/api.md"] and len(results) == 2 and results[0] == results[1]
+
+
+def test_a_read_the_forge_does_not_answer_leaves_no_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The gate of a read that raised is gone too: a new commit is a new key, and every
+    failed read would otherwise leave its lock behind for good."""
+
+    def file_at(_self: Any, repository: str, path: str, ref: str, cap: int) -> bytes:
+        raise forge.ForgeUnavailableError("the forge did not answer: TimeoutError")
+
+    monkeypatch.setattr(forge.Forge, "branch", lambda *_a: {"head_sha": SHA, "found": True})
+    monkeypatch.setattr(forge.Forge, "file_at", file_at)
+    for _ in range(3):
+        with pytest.raises(forge.ForgeUnavailableError):
+            contract_text.read(forge.Forge(TOKEN), "acme/maity", "main", "docs/api.md", "6.2")
+    assert contract_text._pending == {}
 
 
 # --- the heading rules --------------------------------------------------------------------

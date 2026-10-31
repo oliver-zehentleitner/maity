@@ -1,7 +1,7 @@
 // (1) The inbox: what each agent wants from the human, one entry after the
 // other. The first open entry in the chosen order is expanded; answering
-// it expands the next. Runs in one project (#/<owner>/<slug>/inbox) or across
-// all of them (#/all), where every entry is labelled with its project.
+// it expands the next. Runs in one project (/<owner>/<slug>/inbox) or across
+// all of them (/all), where every entry is labelled with its project.
 // Requests carry everything an entry shows (docs/api.md §7): asker, card
 // and context are inline, so no other call is made.
 "use strict";
@@ -13,7 +13,19 @@ window.Maity = window.Maity || {};
 
   const PRIORITY_RANK = { urgent: 0, high: 1, normal: 2, low: 3 };
 
-  const CLASS_LABELS = { decision: "decision", consent: "consent", contract: "contract", info: "info" };
+  // Getters: the words are the catalog's when shown.
+  const CLASS_LABELS = {
+    get decision() { return M.t("inbox.class.decision"); },
+    get consent() { return M.t("inbox.class.consent"); },
+    get contract() { return M.t("inbox.class.contract"); },
+    get info() { return M.t("inbox.class.info"); },
+  };
+  const SORT_LABELS = {
+    get priority() { return M.t("inbox.sort.priority"); },
+    get date() { return M.t("inbox.sort.date"); },
+    get agent() { return M.t("inbox.sort.agent"); },
+    get project() { return M.t("inbox.sort.project"); },
+  };
 
   // Per tab only: which order and filter the human picked, which entry is
   // open, and which were put off with "Later". Not persisted, never sent:
@@ -31,9 +43,16 @@ window.Maity = window.Maity || {};
 
   // Who asked, from the request itself: asked_by and, where the request was
   // filed for someone else, on_behalf_of.
+  // A request the hub files itself (asked_by null, filed_by "hub": an
+  // outage, an unconfirmed commitment, the not-listening digest, §5.3, §7).
+  const byHub = (req) => !req.asked_by && req.filed_by === "hub";
+  // The not-listening digest (§5.3): the hub's, personal, about no project
+  // and no organisation; it leads to one's agents.
+  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org;
+
   function asker(req) {
-    const by = req.asked_by ? req.asked_by.display_name : "—";
-    return req.on_behalf_of ? by + " for " + req.on_behalf_of.display_name : by;
+    const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
+    return req.on_behalf_of ? M.t("inbox.asker_for", { by, name: req.on_behalf_of.display_name }) : by;
   }
 
   function comparator(names) {
@@ -50,22 +69,22 @@ window.Maity = window.Maity || {};
   function answerLabel(req) {
     const a = req.answer;
     if (!a) return req.status;
-    if (a.talk) return "Neither — let's talk";
+    if (a.talk) return M.t("inbox.talk");
     if (a.reply_id) {
       const reply = (req.replies || []).find((r) => r.id === a.reply_id);
       return reply ? reply.label : a.reply_id;
     }
-    return "Free text";
+    return M.t("inbox.free_text");
   }
 
   function addressee(ctx, req) {
     const to = req.to;
     if (!to) return null;
-    if (to === "owner") return "the project's owner";
-    if (to.startsWith("role:")) return "role " + to.slice(5);
-    if (to.startsWith("trust:")) return "trust " + to.slice(6);
-    if (to === ctx.me.id) return "you";
-    if (to.startsWith("profile_owner:")) return "you, as the agent's owner";
+    if (to === "owner") return M.t("inbox.to.owner");
+    if (to.startsWith("role:")) return M.t("inbox.to.role", { role: to.slice(5) });
+    if (to.startsWith("trust:")) return M.t("inbox.to.trust", { trust: to.slice(6) });
+    if (to === ctx.me.id) return M.t("inbox.to.you");
+    if (to.startsWith("profile_owner:")) return M.t("inbox.to.profile_owner");
     return ref(ctx, req, { member_id: to, display_name: ctx.nameOf ? ctx.nameOf(to) : to });
   }
 
@@ -80,12 +99,20 @@ window.Maity = window.Maity || {};
     // where the request carries it, otherwise nothing more.
     if (req.personal) {
       const of = p.name || (req.org ? "@" + req.org.handle : "");
-      return h("span", { class: "project-label personal" }, "Personal", of ? h("span", { class: "muted" }, " · " + of) : null);
+      return h("span", { class: "project-label personal" }, M.t("inbox.personal"), of ? h("span", { class: "muted" }, " · " + of) : null);
     }
     return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
       M.projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
       p.state ? h("span", { class: "state state-" + p.state }, ctx.stateLabel(p.state)) : null);
+  }
+
+  // What the entry's button starts with where its badge is not seen: whose
+  // request it is, one whole label per case.
+  function hiddenLabel(req, names) {
+    const name = names.project(req) || (req.org ? "@" + req.org.handle : "");
+    if (!req.personal) return M.t("inbox.label.project", { name });
+    return req.project && req.org ? M.t("inbox.label.personal_into", { name, org: req.org.handle }) : M.t("inbox.label.personal", { name });
   }
 
   function entrySummary(ctx, req, names, expanded, onToggle) {
@@ -97,11 +124,11 @@ window.Maity = window.Maity || {};
     },
     // The project's badge stands before the entry, as a link; its name is
     // also the start of this button's name, for whom the badge is not seen.
-    ctx.scope === "all" ? h("span", { class: "visually-hidden" }, (req.personal ? "Personal, " : "") + (names.project(req) || (req.org ? "@" + req.org.handle : "")) + (req.project && req.org ? ", into @" + req.org.handle : "") + ": ") : null,
+    ctx.scope === "all" || req.personal ? h("span", { class: "visually-hidden" }, hiddenLabel(req, names)) : null,
     h("span", { class: "prio prio-" + req.priority }, req.priority),
-    h("span", { class: "kind" }, CLASS_LABELS[req.class] || req.class),
+    h("span", { class: "kind" }, Object.hasOwn(CLASS_LABELS, req.class) ? CLASS_LABELS[req.class] : req.class),
     h("span", { class: "title" }, req.title),
-    ui.later.has(keyOf(req)) ? h("span", { class: "muted" }, "later") : null,
+    ui.later.has(keyOf(req)) ? h("span", { class: "muted" }, M.t("inbox.later_mark")) : null,
     h("span", { class: "meta" }, asker(req) + " · " + formatAgo(req.created_at)));
   }
 
@@ -127,7 +154,7 @@ window.Maity = window.Maity || {};
   }
 
   function who(ctx, req, person) {
-    return [ref(ctx, req, person), " · " + M.trust.words(person) + (person.session_id ? " · session " + person.session_id : "")];
+    return [ref(ctx, req, person), " · " + M.trust.words(person) + (person.session_id ? " · " + M.t("inbox.session", { id: person.session_id }) : "")];
   }
 
   // The project a request's text belongs to, for its ids as links
@@ -137,9 +164,12 @@ window.Maity = window.Maity || {};
     const p = ctx.projects.find((x) => x.full_name === req.slug);
     const slug = req.personal && !p ? null : req.slug;
     return { slug, repository: (p && p.repository && p.repository.url) || (ctx.slug === req.slug ? M.ids.where(ctx).repository : null),
-      // Across projects (#/all) a card or request reads with its project (§6.25).
+      // Across projects (/all) a card or request reads with its project (§6.25).
       outside: ctx.scope !== "project" };
   }
+
+  // A card as an entry names it: its reference, title and status (the hub's word).
+  const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
 
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
@@ -149,51 +179,52 @@ window.Maity = window.Maity || {};
     const titleRefs = M.ids.refs(req.title, at);
 
     append(body, h("dl", { class: "facts" },
-      ctx.scope === "all" && req.personal && req.org && !req.project
-        ? [h("dt", null, "Organisation"), h("dd", null, "@" + req.org.handle + " — a personal request: for you, not for a project")]
+      req.personal && req.org && !req.project
+        ? [h("dt", null, M.t("inbox.fact.organisation")), h("dd", null, M.t("inbox.fact.org_personal", { org: req.org.handle }))]
         : null,
       // A transfer into an organisation: the project, and the organisation it would move into.
-      ctx.scope === "all" && req.personal && req.org && req.project
-        ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as an owner of @" + req.org.handle),
-          h("dt", null, "Into"), h("dd", null, "@" + req.org.handle)]
+      req.personal && req.org && req.project
+        ? [h("dt", null, M.t("inbox.fact.project")), h("dd", null, M.t("inbox.fact.project_org", { name: names.project(req), org: req.org.handle })),
+          h("dt", null, M.t("inbox.fact.into")), h("dd", null, "@" + req.org.handle)]
         : null,
-      ctx.scope === "all" && req.personal && !req.org && names.project(req)
-        ? [h("dt", null, "Project"), h("dd", null, names.project(req) + " — a personal request: for you as the owner of the agent, not for the project")]
+      req.personal && !req.org && names.project(req)
+        ? [h("dt", null, M.t("inbox.fact.project")), h("dd", null, M.t("inbox.fact.project_owner", { name: names.project(req) }))]
         : null,
       ctx.scope === "all" && !req.personal
-        ? [h("dt", null, "Project"), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
+        ? [h("dt", null, M.t("inbox.fact.project")), h("dd", null, h("a", { href: ctx.projectLink(req.slug, "inbox") }, names.project(req)))]
         : null,
-      titleRefs.length ? [h("dt", null, "In the title"), h("dd", { class: "title-refs" }, titleRefs.map((a, i) => [i ? ", " : null, a]))] : null,
-      h("dt", null, "Asked by"), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : "—"),
-      req.on_behalf_of ? [h("dt", null, "On behalf of"), h("dd", null, who(ctx, req, req.on_behalf_of))] : null,
-      req.to ? [h("dt", null, "To"), h("dd", null, addressee(ctx, req))] : null,
-      h("dt", null, "Asked"), h("dd", null, formatTime(req.created_at)),
+      titleRefs.length ? [h("dt", null, M.t("inbox.fact.title_refs")), h("dd", { class: "title-refs" }, titleRefs.map((a, i) => [i ? ", " : null, a]))] : null,
+      h("dt", null, M.t("inbox.fact.asked_by")), h("dd", null, req.asked_by ? who(ctx, req, req.asked_by) : byHub(req) ? M.t("inbox.fact.by_hub") : "—"),
+      req.on_behalf_of ? [h("dt", null, M.t("inbox.fact.on_behalf_of")), h("dd", null, who(ctx, req, req.on_behalf_of))] : null,
+      req.to ? [h("dt", null, M.t("inbox.fact.to")), h("dd", null, addressee(ctx, req))] : null,
+      h("dt", null, M.t("inbox.fact.asked")), h("dd", null, formatTime(req.created_at)),
       req.task
-        ? [h("dt", null, "Card"), h("dd", null, req.personal
-          ? M.ids.ref(req.project && req.project.full_name, req.task.id, true) + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"
-          : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) },
-            M.ids.ref(req.slug, req.task.id, ctx.scope !== "project") + " — " + req.task.title + " (" + req.task.status.replace("_", " ") + ")"))]
+        ? [h("dt", null, M.t("inbox.fact.card")), h("dd", null, req.personal
+          ? cardLine(M.ids.ref(req.project && req.project.full_name, req.task.id, true), req.task)
+          : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) }, cardLine(M.ids.ref(req.slug, req.task.id, ctx.scope !== "project"), req.task)))]
         : null,
-      h("dt", null, "Meanwhile"), h("dd", null, req.while_open === "proceed_provisionally"
-        ? "the agent proceeds provisionally"
-        : "the agent waits for the answer"),
-      req.ktw_ref ? [h("dt", null, "Reasoning"), h("dd", null, h("code", null, req.ktw_ref))] : null));
+      digest(req) ? [h("dt", null, M.t("inbox.fact.your_agents")), h("dd", null, h("a", { class: "digest-agents", href: "/agents" }, M.t("inbox.fact.see_agents")))] : null,
+      // Nobody waits on one the hub filed itself.
+      byHub(req) ? null : [h("dt", null, M.t("inbox.fact.meanwhile")), h("dd", null, req.while_open === "proceed_provisionally"
+        ? M.t("inbox.fact.proceeds")
+        : M.t("inbox.fact.waits"))],
+      req.ktw_ref ? [h("dt", null, M.t("inbox.fact.reasoning")), h("dd", null, h("code", null, req.ktw_ref))] : null));
 
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
     const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
-    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at);
+    const said = (field, text, mentions) => M.dom.withMentions(text, mentions, field, memberHref, at, ctx);
     if (req.summary) append(body, h("p", { class: "summary pre" }, said("summary", req.summary, req.mentions)));
-    if (req.tried) append(body, h("h3", { class: "sub" }, "What it tried"), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
+    if (req.tried) append(body, h("h3", { class: "sub" }, M.t("inbox.tried")), h("p", { class: "pre" }, said("tried", req.tried, req.mentions)));
     if (req.options && req.options.length) {
-      append(body, h("h3", { class: "sub" }, "Options it sees"),
+      append(body, h("h3", { class: "sub" }, M.t("inbox.options")),
         h("ul", { class: "options" }, req.options.map((o) =>
           h("li", null, h("strong", null, M.ids.link(o.label, at)), o.detail ? [" — ", M.ids.link(o.detail, at)] : ""))));
     }
     const nis = req.needs_in_session;
     if (nis) {
       append(body, h("p", { class: "flag", role: "note" },
-        h("strong", null, "Needs you in the session: "),
+        h("strong", null, M.t("inbox.needs_session")), " ",
         ref(ctx, req, nis), (nis.session_id ? " · " + nis.session_id : "") + (nis.harness ? " · " + nis.harness : "") + ". ",
         nis.reason));
     }
@@ -205,10 +236,10 @@ window.Maity = window.Maity || {};
       const a = req.answer;
       if (preference) append(body, M.preferences.outcome(req));
       append(body, h("p", { class: "answered" },
-        (req.status === "withdrawn" ? "Withdrawn" : "Answered: " + answerLabel(req)),
+        (req.status === "withdrawn" ? M.t("inbox.withdrawn") : M.t("inbox.answered", { answer: answerLabel(req) })),
         a && a.text ? [" — “", said("text", a.text, a.mentions), "”"] : null,
         a ? [" · ", ref(ctx, req, { member_id: a.by, display_name: names.member(a.by) }),
-          a.on_behalf_of ? [" for ", ref(ctx, req, { member_id: a.on_behalf_of, display_name: names.member(a.on_behalf_of) })] : null,
+          a.on_behalf_of ? [" ", M.tn("inbox.answered_for", { who: ref(ctx, req, { member_id: a.on_behalf_of, display_name: names.member(a.on_behalf_of) }) })] : null,
           " · " + formatTime(a.at)] : null));
       return body;
     }
@@ -216,10 +247,10 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const send = (payload, verb) => {
       body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
-      status.busy("Sending…");
+      status.busy(M.t("inbox.sending"));
       onAnswer(req, payload, verb).catch((err) => {
         body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
-        status.fail("Not sent: ", err);
+        status.fail(M.t("inbox.not_sent"), err);
       });
     };
 
@@ -229,10 +260,9 @@ window.Maity = window.Maity || {};
         await readInFull(req);
         const fresh = entryBody(ctx, req, names, onAnswer, onLater);
         append(clear(body), Array.from(fresh.childNodes));
-      } }, "Try again");
+      } }, M.t("inbox.retry"));
       append(body, h("div", { class: "error", role: "alert" },
-        h("p", null, "This request could not be read in full, so it is not offered for an answer yet: it may be a proposal whose texts you should see first. "
-          + (req.unreadable.message || req.unreadable.code || "")),
+        h("p", null, M.t("inbox.unreadable", { reason: req.unreadable.message || req.unreadable.code || "" })),
         again));
     }
     // A preference proposal (§19.4) is answered in its review: accept,
@@ -240,13 +270,13 @@ window.Maity = window.Maity || {};
     if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload)));
 
     const textId = "reply-" + String(req.slug).replace("/", "-") + "-" + req.id;
-    const text = h("textarea", { id: textId, rows: "3", placeholder: "Reply in your own words" });
+    const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
     const sendWords = () => {
       const value = text.value.trim();
       if (!value) { text.focus(); return; }
       send({ text: value });
     };
-    const sendText = h("button", { type: "button", onclick: sendWords }, "Send");
+    const sendText = h("button", { type: "button", onclick: sendWords }, M.t("inbox.send"));
     M.dom.sendOnCtrlEnter(text, sendWords, sendText);
     append(body,
       // Right-aligned, the secondary ones first: Later, talk, then the replies.
@@ -254,27 +284,27 @@ window.Maity = window.Maity || {};
         h("button", {
           type: "button",
           class: "reply later",
-          title: "Moves it down this list in this tab; it stays open and nothing is sent",
+          title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
-        }, "Later"),
-        h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, "Neither — let's talk"),
+        }, M.t("inbox.later")),
+        h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, M.t("inbox.talk")),
         // Its human may withdraw a personal request, as nobody else can (§7).
         req.personal ? h("button", {
           type: "button",
           class: "reply withdraw",
           onclick: () => {
-            if (!window.confirm("Withdraw this request? It is closed without an answer.")) return;
+            if (!window.confirm(M.t("inbox.withdraw_confirm"))) return;
             const reason = text.value.trim();
             send(reason ? { reason } : {}, "withdraw");
           },
-        }, "Withdraw") : null,
+        }, M.t("inbox.withdraw")) : null,
         // The primary reply last, the others in the hub's order before it.
         (preference || unread ? [] : [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
           ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")]).map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
       // A preference proposal's words go with its Decline, in the review.
       preference || unread ? null : h("div", { class: "free-text" },
-        h("label", { for: textId }, "Free text (" + M.dom.SEND_KEYS + " sends)"),
+        h("label", { for: textId }, M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
         text,
         // @ offers this project's members; the hub links them, it pings nobody (§8.6).
         // Not for a personal request: its project may be one the human is not in.
@@ -287,7 +317,7 @@ window.Maity = window.Maity || {};
     const agent = ctx.scope === "project" && req.asked_by ? ctx.memberById[req.asked_by.member_id] : null;
     if (agent && agent.kind === "agent" && agent.owner_id === ctx.me.id) {
       append(body, h("p", { class: "chat-link" },
-        h("a", { href: ctx.link("chat", agent.id) }, "Chat with " + agent.display_name)));
+        h("a", { href: ctx.link("chat", agent.id) }, M.t("inbox.chat_with", { name: agent.display_name }))));
     }
     return body;
   }
@@ -303,9 +333,21 @@ window.Maity = window.Maity || {};
 
   async function load(ctx) {
     if (ctx.scope === "project") {
-      const requests = await M.api.getAll(ctx.base + "/requests?status=all");
+      // The project's own requests, and the open personal requests about it
+      // (§7: a project's list never holds them, the tab's count does, §18.2):
+      // the list shows what the tab counts.
+      // A failed read of them is said in the list's status line (load's
+      // personalError), never an empty list short of the tab.
+      let personalError = null;
+      const [requests, personal] = await Promise.all([M.api.getAll(ctx.base + "/requests?status=all"),
+        M.api.getAll("/requests").then((r) => r.items.filter((x) => x.personal && x.status === "open" && x.project && x.project.full_name === ctx.slug),
+          (err) => { personalError = err; return []; })]);
       requests.items.forEach((r) => { r.slug = ctx.slug; });
-      return requests.items;
+      personal.forEach((r) => { r.slug = ctx.slug; });
+      await Promise.all(personal.map(readInFull));
+      const all = requests.items.concat(personal);
+      all.personalError = personalError;
+      return all;
     }
     const requests = await M.api.getAll("/requests");
     // A personal request may have no project (an organisation's invitation, §6.26).
@@ -318,7 +360,7 @@ window.Maity = window.Maity || {};
     return requests.items;
   }
 
-  // args[0]: a request to show (#/<owner>/<slug>/inbox/<id>, an id's link,
+  // args[0]: a request to show (/<owner>/<slug>/inbox/<id>, an id's link,
   // js/ids.js): opened, and listed among the answered when it is one; an id
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {
@@ -349,7 +391,7 @@ window.Maity = window.Maity || {};
     const grouped = () => ctx.scope === "all" && ui.group;
     const list = h("div", { class: "entries-box" });
     const listStatus = M.statusLine();
-    let activity = null;
+    if (items.personalError) listStatus.fail(M.t("inbox.personal_failed"), items.personalError);
 
     // With no open entry on screen there is nothing being read or typed, so
     // a change of the counts reloads the list on its own (app.js, watch).
@@ -370,23 +412,20 @@ window.Maity = window.Maity || {};
     }
 
     function draw() {
-      if (activity) activity.draw();
       const shown = ordered();
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
       if (!shown.length) {
-        append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, M.notify.state.available ? "No open requests." : "Nothing waits for you.",
-          h("p", { class: "first-hint" }, ctx.scope === "all"
-            ? "Requests from the agents of every project land here: a decision, a consent or a question only you can answer. Each one shows its project."
-            : "Your agents ask here when they need you: a decision, a consent or a question only you can answer. "
-              + "When an agent waits for the answer, its card on the board shows it."))));
+        append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, M.t("inbox.empty"),
+          h("p", { class: "first-hint" }, ctx.scope === "all" ? M.t("inbox.empty.all") : M.t("inbox.empty.project")))));
         return;
       }
       const entry = (req) => {
         const expanded = keyOf(req) === ui.current;
         return h("li", { class: "entry" + (expanded ? " current" : "") + (req.status !== "open" ? " done" : ""), "data-request": req.id },
-          ctx.scope === "all"
+          // A personal request carries its label in a project's inbox too (§18.2).
+          ctx.scope === "all" || req.personal
             ? h("div", { class: "entry-row" }, projectBadge(ctx, req, names), entrySummary(ctx, req, names, expanded, () => {
               ui.current = expanded ? null : keyOf(req);
               draw();
@@ -406,7 +445,7 @@ window.Maity = window.Maity || {};
           const own = shown.filter((r) => groupOf(r) === slug);
           const id = "inbox-group-" + (slug ? slug.replace("/", "-") : "personal");
           append(list, h("section", { class: "entry-group", "aria-labelledby": id },
-            h("h3", { id }, slug ? names.project(own[0]) : "Personal", h("span", { class: "count" }, String(own.length))),
+            h("h3", { id }, slug ? names.project(own[0]) : M.t("inbox.personal"), h("span", { class: "count" }, String(own.length))),
             h("ol", { class: "entries" }, own.map(entry))));
         });
       } else {
@@ -450,7 +489,7 @@ window.Maity = window.Maity || {};
         ctx.markSeen();
         listStatus.done();
       } catch (err) {
-        listStatus.fail("Answer sent; the counts could not be refreshed: ", err);
+        listStatus.fail(M.t("inbox.counts_failed"), err);
       }
     }
 
@@ -458,18 +497,18 @@ window.Maity = window.Maity || {};
       id: "inbox-sort",
       onchange: (e) => { ui.sort = e.target.value; ui.current = null; draw(); },
     },
-    sorts.map((s) => h("option", { value: s, selected: s === ui.sort }, s)));
+    sorts.map((s) => h("option", { value: s, selected: s === ui.sort }, SORT_LABELS[s])));
     const showSelect = ctx.scope === "all" ? null : h("select", {
       id: "inbox-show",
       onchange: (e) => { ui.show = e.target.value; showAll = false; draw(); },
     },
-    [["open", "open"], ["all", "all, answered too"]].map(([v, l]) => h("option", { value: v, selected: v === show() }, l)));
+    [["open", M.t("inbox.show.open")], ["all", M.t("inbox.show.all")]].map(([v, l]) => h("option", { value: v, selected: v === show() }, l)));
 
     // The cross-project view: a project filter and grouping by project.
     const projectSelect = ctx.scope === "all" ? h("select", {
       id: "inbox-project",
       onchange: (e) => { ui.project = e.target.value; ui.current = null; draw(); },
-    }, h("option", { value: "" }, "every project"),
+    }, h("option", { value: "" }, M.t("inbox.every_project")),
     // No counts in the options: the switcher beside it has them, kept current.
     ctx.projects.map((p) => h("option", { value: p.full_name }, p.name))) : null;
     if (projectSelect) projectSelect.value = ui.project;
@@ -481,13 +520,13 @@ window.Maity = window.Maity || {};
     if (banner) append(root, h("img", { class: "project-banner", src: banner, alt: "" }));
     append(root,
       h("div", { class: "toolbar" },
-        h("h2", null, ctx.scope === "all" ? "Waiting for you, all projects" : "Inbox"),
-        h("label", { for: "inbox-sort" }, "Sort by"), sortSelect,
-        showSelect ? [h("label", { for: "inbox-show" }, "Show"), showSelect] : null,
-        projectSelect ? [h("label", { for: "inbox-project" }, "Project"), projectSelect,
-          h("label", { class: "check", for: "inbox-group" }, groupBox, " Group by project")] : null),
+        h("h2", null, ctx.scope === "all" ? M.t("inbox.title.all") : M.t("inbox.title")),
+        h("label", { for: "inbox-sort" }, M.t("inbox.sort_by")), sortSelect,
+        showSelect ? [h("label", { for: "inbox-show" }, M.t("inbox.show")), showSelect] : null,
+        projectSelect ? [h("label", { for: "inbox-project" }, M.t("inbox.fact.project")), projectSelect,
+          h("label", { class: "check", for: "inbox-group" }, groupBox, " " + M.t("inbox.group"))] : null),
       listStatus.el,
-      wanted && !wantedReq ? h("p", { class: "muted wanted-note", role: "status" }, "No request " + wanted + " in this project's inbox.") : null,
+      wanted && !wantedReq ? h("p", { class: "muted wanted-note", role: "status" }, M.t("inbox.not_here", { id: wanted })) : null,
       list);
     draw();
     if (wantedReq) {
@@ -495,6 +534,5 @@ window.Maity = window.Maity || {};
         .map((li) => li.querySelector("button.entry-head"))[0];
       if (head) window.setTimeout(() => head.focus(), 0);
     }
-    activity = M.waiting.mount(ctx, root, items, () => ctx.scope === "project" ? ctx.slug : projectFilter());
   };
 })(window.Maity);

@@ -1,11 +1,13 @@
-// (4) Organisation: an indented tree computed from reports_to and area
-// ownership on every render; nothing chart-shaped is stored or fetched.
+// The organigram, the Organisation tab of the Team page
+// (/<owner>/<slug>/organisation; the maintainer, 2026-10-30; it was a
+// section of the Overview): an indented tree computed from reports_to and
+// area ownership on every render; nothing chart-shaped is stored or fetched.
 "use strict";
 
 window.Maity = window.Maity || {};
 
 (function (M) {
-  const { h, append } = M.dom;
+  const { h, append, clear } = M.dom;
 
   // "/" contains everything; "hub/" contains "hub/api/".
   function contains(outer, inner) {
@@ -73,16 +75,27 @@ window.Maity = window.Maity || {};
         h("strong", null, M.dom.memberRef(ctx, m.id)),
         h("span", { class: "role" }, M.trust.words(m)),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
-        link && link.via === "area" ? h("span", { class: "muted" }, "(by area)") : null),
+        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null),
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 
-  M.views.org = async function (ctx, root) {
-    const tree = buildTree(ctx.members);
-    append(root, h("h2", null, "Organisation"),
-      h("p", { class: "muted" }, "Policy: " + ctx.project.policy.preset
-        + ". Computed from who reports to whom and who owns which area."),
-      h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))));
+  function drawTree(ctx) {
+    const tree = buildTree(ctx.members || []);
+    return tree.roots.length ? h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))) : h("p", { class: "muted" }, M.t("org.empty"));
+  }
+
+  // The tab: the tree, drawn again from the members when one changes.
+  M.views.organisation = async function (ctx, root) {
+    const status = M.statusLine();
+    const box = h("div", { class: "org-box" });
+    append(root, M.teamTabs(ctx, "organisation"), h("h2", null, M.t("team.tab.organisation")),
+      h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), status.el, box);
+    append(box, drawTree(ctx));
+    ctx.onEvents((events) => {
+      if (!events.some((e) => /^member_/.test(e.kind))) return;
+      M.api.getAll(ctx.base + "/members").then((r) => { M.withMembers(ctx, r.items); append(clear(box), drawTree(ctx)); status.done(); },
+        (err) => status.fail(M.t("org.reread_failed"), err));
+    });
   };
 
   M.org = { buildTree, contains };

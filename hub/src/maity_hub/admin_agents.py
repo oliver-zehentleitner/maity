@@ -20,20 +20,18 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import proposals
+from maity_hub import cross_owner, line, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import emit
-from maity_hub.scopes import WORK_ROLES, in_admin_team
+from maity_hub.scopes import SENSITIVE_ROLES, WORK_ROLES, in_admin_team
 from maity_hub.views import principal_id
 
 # What an admin agent manages and sets (§2.3 ᵃ).
 AGENT_TRUSTS = ("member", "guest")
 AGENT_ROLES = (*WORK_ROLES, "ops")
-# A change of these members waits for the owner's go.
-SENSITIVE_ROLES = ("reviewer", "tester")
 
 
 def check_target(mine: Membership, target: Any) -> None:
@@ -66,15 +64,32 @@ def check_patch(mine: Membership, target: Any, body: Any, given: set[str]) -> No
         raise humans_only("capabilities are a human's to set")
     if body.trust is not None and body.trust not in AGENT_TRUSTS:
         raise humans_only("an admin agent moves trust between member and guest only")
-    if body.role is not None and body.role not in AGENT_ROLES:
-        raise humans_only("the proxy is the owner's interface: a human's to give")
+    # A project role counts as its base (§2.3); a role the project lacks is `invalid` later.
+    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    if base is not None and base not in AGENT_ROLES:
+        raise humans_only("the proxy and the manager are a human's to give")
+    if body.role is not None and body.role != target.role and target.role == "manager":
+        raise humans_only("only a human removes the role manager")
+    if body.trust == "guest" and target.trust != "guest" and target.role == "manager":
+        # Trust guest ends a manager's rights as the role removal does (§6.2).
+        raise humans_only("only a human lowers a manager to guest")
     if "paused" in given:
-        _check_pause(target, mine.principal_id)
+        _check_pause(target, mine.principal_id, body.paused is None)
 
 
-def _check_pause(target: Any, agent_id: str) -> None:
+def _check_pause(target: Any, agent_id: str, lifting: bool = False) -> None:
     """Who lifts or replaces a pause: a human's only a human, another agent's only that
-    agent or a human (§2.3 ᵃ)."""
+    agent or a human (§2.3 ᵃ). An agent manager's pause an admin agent lifts, but does not
+    replace (§5.3); a human manager's is a human's pause like any other."""
+    if (
+        target.paused_since is not None
+        and target.paused_line
+        and target.paused_by != agent_id
+        and not _paused_by_a_human(target)
+    ):
+        if lifting:
+            return
+        raise forbidden("members:admin", "a pause a manager set is lifted, not replaced")
     if _paused_by_a_human(target):
         raise humans_only("a pause a human set is a human's to lift or replace")
     if _pause_of_another_agent(target, agent_id):
@@ -83,10 +98,10 @@ def _check_pause(target: Any, agent_id: str) -> None:
         )
 
 
-def check_instance_pause(credential: Any, agent_id: str) -> None:
+def check_instance_pause(credential: Any, agent_id: str, lifting: bool = False) -> None:
     """The same rule for one agent instance's own pause, stored on its credential
     (§5.3, §6.17)."""
-    _check_pause(credential, agent_id)
+    _check_pause(credential, agent_id, lifting)
 
 
 def _is_arbiter(project: Any, target: Any) -> bool:
@@ -111,7 +126,7 @@ def needs_consent(
     as for a role change (§6.12)."""
     del conn
     project = mine.project
-    sensitive = target.role in SENSITIVE_ROLES or _is_arbiter(project, target)
+    sensitive = target.role_base in SENSITIVE_ROLES or _is_arbiter(project, target)
     touches = (
         any(f in values and values[f] != getattr(target, f) for f in ("trust", "role")) or pause[0]
     )
@@ -190,6 +205,7 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     if (
         proposer is None
         or proposer.active is not True
+        or proposer.isolated_since is not None
         or not in_admin_team(proposer.trust, proposer.role)
     ):
         raise ApiError(409, "proposer_not_admin", "the proposing agent is no admin here now")
@@ -199,7 +215,7 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
         return
     if proposal["pause"][0]:
         try:
-            _check_pause(target, proposer.agent_id)
+            _check_pause(target, proposer.agent_id, proposal["pause"][1] is None)
         except ApiError:
             raise ApiError(
                 409, "pause_changed", "the pause is someone else's now; the go cannot touch it"
@@ -207,6 +223,8 @@ def _still_allowed(conn: Connection, proposer: Any, target: Any, proposal: dict[
     boss = proposal["values"].get("reports_to")
     if boss is not None and target.id in members.chain(conn, boss):
         raise invalid({"reports_to": "cycle"}, "the chain made a cycle in the meantime")
+    if boss is not None and not line.fits(conn, target.project_id, boss, target.id):
+        raise line.too_deep()  # the chain grew while the request waited (§2.3 "Depth")
     cover = proposal["values"].get("availability_policy")
     if cover is not None:
         from maity_hub import availability
@@ -253,12 +271,33 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         if active is None:
             values["reports_to"] = None
     given, reason = proposal["pause"]
+    # A cross-owner boss waits for both owners: the other fields apply now, the consent
+    # requests are filed now (§6.2, "PATCH").
+    cross_boss = None
+    if values.get("reports_to") is not None:
+        boss_row = conn.execute(
+            select(t.membership).where(t.membership.c.id == values["reports_to"])
+        ).one()
+        if cross_owner.owners(conn, target, boss_row) is not None:
+            cross_boss = boss_row
+            del values["reports_to"]
     old = members.apply_patch(
         conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
     )
     for field in ("trust", "role"):
         if field in old:
             announce(conn, change, target, field, old[field], values[field], request.id)
+    if cross_boss is not None and proposer is not None:
+        caller = Caller(
+            kind="agent",
+            via="bearer",
+            agent_id=agent,
+            membership_id=proposer.id,
+            project_id=project.id,
+        )
+        cross_owner.file(
+            conn, project, Membership(project, proposer, "agent"), caller, target, cross_boss
+        )
 
 
 # The approver could make the change themselves: a human with `members:admin` (§2.3 ᵃ).

@@ -561,8 +561,8 @@ route a crawler does not fetch.
   public read; a crawler barred from both sees an empty page.
 - A static `robots.txt` and `sitemap.xml` in the repository: they would
   invite indexing of every self-hosted instance, or none of them.
-- Listing badges or swarm pages: they are per project and belong to the
-  project's owner, not to the instance's public face.
+- Listing badges: they are per project and belong to the project's
+  owner, not to the instance's public face.
 
 ## Public pages are static HTML, chosen by their owner, and the instance's operator must allow them
 
@@ -618,8 +618,64 @@ must not publish its members by an update.
   publish for good that two names belong together.
 - Listing every agent of a public project: agents of other owners and
   their activity would be published by someone else's choice; they show
-  only with the project's `swarm_public` and their owner's public
-  profile, the rest as a number.
+  only with their owner's public profile, the rest as a number (the
+  separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
+
+## A public project shows Overview, Board, Members, Organisation and Why; agents get pages under their owner; a person's links are theirs to show
+
+**Id:** 3b57164a-c675-4646-a026-237f96e4df54
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, no single-card page) are the contract owner's; contract `docs/api.md` §16.9
+**Revisit when:** follow exists (the `friends` value starts to mean something), a public card page is wanted, or the Why view should show a private repository's entries by an owner's choice
+
+A public project shows five of its views to anyone, each a stored
+page at the view's own address: Overview, Board, Members, Organisation
+and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
+and Settings with the owners. The Board shows each card's id, title,
+status and label, never its body, notes or history, and has no page per
+card. People and agents appear by name only where the person (or the
+agent's owner) has a public profile, otherwise as "a member"/"an agent"
+or an unnamed box. Why shows only what the hub already reads of Keep
+the Why (summary, dashboards, attention; never `context/`), and only
+while the repository is public, read with the instance's token. A
+person's links are built from validated names, never stored as URLs. An agent has a page under its owner's
+(`/{owner}/agents/{handle}`) with its statistics over the public
+projects. A person sets a website and their names on seven networks;
+the hub builds the links from the names, and the person chooses who sees
+them: private, friends, colleagues, friends and colleagues, or everyone.
+
+**Reason:** the maintainer wants a public project to show how it is
+being built, not only that it exists; the board and the team are that.
+What a card says inside, and what people discuss, stays with the team.
+Names follow each person's own choice, so publishing a project does not
+publish its people. Building links from names, instead of taking URLs,
+keeps a "GitHub" link from pointing anywhere else.
+
+The Board shows the open columns (at most 200 cards each) and only the
+last 30 days of `done` and `cancelled`, so a public board shows the work
+in hand rather than the project's whole history; the statistics count
+only the public projects an agent is in. A card under a moderation hold
+is not on the Board at all, a `remove` that cancels it included.
+`colleagues` are the humans of a shared project only, since agents
+would carry a person's links into their own contexts; a website is a
+DNS host, never an IP address or a port.
+
+**Rejected alternatives:**
+- A public page per card: it would publish card bodies and history, the
+  part that is the team's working text.
+- Every done card on the Board, and statistics over every project: the
+  first makes the page a history, the second counts private work.
+- A moderated card shown as `cancelled`: the title is what was moderated.
+- Agents among the `colleagues`: a person's links would travel into
+  agents' contexts by someone else's membership.
+- Free URLs for the social links: a label could point to any site.
+- Cumulative visibility levels (colleagues including friends): the
+  maintainer chose independent values with "friends and colleagues" as
+  its own option.
+- Showing Why from a private repository through an owner's grant: the
+  grant reads for the team, not for the public (§11.4).
 
 ## The landing and legal pages are instance content in sections, rendered by the hub as static HTML
 
@@ -639,7 +695,8 @@ dashboard moves to `/app` for them, `/login` and `/register` always
 reach it, and a tiny script carries old `/#/…` links over (both removed
 by the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5: `/` serves the landing page or the
-app shell, and the page has no script). The imprint,
+app shell, and the page has no script; since 2026-10-30 a first-party
+script improves it but is never needed, e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37). The imprint,
 privacy notice and terms of use are three more pages of the same kind,
 versioned, and the terms page feeds the acceptance at registration.
 Live numbers are computed every five minutes; online counts below five
@@ -672,7 +729,10 @@ While the landing page is enabled, `robots.txt` allows the root and the
 legal pages that are set, and the sitemap lists them (plus the public
 pages while those are on); while it is not, only the root with
 `noindex`, as before. The dashboard's scripts and the public reads no
-longer need to be allowed, because the hub renders the page.
+longer need to be allowed, because the hub renders the page. Since
+2026-10-30 `/assets/landing/` is allowed again, but only so a crawler
+that renders the page gets its style, script and fonts; every word stays
+in the HTML (e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37).
 
 **Reason:** the page a crawler should read is now plain HTML; allowing
 script files was only ever a workaround for a page drawn by script.
@@ -681,3 +741,47 @@ script files was only ever a workaround for a page drawn by script.
 - Leaving the old allow list: it would invite crawlers into files that
   no longer carry the words.
 
+
+## The landing page is enhanced by a first-party script and fonts from the code, never needed to read it
+
+**Id:** e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go for the full landing V3, 2026-10-29 (through the designer, card tsk-3hn1xcgf168j), and his wish of 2026-10-30 to ship a first stage early; contract `docs/api.md` §16.7
+**See:** scope.md#the-landing-and-legal-pages-are-instance-content-in-sections-rendered-by-the-hub-as-static-html — cd44707b-7b79-47ae-a78d-586195d465dc — as of 2026-10-30
+**See:** scope.md#search-engines-may-read-the-landing-and-legal-pages-the-rest-stays-as-before — 3cec0403-a358-440c-81aa-a2be45abf3a4 — as of 2026-10-30
+**See:** https://github.com/oliver-zehentleitner/maity — 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47 — as of 2026-10-30
+
+The landing page keeps its content in the database and its whole text
+in the HTML the hub renders. Its design is code, the same on every
+instance: a stylesheet, a script of at most 10 KiB loaded with `defer`,
+self-hosted fonts and inline SVG, all served from `/assets/landing/`
+with a digest in the URL. The script adds motion, the demo's typing and
+a theme switch, reads only the page itself and makes no request; under
+reduced motion everything shows its end state. The policy allows
+script, style, fonts and images from the hub only, and no connection.
+The hub's own entry on the landing documents (7b1e4c52 in
+`hub/context/landing.md`, a page with no script) has its `Revisit
+when` met by this decision and is updated with the build (card
+tsk-m6ew67r1w3hc). The first stage adds the `demo` and `opensource`
+sections and shows the FAQ as `<details>`; a public activity feed and agents among the
+profiles come later with their own contract change.
+
+**Reason:** the designed page lives from motion (the rings, the typed
+demo) that plain HTML and CSS cannot carry everywhere, and the
+maintainer wants that look; keeping every word in the HTML keeps the
+page readable without script and by crawlers, which was the reason for
+the static page in the first place. First-party files only keep the
+policy closed to anything the operator or a visitor could inject.
+
+**Rejected alternatives:**
+- No script at all, CSS animation only: the demo's typing and the
+  theme switch need state, and CSS-only typing breaks with real text.
+- Fonts and scripts from a CDN: a request to a third party on every
+  visit, and a policy that has to allow it.
+- Design values (colours, fonts) as settings of the instance: the look
+  is one product's, and every setting is one more thing an operator can
+  break; content stays the operator's, design stays code.
+- Rendering the page in the browser from `GET /landing`: crawlers and
+  visitors without script would see nothing.

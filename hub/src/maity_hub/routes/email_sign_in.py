@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, paths
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import second_factor, sessions, sign_in_settings
@@ -91,7 +91,7 @@ def request_link(body: LinkRequest, request: Request, background: BackgroundTask
             body.address,
             pending,
             origin.address,
-            sessions.safe_next(body.next),
+            paths.safe_next(body.next),
             request.headers.get("user-agent"),
             requested_at,
         )
@@ -118,6 +118,7 @@ def _eligible(conn: Connection, hub: Settings, human_id: str, epoch: int | None 
     if (
         human is None
         or human.account_status != "active"
+        or human.suspended_at is not None  # no way in for a suspended account (§16.8)
         or row is None
         or row.address_status != "verified"
         or row.address is None

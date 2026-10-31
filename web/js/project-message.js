@@ -1,4 +1,4 @@
-// Message the project (#/<owner>/<slug>/message): a message to everyone, a role
+// Message the project (/<owner>/<slug>/message): a message to everyone, a role
 // or one member (docs/api.md §8.4), of one of the hub's types, optionally
 // about a card. Its body is scanned by the hub: a mention draws the member
 // into the message's audience and pings them (§8.6); the dashboard never
@@ -12,12 +12,13 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
 
+  // No review_result: it carries its verdict, head and cites (§8.4), which
+  // come from the CLI's --review-file (context/views.md).
   const TYPES = [
     ["notice", "For your information (no answer expected)"],
     ["handover", "A handover"],
     ["blocker", "Something blocks work"],
     ["go_request", "Asks for a go"],
-    ["review_result", "A review's result"],
     ["interface_change", "An interface changes"],
   ];
   const CLOSED = new Set(["done", "cancelled"]);
@@ -39,7 +40,7 @@ window.Maity = window.Maity || {};
       h("option", { value: "all" }, "Everyone in the project"),
       // §8.4: trust:owner, trust:admin or a role (§2.3).
       h("optgroup", { label: "A trust" }, ["owner", "admin"].map((t) => h("option", { value: "trust:" + t }, "Every " + t))),
-      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + r))),
+      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + M.trust.roleLabel(r).toLowerCase()))),
       h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + M.dom.handleOf(ctx, m) + ")"))));
     to.value = "all";
     const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l)));

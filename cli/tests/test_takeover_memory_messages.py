@@ -335,6 +335,19 @@ def test_messages_names_an_instance_address_by_its_handle(
     assert "blocker  agent-b -> agent-b#k7mq  tsk-0004" in capsys.readouterr().out
 
 
+def test_messages_names_the_sending_instance(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    by_instance = {**MESSAGE, "from_instance": "p3x9", "attachments": []}
+    by_human = {**MESSAGE, "seq": 4241, "from": "hum-m", "from_instance": None, "attachments": []}
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (200, {"items": [by_instance, by_human]})
+    fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "blocker  agent-b#p3x9 -> role:admin  tsk-0004" in out
+    assert "blocker  maint -> role:admin  tsk-0004" in out
+
+
 def test_messages_json_is_the_page_ascii_escaped(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -432,9 +445,7 @@ def test_after_a_retracted_objection_the_holder_answers_again(
     assert fake.signed()[-1].json() == {"accept": True}
 
 
-def test_resume_stores_the_instance_and_forgets_a_stale_one(
-    joined: Path, fake: fakehub.FakeHub
-) -> None:
+def test_resume_stores_the_instance_the_packet_names(joined: Path, fake: fakehub.FakeHub) -> None:
     from maity import state
 
     packet = {"session": {"id": "ses-b-0005"}, "events": {"after": 0, "items": [], "cursor": 1},
@@ -442,9 +453,9 @@ def test_resume_stores_the_instance_and_forgets_a_stale_one(
     fake.routes[("POST", "/api/v1/me/resume")] = lambda s: (200, packet)
     assert cli.main(["resume", "--json"]) == cli.EXIT_OK
     assert state.load_state(state.resolve_state_dir())["instance"] == "wle2"
-    packet["me"] = {"member_id": "agt-b"}
+    packet["me"] = {"member_id": "agt-b", "instance": "k7mq"}
     assert cli.main(["resume", "--json"]) == cli.EXIT_OK
-    assert "instance" not in state.load_state(state.resolve_state_dir())
+    assert state.load_state(state.resolve_state_dir())["instance"] == "k7mq"
 
 
 def test_memory_add_json_is_ascii_escaped(

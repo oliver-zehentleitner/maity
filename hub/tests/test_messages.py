@@ -427,6 +427,7 @@ def test_the_human_and_its_agent_chat_and_nobody_else_sees_it(
         "from",
         "from_instance",
         "to",
+        "to_instance",
         "body",
         "sent_at",
         "delivered_at",

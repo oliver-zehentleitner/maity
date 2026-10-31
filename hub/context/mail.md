@@ -246,3 +246,36 @@ password sees an error that depends on an account (a taken handle).
   and the link must work from a mail on any device, with no script.
 - Accepting a `POST` without `Sec-Fetch-Site`: an older browser could then be made to submit the
   form from another site; the cookie alone is a second guard, not a reason to drop the first.
+
+## The account mails of registration and the invitation's mail are queued only while mail is ready, in English, tied to an account only where one holds the address
+
+**Id:** 158a003c-a0d6-4ac3-a2b7-eb407292b247
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §2.7.5, §3.4, §16.2, §18.5; implementation of the `TODO(#280)` mails (tsk-pb3vs6d65800) and its review (#776), 2026-10-30
+**Revisit when:** the registration keeps the person's language past the confirmation, or the security budget is counted per recipient
+
+The approval, rejection and expiry mails of registration (`registration_accounts._mail`) and the
+invitation's mail (`invitation_mail.send`) are queued only when mail is complete and enabled
+(`registration.mail_ready`), as the security mail of the outbox otherwise is not: without mail a
+decision queues nothing. Each is queued in the deciding transaction on the `security` budget, which
+is counted per instance and kind (`mail_budget`), not per recipient; "the recipient's security
+budget" of §3.4 is that budget. A rejection's or an expiry's mail has no `human_id`: the account and
+everything it made are deleted in the same transaction, and the address was read before. The
+invitation's mail is tied to an account only where one holds the address as verified (or disabled),
+so a disabled address stops it as it stops that account's other mail (§18.7); most often nobody
+holds it yet. The texts are English: at the decision the hub no longer knows the person's language,
+which only the pending registration kept. What the hub did not write (the operator's reason, the
+inviter's and the project's names, the note) goes through `mailer.defang` and `mailer.quoted`, so
+the only links are the hub's own (§18.5).
+
+**Reason:** a mail held while mail is off would go out when someone switches mail on, possibly
+weeks after the decision, about an account that may be gone. The contract says that without mail
+the inviter passes the link on; the account mails follow the same rule so the two never differ.
+
+**Rejected alternatives:**
+- Queue them whatever the mail setting says, as the outbox holds every mail while mail is off:
+  delivers stale news once mail comes back.
+- Mail in the registration's language: the account registration does not keep it; keeping it would
+  need a column and a migration for four mails the card asked to have in English.

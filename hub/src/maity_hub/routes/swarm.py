@@ -1,25 +1,20 @@
-"""The swarm page (docs/api.md §6.22): `GET /projects/{owner}/{slug}/swarm` for members, and the
-public `GET /swarm/{slug}` under `policy.swarm_public`, agents only."""
+"""The swarm statistics (docs/api.md §6.22): `GET /projects/{owner}/{slug}/swarm`, a section of
+the project's Overview for members. There is no public swarm page; a public project's page
+shows them reduced (§16.9)."""
 
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
-from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, namespace, swarm
+from maity_hub import clock, swarm
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import not_found
 from maity_hub.namespace import ProjectRoute
-from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.badges import CACHE as PUBLIC_CACHE
-from maity_hub.routes.badges import limit_not_served, limit_source
 from maity_hub.views import member_views
 
 router = APIRouter(route_class=ProjectRoute)
@@ -115,69 +110,3 @@ def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DA
                 "coverage": folded["coverage"],
             }
         )
-
-
-def _public(project: Any) -> bool:
-    return project.state not in CLOSED_STATES and project.swarm_public == "on"
-
-
-@router.get("/swarm/{slug}")
-def legacy_public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
-    """The address from before the namespace (§6.25): the slug frozen at the migration,
-    never the current slug, which another owner's project may carry. A `301` to the new
-    address only while the page is public; otherwise the same answer as any page not
-    served, so the old address tells nobody whether a project exists."""
-    limit_source(request)
-    with engine_of(request).begin() as conn:
-        project = conn.execute(select(t.project).where(t.project.c.legacy_slug == slug)).first()
-        if project is None or not _public(project):
-            limit_not_served()
-            raise not_found()
-        name = namespace.full_name(conn, project)
-    query = f"?days={days}" if days != DAYS else ""
-    return RedirectResponse(f"/api/v1/swarm/{name}{query}", status_code=301)
-
-
-@router.get("/swarm/{owner}/{slug}")
-def public_swarm(slug: str, request: Request, days: int = DAYS) -> Response:
-    """For visitors without a session: the policy first, one uniform `not_found` before
-    any ETag, then the members' page reduced to the agents (§6.22). `slug` is the full
-    name, as `ProjectRoute` hands it over."""
-    limit_source(request)
-    with engine_of(request).begin() as conn:
-        project = namespace.resolve(conn, slug)
-        if project is None or not _public(project):
-            limit_not_served()
-            raise not_found()
-        rows = [r for r in _active(conn, project.id) if r.agent_id is not None]
-        live = _live(conn, project.id, rows)
-        agents = {r.id for r in rows}
-        found = swarm.CACHE.get(conn, project.id)
-        folded = swarm.fold(found, _who(rows, live), days=days, include=lambda m: m in agents)
-    # No `live_at`, and `as_of` to the minute: the ETag holds for the 60 s the page may
-    # be cached, and presence there may be up to a minute old (§6.22).
-    body = {
-        "as_of": clock.rfc3339(found.as_of.replace(second=0, microsecond=0)),
-        "window_days": folded["window_days"],
-        "live": [
-            {
-                "handle": a["handle"],
-                "name": a.get("name"),  # the global name, shown by design (§6.3, §6.22)
-                "display_name": a["display_name"],
-                "online": a["online"],
-                "instances_online": a["instances_online"],
-                "holding_count": len(a["holding"]),
-            }
-            for a in live
-        ],
-        "members": [{k: v for k, v in m.items() if k != "member_id"} for m in folded["members"]],
-        "totals": folded["totals"],
-        "coverage": folded["coverage"],
-    }
-    document = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
-    etag = '"' + hashlib.sha256(document).hexdigest() + '"'
-    headers = {"ETag": etag, "Cache-Control": PUBLIC_CACHE}
-    candidates = request.headers.get("if-none-match", "").split(",")
-    if any(tag.strip() == "*" or tag.strip().removeprefix("W/") == etag for tag in candidates):
-        return Response(status_code=304, headers=headers)
-    return Response(document, media_type="application/json", headers=headers)

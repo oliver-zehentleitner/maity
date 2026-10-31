@@ -59,6 +59,8 @@ def note(who: Any, card_id: str, body: str) -> dict[str, Any]:
 
 
 def test_one_document_to_save(owner: flow.Human) -> None:
+    owner.patch("/me/notification-settings", {"not_listening": {"mode": "bell", "minutes": 25}})
+    owner.patch("/projects/maintainer/maity/me/settings", {"not_listening": {"minutes": 15}})
     response = export(owner)
     today = clock.now().date().isoformat()
     assert response.headers["content-disposition"] == (
@@ -74,6 +76,9 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "sessions",
         "second_factor",
         "forge_links",
+        "organisations",
+        "abuse_reports",
+        "organisation_invitations",
         "runners",
         "agent_profiles",
         "memberships",
@@ -89,10 +94,12 @@ def test_one_document_to_save(owner: flow.Human) -> None:
     account = body["account"]
     assert (account["handle"], account["id"]) == ("maintainer", owner.id)
     assert {"display_name", "avatar_url", "addresses", "terms", "preferences"} <= set(account)
-    assert set(account["notification_settings"]) == {"browser", "email"}
+    assert set(account["notification_settings"]) == {"browser", "email", "not_listening"}
+    assert account["notification_settings"]["not_listening"] == {"mode": "bell", "minutes": 25}
     assert [m["project"] for m in body["memberships"]] == ["maintainer/maity"]
     membership = body["memberships"][0]
     assert (membership["trust"], membership["left_at"]) == ("owner", None)
+    assert membership["own_settings"] == {"not_listening": {"minutes": 15}}
     [session] = body["sessions"]
     assert session["method"] and session["created_at"] and session["last_seen_at"]
     assert set(session["device"]) == {"browser", "os"}
@@ -179,6 +186,26 @@ def test_what_they_wrote(owner: flow.Human, colleague: flow.Human) -> None:
     [given] = export(owner).json()["answers_given"]
     assert given["request"] == {"id": asked["id"], "title": "Ship it?"}
     assert given["text"] == "Yes, the owner says ship" and given["answered_at"]
+
+
+def test_a_review_result_is_exported_with_its_review(
+    owner: flow.Human, colleague: flow.Human
+) -> None:
+    """§8.4: what a review result judged and read is part of the message they wrote."""
+    review = {
+        "subject": "#743",
+        "head": "7039a4b6fd8b988d71a63338711da188fcd95fba",
+        "verdict": "changes",
+        "cites": [
+            {"path": "docs/api.md", "line": 11929, "quote": "the inbox item appears"},
+            {"path": "old.py", "line": None, "quote": "def removed():"},
+        ],
+    }
+    say(colleague, "One P1.", type="review_result", review=review)
+    say(colleague, "A plain notice")
+    [first, second] = export(colleague).json()["messages"]
+    assert first["type"] == "review_result" and first["review"] == review
+    assert second["type"] == "notice" and second["review"] is None
 
 
 def test_redacted_stays_redacted(owner: flow.Human, colleague: flow.Human) -> None:
@@ -280,3 +307,58 @@ def test_forge_links_are_login_kind_and_created_never_a_token(
     ]
     assert all(set(link) == {"kind", "forge", "login", "status", "created"} for link in links)
     assert "very-secret-sealed-bytes" not in response.text and "4711" not in response.text
+
+
+def test_the_organisations_are_handle_role_and_when_they_joined(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_orgs import add_member, make_org
+
+    who = flow.human(make_client, migrated)
+    mine = make_org(who, "my-team", "My Team")
+    boss = flow.human(make_client, migrated, "boss")
+    theirs = make_org(boss, "their-team", "Their Team")
+    add_member(migrated, theirs["id"], who.id, "admin")
+    gone = make_org(who, "gone-team", "Gone Team")
+    assert gone["id"] != mine["id"]
+    from tests.test_orgs import delete_org
+
+    assert delete_org(who, "gone-team", "gone-team").status_code == 204
+    shown = who.get("/me/export").json()["organisations"]
+    assert [(o["handle"], o["role"]) for o in shown] == [
+        ("my-team", "owner"),
+        ("their-team", "admin"),
+    ]
+    assert set(shown[0]) == {"handle", "role", "joined"}
+
+
+def test_the_invitations_a_human_sent_are_in_their_export(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from tests.test_orgs import make_org
+
+    who = flow.human(make_client, migrated)
+    make_org(who, "my-team", "My Team")
+    flow.human(make_client, migrated, "guest")
+    first = who.post("/orgs/my-team/members/invitations", {"handle": "guest", "role": "admin"})
+    second = who.post(
+        "/orgs/my-team/members/invitations", {"handle": "nobody-here", "role": "member"}
+    )
+    assert first.status_code == second.status_code == 202
+    assert who.delete(f"/orgs/my-team/members/invitations/{first.json()['id']}").status_code == 204
+    shown = who.get("/me/export").json()["organisation_invitations"]
+    assert [(i["handle"], i["role"], i["status"]) for i in shown] == [
+        ("guest", "admin", "revoked"),
+        ("nobody-here", "member", "open"),
+    ]
+    assert all(i["organisation"] == "my-team" for i in shown)
+    assert set(shown[0]) == {
+        "organisation",
+        "handle",
+        "role",
+        "status",
+        "created",
+        "expires",
+        "closed",
+    }
+    assert "request" not in str(shown)

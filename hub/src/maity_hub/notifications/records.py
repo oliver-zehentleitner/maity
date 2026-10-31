@@ -27,7 +27,9 @@ SECURITY = (
 # The forge access changes that are a `security` item; the others are no notification.
 FORGE_ADDED = ("linked", "token_set")
 # Records that are `inbox` items, open until their matter is closed (§18.1).
-INBOX = ("registration_pending", "mail_disabled")
+INBOX = ("registration_pending", "mail_disabled", "report_open", "agents_not_listening")
+# Records that are `inbox` items read by a read mark, as any notice (§18.1).
+NOTICES = ("moderation_applied",)
 PERSONAL = (
     "personal_request_created",
     "personal_request_answered",
@@ -35,9 +37,15 @@ PERSONAL = (
 )
 
 
+def lock_human(conn: Connection, human_id: str) -> None:
+    """The human's row, locked for the rest of the caller's transaction: the records are
+    appended under it."""
+    conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+
+
 def write(conn: Connection, human_id: str, kind: str, data: dict[str, Any]) -> int:
     """Append one record for `human_id` inside the caller's transaction; returns `n`."""
-    conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+    lock_human(conn, human_id)
     previous = conn.execute(
         select(func.max(t.account_record.c.at)).where(t.account_record.c.human_id == human_id)
     ).scalar()
@@ -66,7 +74,12 @@ def personal_request(conn: Connection, request: Any) -> None:
         conn,
         request.to_human,
         kind,
-        {"request_id": request.id, "project_id": request.project_id, "status": request.status},
+        {
+            "request_id": request.id,
+            "project_id": request.project_id,
+            "org_id": request.org_id,  # an organisation's invitation has no project (§6.26)
+            "status": request.status,
+        },
     )
 
 

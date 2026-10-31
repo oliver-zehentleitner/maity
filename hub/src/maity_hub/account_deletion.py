@@ -28,7 +28,16 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, select, update
 
-from maity_hub import clock, github_app, invitations, namespace, placements, write_guard
+from maity_hub import (
+    clock,
+    github_app,
+    invitations,
+    namespace,
+    orgs,
+    placements,
+    public_pages,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
@@ -102,6 +111,14 @@ def blocker(conn: Connection, human_id: str) -> ApiError | None:
         namespace.namespace_owner_of(conn, human_id, open_projects)
     except ApiError as refusal:
         return refusal
+    alone = orgs.owned_alone(conn, human_id)
+    if alone:
+        return ApiError(
+            409,
+            "org_last_owner",
+            "the account is the last owner of an organisation",
+            {"orgs": alone},
+        )
     # The instance has one admin, the earliest account (`admin.instance_admin_id`): that
     # one is always the last.
     if is_instance_admin(conn, human_id):
@@ -194,7 +211,7 @@ def _digest(nonce: str) -> str:
 def export_url(public_url: str) -> str:
     """The dashboard's account page, which signs in and asks for the step-up before the
     export: never the API route (§2.9)."""
-    return f"{public_url}/#/account"
+    return f"{public_url}/account"
 
 
 def _mail(conn: Connection, public_url: str, human: Any, address: str, token: str) -> None:
@@ -219,7 +236,7 @@ def _mail(conn: Connection, public_url: str, human: Any, address: str, token: st
             f"Confirm the deletion: {public_url}/mail/account-deletion/{token}\n\n"
             "The link is valid for 24 hours and works once. Nothing changes until you "
             "confirm. If this was not you, change your password: that withdraws the "
-            f"request. Your sessions: {public_url}/#/account/sessions\n"
+            f"request. Your sessions: {public_url}/account/sessions\n"
         ),
     )
 
@@ -275,6 +292,9 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
     row = _alive(conn, hub.mail.signing_key, token, lock=True)
     if row is None:
         return None
+    # The organisations before any project, in the order of their ids (§6.26): a promotion or
+    # a transfer into an organisation takes the same order.
+    orgs.lock_all_of(conn, human.id)
     # The namespace's projects under their locks before the re-check: a state change
     # takes the same lock, so a reopen commits first (and this refuses) or waits.
     _lock_namespace(conn, human.id)
@@ -383,11 +403,21 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
         )
         conn.execute(delete(t.soul_version).where(t.soul_version.c.agent_id.in_(owned)))
         conn.execute(delete(t.soul).where(t.soul.c.agent_id.in_(owned)))
+    # Its memberships in organisations end (§2.9, §6.26); the check that it is nobody's last
+    # owner is `blocker`, made under the organisations' locks. Before the project memberships
+    # end: the `member_updated` of a seat the hub kept must not say `org_owner`.
+    from maity_hub import org_invitations, project_names
+
+    org_invitations.withdraw_by_inviter_everywhere(conn, human_id, "inviter_deleted")
+    project_names.withdraw_started_by(conn, human_id, "initiator_deleted")
+    conn.execute(delete(t.org_member).where(t.org_member.c.human_id == human_id))
     _leave_projects(conn, human_id)
+    _forget_confirmations(conn, human_id)
     # The personal requests last, once removing the profiles cannot file another.
     _withdraw_personal(conn, human_id)
     _end_access(conn, hub, human_id)
     _remove_person(conn, human_id, hub.secret_key)
+    public_pages.touch(conn, "person", human_id)  # a deleted person has no page (§16.9)
 
 
 def _ids(conn: Connection, query: Any) -> list[str]:
@@ -398,8 +428,11 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
     """Its open personal requests are withdrawn (§7). Open cross-owner `reports_to`
     consents (§6.2) do not exist in this hub yet: nothing files them, so there is
     nothing to withdraw."""
+    from maity_hub import org_invitations
     from maity_hub.routes.requests import close_request
 
+    # An organisation's invitations to the human first: they have no project to lock (§6.26).
+    org_invitations.withdraw_for_human(conn, human_id, "invitee_deleted")
     for request_id in _ids(
         conn,
         select(t.request.c.id)
@@ -413,7 +446,8 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
         project_id = conn.execute(
             select(t.request.c.project_id).where(t.request.c.id == request_id)
         ).scalar_one()
-        lock_project(conn, project_id)
+        if project_id is not None:
+            lock_project(conn, project_id)
         close_request(conn, request_id, "withdrawn", None, reason="the account was deleted")
 
 
@@ -453,6 +487,23 @@ def _leave_projects(conn: Connection, human_id: str) -> None:
         target = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
         project = lock_project(conn, target.project_id)
         apply_remove(conn, Change(project, HUB, human_id, human_id, None, None), target)
+
+
+def _forget_confirmations(conn: Connection, human_id: str) -> None:
+    """The repositories it confirmed are not confirmed any more: their grants end with the
+    account (§11.4); another owner of the organisation confirms again."""
+    for project_id in _ids(
+        conn,
+        select(t.project.c.id)
+        .where(t.project.c.repository_confirmed_by == human_id)
+        .order_by(t.project.c.id),
+    ):
+        lock_project(conn, project_id)
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id, t.project.c.repository_confirmed_by == human_id)
+            .values(repository_owner_confirmed=False, repository_confirmed_by=None)
+        )
 
 
 def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
@@ -514,9 +565,9 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
     the account's own records and its declared limit; the row stays with `deleted_at`,
     its handle taken for good (§2.9). The row is written last: ordinary work locks it
     after project locks (account records), and so does the deletion; what the removals
-    wrote into events before it is shaped when read (`views.shape_deleted`). The hub has no
-    public profile or static pages of a human yet (§16.9), and no handle aliases
-    (§6.24)."""
+    wrote into events before it is shaped when read (`views.shape_deleted`). The public profile
+    goes with the row's other personal text and its page with `touch` after it (§16.9). Its
+    aliases (§6.24) stay with the row, as its handle does: both stay taken."""
     known = _addresses(conn, human_id)
     _forget_mail(conn, human_id, known)  # its pending registrations go here too
     addresses.forget_locks(conn, secret_key, known)
@@ -547,6 +598,8 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_since=None,
             limit_reason=None,
             limit_show_reason_in=None,
+            public_profile=False,  # the profile and its page are deleted with the person (§2.9)
+            public_bio=None,
             deleted_at=clock.now(),
         )
     )

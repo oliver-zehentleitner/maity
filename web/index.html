@@ -19,6 +19,9 @@
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="brand/loader.css">
   <script src="js/theme.js"></script>
+  <script src="js/i18n/en.js" defer></script>
+  <script src="js/i18n.js" defer></script>
+  <script src="js/route.js" defer></script>
   <script src="js/dom.js" defer></script>
   <script src="js/trust.js" defer></script>
   <script src="js/ids.js" defer></script>
@@ -39,6 +42,7 @@
   <script src="js/placements.js" defer></script>
   <script src="js/agents.js" defer></script>
   <script src="js/members.js" defer></script>
+  <script src="js/member-page.js" defer></script>
   <script src="js/invite.js" defer></script>
   <script src="js/register.js" defer></script>
   <script src="js/org.js" defer></script>
@@ -64,18 +68,24 @@
   <script src="js/step-up.js" defer></script>
   <script src="js/your-data.js" defer></script>
   <script src="js/preferences.js" defer></script>
+  <script src="js/handles.js" defer></script>
   <script src="js/account.js" defer></script>
+  <script src="js/agents-page.js" defer></script>
   <script src="js/orgs.js" defer></script>
+  <script src="js/person.js" defer></script>
   <script src="js/runners.js" defer></script>
   <script src="js/admin-users.js" defer></script>
+  <script src="js/admin-reports.js" defer></script>
+  <script src="js/admin-limits.js" defer></script>
   <script src="js/statistics.js" defer></script>
   <script src="js/landing.js" defer></script>
+  <script src="js/admin-registration.js" defer></script>
   <script src="js/instance-admin.js" defer></script>
   <script src="js/project-runners.js" defer></script>
 </head>
 <body>
   <!-- The header with the lockup at once, before any script or hub call (app.js brandTitle); the first view redraws it. -->
-  <header id="header"><div class="bar"><h1 class="brand"><img class="brand-lockup brand-light" src="brand/maity-lockup.svg" alt="Maity" width="94" height="28"><img class="brand-lockup brand-dark" src="brand/maity-lockup-dark.svg" alt="Maity" width="94" height="28"></h1></div></header>
+  <header id="header"><div class="bar"><h1 class="brand"><a class="brand-home" href="/" aria-label="Maity: home" title="Maity: home"><img class="brand-lockup brand-light" src="brand/maity-lockup.svg" alt="" width="94" height="28"><img class="brand-lockup brand-dark" src="brand/maity-lockup-dark.svg" alt="" width="94" height="28"></a></h1></div></header>
   <main id="main">
     <noscript><p>The Maity dashboard needs JavaScript.</p></noscript>
     <!-- Until the first view replaces it (web/brand/loader.html; its timing lives in brand/loader.css). -->

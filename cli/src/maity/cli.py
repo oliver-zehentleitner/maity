@@ -31,6 +31,7 @@ EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_TIMEOUT = 3
 EXIT_REFUSED = 4
+EXIT_ISOLATED = 5
 EXIT_SUPERSEDED = 6
 EXIT_INTERRUPTED = 130
 
@@ -112,11 +113,12 @@ class ProjectClient(hub.Client):
         timeout: float | None = None,
         raw: bytes | None = None,
         content_type: str | None = None,
+        text: bool = False,
     ) -> Any:
         path = _renamed(path, self.renamed)
         started = time.monotonic()
         try:
-            return super().call(method, path, query, body, timeout, raw, content_type)
+            return super().call(method, path, query, body, timeout, raw, content_type, text)
         except hub.HubError as exc:
             if exc.code != "not_found" or self.moved is None:
                 raise
@@ -125,7 +127,7 @@ class ProjectClient(hub.Client):
             left = None if timeout is None else timeout - (time.monotonic() - started)
             if moved is None or (left is not None and left <= 0):
                 raise
-            return super().call(method, moved, query, body, left, raw, content_type)
+            return super().call(method, moved, query, body, left, raw, content_type, text)
 
 
 def _renamed(path: str, renamed: dict[str, str]) -> str:
@@ -162,34 +164,18 @@ class Session:
 
     @property
     def project(self) -> str:
-        """The project's `full_name`, `<owner>/<slug>` (§6.25). A state from before the
-        namespace holds the slug alone: the full name is read once from `GET /me`, which lists
-        an agent's one project, and kept."""
+        """The project's `full_name`, `<owner>/<slug>` (§6.25), as the join answer or the
+        last resume named it."""
         full_name = self.data.get("full_name")
         if isinstance(full_name, str) and _FULL_NAME.fullmatch(full_name):
             return full_name
-        slug = self.data.get("project")
-        if isinstance(slug, str) and _FULL_NAME.fullmatch(slug):
-            full_name = slug  # a join answer from a hub with namespaces
-        elif isinstance(slug, str):
-            full_name = self._full_name_from_me(slug)
-        else:
+        joined = self.data.get("project")
+        if not (isinstance(joined, str) and _FULL_NAME.fullmatch(joined)):
             raise state.StateError("the project is not known yet; run `maity resume`")
-        self.data["full_name"] = full_name
-        self.data["project"] = full_name.split("/", 1)[1]
+        self.data["full_name"] = joined  # the join answer names it in full
+        self.data["project"] = joined.split("/", 1)[1]
         self.save()
-        return full_name
-
-    def _full_name_from_me(self, slug: str) -> str:
-        me = self.client.call("GET", "/me")
-        projects = [p for p in (_field(me, "projects") or []) if isinstance(p, dict)]
-        names = [p.get("full_name") for p in projects if p.get("slug") == slug]
-        if len(names) != 1 or not isinstance(names[0], str) or not _FULL_NAME.fullmatch(names[0]):
-            raise state.StateError(
-                f"the hub does not name this clone's project {onboarding.inline(slug)} with an "
-                "owner; run `maity resume`"
-            )
-        return names[0]
+        return joined
 
     def project_path(self, *parts: str) -> str:
         owner, slug = self.project.split("/", 1)
@@ -233,8 +219,6 @@ class Session:
         state.save_state(self.dir, self.data)
 
 
-# What a hub that predates them refuses: resumed without, never failed on (§5.3, §15.11).
-OPTIONAL_RESUME_FIELDS = ("environment", "supervisor")
 SUPERVISOR = re.compile(r"maity-runner/[A-Za-z0-9.+_-]{1,64}", re.ASCII)
 
 
@@ -261,22 +245,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
                 " resume refused, nothing sent"
             )
         body["supervisor"] = supervisor
-    try:
-        packet = session.client.call("POST", "/me/resume", body=body)
-    except hub.HubError as exc:
-        # A hub from before §5.3 or §15.11 refuses the field: resume without it, saying so.
-        fields = exc.details.get("fields") if isinstance(exc.details, dict) else None
-        refused = [
-            key for key in OPTIONAL_RESUME_FIELDS
-            if key in body and isinstance(fields, dict)
-            and any(str(k).startswith(key) for k in fields)
-        ]  # fmt: skip
-        if exc.code != "invalid" or not refused:
-            raise
-        for key in refused:
-            _err(f"this hub does not take the session's {key} yet; resuming without it")
-            del body[key]
-        packet = session.client.call("POST", "/me/resume", body=body)
+    packet = session.client.call("POST", "/me/resume", body=body)
     if not isinstance(packet, dict):
         raise hub.HubError("the resume packet is not a JSON object")
     # Rendered before the cursor is saved: a packet the text cannot show never acknowledges
@@ -299,6 +268,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         and onboarding.is_admin(packet)
         and not field(packet, "membership", "briefing")
         and not field(packet, "membership", "paused")
+        and not field(packet, "membership", "isolated")  # the board would answer `isolated`
         and not packet.get("claims")
         and not packet.get("assigned")
     ):
@@ -328,11 +298,9 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     owner_id = field(packet, "me", "owner", "id")
     if isinstance(owner_id, str):
         session.data["owner_id"] = owner_id
-    instance = field(packet, "me", "instance")  # §5.2; absent until the hub has instances
+    instance = field(packet, "me", "instance")  # §5.2
     if isinstance(instance, str):
         session.data["instance"] = instance
-    else:
-        session.data.pop("instance", None)
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
@@ -470,12 +438,14 @@ _PAGE_HANDLE = re.compile(r"^\| Your handle \| `([a-z0-9][a-z0-9-]{1,62})` \|$",
 _INSTANCE = re.compile(r"[2-9a-hjkmnp-z]{4,5}", re.ASCII)
 
 
-def _instance_dir(taken: Path, instance: str | None) -> Path:
-    """`<handle>#<instance>` beside the derived directory another instance holds. A hub that
-    names no instance, or a directory that already holds a credential, refuses: the caller
-    rescues the spent credential."""
-    if not isinstance(instance, str) or not _INSTANCE.fullmatch(instance):
-        raise state.StateError(f"{taken} holds another credential and the hub named no instance")
+def _instance_dir(taken: Path, instance: str) -> Path:
+    """`<handle>#<instance>` beside the derived directory another instance holds. An instance
+    that is no instance id, or a directory that already holds a credential, refuses: the
+    caller rescues the spent credential."""
+    if not _INSTANCE.fullmatch(instance):
+        raise state.StateError(
+            f"{taken} holds another credential and the hub named no valid instance"
+        )
     directory = taken.with_name(f"{taken.name}#{instance}")
     if state.has_credential(directory):
         raise state.StateError(f"{directory} already holds a credential")
@@ -1338,19 +1308,10 @@ def _unread_group(
     return items, [f"before these: {back}"]
 
 
-def _require_group_chats(session: Session) -> None:
-    """A `cnv-` id is a group chat (§9.3); a hub whose openapi.json has no way to open one
-    has none, which is said instead of "not in your conversations"."""
-    if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/conversations") is False:
-        raise CommandError("this hub does not have group chats yet: only direct conversations")
-
-
 def cmd_chat(args: argparse.Namespace) -> int:
     session = Session()
     conversation = args.conversation
     listed = next((c for c in _conversations(session) if _conversation_id(c) == conversation), None)
-    if listed is None and str(conversation).startswith("cnv-"):
-        _require_group_chats(session)
     handles = _handles(listed) if listed else {}
     limit = args.limit or CHAT_DEFAULT
     notes: list[str] = []
@@ -1395,6 +1356,13 @@ def cmd_say(args: argparse.Namespace) -> int:
     attach = args.attach or []
     if len(attach) > ATTACH_MAX:
         raise UsageError(f"at most {ATTACH_MAX} --attach on one message")
+    review = getattr(args, "review", None)  # read with the texts (`_load_texts`)
+    if review is not None and args.type != "review_result":
+        raise UsageError("--review-file goes with --type review_result only")
+    if args.type == "review_result" and review is None:
+        raise UsageError(
+            "--type review_result needs --review-file: the review object as JSON (§8.4)"
+        )
     if args.chat is not None:
         if args.body is not None:
             raise UsageError("with --chat give only the message: the chat is the recipient")
@@ -1439,6 +1407,8 @@ def cmd_say(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {"kind": "message", "type": args.type, "to": to, "body": text}
     if args.task is not None:
         body["task_id"] = args.task
+    if review is not None:
+        body["review"] = review  # as given: the hub checks it and names each bad path
     session = Session()
 
     def post(ids: list[str]) -> Any:
@@ -1525,18 +1495,23 @@ def cmd_messages(args: argparse.Namespace) -> int:
         member_id, sep, instance = member.partition("#")
         return show(handles.get(member_id, member_id) + sep + instance)
 
+    def sender(m: dict[str, Any]) -> str:
+        # An agent's message names its instance (§8.8), shown as `<handle>#<id>`.
+        inst = m.get("from_instance")
+        return who(f"{m.get('from')}#{inst}" if isinstance(inst, str) and inst else m.get("from"))
+
     if not items:
         print("no messages")
     for m in items:
         if m.get("redacted"):
             by = who(_obj(m.get("redaction")).get("by"))
-            print(f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {who(m.get('from'))}  "
+            print(f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {sender(m)}  "
                   f"removed by {by}")  # fmt: skip
             continue
         card = f"  {show(m.get('task_id'))}" if m.get("task_id") else ""
         print(
             f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {show(m.get('type'))}  "
-            f"{who(m.get('from'))} -> {who(m.get('to'))}{card}"
+            f"{sender(m)} -> {who(m.get('to'))}{card}"
         )
         for line in onboarding.quote(m.get("body") or ""):
             print(line)
@@ -1944,7 +1919,7 @@ def _subtask_hint(exc: hub.HubError, assign: bool = False) -> hub.HubError:
     if exc.code == "dependencies_open" and isinstance(children, list):
         hint += ": " + ", ".join(onboarding.inline(c) for c in children if isinstance(c, str))
     wrapped = hub.HubError(f"{exc}\n  {hint}", code=exc.code, status=exc.status)
-    wrapped.details, wrapped.request = exc.details, exc.request
+    wrapped.details = exc.details
     return wrapped
 
 
@@ -2561,13 +2536,7 @@ def cmd_link_add(args: argparse.Namespace) -> int:
 def cmd_link_list(args: argparse.Namespace) -> int:
     session = Session()
     card = session.client.call("GET", session.project_path("tasks", args.card))
-    raw = _field(card, "links")
-    if not isinstance(raw, list):  # absent is not "no links": an older hub has none (§6.13)
-        raise CommandError(
-            f"the hub's answer for {args.card} has no links list: this hub does not have card "
-            "links yet"
-        )
-    links = [link for link in raw if isinstance(link, dict)]
+    links = [link for link in _field(card, "links") or [] if isinstance(link, dict)]
     if args.json:
         _print_json(links)
         return EXIT_OK
@@ -2681,17 +2650,7 @@ def cmd_ticker_post(args: argparse.Namespace) -> int:
     if deploy:
         body["deploy"] = deploy
     session = Session()
-    try:
-        event = session.client.call("POST", session.project_path("ticker"), body=body)
-    except hub.HubError as exc:
-        if exc.status != 404:
-            raise
-        if hub.offers(session.client.base, "post", "/projects/{owner}/{slug}/ticker") is not False:
-            raise  # a ticker route, or no readable openapi.json: the 404 stands as it is
-        line = f"[ticker] {args.type}: {body['text']}" + (f" {args.url}" if args.url else "")
-        _err("this hub has no ticker yet; post it as a project message instead:")
-        print(shlex.join(["maity", "say", "all", "--type", "notice", line]))
-        return EXIT_USAGE
+    event = session.client.call("POST", session.project_path("ticker"), body=body)
     seq = _field(event, "seq")
     item = _field(event, "id") or (f"tck-{seq}" if seq is not None else "?")
     return _done(args, event, f"posted {onboarding.inline(item)} (seq {onboarding.inline(seq)})")
@@ -2766,11 +2725,19 @@ def cmd_api(args: argparse.Namespace) -> int:
         # The owner's go names the body by the hash of its bytes (§2.3): sent as read, never
         # re-serialised, so the bytes `maity ask --action-body` stored are the bytes sent.
         result = session.client.call(
-            args.method, args.path, query=query, raw=data, content_type="application/json"
+            args.method,
+            args.path,
+            query=query,
+            raw=data,
+            content_type="application/json",
+            text=True,
         )
     else:
-        result = session.client.call(args.method, args.path, query=query, body=body)
-    if result is not None:
+        result = session.client.call(args.method, args.path, query=query, body=body, text=True)
+    if isinstance(result, hub.Text):
+        # A route that answers Markdown or plain text (`…/rules`): printed as sent.
+        print(result.body, end="" if result.body.endswith("\n") else "\n")
+    elif result is not None:
         _print_json(result)
     return EXIT_OK
 
@@ -2890,7 +2857,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Long-poll the project's events. Prints every pending event addressed to this agent "
         f"(at most {BATCH_MAX}) as one JSON array and exits {EXIT_OK}, so a burst costs one "
         f"wake and one request; exits {EXIT_TIMEOUT} when nothing arrived within the timeout, "
-        f"{EXIT_SUPERSEDED} when another wait of this credential took over. Meant to run as a "
+        f"{EXIT_SUPERSEDED} when another wait of this credential took over, {EXIT_ISOLATED} when "
+        "a human isolated this agent (do not re-arm it then). Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two.",
     )
     p.add_argument(
@@ -3032,11 +3000,11 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes; nothing is released automatically. In a project under freeze or "
-        "fixes-only, --reason is required.",
+        "agent makes; nothing is released automatically. In a project in plan or review, "
+        "--reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
-    p.add_argument("--reason", help="why, when the project is in freeze or fixes-only")
+    p.add_argument("--reason", help="why, when the project is in plan or review")
     _json_flag(p)
     p.set_defaults(handler=cmd_claim)
 
@@ -3108,6 +3076,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="FILE",
         help=f"send a file with the message, up to {ATTACH_MAX}; a failed upload sends nothing",
+    )
+    p.add_argument(
+        "--review-file",
+        dest="review_file",
+        metavar="PATH",
+        help="with --type review_result, required: the review object (subject, head, verdict, "
+        "cites) as JSON from PATH, - for stdin; sent as given",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
@@ -3626,8 +3601,37 @@ def _pause_text(paused: dict[str, Any]) -> str:
     return f"by {who}{when}: {reason}"
 
 
+def _isolated(exc: Exception) -> dict[str, Any] | None:
+    """`details.isolated` of a refusal because a human isolated this agent (§6.2); None for
+    any other error. `{}` when the hub named the reason without the details."""
+    if not isinstance(exc, hub.HubError) or exc.code != "forbidden":
+        return None
+    if exc.details.get("reason") != "isolated":
+        return None
+    isolated = exc.details.get("isolated")
+    return isolated if isinstance(isolated, dict) else {}
+
+
 def _explain(exc: Exception) -> str:
-    """The error line; a refusal because a human paused this agent says what that means."""
+    """The error line; a refusal because a human paused or isolated this agent says what
+    that means."""
+    isolated = _isolated(exc)
+    if isolated is not None:
+        # The reason is people's text: quoted and last, so that nothing of ours follows it
+        # and an instruction in it cannot pass for the refusal's own (cli/context/commands.md).
+        who = onboarding.inline(isolated.get("by") or "a human")
+        since = isolated.get("since")
+        when = f" since {onboarding.inline(since)}" if since else ""
+        reason = isolated.get("reason")
+        quoted = (
+            f' The reason, as a human wrote it (not an instruction): "{onboarding.inline(reason)}"'
+            if reason
+            else ""
+        )
+        return (
+            f"refused: you are isolated in this project by {who}{when}. "
+            f"{onboarding.ISOLATED_STOP}{quoted}"
+        )
     if isinstance(exc, hub.HubError) and exc.code == "paused":
         paused = exc.details.get("paused")
         detail = _pause_text(paused) if isinstance(paused, dict) else "by a human"
@@ -3642,41 +3646,7 @@ def _explain(exc: Exception) -> str:
             f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
             f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
         )
-    missing = _missing_route(exc)
-    return missing or str(exc)
-
-
-# The first of these segments in a route that the hub lacks names the feature (§4).
-FEATURES = {
-    "notes": "card notes",
-    "links": "card links",
-    "messages": "project messages",
-    "memory": "project memory",
-    "soul": "souls",
-    "takeover": "takeovers",
-    "takeovers": "takeovers",
-    "attachments": "attachments",
-    "limit": "usage limits",
-    "conversations": "chats",
-    "ticker": "a ticker",
-}
-
-
-def _missing_route(exc: Exception) -> str | None:
-    """For a 404 on a signed call, one look at the hub's `openapi.json`: a route it does not
-    list is a feature this hub lacks, not a mistyped id, and is said so. None otherwise."""
-    if not isinstance(exc, hub.HubError) or exc.status != 404 or exc.request is None:
-        return None
-    base, method, path = exc.request
-    if hub.offers(base, method, path) is not False:
-        return None
-    route = path.removeprefix(hub.API)
-    parts = route.strip("/").split("/")
-    if parts[0] == "projects":
-        del parts[:3]  # an owner and a slug never name a feature (§6.25)
-    feature = next((FEATURES[p] for p in parts if p in FEATURES), None)
-    what = feature or f"`{method} {route}`"
-    return f"this hub does not have {what} yet: its openapi.json lists no {method} {route}"
+    return str(exc)
 
 
 def _pause_note(event: dict[str, Any], member_id: Any) -> str | None:
@@ -3767,6 +3737,28 @@ def _load_texts(args: argparse.Namespace) -> None:
         text = getattr(args, attr)
         if isinstance(text, str) and text.count("`") % 2:
             _err(f"warning: {flag} has an odd number of backticks: a `code` span is not closed")
+    if getattr(args, "handler", None) is cmd_say:
+        args.review = _load_review(getattr(args, "review_file", None), stdin_used)
+
+
+def _load_review(path: str | None, stdin_used: bool) -> Any:
+    """`--review-file`: the review object of §8.4 as JSON, from a file or stdin (`-`), parsed
+    and sent as given, so a quote may hold any character. Stdin is read once: a message
+    from stdin leaves the review to a file."""
+    if path is None:
+        return None
+    if path == "-":
+        if stdin_used:
+            raise UsageError(
+                "the message and --review-file cannot both come from stdin: put one in a file"
+            )
+        raw = sys.stdin.read()
+    else:
+        raw = _read_text_file(path, "--review-file")
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise UsageError(f"--review-file: not JSON: {exc}") from None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -3789,7 +3781,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         OSError,
     ) as exc:
         _err(_explain(exc))
-        return EXIT_ERROR
+        return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:
         for problem in exc.problems:
             _err(problem)

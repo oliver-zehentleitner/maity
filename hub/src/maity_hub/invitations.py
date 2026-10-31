@@ -60,6 +60,7 @@ def view(row: Any, project_slug: str, url: str | None = None) -> dict[str, Any]:
         "used_by": row.used_by,
         "revoked_at": _ts(row.revoked_at),
         "voided_at": _ts(row.voided_at),
+        "via": row.via,
     }
     if url is not None:
         found["url"] = url
@@ -70,24 +71,24 @@ def _ts(value: datetime | None) -> str | None:
     return clock.rfc3339(value) if value is not None else None
 
 
-def may_issue(trust: str, role: str, issuer_trust: str, issuer_role: str) -> bool:
+def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> bool:
     """Trust `owner` or `admin`, and the role `proxy`, need the issuer to hold trust
-    `owner`; the others `members:admin`."""
+    `owner`; the others `members:admin`. `issuer_base` is the issuer's `role_base`."""
     if trust in OWNER_TRUSTS or role == "proxy":
         return issuer_trust == "owner"
-    return has_scope(issuer_trust, issuer_role, "human", "members:admin")
+    return has_scope(issuer_trust, issuer_base, "human", "members:admin")
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
     """Whether the issuer is still an active human member with the authority it needs."""
     issuer = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role).where(
+        select(t.membership.c.trust, t.membership.c.role_base).where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
         )
     ).first()
-    return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role)
+    return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role_base)
 
 
 def admits(conn: Connection, row: Any, project: Any, now: datetime | None = None) -> bool:
@@ -134,11 +135,16 @@ def admits_address(conn: Connection, normalized: str, *, lock: bool = False) -> 
 
 
 def account_address(conn: Connection, human_id: str) -> str | None:
-    """The account's verified address (§18.4), normalized, or None. Fails closed: with
-    None an address-bound invitation is `invitation_address_mismatch` for everyone."""
-    # TODO(#280): read the verified address the notification settings store.
-    del conn, human_id
-    return None
+    """The account's verified address (§18.4), normalized, or None. An address that is
+    only pending, or none at all, is None: with it an address-bound invitation is
+    `invitation_address_mismatch`. A `disabled` address was verified and stays the
+    account's."""
+    return conn.execute(
+        select(t.notification_settings.c.address_normalized).where(
+            t.notification_settings.c.human_id == human_id,
+            t.notification_settings.c.address_status.in_(("verified", "disabled")),
+        )
+    ).scalar()
 
 
 def audience(conn: Connection, project_id: str, *also: str) -> list[str]:

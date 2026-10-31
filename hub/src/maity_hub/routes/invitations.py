@@ -24,6 +24,7 @@ from maity_hub import (
     invitations,
     namespace,
     paging,
+    project_roles,
     registration,
 )
 from maity_hub import tables as t
@@ -48,10 +49,11 @@ PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 class InvitationIn(Strict):
     trust: Literal["owner", "admin", "member", "guest"] = "member"
-    role: Literal["coder", "reviewer", "tester", "designer", "ops", "proxy"] = "coder"
+    role: str = "coder"  # a built-in role or one of the project's (§2.3)
     address: str | None = None
     ttl_seconds: int = invitations.TTL_DEFAULT
     note: str | None = None
+    via: Literal["join", "public"] | None = None
 
 
 def _check(body: InvitationIn) -> None:
@@ -69,8 +71,22 @@ def _check(body: InvitationIn) -> None:
         raise invalid(errors)
 
 
-def _url(request: Request, token: str) -> str:
-    return f"{settings_of(request).public_url}/#/invite/{token}"
+def _via(request: Request, body: InvitationIn) -> str:
+    """The host of the link: the join host when one is configured and `via` does not say
+    otherwise (§3.4); `join` without one is `invalid`."""
+    settings = settings_of(request)
+    via = body.via or ("join" if settings.join_url else "public")
+    if via == "join" and settings.join_url is None:
+        raise invalid({"via": "no_join_host"}, "this hub has no join host")
+    return via
+
+
+def _url(request: Request, via: str, token: str) -> str:
+    """`https://<join host>/i/<token>`, a redirect to the page (§1.1), or the page's own."""
+    settings = settings_of(request)
+    if via == "join" and settings.join_url is not None:
+        return f"{settings.join_url}/i/{token}"
+    return f"{settings.public_url}/invite/{token}"
 
 
 def _load(conn: Connection, invitation_id: str) -> dict[str, Any]:
@@ -87,13 +103,18 @@ def create_invitation(
     slug: str, body: InvitationIn, request: Request, caller: HumanCaller
 ) -> JSONResponse:
     _check(body)
+    via = _via(request, body)
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("members:admin")
+        # Under the lock `PUT …/roles` holds, so a role it removes is never invited to.
+        project = events.lock_project(conn, mine.project.id)
+        if project_roles.base_of(project, body.role) is None:
+            raise invalid({"role": "unknown"}, "the project has no such role")
         if body.role == "proxy" and body.trust != "admin":
             raise invalid({"role": "proxy_needs_admin"}, "a proxy holds trust admin")
-        if not invitations.may_issue(body.trust, body.role, mine.trust, mine.role):
+        if not invitations.may_issue(body.trust, body.role, mine.trust, mine.role_base):
             raise ApiError(
                 403,
                 "forbidden",
@@ -120,13 +141,16 @@ def create_invitation(
                 created_by=caller.principal_id,
                 created_at=now,
                 expires_at=now + timedelta(seconds=body.ttl_seconds),
+                via=via,
             )
         )
         row = conn.execute(select(t.invitation).where(t.invitation.c.id == invitation_id)).one()
         invitations.announce(conn, "invitation_created", row, caller.actor(mine.id))
-        url = _url(request, token)
+        url = _url(request, via, token)
         if given is not None:
-            invitation_mail.send(conn, invitation_id=invitation_id, to=given, url=url)
+            invitation_mail.send(
+                conn, invitation_id=invitation_id, to=given, url=url, hub=settings_of(request)
+            )
         return idempotency.Outcome(
             201,
             "invitation",
@@ -239,7 +263,7 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
 
 @router.get("/invitations/{token}")
 async def invitation_page(token: str, request: Request) -> JSONResponse:
-    """What the dashboard's `/#/invite/<token>` shows (§3.4), the same for every reader."""
+    """What the dashboard's `/invite/<token>` shows (§3.4), the same for every reader."""
     wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -254,7 +278,9 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 select(t.human.c.display_name).where(t.human.c.id == row.created_by)
             ).scalar()
             env = hub.registration or registration.RegistrationEnvironment()
-            resolved = registration.resolve(conn, env, registration.mail_ready(conn, hub))
+            resolved = registration.resolve(
+                conn, env, registration.mail_ready(conn, hub), hub.public_url
+            )
             return {
                 "project": {
                     "slug": project.slug,
@@ -346,6 +372,11 @@ def _accept(
             human_id=caller.human_id,
             trust=row.trust,
             role=row.role,
+            # A role still named by an open invitation cannot be removed (§2.3).
+            role_base=project_roles.base_of(
+                conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one(),
+                row.role,
+            ),
             areas=[],
             capabilities=[],
             joined_at=now,

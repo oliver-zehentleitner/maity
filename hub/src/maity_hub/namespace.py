@@ -6,9 +6,8 @@ project route is `/projects/{owner}/{slug}/…`; `ProjectRoute` hands the route 
 project from one value. `resolve` finds the project by the owner, then the pair of the
 owner's id and the slug among every project's current name and aliases.
 
-Old one-segment paths (`/projects/maity/tasks`) always have a reserved word where the new form
-has a slug (`tasks` cannot be a slug), so `outdated` recognises them without a lookup and
-answers them the same whether the first segment was ever a slug or not.
+A slug is never a literal word after `{slug}` in a route (`ROUTE_WORDS`) nor a project view of
+the dashboard (§16.11), so that `/<owner>/<word>` stays free.
 """
 
 from __future__ import annotations
@@ -20,9 +19,9 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
-from sqlalchemy import Connection, delete, insert, select
+from sqlalchemy import Connection, delete, func, insert, inspect, select
 
-from maity_hub import clock
+from maity_hub import clock, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, rate_limited
 
@@ -33,18 +32,6 @@ ALIAS_LIMIT = 8
 CHANGES_PER_DAY = 3
 DAY_SECONDS = 24 * 3600
 FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
-# The lowest CLI that addresses projects as <owner>/<slug> (§6.25): what `client_outdated`
-# names. Any CLI that calls an old path is older than that by construction.
-CLI_MINIMUM = "0.1.0a2"
-# The dashboard's top-level routes (§6.25): never a human handle, so that `#/invite/…` cannot
-# be read as the namespace `invite`. Every route the dashboard adds later goes here too.
-DASHBOARD_WORDS = frozenset(
-    {
-        "account", "admin", "agents", "all", "chats", "components", "invite", "join", "login",
-        "new", "notifications", "observe", "p", "register", "requests", "runners", "s",
-        "settings", "sign-in",
-    }
-)  # fmt: skip
 
 
 class ProjectRoute(APIRoute):
@@ -84,9 +71,9 @@ def route_words(paths: Iterable[str]) -> frozenset[str]:
 ROUTE_WORDS = frozenset(
     {
         "attachments", "banner", "conversations", "credentials", "events", "forge",
-        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "members", "memory",
-        "messages", "placements", "probe", "requests", "rules", "runners", "swarm", "takeovers",
-        "tasks", "ticker", "transfer",
+        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "me", "members", "memory",
+        "messages", "placements", "probe", "repository", "requests", "roles", "rules", "runners",
+        "swarm", "takeovers", "tasks", "ticker", "transfer",
     }
 )  # fmt: skip
 
@@ -96,43 +83,60 @@ def app_words(app: Any) -> frozenset[str]:
     included routers behind its own objects; the schema lists every path flat)."""
     words = getattr(app.state, "namespace_words", None)
     if words is None:
-        words = ROUTE_WORDS | route_words(app.openapi().get("paths", {}))
+        words = ROUTE_WORDS | paths.PROJECT_VIEWS | route_words(app.openapi().get("paths", {}))
         app.state.namespace_words = words
     return words
 
 
-def outdated(path: str, words: frozenset[str]) -> bool:
-    """A project path in the form before the namespace: `/projects/<slug>` alone, or
-    `/projects/<slug>/<word>/…` with a word that follows a project in a route."""
-    if not path.startswith(PREFIX):
-        return False
-    parts = path[len(PREFIX) :].split("/")
-    if len(parts) == 1:
-        return parts[0] != ""
-    return parts[1] in words
+def owner_values(owner_id: str) -> dict[str, Any]:
+    """The owner columns of a `project` or `project_alias` row for the namespace owner
+    `owner_id`, a human's or an organisation's: `owner_id` and the one foreign key of its kind
+    (§6.26, `tables.OWNER_SHAPE`)."""
+    human = owner_id.startswith("hum-")
+    return {
+        "owner_id": owner_id,
+        "owner_human_id": owner_id if human else None,
+        "owner_org_id": None if human else owner_id,
+    }
 
 
-def outdated_error(user_agent: str, install: str) -> ApiError:
-    """`client_outdated` (426) for the CLI, `project_path_outdated` (410) for everyone else
-    (§6.25); neither says anything about the project."""
-    if user_agent.startswith("maity-cli/"):
-        return ApiError(
-            426,
-            "client_outdated",
-            "this maity is older than the hub needs: projects are addressed as <owner>/<slug>",
-            {"minimum": CLI_MINIMUM, "install": install},
-        )
-    return ApiError(
-        410,
-        "project_path_outdated",
-        "projects are addressed as /projects/{owner}/{slug} (docs/api.md §6.25)",
+def _owners(table: Any) -> Any:
+    """`table` with its owner, a human or an organisation, joined for the handle."""
+    return table.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
+        t.org, t.org.c.id == table.c.owner_org_id
     )
 
 
+def _handle(table: Any) -> Any:
+    """The current handle of the row's namespace owner, whichever kind it is."""
+    return func.coalesce(t.human.c.handle, t.org.c.handle)
+
+
+def join_owner(query: Any) -> Any:
+    """`query`, which has `project` among its tables, with the project's owner joined: use
+    `owner_handle()` for its handle."""
+    return query.outerjoin(t.human, t.human.c.id == t.project.c.owner_human_id).outerjoin(
+        t.org, t.org.c.id == t.project.c.owner_org_id
+    )
+
+
+def owner_handle() -> Any:
+    """The handle of the namespace owner joined by `join_owner`: a human's or an organisation's."""
+    return func.coalesce(t.human.c.handle, t.org.c.handle)
+
+
 def resolve_owner(conn: Connection, handle: str) -> str | None:
-    """The human id a namespace owner's handle names (§6.25): the current handle. The hook
-    for handle aliases (§6.24): when the hub keeps aliases, an alias resolves here too."""
-    return conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).scalar()
+    """The id a namespace owner's handle names (§6.25): a human's or an organisation's
+    (§6.26), by the current handle or, for a human, an alias (§6.24), so that `<old
+    handle>/<slug>` keeps reaching the project after a rename; a deleted one's still names
+    its archived projects."""
+    from maity_hub import handles
+
+    human = handles.human_id_of(conn, handle)
+    if human is not None:
+        return human
+    org = conn.execute(select(t.org.c.id).where(t.org.c.handle == handle)).scalar()
+    return None if org is None else str(org)
 
 
 def resolve(conn: Connection, full_name: str) -> Any | None:
@@ -163,7 +167,9 @@ def resolve(conn: Connection, full_name: str) -> Any | None:
 def owner_of(conn: Connection, project: Any) -> dict[str, str]:
     """`{id, handle}` of the project's namespace owner, by its current handle."""
     handle = conn.execute(
-        select(t.human.c.handle).where(t.human.c.id == project.owner_id)
+        select(_handle(t.project))
+        .select_from(_owners(t.project))
+        .where(t.project.c.id == project.id)
     ).scalar_one()
     return {"id": project.owner_id, "handle": handle}
 
@@ -176,8 +182,8 @@ def full_name(conn: Connection, project: Any) -> str:
 def name_of(conn: Connection, project_id: str) -> str:
     """The full name of the project with this id (§6.25)."""
     row = conn.execute(
-        select(t.project.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        select(t.project.c.slug, _handle(t.project).label("handle"))
+        .select_from(_owners(t.project))
         .where(t.project.c.id == project_id)
     ).one()
     return f"{row.handle}/{row.slug}"
@@ -187,8 +193,8 @@ def aliases_of(conn: Connection, project_id: str) -> list[str]:
     """The project's earlier full names, oldest first, each with its owner's current handle
     (an owner's own handle aliases resolve anyway, §6.24)."""
     rows = conn.execute(
-        select(t.project_alias.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project_alias.c.owner_id)
+        select(t.project_alias.c.slug, _handle(t.project_alias).label("handle"))
+        .select_from(_owners(t.project_alias))
         .where(t.project_alias.c.project_id == project_id)
         .order_by(t.project_alias.c.id)
     ).all()
@@ -201,8 +207,8 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        select(t.project.c.id, t.project.c.slug, _handle(t.project).label("handle"))
+        .select_from(_owners(t.project))
         .where(t.project.c.id.in_(ids))
     ).all()
     return {row.id: f"{row.handle}/{row.slug}" for row in rows}
@@ -215,7 +221,10 @@ def taken(conn: Connection, owner_id: str, slug: str, project_id: str | None = N
     Every caller is about to claim the slug, so the namespace owner's row is locked first:
     a project's slug and an alias live in two tables, and no constraint keeps a create of
     `s` from racing a rename away from `s`, which writes `s` as an alias."""
-    conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
+    if owner_id.startswith("org-"):  # an organisation's namespace: its row, as every change of it
+        conn.execute(select(t.org.c.id).where(t.org.c.id == owner_id).with_for_update()).first()
+    else:
+        conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update()).first()
     current = conn.execute(
         select(t.project.c.id).where(t.project.c.owner_id == owner_id, t.project.c.slug == slug)
     ).scalar()
@@ -236,8 +245,12 @@ def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[s
     if not ids:
         return found
     rows = conn.execute(
-        select(t.project_alias.c.project_id, t.project_alias.c.slug, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project_alias.c.owner_id)
+        select(
+            t.project_alias.c.project_id,
+            t.project_alias.c.slug,
+            _handle(t.project_alias).label("handle"),
+        )
+        .select_from(_owners(t.project_alias))
         .where(t.project_alias.c.project_id.in_(ids))
         .order_by(t.project_alias.c.id)
     ).all()
@@ -309,13 +322,15 @@ def move(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
         conn.execute(
             insert(t.project_alias).values(
                 project_id=project.id,
-                owner_id=project.owner_id,
+                **owner_values(project.owner_id),
                 slug=project.slug,
                 created_at=clock.now(),
             )
         )
     conn.execute(
-        t.project.update().where(t.project.c.id == project.id).values(owner_id=owner_id, slug=slug)
+        t.project.update()
+        .where(t.project.c.id == project.id)
+        .values(**owner_values(owner_id), slug=slug)
     )
 
 
@@ -325,8 +340,16 @@ def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[st
     ids = list(project_ids)
     if not ids:
         return
+    # The namespace owner, or an owner of the organisation that owns the project (§6.26):
+    # the organisation's owners stay owners of its projects collectively, one by one.
+    owns_org = select(t.org_member.c.org_id).where(
+        t.org_member.c.human_id == human_id, t.org_member.c.role == "owner"
+    )
     rows = conn.execute(
-        select(t.project.c.id).where(t.project.c.owner_id == human_id, t.project.c.id.in_(ids))
+        select(t.project.c.id).where(
+            (t.project.c.owner_id == human_id) | t.project.c.owner_org_id.in_(owns_org),
+            t.project.c.id.in_(ids),
+        )
     ).scalars()
     names = sorted(full_names(conn, rows).values())
     if names:
@@ -336,3 +359,33 @@ def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[st
             "the project's namespace owner stays an owner: transfer the project first",
             {"projects": names},
         )
+
+
+def reserved_holders(conn: Connection) -> list[str]:
+    """Who already holds a word that §16.11 reserves: a handle that is a reserved first
+    segment, a slug or a project alias that is a project view or a route word. A release
+    that reserves such a word does not go on; the operator renames the holder first. Tables
+    an older schema does not have yet are skipped."""
+    present = set(inspect(conn).get_table_names())
+    found: list[str] = []
+    if "human" in present:
+        found += [
+            f"handle {handle!r}"
+            for handle in conn.execute(select(t.human.c.handle)).scalars()
+            if handle in paths.RESERVED_FIRST
+        ]
+    if "org" in present:  # an organisation's handle is held to the same words (§6.26)
+        found += [
+            f"organisation handle {handle!r}"
+            for handle in conn.execute(select(t.org.c.handle)).scalars()
+            if handle in paths.RESERVED_FIRST
+        ]
+    slugs = ROUTE_WORDS | paths.PROJECT_VIEWS
+    for table, label in ((t.project, "slug"), (t.project_alias, "project alias")):
+        if table.name in present:
+            found += [
+                f"{label} {slug!r}"
+                for slug in conn.execute(select(table.c.slug)).scalars()
+                if slug in slugs
+            ]
+    return sorted(found)

@@ -26,12 +26,14 @@ defaults:
 # The three database jobs may run on the maintainer's own machine (deploy/runner/): the
 # repository variable HUB_RUNNER_LABEL holds a label prefix, e.g. maity-hub, and each job asks for
 # [self-hosted, <prefix>-sqlite], <prefix>-pg or <prefix>-maria: one runner service per job type, so a
-# pull request's three jobs run side by side and two Postgres jobs never share port 5432.
+# push's three jobs run side by side and two Postgres jobs never share port 5432.
 # HUB_RUNNER_TYPES, a space-separated list of sqlite, pg and maria, names the jobs that go to the
 # machine (unset or empty: all three); a job whose type is not listed stays on a hosted runner, so a
 # single runner for one type can be tried without the other two jobs waiting for a runner that is not there.
-# Unset or empty, and for every pull request from a fork, they run on GitHub-hosted
-# runners; unsetting the variable is the whole fallback. Setup: deploy/runner/README.md.
+# Only a push (to main) goes to the machine: every pull request runs on GitHub-hosted runners, in
+# parallel, so that a queue of pull requests for one runner per job type cannot hold up the checks
+# people wait for. Unset or empty, they run on GitHub-hosted runners; unsetting the variable is the
+# whole fallback. Setup: deploy/runner/README.md.
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
   # merges into: a suite runs only when its part changed. A push to main, or a
@@ -100,6 +102,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # A pull request is checked out as its merge with main: two Alembic heads mean main got
+      # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
+      - run: python tools/rechain.py --check
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
@@ -168,7 +173,7 @@ jobs:
   hub-sqlite:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -266,7 +271,7 @@ jobs:
   hub-postgresql:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -295,7 +300,7 @@ jobs:
   hub-mariadb:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
     services:
       mariadb:
         image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it

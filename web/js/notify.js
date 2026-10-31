@@ -1,8 +1,8 @@
 // Notifications for the human (docs/api.md §18, stage 1 and the browser
 // part): the counts behind the badges and the tab title, the bell with the
 // latest items, and browser notifications while a tab is open. Everything
-// comes from GET /me/notifications; a hub without it leaves the page as it
-// was (counts summed from /me, no bell). Links are built from an item's
+// comes from GET /me/notifications; until it is read the counts are summed
+// from /me. Links are built from an item's
 // target, never from its url: the dashboard owns its routes.
 "use strict";
 
@@ -25,31 +25,37 @@ window.Maity = window.Maity || {};
   const QUICK_MS = 1000;
   const PAUSE_MS = 30 * 1000;
 
-  // available: null until read, false when the hub has no notifications.
-  const state = { available: null, counts: null, byProject: {}, settings: null };
+  // counts: null until read.
+  const state = { counts: null, byProject: {}, settings: null };
 
   // The page's address for an item, from its target. Account records lead
   // to the account: a sign-in to its sessions, the settings to the
   // notification settings; a personal request of a project one is no
   // member of, to everything waiting, until the page has the personal
-  // inbox (§18.2 names #/requests/<id>). A security item of another target
+  // inbox (§18.2 names /requests/<id>). A security item of another target
   // goes to the sessions too, where it is confirmed.
-  // Of the kinds since 2026-10-26 (§18.1): an older hub's other items are no notification here.
+  // The kinds of §18.1: an item of any other kind is no notification here.
   const known = (x) => Object.prototype.hasOwnProperty.call(KIND_WORDS, x.kind);
   // Read only on purpose: a sign-in alert by This was me (§2.6.5), and an
   // item that asks for an action (a registration to decide, an address to
   // set again) closes with the matter, not by opening it (§18.1).
-  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings"].includes((x.target || {}).type);
+  // The four open matters of §18.3 (registration_pending, mail_disabled,
+  // report_open, agents_not_listening), by their targets (registration,
+  // settings, report, agents), read as read only once the matter is closed,
+  // never by opening or marking them: the hub ignores their ids.
+  const keepsUnread = (x) => x.kind === "security" || ["registration", "settings", "report", "agents"].includes((x.target || {}).type);
 
   function linkOf(item) {
     const t0 = item.target || {};
-    if (t0.type === "session" || item.kind === "security") return "#/account/sessions";
-    if (t0.type === "settings") return "#/account/notifications";
+    if (t0.type === "session" || item.kind === "security") return "/account/sessions";
+    if (t0.type === "settings") return "/account/notifications";
+    // Agent instances not listening (agents_not_listening, §5.3): one's agents.
+    if (t0.type === "agents") return "/agents";
     // A registration waiting for the instance admin (§16.4): Admin.
-    if (t0.type === "registration") return "#/admin";
+    if (t0.type === "registration") return "/admin";
     const full = item.project && item.project.full_name;
-    if (!full || item.project.member === false) return "#/all";
-    const base = "#/" + M.api.projectPath(full) + "/";
+    if (!full || item.project.member === false) return "/all";
+    const base = "/" + M.api.projectPath(full) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
@@ -59,20 +65,10 @@ window.Maity = window.Maity || {};
 
   // The counts, per project too (by_project, computed by the hub over
   // every unread item, §18.2), and the head for the long-poll; no items.
-  // A hub without them (404 or 405) is asked once: the counts' timer then
-  // stops knocking for the rest of the page's life.
   async function read() {
-    if (M.api.absent.has("GET", "/me/notifications")) { state.available = false; return state; }
-    try {
-      const answer = await M.api.get("/me/notifications?limit=0");
-      state.available = true;
-      state.counts = answer.counts;
-      state.byProject = answer.by_project || {};
-    } catch (err) {
-      if (!M.api.notOnHub(err)) throw err;
-      if (await M.api.missingRoute(err, "GET", "/me/notifications")) M.api.absent.note("GET", "/me/notifications");
-      state.available = false;
-    }
+    const answer = await M.api.get("/me/notifications?limit=0");
+    state.counts = answer.counts;
+    state.byProject = answer.by_project || {};
     changed();
     return state;
   }
@@ -86,29 +82,22 @@ window.Maity = window.Maity || {};
 
   // The tab title: "(6) " before it while anything asks for the human.
   function title(base) {
-    const n = state.available && state.counts ? state.counts.total : 0;
+    const n = state.counts ? state.counts.total : 0;
     return (n ? "(" + n + ") " : "") + base;
   }
 
-  // The Chat button: every chat across the projects (#/chats), with the
+  // The Chat button: every chat across the projects (/chats), with the
   // unread chat messages the hub counts (counts.chat, §18.2) on it.
   function chatButton(ctx) {
-    const n = state.available && state.counts ? state.counts.chat || 0 : 0;
+    const n = state.counts ? state.counts.chat || 0 : 0;
     const label = n ? n + (n === 1 ? " unread chat message" : " unread chat messages") : "Chats";
-    return h("a", { class: "bell chat-button", href: "#/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
+    return h("a", { class: "bell chat-button", href: "/chats", "aria-label": label, title: label, "aria-current": ctx && ctx.scope === "chats" ? "page" : null },
       M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
   }
 
   // The bell: the unread count on it, the latest items under it, each a
   // link to where it happened, unread ones marked, and Mark all read.
   function bell(ctx, onChange) {
-    // A hub without notifications: the bell still stands, a link to
-    // everything waiting, without a count; in the same box as the full
-    // bell, so that a refresh replaces it in place.
-    if (!state.available) {
-      return h("div", { class: "bell-box" },
-        h("a", { class: "bell", href: "#/all", "aria-label": "Notifications", title: "Notifications" }, M.icons.bell(18)));
-    }
     // What is unread on the bell: every kind but the open requests, which
     // the inbox and the switcher show. Sign-in and address alerts count,
     // but "mark all read" never reaches them (§18.3).
@@ -168,8 +157,8 @@ window.Maity = window.Maity || {};
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
             x.read ? null : h("span", { class: "visually-hidden" }, " (unread)"))))
           : h("p", { class: "muted" }, "No notifications in the last 30 days."),
-        h("p", { class: "hint" }, h("a", { href: "#/notifications", onclick: () => close(false) }, "All notifications"), " · ",
-          h("a", { href: "#/account/notifications", onclick: () => close(false) }, "Notification settings")),
+        h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, "All notifications"), " · ",
+          h("a", { href: "/account/notifications", onclick: () => close(false) }, "Notification settings")),
         status.el);
     }
     // The latest 20 are read when the bell opens; "mark all read" marks up to
@@ -217,7 +206,7 @@ window.Maity = window.Maity || {};
   // The waiting view and browser pop-ups share one request, even while a
   // navigation or a settings change happens during an outstanding long-poll.
   function ensureLoop() {
-    if (halted || browserLoop || !wanted() || state.available === false) return;
+    if (halted || browserLoop || !wanted()) return;
     const loop = { timer: null, wake: null, reset: false, abort: null };
     browserLoop = loop;
     let after = null;
@@ -226,7 +215,7 @@ window.Maity = window.Maity || {};
       loop.timer = window.setTimeout(() => { loop.wake = null; done(); }, ms);
     });
     (async () => {
-      while (!halted && wanted() && state.available !== false) {
+      while (!halted && wanted()) {
         // A resume() that came while this loop was only pausing: it serves it.
         restartWanted = false;
         const asked = Date.now();
@@ -252,12 +241,6 @@ window.Maity = window.Maity || {};
           // The session is gone (signed out elsewhere, revoked): the next render
           // shows sign-in; knocking on would only collect more 401s.
           if (err.status === 401) break;
-          if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
-            M.api.absent.note("GET", "/me/notifications");
-            state.available = false;
-            changed();
-            break;
-          }
           if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.after === "position") {
             after = null;
             changed();
@@ -286,7 +269,7 @@ window.Maity = window.Maity || {};
             tag: x.id,
             body: (x.project ? x.project.name : "") + (withText ? "\n" + x.content.slice(0, 120) : ""),
           });
-          note.onclick = () => { window.focus(); window.location.hash = linkOf(x); note.close(); };
+          note.onclick = () => { window.focus(); M.route.go(linkOf(x)); note.close(); };
         });
         if (!items.length && Date.now() - asked < QUICK_MS && wanted()) await pause(PAUSE_MS);
       }

@@ -20,7 +20,16 @@ from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 from sqlalchemy import Connection, insert, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import availability, clock, events, idempotency, instances, longpoll
+from maity_hub import (
+    availability,
+    clock,
+    events,
+    handles,
+    idempotency,
+    instances,
+    longpoll,
+    namespace,
+)
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
@@ -135,8 +144,14 @@ def _projects(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
     """The projects a runner reads: attached, or with an active placement of it (§15.8)."""
     ids = pl.reading_projects(conn, runner_id)
     rows = conn.execute(
-        select(t.project.c.slug, t.project.c.name, t.project.c.repository_url, t.human.c.handle)
-        .join(t.human, t.human.c.id == t.project.c.owner_id)
+        namespace.join_owner(
+            select(
+                t.project.c.slug,
+                t.project.c.name,
+                t.project.c.repository_url,
+                namespace.owner_handle().label("handle"),
+            )
+        )
         .where(t.project.c.id.in_(ids))
         .order_by(t.project.c.slug)
     ).all()
@@ -541,7 +556,9 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
             t.agent_profile.c.handle == placement.new_handle,
         )
     ).first()
-    if taken is not None:  # the exchange would refuse it: no code that can never work
+    aliased = handles.holder(conn, placement.created_by, placement.new_handle)
+    if taken is not None or aliased not in (None, "placement"):
+        # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
     profile = placement.new_profile or {}
     return {

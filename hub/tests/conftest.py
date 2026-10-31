@@ -91,6 +91,10 @@ def _leave_the_server_database_empty(_server_database_url: str | None) -> Iterat
     yield
     if _server_database_url:
         engine = make_engine(_server_database_url)
+        if current_revision(engine) is not None:
+            # The rows first: a downgrade refuses what the last test left behind, such as a
+            # project an organisation owns (below 0089).
+            _empty_the_tables(engine)
         downgrade(engine)
         engine.dispose()
 
@@ -102,6 +106,15 @@ def _empty_the_tables(engine: Engine) -> None:
         if engine.dialect.name == "postgresql":
             quoted = ", ".join(f'"{t}"' for t in tables)
             connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+            if "nonce_epoch" in tables:
+                # The nonces known since long before the test (auth.nonces): a test signs no
+                # request in the second the epoch would otherwise be set in.
+                connection.execute(
+                    text(
+                        "INSERT INTO nonce_epoch (id, since) "
+                        "VALUES (1, (now() AT TIME ZONE 'utc') - interval '1 hour')"
+                    )
+                )
         else:
             connection.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
             for table in tables:
@@ -146,7 +159,10 @@ def migrate_fast(engine: Engine, template: Path | None) -> None:
 def web_dir(tmp_path: Path) -> Path:
     web = tmp_path / "web"
     web.mkdir()
-    (web / "index.html").write_text("<!doctype html><title>dashboard</title>")
+    (web / "index.html").write_text(
+        '<!doctype html><html><head><meta charset="utf-8"><title>dashboard</title></head>'
+        '<body><script src="js/app.js"></script></body></html>'
+    )
     return web
 
 
@@ -245,6 +261,7 @@ def _fresh_process_state() -> Iterator[None]:
     second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
+    forge._public.clear()
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()

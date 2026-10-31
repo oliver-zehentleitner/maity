@@ -1,4 +1,4 @@
-// (8) Runners (#/runners): the small services on the operator's own
+// (8) Runners (/runners): the small services on the operator's own
 // machines that start agents for the projects they are allowed in
 // (docs/api.md §15). The hub never starts anything itself; a runner does,
 // within what its own configuration allows. This view pairs a runner (the
@@ -16,7 +16,8 @@ window.Maity = window.Maity || {};
   // A runner's name follows the rule for handles.
   const NAME_PATTERN = M.dom.NAME_RULES.handle.pattern;
   const NAME = M.dom.NAME_RULES.handle.test;
-  const NAME_RULE = M.dom.NAME_RULES.handle.text;
+  // Read when shown: the rule's text is the catalog's (a getter in dom.js).
+  const nameRule = () => M.dom.NAME_RULES.handle.text;
   // The CLI as published on PyPI; the runner commands are part of it.
   const CLI_INSTALL = "pipx install maity";
   const CONFIG_PATH = "~/.config/maity-runner/runner.toml";
@@ -25,91 +26,110 @@ window.Maity = window.Maity || {};
 
   const TOOLS = {
     "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", pi: "pi", hermes: "Hermes",
-    kimi: "Kimi Code", cline: "Cline", omp: "oh-my-pi", stub: "a test tool",
+    kimi: "Kimi Code", cline: "Cline", omp: "oh-my-pi", get stub() { return M.t("runners.tool.stub"); },
   };
-  const toolName = (id) => TOOLS[id] || id;
+  const toolName = (id) => (Object.hasOwn(TOOLS, id) ? TOOLS[id] : id);
   const MODES = {
-    interactive: "a session you can attach to (tmux)",
-    supervised: "woken by events, no open session (no tokens while idle)",
+    get interactive() { return M.t("runners.mode.interactive"); },
+    get supervised() { return M.t("runners.mode.supervised"); },
   };
+  // Names in a sentence: "a, b, c" in English, in the catalog's language.
+  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
 
   // local: one machine; ssh: hosts; k8s: a pool of pods.
   function backendLabel(runner) {
     const c = runner.capabilities;
-    if (!c) return "has not reported what it can do yet";
-    const targets = (c.targets || []).map((t) => t.name);
-    if (c.backend === "local") return "this machine";
-    if (c.backend === "ssh") return "hosts " + targets.join(", ");
-    if (c.backend === "k8s") return "pods in " + targets.join(", ");
+    if (!c) return M.t("runners.backend.unreported");
+    const targets = names((c.targets || []).map((t) => t.name));
+    if (c.backend === "local") return M.t("runners.backend.local");
+    if (c.backend === "ssh") return M.t("runners.backend.ssh", { targets });
+    if (c.backend === "k8s") return M.t("runners.backend.k8s", { targets });
     return c.backend;
   }
 
   function presenceText(runner) {
-    if (runner.removed_at) return "removed " + formatAgo(runner.removed_at);
-    if (runner.credential_state === "revoked") return "revoked";
-    if (runner.credential_state === "none") return "not paired yet";
-    if (runner.presence === "online") return "online";
-    const seen = runner.last_seen_at ? ", last seen " + formatAgo(runner.last_seen_at) : ", never connected";
-    return (runner.presence === "away" ? "away" : "offline") + seen;
+    if (runner.removed_at) return M.t("runners.presence.removed", { ago: formatAgo(runner.removed_at) });
+    if (runner.credential_state === "revoked") return M.t("runners.presence.revoked");
+    if (runner.credential_state === "none") return M.t("runners.presence.unpaired");
+    if (runner.presence === "online") return M.t("runners.presence.online");
+    const away = runner.presence === "away";
+    if (!runner.last_seen_at) return away ? M.t("runners.presence.away_never") : M.t("runners.presence.offline_never");
+    const ago = formatAgo(runner.last_seen_at);
+    return away ? M.t("runners.presence.away_seen", { ago }) : M.t("runners.presence.offline_seen", { ago });
   }
 
   const presenceClass = (runner) => (runner.credential_state !== "active" || runner.removed_at ? "revoked" : (runner.presence || "offline"));
 
   // "Agents on this machine run as user oliver, with the runner, together."
   function isolationSentence(runner, target) {
-    const where = runner.capabilities.backend === "local" ? "on " + runner.name : "on " + target.name;
+    const name = runner.capabilities.backend === "local" ? runner.name : target.name;
     const iso = target.isolation || {};
     if (iso.kind === "shared_user") {
-      return "Agents " + where + " run as one user, " + (iso.user || "?") + ", and can see each other's files"
-        + (iso.runner_separate ? "; the runner itself runs as another user." : ", as the runner itself does.");
+      const user = iso.user || "?";
+      return iso.runner_separate ? M.t("runners.isolation.shared_separate", { name, user }) : M.t("runners.isolation.shared", { name, user });
     }
-    if (iso.kind === "own_user") return "Each agent " + where + " runs as its own user and cannot see the others' files.";
-    if (iso.kind === "pod") return "Each agent " + where + " runs in its own pod, with its own storage.";
-    return "How agents " + where + " are kept apart is not reported (" + (iso.kind || "unknown") + ").";
+    if (iso.kind === "own_user") return M.t("runners.isolation.own_user", { name });
+    if (iso.kind === "pod") return M.t("runners.isolation.pod", { name });
+    return M.t("runners.isolation.unreported", { name, kind: iso.kind || "unknown" });
   }
 
   function targetLine(runner, target) {
     const c = runner.capabilities;
-    const label = c.backend === "local" ? "" : (c.backend === "ssh" ? "host " : "pool ") + target.name + ": ";
-    return label + target.running + " of " + target.max_agents + " agents running"
-      + (target.reachable === false ? " · unreachable" + (target.unreachable_since ? " since " + formatAgo(target.unreachable_since) : "") : "");
+    let line = M.t("runners.target.running", { running: target.running, count: target.max_agents });
+    if (target.reachable === false) {
+      line = target.unreachable_since ? M.t("runners.target.unreachable_since", { line, ago: formatAgo(target.unreachable_since) })
+        : M.t("runners.target.unreachable", { line });
+    }
+    if (c.backend === "local") return line;
+    return c.backend === "ssh" ? M.t("runners.target.host", { name: target.name, line }) : M.t("runners.target.pool", { name: target.name, line });
   }
 
   function toolLine(runner, tool) {
     if (tool.available === false) {
-      const why = tool.reason === "binary_not_found" ? "is not installed on " + runner.name
-        : tool.reason === "version_failed" ? "did not report its version on " + runner.name : (tool.reason || "is not available");
-      return h("li", { class: "unavailable" }, toolName(tool.id) + " " + why);
+      const values = { tool: toolName(tool.id), runner: runner.name, reason: tool.reason };
+      const said = tool.reason === "binary_not_found" ? M.t("runners.tool.not_installed", values)
+        : tool.reason === "version_failed" ? M.t("runners.tool.no_version", values)
+          : tool.reason ? M.t("runners.tool.unavailable_reason", values) : M.t("runners.tool.unavailable", values);
+      return h("li", { class: "unavailable" }, said);
     }
-    const bounds = tool.confinement === "allowlist" ? "kept to its command allowlist"
-      : tool.confinement === "pod" ? "without a command allowlist: its pod is the only boundary"
-        : tool.confinement === "none" ? "for tests only" : tool.confinement;
-    return h("li", null, h("strong", null, toolName(tool.id)), (tool.version ? " " + tool.version : "") + " · " + bounds
-      + (tool.sandbox === "on" ? ", in its OS sandbox" : "")
-      + " · " + (tool.modes || []).map((m) => MODES[m] || m).join("; or ")
-      + ((tool.models || []).length ? " · models " + tool.models.join(", ") : ""));
+    const bounds = tool.confinement === "allowlist" ? M.t("runners.tool.allowlist")
+      : tool.confinement === "pod" ? M.t("runners.tool.pod")
+        : tool.confinement === "none" ? M.t("runners.tool.tests_only") : tool.confinement;
+    const parts = [tool.sandbox === "on" ? M.t("runners.tool.sandboxed", { bounds }) : bounds,
+      // "; or ": a mode's own words hold a comma.
+      (tool.modes || []).map((m) => (Object.hasOwn(MODES, m) ? MODES[m] : m)).join(M.t("runners.tool.or"))];
+    if ((tool.models || []).length) parts.push(M.t("runners.tool.models", { models: names(tool.models) }));
+    return h("li", null, h("strong", null, toolName(tool.id)), (tool.version ? " " + tool.version : "") + " · " + parts.join(" · "));
+  }
+
+  function allows(c) {
+    const values = {
+      projects: (c.projects || []).length ? names(c.projects) : M.t("runners.caps.none"),
+      repositories: (c.repositories || []).length ? names(c.repositories) : M.t("runners.caps.none"),
+    };
+    return c.require_local_approval ? M.t("runners.caps.allows_approval", values) : M.t("runners.caps.allows", values);
   }
 
   // What a runner can do, in words: hosts or pools, tools, how agents are kept apart.
   function capabilities(runner) {
     const c = runner.capabilities;
-    if (!c) return h("p", { class: "muted" }, "It has not reported what it can do yet; it does when it connects.");
+    if (!c) return h("p", { class: "muted" }, M.t("runners.caps.unreported"));
     return h("div", { class: "runner-caps" },
       h("ul", { class: "runner-targets" }, (c.targets || []).map((t) => h("li", null, targetLine(runner, t)))),
-      h("h4", null, "Tools"),
+      h("h4", null, M.t("runners.caps.tools")),
       (c.harnesses || []).length ? h("ul", { class: "runner-tools" }, c.harnesses.map((t) => toolLine(runner, t)))
-        : h("p", { class: "muted" }, "None configured."),
-      h("h4", null, "Who can see what"),
+        : h("p", { class: "muted" }, M.t("runners.caps.no_tools")),
+      h("h4", null, M.t("runners.caps.isolation")),
       h("ul", { class: "runner-isolation" }, (c.targets || []).map((t) => h("li", null, isolationSentence(runner, t)))),
-      h("p", { class: "muted" }, "Its configuration allows the projects " + ((c.projects || []).join(", ") || "none")
-        + " and the repositories " + ((c.repositories || []).join(", ") || "none")
-        + (c.require_local_approval ? "; every new agent waits for approval on that machine." : ".")));
+      h("p", { class: "muted" }, allows(c)));
   }
 
   M.runnerWords = { toolName, backendLabel, presenceText, presenceClass, capabilities, isolationSentence, MODES };
 
   // ---- the starter configuration --------------------------------------------
 
+  // The file's text stays English: it is the runner's configuration, which
+  // tools/starter_configs.py checks as written, not words of the page.
   // From what the dashboard knows: this hub, the projects the human
   // administers with their repositories. No secret: the credential comes
   // from the pairing line and is written by maity runner pair.
@@ -154,12 +174,12 @@ window.Maity = window.Maity || {};
       onclick: async () => {
         try {
           await navigator.clipboard.writeText(textOf());
-          b.textContent = "Copied";
+          b.textContent = M.t("runners.copy.done");
         } catch (err) {
-          b.textContent = "Copy failed — select the text";
+          b.textContent = M.t("runners.copy.failed");
         }
       },
-    }, label || "Copy");
+    }, label || M.t("runners.copy.label"));
     return b;
   }
 
@@ -172,22 +192,21 @@ window.Maity = window.Maity || {};
   function pairSteps(enrollment, config, onHide) {
     const heredoc = config && writeCommand(config);
     return h("div", { class: "pair-steps flag", "aria-live": "polite" },
-      h("p", null, h("strong", null, "On the machine that should run agents, in a terminal there (not in an agent session):")),
+      h("p", null, h("strong", null, M.t("runners.pair.where"))),
       h("ol", null,
-        h("li", null, "Install the Maity CLI:", h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
-          h("p", { class: "hint" }, "This installs the published CLI, which brings maity runner pair, check, serve and stop-all.")),
+        h("li", null, M.t("runners.pair.install"), h("pre", { class: "paste-line" }, CLI_INSTALL), copyButton(() => CLI_INSTALL),
+          h("p", { class: "hint" }, M.t("runners.pair.install_hint"))),
         config
-          ? h("li", null, "Save this configuration as " + CONFIG_PATH + ". It allows the projects you chose and their repositories, "
-            + "and one tool, Claude Code; change it as you like.",
-          h("pre", { class: "runner-config", tabindex: "0", "aria-label": "Starter configuration" }, config),
-          copyButton(() => config, "Copy the configuration"), " ", copyButton(() => heredoc, "Copy as a command that writes the file"))
-          : h("li", null, "Keep your existing configuration."),
-        h("li", { class: "pair-line-step" }, "Pair it. This line is shown once and expires " + formatTime(enrollment.expires_at) + ":",
+          ? h("li", null, M.t("runners.pair.save", { path: CONFIG_PATH }),
+          h("pre", { class: "runner-config", tabindex: "0", "aria-label": M.t("runners.pair.config_label") }, config),
+          copyButton(() => config, M.t("runners.pair.copy_config")), " ", copyButton(() => heredoc, M.t("runners.pair.copy_command")))
+          : h("li", null, M.t("runners.pair.keep_config")),
+        h("li", { class: "pair-line-step" }, M.t("runners.pair.line", { time: formatTime(enrollment.expires_at) }),
           h("pre", { class: "paste-line" }, enrollment.pair_line), copyButton(() => enrollment.pair_line)),
-        h("li", null, "Check it: ", h("code", null, "maity runner check"), " says what is still missing, such as the tool's login."),
-        h("li", null, "Start it: ", h("code", null, "maity runner serve"), ".")),
-      h("p", { class: "muted pair-wait" }, "Waiting for the runner to pair…"),
-      h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, "Hide")));
+        h("li", null, M.tn("runners.pair.check", { command: h("code", null, "maity runner check") })),
+        h("li", null, M.tn("runners.pair.start", { command: h("code", null, "maity runner serve") }))),
+      h("p", { class: "muted pair-wait" }, M.t("runners.pair.waiting")),
+      h("div", { class: "actions" }, h("button", { type: "button", onclick: onHide }, M.t("runners.hide"))));
   }
 
   // ---- the view --------------------------------------------------------------
@@ -212,33 +231,34 @@ window.Maity = window.Maity || {};
       const open = items.filter((e) => !e.used_at && !e.revoked_at && !e.burned && Date.parse(e.expires_at) > Date.now());
       clear(pending);
       if (!open.length) return;
-      append(pending, h("h3", null, "Open pairings"), h("ul", { class: "joins" }, open.map((e) => h("li", null,
-        h("code", null, e.id), " " + (e.name || "re-pair of " + e.runner_id) + " · expires " + formatTime(e.expires_at),
+      append(pending, h("h3", null, M.t("runners.open.title")), h("ul", { class: "joins" }, open.map((e) => h("li", null,
+        h("code", null, e.id), " " + M.t("runners.open.item", { name: e.name || M.t("runners.open.repair_of", { id: e.runner_id }), time: formatTime(e.expires_at) }),
         h("button", {
           type: "button",
           class: "danger",
           onclick: async () => {
-            status.busy("Revoking…");
+            status.busy(M.t("runners.busy.revoking"));
             try {
               await M.api.del("/runners/enrollments/" + encodeURIComponent(e.id));
               drawEnrollments((await M.api.getAll("/runners/enrollments")).items);
               status.done();
             } catch (err) {
-              status.fail("Not revoked: ", err);
+              status.fail(M.t("runners.failed.not_revoked"), err);
             }
           },
-        }, "Revoke")))));
+        }, M.t("runners.revoke"))))));
     }
 
-    async function act(label, call, after) {
-      status.busy(label + "…");
+    // busy: what the status line says meanwhile; failed: its prefix to the hub's words.
+    async function act(busy, failed, call, after) {
+      status.busy(busy);
       try {
         const answer = await call();
         status.done();
         if (after) after(answer);
         await reload();
       } catch (err) {
-        status.fail(label + " failed: ", err);
+        status.fail(failed, err);
       }
     }
 
@@ -250,11 +270,11 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const name = nameInput.value.trim();
-          if (!NAME.test(name)) { status.fail("Not renamed: ", { message: NAME_RULE }); return; }
+          if (!NAME.test(name)) { status.fail(M.t("runners.failed.not_renamed"), { message: nameRule() }); return; }
           if (name === r.name) return;
-          act("Renaming", () => M.api.patch("/runners/" + encodeURIComponent(r.id), { name }));
+          act(M.t("runners.busy.renaming"), M.t("runners.failed.renaming"), () => M.api.patch("/runners/" + encodeURIComponent(r.id), { name }));
         },
-      }, h("label", { for: id }, "Name"), nameInput, h("button", { type: "submit", class: "small" }, "Rename"));
+      }, h("label", { for: id }, M.t("runners.name")), nameInput, h("button", { type: "submit", class: "small" }, M.t("runners.rename")));
       const cred = r.credential;
       return h("article", { class: "runner", "aria-label": r.name },
         h("header", null,
@@ -263,68 +283,66 @@ window.Maity = window.Maity || {};
           h("span", { class: "presence " + presenceClass(r) }, presenceText(r)),
           h("span", { class: "muted" }, " · " + backendLabel(r) + (r.version ? " · " + r.version : ""))),
         r.projects && r.projects.length
-          ? h("p", null, "Allowed in " + r.projects.join(", ") + ".")
-          : h("p", { class: "muted" }, "Not allowed in any project yet; allow it in a project's Runners tab."),
+          ? h("p", null, M.t("runners.allowed_in", { projects: names(r.projects) }))
+          : h("p", { class: "muted" }, M.t("runners.allowed_nowhere")),
         capabilities(r),
         cred
-          ? h("p", { class: "muted" }, "Credential ", h("code", null, cred.id), " · created " + formatTime(cred.created_at)
-            + (cred.last_used_at ? " · last used " + formatAgo(cred.last_used_at) : "")
-            + (cred.revoked_at ? " · revoked " + formatTime(cred.revoked_at) + (cred.revoked_reason ? " (" + cred.revoked_reason + ")" : "") : ""))
+          ? h("p", { class: "muted" }, M.tn("runners.credential", { id: h("code", null, cred.id), time: formatTime(cred.created_at) }),
+            cred.last_used_at ? " · " + M.t("runners.credential.used", { ago: formatAgo(cred.last_used_at) }) : "",
+            cred.revoked_at ? " · " + (cred.revoked_reason ? M.t("runners.credential.revoked_why", { time: formatTime(cred.revoked_at), reason: cred.revoked_reason })
+              : M.t("runners.credential.revoked", { time: formatTime(cred.revoked_at) })) : "")
           : null,
         h("div", { class: "runner-actions" },
           rename,
           h("button", {
             type: "button",
-            onclick: () => act("Creating a new pairing line", () => M.api.post("/runners/enrollments", { runner_id: r.id }),
+            onclick: () => act(M.t("runners.busy.repairing"), M.t("runners.failed.repairing"), () => M.api.post("/runners/enrollments", { runner_id: r.id }),
               (e) => showPairing(e, null, { runner_id: r.id, name: r.name, expires_at: e.expires_at, credential: cred && cred.id })),
-          }, "Re-pair"),
+          }, M.t("runners.repair")),
           r.credential_state === "active"
             ? h("button", {
               type: "button",
               class: "danger separated",
               onclick: () => {
-                if (!window.confirm("Revoke " + r.name + "'s credential? It stops talking to the hub at once; its agents keep running until you stop them.")) return;
-                act("Revoking", () => M.api.post("/runners/" + encodeURIComponent(r.id) + "/revoke", {}));
+                if (!window.confirm(M.t("runners.confirm.revoke", { name: r.name }))) return;
+                act(M.t("runners.busy.revoking"), M.t("runners.failed.revoking"), () => M.api.post("/runners/" + encodeURIComponent(r.id) + "/revoke", {}));
               },
-            }, "Revoke")
+            }, M.t("runners.revoke"))
             : null,
           h("button", {
             type: "button",
             class: "danger" + (r.credential_state === "active" ? "" : " separated"),
             onclick: () => {
-              if (!window.confirm("Remove " + r.name + "? Its credential is revoked, it leaves every project and the hub closes its placements; "
-                + "agents still running on that machine are yours to stop there (maity runner stop-all).")) return;
-              act("Removing", () => M.api.del("/runners/" + encodeURIComponent(r.id)), showRemoved);
+              if (!window.confirm(M.t("runners.confirm.remove", { name: r.name }))) return;
+              act(M.t("runners.busy.removing"), M.t("runners.failed.removing"), () => M.api.del("/runners/" + encodeURIComponent(r.id)), showRemoved);
             },
-          }, "Remove")));
+          }, M.t("runners.remove"))));
     }
 
     function showRemoved(answer) {
       const still = answer.still_running || [];
       clear(panel);
       append(panel, h("div", { class: "flag", role: "status" },
-        h("p", null, h("strong", null, answer.name + " was removed.")),
+        h("p", null, h("strong", null, M.t("runners.removed.title", { name: answer.name }))),
         still.length
-          ? [h("p", null, "These agents were still running on it. The hub no longer talks to it, so ending them is yours, on that machine: ",
-            h("code", null, "maity runner stop-all"), "."),
+          ? [h("p", null, M.tn("runners.removed.still", { command: h("code", null, "maity runner stop-all") })),
           h("ul", null, still.map((p) => h("li", null, (p.agent && (p.agent.display_name || p.agent.handle)) || p.id,
             p.reported ? " · " + p.reported.state : "")))]
-          : h("p", null, "Nothing was running on it."),
-        h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, "Hide"))));
+          : h("p", null, M.t("runners.removed.nothing")),
+        h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, M.t("runners.hide")))));
     }
 
-    function showPairing(enrollment, config, waiting, note) {
+    function showPairing(enrollment, config, waiting) {
       waitingFor = waiting;
       clear(panel);
-      if (note) append(panel, h("p", { class: "flag" }, note));
       append(panel, pairSteps(enrollment, config, () => { waitingFor = null; clear(panel); }));
     }
 
     function pairForm() {
-      const name = h("input", { id: "pair-name", required: true, pattern: NAME_PATTERN, maxlength: "31", placeholder: "e.g. home-laptop",
+      const name = h("input", { id: "pair-name", required: true, pattern: NAME_PATTERN, maxlength: "31", placeholder: M.t("runners.pair.name_placeholder"),
         autocomplete: "off", spellcheck: "false", "aria-describedby": "pair-name-rule" });
       const ttl = h("select", { id: "pair-ttl" },
-        [[900, "15 minutes"], [600, "10 minutes"], [300, "5 minutes"]].map(([v, l]) => h("option", { value: String(v) }, l)));
+        [900, 600, 300].map((v) => h("option", { value: String(v) }, M.t("runners.pair.minutes", { count: v / 60 }))));
       ttl.value = "900";
       const boxes = adminProjects.map((p) => {
         const box = h("input", { type: "checkbox", id: "pair-attach-" + p.full_name.replace("/", "-") });
@@ -336,38 +354,28 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const n = name.value.trim();
-          if (!NAME.test(n)) { status.fail("No pairing line: ", { message: "the name: " + NAME_RULE }); name.focus(); return; }
+          if (!NAME.test(n)) { status.fail(M.t("runners.failed.no_line"), { message: M.t("runners.pair.name_rule", { rule: nameRule() }) }); name.focus(); return; }
           const attach = boxes.filter((b) => b.box.checked).map((b) => b.p.full_name);
           const chosen = adminProjects.filter((p) => attach.includes(p.full_name));
-          // A hub before attachments (docs/api.md §15.4) refuses `attach`: pair
-          // without it, and say where the runner is allowed instead.
-          let note = null;
-          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach })
-            .catch((err) => {
-              const f = err.code === "invalid" && err.details && err.details.fields;
-              if (!attach.length || !f || f.attach !== "not_supported_yet") throw err;
-              note = "This hub cannot allow the runner in projects while pairing yet; allow it in each project's Runners tab once it can.";
-              return M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value) });
-            });
-          act("Creating the pairing line", create,
-            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }, note));
+          const create = () => M.api.post("/runners/enrollments", { name: n, ttl_seconds: Number(ttl.value), attach });
+          act(M.t("runners.busy.pairing"), M.t("runners.failed.pairing"), create,
+            (enr) => showPairing(enr, starterConfig(new URL(enr.pair_url).origin, chosen), { name: n, expires_at: enr.expires_at }));
         },
       },
-      h("h3", null, "Pair a runner"),
-      h("p", { class: "hint" }, "A runner is a small service on one of your machines that starts agents for you, in the projects you allow. "
-        + "The hub never starts anything itself."),
-      h("label", { for: "pair-name" }, "Name of the machine's runner"), name, h("p", { class: "hint", id: "pair-name-rule" }, NAME_RULE),
-      boxes.length ? h("fieldset", { class: "pair-projects" }, h("legend", null, "Allow it in"),
+      h("h3", null, M.t("runners.pair.title")),
+      h("p", { class: "hint" }, M.t("runners.pair.hint")),
+      h("label", { for: "pair-name" }, M.t("runners.pair.name")), name, h("p", { class: "hint", id: "pair-name-rule" }, nameRule()),
+      boxes.length ? h("fieldset", { class: "pair-projects" }, h("legend", null, M.t("runners.pair.allow_in")),
         boxes.map(({ p, box }) => h("label", { class: "check", for: box.id }, box, " " + p.name))) : null,
-      h("label", { for: "pair-ttl" }, "The pairing line is valid for"), ttl,
-      h("button", { type: "submit" }, "Create the pairing line"));
+      h("label", { for: "pair-ttl" }, M.t("runners.pair.ttl")), ttl,
+      h("button", { type: "submit" }, M.t("runners.pair.submit")));
     }
 
     function drawRunners(items) {
       clear(list);
       const live = items.filter((r) => !r.removed_at);
       if (!live.length) {
-        append(list, h("div", { class: "empty-state" }, h("p", null, "No runner yet. A runner is a small service on your machine that starts agents for you.")));
+        append(list, h("div", { class: "empty-state" }, h("p", null, M.t("runners.empty"))));
         return;
       }
       live.forEach((r) => append(list, runnerCard(r)));
@@ -379,11 +387,11 @@ window.Maity = window.Maity || {};
         const paired = r && r.credential_state === "active" && (!waitingFor.runner_id || (r.credential && r.credential.id) !== waitingFor.credential);
         const step = panel.querySelector(".pair-line-step");
         if (paired) {
-          wait.textContent = r.presence === "online" ? r.name + " is online." : r.name + " is paired; it shows online once maity runner serve runs.";
+          wait.textContent = r.presence === "online" ? M.t("runners.paired.online", { name: r.name }) : M.t("runners.paired.offline", { name: r.name });
           wait.className = "ok pair-wait";
-          if (step) append(clear(step), "Paired; the line is used up.");
+          if (step) append(clear(step), M.t("runners.paired.used"));
         } else if (step && Date.parse(waitingFor.expires_at) <= Date.now()) {
-          append(clear(step), "The line expired unused; create a new one.");
+          append(clear(step), M.t("runners.paired.expired"));
           wait.textContent = "";
         }
       }
@@ -400,8 +408,8 @@ window.Maity = window.Maity || {};
       drawEnrollments(e.items);
     }
 
-    append(root, h("h2", null, "Runners"),
-      h("p", { class: "muted" }, "Runners start agents on your machines, ssh hosts or a cluster, only for the projects and repositories their own configuration allows."),
+    append(root, h("h2", null, M.t("runners.title")),
+      h("p", { class: "muted" }, M.t("runners.intro")),
       pairForm(), panel, status.el, pending, list);
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
@@ -415,7 +423,7 @@ window.Maity = window.Maity || {};
       try {
         await reload();
       } catch (err) {
-        status.fail("Could not refresh: ", err);
+        status.fail(M.t("runners.failed.refresh"), err);
       } finally {
         polling = false;
       }

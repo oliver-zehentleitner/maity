@@ -73,7 +73,7 @@ def test_an_immediate_item_waits_its_window_and_goes_once(
     [mail] = notifications(migrated)
     assert mail.recipient == "me@example.org"
     assert mail.subject.startswith("[Maity] Maity: ") and mail.subject.endswith("asks: Which?")
-    assert "https://hub.example/#/maintainer/maity/inbox" in mail.body
+    assert "https://hub.example/maintainer/maity/inbox" in mail.body
     assert "Maity only links to https://hub.example" in mail.body
     assert "Stop these mails (inbox): https://hub.example/mail/unsubscribe/" in mail.body
     assert mail.headers["List-Unsubscribe"].startswith("<https://hub.example/mail/unsubscribe/")
@@ -266,7 +266,7 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
     from maity_hub.notifications.preferences import DEFAULTS
 
     many = [
-        Item(kind="inbox", at=clock.now(), title=f"t{n}", target=None, url=f"{PUBLIC}/#/x", seq=n)
+        Item(kind="inbox", at=clock.now(), title=f"t{n}", target=None, url=f"{PUBLIC}/x", seq=n)
         for n in range(53)
     ]
     with migrated.begin() as conn:
@@ -275,7 +275,7 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
         )
     assert subject == "[Maity] 53 updates" and kinds == ["inbox"]
     assert body.count("\n- ") + body.startswith("- ") == 50
-    assert "and 3 more: https://hub.example/#/" in body
+    assert "and 3 more: https://hub.example/" in body
 
 
 def test_over_the_instance_budget_mail_waits_and_merges_into_one(
@@ -444,6 +444,52 @@ def test_the_open_matters_are_never_mailed(
     at(minutes=5)
     run(migrated)
     assert notifications(migrated) == []
+
+
+def test_an_open_report_is_mailed_to_the_instance_admin(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """Unlike the other open matters (§18.1, §16.8): its reason and type, never its text."""
+    owner, agent = setup(make_client, migrated)  # the earliest account: the instance admin
+    made = agent.post(
+        "/reports",
+        {"target": {"type": "project", "id": "maintainer/maity"}, "reason": "spam", "text": "zzz"},
+    )
+    assert made.status_code == 201, made.text
+    at(minutes=5)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.recipient == "me@example.org"
+    assert "Report: spam — project" in mail.subject + mail.body
+    assert "zzz" not in mail.body
+
+
+def test_a_suspension_is_mailed_whatever_the_inbox_mode(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """A suspended account reads no inbox: the mail is its only way to learn (§16.8)."""
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "off"}}}})
+    seq = agent.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "spam"},
+    ).json()["seq"]
+    made = owner.post(
+        "/reports",
+        {
+            "target": {"type": "message", "id": str(seq), "project": "maintainer/maity"},
+            "reason": "spam",
+        },
+    ).json()
+    resolved = owner.post(
+        f"/admin/reports/{made['id']}/resolve", {"action": "suspend", "note": "spam run"}
+    )
+    assert resolved.status_code == 200, resolved.text
+    at(minutes=5)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.recipient == "me@example.org"
+    assert "Moderation: suspend — message: spam run" in mail.subject + mail.body
 
 
 def test_a_message_text_never_comes_from_a_redacted_event(

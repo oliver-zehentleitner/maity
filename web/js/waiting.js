@@ -1,153 +1,108 @@
-// Unread activity beside the requests, sharing the tab's notifications stream.
+// All notifications (/notifications, docs/api.md §18.2, §18.3): the bell's
+// More, paged by the hub's cursor, unread ones in bold with a dot, Mark read
+// per item and Mark all read. The inbox shows the requests alone (the maintainer, 2026-10-29):
+// conversations, mentions and the account's alerts are here, on the bell
+// and on the Chat button.
 "use strict";
 window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatAgo } = M.dom;
-  // §18.8: requests (and what asks like one), conversations, mentions, the
-  // account's alerts. Cards, the ticker and jour fixe steps are not here.
-  const GROUPS = [["inbox", "Request updates"], ["chat", "Conversations"], ["mention", "Mentions"], ["account", "Account"]];
-  const projectOf = (x) => x.project && x.project.full_name || "";
-  // The view shows 200 rows: 4 pages of the hub's most (50, §18.2) are all it
-  // reads; the rest is behind More notifications. Stream events within a
-  // short while are one refresh.
-  const SHOWN = 200, PAGES = SHOWN / 50, SETTLE_MS = 400;
-  const requestKey = (slug, id) => slug + "/" + id;
-  function rows(items, requests, project) {
-    const open = new Set(requests.filter((r) => r.status === "open").map((r) => requestKey(r.slug, r.id)));
-    const chats = new Map(), groups = Object.fromEntries(GROUPS.map(([key]) => [key, []]));
-    const seen = new Set();
-    items.filter((x) => !x.read && (!project || projectOf(x) === project)).forEach((x) => {
-      if (seen.has(x.id)) return;
-      seen.add(x.id);
-      const target = x.target || {};
-      if (x.kind === "inbox" && target.type === "request" && open.has(requestKey(projectOf(x), target.id))) return;
-      const kind = x.kind === "security" ? "account" : x.kind;
-      if (!groups[kind]) return;
-      if (kind === "chat" && target.type === "conversation") {
-        const key = projectOf(x) + "/" + target.id;
-        const row = chats.get(key);
-        if (row) {
-          row.count++;
-          if (String(x.at) > String(row.item.at)) row.item = x;
-        } else {
-          const entry = { item: x, count: 1 };
-          chats.set(key, entry); groups.chat.push(entry);
-        }
-      } else groups[kind].push({ item: x, count: 1 });
-    });
-    GROUPS.forEach(([key]) => groups[key].sort((a, b) => String(b.item.at).localeCompare(String(a.item.at))));
-    return groups;
-  }
 
-  // more: the list stopped at its 200 rows, so a conversation's count may
-  // be short of the hub's.
-  function rowLink(ctx, row, afterRead, status, more) {
-    const x = row.item;
-    return h("li", { class: "waiting-item", "data-notification": x.id },
-      h("a", { href: M.notify.linkOf(x), onclick: () => {
-        if (M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
-        M.api.post("/me/notifications/read", { ids: [x.id] }).then(() => {
-          if (afterRead) afterRead(x);
-          M.notify.changed();
-          return ctx.refreshCounts();
-        }).catch((err) => status.fail("Could not mark the item read: ", err));
-      } }, x.redacted ? "Removed" : x.title || M.notify.KIND_WORDS[x.kind] || "Notification"),
-      x.kind === "chat" && !x.read ? h("span", { class: "count" }, row.count + (more ? "+" : "") + " unread") : null,
-      h("span", { class: "muted" }, (x.project ? x.project.name + " · " : "") + formatAgo(x.at)));
-  }
-
-  // Mounted without being awaited: the inbox is drawn at once, this list
-  // reads in its own time and says so meanwhile.
-  function mount(ctx, root, requests, project) {
-    const box = h("div", { class: "waiting-activity" }), status = M.statusLine();
-    append(root, box, status.el);
-    let items = [], more = false, disposed = false, loading = false, again = false, last = null, settle = null;
-    // The project the last read was for: the 200 are read per project, so a
-    // filter changed to another one reads again instead of filtering the 200.
-    let readFor;
-    const draw = () => {
-      if (!M.notify.state.available) { clear(box); last = null; return; }
-      if (readFor !== undefined && project() !== readFor) { refresh(); return; }
-      const groups = rows(items, requests, project());
-      const signature = JSON.stringify(groups) + more;
-      if (signature === last) return;
-      last = signature;
-      const focused = Array.from(box.querySelectorAll(".waiting-item")).find((el) => el.contains(document.activeElement));
-      const focusId = focused && focused.getAttribute("data-notification");
-      clear(box);
-      let left = SHOWN, total = 0;
-      GROUPS.forEach(([key, title]) => {
-        const all = groups[key]; total += all.length;
-        const visible = all.slice(0, left); left -= visible.length;
-        if (visible.length) append(box, h("section", { class: "waiting-group", "aria-label": title },
-          h("h3", null, title), h("ul", { class: "waiting-items" }, visible.map((row) => rowLink(ctx, row, null, status, more)))));
+  // One item: its link, and Mark read where a read mark can be set from
+  // here (§18.3): not on an open matter, which reads as read once it is
+  // closed, and on a sign-in or address alert only where this session may
+  // confirm it (§2.6.5, M.sessions.mayConfirm), else the hub would skip it.
+  function row(ctx, x, mark, sessions) {
+    let li = null;
+    const title = x.redacted ? "Removed" : x.title || M.notify.KIND_WORDS[x.kind] || "Notification";
+    const security = x.kind === "security";
+    const reported = security && sessions && (x.target || {}).type === "session" ? sessions.list.find((s) => s.id === x.target.id) || null : null;
+    const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayConfirm(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
+    const link = h("a", { href: M.notify.linkOf(x), onclick: () => {
+      if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
+      mark({ ids: [x.id] });
+    } }, title);
+    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " (unread)");
+    // Marked read in place: the row, its words and its button change, the
+    // focus goes to its link, the pages read so far stay.
+    const markButton = markable ? h("button", { type: "button", class: "small mark-read", "aria-label": "Mark read: " + title }, "Mark read") : null;
+    if (markButton) {
+      markButton.addEventListener("click", async () => {
+        markButton.disabled = true;
+        if (!(await mark({ ids: [x.id] }))) { markButton.disabled = false; return; }
+        x.read = true;
+        li.className = "waiting-item read";
+        if (unread && unread.parentNode) unread.parentNode.removeChild(unread);
+        if (markButton.parentNode) markButton.parentNode.removeChild(markButton);
+        link.focus();
       });
-      if (total > SHOWN || more) append(box, h("p", { class: "hint" }, "Showing " + Math.min(total, SHOWN) + " activity rows. ", h("a", { href: "#/notifications" }, "More notifications")));
-      if (focusId) {
-        const replacement = Array.from(box.querySelectorAll(".waiting-item")).find((el) => el.getAttribute("data-notification") === focusId);
-        if (replacement) replacement.querySelector("a").focus();
-      }
-    };
-    async function refresh() {
-      if (disposed || M.notify.state.available === false) { if (!disposed) draw(); return; }
-      if (loading) { again = true; return; }
-      loading = true;
-      try {
-        readFor = project();
-        const path = "/me/notifications?unread=true&limit=50" + (readFor ? "&project=" + encodeURIComponent(readFor) : "");
-        const all = [], cursors = new Set();
-        let cursor = null, pages = 0;
-        do {
-          const answer = await M.api.get(path + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
-          if (disposed) return;
-          all.push(...(answer.items || []));
-          cursor = answer.next_cursor;
-          pages++;
-          if (cursor && cursors.has(cursor)) throw new Error("The hub repeated a notification page.");
-          cursors.add(cursor);
-        } while (cursor && pages < PAGES);
-        items = all; more = !!cursor; status.done(); draw();
-      } catch (err) {
-        if (disposed) return;
-        if (await M.api.missingRoute(err, "GET", "/me/notifications")) {
-          M.api.absent.note("GET", "/me/notifications"); M.notify.state.available = false; items = []; status.done(); draw();
-        } else status.fail("Could not read waiting activity: ", err);
-      } finally {
-        loading = false;
-        if (again && !disposed) { again = false; refresh(); }
-      }
     }
-    // A busy stream is one refresh once it settles, never a new read per event.
-    const soon = () => { window.clearTimeout(settle); settle = window.setTimeout(refresh, SETTLE_MS); };
-    const unsubscribe = M.notify.state.available ? M.notify.subscribe(soon) : () => {};
-    ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
-    if (M.notify.state.available) status.busy("Reading what else is new…");
-    const ready = refresh();
-    return { draw, ready, refresh };
+    li = h("li", { class: "waiting-item " + (x.read ? "read" : "unread"), "data-notification": x.id },
+      link, unread,
+      h("span", { class: "muted" }, (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
+      markButton);
+    return li;
   }
 
-  // The overflow destination is paginated, so the 200-row landing page
-  // never hides the remainder or turns its More link into settings.
   async function full(ctx, root) {
     const list = h("ul", { class: "waiting-items" }), status = M.statusLine();
     const older = h("button", { type: "button" }, "Older");
-    let cursor = null, disposed = false;
+    // Mark all read marks up to the head of the first page (§18.3, as the
+    // bell does); a sign-in or address alert stays unread (§2.6.5). Always
+    // there, off while nothing it would mark is unread.
+    const markAll = h("button", { type: "button", class: "small" }, "Mark all read");
+    let cursor = null, top = null, disposed = false, items = [];
+    // The sessions, read only when the page shows an unread security item.
+    let sessions = null;
     ctx.onDispose(() => { disposed = true; });
+    const markAllOff = () => { markAll.disabled = top === null || !items.some((x) => !x.read && !M.notify.keepsUnread(x)); };
+    // True once the hub took it; the counts follow. Mark all read reads
+    // the list again, since it reaches items on pages not shown.
+    async function mark(body) {
+      try {
+        await M.api.post("/me/notifications/read", body);
+      } catch (err) {
+        status.fail("Not marked: ", err);
+        return false;
+      }
+      M.notify.changed();
+      await ctx.refreshCounts().catch(() => null);
+      if (body.up_to) { clear(list); cursor = null; items = []; await load(); } else markAllOff();
+      return true;
+    }
     async function load() {
       older.disabled = true;
       try {
         const answer = await M.api.get("/me/notifications?limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
         if (disposed) return;
-        (answer.items || []).filter(M.notify.known).forEach((x) => append(list, rowLink(ctx, { item: x, count: 1 }, null, status)));
+        if (cursor === null) top = answer.next_after || null;
+        const page = (answer.items || []).filter(M.notify.known);
+        if (!sessions && page.some((x) => x.kind === "security" && !x.read)) {
+          const listed = await M.api.get("/auth/sessions?ended=true").then((r) => r.items, () => null);
+          sessions = listed ? { list: listed, current: listed.find((x) => x.current) || null } : null;
+        }
+        if (disposed) return;
+        items = items.concat(page);
+        page.forEach((x) => append(list, row(ctx, x, mark, sessions)));
         cursor = answer.next_cursor; older.hidden = !cursor; status.done();
+        markAllOff();
         if (!list.children.length) append(list, h("li", { class: "empty" }, "No notifications."));
       } catch (err) {
         if (!disposed) status.fail("Could not read notifications: ", err);
       } finally { older.disabled = false; }
     }
+    markAll.addEventListener("click", async () => {
+      markAll.disabled = true;
+      status.busy("Marking…");
+      await mark({ up_to: top });
+      markAllOff();
+    });
     older.addEventListener("click", load);
-    append(root, h("h2", null, "Notifications"), list, older, status.el);
+    append(root, h("div", { class: "toolbar" }, h("h2", null, "Notifications"), markAll),
+      h("p", { class: "hint" }, "Mark all read leaves sign-in and address alerts unread: confirm them with This was me under Sessions in your account."),
+      list, older, status.el);
+    markAllOff();
     await load();
   }
-  M.waiting = { mount, rows, full };
+  M.waiting = { full };
 })(window.Maity);

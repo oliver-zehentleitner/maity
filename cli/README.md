@@ -61,8 +61,8 @@ mismatch warns on stderr and keeps the join; a fork's origin is fine when
 upstream names the project. `--no-resume` skips this first-session check.
 If an admin has no briefing or assigned/held cards, resume checks one card
 from the board: an empty board prompts the admin to create cards or ask
-the human, instead of waiting for work to appear. In an accepted or archived
-project it asks the human about reopening first. A failed board read is
+the human, instead of waiting for work to appear. In an archived project
+it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
 A run against the test hub of this package (`tests/fakehub.py`), with a
@@ -196,15 +196,13 @@ the packet itself, complete.
   same place gives unrelated ids on two hubs, and the ids are never
   printed. The hub only compares them, to tell the humans when two
   members share a home or a workspace. A secret that cannot be read, or
-  one others can reach, leaves the ids out with a note; a hub that does
-  not take them yet is resumed without them.
+  one others can reach, leaves the ids out with a note.
 - A session a runner started has `MAITY_SUPERVISOR=maity-runner/<version>`
   in its environment, and `resume` sends it as `supervisor`
   ([`docs/api.md`](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) §15.11). The hub then answers a
   supervised session: no `maity wait`, end the turn after a checkpoint,
   and wake-ups only for what concerns the agent. Any other value is a
-  usage error. A hub that does not take the field yet is resumed without
-  it, with a warning.
+  usage error.
 - The join code in the pasted line is single-use and short-lived. The
   session credential is long-lived, bound to this agent profile and
   project, and revoked in the dashboard.
@@ -307,18 +305,16 @@ dropped connection) succeeds and says so.
 `…` stands for the project's routes, `/api/v1/projects/<owner>/<slug>`
 (§6.25). The CLI keeps the project's `full_name` (`oliver/maity`) in its
 state and takes it anew from every `maity resume`, so a renamed or
-transferred project needs no new join. A state written before the
-namespace holds the slug alone. The first command that needs the project
-then reads the full name once from `GET /me` and keeps it. A hub that
+transferred project needs no new join. A hub that
 needs a newer CLI answers `client_outdated` (426), and the CLI prints the
 minimum version and the upgrade line from the answer.
 
 | Command | Call (`docs/api.md`) |
 |---|---|
-| `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `freeze` and `fixes-only` |
+| `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `plan` and `review` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice` |
+| `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
 | text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
@@ -339,6 +335,16 @@ why, and lists what still works. `maity wait` returns the
 `session_paused` event about the agent itself as JSON on stdout, as
 usual, and adds a plain line on stderr: "you were paused by … : <reason>"
 or "your pause was lifted". A pause of another member gets no line.
+**When a human isolates the agent** (§6.2), every call of its credentials
+into the project but `maity resume` answers `forbidden` with reason
+`isolated`. Every command, `maity wait` included, then prints one line,
+"refused: you are isolated in this project by … since …", what lifts it
+and, last, the reason quoted as a human wrote it, and
+exits 5 without retrying: only a human of the project with
+`members:admin` can lift it. `maity resume` starts with ISOLATED, who,
+since when and the reason, and its next step is to stop. After the lift
+the next call works again, and `maity resume` shows no isolation.
+
 Why these names: [`context/commands.md`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/context/commands.md).
 
 A run against the test hub of this package (`tests/fakehub.py`):
@@ -437,9 +443,7 @@ item is one more `kind` there.
 
 `ticker post` maps each flag to its field; `--to` and `--area` repeat,
 and `--to computed` or `--to all` stands alone. Merges and decisions are
-announced by the hub itself. On a hub that has no ticker yet (it does
-not list the path in its `openapi.json`), `post` prints the `maity say`
-line to send instead and exits 2. `follow`, `mute`, `unfollow` and
+announced by the hub itself. `follow`, `mute`, `unfollow` and
 `unmute` change your own subscription with one call each; a value you
 both follow and mute is listed for you and never wakes you.
 
@@ -627,7 +631,8 @@ refusal for `objection_open` says so. Why the checks:
 covers the endpoints that have no command of their own: creating and
 editing cards, `assign`, `withdraw`, pausing (`PATCH /me`), the
 conversation history. It sends one signed request to `/api/v1<path>` and
-prints the JSON answer. A proxy adds `--on-request` with the owner's
+prints the JSON answer; an answer the hub sends as text (`…/rules` is
+Markdown) is printed as it came. A proxy adds `--on-request` with the owner's
 answered go for exactly this call (`maity ask … --action "METHOD PATH[?QUERY]" --action-body FILE`, the
 exact call, body bytes included,
 [`docs/api.md`](../docs/api.md) §2.3); it is sent as `Maity-On-Request`
@@ -976,6 +981,7 @@ the service never ends the agents' tmux sessions.
 | 2 | usage |
 | 3 | `wait` timed out; it never runs past `--timeout`, even when the hub stops answering |
 | 4 | `report` refused |
+| 5 | this agent is isolated in the project (§6.2): every call but `resume` is refused until a human lifts it; do not re-arm `wait` |
 | 6 | `wait` superseded by another `wait` of this credential |
 | 78 | `maity runner serve`: a revoked credential, a configuration, state directory or answer the hub will not change, or a second service; the systemd unit does not restart it |
 | 130 | interrupted (Ctrl-C) |

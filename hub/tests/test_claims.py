@@ -105,20 +105,20 @@ def test_a_proposed_card_is_not_claimable(owner: flow.Human) -> None:
     assert response.json()["error"]["details"] == {"from": "proposed", "to": "in_progress"}
 
 
-def test_freeze_wants_a_reason_and_closed_refuses(
+def test_review_wants_a_reason_and_closed_refuses(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     card = task(owner)
-    owner.patch("/projects/maintainer/maity", {"state": "fixes-only", "reason": "release"})
+    owner.patch("/projects/maintainer/maity", {"state": "review", "reason": "release"})
     assert _claim(owner, card).json()["error"]["details"]["fields"] == {"reason": "required"}
     assert _claim(owner, card, reason="the regression").status_code == 200
     with migrated.connect() as conn:
         payload = conn.execute(
             select(t.event.c.payload).where(t.event.c.kind == "task_claimed")
         ).scalar_one()
-    assert (payload["project_state"], payload["reason"]) == ("fixes-only", "the regression")
+    assert (payload["project_state"], payload["reason"]) == ("review", "the regression")
     other = task(owner, reason="needed")
-    owner.patch("/projects/maintainer/maity", {"state": "accepted", "reason": "shipped"})
+    owner.patch("/projects/maintainer/maity", {"state": "archived", "reason": "shipped"})
     assert _claim(owner, other, reason="x").headers["Maity-Error"] == "project_closed"
 
 
@@ -289,6 +289,7 @@ def test_a_report_moves_the_card_to_review_and_keeps_the_claim(
         f"member:{agent.id}",
         f"member:{owner.id}",
         "role:reviewer",
+        "role:purple-team",  # the security team built on the reviewer is reached too (§2.3)
         "trust:admin",
     ]
 
@@ -410,11 +411,11 @@ def test_a_claim_decides_from_the_project_as_locked(
     card = task(owner)
     real = events.lock_project
 
-    def accepted_meanwhile(conn: Any, project_id: str) -> Any:
-        conn.execute(update(t.project).where(t.project.c.id == project_id).values(state="accepted"))
+    def archived_meanwhile(conn: Any, project_id: str) -> Any:
+        conn.execute(update(t.project).where(t.project.c.id == project_id).values(state="archived"))
         return real(conn, project_id)
 
-    monkeypatch.setattr(tasks, "lock_project", accepted_meanwhile)
+    monkeypatch.setattr(tasks, "lock_project", archived_meanwhile)
     response = _claim(agent, card)
     assert response.status_code == 409
     assert response.headers["Maity-Error"] == "project_closed"

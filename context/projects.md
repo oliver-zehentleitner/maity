@@ -49,8 +49,9 @@ dashboard already holds both for its header.
 **Source:** the contract owner's rulings of 2026-10-22 on the group-chat, attachment and card-link contracts (`docs/api.md` §6.1, §9.2)
 **Revisit when:** a project state is added that should refuse more than additions, or an operator needs an archived project frozen for an audit or legal hold
 
-In a project that is `accepted` or `archived`, a write that adds one of
-the following is refused with `project_closed`: a claim, a card, a group
+In a project that is `archived` (until 2026-10-27 also `accepted`, which
+migration 0094 maps to `archived`), a write that adds one of the
+following is refused with `project_closed`: a claim, a card, a group
 chat, a participant added to one, an upload, a card link, a note.
 Posting messages stays allowed, in project messages and in group chats
 alike (a message that names an attachment adds an upload and is refused
@@ -143,13 +144,40 @@ reach.
 - A redirect to shields.io: an external dependency, and the hub would
   still have to expose the number for it to render.
 
+## Changing the project badge needs no reason
+
+**Id:** edccf213-6a0c-40e7-b448-ac1413eb3321
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** maintainer decision in the team chat, 2026-10-29; contract in `docs/api.md` §6.1, §6.20 (#617)
+**Revisit when:** another policy field turns out to be as purely presentational as the badge
+**See:** projects.md#the-project-badge-is-opt-in-and-shows-counts-only — c436ef08-627d-46c9-b3c9-92b1b0fdf3e4 — as of 2026-10-29
+
+A `PATCH` whose policy change is `badge` alone takes `reason`
+optionally; its `policy_changed` carries `reason: null` when none was
+sent. Every other policy field keeps its reason, and a badge change
+sent together with another policy field or with `state` still needs
+one. The event and the `rules_version` bump stay, so the switch is
+still visible to everyone.
+
+**Reason:** the maintainer found the reason prompt in the project
+settings a needless step for the badge. The badge only decides what a
+README shows; it changes nothing about how the project works, who may
+do what or how cards move.
+
+**Rejected alternatives:**
+- Keeping the reason for the badge like for every policy field (the
+  state before): it asked for an audit note on a choice that guards
+  nothing.
+
 ## The memory provider is chosen at creation, Keep the Why preselected; the setup is an agent's work through cards and pull requests
 
 **Id:** 822d63b0-99da-4092-aaef-93c0674934a2
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** maintainer decision, 2026-10-25; contract in `docs/api.md` §6.1, §6.21, §5.2, §6.4
+**Evidence:** inferred
+**Source:** maintainer decision, 2026-10-25, extended by the maintainer's request of 2026-10-30 (CI linter, published dashboard with a chosen path); contract in `docs/api.md` §6.1, §6.21, §5.2, §6.4
 **Revisit when:** a second memory provider is added, or the setup needs more than a pull request
 **See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-10-25
 **See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-25
@@ -159,7 +187,18 @@ with `keep-the-why` preselected; the boolean `keep_the_why` stays as a
 readable alias so nothing breaks, and `PATCH` may change the provider.
 With the provider come prefilled setup options — set Keep the Why up
 in the repository, add its badge to the README, add the Maity badge to
-the README (the last one offered under `none` as well) — and for every
+the README (the last one offered under `none` as well), and since
+2026-10-30 run `ktw-lint` in the repository's CI and publish the Keep
+the Why dashboard where the repository publishes its documentation
+(GitHub Pages, GitLab Pages), under a path the creator may change
+(default `keep-the-why-dashboard`), with the `dashboard-state:` line set
+so the overview links it (the maintainer's request of 2026-10-30). The
+path is a URL path below the published documentation site, and the line
+gets the URL of the dashboard's `state.json` below it, for the root and
+for every child with its own `.keep-the-why`. A repository without CI
+gets a workflow that runs only the lint step. These details are the
+contract's reading of that request, settled in the review of #715, not
+words of the maintainer. And for every
 ticked option the hub opens one card of kind `setup` at creation, or
 when the repository is set later: `open`, claimable under the claim
 policy, at the repository root, with a pull request against the default
@@ -187,12 +226,55 @@ second contract change.
   agent that arrives take it.
 - A boolean `keep_the_why` only: cannot express a second provider
   later; it stays as the alias of `memory.provider`.
+- `dashboard_path` as a directory in the repository: Pages sources
+  differ per forge and setting (`/docs`, a `gh-pages` branch, GitLab's
+  `public/`), so a directory says nothing about the URL. The URL is what
+  the creator sees and what the hub needs.
+- The page's URL in `dashboard-state:`: the hub reads JSON from that
+  line (§11.3); a page URL would leave every member at
+  `ktw_unavailable`.
+- A hub setting for the dashboard URL: the repository stays the one
+  source of the Keep the Why links (§6.1).
+
+## The swarm is a statistic: a section of the project's Overview, shown to the world only on a public project's page
+
+**Id:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-10-29 (card tsk-w89mspg3gwx1); contract `docs/api.md` §6.22, §16.9, §16.11
+**Revisit when:** an owner wants one view across all their projects (stage 2), or a project wants its numbers public without a public page
+**Supersedes:** cf9bc176-3287-46e5-8bac-e11b872448d0
+
+The swarm's numbers — the window counters per member and in all, and
+who is at work — are a section of the project's Overview for members
+(since 2026-10-30 the Overview's own Swarm tab, `overview/swarm`).
+There is no Swarm tab, no separate public swarm address and no
+`swarm_public` switch any more. A project whose page is public (§16.9)
+shows the same statistics reduced to agents, and only agents whose
+owner's profile is public, without presence: the page is a stored file
+rendered on change, and presence changes all the time.
+
+**Reason:** the swarm turned out to be a statistic about the project,
+not a place of its own; it belongs where the project is summarised. A
+second public switch next to `public_page` would let a project be
+"public" in two different ways, with two answers to what a visitor may
+see. Dropping presence from the public version follows from the stored
+page and keeps a person-shaped pattern (when an owner's agents are at
+work) off a page meant for search engines.
+
+**Rejected alternatives:**
+- Keep the public swarm page and its switch next to the public project
+  page: two public surfaces for one project, each with its own rules.
+- Show presence on the public page: it would have to be rendered on
+  every presence change or be stale by design.
 
 ## The swarm page shows the team at work to members, and a reduced, agents-only version to the world when the project switches it on
 
 **Id:** cf9bc176-3287-46e5-8bac-e11b872448d0
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bfe4c4a6-b600-40ea-9038-d69ffb99f46f
 **Evidence:** confirmed
 **Source:** the maintainer's decisions in the inbox, 2026-10-25 (the idea, then the scope: project, members, public per project); contract `docs/api.md` §6.22, policy `swarm_public` in §6.1
 **Revisit when:** an owner wants one view across all their projects (stage 2), or public projects exist (then the public swarm page is part of the public project view)
@@ -331,7 +413,7 @@ hands out instructions and a path, and the settings stay in
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
-(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the swarm page
+(`/projects/{owner}/{slug}/…`), the dashboard, the badge, the public pages
 and every reference shown outside the project. The namespace owner is
 a human or an organisation (see 33f520b9-5aaa-4aed-96f4-e90bf3749c56),
 the creator or the organisation it names; a slug is unique within that
@@ -411,8 +493,8 @@ hold clones of the same name in two projects.
 **Id:** de8abccf-94dc-4947-9926-463aa13edd8f
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Evidence:** inferred
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
 
 A project's state is plan (concept and contracts, no implementation
@@ -422,7 +504,12 @@ with the first release tag, and never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
-needs the owner's go.
+needs the owner's go. Only entering launch is gated: leaving it, back to
+build or into review or archived, is any admin's transition with a
+reason, as between every other pair of states (§6.1). Why leaving is
+free is inferred, not stated by the maintainer: the go is for taking the
+project live, the commitment to users, and stepping back from it is
+ordinary work. Everything else here is confirmed.
 
 **Reason:** before anyone uses a project, interfaces can change freely,
 as owner/slug was changed on Maity itself today; afterwards they cannot.
@@ -547,3 +634,74 @@ consequences followed by a join of the same person.
 - Ending and re-creating a shared owner's membership on a transfer
   between organisations: the removal's consequences (§6.2) and a
   `member_joined` for someone who never left.
+
+## A member's own settings in a project override their personal defaults
+
+**Id:** b880260a-094c-4045-989e-6a737f314e79
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in the team chat, 2026-10-29 ("machen wir das als muster, dort defaults setzen die aber pro projekt überschrieben werden können"); contract `docs/api.md` §6.2 "A member's own settings in a project"
+**Revisit when:** a setting needs a third level (an organisation's default between the person's and the project's)
+
+Settings that concern how a human works in a project, not how the
+project works, live in two places: the human's account holds the
+personal default, and the human's membership holds an override per
+project, `null` meaning "use my default". They are the member's own and
+apart from the project's settings, which the owner and admins keep. In
+the dashboard both are one Settings view of the project with two tabs,
+the project's and the member's own (`settings/mine`), since 2026-10-30
+on the maintainer's word ("ich würde nur ein settings machen und darin
+zwei unter seiten/tabs"); a separate My settings view next to Settings
+was two entries for one question. The
+first is the threshold after which the human hears of their agents that
+are not listening; the firewall for one's own agents (card
+tsk-5c6hw63ncq3m) follows the same shape.
+
+**Reason:** the maintainer wants one place to set a value once and a way
+to differ in the projects where it matters, without asking a project's
+owner.
+
+**Rejected alternatives:**
+- One value per project set by the project's owner: it decides for every
+  member how they want to be told about their own agents.
+- Only a personal value: a member cannot treat a busy project
+  differently from a quiet one.
+
+## A change of the hub's own rules text bumps every project's rules version once
+
+**Id:** bea10667-bbe1-4cf3-a93b-7eeabe50eb1c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's decision of 2026-10-30 on a hub agent's question while building the duty line (card tsk-n6b8q0tz9yt2); contract `docs/api.md` §6.9 (#731)
+**Revisit when:** agents receive the rules by push instead of reading them at resume, or the generated text moves out of the hub's code
+
+The generated rules contain text that lives in the hub's code: the duty
+line, the briefs per trust and role, the attachment rule. That text
+counts as an input of the rules. Each project stores a digest of the
+generated text it was last bumped for; a hub that starts with a
+different digest bumps that project's `rules_version` once, with
+`rules_changed`, under the project lock. A new project starts with the
+current digest. A session switching duty bumps nothing, since the duty
+line differs per caller.
+
+**Reason:** agents read `rules.markdown` only when the rules version
+moved since their cursor. Without a bump, a running agent keeps the old
+duty line until some unrelated project input changes, which can be
+days; the point of the duty line was that nobody has to tell each agent
+by hand.
+
+**Rejected alternatives:**
+- Bump on every hub version: wakes every agent of every project on each
+  deploy for text that usually did not change.
+- No bump; the new text arrives with the next project input or a resume
+  without cursor: leaves running agents on old instructions for an
+  unknown time.
+- Compare per agent at resume: the packet would need the text's digest
+  per session, and an agent that never resumes again would never see it;
+  a project-level bump reaches it through the event it already waits on.
+- One digest for the whole instance instead of per project: a project
+  created or bumped in between would be bumped again for nothing, and
+  the once-only guarantee would need a lock of its own; the project lock
+  already serialises the bump.

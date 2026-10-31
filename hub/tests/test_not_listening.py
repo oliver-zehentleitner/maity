@@ -95,20 +95,16 @@ def test_an_event_unread_for_ten_minutes_starts_an_episode(setup: Setup) -> None
         False,
     )
     assert payload["instance"] == s.agent.instance
-    [notice] = s.notices()
-    assert notice["title"].endswith(f" ({s.agent.instance}) is not listening")
-    assert (notice["class"], notice["status"], notice["personal"]) == ("info", "open", True)
-    assert [o["id"] for o in notice["options"]] == ["seen"]
-    assert notice["summary"].startswith(f"Session {session.id} has not called the events")
+    assert s.notices() == []  # no request per episode: the owner hears through the digest
     # The instance view says since when.
     view = s.owner.get(f"{BASE}/members/{s.agent.id}").json()
     assert view["instances"][0]["session"]["not_listening_since"] is not None
     # The member view's session does not carry it (§6.2).
     assert "not_listening_since" not in (view.get("session") or {})
-    # Checked again, nothing new: one episode, one notice.
+    # Checked again, nothing new: one episode.
     s.at(13)
     s.sweep()
-    assert len(s.events()) == 1 and len(s.notices()) == 1
+    assert len(s.events()) == 1
 
 
 def test_reading_the_waiting_event_ends_the_episode(setup: Setup) -> None:
@@ -126,8 +122,6 @@ def test_reading_the_waiting_event_ends_the_episode(setup: Setup) -> None:
     assert s.session().not_listening_since is None
     started, ended = s.events()
     assert ended.payload["ended"] is True and ended.payload["since"] == started.payload["since"]
-    [notice] = s.notices()
-    assert notice["status"] == "withdrawn"
 
 
 def test_a_session_that_called_for_events_lately_is_listening(setup: Setup) -> None:
@@ -138,6 +132,50 @@ def test_a_session_that_called_for_events_lately_is_listening(setup: Setup) -> N
     s.at(11)
     s.sweep()  # the event is 11 minutes old, but the last call is 3 minutes ago
     assert s.session().not_listening_since is None and s.events() == []
+
+
+def test_a_resume_starts_the_ten_minutes_again(setup: Setup) -> None:
+    s = setup
+    s.message()
+    s.at(8)
+    assert s.agent.resume().status_code == 200
+    s.at(11)
+    s.sweep()  # the event is 11 minutes old, but the resume is 3 minutes ago
+    assert s.session().not_listening_since is None and s.events() == []
+    s.at(19)
+    s.sweep()  # 11 minutes after the resume
+    assert s.session().not_listening_since == s.now + timedelta(minutes=18)
+
+
+def test_the_cursor_a_resume_sends_counts_as_acknowledged(setup: Setup) -> None:
+    s = setup
+    s.message()
+    cursor = _cursor(s)
+    s.at(1)
+    assert s.agent.resume(cursor=cursor).status_code == 200
+    assert s.session().acknowledged_seq == cursor
+    s.at(30)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == []
+
+
+def test_a_resume_without_a_cursor_leaves_the_events_above_the_old_one_waiting(
+    setup: Setup,
+) -> None:
+    """The new session starts at the old one's acknowledged cursor, and the events its
+    packet delivers are acknowledged only by a later call for events. A session that
+    works from the packet and never calls again is not listening ten minutes after its
+    resume, which §5.3 accepts: the hub cannot tell "received and busy" from "never saw
+    it"."""
+    s = setup
+    s.message()
+    s.at(1)
+    assert s.agent.resume().status_code == 200
+    s.at(12)
+    s.sweep()
+    assert s.session().not_listening_since == s.now + timedelta(minutes=11)
+    [started] = s.events()
+    assert started.payload["ended"] is False
 
 
 def test_a_paused_agent_is_never_not_listening(setup: Setup) -> None:
@@ -187,11 +225,9 @@ def test_an_ended_session_ends_its_episode_and_a_new_one_starts_clean(setup: Set
         old = conn.execute(select(t.agent_session).where(t.agent_session.c.id == first)).one()
     assert old.not_listening_since is None
     assert [e.payload["ended"] for e in s.events()] == [False, True]
-    [notice] = s.notices()
-    assert notice["status"] == "withdrawn"
 
 
-def test_at_most_one_open_notice_per_instance(setup: Setup) -> None:
+def test_a_later_episode_of_the_same_session_counts_again(setup: Setup) -> None:
     s = setup
     s.message()
     s.at(11)
@@ -200,9 +236,7 @@ def test_at_most_one_open_notice_per_instance(setup: Setup) -> None:
     s.sweep()  # the first episode ends
     s.message()
     s.at(30)
-    s.sweep()  # a later episode files again
-    statuses = sorted(n["status"] for n in s.notices())
-    assert statuses == ["open", "withdrawn"]
+    s.sweep()
     assert len([e for e in s.events() if not e.payload["ended"]]) == 2
 
 
@@ -239,34 +273,6 @@ def test_a_supervised_session_is_never_not_listening(setup: Setup) -> None:
     assert s.session().not_listening_since is None and s.notices() == []
 
 
-def test_a_new_owner_gets_the_notice_instead(setup: Setup) -> None:
-    """§5.3, as for the Keep the Why commitment (§6.23): the notice to the old owner is
-    withdrawn and one is filed to the new owner."""
-    from tests import factory
-
-    s = setup
-    s.message()
-    s.at(11)
-    s.sweep()
-    heir = factory.human(s.engine, "heir")
-    with s.engine.begin() as conn:
-        conn.execute(
-            update(t.agent_profile).where(t.agent_profile.c.id == s.agent.id).values(owner_id=heir)
-        )
-    s.sweep()
-    with s.engine.connect() as conn:
-        rows = conn.execute(
-            select(t.request.c.status, t.request.c.to_human)
-            .where(t.request.c.filed_by == "hub")
-            .order_by(t.request.c.created_at, t.request.c.id)
-        ).all()
-    assert sorted((r.status, r.to_human == heir) for r in rows) == [
-        ("open", True),
-        ("withdrawn", False),
-    ]
-    assert s.session().not_listening_request_id is not None
-
-
 def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
     """A reports-to agent whose team wakes its lead only: the start wakes the lead,
     not a sibling; the end wakes neither (§5.3, §8.2 "Team wake")."""
@@ -274,7 +280,9 @@ def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
 
     from maity_hub import events
 
-    boss = SimpleNamespace(id=7, agent_id="agt-boss", role="member", lead_instance="lead")
+    boss = SimpleNamespace(
+        id=7, agent_id="agt-boss", role="member", lead_instance="lead", isolated_since=None
+    )
     start = SimpleNamespace(
         kind="member_not_listening",
         payload={"ended": False},
@@ -288,7 +296,9 @@ def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
     assert not events.wakes(start, boss, "agt-boss", instance="other")
     end = SimpleNamespace(**{**vars(start), "payload": {"ended": True}})
     assert not events.wakes(end, boss, "agt-boss", instance="lead")
-    admin = SimpleNamespace(id=8, agent_id="agt-admin", role="admin", lead_instance=None)
+    admin = SimpleNamespace(
+        id=8, agent_id="agt-admin", role="admin", lead_instance=None, isolated_since=None
+    )
     assert not events.wakes(start, admin, "agt-admin", instance="x")  # trust:admin only reads
 
 
@@ -313,3 +323,53 @@ def test_the_membership_is_read_again_under_the_projects_lock(
     monkeypatch.setattr(not_listening, "lock_project", paused_while_waiting)
     s.sweep()
     assert s.session().not_listening_since is None and s.events() == [] and s.notices() == []
+
+
+@pytest.mark.parametrize("mode", ["inbox", "bell", "off"])
+def test_an_episode_files_no_request_in_any_mode(setup: Setup, mode: str) -> None:
+    """§5.3: the episode feeds the owner's digest and files no request of its own; the
+    member it reports to hears of it whatever the owner's mode."""
+    s = setup
+    changed = s.owner.patch("/me/notification-settings", {"not_listening": {"mode": mode}})
+    assert changed.status_code == 200, changed.text
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is not None
+    assert len(s.events()) == 1
+    assert s.notices() == []
+
+
+def test_a_request_per_episode_from_before_is_withdrawn_at_the_first_digest_hour(
+    setup: Setup,
+) -> None:
+    """§5.3: when the digest replaces the requests per episode, the hub withdraws every one
+    still open at the first digest hour; the episode itself goes on."""
+    from maity_hub import not_listening_digest
+    from maity_hub.events import transaction
+    from maity_hub.routes.requests import file_hub_notice
+
+    s = setup
+    s.message()
+    s.at(11)
+    s.sweep()
+    session = s.session()
+    with transaction(s.engine) as conn:  # as the hub filed it before the digest
+        member = conn.execute(
+            select(t.membership).where(t.membership.c.id == session.membership_id)
+        ).one()
+        old = file_hub_notice(
+            conn, member.project_id, member.id, s.agent.id, "agent (x) is not listening", "-"
+        )
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == session.id)
+            .values(not_listening_request_id=old)
+        )
+    assert [n["status"] for n in s.notices()] == ["open"]
+    s.at(200)
+    not_listening_digest.run(s.engine)
+    statuses = {n["id"]: n["status"] for n in s.notices()}
+    assert statuses[old] == "withdrawn"
+    assert s.session().not_listening_since is not None
+    assert s.session().not_listening_request_id is None

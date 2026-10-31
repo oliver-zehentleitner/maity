@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, case, select, update
+from sqlalchemy import Connection, select, update
 
 from maity_hub import (
     admin_agents,
@@ -19,11 +19,16 @@ from maity_hub import (
     availability,
     briefings,
     clock,
+    cross_owner,
     group_chats,
     idempotency,
     instances,
+    isolation,
+    line,
     namespace,
+    person_links,
     placements,
+    project_roles,
     rules,
     seats,
     takeovers,
@@ -143,10 +148,12 @@ def validate_assignment(
     member: int | None = None,
     trust: str | None = None,
     current: tuple[str, str] = ("member", "coder"),
+    keeps_boss: int | None = None,
 ) -> dict[str, Any]:
     """Columns for trust, role, reports_to, areas, capabilities; `invalid` naming every
     bad field. `member` is the membership being assigned, for the cycle check; None for
-    a new one. `current` is its trust and role now, which a field left out keeps."""
+    a new one. `current` is its trust and role now, which a field left out keeps;
+    `keeps_boss` a boss the member has already, which no depth check refuses."""
     errors: dict[str, str] = {}
     values: dict[str, Any] = {}
     if trust is not None:
@@ -156,9 +163,18 @@ def validate_assignment(
             errors["trust"] = "humans_only"
         values["trust"] = trust
     if role is not None:
-        if role not in ROLES:
+        # A project role is read under the project's lock, which `PUT …/roles` holds while it
+        # checks what still names a role it removes: no assignment slips past that check.
+        project = (
+            conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+            if role in ROLES
+            else lock_project(conn, project_id)
+        )
+        base = project_roles.base_of(project, role)  # a project role too (§2.3)
+        if base is None:
             errors["role"] = "unknown"
         values["role"] = role
+        values["role_base"] = base
     # The proxy holds trust `admin`, the only trust it may hold (§2.3).
     if "role" not in errors and "trust" not in errors:
         new_trust, new_role = values.get("trust", current[0]), values.get("role", current[1])
@@ -175,6 +191,14 @@ def validate_assignment(
                 errors["reports_to"] = "guest"
             elif member is not None and member in chain(conn, values["reports_to"]):
                 errors["reports_to"] = "cycle"
+            elif (
+                boss.id != keeps_boss
+                and _sets_boss(conn, member, boss.id)
+                and not line.fits(conn, project_id, boss.id, member)
+            ):
+                # Every way that sets a boss checks the depth; a chain that is already
+                # longer stays as it is while nobody moves it (§2.3 "Depth").
+                errors["reports_to"] = "too_deep"
     if areas is not None:
         if any(not AREA.fullmatch(a) or a.startswith("..") or "/../" in f"/{a}/" for a in areas):
             errors["areas"] = "invalid_path"
@@ -186,6 +210,16 @@ def validate_assignment(
     if errors:
         raise invalid(errors)
     return values
+
+
+def _sets_boss(conn: Connection, member: int | None, boss: int) -> bool:
+    """Whether naming `boss` changes the member's `reports_to`: always for a new one."""
+    if member is None:
+        return True
+    current = conn.execute(
+        select(t.membership.c.reports_to).where(t.membership.c.id == member)
+    ).scalar()
+    return bool(current != boss)
 
 
 def chain(conn: Connection, membership_id: int) -> set[int]:
@@ -250,6 +284,7 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             rows,
             briefing=lambda r: admin or r.id == mine.id,
             details=lambda r: admin or r.agent_id in owned,
+            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
@@ -285,7 +320,15 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         own = row.id == mine.id
         admin = mine.may("members:admin")
         details = admin or row.agent_id in _owned_agents(conn, mine)
-        return JSONResponse(member_view(conn, row, briefing=own or admin, details=details))
+        return JSONResponse(
+            member_view(
+                conn,
+                row,
+                briefing=own or admin,
+                details=details,
+                links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+            )
+        )
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:
@@ -312,9 +355,11 @@ class Change:
     approver: str
     credential_id: str | None
     via: str | None
+    # A pause it sets is a manager's under `line:lead` (§2.3 "The manager", §5.3).
+    line: bool = False
 
 
-def change_of(mine: Membership, caller: Caller) -> Change:
+def change_of(mine: Membership, caller: Caller, *, line: bool = False) -> Change:
     return Change(
         mine.project,
         caller.actor(mine.id),
@@ -322,6 +367,7 @@ def change_of(mine: Membership, caller: Caller) -> Change:
         mine.principal_id,
         caller.credential_id,
         caller.via,
+        line,
     )
 
 
@@ -333,16 +379,23 @@ def apply_patch(
     pause: tuple[bool, str | None],
     *,
     instance: str | None = None,
+    line_consent: bool = False,
 ) -> dict[str, Any]:
     """Write a membership change and announce it; `pause` is (given, reason), for one
     agent instance when `instance` names it. Returns the changed columns with their old
     values, for `member_changed_by_agent`."""
     changed = {k: v for k, v in values.items() if getattr(target, k) != v}
+    if line_consent and "reports_to" in values and not target.line_consent:
+        # The edge is already there and the go now names the manager's rights for it (§6.2).
+        changed["line_consent"] = True
     old = {k: getattr(target, k) for k in changed}
     member_id = principal_id(conn, target.id)
     assert member_id is not None
     if changed:
         columns = {k: v for k, v in changed.items() if k != "briefing"}
+        if "reports_to" in changed:
+            # A consent for a manager's rights names the edge it was given for (§6.2).
+            columns["line_consent"] = line_consent
         conn.execute(
             update(t.membership)
             .where(t.membership.c.id == target.id)
@@ -378,6 +431,13 @@ def apply_patch(
                 actor=change.actor,
                 subject=("member", member_id),
             )
+        if "reports_to" in changed:
+            line.edge_ended(conn, change, target)
+        # Trust guest ends a manager's rights as losing the role does: the consents go
+        # for good, a later return to member does not bring them back (§6.2).
+        held = target.role == "manager" and target.trust != "guest"
+        if held and not (row.role == "manager" and row.trust != "guest"):
+            line.manager_lost(conn, change, target)
     given, reason = pause
     if given:
         if target.agent_id is None:
@@ -411,6 +471,12 @@ def patch_member(
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
+        lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
+        if lifted is not None:
+            return lifted
+        moved = _owner_sets_reports_to(conn, caller, slug, member_id, body, given)
+        if moved is not None:
+            return moved
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row(conn, mine.project.id, member_id)
@@ -419,7 +485,11 @@ def patch_member(
         if "availability_policy" in given:
             _policy_humans_only(conn, mine, caller, target, body.availability_policy)
         own_policy = given == {"availability_policy"} and target.id == mine.id
-        if not agent_admin and not (own_policy and mine.kind == "human"):
+        # A manager without members:admin acts on its reach alone (§2.3 "The manager").
+        line_lead = not agent_admin and not mine.may("members:admin") and mine.may("line:lead")
+        if line_lead and not (own_policy and mine.kind == "human"):
+            target = line.check_patch(conn, mine, target, body, given)
+        elif not agent_admin and not (own_policy and mine.kind == "human"):
             # A human sets their own policy without members:admin (§6.12).
             mine.require("members:admin")
         if agent_admin:
@@ -465,7 +535,17 @@ def patch_member(
                 raise invalid({"paused": "agents_only"}, "paused is for agent members")
             held = instances.require_active(conn, target, instance, "instance")
             if agent_admin:
-                admin_agents.check_instance_pause(held, mine.principal_id)
+                admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
+        if line_lead and line.needs_consent(mine.project, target, values, pause):
+            # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
+            request_id = line.propose(
+                conn,
+                mine,
+                caller,
+                target,
+                {"values": values, "pause": pause, "instance": instance},
+            )
+            return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
         if agent_admin and admin_agents.needs_consent(conn, mine, target, values, pause):
             # The whole PATCH waits for the owner's go (§2.3 ᵃ).
             request_id = admin_agents.propose(
@@ -476,14 +556,164 @@ def patch_member(
                 {"action": "patch", "values": values, "pause": pause, "instance": instance},
             )
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
-        change = change_of(mine, caller)
+        change = change_of(mine, caller, line=line_lead)
+        asked: list[str] | None = None
+        if "reports_to" in given:
+            # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
+            # of the member; an agent that did not ask for them does not end the decision of
+            # the two owners.
+            pending = cross_owner.open_pair(conn, target.id)
+            if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
+                raise ApiError(
+                    403,
+                    "forbidden",
+                    "an agent that did not ask for the edge does not end the owners' decision",
+                    {"reason": "pending_consent"},
+                )
+            cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
+            boss_row = (
+                member_row(conn, mine.project.id, body.reports_to)
+                if body.reports_to is not None
+                else None
+            )
+            if boss_row is not None and cross_owner.owners(conn, target, boss_row) is not None:
+                # The edge waits for both owners: the other fields apply at once (§6.2).
+                values = {k: v for k, v in values.items() if k != "reports_to"}
+                asked = cross_owner.file(conn, mine.project, mine, caller, target, boss_row)
         old = apply_patch(conn, change, target, values, pause, instance=instance)
         for field in ("trust", "role"):
             if agent_admin and field in old:
                 admin_agents.announce(conn, change, target, field, old[field], values[field])
+        if asked:
+            return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _owner_lifts_line_pause(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome | None:
+    """The agent's owner lifts a pause a manager set, member of the project or not and
+    without members:admin (§2.3 "The manager", §5.3). None when the call is not that:
+    the ordinary rules then decide."""
+    if caller.kind != "human" or "paused" not in given or body.paused is not None:
+        return None
+    if not given <= {"paused", "instance"}:
+        return None
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        return None
+    if not instances.owns_agent(conn, caller, target):
+        return None
+    row = target
+    if body.instance is not None:
+        row = instances.require_active(conn, target, body.instance, "instance")
+    if row.paused_since is None or not row.paused_line:
+        return None
+    try:
+        reader: Membership | None = membership(conn, caller, slug)
+    except ApiError:
+        reader = None
+    if reader is not None and reader.may("members:admin"):
+        return None  # the admin's own path, with its answer
+    change = Change(
+        project,
+        line.owner_actor(caller, reader.id if reader else None),
+        caller.principal_id,
+        caller.principal_id,
+        caller.credential_id,
+        caller.via,
+    )
+    set_paused(conn, change, target, None, instance=body.instance)
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
+    view = member_view(
+        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    )
+    return idempotency.Outcome(200, "member_team", str(target.id), view)
+
+
+def _owner_sets_reports_to(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome | None:
+    """The agent's owner sets its `reports_to`, member of the project or not and without
+    members:admin (§2.3): to nobody or to a member they own (themselves or another of their
+    agents) at once, to any other member as a cross-owner edge that waits for the boss's side
+    (§6.2, "Own consent"). None when the call is not that: the ordinary rules then decide.
+    The checks and the effects are an admin's: guest, cycle, depth, the line consent that ends,
+    `member_updated`."""
+    if caller.kind != "human" or given != {"reports_to"}:
+        return None
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        return None
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        return None
+    if not instances.owns_agent(conn, caller, target):
+        return None
+    try:
+        reader: Membership | None = membership(conn, caller, slug)
+    except ApiError:
+        reader = None
+    if reader is not None and reader.may("members:admin"):
+        return None  # the admin's own path
+    boss = body.reports_to
+    if boss is not None:
+        lock_project(conn, project.id)  # two PATCHes naming each other must not both pass
+    values = validate_assignment(
+        conn,
+        project.id,
+        kind="agent",
+        role=None,
+        reports_to=boss,
+        areas=None,
+        capabilities=None,
+        member=target.id,
+        current=(target.trust, target.role),
+    )
+    if boss is None:
+        values["reports_to"] = None
+    change = Change(
+        project,
+        line.owner_actor(caller, reader.id if reader else None),
+        caller.principal_id,
+        caller.principal_id,
+        caller.credential_id,
+        caller.via,
+    )
+    # A further PATCH of `reports_to` ends the open consent requests of the member (§6.2).
+    cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
+    if boss is not None and not _owns_member(conn, caller, project.id, boss):
+        asked = cross_owner.file(
+            conn, project, reader, caller, target, member_row(conn, project.id, boss)
+        )
+        if asked:
+            return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
+    apply_patch(conn, change, target, values, (False, None))
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
+    view = member_view(
+        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    )
+    return idempotency.Outcome(200, "member_team", str(target.id), view)
+
+
+def _owns_member(conn: Connection, caller: Caller, project_id: str, principal: str) -> bool:
+    """Whether `principal` is the caller themselves, or an agent of theirs in the project."""
+    if principal == caller.human_id:
+        return True
+    try:
+        row = member_row(conn, project_id, principal)
+    except ApiError:
+        return False
+    return instances.owns_agent(conn, caller, row)
 
 
 def _owner_preferences(
@@ -567,6 +797,7 @@ def set_paused(
         "paused_reason": reason,
         "paused_since": now if reason else None,
         "paused_by": change.by if reason else None,
+        "paused_line": bool(reason) and change.line,
     }
     if instance is None:
         lifts_a_human_pause = reason is None and human_paused(target)
@@ -607,6 +838,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     onboarding.member_removed(
         conn, change.project.id, target.agent_id or target.human_id, change.actor
     )
+    cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
     now = clock.now()
     credentials = (
         conn.execute(
@@ -621,19 +853,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
-    conn.execute(
-        update(t.card)
-        .where(t.card.c.claim_holder == target.id, t.card.c.status.notin_(("done", "cancelled")))
-        .values(
-            claim_holder=None,
-            claim_instance=None,
-            claim_session_id=None,
-            claim_since=None,
-            lease_until=None,
-            status=case((t.card.c.status == "in_progress", "open"), else_=t.card.c.status),
-            updated_at=now,
-        )
-    )
+    isolation.release_claims(conn, target.id)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -657,11 +877,13 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         )
     ).scalars()
     for report_id in sorted(reported):
+        before = conn.execute(select(t.membership).where(t.membership.c.id == report_id)).one()
         conn.execute(
             update(t.membership)
             .where(t.membership.c.id == report_id)
             .values(
                 reports_to=None,
+                line_consent=False,  # the edge ended (§6.2)
                 changed_by_credential=change.credential_id,
                 changed_via=change.via,
             )
@@ -677,6 +899,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
             actor=change.actor,
             subject=("member", report["id"]),
         )
+        line.edge_ended(conn, change, before)
     conn.execute(
         update(t.join_link)
         .where(t.join_link.c.reports_to == target.id, t.join_link.c.used_at.is_(None))
@@ -718,6 +941,51 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         apply_remove(conn, change_of(mine, caller), target)
         # The answer goes to the admin who removed it, like a repeated DELETE's.
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+class IsolateIn(Strict):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+def _isolation_target(conn: Connection, mine: Membership, caller: Caller, member_id: str) -> Any:
+    """Only a human with `members:admin` isolates, and only an agent member (§6.2)."""
+    if mine.kind == "agent":
+        raise humans_only("only a human isolates an agent")
+    mine.require("members:admin")
+    target = member_row(conn, mine.project.id, member_id)
+    if target.agent_id is None:
+        raise invalid({"member": "not_an_agent"}, "a human member cannot be isolated")
+    return target
+
+
+@router.post("/projects/{owner}/{slug}/members/{member_id}/isolate")
+def isolate_member(
+    slug: str, member_id: str, body: IsolateIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """Stop an agent at once, whoever brought it (§6.2, "Isolation")."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        target = _isolation_target(conn, mine, caller, member_id)
+        isolation.isolate(
+            conn, mine.project, target, body.reason, mine.principal_id, caller.actor(mine.id)
+        )
+        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.delete("/projects/{owner}/{slug}/members/{member_id}/isolate")
+def lift_isolation(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Give an isolated agent its access back, nothing it held (§6.2, "Isolation")."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        target = _isolation_target(conn, mine, caller, member_id)
+        isolation.lift(conn, mine.project, target, mine.principal_id, caller.actor(mine.id))
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -1,4 +1,4 @@
-// (11) Messages (#/<owner>/<slug>/messages): the project's messages the reader
+// (11) Messages (/<owner>/<slug>/messages): the project's messages the reader
 // may see (docs/api.md §8.4, every type but chat), newest first, by type:
 // who wrote to whom, about which card, the text as Markdown, the members
 // it mentions as links, and its files (§8.7). The uploader or an admin
@@ -24,7 +24,10 @@ window.Maity = window.Maity || {};
   ];
   const TYPE_WORDS = Object.fromEntries(TYPES);
   const PAGE = 200;
-  // How far back the view reads: the project's latest events, said when cut.
+  // How far back the view reads, said when cut: a window of the hub's event
+  // numbers (`seq` counts across every project, §8.3), so it holds fewer of
+  // this project's events the busier the rest of the hub is; the hub has no
+  // reading backwards by project, and no filter by kind or actor.
   const WINDOW = 5000;
   const MAX_PAGES = Math.ceil(WINDOW / PAGE) + 1;
 
@@ -37,9 +40,10 @@ window.Maity = window.Maity || {};
     return M.dom.memberRef(ctx, to);
   }
 
-  // The latest WINDOW events from the head, oldest first; stops when the
-  // view was left, and fails loud on a cursor that does not move.
-  async function scan(ctx, stillHere) {
+  // The project's events within the hub's latest WINDOW numbers, oldest
+  // first, those `keep` takes; stops when the view was left, and fails loud
+  // on a cursor that does not move. Shared with a member's Activity.
+  async function scan(ctx, stillHere, keep) {
     const head = (await M.api.get(ctx.base + "/events?after=latest&wait=0")).cursor;
     const start = Math.max(0, head - WINDOW);
     const kept = [];
@@ -47,7 +51,7 @@ window.Maity = window.Maity || {};
     for (let n = 0; n < MAX_PAGES; n++) {
       if (!stillHere()) return null;
       const page = await M.api.get(ctx.base + "/events?after=" + after + "&wait=0&limit=" + PAGE);
-      kept.push(...page.items.filter(isMessage));
+      kept.push(...page.items.filter(keep || isMessage));
       if (page.items.length < PAGE) return { kept, cut: start > 0 };
       const next = page.items[page.items.length - 1].seq;
       if (!(next > after)) throw new Error("the hub's event cursor did not move past " + after);
@@ -56,9 +60,47 @@ window.Maity = window.Maity || {};
     return { kept, cut: true };
   }
 
+  // Read by a member's Activity (js/member-page.js) with its own filter.
+  M.recentEvents = (ctx, keep, stillHere) => scan(ctx, stillHere || (() => true), keep);
+  M.recentEvents.WINDOW = WINDOW;
+
+  // A review result's facts (§8.4): the verdict, what was reviewed, the
+  // commit at its short head, and the places the reviewer read, each with
+  // its quote as written. Folded after five; all text as text.
+  const VERDICTS = { approve: "Approve", changes: "Changes requested", comment: "Comment" };
+  const CITES_SHOWN = 5;
+  // A commit's page on the project's forge, GitHub and GitLab, whose path
+  // shapes are known; anything else gets no link.
+  function commitUrl(repo, head) {
+    const base = repo && M.dom.safeUrl(repo.url) ? String(repo.url).replace(/\.git$/, "").replace(/\/+$/, "") : null;
+    if (!base || !/^[0-9a-f]{40}$/.test(head)) return null;
+    if (repo.forge === "github") return base + "/commit/" + head;
+    if (repo.forge === "gitlab") return base + "/-/commit/" + head;
+    return null;
+  }
+  function reviewBlock(ctx, r) {
+    const head = String(r.head || "");
+    const short = h("code", null, head.slice(0, 7));
+    const url = commitUrl(ctx.project && ctx.project.repository, head);
+    const cite = (c) => h("li", { class: "review-cite" },
+      h("span", { class: "review-place" }, h("code", null, c.path + (c.line ? ":" + c.line : "")), c.line ? null : h("span", { class: "muted" }, " removed")),
+      h("code", { class: "review-quote" }, c.quote));
+    const cites = r.cites || [];
+    const shown = cites.slice(0, CITES_SHOWN);
+    const rest = cites.slice(CITES_SHOWN);
+    return h("div", { class: "review" },
+      h("p", { class: "review-head" },
+        h("span", { class: "pill review-verdict verdict-" + r.verdict }, VERDICTS[r.verdict] || String(r.verdict)),
+        " " + (r.subject || "") + " at ",
+        url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank", title: head }, short) : h("span", { title: head }, short)),
+      cites.length ? h("ul", { class: "review-cites", "aria-label": "Places the reviewer read" }, shown.map(cite)) : null,
+      rest.length ? h("details", { class: "review-more" }, h("summary", null, rest.length + " more " + (rest.length === 1 ? "place" : "places")),
+        h("ul", { class: "review-cites" }, rest.map(cite))) : null);
+  }
+
   M.views.messages = async function (ctx, root) {
-    const here = window.location.hash;
-    const read = await scan(ctx, () => window.location.hash === here);
+    const here = M.route.current().path;
+    const read = await scan(ctx, () => M.route.current().path === here);
     if (!read) return;
     const all = read.kept;
     const status = M.statusLine();
@@ -102,6 +144,7 @@ window.Maity = window.Maity || {};
 
     function item(e) {
       const p = e.payload;
+      const review = p.type === "review_result" && p.review ? reviewBlock(ctx, p.review) : null;
       const from = e.actor && e.actor.member_id;
       // The file's uploader is the message's sender; an admin deletes any (§8.7).
       const canDelete = () => from === ctx.me.id || ctx.canAdmin;
@@ -111,6 +154,7 @@ window.Maity = window.Maity || {};
           h("span", null, " ", M.dom.memberRef(ctx, from, { instance: e.actor }), " to ", toWords(ctx, p.to)),
           p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
+        review,
         p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx))) : null,
         (p.mentions || []).length
           ? h("p", { class: "muted pmsg-mentions" }, "Mentions: ",
@@ -155,7 +199,7 @@ window.Maity = window.Maity || {};
     append(root,
       h("div", { class: "toolbar" }, h("h2", null, "Messages"), h("a", { class: "button small", href: ctx.link("message") }, "Message the project")),
       h("p", { class: "muted" }, "The project's messages you can read, newest first. Chats are in Chat."),
-      read.cut ? h("p", { class: "muted pmsg-cut" }, "Only the messages among the project's latest " + WINDOW + " events are shown; older ones are not read here.") : null,
+      read.cut ? h("p", { class: "muted pmsg-cut" }, "Only messages within the hub's latest " + WINDOW + " events (all projects counted) are shown; older ones are not read here.") : null,
       h("form", { class: "board-filter", role: "search", onsubmit: (ev) => ev.preventDefault() },
         h("label", { for: "messages-type" }, "Type"), pick),
       status.el, list);

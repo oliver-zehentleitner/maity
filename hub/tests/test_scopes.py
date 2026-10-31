@@ -24,6 +24,11 @@ ROLE_TABLE = {
     "ops": CODER | {"releases:write", "agents:propose", "ticker:post"},
     "writer": CODER,
     "proxy": CODER,
+    "manager": CODER | {"line:lead"},  # §2.3 "The manager"
+    # The security teams have the scopes of the role they are built on (§2.3).
+    "red-team": CODER | {"tasks:test"},
+    "blue-team": CODER,
+    "purple-team": CODER | {"tasks:review", "releases:write"},
 }
 HUMAN_ONLY = {"project:admin", "members:admin", "events:admin", "credentials:admin"}
 
@@ -69,9 +74,9 @@ def test_a_member_coder_has_the_resume_packets_four_scopes() -> None:
 
 
 def test_trust_admin_never_resolves_to_a_proxy() -> None:
-    assert tokens_of("admin", "coder") == {"role:coder", "trust:admin"}
-    assert tokens_of("admin", "proxy") == {"role:proxy"}
-    assert tokens_of("owner", "coder") == {"role:coder", "trust:owner"}
+    assert tokens_of("admin", "coder", "coder") == {"role:coder", "trust:admin"}
+    assert tokens_of("admin", "proxy", "proxy") == {"role:proxy"}
+    assert tokens_of("owner", "coder", "coder") == {"role:coder", "trust:owner"}
     assert not in_admin_team("admin", "proxy")
     assert in_admin_team("owner", "designer")
 

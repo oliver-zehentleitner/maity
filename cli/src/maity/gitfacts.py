@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from maity import proc
+from maity.redact import without_userinfo
 
 
 class FactsError(Exception):
@@ -57,12 +58,17 @@ def _git(cwd: Path, *args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _last_line(stderr: str) -> str:
+    """The last line of git's or gh's error output, without a credential: both repeat the
+    remote's URL as configured, a token in it included."""
+    return without_userinfo(stderr.strip().splitlines()[-1]) if stderr.strip() else "no output"
+
+
 def _git_required(cwd: Path, *args: str) -> str:
     """For questions that must be answered; a failure is an error, never an empty answer."""
     result = _run([*proc.GIT, *args], cwd)
     if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
-        raise FactsError(f"git {args[0]} failed: {detail}")
+        raise FactsError(f"git {args[0]} failed: {_last_line(result.stderr)}")
     return result.stdout.strip()
 
 
@@ -84,8 +90,7 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         cwd,
     )
     if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "no output"
-        raise FactsError(f"gh could not list pull requests: {detail}")
+        raise FactsError(f"gh could not list pull requests: {_last_line(result.stderr)}")
     try:
         rows = json.loads(result.stdout or "[]")
         if not rows:
@@ -115,11 +120,13 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
         return "gh is not installed"
     if remote is None:
         return None
-    url = _git(cwd, "config", "--get", f"remote.{remote}.url") or ""  # as written, before insteadOf
+    # As written, before insteadOf; a branch pushed with `-u <url>` has the URL as its remote.
+    url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
     known = {"github.com", os.environ.get("GH_HOST", "github.com")}
     if host not in known:
-        return f"the remote {remote} is not on a GitHub host gh knows ({host or 'a local path'})"
+        where = host or "a local path"
+        return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
 
 
@@ -171,7 +178,9 @@ def collect(cwd: Path) -> Facts:
     return Facts(
         head=head,
         branch=branch,
-        remote=remote,
+        # A branch pushed with `-u` to a URL has that URL as its remote, a token in it included;
+        # the facts go into messages and to the hub, so they keep it without.
+        remote=without_userinfo(remote) if remote else remote,
         remote_branch=remote_branch,
         remote_head=remote_head,
         dirty=dirty,

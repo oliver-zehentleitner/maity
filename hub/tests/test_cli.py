@@ -1,14 +1,24 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from maity_hub.cli import main
+from maity_hub.db import head_revision, make_engine
 
 PASSWORD = "s3cret-pw"
 ACCOUNT_PASSWORD = "correct-horse-battery-staple"
+
+
+def head() -> str | None:
+    """The head of the migrations the package carries: a number or a UTC time and a slug."""
+    engine = make_engine("sqlite://")
+    try:
+        return head_revision(engine)
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +31,7 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 @pytest.mark.wheel
 def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["migrate"]) == 0
-    assert re.search(r"schema empty -> \d{4}$", capsys.readouterr().out.strip())
+    assert capsys.readouterr().out.strip().endswith(f"schema empty -> {head()}")
     assert Path("maity-hub.db").is_file()
 
 
@@ -244,6 +254,33 @@ def test_serve_keeps_idle_connections_longer_than_a_proxy_does(
     assert seen == [cli.KEEP_ALIVE_SECONDS] and cli.KEEP_ALIVE_SECONDS > 90  # Traefik's pool
 
 
+def test_serve_runs_on_an_engine_built_from_the_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pool and the PostgreSQL timeouts of the environment reach the engine the served app
+    runs on: `serve` once built its own engine from the URL alone and ignored all of them."""
+    from maity_hub import cli
+    from tests.test_db_pool import captured_connect_args
+
+    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql+psycopg://u:p@localhost/h")
+    monkeypatch.setenv("MAITY_DB_POOL_SIZE", "7")
+    monkeypatch.setenv("MAITY_DB_MAX_OVERFLOW", "3")
+    monkeypatch.setenv("MAITY_DB_POOL_RECYCLE", "60")
+    monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
+    monkeypatch.setenv("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "22")
+    monkeypatch.setattr(cli, "require_current_schema", lambda engine: None)
+    served: list[Any] = []
+    monkeypatch.setattr(
+        cli._Server, "run", lambda self, sockets=None: served.append(self.config.app.state.engine)
+    )
+    assert main(["serve"]) == 0
+    pool: Any = served[0].pool
+    assert (pool.size(), pool._max_overflow, pool._recycle) == (7, 3, 60)
+    assert captured_connect_args(served[0])["options"] == (
+        "-c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
+    )
+
+
 def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     import io
 
@@ -258,7 +295,7 @@ def test_quickstart_sets_up_a_new_hub_and_ends_on_the_dashboard(
     assert main(["quickstart", "--handle", "me"]) == 0
     captured = capsys.readouterr()
     out = captured.out.strip().splitlines()
-    assert re.fullmatch(r"maity-hub: schema empty -> \d{4}", out[0])
+    assert out[0] == f"maity-hub: schema empty -> {head()}"
     assert out[1].startswith("maity-hub: created me (hum-")
     assert out[-2:] == ["maity-hub: sign in as me", out[-1]]
     assert out[-1].startswith("maity-hub: dashboard at http://127.0.0.1:8080/") or (
@@ -297,7 +334,9 @@ def test_quickstart_is_for_sqlite_only(
     assert "migrate, owner create and serve" in err and PASSWORD not in err
 
 
-@pytest.mark.parametrize(("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner")])
+@pytest.mark.parametrize(
+    ("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner"), ("admin", "owner")]
+)
 def test_quickstart_names_the_account_after_the_login(
     login: str,
     handle: str,
@@ -355,3 +394,41 @@ def test_quickstart_never_adds_a_second_first_account(
 
         assert [r.handle for r in conn.execute(select(t.human.c.handle))] == ["other"]
     engine.dispose()
+
+
+def test_owner_create_refuses_a_handle_another_human_kept_as_an_alias(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    from sqlalchemy import create_engine, insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("a long password\n"))
+    assert main(["owner", "create", "--handle", "maintainer", "--display-name", "Maint"]) == 0
+    engine = create_engine("sqlite:///maity-hub.db")
+    with engine.begin() as conn:
+        human_id = conn.execute(select(t.human.c.id)).scalar_one()
+        conn.execute(
+            insert(t.handle_alias).values(
+                human_id=human_id, scope="human", handle="old-maint", created_at=clock.now()
+            )
+        )
+    engine.dispose()
+    monkeypatch.setattr("sys.stdin", io.StringIO("another long password\n"))
+    assert main(["owner", "create", "--handle", "old-maint", "--display-name", "X"]) == 1
+    assert "alias" in capsys.readouterr().err
+
+
+def test_quickstart_refuses_a_reserved_handle_for_the_first_account(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first account has no way to be renamed, and `maity-hub migrate` stops on a
+    handle that is a first segment of the hub (§16.11): so it is refused up front."""
+    _banner_only(monkeypatch)
+    _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
+    assert main(["quickstart", "--handle", "admin"]) == 2
+    assert "reserved first segment" in capsys.readouterr().err

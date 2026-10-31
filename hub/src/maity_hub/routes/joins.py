@@ -25,11 +25,27 @@ from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import briefings, clock, events, idempotency, instances, namespace, takeovers
+from maity_hub import (
+    briefings,
+    clock,
+    cross_owner,
+    events,
+    handles,
+    handover,
+    idempotency,
+    instances,
+    limits,
+    line,
+    moderation,
+    namespace,
+    project_roles,
+    takeovers,
+    write_guard,
+)
 from maity_hub import tables as t
-from maity_hub.access import membership
+from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials, second_factor
-from maity_hub.auth.caller import require_secure_transport
+from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
@@ -43,21 +59,16 @@ from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
-from maity_hub.scopes import ROLES, has_scope
+from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
 from maity_hub.views import join_view, member_view, principal_id
 
 router = APIRouter(route_class=ProjectRoute)
-page_router = APIRouter(
-    route_class=ProjectRoute
-)  # /join/{token} and /j/{token}, outside the API prefix
+page_router = APIRouter(route_class=ProjectRoute)  # /join/{token}, outside the API prefix
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
 # What a member's own agent may hold (§3.1 "Bringing your own agent"): below governance.
 MEMBER_RULE_TRUSTS = ("member", "guest")
-# `manager` (§2.3, #541) joins this list once the hub knows the role; until then it is
-# `unknown` like any role the hub does not have.
-MEMBER_RULE_ROLES = ("coder", "reviewer", "tester", "designer", "writer")
 EXCHANGE_BY_ADDRESS = Limiter(10, 60)
 _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
@@ -117,7 +128,13 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         if member_rule:
             _require_member_rule(mine)
         second_factor.require_step_up(conn, settings, caller)  # mints a credential (§2.8.4)
-        agent_id = _agent_for_join(conn, body.agent, caller.principal_id, member_rule)
+        agent_id = _agent_for_join(
+            conn,
+            body.agent,
+            caller.principal_id,
+            member_rule,
+            limits.of(conn, settings, "max_agents_per_human"),
+        )
         existing = conn.execute(
             select(t.membership).where(
                 t.membership.c.project_id == mine.project.id,
@@ -127,7 +144,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         ).first()
         reports_to = body.reports_to
         if member_rule:
-            _check_member_limits(body, mine, existing)
+            _check_member_limits(conn, body, mine, existing)
             if existing is None and reports_to is None:
                 reports_to = mine.principal_id  # the agent reports to whoever brings it
         values = validate_assignment(
@@ -140,6 +157,8 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             capabilities=body.capabilities,
             trust=body.trust,
             current=(existing.trust, existing.role) if existing else ("member", "coder"),
+            # A member's own boss again is no move: no depth check for it (§2.3).
+            keeps_boss=existing.reports_to if existing else None,
         )
         if existing is not None:
             # A second clone of a member: a new instance, the membership as it is.
@@ -282,17 +301,39 @@ def _require_member_rule(mine: Any) -> None:
 def _within_limits(membership_row: Any) -> bool:
     """A membership a member's join may add an instance to: trust and role within §3.1."""
     return bool(
-        membership_row.trust in MEMBER_RULE_TRUSTS and membership_row.role in MEMBER_RULE_ROLES
+        membership_row.trust in MEMBER_RULE_TRUSTS and membership_row.role_base in MEMBER_RULE_ROLES
     )
 
 
-def _check_member_limits(body: JoinCreate, mine: Any, existing: Any) -> None:
+def _own_manager(conn: Connection, mine: Any, member_id: str) -> bool:
+    """`member_id` is an agent of the caller with the role `manager` in this project,
+    so a member brings a manager and the team below it (§3.1)."""
+    found = conn.execute(
+        select(t.membership.c.id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(
+            t.membership.c.project_id == mine.project.id,
+            t.membership.c.agent_id == member_id,
+            t.membership.c.active.is_(True),
+            t.membership.c.role == "manager",
+            t.agent_profile.c.owner_id == mine.principal_id,
+        )
+    ).first()
+    return found is not None
+
+
+def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing: Any) -> None:
     """The limits of §3.1 a member's join stays within, the first broken one named."""
     if body.trust is not None and body.trust not in MEMBER_RULE_TRUSTS:
         raise _limit("trust")
-    if body.role is not None and body.role in ROLES and body.role not in MEMBER_RULE_ROLES:
-        raise _limit("role")  # a role the hub does not know is `invalid` below
-    if body.reports_to is not None and body.reports_to != mine.principal_id:
+    base = project_roles.base_of(mine.project, body.role) if body.role is not None else None
+    if base is not None and base not in MEMBER_RULE_ROLES:
+        raise _limit("role")  # a role the project does not have is `invalid` below
+    if (
+        body.reports_to is not None
+        and body.reports_to != mine.principal_id
+        and not _own_manager(conn, mine, body.reports_to)
+    ):
         raise _limit("reports_to")
     if body.areas:
         raise _limit("areas")
@@ -351,7 +392,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     creator raised to `members:admin` meanwhile keeps it, and `member_agents` turned
     `off` does not void it."""
     creator = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role).where(
+        select(t.membership.c.trust, t.membership.c.role_base).where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
@@ -359,7 +400,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     ).first()
     if creator is None:
         raise not_found()
-    if has_scope(creator.trust, creator.role, "human", "members:admin"):
+    if has_scope(creator.trust, creator.role_base, "human", "members:admin"):
         return
     if creator.trust != "member":  # a guest now, or anything else below: void
         raise not_found()
@@ -391,7 +432,11 @@ def live_profile(conn: Connection, agent_id: str) -> None:
 
 
 def _agent_for_join(
-    conn: Connection, agent: JoinAgent, owner_id: str, member_rule: bool = False
+    conn: Connection,
+    agent: JoinAgent,
+    owner_id: str,
+    member_rule: bool = False,
+    limit: int | None = None,
 ) -> str:
     if agent.id is not None:
         if agent.handle is not None or agent.display_name is not None:
@@ -411,7 +456,9 @@ def _agent_for_join(
         raise invalid(
             {"agent": "id_or_handle"}, "name an agent by id, or give handle and display_name"
         )
-    return create_profile(conn, owner_id, agent.handle, agent.display_name, agent.git_identity)
+    return create_profile(
+        conn, owner_id, agent.handle, agent.display_name, agent.git_identity, limit
+    )
 
 
 @router.get("/projects/{owner}/{slug}/joins")
@@ -554,6 +601,8 @@ def render_page(
             or conn.execute(select(t.human.c.handle).where(t.human.c.id == reports_to)).scalar()
         )
         reports_to_text = f"`{boss}`"
+        if cross_owner.join_waits(conn, row):  # §3.1: the edge is set at a human's go
+            reports_to_text += " (waiting for a human's consent)"
     else:
         reports_to_text = "nobody"
     values = {
@@ -657,12 +706,6 @@ async def public_join_page(token: str, request: Request) -> Response:
     return await _page(token, request)
 
 
-@page_router.get("/j/{token}")
-async def short_join_page(token: str, request: Request) -> Response:
-    """The links handed out before `/join/` (§3.2): an alias, not a redirect."""
-    return await _page(token, request)
-
-
 # --- the exchange -------------------------------------------------------------------------
 
 
@@ -683,6 +726,11 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
+            # The owner's account lock before any other (§2.9): a suspension or a
+            # deletion takes it first; `_consume` refuses a suspended account under it.
+            owner = _owner(conn, row)
+            if owner is not None:
+                write_guard.share(conn, owner)
             if row.agent_id is not None:  # a pickup's new profile does not exist yet (§15.9)
                 live_profile(conn, row.agent_id)  # first, as the deletion takes it (§6.3)
             # Take an attempt slot before comparing: one conditional UPDATE, so
@@ -738,20 +786,63 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
 
 
 def _boss_still_here(conn: Connection, reports_to: int | None) -> int | None:
-    """The link's `reports_to` while it names an active member, else null (§6.2). Read
-    under the project lock: `row` was read before it, and a removal may have committed
-    in between, so the link's own column cannot be trusted here."""
+    """The link's `reports_to` while it names an active member and the chain still has
+    room for the new member, else null (§6.2, §2.3 "Depth"). Read under the project
+    lock: `row` was read before it, and a removal may have committed in between, so the
+    link's own column cannot be trusted here."""
     if reports_to is None:
         return None
     active = conn.execute(
-        select(t.membership.c.id).where(
+        select(t.membership.c.id, t.membership.c.project_id).where(
             t.membership.c.id == reports_to, t.membership.c.active.is_(True)
         )
     ).first()
-    return reports_to if active is not None else None
+    if active is None or not line.fits(conn, active.project_id, reports_to):
+        return None
+    return reports_to
+
+
+def _ask_boss_side(
+    conn: Connection, row: Any, project: Any, membership_id: int, boss_id: int
+) -> None:
+    """The consent request to the boss's side, `asked_by` the join's creator (§3.1): their
+    creating the profile is the subordinate's owner's consent. A creator who has left the
+    project asks nobody: the member starts without a boss."""
+    creator = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == row.project_id,
+            (t.membership.c.agent_id == row.created_by)
+            | (t.membership.c.human_id == row.created_by),
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if creator is None:
+        return
+    target = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    boss = conn.execute(select(t.membership).where(t.membership.c.id == boss_id)).one()
+    human = creator.agent_id is None
+    caller = Caller(
+        kind="human" if human else "agent",
+        via="join",
+        human_id=creator.human_id,
+        agent_id=creator.agent_id,
+        membership_id=creator.id,
+        project_id=row.project_id,
+    )
+    mine = Membership(project, creator, "human" if human else "agent")
+    cross_owner.file(conn, project, mine, caller, target, boss)
+
+
+def _owner(conn: Connection, row: Any) -> str | None:
+    """The account a join issues for: the profile's owner (None once the profile is
+    gone), or the creator for a profile the exchange creates."""
+    if row.agent_id:
+        return moderation.owner_account(conn, row.agent_id)
+    return str(row.created_by)
 
 
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, str, str, str]:
+    moderation.refuse_suspended(conn, _owner(conn, row))  # no credential for it (§16.8)
     # Serialise with every other write to the project: two first exchanges for
     # one new agent must not both insert its membership.
     lock_project(conn, row.project_id)
@@ -785,14 +876,20 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         # A pickup for a member, or a rejoin, never brings back a member a human removed
         # (§15.9): it answers as every join that no longer works (§1.1).
         raise not_found()
+    waiting_for: int | None = None  # a cross-owner boss: the edge waits for a human (§3.1)
     if member is None:
+        boss = _boss_still_here(conn, row.reports_to)
+        if boss is not None and cross_owner.join_waits(conn, row):
+            waiting_for, boss = boss, None
         result = conn.execute(
             insert(t.membership).values(
                 project_id=row.project_id,
                 agent_id=agent_id,
                 trust=row.trust,
                 role=row.role,
-                reports_to=_boss_still_here(conn, row.reports_to),
+                # A role still named by an open join cannot be removed (§2.3).
+                role_base=project_roles.base_of(project, row.role),
+                reports_to=boss,
                 areas=row.areas,
                 capabilities=row.capabilities,
                 briefing=row.briefing,
@@ -804,6 +901,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         membership_id = int(key[0])
         # Version 1, by whoever made the join (§6.2), even when it carries no text.
         briefings.record(conn, membership_id, row.briefing, row.created_by, now)
+        if waiting_for is not None:
+            _ask_boss_side(conn, row, project, membership_id, waiting_for)
     else:
         membership_id = member.id
         _recheck_instance(conn, row, member)
@@ -817,6 +916,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             membership_id=membership_id,
             instance=instance,
             replaces=row.replaces,
+            exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
             verifier=verifier,
             join_id=row.id,
             client=client,
@@ -991,15 +1091,19 @@ def _create_for_join(conn: Connection, row: Any) -> str:
             t.agent_profile.c.handle == row.new_agent_handle,
         )
     ).first()
-    if taken is not None:
+    if taken is not None or handles.holder(conn, row.created_by, row.new_agent_handle) not in (
+        None,
+        "placement",
+    ):
         raise not_found()
     # `POST /agents` does not take the project lock: a profile of that handle may land
     # after the check above. Its `invalid`, or the unique constraint, is still a join
     # that no longer works, never a 400 or a 500 that tells the holder of the link more.
     try:
         return create_profile(
-            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None
-        )
+            conn, row.created_by, row.new_agent_handle, row.new_agent_display_name, None,
+            placement=True,
+        )  # fmt: skip
     except IntegrityError:
         raise not_found() from None
     except ApiError as error:

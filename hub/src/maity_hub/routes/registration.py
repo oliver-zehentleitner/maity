@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import (
     clock,
     paging,
+    paths,
     registration,
     registration_accounts,
     registration_mail,
@@ -64,7 +65,7 @@ def _environment(request: Request) -> registration.RegistrationEnvironment:
 def _resolved(conn: Connection, hub: Any) -> registration.Resolved:
     found = hub.registration if hub.registration is not None else None
     env = found or registration.RegistrationEnvironment()
-    return registration.resolve(conn, env, registration.mail_ready(conn, hub))
+    return registration.resolve(conn, env, registration.mail_ready(conn, hub), hub.public_url)
 
 
 def _closed() -> ApiError:
@@ -133,7 +134,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         origin.address,
         request.headers.get("user-agent"),
         request.headers.get("accept-language"),
-        registration.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
+        paths.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 
@@ -303,7 +304,7 @@ def list_registrations(
     """The accounts that wait for approval, oldest first (§16.4)."""
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        registration_accounts.expire(conn)
+        registration_accounts.expire(conn, settings_of(request))
         c = t.account_registration.c
         query = select(t.account_registration).where(c.status == "pending")
         if cursor is not None:
@@ -322,10 +323,10 @@ def list_registrations(
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 
-def _decidable(conn: Connection, human_id: str) -> Any:
+def _decidable(conn: Connection, human_id: str, hub: Any) -> Any:
     """The pending account, locked; `not_found` for none, `invalid_transition` for one
     another instance admin decided meanwhile (§16.4)."""
-    registration_accounts.expire(conn)
+    registration_accounts.expire(conn, hub)
     row = registration_accounts.locked(conn, human_id)
     if row is None:
         raise not_found()
@@ -343,8 +344,8 @@ def _decidable(conn: Connection, human_id: str) -> Any:
 def approve_registration(human_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        row = _decidable(conn, human_id)
-        registration_accounts.approve(conn, row, caller.principal_id)
+        row = _decidable(conn, human_id, settings_of(request))
+        registration_accounts.approve(conn, row, caller.principal_id, settings_of(request))
         return JSONResponse({**registration_accounts.item(conn, row), "account_status": "active"})
 
 
@@ -356,6 +357,8 @@ def reject_registration(
         raise invalid({"reason": "invalid"})
     with engine_of(request).begin() as conn:
         _require_admin(conn, caller)
-        row = _decidable(conn, human_id)
-        registration_accounts.remove(conn, row, "rejected", caller.principal_id, body.reason)
+        row = _decidable(conn, human_id, settings_of(request))
+        registration_accounts.remove(
+            conn, row, "rejected", caller.principal_id, body.reason, settings_of(request)
+        )
         return JSONResponse({"id": human_id, "status": "rejected"})

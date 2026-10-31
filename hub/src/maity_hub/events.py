@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
 from maity_hub import tables as t
-from maity_hub.scopes import in_admin_team, tokens_of
+from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
 _UNDO = "maity_undo_on_rollback"
@@ -39,6 +39,7 @@ class Actor:
     model: str | None = None
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
+    report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
 
 
 class Notifier:
@@ -177,6 +178,7 @@ def emit(
             actor_model=actor.model if actor else None,
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
+            actor_report_id=actor.report_id if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
             audience=audience,
@@ -205,8 +207,17 @@ def emit(
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
     pending.append((project_id, seq))
+    if kind in MEMBER_KINDS and project.public_page == "on":
+        # Who a public page shows follows who is a member (§16.9): a join adds, any other
+        # change may take someone off.
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
     return seq
 
+
+# The events of a membership: what a public page shows of the team follows them (§16.9).
+MEMBER_KINDS = frozenset({"member_joined", "member_updated"})
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")
@@ -280,11 +291,22 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+def _isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
+    outside the project, is none."""
+    return (
+        getattr(membership, "agent_id", None) is not None
+        and getattr(membership, "isolated_since", None) is not None
+    )
+
+
 def readable_by(
     row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project."""
+    if _isolated(membership):
+        return False  # an isolated agent is left out of every audience (§6.2)
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden
@@ -321,7 +343,7 @@ def readable_by(
     return (
         "all" in audience
         or _names_team(audience, principal)
-        or bool(tokens_of(membership.trust, membership.role) & set(audience))
+        or bool(tokens_of(membership.trust, membership.role, membership.role_base) & set(audience))
     )
 
 
@@ -334,8 +356,10 @@ def read(
     limit: int,
     *,
     chat_windows: dict[str, int] | None = None,
+    until: int | None = None,
 ) -> tuple[list[Any], int, bool]:
-    """Readable events after `after`, oldest first: (rows, highest seq examined, truncated).
+    """Readable events after `after` (and up to `until`, when given), oldest first: (rows,
+    highest seq examined, truncated).
     With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
     and the seq its current stay's window starts after), a group chat's message is kept
     only when it mentions `principal` and lies in that window; any other is passed over
@@ -351,7 +375,10 @@ def read(
                 return False
         return readable_by(row, membership, principal, hidden)
 
-    return _scan(conn, t.event.c.project_id == project_id, wanted, after, limit, membership)
+    scope = t.event.c.project_id == project_id
+    if until is not None:
+        scope = scope & (t.event.c.seq <= until)
+    return _scan(conn, scope, wanted, after, limit, membership)
 
 
 def _scan(
@@ -447,7 +474,7 @@ def wakes(
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
     sender's own) is still `all`."""
-    if row.kind in NON_WAKING:
+    if row.kind in NON_WAKING or _isolated(membership):
         return False
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
@@ -481,23 +508,36 @@ def wakes(
         # An agent in a group chat is woken by a message that mentions it, by nothing
         # else there: being added is not work, and every message waking every agent
         # would loop two agents answering each other (§9.2).
-        # An instance mention wakes that instance only (§8.6).
+        # An instance mention wakes that instance only (§8.6): the one named, or the one that
+        # replaced it, whose token the write put in the audience (§8.2).
         mentioned = (row.payload or {}).get("mentions") or []
+        resolved = instance is not None and f"instance:{principal}#{instance}" in (
+            row.audience or []
+        )
         return row.kind == "message" and any(
             m.get("member_id") == principal
-            and (m.get("instance") is None or instance is None or m["instance"] == instance)
+            and (
+                m.get("instance") is None
+                or instance is None
+                or m["instance"] == instance
+                or resolved
+            )
             for m in mentioned
         )
     audience = row.audience or []
     own = instance is not None and f"instance:{principal}#{instance}" in audience
     if row.actor_membership == membership.id:
         return own and row.actor_credential_id != credential_id
-    if own or row.conversation_id == principal:
+    if own:
         return True
+    if row.conversation_id == principal and (row.payload or {}).get("to_instance") is not None:
+        # A direct chat message that names an instance wakes that one only (§9.1); without one
+        # it goes on to the team's wake rule below (§6.18).
+        return instance is None
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (
-        tokens_of(membership.trust, membership.role) & set(audience)
+        tokens_of(membership.trust, membership.role, membership.role_base) & set(audience)
     ):
         return False
     chosen = (row.wakes or {}).get(principal)
@@ -527,10 +567,10 @@ def _merge_wakes(row: Any, membership: Any, principal: str, instance: str | None
         allowed = f"member:{principal}" in audience
     elif authority == "admin":
         allowed = in_admin_team(membership.trust, membership.role)
-    else:  # a guest holds none of its role's scopes (§2.3)
-        allowed = membership.trust != "guest" and membership.role in _DONE_ROLES.get(
-            str(authority), ()
-        )
+    else:  # a guest holds none of its role's scopes (§2.3); a security team counts as its base
+        allowed = membership.trust != "guest" and counts_as(
+            membership.role_base
+        ) in _DONE_ROLES.get(str(authority), ())
     if not allowed:
         return False
     chosen = (row.wakes or {}).get(principal)

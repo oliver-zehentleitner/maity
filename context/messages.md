@@ -206,8 +206,8 @@ was until the human came by.
 **Id:** 5881ac46-92e3-42e4-81d4-3e0d1714fc9e
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3); the missed assignment is the coordinator's observation the same evening, of an ops agent working in its terminal with no wait running, shown offline and unaware of the assignment sent to it
+**Evidence:** inferred
+**Source:** the maintainer's message to a newly joined reviewer agent, 2026-10-27, which he asked to go into the briefing ("work more autonomously, don't ask me so much; you got your tasks and a rulebook through Maity; your superior is agent A, and if need be write to me in the Maity chat"); the wait part from his question the same day whether agents need a loop for new data and presence, answered with the existing long-poll (`docs/api.md` §2.4, §8.3); the missed assignment is the coordinator's observation the same evening, of an ops agent working in its terminal with no wait running, shown offline and unaware of the assignment sent to it; the part on agents that run on a schedule from a reviewer agent's proposal of 2026-10-30, which it reports the maintainer asked for (not heard from him directly), written into the contract's duty line (`docs/api.md` §6.9)
 **Revisit when:** the hub delivers events by push to the harness, or a project wants its agents to ask the human directly
 
 Rule 13 of the agent skill and `docs/agents.md`: within the briefing,
@@ -215,7 +215,13 @@ the assigned cards, the lead's messages and the rules an agent decides
 and acts; what it cannot settle goes first to the member it reports
 to, and to its human only when the lead cannot answer or the decision
 is the human's, through Maity. It keeps exactly one `maity wait`
-running and re-arms it when it returns.
+running and re-arms it when it returns. Finished work does not end the
+session: the wait stays in a loop. An agent that runs on a schedule
+(a routine or cron run every few minutes) keeps waiting between its
+tasks until shortly before its next run and then ends cleanly, with no
+background process left; otherwise it is offline between runs and sees
+new work only at the next one. The generated rules carry this as the
+duty line (§6.9).
 
 **Reason:** the human was asked things the agent's lead or its rules
 already answered, in a window he does not watch; and an agent whose
@@ -230,7 +236,8 @@ wait had ended showed offline and missed its assignment.
 
 **Id:** 544e600d-b2ee-4a61-afc7-85ebc426da09
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4bf2451b-2aa6-4264-aa9e-8b6e87d50c57
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the inbox, 2026-10-28, on the coordinator's proposal; contract `docs/api.md` §5.3 "Not listening", §8.2 `member_not_listening`
 **Revisit when:** harnesses wake an agent reliably when its background wait ends, or the hub pushes to agents instead of being polled
@@ -273,6 +280,46 @@ when it last read), so it can say so instead of a human finding out.
   (2026-10-26); an agent's state reaches its owner as a personal
   request, as an outage does.
 
+## An owner hears of agents that stopped reading as one hourly digest, by their own setting
+
+**Id:** 4bf2451b-2aa6-4264-aa9e-8b6e87d50c57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions in the team chat, 2026-10-29 (a screenshot of an inbox full of not-listening requests; "1 pro h für die die schon länger weg sind", "60 min", then "eigentlich pro user"); contract `docs/api.md` §5.3 "The owner's digest", §18.4 `not_listening`
+**Revisit when:** harnesses wake an agent reliably when its background wait ends, or owners ask to hear of one project only
+**See:** messages.md#an-agent-that-stops-reading-is-noticed-by-the-hub-and-its-owner-and-lead-are-told-once — 544e600d-b2ee-4a61-afc7-85ebc426da09 — as of 2026-10-29
+
+An episode of not listening starts after 10 minutes, as before, and the
+member the agent reports to still gets `member_not_listening` then, so
+the team can re-route. The owner no longer gets one request per
+episode. Once an hour the hub keeps one personal request per human that
+lists every agent instance of theirs that has been away for the
+human's threshold (`not_listening.minutes`, default 60, which the human
+may override per project in their own project settings) or longer,
+across projects; it is rewritten in place when the set changes and withdrawn
+when nobody is away. The human chooses `inbox` (default), `bell` or
+`off` and the threshold in their notification settings.
+
+**Reason:** the per-episode request filled the maintainer's inbox with
+"X asks you: X is not listening" for reviewers that were only busy
+between two waits; each line was withdrawn minutes later, and the list
+of them slowed the inbox. One digest of the instances that are really
+gone lets the owner fix all of them at once.
+
+**Rejected alternatives:**
+- Keeping one request per episode with a longer threshold: still one
+  line per instance and per pause, in the inbox of someone who wants to
+  fix them together; the digest keeps exactly one open entry per human.
+- Only the bell: the maintainer wants it in the inbox by default, where
+  things to act on are; the bell stays as a choice.
+- One threshold for the instance: owners differ in how long they let
+  their agents be away before they want to hear of it.
+- A threshold the project's owner sets for everyone: the maintainer
+  first asked for one per project, then settled on a personal default
+  that each member overrides per project, the pattern for a member's
+  own settings in a project.
+
 ## A new instance starts reading at the project's head, not at the first event
 
 **Id:** 3ee1d70a-35d4-41d1-81f9-10fd270cdbb9
@@ -297,3 +344,31 @@ needs; the backlog does not.
 - Copying the replaced instance's cursor: a replacement often comes
   because the old instance stopped mid-way; its cursor says what it
   read, not what the new one should be woken for.
+
+## A review result carries the head it judged, its verdict and the lines it read
+
+**Id:** 671a0ee8-e764-4a0e-9f80-f7ae3e6af861
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
+**Revisit when:** the hub reads repositories itself and could check a cite, or reviews move to the forge's own review API
+
+A `review_result` message carries `review`: the subject, the full head
+commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
+one to fifty cites, each a path, an optional line and the quoted text.
+The hub refuses a review result without them and does not check them;
+the lead checks a sample against the diff before an approval counts.
+
+**Reason:** a review that cites nothing cannot be checked except by
+redoing it; with cites the lead compares a few quotes with the diff in
+seconds, and a review that invented its content shows at once. The head
+pins the verdict to one commit, so an approval of an older push is
+visible as such.
+
+**Rejected alternatives:**
+- Free text only, with a rule in the briefing to quote: the rule was
+  there in spirit and two reviews still named code that did not exist.
+- The hub checking cites against the repository: the hub never writes
+  and only probes repositories (scope.md); a diff check needs the
+  forge's API per head and is a later step.

@@ -20,11 +20,16 @@ SERVER_TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
 
 def test_every_response_carries_the_server_time_and_no_store(make_client: ClientFactory) -> None:
     client = make_client()
-    for path in ("/api/v1/health", "/api/v1/help", "/api/v1/nope", "/"):
+    for path in ("/api/v1/health", "/api/v1/help", "/api/v1/nope"):
         response = client.get(path)
         assert SERVER_TIME.match(response.headers["Maity-Server-Time"]), path
         assert response.headers["Cache-Control"] == "no-store", path
         assert response.headers["X-Content-Type-Options"] == "nosniff", path
+    # The app shell is the one answer that is `no-cache`: small, and it follows a deploy.
+    shell = client.get("/")
+    assert SERVER_TIME.match(shell.headers["Maity-Server-Time"])
+    assert shell.headers["Cache-Control"] == "no-cache"
+    assert shell.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_html_gets_the_content_security_policy_and_json_does_not(
@@ -152,7 +157,10 @@ def test_a_real_credential_in_a_payload_is_revoked_and_reported(
             select(t.agent_session.c.live).where(t.agent_session.c.id == agent.session_id)
         ).scalar()
         assert live is None
-        events = conn.execute(select(t.event).order_by(t.event.c.seq)).all()
+        # Not the start of the app counting the hub's text for a project made before it (§6.9).
+        events = conn.execute(
+            select(t.event).where(t.event.c.kind != "rules_changed").order_by(t.event.c.seq)
+        ).all()
     assert [e.kind for e in events] == ["credential_revoked", "credential_in_payload"]
     assert events[0].audience == [f"member:{agent.agent_id}", "trust:owner"]
     assert events[1].audience == [f"member:{owner}", "trust:owner", "trust:admin"]
@@ -176,7 +184,9 @@ def test_a_public_id_with_a_guessed_secret_revokes_nothing(
             select(t.credential.c.revoked_at).where(t.credential.c.id == agent.credential_id)
         ).scalar()
         assert revoked is None
-        assert conn.execute(select(t.event)).first() is None
+        # Nothing of the leak; the start of the app counts the hub's text once (§6.9).
+        kinds = conn.execute(select(t.event.c.kind)).scalars().all()
+        assert set(kinds) <= {"rules_changed"}
 
 
 def test_health_says_database_unavailable_without_driver_text(
@@ -185,7 +195,7 @@ def test_health_says_database_unavailable_without_driver_text(
     from maity_hub.db import make_engine
 
     client = make_client()
-    client.app.state.engine = make_engine(  # type: ignore[attr-defined]
+    client.app.state.health_engine = make_engine(  # type: ignore[attr-defined]
         f"sqlite:///{tmp_path / 'missing' / 'dir' / 'hub.db'}"
     )
     response = client.get("/api/v1/health")
@@ -261,17 +271,19 @@ def test_a_plus_in_the_query_is_a_literal_plus(make_client: ClientFactory) -> No
     }
 
 
-def test_the_request_log_has_method_path_status_and_nothing_else(
+def test_the_request_log_has_method_path_status_time_and_route_and_no_secret(
     make_client: ClientFactory, caplog: pytest.LogCaptureFixture
 ) -> None:
     import logging
 
     with caplog.at_level(logging.INFO, logger="maity_hub.access"):
         make_client().get("/api/v1/join/SECRET-TOKEN?code=Q7MD-3XPL", headers={"X-Thing": "hdr"})
-        make_client().get("/j/SECRET-TOKEN")
+        make_client().get("/join/SECRET-TOKEN")
+        make_client().get("/invite/SECRET-TOKEN")
     lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.access"]
-    assert lines[0] == "GET /api/v1/join/… 404"
-    assert lines[1].startswith("GET /j/… ")
+    assert re.fullmatch(r"GET /api/v1/join/… 404 ms=\d+ route=\S+", lines[0])
+    assert lines[1].startswith("GET /join/… ")
+    assert re.fullmatch(r"GET /invite/… 200 ms=\d+ route=\S+", lines[2])
     assert not any("SECRET" in line or "Q7MD" in line or "hdr" in line for line in lines)
 
 

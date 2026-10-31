@@ -220,6 +220,33 @@ not stated in the contract itself (inferred). The `account_registration`
 row of a deleted account keeps the decision and a rejection's reason,
 not the address or the source.
 
+## The login page is offered registration only where someone could finish it
+
+**Id:** 01d0f6ab-e4f6-48c8-9a28-4e89f0b43c35
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on an empty allowlist, 2026-10-29 (follow-up to #652, card tsk-46vft0764kve); docs/api.md §2.7 "What the login page learns", §16.4; the review of #657
+**See:** https://github.com/oliver-zehentleitner/maity — 48c34360-b586-4e82-b21a-737b922f1734 — as of 2026-10-29
+**Revisit when:** registration gains a way in that needs no list entry (an invitation is already one, §3.4), or `missing` gains a reason that also makes registration impossible
+
+`GET /auth/methods` answers `registration: true` only when
+`effective_mode` is `allowlist` or `open` and `missing` does not name
+`allowlist`. So an allowlist with both lists empty answers `false`;
+the instance admin sees the gap in `GET /admin/settings/registration`
+as `missing: ["allowlist"]`. `POST /auth/register` is unchanged: it
+answers `202` and drops the request, as for any address not on the list.
+
+**Reason:** under an empty allowlist every visitor would get the form
+and then the silence of a dropped request, a dead end for everyone.
+Telling an anonymous visitor that the allowlist is empty reveals no
+entry and no account.
+
+**Rejected alternative:** `registration: true` under an empty
+allowlist, as the contract first said (the dead end above). Refusing a
+`PATCH` that leaves the allowlist empty: §16.4 calls it valid, and an
+admin may set the mode before the entries.
+
 ## Two-factor sign-in: whether a session must enrol is worked out per call, and the second step re-keys the session in place
 
 **Id:** ff8b8099-8384-4d68-906a-1b4d7b17bc47
@@ -330,6 +357,8 @@ effect and the operator's command share one function so that the record, the ses
 **Evidence:** inferred
 **Source:** docs/api.md §6.5; tsk-dfatkddmt565; `hub/tests/test_human_lease.py` and the cost found while measuring `GET /me/conversations` (tsk-45vs1hdzswjs)
 **Revisit when:** a human's lease is to be renewed for something other than a claimed card, or a hold (`availability.hold_cap`) is to cover a membership with no claim
+**See:** availability.md#a-limit-only-ever-lengthens-a-lease — 98ea3f6d-dbc2-4163-92e2-e2717c794b9b — as of 2026-10-29
+**See:** auth.md#a-calls-side-effects-commit-before-the-endpoint-runs-in-their-own-transaction — d9800cc1-6d12-481a-a039-f389d758b11b — as of 2026-10-29
 
 `auth.caller._cookie` renewed, on every request of a human with a session, the leases of all the
 human's active memberships: per membership three reads in `availability.hold_cap` (the
@@ -339,6 +368,9 @@ Measured with 1 and with 7 projects and no claim: 11 and 35 statements for the s
 now 11 and 11. The membership query got an `EXISTS` on open cards whose `claim_holder` is the
 membership, and the loop runs over those memberships only, with the same `renewed_lease`, hold
 and 24-hour cap as before, so a claim that exists is renewed exactly as it was.
+The `EXISTS` and the `UPDATE` must keep the same predicate (the holder and an open status): if
+one gains a condition, such as an instance, the other needs it too, or a claim is skipped or a
+membership is read for nothing.
 
 **Reason:** the cost was linear in the human's projects on every dashboard poll and bought
 nothing, because a renewal with no card to update changes no row. Narrowing the set where it is

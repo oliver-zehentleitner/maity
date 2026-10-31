@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine, Insert
 
-from maity_hub.db import create_revision, current_revision, downgrade, head_revision, migrate
+from maity_hub.db import (
+    create_revision,
+    current_revision,
+    downgrade,
+    head_revision,
+    migrate,
+    revision_id,
+)
 
 
 @pytest.mark.wheel
@@ -58,19 +65,24 @@ def test_sqlite_keeps_the_event_seq_autoincrement_through_every_migration(engine
     assert "AUTOINCREMENT" in ddl()
 
 
-def test_create_revision_numbers_the_next_migration(engine: Engine, tmp_path: Path) -> None:
+def test_create_revision_names_the_migration_by_time_and_slug(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A new revision's id cannot collide with a parallel branch's: the UTC second and the
+    slug, cut to the 32 characters of `alembic_version`; `tools/rechain.py` chains it."""
+    from datetime import UTC, datetime
+
     migrations = tmp_path / "migrations"
     shutil.copytree(Path(str(files("maity_hub") / "migrations")), migrations)
     head = head_revision(engine)
     assert head is not None
-    # The highest number plus one, not the head's: numbers are reserved ahead, so a
-    # revision chained later may carry a lower number than one merged before it.
-    numbers = [int(p.name[:4]) for p in (migrations / "versions").glob("[0-9]*.py")]
-    following = f"{max(numbers) + 1:04d}"
-    created = create_revision(engine, "add the task table", migrations)
-    assert created.name == f"{following}_add_the_task_table.py"
-    assert f'revision: str = "{following}"' in created.read_text()
+    now = datetime(2026, 10, 30, 10, 25, 12, tzinfo=UTC)
+    created = create_revision(engine, "Add the tasks!", migrations, now=now)
+    assert created.name == "20261030102512_add_the_tasks.py"
+    assert 'revision: str = "20261030102512_add_the_tasks"' in created.read_text()
     assert f'down_revision: str | None = "{head}"' in created.read_text()
+    assert revision_id("x" * 80, now) == "20261030102512_" + "x" * 17
+    assert len(revision_id("x" * 80, now)) == 32
 
 
 def test_the_profile_delete_downgrade_restores_one_handle_per_owner(engine: Engine) -> None:
@@ -172,14 +184,14 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
     from maity_hub import tables as t
 
     return insert(t.membership).values(
-        project_id=project_id, human_id=human_id, trust="owner", role="coder", areas=["/"],
-        capabilities=[], joined_at=joined, active=active,
+        project_id=project_id, human_id=human_id, trust="owner", role="coder",
+        role_base="coder", areas=["/"], capabilities=[], joined_at=joined, active=active,
     )  # fmt: skip
 
 
 def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
-    """0060: the creator left, so the next oldest active owner holds the namespace; the
-    slug is kept as `legacy_slug`; a limit's `show_reason_in` names full names."""
+    """0060: the creator left, so the next oldest active owner holds the namespace; a
+    limit's `show_reason_in` names full names."""
     from sqlalchemy import select
 
     from maity_hub import tables as t
@@ -191,7 +203,7 @@ def test_the_namespace_owner_is_the_oldest_active_owner(engine: Engine) -> None:
         shown = conn.execute(
             select(t.human.c.limit_show_reason_in).where(t.human.c.id == ids["b"])
         ).scalar()
-    assert (project.owner_id, project.legacy_slug) == (ids["b"], "shop")
+    assert project.owner_id == ids["b"]
     assert shown == ["b/shop"]
 
 
@@ -468,3 +480,374 @@ def test_settings_stored_for_removed_notification_kinds_are_deleted(engine: Engi
         "email": {"kinds": {"inbox": {"mode": "daily"}}, "language": "de"},
     }
     assert rows[owners["clean"]] == clean
+
+
+def test_the_old_landing_body_is_carried_into_the_first_section_page(engine: Engine) -> None:
+    """0090 (§16.7): the title, call to action and Markdown of the one-body landing become
+    the `en` page, a `hero` and a `text` section; a landing that held nothing stays off,
+    and going back restores the old columns from that page."""
+    import sqlalchemy as sa
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    from maity_hub import clock
+
+    cta = {"label": "Sign in", "href": "/login"}
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title="Bring your agent",
+                markdown="# Hi",
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing",
+        sa.column("enabled", sa.Boolean),
+        sa.column("default_language", sa.String),
+        sa.column("pages", sa.JSON),
+        sa.column("footer", sa.JSON),
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    assert (row.enabled, row.default_language, row.footer) == (True, "en", None)
+    assert row.pages == {
+        "en": {
+            "title": "Bring your agent",
+            "description": "",
+            "sections": [
+                {
+                    "type": "hero",
+                    "enabled": True,
+                    "title": "Bring your agent",
+                    "cta_primary": cta,
+                },
+                {"type": "text", "enabled": True, "markdown": "# Hi"},
+            ],
+        }
+    }
+    downgrade(engine, _before(engine, "0090"))
+    with engine.connect() as conn:
+        back = conn.execute(sa.select(old.c.enabled, old.c.title, old.c.markdown, old.c.cta)).one()
+    assert tuple(back) == (True, "Bring your agent", "# Hi", cta)
+
+
+def test_a_landing_that_held_nothing_stays_off_and_empty(engine: Engine) -> None:
+    import sqlalchemy as sa
+
+    migrate(engine)
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("select count(*) from instance_landing")).scalar() == 0
+        assert conn.execute(sa.text("select count(*) from legal_page")).scalar() == 0
+
+
+@pytest.mark.parametrize(
+    ("title", "markdown", "cta", "kinds", "page_title"),
+    [
+        ("Hello", "Body", None, ["text"], "Hello"),  # a title alone is the page's title
+        (None, "Body", {"label": "Go", "href": "/login"}, ["text"], "Maity"),  # no title: no hero
+        ("Hello", None, {"label": "Go", "href": "/login"}, ["hero"], "Hello"),
+        ("Hello", "Body", {"label": "Go", "href": "/login"}, ["hero", "text"], "Hello"),
+        (None, "Body", None, ["text"], "Maity"),
+    ],
+)
+def test_a_carried_landing_passes_the_checks_of_the_setting(
+    engine: Engine,
+    title: str | None,
+    markdown: str | None,
+    cta: dict[str, str] | None,
+    kinds: list[str],
+    page_title: str,
+) -> None:
+    """0090 must never make a hero the setting itself would refuse: a hero needs a title and
+    a call to action, and the old schema allowed either to be null (§16.7)."""
+    import sqlalchemy as sa
+
+    from maity_hub import clock, landing
+
+    migrate(engine, _before(engine, "0090"))
+    old = sa.table(
+        "instance_landing",
+        sa.column("id", sa.String),
+        sa.column("enabled", sa.Boolean),
+        sa.column("title", sa.String),
+        sa.column("markdown", sa.Text),
+        sa.column("cta", sa.JSON),
+        sa.column("updated_at", sa.DateTime),
+        sa.column("updated_by", sa.String),
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            sa.insert(old).values(
+                id="landing",
+                enabled=True,
+                title=title,
+                markdown=markdown,
+                cta=cta,
+                updated_at=clock.now(),
+                updated_by=None,
+            )
+        )
+    migrate(engine)
+    new = sa.table(
+        "instance_landing", sa.column("pages", sa.JSON), sa.column("enabled", sa.Boolean)
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sa.select(new)).one()
+    page = row.pages["en"]
+    assert page["title"] == page_title and [s["type"] for s in page["sections"]] == kinds
+    current = {
+        "enabled": False,
+        "default_language": "en",
+        "pages": {},
+        "footer": {"operator": None, "social": []},
+    }
+    checked = landing.check({"enabled": True, "pages": row.pages}, current)
+    assert checked["pages"] == row.pages  # the editor can write it back unchanged
+
+
+def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
+    """0094 (§6.1): `freeze` and `fixes-only` become `review`, `accepted` becomes `archived`,
+    `build` and `archived` stay; downgrading maps `review` back to `freeze`."""
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0094"))
+    old = ("build", "freeze", "fixes-only", "accepted", "archived")
+    ids = {state: factory.project(engine, f"p-{state}", state=state) for state in old}
+
+    def states() -> dict[str, str]:
+        with engine.connect() as conn:
+            return dict(conn.execute(select(t.project.c.id, t.project.c.state)).all())
+
+    migrate(engine)
+    assert states() == {
+        ids["build"]: "build",
+        ids["freeze"]: "review",
+        ids["fixes-only"]: "review",
+        ids["accepted"]: "archived",
+        ids["archived"]: "archived",
+    }
+    downgrade(engine, _before(engine, "0094"))
+    assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"
+
+
+def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) -> None:
+    """0097 (§6.1): `released_at` from the earliest found tag of a release; a missing tag,
+    a tag of no release and a project without either stay `null`."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import insert, select
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "0097"))
+    ids = {name: factory.project(engine, name) for name in ("two", "missing", "other", "none")}
+    early, late = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 20, tzinfo=UTC)
+    tags = [
+        ("two", "0.1.0", "v0.1.0", True, late),
+        ("two", "0.2.0", "v0.2.0", True, early),
+        ("missing", "0.1.0", "v0.1.0", False, early),
+        ("other", "0.1.0", "v9.0.0", True, early),
+    ]
+    maker = factory.human(engine, "maker")
+    members = {name: factory.membership(engine, ids[name], human_id=maker) for name in ids}
+    for name, version, _ref, _found, _at in tags:
+        factory.card(
+            engine, ids[name], members[name], kind="release", title=version,
+            release_version=version,
+        )  # fmt: skip
+    with engine.begin() as conn:
+        for name, _version, ref, found, at in tags:
+            conn.execute(
+                insert(t.forge_observation).values(
+                    project_id=ids[name], kind="tag", ref=ref, observed_at=at,
+                    data={"name": ref, "sha": None, "found": found},
+                )
+            )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        released = dict(conn.execute(select(t.project.c.id, t.project.c.released_at)).all())
+    assert released[ids["two"]] == early
+    assert released[ids["missing"]] is None and released[ids["other"]] is None
+    assert released[ids["none"]] is None
+
+
+def test_cards_are_written_in_the_one_shape_the_code_reads(engine: Engine) -> None:
+    """0101: a reported card without `reported_instances` gets the instance of its report,
+    a contract without a place gets the default place; nothing else is touched."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human_id = factory.human(engine, "a")
+    project_id = factory.project(engine, "shop", owner_id=human_id)
+    membership_id = factory.membership(engine, project_id, "owner", human_id=human_id)
+    report = {"reported_by": "agt-x", "reported_instance": "ab12"}
+    old_report = factory.card(engine, project_id, membership_id, report=report)
+    new_report = factory.card(
+        engine,
+        project_id,
+        membership_id,
+        report=report,
+        reported_instances=[{"member_id": "agt-y", "instance": "cd34"}],
+    )
+    unreported = factory.card(engine, project_id, membership_id)
+    bare = {"arbiter": "trust:admin", "state": "proposed", "watchers": []}
+    old_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=bare)
+    placed = {**bare, "path": "docs/other.md", "section": "2.1"}
+    new_contract = factory.card(engine, project_id, membership_id, kind="contract", contract=placed)
+    downgrade(engine, "0100")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == old_report).values(reported_instances=None)
+        )
+    migrate(engine)
+    with engine.connect() as conn:
+        found = {
+            r.id: r for r in conn.execute(select(t.card).where(t.card.c.project_id == project_id))
+        }
+    assert found[old_report].reported_instances == [{"member_id": "agt-x", "instance": "ab12"}]
+    assert found[new_report].reported_instances == [{"member_id": "agt-y", "instance": "cd34"}]
+    assert found[unreported].reported_instances is None
+    assert found[old_contract].contract == {**bare, "path": "docs/api.md", "section": None}
+    assert found[new_contract].contract == placed
+
+
+def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: Engine) -> None:
+    """0107: a project's `setup` from before `keep_the_why_ci`, `keep_the_why_dashboard`
+    and `dashboard_path` gets them as `false`, `false` and `null` (nothing was chosen);
+    a project without `setup` keeps `null`; the downgrade takes the three keys away."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    old = {"keep_the_why_init": True, "keep_the_why_badge": False, "maity_badge": True}
+    with_cards = factory.project(engine, "cards")
+    without = factory.project(engine, "plain")
+    none = factory.project(engine, "none")
+    downgrade(engine, "0102")
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == with_cards)
+            .values(setup={**old, "cards": ["tsk-1"]})
+        )
+        conn.execute(
+            update(t.project).where(t.project.c.id == without).values(setup={**old, "cards": None})
+        )
+        conn.execute(update(t.project).where(t.project.c.id == none).values(setup=None))
+    migrate(engine)
+    added = {"keep_the_why_ci": False, "keep_the_why_dashboard": False, "dashboard_path": None}
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[with_cards] == {**old, **added, "cards": ["tsk-1"]}
+    assert found[without] == {**old, **added, "cards": None}
+    assert found[none] is None
+    downgrade(engine, "0102")
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[with_cards] == {**old, "cards": ["tsk-1"]}
+    assert found[none] is None
+
+
+def test_project_roles_give_every_membership_its_base_and_go_back_to_it(engine: Engine) -> None:
+    """0112: every membership so far holds a built-in role and gets it as `role_base`; the
+    downgrade turns a project role into its base wherever it is named."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    human = factory.human(engine, "a")
+    project_id = factory.project(engine, "shop", owner_id=human)
+    downgrade(engine, _before(engine, "0112"))
+    reviewer = factory.membership(
+        engine, project_id, role="reviewer", human_id=factory.human(engine, "b")
+    )
+    migrate(engine)
+    with engine.connect() as conn:
+        bases = dict(conn.execute(select(t.membership.c.id, t.membership.c.role_base)).all())
+    assert bases[reviewer] == "reviewer"
+    assert set(bases.values()) <= {"coder", "reviewer"}
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id)
+            .values(
+                roles=[
+                    {
+                        "name": "legal",
+                        "base": "reviewer",
+                        "description": "",
+                        "guide": "",
+                        "guide_by": None,
+                    }
+                ]
+            )
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == reviewer)
+            .values(role="legal", role_base="reviewer")
+        )
+    downgrade(engine, _before(engine, "0112"))
+    with engine.connect() as conn:
+        role = conn.execute(
+            select(t.membership.c.role).where(t.membership.c.id == reviewer)
+        ).scalar_one()
+    assert role == "reviewer"
+
+
+def test_a_human_with_the_meat_proxy_switch_on_gets_both_parts_by_0103(engine: Engine) -> None:
+    """0103 (§5.2): `meat_proxy` true becomes both parts true, false both false; downgrading
+    makes the switch the or of the parts."""
+    from sqlalchemy import text
+
+    from tests import factory
+
+    migrate(engine, _before(engine, "0103"))
+    on, off = factory.human(engine, "on"), factory.human(engine, "off")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE human SET meat_proxy = :v WHERE id = :id"), {"v": True, "id": on})
+
+    def parts() -> dict[str, tuple[bool, bool]]:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT id, meat_proxy_lead, meat_proxy_hands FROM human")
+            ).all()
+        return {r[0]: (bool(r[1]), bool(r[2])) for r in rows}
+
+    migrate(engine)
+    assert parts()[on] == (True, True) and parts()[off] == (False, False)
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE human SET meat_proxy_hands = :v WHERE id = :id"), {"v": False, "id": on}
+        )
+    downgrade(engine, _before(engine, "0103"))
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT id, meat_proxy FROM human")).all()
+    switch = {r[0]: bool(r[1]) for r in rows}
+    assert switch[on] is True and switch[off] is False

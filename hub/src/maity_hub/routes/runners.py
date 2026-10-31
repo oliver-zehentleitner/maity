@@ -20,7 +20,17 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, events, idempotency, namespace, paging, placements, runner_revoke
+from maity_hub import (
+    clock,
+    events,
+    idempotency,
+    moderation,
+    namespace,
+    paging,
+    placements,
+    runner_revoke,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor
@@ -370,6 +380,9 @@ async def pair(token: str, body: Pair, request: Request) -> Response:
         """The credential facts, or None for a wrong code (recorded and committed)."""
         with events.transaction(engine) as conn:
             row = _usable(conn, token)
+            # The creator's account lock before any other (§2.9): a suspension or a
+            # deletion takes it first; `_consume` refuses a suspended account under it.
+            write_guard.share(conn, row.created_by)
             # One conditional UPDATE takes an attempt slot before the comparison,
             # exactly as the join exchange does (routes/joins.py).
             now = clock.now()
@@ -419,6 +432,7 @@ async def pair(token: str, body: Pair, request: Request) -> Response:
 
 
 def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, list[str]]:
+    moderation.refuse_suspended(conn, row.created_by)  # no credential for it (§16.8)
     now = clock.now()
     consumed = conn.execute(
         update(t.runner_enrollment)
@@ -536,12 +550,17 @@ def list_runners(request: Request, caller: HumanCaller) -> JSONResponse:
         administered = [
             r.project_id
             for r in conn.execute(
-                select(t.membership.c.project_id, t.membership.c.trust, t.membership.c.role).where(
+                select(
+                    t.membership.c.project_id,
+                    t.membership.c.trust,
+                    t.membership.c.role,
+                    t.membership.c.role_base,
+                ).where(
                     t.membership.c.human_id == caller.principal_id,
                     t.membership.c.active.is_(True),
                 )
             )
-            if has_scope(r.trust, r.role, "human", "members:admin")
+            if has_scope(r.trust, r.role_base, "human", "members:admin")
         ]
         attached_there = select(t.runner_attachment.c.runner_id).where(
             t.runner_attachment.c.project_id.in_(administered),

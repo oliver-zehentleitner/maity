@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import events, idempotency, namespace
+from maity_hub import events, handles, idempotency, moderation, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -375,20 +375,20 @@ def _agent_values(
         raise invalid({"agent": "id_required"}, "a proposal names an existing member")
     if body.agent.handle is None or body.agent.display_name is None:
         raise invalid({"agent": "id_or_handle"}, "name an agent by id, or give handle and name")
-    owned = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == mine.principal_id,
-            t.agent_profile.c.handle == body.agent.handle,
-            t.agent_profile.c.live.is_(True),
-        )
-    ).first()
-    if owned is not None:
+    # The handle or an alias of one of the owner's profiles (§6.24); a placement's reservation
+    # of it comes after the project's own `placement_exists` below.
+    held = handles.holder(conn, mine.principal_id, body.agent.handle)
+    if held is not None and held != "placement":
         raise invalid({"handle": "taken"}, "you already have an agent with this handle")
     _exists(
         conn,
         t.placement.c.project_id == mine.project.id,
         t.placement.c.new_handle == body.agent.handle,
     )
+    if held == "placement":  # another project's placement will create a profile with it
+        raise invalid(
+            {"handle": "taken"}, "a placement of yours will create an agent with this handle"
+        )
     assignment = validate_assignment(
         conn,
         mine.project.id,
@@ -550,6 +550,10 @@ def restart_placement(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
+        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
+            # Before the project lock: the suspension takes the account lock, then projects.
+            account = pl.profile_owner(conn, _placement(conn, mine, placement_id))
+            moderation.refuse_suspended(conn, account)
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)

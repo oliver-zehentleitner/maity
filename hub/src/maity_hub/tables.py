@@ -11,9 +11,10 @@ the API shows the principal's id (`hum-…`, `agt-…`). No table or column is
 named after an SQL keyword of any of the three engines (`join`, `key`,
 `cursor`, `release` are), so hand-written SQL needs no quoting.
 
-Not in a table, by design for one replica (docs/api.md §8.3): the nonce
-window of signed requests and whether a session is `listening`; both move
-to the database before a second replica exists. The policy is columns on
+Not in a table, by design for one replica (docs/api.md §8.3): whether a
+session is `listening`, which moves to the database before a second replica
+exists; the nonce window of signed requests is in `request_nonce` on
+PostgreSQL and in the process elsewhere. The policy is columns on
 `project`, the one-to-one form of architecture §3.6's policy entity; its
 history is in the events.
 """
@@ -56,6 +57,12 @@ HANDLE = 64
 TITLE = 200  # characters, docs/api.md §1.7
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
+# A namespace owner is a human or an organisation: one of the two foreign keys, and
+# `owner_id` the same id (docs/api.md §6.25, §6.26).
+OWNER_SHAPE = (
+    "(owner_human_id IS NOT NULL AND owner_org_id IS NULL AND owner_id = owner_human_id)"
+    " OR (owner_human_id IS NULL AND owner_org_id IS NOT NULL AND owner_id = owner_org_id)"
+)
 
 
 def _id(name: str = "id", **kwargs: object) -> Column[str]:
@@ -99,8 +106,19 @@ human = Table(
     Column("limit_since", UtcDateTime),
     Column("limit_reason", MARKDOWN_TEXT),
     Column("limit_show_reason_in", JSON_VALUE),  # the slugs whose member view shows the reason
-    # "I am a meat proxy" (docs/api.md §5.2): the human's own switch.
-    Column("meat_proxy", Boolean, nullable=False, server_default=false()),
+    # "I am a meat proxy" (docs/api.md §5.2): the two things the human says about themselves.
+    # The switch `meat_proxy` is derived: on while a part is.
+    Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
+    Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
+    # Whether the person has a public page, and the plain text on it (§16.9); a person is
+    # private until they choose.
+    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    Column("public_bio", String(280)),
+    # The person's website and their names on the networks of §16.9 (never URLs), and who
+    # sees them; the links are built from the names when shown.
+    Column("website", String(200)),
+    Column("social", JSON_VALUE),
+    Column("links_visible", String(24), nullable=False, server_default="private"),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -110,6 +128,80 @@ human = Table(
     # Set when the human deleted the account (§2.9): the row stays, so every stored id
     # resolves and the handle stays taken; everything about the person is gone.
     Column("deleted_at", UtcDateTime),
+    # Set while an instance admin's `suspend` stands (§16.8), with the report it came from;
+    # only the operator's `maity-hub account unsuspend` clears them.
+    Column("suspended_at", UtcDateTime),
+    Column("suspended_report", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The one namespace of current handles: a human's and an organisation's (docs/api.md §6.24,
+# §6.26). The primary key is what makes two principals with one handle impossible, on every
+# engine and under any race; `owner_id` is a `hum-…` or an `org-…` id, so it has no foreign
+# key. A row is never deleted: a deleted account's or organisation's handle stays taken.
+handle_register = Table(
+    "handle_register",
+    metadata,
+    Column("handle", String(HANDLE), primary_key=True),
+    Column("kind", String(8), nullable=False),  # human, org
+    Column("owner_id", String(ID), nullable=False),
+    UniqueConstraint("owner_id", name="uq_handle_register_owner"),
+    CheckConstraint("kind IN ('human', 'org')", name="kind_known"),
+    **MYSQL_TABLE,
+)
+
+# An organisation, the second kind of namespace owner (docs/api.md §6.26). The row stays
+# after a deletion, with `deleted_at`, so every stored id keeps resolving.
+org = Table(
+    "org",
+    metadata,
+    _id(primary_key=True),
+    Column("handle", String(HANDLE), nullable=False, unique=True),
+    Column("display_name", String(TITLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    # Whether a plain member creates projects in it (owners and admins always do).
+    Column("members_create_projects", Boolean, nullable=False, server_default=false()),
+    Column("public_page", String(8), nullable=False, server_default="off"),  # off, on (§16.9)
+    Column("deleted_at", UtcDateTime),
+    CheckConstraint("public_page IN ('off', 'on')", name="public_page_known"),
+    **MYSQL_TABLE,
+)
+
+# A human's role in an organisation: one row per member.
+org_member = Table(
+    "org_member",
+    metadata,
+    _ref("org_id", "org.id", nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    Column("role", String(8), nullable=False),  # owner, admin, member
+    Column("joined_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("org_id", "human_id", name="pk_org_member"),
+    Index("ix_org_member_human", "human_id"),
+    CheckConstraint("role IN ('owner', 'admin', 'member')", name="role_known"),
+    **MYSQL_TABLE,
+)
+
+# An offer to become a member, answered by the invited human's own word (§6.26). `handle`
+# is the value the inviter typed, never resolved; `live` is true while it is open and NULL
+# once closed, so that one value is open at most once per organisation, on every engine.
+org_invitation = Table(
+    "org_invitation",
+    metadata,
+    _id(primary_key=True),
+    _ref("org_id", "org.id", nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("role", String(8), nullable=False),
+    _ref("invited_by", "human.id", nullable=False),
+    _ref("request_id", "request.id"),  # null when the handle named nobody who can be invited
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("closed_at", UtcDateTime),
+    Column("closed_by", String(16)),  # accepted, declined, revoked, expired, superseded, ...
+    Column("live", Boolean),
+    UniqueConstraint("org_id", "handle", "live", name="uq_org_invitation_open"),
+    Index("ix_org_invitation_org", "org_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    CheckConstraint("role IN ('owner', 'admin', 'member')", name="role_known"),
     **MYSQL_TABLE,
 )
 
@@ -190,6 +282,8 @@ invitation = Table(
     Column("revoked_at", UtcDateTime),
     Column("voided_at", UtcDateTime),
     Column("void_reason", String(16)),
+    # `join` or `public`: the host of the link that went out (§3.4), as `join_link.via`.
+    Column("via", String(16), nullable=False, server_default="public"),
     Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
     **MYSQL_TABLE,
 )
@@ -248,9 +342,7 @@ agent_profile = Table(
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
     Column("deleted_at", UtcDateTime),
-    Column(
-        "live", Boolean, server_default=true()
-    ),  # the database fills it: inserts on older schemas name no `live`
+    Column("live", Boolean, server_default=true()),  # true until deleted; an insert names none
     UniqueConstraint("owner_id", "handle", "live"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
@@ -426,27 +518,42 @@ project = Table(
     metadata,
     _id(primary_key=True),
     # The namespace owner, a human, and the slug: unique together, with the project's
-    # aliases (§6.25). `legacy_slug` is the slug at the namespace migration, frozen, for the
-    # addresses outside the API that predate it; null for every later project.
-    _ref("owner_id", "human.id", nullable=False),
+    # aliases (§6.25).
+    # `owner_id` is the one id every reader uses, a `hum-…` or an `org-…`; the two columns
+    # below carry the foreign keys, exactly one set, and the check keeps the three in step
+    # (§6.26, hub/context/orgs.md).
+    Column("owner_id", String(ID), nullable=False),
+    _ref("owner_human_id", "human.id"),
+    _ref("owner_org_id", "org.id"),
     Column("slug", String(HANDLE), nullable=False),
-    Column("legacy_slug", String(HANDLE)),
     Column("name", String(TITLE), nullable=False),
     Column("state", String(16), nullable=False),
     Column("state_note", MARKDOWN_TEXT),
     Column("state_changed_at", UtcDateTime, nullable=False),
+    # Set once, when the probe first finds a release's tag; never cleared (§6.1).
+    Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # The project's public page and the text on it (§16.9): both belong to the namespace
+    # owner and are off and empty until they choose; not part of the policy.
+    Column("public_page", String(8), nullable=False, server_default="off"),
+    Column("public_about", MARKDOWN_TEXT),
+    # Whether the forge's last answer said the repository is public (§16.9, §11.4); null
+    # before the hub looked, which counts as private. Cleared when the page goes on or off, a
+    # transfer happens or the repository changes: the answer of an earlier page is never reused.
+    Column("repository_public", Boolean),
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
+    # Whose grants the confirmation put to use: the namespace owner for a project of a human,
+    # the owner of the organisation who confirmed for one of an organisation; set with the
+    # confirmation and cleared with it (§11.4).
+    _ref("repository_confirmed_by", "human.id"),
     Column("keep_the_why", Boolean, nullable=False),
     # The policy (docs/api.md §6.1); its history is in the events.
     Column("policy_preset", String(32), nullable=False),
     Column("badge", String(20), nullable=False, server_default="off"),
     Column("subtasks", String(16), nullable=False, server_default="proposed"),
-    # Whether visitors without a session see the swarm page, agents only (§6.22).
-    Column("swarm_public", String(8), nullable=False, server_default="off"),
     # What a merged pull request does to its card in review: notify or auto (§6.6).
     Column("merged_closes", String(8), nullable=False, server_default="notify"),
     # Whether a human with trust member creates joins for agents of their own, and how
@@ -459,18 +566,18 @@ project = Table(
     Column("tag_authority", String(32), nullable=False),
     Column("steward_writes", String(32), nullable=False),
     Column("lease_seconds", Integer, nullable=False),
-    # How long a holder has to answer a takeover (§6.1, §6.19); older rows read the default.
+    # How long a holder has to answer a takeover (§6.1, §6.19).
     Column("takeover_window_minutes", Integer, nullable=False, server_default="60"),
-    # optional or required (§2.2); the default fills projects made before 0004.
+    # optional or required (§2.2).
     Column("signing", String(16), nullable=False, server_default="optional"),
     # What an agent's placement proposal does, and how many placements may be active
-    # (§6.1, §15.6); the defaults fill projects made before 0008.
+    # (§6.1, §15.6).
     Column("spawn_requests", String(16), nullable=False, server_default="consent"),
     Column("max_placements", Integer, nullable=False, server_default="8"),
-    # Who answers a placement's consent request (§6.1, §15.6); fills projects before 0011.
+    # Who answers a placement's consent request (§6.1, §15.6).
     Column("spawn_consent_by", String(16), nullable=False, server_default="human"),
     # Whose outage gates new assignments by agents, and who stands in for that role
-    # alone (§6.1, §6.12); the defaults fill projects made before 0024.
+    # alone (§6.1, §6.12).
     Column("coordinator", String(ID + 8), nullable=False, server_default="trust:admin"),
     Column("coordinator_substitute", String(ID)),
     # What revoking a runner does to its agents here: keep, stop or inherit (§6.1, §15.3).
@@ -491,17 +598,64 @@ project = Table(
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
+    # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
+    # 12; null for none.
+    Column("roles", JSON_VALUE),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
     # The event seq at the last rules change, set under the project lock, so
     # that `rules.changed` compares with an agent's cursor (§5.2).
     Column("rules_changed_seq", BIG_ID),
+    # The digest of the hub's generated text this project's `rules_version` last counted
+    # (§6.9): a start with another digest bumps the version once. Null: never counted.
+    Column("rules_text_digest", String(64)),
     # Whether one of its teams has a `wake` rule other than `all` (§6.18): only then
     # does writing an event look for the instances it wakes.
     Column("team_wake", Boolean, nullable=False, server_default=false()),
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_owner_slug"),
+    CheckConstraint(OWNER_SHAPE, name="owner_shape"),
+    **MYSQL_TABLE,
+)
+
+# A handle a human or an agent profile gave up by a rename (§6.24): it stays with the id, oldest
+# first, and nobody else can take it. `scope` is where handles are unique: "human" for all
+# humans, the owner's id for an owner's agent profiles; a deleted profile's aliases leave the
+# scope with it (`live` NULL), as its handle does.
+handle_alias = Table(
+    "handle_alias",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id"),
+    _ref("agent_id", "agent_profile.id"),
+    Column("scope", String(ID), nullable=False),
+    Column("handle", String(HANDLE), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("live", Boolean, server_default=true()),
+    UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
+    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# One row per rename (a no-op leaves none), for the limit of 3 in 24 hours (§1.7, §6.24).
+handle_change = Table(
+    "handle_change",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("subject_id", String(ID), nullable=False, index=True),
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The lock a rename or a creation takes on the handle it wants, so that two of them for one
+# handle in one scope run one after the other (§6.24); rows are made when first asked for.
+handle_lock = Table(
+    "handle_lock",
+    metadata,
+    Column("scope", String(ID), primary_key=True),
+    Column("handle", String(HANDLE), primary_key=True),
     **MYSQL_TABLE,
 )
 
@@ -513,10 +667,13 @@ project_alias = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     _ref("project_id", "project.id", nullable=False),
-    _ref("owner_id", "human.id", nullable=False),
+    Column("owner_id", String(ID), nullable=False),  # a human's or an organisation's id
+    _ref("owner_human_id", "human.id"),
+    _ref("owner_org_id", "org.id"),
     Column("slug", String(HANDLE), nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     UniqueConstraint("owner_id", "slug", name="uq_project_alias_owner_slug"),
+    CheckConstraint(OWNER_SHAPE, name="owner_shape"),
     **MYSQL_TABLE,
 )
 
@@ -529,13 +686,32 @@ membership = Table(
     _ref("agent_id", "agent_profile.id"),
     # A built-in role, or a project role of up to 24 characters (#506).
     Column("role", String(24), nullable=False),
+    # The built-in role whose scopes `role` has: `role` itself for a built-in one, the base
+    # for a project role (§2.3); written with every `role`, and by a `PUT …/roles` that
+    # moves a role to another base, so no reader looks the project's roles up.
+    Column("role_base", String(24), nullable=False),
     Column("trust", String(16), nullable=False),  # with `role`: trust × role (§2.3)
+    # A membership the hub keeps for an owner of the organisation that owns the project
+    # (§6.26): `created` (the hub made it: it ends with the ownership) or `raised` (it held
+    # a lower trust, kept in `org_keep_trust`, which it returns to); null for every other.
+    Column("org_keep", String(8)),
+    Column("org_keep_trust", String(16)),
     _membership_ref("reports_to"),
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    # An agent member a human with `members:admin` isolated (§6.2, "Isolation"): why, since
+    # when and by whom; null while free. The membership keeps its history either way.
+    Column("isolated_reason", String(500)),
+    Column("isolated_since", UtcDateTime),
+    Column("isolated_by", String(ID)),
+    # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
+    # The cross-owner `reports_to` edge was consented with a manager's rights and the
+    # boss still holds the role `manager` (§6.2): the member is in the boss's reach.
+    Column("line_consent", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
     Column("onboarded_at", UtcDateTime),
@@ -567,6 +743,9 @@ membership = Table(
     # limit, the state the hub last announced and since when, and when the current
     # outage began (null while available).
     Column("availability_policy", JSON_VALUE),
+    # A human member's own settings in this project, each `null` for the personal default
+    # (§6.2, "A member's own settings in a project"): `{not_listening: {minutes}}`.
+    Column("own_settings", JSON_VALUE),
     Column("limit_until", UtcDateTime),
     Column("limit_since", UtcDateTime),
     Column("limit_source", String(16)),
@@ -576,8 +755,19 @@ membership = Table(
     Column("availability_state", String(16)),
     Column("availability_since", UtcDateTime),
     Column("outage_since", UtcDateTime),
+    # The policy's answer once the outage passed its grace (§6.12): `wait`, `covered`
+    # (by `cover_by` since `cover_since`), or `none_available`, retried; null otherwise.
+    Column("cover_state", String(16)),
+    _membership_ref("cover_by"),
+    Column("cover_since", UtcDateTime),
     *_audit(),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
+    CheckConstraint(
+        "(org_keep IS NULL AND org_keep_trust IS NULL)"
+        " OR (org_keep = 'created' AND org_keep_trust IS NULL)"
+        " OR (org_keep = 'raised' AND org_keep_trust IS NOT NULL)",
+        name="org_keep_shape",
+    ),
     CheckConstraint(
         "(human_id IS NULL AND agent_id IS NOT NULL)"
         " OR (human_id IS NOT NULL AND agent_id IS NULL)",
@@ -692,6 +882,12 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # What the resume packet's `handover` needs (§5.2): the project's newest event when the
+    # exchange created this instance, and `events.after` and `events.cursor` of its first
+    # packet (set by its first resume).
+    Column("exchange_seq", Integer),
+    Column("first_after", Integer),
+    Column("first_cursor", Integer),
     _ref("join_id", "join_link.id"),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -718,7 +914,29 @@ credential = Table(
     Column("paused_reason", MARKDOWN_TEXT),
     Column("paused_since", UtcDateTime),
     Column("paused_by", String(ID)),
+    Column("paused_line", Boolean, nullable=False, server_default=false()),
     UniqueConstraint("membership_id", "instance", name="uq_credential_instance"),
+    **MYSQL_TABLE,
+)
+
+# The nonces of signed requests (docs/api.md §2.2), shared by every replica on PostgreSQL, where
+# the migration makes both tables UNLOGGED: lost on a crash or a failover, and `nonce_epoch` with
+# them, so a request signed before the loss is refused (hub/context/replicas.md 1c65bb74).
+# SQLite and MariaDB keep the window in the process (`auth.credentials.NonceWindow`).
+request_nonce = Table(
+    "request_nonce",
+    metadata,
+    Column("credential_id", String(ID), primary_key=True),
+    Column("nonce", String(128), primary_key=True),
+    Column("expires_at", UtcDateTime, nullable=False, index=True),
+    **MYSQL_TABLE,
+)
+
+nonce_epoch = Table(
+    "nonce_epoch",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=False),  # always 1
+    Column("since", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
 
@@ -1051,6 +1269,11 @@ card = Table(
     Column("merge_report", String(64)),
     Column("merge_told", Boolean, nullable=False, server_default=false()),
     Column("contract", JSON_VALUE),
+    # The forge issue an import read (§6.14): set once, never changed; null otherwise.
+    Column("imported_from", JSON_VALUE),
+    # `{for, by, since}` while the card moved to a substitute (§6.12), with what moved
+    # (`claim`, `assignment`) and whether the substitute has touched it since.
+    Column("cover", JSON_VALUE),
     # Releases: the version is unique per project; `release_in_flight` is
     # True on the one release card that is neither done nor cancelled and
     # NULL on every other card, so the unique constraint allows one per project.
@@ -1154,7 +1377,11 @@ request = Table(
     "request",
     metadata,
     _id(primary_key=True),
-    _ref("project_id", "project.id", nullable=False),
+    # Null only for a personal request that concerns an organisation and no project: an
+    # invitation (§7, §6.26); then `org_id` is set and `asked_by` is null, the inviter being
+    # `asked_by_human`.
+    _ref("project_id", "project.id"),
+    _ref("org_id", "org.id"),
     Column("class", String(16), nullable=False),
     Column("title", String(TITLE), nullable=False),
     Column("summary", MARKDOWN_TEXT),
@@ -1166,6 +1393,7 @@ request = Table(
     # owns an agent profile, member of the project or not: a personal request (§7).
     Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
     _membership_ref("to_member"),
+    Column("to_instance", String(INSTANCE)),  # the address as written: `<member>#<id>` (§7)
     Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
@@ -1176,7 +1404,8 @@ request = Table(
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
-    _membership_ref("asked_by", nullable=False),
+    _membership_ref("asked_by"),  # null with `project_id`: the human is `asked_by_human`
+    _ref("asked_by_human", "human.id"),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
     _ref("task_id", "card.id"),
@@ -1191,6 +1420,7 @@ request = Table(
     Column("jour_fixe", JSON_VALUE),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
+    Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
     Column("ktw_ref", String(255)),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
@@ -1223,6 +1453,16 @@ request = Table(
         "(personal AND to_kind IN ('profile_owner', 'human'))"
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
+    ),
+    # No project: a personal request that concerns an organisation (§7, §6.26), or the owner's
+    # digest of agent instances that are not listening, which concerns every project of the
+    # human's agents at once and has no asker (§5.3).
+    CheckConstraint(
+        "project_id IS NOT NULL"
+        " OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)"
+        " OR (org_id IS NULL AND personal AND filed_by = 'hub' AND asked_by IS NULL"
+        " AND asked_by_human IS NULL)",
+        name="scope_known",
     ),
     Index("ix_request_project_status", "project_id", "status"),
     Index("ix_request_to_member_status", "to_member", "status"),
@@ -1361,6 +1601,9 @@ event = Table(
     # A human who is no member of the project (§8.1: the owner deleting a profile with
     # `cascade`, §6.3), with `actor_membership` null; no foreign key either.
     Column("actor_human_id", String(ID)),
+    # The abuse report a moderation change was made for (§16.8), with every other actor
+    # column null; no foreign key either.
+    Column("actor_report_id", String(ID)),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -1427,7 +1670,7 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed
+    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
     Column("here", Boolean, default=True),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
@@ -1449,18 +1692,69 @@ conversation_read = Table(
 )
 
 # The instance's landing page (docs/api.md §16.7): one row, written by the instance
-# admin; no row means the default, disabled. `updated_at` and `updated_by` are the record
-# of its changes in this version.
+# admin; no row means the default, disabled. `pages` is per language `{title,
+# description, sections}`, `footer` is shared by all languages. `updated_at` and
+# `updated_by` are the record of its changes in this version.
 instance_landing = Table(
     "instance_landing",
     metadata,
     Column("id", String(16), primary_key=True),
     Column("enabled", Boolean, nullable=False),
-    Column("title", String(120)),
-    Column("markdown", MARKDOWN_TEXT),
-    Column("cta", JSON_VALUE),
+    Column("default_language", String(8), nullable=False),
+    Column("pages", JSON_VALUE, nullable=False),
+    Column("footer", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
     Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The legal pages (docs/api.md §16.7.1). `instance_legal` is the one row of the setting
+# (the default language and who last wrote it); `legal_version` keeps every text a page
+# ever had, read-only, since a person may have accepted one; `legal_page` says which
+# version is served now, none for a page that is not set.
+instance_legal = Table(
+    "instance_legal",
+    metadata,
+    Column("id", String(16), primary_key=True),
+    Column("default_language", String(8), nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+legal_version = Table(
+    "legal_version",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("page", String(16), nullable=False),  # imprint, privacy, terms
+    Column("version", String(20), nullable=False),  # the hub's time of the change, RFC 3339
+    Column("languages", JSON_VALUE, nullable=False),  # {tag: {title, markdown}}
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("created_by", String(ID)),
+    UniqueConstraint("page", "version", name="uq_legal_version_page_version"),
+    **MYSQL_TABLE,
+)
+legal_page = Table(
+    "legal_page",
+    metadata,
+    Column("page", String(16), primary_key=True),
+    Column("current", String(20)),  # the served version; null while the page is not set
+    **MYSQL_TABLE,
+)
+
+# A draft of the landing page or of a legal page, seen before it is saved (docs/api.md
+# §16.7, §16.7.1): bound to the admin's session and never to the setting, kept for ten
+# minutes, at most twenty per session.
+preview_draft = Table(
+    "preview_draft",
+    metadata,
+    Column("id", String(32), primary_key=True),
+    Column("session", String(64), nullable=False),  # the id hash of the admin's session
+    Column("kind", String(8), nullable=False),  # landing, legal
+    Column("page", String(16)),  # the legal page; null for the landing page
+    Column("payload", JSON_VALUE, nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Index("ix_preview_draft_session", "session", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -1860,5 +2154,69 @@ forge_token = Table(
     Column("status", String(16), nullable=False),  # active, rejected
     Column("set_at", UtcDateTime, nullable=False),
     Column("checked_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# An abuse report (docs/api.md §16.8): what someone signed in reported, kept with a copy
+# of the target as the reporter could read it then. `account_id` is the reporting account
+# (an agent's owner), the one the limits count; `reporter` the principal that reported.
+# `snapshot`, `text` and `note` are the report's content: emptied 90 days after it closes
+# (`purged_at`), the rest stays as the record.
+abuse_report = Table(
+    "abuse_report",
+    metadata,
+    _id(primary_key=True),
+    Column("reporter", String(ID), nullable=False),
+    _ref("account_id", "human.id", nullable=False, index=True),
+    Column("target_type", String(16), nullable=False),  # profile, project, message, card
+    Column("target_id", String(255), nullable=False),
+    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("reason", String(32), nullable=False),
+    Column("text", Text),
+    Column("snapshot", JSON_VALUE),
+    Column("status", String(16), nullable=False),  # open, resolved, expired
+    Column("action", String(16)),  # dismiss, hide, remove, suspend
+    Column("note", MARKDOWN_TEXT),
+    Column("resolved_by", String(ID)),  # the instance admin who resolved it last
+    Column("resolved_at", UtcDateTime),
+    Column("closed_at", UtcDateTime),  # resolved or expired: the 90 days count from here
+    Column("purged_at", UtcDateTime),
+    Column("created_at", UtcDateTime, nullable=False),
+    Index("ix_abuse_report_status_created", "status", "created_at"),
+    **MYSQL_TABLE,
+)
+
+# What a report's `hide` or `remove` holds on its target (docs/api.md §16.8): ordinary
+# writes cannot undo it while the row exists; resolving the report again replaces or (with
+# `dismiss`) lifts it. `target_id` is the stable id: a project's id (not its full name, which
+# a rename changes), a card's id, `<project id>/<seq>` for a message, a principal's id for a
+# profile.
+moderation_hold = Table(
+    "moderation_hold",
+    metadata,
+    _ref("report_id", "abuse_report.id", primary_key=True),
+    Column("target_type", String(16), nullable=False),
+    Column("target_id", String(255), nullable=False),
+    Column("action", String(16), nullable=False),  # hide, remove
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_moderation_hold_target", "target_type", "target_id"),
+    **MYSQL_TABLE,
+)
+
+# A public page as the hub rendered it (docs/api.md §16.9): one row per address, the HTML as it is
+# served, its ETag, a digest of the inputs it was made from and when they last changed (`lastmod`
+# of the sitemap). Taking a page off is deleting its row, in the transaction that changed the input.
+public_page = Table(
+    "public_page",
+    metadata,
+    Column("path", String(255), primary_key=True),
+    Column("kind", String(16), nullable=False),  # person, organisation, project, view, agent
+    Column("target_id", String(255), nullable=False),  # the id of what the page shows
+    Column("body", MARKDOWN_TEXT, nullable=False),
+    Column("etag", String(80), nullable=False),
+    Column("inputs", String(64), nullable=False),
+    Column("lastmod", UtcDateTime, nullable=False),
+    Column("rendered_at", UtcDateTime, nullable=False),
+    Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )

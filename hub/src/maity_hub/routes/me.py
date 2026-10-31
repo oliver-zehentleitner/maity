@@ -9,7 +9,17 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, select
 
-from maity_hub import account_deletion, avatars, clock, events, export, images, namespace
+from maity_hub import (
+    account_deletion,
+    avatars,
+    clock,
+    events,
+    export,
+    handles,
+    images,
+    moderation,
+    namespace,
+)
 from maity_hub import tables as t
 from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor
@@ -18,7 +28,7 @@ from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticated
 from maity_hub.models import Strict
 from maity_hub.ratelimit import Limiter
-from maity_hub.views import agent_member, human_member, owner_handles
+from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
 
 router = APIRouter()
 
@@ -44,9 +54,11 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                         avatar_url=None,
                         owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
                     ),
+                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
                     **avatars.state(conn, agent.id),
                 },
                 "projects": _agent_project(conn, caller),
+                "membership": {"isolated": _isolated(conn, caller)},
             }
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
@@ -58,9 +70,16 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
     return {
         "member": {
             **human_member(human, avatar_url=None),
+            "aliases": handles.aliases(conn, [human.id])[human.id],
             **avatars.state(conn, human.id),
             "instance_admin": is_instance_admin(conn, human.id),
-            "meat_proxy": human.meat_proxy,
+            **meat_proxy_member(human.meat_proxy_lead, human.meat_proxy_hands),
+            # The person's own page, whatever it shows to others (§16.9).
+            "public_profile": human.public_profile,
+            "public_bio": human.public_bio,
+            "website": human.website,
+            "social": human.social or {},
+            "links_visible": human.links_visible,
             "account_status": human.account_status,
             "terms": (
                 {
@@ -72,6 +91,12 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),
+            # Only while a moderation hold stands on the profile (§16.8).
+            **(
+                {"moderation": held}
+                if (held := moderation.holds_of(conn, "profile", [human.id]).get(human.id))
+                else {}
+            ),
         },
         # A pending account is a member of nothing (§2.7.5).
         "projects": _human_projects(conn, human.id) if human.account_status == "active" else [],
@@ -163,6 +188,12 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _isolated(conn: Connection, caller: Caller) -> dict[str, Any] | None:
+    """An isolated agent's way to learn why its calls are refused (§6.2)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
+    return isolated(row)
+
+
 def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
     row = conn.execute(
         select(t.membership.c.trust, t.membership.c.role, t.project)
@@ -184,7 +215,10 @@ def open_requests(conn: Connection, membership_id: int) -> int:
     mine = Membership(project, row, "agent" if row.agent_id else "human")
     open_rows = conn.execute(
         select(t.request).where(
-            t.request.c.project_id == row.project_id, t.request.c.status == "open"
+            t.request.c.project_id == row.project_id,
+            t.request.c.status == "open",
+            # A personal request is never addressed to a membership (§7): not read here.
+            t.request.c.personal.is_(False),
         )
     ).all()
     return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))

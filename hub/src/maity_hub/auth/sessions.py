@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import re
 import secrets
-import unicodedata
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
@@ -242,27 +241,6 @@ def approved_by_chain(conn: Connection, human_id: str, public_id: str) -> list[A
     return found
 
 
-NEXT_MAX = 512
-_NEXT_BAD = re.compile(r"[\\\s\x00-\x1f\x7f]|//")
-
-
-def safe_next(value: str | None) -> str:
-    """A login's `next` (§2.6.5): `/` or a dashboard route `/#/…` on the public host,
-    at most 512 characters, without a backslash, whitespace, a control or format
-    character, a second `#` or `//`. Anything else becomes `/`, silently."""
-    if (
-        not value
-        or len(value) > NEXT_MAX
-        or not (value == "/" or value.startswith("/#/"))
-        or value.count("#") > 1
-        or _NEXT_BAD.search(value)
-        # C1 controls, bidi overrides, zero-width and other format characters.
-        or any(unicodedata.category(c) in ("Cc", "Cf") for c in value)
-    ):
-        return "/"
-    return value
-
-
 def create(
     conn: Connection,
     human_id: str,
@@ -278,9 +256,15 @@ def create(
     cookie value's hash is stored. A session that still owes the second step of a
     two-factor sign-in (`state` other than `full`, §2.8.2) is not a sign-in yet: no
     record, no `last_login_at`; `complete_sign_in` makes it one."""
-    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == human_id))
-    if deleted.scalar() is not None:  # every way in ends here: none for a deleted account
+    account = conn.execute(
+        select(t.human.c.deleted_at, t.human.c.suspended_at).where(t.human.c.id == human_id)
+    ).first()
+    if account is not None and account.deleted_at is not None:
+        # Every way in ends here: none for a deleted account,
         raise unauthenticated("this account was deleted")
+    if account is not None and account.suspended_at is not None:
+        # and none for a suspended one, answered as a wrong password is (§16.8).
+        raise unauthenticated("handle or password is wrong")
     now = clock.now()
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
     browser, system = describe(user_agent)

@@ -24,12 +24,12 @@ from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.mentions import global_name
+from maity_hub.policy import CLOSED_STATES
 from maity_hub.views import ts
 
 PREFIX = "cnv-"
 MIN_PARTICIPANTS, MAX_PARTICIPANTS = 2, 12  # the creator included (§1.7)
 OPEN_PER_PROJECT = 200  # open group chats per project (§1.7)
-CLOSED_STATES = ("accepted", "archived")
 
 
 def is_group(conversation_id: str | None) -> bool:
@@ -520,8 +520,15 @@ def rename(conn: Connection, conversation: Any, title: str | None, actor: Actor 
     )
 
 
-def membership_removed(conn: Connection, target: Any, actor: Actor | None, by: str) -> None:
-    """A member removed from the project leaves every chat (§6.2)."""
+def membership_removed(
+    conn: Connection,
+    target: Any,
+    actor: Actor | None,
+    by: str,
+    reason: str = "membership_removed",
+) -> None:
+    """A member removed from the project leaves every chat (§6.2); an isolated agent too,
+    with `reason: membership_isolated`."""
     chats = conn.execute(
         select(t.conversation)
         .join(
@@ -535,7 +542,7 @@ def membership_removed(conn: Connection, target: Any, actor: Actor | None, by: s
         .order_by(t.conversation.c.id)
     ).all()
     for chat in chats:
-        remove(conn, chat, target.id, by, "membership_removed", actor)
+        remove(conn, chat, target.id, by, reason, actor)
 
 
 def _announce(

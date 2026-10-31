@@ -48,13 +48,17 @@ def test_the_member_view_has_the_contract_shape(
         "id",
         "kind",
         "handle",
+        "aliases",
         "name",
         "display_name",
         "avatar_url",  # null: no picture uploaded (§6.10)
         "owner_id",
         "trust",
         "role",
+        "role_base",  # the role itself for a built-in one (§2.3)
         "reports_to",
+        "cross_owner",
+        "line_consent",
         "areas",
         "capabilities",
         "harness",
@@ -63,6 +67,7 @@ def test_the_member_view_has_the_contract_shape(
         "last_seen_at",
         "presence",
         "paused",
+        "isolated",  # §6.2
         "availability",  # §6.12
         "availability_policy",
         "covered_by",
@@ -81,6 +86,7 @@ def test_the_member_view_has_the_contract_shape(
         "instances",
         "keep_the_why_unconfirmed",  # §6.1: set while the commitment is open
     }
+    assert (view["cross_owner"], view["line_consent"]) == (False, False)
     assert (view["kind"], view["owner_id"], view["reports_to"]) == ("agent", owner.id, owner.id)
     assert (view["harness"], view["model"], view["presence"]) == (
         "Claude Code",
@@ -287,6 +293,7 @@ def test_profiles_belong_to_their_human(
     assert set(body) == {
         "id",
         "handle",
+        "aliases",
         "name",
         "display_name",
         "avatar_url",

@@ -19,7 +19,12 @@ window.Maity = window.Maity || {};
   // The hub's bound on a pull request number (docs/api.md §6.7).
   const PR_MAX = 2 ** 31;
 
-  const KIND_LABELS = { release: "Release", contract: "Contract", maintenance_round: "Context round", setup: "Setup" };
+  const KIND_LABELS = {
+    get release() { return M.t("board.kind.release"); },
+    get contract() { return M.t("board.kind.contract"); },
+    get maintenance_round() { return M.t("board.kind.maintenance_round"); },
+    get setup() { return M.t("board.kind.setup"); },
+  };
 
   const status = (s) => s.replace("_", " ");
 
@@ -28,14 +33,14 @@ window.Maity = window.Maity || {};
   function blockingText(b, byId) {
     const card = (id) => id + (byId[id] ? " (" + byId[id].title + ")" : "");
     switch (b.reason) {
-      case "probe_not_configured": return "the hub observes nothing for this project (no forge probe)";
-      case "task_open": return card(b.task) + " is not done";
-      case "pr_open": return "#" + b.pr + " is not merged";
-      case "pr_unverified": return "#" + b.pr + " is not observed yet; what was typed or reported counts for nothing";
-      case "pr_not_found": return "#" + b.pr + " is not on the forge (a mistyped number, or a moved repository)";
-      case "pr_mismatch": return "#" + b.pr + ": the observed head differs from the reported one";
-      case "group_incomplete": return "the group " + b.tasks.join(" + ") + " does not ship complete";
-      case "checklist_open": return "checklist item " + b.item + " is open";
+      case "probe_not_configured": return M.t("board.blocking.probe_not_configured");
+      case "task_open": return M.t("board.blocking.task_open", { card: card(b.task) });
+      case "pr_open": return M.t("board.blocking.pr_open", { pr: "#" + b.pr });
+      case "pr_unverified": return M.t("board.blocking.pr_unverified", { pr: "#" + b.pr });
+      case "pr_not_found": return M.t("board.blocking.pr_not_found", { pr: "#" + b.pr });
+      case "pr_mismatch": return M.t("board.blocking.pr_mismatch", { pr: "#" + b.pr });
+      case "group_incomplete": return M.t("board.blocking.group_incomplete", { tasks: b.tasks.join(" + ") });
+      case "checklist_open": return M.t("board.blocking.checklist_open", { item: b.item });
       default: {
         const details = Object.keys(b).filter((k) => k !== "reason").map((k) => k + " " + JSON.stringify(b[k]));
         return b.reason + (details.length ? " (" + details.join(", ") + ")" : "");
@@ -56,21 +61,21 @@ window.Maity = window.Maity || {};
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
         " " + (member.presence || "unknown"), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
-      : " · presence unknown");
+      : " · " + M.t("board.presence_unknown"));
   }
 
   function claimLine(ctx, c) {
     const claim = c.claim;
     const dot = (kind) => h("span", { class: "claim-dot " + kind, "aria-hidden": "true" });
     if (!claim) {
-      return h("p", { class: "claim unclaimed" }, dot("none"), c.assigned_to ? "Assigned, not claimed" : "Unclaimed");
+      return h("p", { class: "claim unclaimed" }, dot("none"), c.assigned_to ? M.t("board.claim.assigned_unclaimed") : M.t("board.claim.unclaimed"));
     }
     const who = h("strong", { title: ctx.nameOf(claim.holder) }, M.dom.memberRef(ctx, claim.holder, { text: "handle" }));
     if (claim.expired) {
-      return h("p", { class: "claim expired" }, dot("expired"), who, holderPresence(ctx, claim.holder), " · lease expired " + formatTime(claim.lease_until));
+      return h("p", { class: "claim expired" }, dot("expired"), who, holderPresence(ctx, claim.holder), " · ", M.t("board.claim.lease_expired", { time: formatTime(claim.lease_until) }));
     }
-    return h("p", { class: "claim live" }, dot("live"), "Claimed by ", who, holderPresence(ctx, claim.holder), " · " + formatAgo(claim.since),
-      claim.lease_until ? h("span", { class: "lease" }, " · lease until " + formatTime(claim.lease_until)) : null);
+    return h("p", { class: "claim live" }, dot("live"), M.tn("board.claim.claimed_by", { who }), holderPresence(ctx, claim.holder), " · " + formatAgo(claim.since),
+      claim.lease_until ? h("span", { class: "lease" }, " · ", M.t("board.claim.lease_until", { time: formatTime(claim.lease_until) })) : null);
   }
 
   // Whose card it is, in its header: a small picture and the handle, the
@@ -80,7 +85,7 @@ window.Maity = window.Maity || {};
     const m = (ctx.memberById || {})[c.assigned_to];
     const name = ctx.nameOf(c.assigned_to);
     return h("a", { class: "card-assignee kind-" + (m && m.kind === "human" ? "human" : "agent"), href: ctx.link("members", c.assigned_to),
-      title: name, "aria-label": "Assigned to " + name },
+      title: name, "aria-label": M.t("board.assigned_to", { name }) },
       m ? M.avatar(m, 16) : null, h("span", { "aria-hidden": "true" }, handleOf(ctx, c.assigned_to)));
   }
 
@@ -113,8 +118,8 @@ window.Maity = window.Maity || {};
     const kids = Object.values(byId).filter((t) => t.parent === c.id).sort(M.boardEdit.byOrder);
     const away = counts.total - kids.length;
     const list = h("ul", { class: "subtask-list" }, kids.map((t) => childRow(ctx, t)),
-      away > 0 ? h("li", { class: "muted" }, away + " more not loaded on the board") : null);
-    const words = "Subtasks · " + counts.open + " of " + counts.total + " open";
+      away > 0 ? h("li", { class: "muted" }, M.t("board.subtasks.not_loaded", { count: away })) : null);
+    const words = M.t("board.subtasks.words", { open: counts.open, total: counts.total });
     if (inPanel) return h("div", { class: "subtasks" }, h("span", { class: "label" }, words), list);
     const key = ctx.slug + "/" + c.id;
     const listId = "subtasks-" + c.id;
@@ -131,9 +136,9 @@ window.Maity = window.Maity || {};
   // The parent and the related cards, as links (navigation only).
   function family(ctx, c, inPanel) {
     return [
-      c.parent ? h("p", { class: "card-parent muted" }, "Subtask of ", cardLink(ctx, c.parent)) : null,
+      c.parent ? h("p", { class: "card-parent muted" }, M.tn("board.subtask_of", { card: cardLink(ctx, c.parent) })) : null,
       inPanel && (c.related || []).length
-        ? h("div", { class: "deps related" }, h("span", { class: "label" }, "Related"), h("ul", null, c.related.map((id) => h("li", null, cardLink(ctx, id)))))
+        ? h("div", { class: "deps related" }, h("span", { class: "label" }, M.t("board.related")), h("ul", null, c.related.map((id) => h("li", null, cardLink(ctx, id)))))
         : null,
     ];
   }
@@ -154,8 +159,7 @@ window.Maity = window.Maity || {};
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    // A hub without subtasks (§6.4) sends no parent on its cards.
-    if (!manage || !manage.reload || !("parent" in c)) return null;
+    if (!manage || !manage.reload) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
     const parts = [];
@@ -169,13 +173,13 @@ window.Maity = window.Maity || {};
           others.filter((t) => t.kind !== "release" && !t.parent && (t.id === c.parent || !closed(t))).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
       // A parent or related card the board did not load (closed before its
       // window) stays chosen as it is: a save never drops what it cannot show.
-      const notLoaded = (id) => h("option", { value: id }, id + " (not on the board)");
+      const notLoaded = (id) => h("option", { value: id }, M.t("board.family.not_loaded", { id }));
       if (parentSel && c.parent && !others.some((t) => t.id === c.parent)) parentSel.appendChild(notLoaded(c.parent));
       if (parentSel) parentSel.value = c.parent || "";
       const relatedSel = h("select", { id: "card-related-" + c.id, multiple: true, size: "4" },
         others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
         (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
-      const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, "Save");
+      const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, M.t("board.save"));
       parts.push(h("form", {
         class: "card-family-form",
         onsubmit: async (e) => {
@@ -186,21 +190,21 @@ window.Maity = window.Maity || {};
           if (chosen.slice().sort().join() !== (c.related || []).slice().sort().join()) body.related = chosen;
           if (!Object.keys(body).length) return;
           save.disabled = true;
-          said.busy("Saving…");
+          said.busy(M.t("board.saving"));
           try {
             await M.api.patch(path, body);
           } catch (err) {
             save.disabled = false;
-            said.fail("Not saved: ", hubWords(err) || M.boardEdit.said(err));
+            said.fail(M.t("board.not_saved"), hubWords(err) || M.boardEdit.said(err));
             return;
           }
           await manage.reload("family:" + c.id);
         },
       },
-      h("h4", null, "Parent and related cards"),
-      parentSel ? [h("label", { for: parentSel.id }, "Subtask of"), parentSel]
-        : h("p", { class: "hint" }, hasKids ? "It has subtasks of its own, so it is no subtask." : "A release is no subtask."),
-      h("label", { for: relatedSel.id }, "Related (Ctrl or Shift to choose several)"), relatedSel,
+      h("h4", null, M.t("board.family.title")),
+      parentSel ? [h("label", { for: parentSel.id }, M.t("board.family.parent")), parentSel]
+        : h("p", { class: "hint" }, hasKids ? M.t("board.family.has_kids") : M.t("board.family.release")),
+      h("label", { for: relatedSel.id }, M.t("board.family.related")), relatedSel,
       save, said.el));
     }
     // A subtask under it: not under a subtask, a release or a closed card (§6.4).
@@ -220,7 +224,7 @@ window.Maity = window.Maity || {};
           append(clear(box), f.form);
           start.setAttribute("aria-expanded", "true");
           f.focus();
-        } }, "New subtask");
+        } }, M.t("board.new_subtask"));
       parts.push(h("div", { class: "card-new-subtask" }, start, box));
     }
     return parts.length ? h("div", { class: "card-family" }, parts) : null;
@@ -230,9 +234,9 @@ window.Maity = window.Maity || {};
     const cp = c.checkpoint;
     if (!cp) return null;
     // Two lines at most on the card; the whole text as its tooltip.
-    const said = "Done: " + cp.last_step + "\nNext: " + cp.next_step;
+    const said = M.t("board.checkpoint.text", { done: cp.last_step, next: cp.next_step });
     return h("div", { class: "checkpoint" },
-      h("span", { class: "label" }, "Checkpoint " + formatAgo(cp.updated_at) + " (" + cp.verification + ")"),
+      h("span", { class: "label" }, M.t("board.checkpoint.label", { ago: formatAgo(cp.updated_at), verification: cp.verification })),
       h("p", { class: "pre clamp", title: said }, M.ids.link(said, M.ids.where(ctx))),
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
@@ -240,15 +244,15 @@ window.Maity = window.Maity || {};
   function report(ctx, c) {
     const r = c.report;
     if (!r) return null;
-    const pr = r.pr ? "PR #" + r.pr.number : (r.pr_status === "none" ? "no PR" : "PR unknown: " + (r.pr_unknown_reason || "—"));
+    const pr = r.pr ? M.t("board.report.pr", { number: "#" + r.pr.number }) : (r.pr_status === "none" ? M.t("board.report.no_pr") : M.t("board.report.pr_unknown", { reason: r.pr_unknown_reason || "—" }));
     const observed = r.observed
-      ? "observed " + r.observed.pr_state + ", checks " + r.observed.checks + " · " + formatAgo(r.observed.observed_at)
-      : "not observed by the hub";
+      ? M.t("board.report.observed", { state: r.observed.pr_state, checks: r.observed.checks, ago: formatAgo(r.observed.observed_at) })
+      : M.t("board.report.not_observed");
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
-      h("span", { class: "label" }, "Report " + formatAgo(r.reported_at) + " (" + r.verification + ")"),
-      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx))),
+      h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: r.verification })),
+      h("p", { class: "pre" }, M.dom.withMentions(r.summary, r.mentions, "summary", (id) => ctx.link("members", id), M.ids.where(ctx), ctx)),
       h("p", { class: "muted" }, pr + " · " + observed),
-      r.mismatch ? h("p", { class: "flag" }, "The observed head differs from the reported one.") : null,
+      r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
       whyLine(ctx, r));
   }
 
@@ -258,7 +262,7 @@ window.Maity = window.Maity || {};
   function whyLine(ctx, r) {
     const w = r.why;
     if (!w) return null;
-    if (typeof w.none === "string") return h("p", { class: "report-why" }, "No why: " + w.none);
+    if (typeof w.none === "string") return h("p", { class: "report-why" }, M.t("board.why.none", { reason: w.none }));
     if (typeof w.ref !== "string") return null;
     const cut = w.ref.indexOf("#");
     const path = cut < 0 ? w.ref : w.ref.slice(0, cut);
@@ -267,8 +271,7 @@ window.Maity = window.Maity || {};
     const safe = typeof repo === "string" && /^https:\/\//.test(repo) && /^[0-9a-f]{40}$/.test(r.head || "")
       && /^[A-Za-z0-9._\/-]+\.md$/.test(path) && !path.startsWith("/") && !path.split("/").includes("..");
     const href = safe ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + "/blob/" + r.head + "/" + path : null;
-    return h("p", { class: "report-why" }, "Why: ",
-      href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, path) : h("code", null, path),
+    return h("p", { class: "report-why" }, M.tn("board.why.ref", { file: href ? h("a", { href, target: "_blank", rel: "noopener noreferrer" }, path) : h("code", null, path) }),
       id ? h("span", { class: "muted" }, " #" + id) : null);
   }
 
@@ -276,28 +279,28 @@ window.Maity = window.Maity || {};
   // is a fact; a typed or reported state is shown as a claim beside
   // "unverified" (docs/api.md §6.7).
   function prState(pr) {
-    if (pr.found === false) return h("td", { class: "pr-missing" }, "not on the forge");
+    if (pr.found === false) return h("td", { class: "pr-missing" }, M.t("board.pr.not_found"));
     if (!pr.observed_at) {
-      return h("td", { class: "pr-unverified" }, "unverified",
-        pr.state ? h("span", { class: "muted" }, " · " + pr.source + " as " + pr.state) : null);
+      return h("td", { class: "pr-unverified" }, M.t("board.pr.unverified"),
+        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: pr.state })) : null);
     }
     return h("td", { class: "pr-" + pr.state }, pr.state || "—");
   }
 
   function pullRequests(rel) {
     const prs = rel.pull_requests || [];
-    if (!prs.length) return h("p", { class: "muted" }, "No pull requests yet: they come from the shipped cards' reports, or are typed in.");
+    if (!prs.length) return h("p", { class: "muted" }, M.t("board.prs.none"));
     // The table scrolls sideways in a narrow card; a keyboard reaches it.
-    return h("table", { class: "prs", tabindex: "0", "aria-label": "Pull requests of " + rel.version },
+    return h("table", { class: "prs", tabindex: "0", "aria-label": M.t("board.prs.label", { version: rel.version }) },
       h("thead", null, h("tr", null,
-        h("th", { scope: "col" }, "PR"), h("th", { scope: "col" }, "State"),
-        h("th", { scope: "col" }, "Checks"), h("th", { scope: "col" }, "Observed"))),
+        h("th", { scope: "col" }, M.t("board.prs.pr")), h("th", { scope: "col" }, M.t("board.prs.state")),
+        h("th", { scope: "col" }, M.t("board.prs.checks")), h("th", { scope: "col" }, M.t("board.prs.observed")))),
       h("tbody", null, prs.map((pr) => h("tr", null,
         h("td", null, safeUrl(pr.url) ? h("a", { href: safeUrl(pr.url), rel: "noopener noreferrer" }, "#" + pr.number) : "#" + pr.number,
-          " " + (pr.title || ""), h("span", { class: "muted" }, " · " + pr.source + (pr.task_id ? " by " + pr.task_id : ""))),
+          " " + (pr.title || ""), h("span", { class: "muted" }, " · " + (pr.task_id ? M.t("board.prs.source_by", { source: pr.source, card: pr.task_id }) : pr.source))),
         prState(pr),
         h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? pr.checks : "—"),
-        h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : "never")))));
+        h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : M.t("board.pr.never"))))));
   }
 
   // The connected ships_with components: they ship together or not at all.
@@ -588,8 +591,8 @@ window.Maity = window.Maity || {};
           (c.contract.watchers || []).length
             ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
         : null,
-      // Its section from the repository, where the hub knows path and section (§6.8).
-      c.contract && "path" in c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
+      // Its section from the repository (§6.8).
+      c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -607,7 +610,7 @@ window.Maity = window.Maity || {};
   // them; a title opening its card keeps them too.
   let lastBoard = null;
 
-  // args[0]: a card to open (#/<owner>/<slug>/tasks/<id>, a title's or an id's
+  // args[0]: a card to open (/<owner>/<slug>/tasks/<id>, a title's or an id's
   // link, js/ids.js): its panel, and the card marked on the board; one the
   // board does not hold is read by itself, and said when there is none.
   M.views.board = async function (ctx, root, args) {
@@ -723,18 +726,9 @@ window.Maity = window.Maity || {};
     const place = (c, how, focusKey) => write("Reordering",
       c.id + (how.to ? " is now at the " + how.to : " is now " + PLACED[Object.keys(how)[0]] + " " + Object.values(how)[0]) + ".",
       () => M.api.post(cardPath(c) + "/move", how), focusKey || "order:" + c.id,
-      (err) => {
-        if (err.code !== "not_found" && err.code !== "invalid") return null;
-        // A not_found with the card and its neighbour still where they were
-        // is a hub without the endpoint, not a race.
-        const near = how.before || how.after;
-        return (fresh) => {
-          const here = (id) => fresh.some((t) => t.id === id && t.status === c.status);
-          return err.code === "not_found" && here(c.id) && (!near || here(near))
-            ? "this hub does not order cards yet."
-            : "the card next to it moved or changed meanwhile; the board shows the order as it is now.";
-        };
-      });
+      (err) => (err.code === "not_found" || err.code === "invalid"
+        ? () => "the card next to it moved or changed meanwhile; the board shows the order as it is now."
+        : null));
     const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 
@@ -840,7 +834,7 @@ window.Maity = window.Maity || {};
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => window.location.replace(ctx.link("board")));
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);
@@ -1030,8 +1024,7 @@ window.Maity = window.Maity || {};
     ctx.every(30000, async () => {
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
-        ctx.members = fresh;
-        ctx.memberById = Object.fromEntries(fresh.map((m) => [m.id, m]));
+        M.withMembers(ctx, fresh);
         if (filter.silent) draw();
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);

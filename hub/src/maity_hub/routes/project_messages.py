@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import events, paging
+from maity_hub import events, instances, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -110,6 +110,8 @@ def _scan(
 
 def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str, Any]]:
     senders = principal_ids(conn, (r.actor_membership for r in rows))
+    # A message from an agent names its instance (§8.8, §6.17); a human's has none.
+    instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     # A deleted account among the mentions is shown as one (§2.9).
     payloads = shape_deleted(conn, [r.payload or {} for r in rows])
     items = []
@@ -121,8 +123,10 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
                 "seq": row.seq,
                 "type": None if row.redacted else payload.get("type"),
                 "from": senders.get(row.actor_membership),
+                "from_instance": instance_of.get(row.actor_credential_id or ""),
                 "to": None if row.redacted else payload.get("to"),
                 "task_id": None if row.redacted else payload.get("task_id"),
+                "review": None if row.redacted else payload.get("review"),
                 "body": None if row.redacted else payload.get("body"),
                 "sent_at": ts(row.at),
                 "mentions": [] if row.redacted else payload.get("mentions") or [],

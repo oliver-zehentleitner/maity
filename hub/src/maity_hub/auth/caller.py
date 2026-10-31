@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -23,7 +24,7 @@ from sqlalchemy import Connection, and_, select, update
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, nonces
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
@@ -192,6 +193,21 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     return Caller(kind="human", via="cookie", human_id=row.human_id, human_session=id_hash)
 
 
+def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
+    """Whether a `maity_session` cookie names a session that is alive: the test of §16.7 for
+    "a visitor without a session". It reads, it renews nothing, and it never raises."""
+    value = cookies.get(SESSION_COOKIE)
+    if not value or not value.isascii():
+        return False
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.id_hash == session_id_hash(value))
+    ).first()
+    if row is None or row.ended_at is not None or not session_alive(row, clock.now()):
+        return False
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == row.human_id))
+    return deleted.scalar() is None
+
+
 def session_alive(row: Any, now: datetime) -> bool:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
@@ -219,7 +235,7 @@ def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> C
     if is_runner_credential(row.id):
         # Whatever any project's policy says, before any side effect (§15.1).
         raise ApiError(403, "signature_required", "a runner credential signs every call")
-    return _agent(conn, row, "bearer", renew, facts.cli_install)
+    return _agent(conn, row, "bearer", renew, facts)
 
 
 def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bool) -> Caller:
@@ -230,12 +246,11 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "signature_invalid", "the signature headers are malformed")
     now = clock.now()
     stamp = int(timestamp)
-    # Nonces are remembered in this process only: a request signed before the
-    # process started could be replayed now, so it is refused as skew (§2.2).
-    if (
-        abs(stamp - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS
-        or stamp < PROCESS_STARTED
-    ):
+    # A request signed before the nonces were known could be replayed now, so it is refused as
+    # skew (§2.2): before the database's nonce epoch where they are shared, before the process
+    # started where the process keeps them.
+    known_since = int(nonces.epoch(conn).timestamp()) if nonces.shared(conn) else PROCESS_STARTED
+    if abs(stamp - now.timestamp()) > credentials.TIMESTAMP_WINDOW_SECONDS or stamp < known_since:
         raise ApiError(
             401,
             "timestamp_skew",
@@ -250,11 +265,16 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
-    if not NONCES.first_use(credential_id, nonce):
+    spent_first = (
+        nonces.first_use(conn, credential_id, nonce)
+        if nonces.shared(conn)
+        else NONCES.first_use(credential_id, nonce)
+    )
+    if not spent_first:
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
     if is_runner_credential(row.id):
         return _runner(conn, row)
-    return _agent(conn, row, "signed", renew, facts.cli_install)
+    return _agent(conn, row, "signed", renew, facts)
 
 
 NONCES = credentials.NonceWindow()
@@ -299,6 +319,9 @@ def _credential(conn: Connection, credential_id: str) -> Any:
             t.credential.c.instance,
             t.membership.c.project_id,
             t.membership.c.agent_id,
+            t.membership.c.isolated_reason,
+            t.membership.c.isolated_since,
+            t.membership.c.isolated_by,
             t.agent_profile.c.owner_id,
             t.project.c.signing,
         )
@@ -340,9 +363,12 @@ def _refuse_revoked(row: Any) -> None:
         raise runner_revoke.RevocationDue(row.id, row.revoke_due_by)
 
 
-def _agent(
-    conn: Connection, row: Any, via: str, renew: bool, cli_install: str = DEFAULT_CLI_INSTALL
-) -> Caller:
+# The two calls an isolated agent may still make, so that it learns why (§6.2).
+ISOLATED_MAY = {("GET", b"/api/v1/me"), ("POST", b"/api/v1/me/resume")}
+
+
+def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFacts) -> Caller:
+    cli_install = facts.cli_install
     if via == "bearer" and row.signing == "required":
         # After the proof of possession, before any side effect: no presence, no
         # lease, no last use, and no idempotent replay of an earlier answer (§2.2).
@@ -352,6 +378,23 @@ def _agent(
             "this project requires signed requests: install the CLI; "
             "it uses the credential you already have",
             {"cli": cli_install, "then": "maity resume"},
+        )
+    if row.isolated_since is not None and (facts.method, facts.raw_path) not in ISOLATED_MAY:
+        # Before any side effect, as for a required signature (§6.2, "Isolation").
+        from maity_hub import isolation
+
+        raise isolation.refusal(row)
+    if row.isolated_since is not None:
+        # The two calls it may make leave no trace: no presence, no lease, no session (§6.2).
+        return Caller(
+            kind="agent",
+            via=via,
+            agent_id=row.agent_id,
+            owner_id=row.owner_id,
+            credential_id=row.id,
+            instance=row.instance,
+            membership_id=row.membership_id,
+            project_id=row.project_id,
         )
     now = clock.now()
     credential_id: str = row.id

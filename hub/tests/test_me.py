@@ -9,6 +9,7 @@ from sqlalchemy import Engine, insert
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.ids import new_id
+from maity_hub.views import meat_proxy_note
 from tests import factory
 from tests.conftest import ClientFactory
 
@@ -38,7 +39,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
 ) -> None:
     owner = factory.human(migrated, "maintainer")
     maity = factory.project(migrated, "maity", name="Maity")
-    sample = factory.project(migrated, "sample", name="Sample shop", state="freeze")
+    sample = factory.project(migrated, "sample", name="Sample shop", state="review")
     other = factory.project(migrated, "other")  # not a member: never listed or counted
     me_maity = factory.membership(migrated, maity, "owner", human_id=owner)
     factory.membership(migrated, sample, "proxy", human_id=owner)
@@ -62,12 +63,21 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     assert body["member"] == {
         "id": owner,
         "kind": "human",
+        "aliases": [],
         "handle": "maintainer",
         "display_name": "Human maintainer",
         "avatar_url": None,
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
         "meat_proxy": False,  # §5.2
+        "meat_proxy_lead": False,
+        "meat_proxy_hands": False,
+        "meat_proxy_note": meat_proxy_note(True, True),  # what switching it on would send
+        "public_profile": False,  # §16.9: the person's own page, private until they choose
+        "public_bio": None,
+        "website": None,  # §16.9: the person's links, private until they choose
+        "social": {},
+        "links_visible": "private",
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
         "limit": None,  # no limit declared (§6.12)
@@ -87,7 +97,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "slug": "sample",
             "full_name": "maintainer/sample",
             "name": "Sample shop",
-            "state": "freeze",
+            "state": "review",
             "trust": "admin",
             "role": "proxy",
             "logo": {"available": False, "etag": None},

@@ -14,7 +14,8 @@
   --high: #b42318;
   --normal: #8a5a00;
   --low: #4a5a6a;
-  --ok: #1a7f37;
+  --ok: #177633; /* 5.33:1 on --bg, 5.71:1 on --surface, 5.0:1 on --surface-2 (WCAG AA, a panel's status line) */
+  --plan: #7a45d6; /* the plan state: 5.36:1 on --bg, 5.75:1 on --surface (WCAG AA) */
   --warn: #9a6700;
   --bad: #b42318;
   --flag-bg: #fff6dd;
@@ -50,6 +51,7 @@
     --normal: #e3b341;
     --low: #9aa4ae;
     --ok: #3fb950;
+    --plan: #b392f0;
     --warn: #d29922;
     --bad: #ff7b72;
     --flag-bg: #2d2610;
@@ -75,6 +77,7 @@
   --normal: #e3b341;
   --low: #9aa4ae;
   --ok: #3fb950;
+  --plan: #b392f0;
   --warn: #d29922;
   --bad: #ff7b72;
   --flag-bg: #2d2610;
@@ -159,10 +162,16 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
 }
 
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* A header that is the bar alone (sign-in, an invitation, registration,
+   the landing page, the loader): as much room below it as above, where the
+   full header's rows of tabs would otherwise give it. */
+#header > .bar:only-child { padding-bottom: 10px; }
 /* The page's one h1: the product name, at the size of the header line. */
 .brand { font-weight: 700; font-size: inherit; margin: 0; }
 /* The lockup, 28 px tall; the dark file where the page is dark (as the tokens above decide). */
 .brand-lockup { display: block; height: 28px; width: auto; }
+/* The lockup is the way home (js/app.js brandTitle): a link without underline, its focus ring round the lockup. */
+.brand-home { display: block; text-decoration: none; border-radius: 4px; }
 .brand-lockup.brand-dark { display: none; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .brand-lockup.brand-light { display: none; }
@@ -210,10 +219,12 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
   white-space: nowrap;
 }
 
+.state-plan { color: var(--plan); }
 .state-build { color: var(--accent); }
-.state-freeze, .state-fixes-only { color: var(--warn); }
-.state-accepted { color: var(--ok); }
+.state-review { color: var(--warn); }
+.state-launch { color: var(--ok); }
 .state-archived { color: var(--muted); }
+.state.released { color: var(--text); border-style: double; border-width: 3px; }
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
@@ -243,6 +254,11 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
 .switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
 .project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+/* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
+.header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
+.header-link:hover { border-color: var(--accent); }
+.header-link-mark { flex: none; }
 .state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
@@ -259,9 +275,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 .switcher a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
 .switcher .count { margin-left: 0; }
 
+.dot.state-dot-plan { background: var(--plan); }
 .dot.state-dot-build { background: var(--accent); }
-.dot.state-dot-freeze, .dot.state-dot-fixes-only { background: var(--warn); }
-.dot.state-dot-accepted { background: var(--ok); }
+.dot.state-dot-review { background: var(--warn); }
+.dot.state-dot-launch { background: var(--ok); }
 .dot.state-dot-archived { background: var(--muted); }
 
 main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
@@ -336,6 +353,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
+.members-filter { margin: 4px 0 8px; }
+.members-filter label.check { display: inline-flex; align-items: center; gap: 6px; }
 
 .prio-high { color: var(--high); }
 .prio-normal { color: var(--normal); }
@@ -402,6 +421,7 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .card-release { border-left: 3px solid var(--accent); }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
+.badge.member-isolated { color: var(--bad); }
 .badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
@@ -726,6 +746,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .md ul, .md ol { margin: 4px 0 6px; padding-inline-start: 20px; }
 .md blockquote { margin: 4px 0 6px; padding-inline-start: 10px; border-inline-start: 3px solid var(--border); color: var(--muted); }
 .md code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
+.md code.md-inline-copy { cursor: copy; }
+.md code.md-inline-copy:hover { outline: 1px solid var(--border); }
+.md-copied:not(:empty) { margin-inline-start: 4px; font-size: 0.75rem; color: var(--ok); }
 .md .md-h { margin: 6px 0 4px; }
 .md .md-h1 { font-size: 1.05rem; }
 .md .md-h2 { font-size: 1rem; }
@@ -758,6 +781,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .jump-latest { align-self: flex-end; margin: -40px 12px 8px 0; position: relative; z-index: 1; }
 .jump-latest[hidden] { display: none; }
 .msg.out { justify-self: end; background: var(--out-bg); }
+/* A link in one's own bubble: the accent falls under 4.5:1 on --out-bg (4.33 light),
+   so it takes the text's colour, underlined to stay a link. */
+.msg.out a { color: var(--text); text-decoration: underline; }
 .msg .meta { display: block; margin-top: 4px; font-size: 0.78rem; color: var(--muted); }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
@@ -891,13 +917,15 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 .picture-list { list-style: none; padding: 0; margin: 0; }
 .picture-name { margin: 12px 0 4px; font-size: 0.95rem; }
 /* The project at a glance (js/overview.js), as the designer laid it out
-   (#6484): what needs you, then the state, then the facts, in three rows;
+   (#6484): what needs you, then the state, then the facts, in two rows
+   (Project and README badge under Team, beside Latest reports);
    on a phone one column in the same order. */
 .overview { display: grid; gap: 16px; }
 .overview-row { display: grid; gap: 16px; min-width: 0; }
-.overview-row-1, .overview-row-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.overview-row-1 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .overview-row-2 { display: flex; flex-wrap: wrap; align-items: flex-start; }
-.overview-team { flex: 2 1 480px; }
+.overview-row-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); align-items: start; }
+.overview-stack { flex: 2 1 480px; display: grid; gap: 16px; min-width: 0; }
 .overview-latest { flex: 1 1 300px; }
 .overview-part { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; display: grid; gap: 10px; align-content: start; }
 .overview-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
@@ -1134,23 +1162,24 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .owner-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 8px; }
 .owner-preferences .hint { flex-basis: 100%; margin: 0; }
 
-/* The swarm (js/swarm.js, §6.22): who is at work, the window's table; the
-   public page with initials instead of pictures. */
+/* The swarm (js/swarm.js, §6.22), a section of the Overview: who is at
+   work, the window's table. */
 .swarm-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
 .swarm-window button[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); }
 .swarm-live { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 8px; }
 .swarm-member { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; }
 .swarm-holding { flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
-.swarm-initials { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); font-size: 0.7rem; font-weight: 600; }
 .swarm-per-day { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
 .swarm-per-day .sparkline { color: var(--accent); }
 .swarm-per-day .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+/* A section of the Overview (a grid item) never grows past its column:
+   the table scrolls sideways in its own box on a phone. */
+.swarm-body { min-width: 0; }
+.swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .swarm-table th[scope="row"], .swarm-table thead th:first-child { text-align: left; }
 .swarm-total th, .swarm-total td { font-weight: 600; }
-.swarm-public { max-width: 60rem; margin: 24px auto; display: grid; gap: 8px; }
-.bar .swarm-onward { margin-left: 12px; font-size: 0.9rem; }
 /* Project memory and its setup options (js/new-project.js, §6.21); the
    memory and the README badge in Project settings (js/app.js, §6.20). */
 .project-setup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
@@ -1347,3 +1376,107 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Another instance's state directory, said before its join line (js/join.js). */
 .instance-note { border-left: 3px solid var(--warn); padding: 4px 0 4px 10px; margin: 8px 0; }
 .instance-note p { margin: 4px 0; }
+
+/* The landing page and legal pages editor (js/landing.js). */
+.lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
+.lp-section.kept { opacity: 0.8; }
+.lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lp-section-title { margin: 0; flex: 1 1 auto; }
+.lp-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.lp-tabs button[aria-pressed="true"] { border-color: var(--accent); }
+.lp-field { margin: 6px 0; }
+.lg-page { margin-top: 16px; }
+.legal-links { margin-top: 16px; text-align: center; }
+/* All notifications: unread in bold with a dot, as on the bell. */
+.waiting-items li.unread a { font-weight: 600; }
+.waiting-items li.unread::before { content: "●"; color: var(--accent); margin-inline-end: 6px; font-size: 0.7rem; }
+
+/* Your agents (js/agents-page.js). */
+.agent-cards, .agent-memberships { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.agent-memberships { gap: 4px; margin: 8px 0; }
+.agent-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; overflow-wrap: anywhere; }
+.agent-card.wanted { border-color: var(--accent); }
+.agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.agent-card-head h3 { margin: 0; }
+.agent-settings { margin-top: 8px; }
+.agent-new { margin-top: 20px; }
+/* A project's Agents: what belongs to the membership, under the card. */
+.agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-here h4 { margin: 0 0 4px; }
+.member-actions { white-space: nowrap; }
+.member-actions .member-chat + button { margin-left: 6px; }
+/* Agents that stop listening, on the account (js/notify-settings.js). */
+.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings h3 { margin: 0; }
+.not-listening-settings button { justify-self: start; }
+/* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
+.my-nl { display: grid; gap: 6px; }
+.my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.my-nl input[type="number"] { max-width: 8rem; }
+
+/* A member's page (js/member-page.js): the breadcrumb, the header, the tabs. */
+.breadcrumb { margin: 4px 0 12px; font-size: 0.9rem; }
+.member-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: start;
+  padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.member-head-face { position: relative; width: 64px; height: 64px; }
+/* The presence dot at the avatar's bottom right, ringed in the header's background. */
+.member-head-dot { position: absolute; right: -2px; bottom: -2px; width: 16px; height: 16px; box-shadow: 0 0 0 2px var(--surface); }
+.member-head-text h2 { margin: 0; overflow-wrap: anywhere; }
+.member-pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.member-pill-paused { border-color: var(--warn); }
+.member-line { margin: 0; }
+.member-head-actions { display: flex; gap: 8px; align-items: center; }
+.member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
+.member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+.view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
+.view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
+.view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
+.member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
+/* Phone: avatar, text, then the buttons at full width (the handover). */
+@media (max-width: 600px) {
+  .member-head { grid-template-columns: minmax(0, 1fr); }
+  .member-head-actions { flex-direction: column; align-items: stretch; }
+  .member-head-actions > * { width: 100%; }
+}
+
+/* The instance a chat message wakes (js/chat.js, §9.1), beside the heading. */
+.chat-instance { display: inline-flex; align-items: center; gap: 6px; }
+.chat-instance select { min-height: 28px; }
+.msg-to { white-space: nowrap; }
+
+/* A review result's facts (js/messages.js, §8.4): verdict, head, the places read. */
+.review { display: grid; gap: 4px; margin: 4px 0; }
+.review-head { margin: 0; }
+.review-cites { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 0.85rem; }
+.review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
+.review-quote { white-space: pre-wrap; }
+@media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
+
+/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
+.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
+.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
+
+/* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
+.meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
+.meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+
+/* A person or an organisation at /<handle> (js/person.js, docs/api.md §6.27). */
+.person-head { display: flex; align-items: center; gap: 14px; }
+.person-head h2 { margin: 0; }
+.person-head p { margin: 2px 0 0; }
+/* No picture the reader may see: a neutral placeholder, not a generated avatar. */
+.person-picture-none { display: inline-block; flex: none; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); vertical-align: middle; }
+.person-picture-none.size-64 { width: 64px; height: 64px; }
+.person-picture-none.size-20 { width: 20px; height: 20px; }
+.person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+
+/* Renaming a handle (js/handles.js, docs/api.md §6.24). */
+.handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
+.handle-form .error { flex-basis: 100%; margin: 0; }
+.handle-at { color: var(--muted, inherit); }

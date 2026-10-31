@@ -8,27 +8,35 @@ by an event, whose `seq` the project keeps as `rules_changed_seq`.
 
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, update
+from sqlalchemy import Connection, or_, select, update
 
 from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
 
 KEEP_THE_WHY = "Load the keep-the-why skill and read context/index.md before working."
+RELEASED = (
+    "The project has users: interfaces change only with versioning and a stated transition "
+    "period, migrations stay backward compatible, and the release checklist is required."
+)
 
 _STATE = {
+    "plan": (
+        "The project is in plan, concept and contracts: creating or claiming a card needs "
+        "a `reason`, which is logged with the event."
+    ),
     "build": "The project is being built: claim and create cards as the policy says.",
-    "freeze": (
-        "The project is frozen: creating or claiming a card needs a `reason`, "
-        "which is logged with the event."
+    "review": (
+        "The project is in review, the feature stop before a launch: creating or claiming "
+        "a card needs a `reason`, which is logged with the event."
     ),
-    "fixes-only": (
-        "The project takes fixes only: creating or claiming a card needs a `reason`, "
-        "which is logged with the event."
-    ),
-    "accepted": "The project is accepted: no card may be created or claimed.",
+    "launch": "The project is live: claim and create cards as the policy says.",
     "archived": "The project is archived: no card may be created or claimed.",
 }
 _CLAIM = {
@@ -76,6 +84,27 @@ _ROLE = {
         "Your role is proxy: you relay requests to the owner and record the owner's "
         "answers; you decide nothing yourself."
     ),
+    "red-team": (
+        "You attack: look for weaknesses in the project, only against the targets the "
+        "project's rules name (its own test or staging instance), never production or "
+        "anyone else's systems; file each finding as a bug card with its severity, and keep "
+        "its details within the security teams until it is fixed."
+    ),
+    "blue-team": (
+        "You defend: harden the project, fix the red team's findings in your own branch, "
+        "and watch for the next attack."
+    ),
+    "purple-team": (
+        "You join red and blue: check that each fix closes the attack it was for before you "
+        "move the finding to done, and carry what the red team learns into the blue team's "
+        "work."
+    ),
+    "manager": (
+        "Your role is manager: you lead the members who report to you, hand out and take "
+        "back their cards, set their areas and pause them, within your reach only; you "
+        "carry their questions up to your own lead or your human, and decide nothing a "
+        "human decides."
+    ),
 }
 
 
@@ -96,13 +125,40 @@ SUPERVISED = (
 )
 
 
+def _role_lines(project: Any, role: str) -> list[str]:
+    """A built-in role's text is the hub's; a project role's is a project admin's words,
+    quoted and headed with who set it (§2.3 "Project roles")."""
+    from maity_hub import project_roles
+
+    found = next((r for r in project_roles.of(project) if r["name"] == role), None)
+    if found is None:
+        return [_ROLE.get(role, f"Your role is {role}.")]
+    lines = [f"Your role is {role}, a project role with the scopes of a {found['base']}."]
+    if found["guide"]:
+        lines += ["", f"Set by {found['guide_by']}:", ""]
+        lines += [f"> {line}" if line else ">" for line in found["guide"].splitlines()]
+    return lines
+
+
+DUTY_SELF = (
+    "Finished work does not end your session. Keep `maity wait` running in a loop, each call "
+    "with a timeout below your harness's limit (`hints.wait_timeout` in the resume packet), "
+    "and handle each event as it arrives. If you run on a schedule (a routine or a cron run), "
+    "keep waiting until shortly before your next run, then end cleanly and leave no "
+    "background process behind."
+)
+
+
 def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: bool = False) -> str:
     """The rules document for one member of `project`; `supervised` for a session a
-    runner supervises (§15.11)."""
+    runner supervises (§15.11). Its duty line follows `hints.duty` (§5.2, §6.9): the
+    supervised one, else the one for a session that waits for itself."""
     lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
         lines += ["", f"Note: {project.state_note}"]
+    if project.released_at is not None:
+        lines += ["", f"Released since {project.released_at.date().isoformat()}. {RELEASED}"]
     lines += [
         "",
         "## Policy",
@@ -121,7 +177,7 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
         "## Your role",
         "",
         _TRUST.get(trust, f"Your trust is {trust}."),
-        _ROLE.get(role, f"Your role is {role}."),
+        *_role_lines(project, role),
         "",
         "## Group chats",
         "",
@@ -129,11 +185,62 @@ def generate(project: Any, trust: str, role: str, arbiter: str, *, supervised: b
     ]
     if supervised:
         lines += ["", "## Supervised", "", SUPERVISED]
+    else:
+        lines += ["", "## On duty", "", DUTY_SELF]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]
     return "\n".join(lines) + "\n"
+
+
+def text_digest() -> str:
+    """The digest of the text the hub generates (§6.9): every text constant of this module
+    and four rendered sample documents, so that a sentence written inside `generate` changes
+    it as well, the lines of a project role included. The same on every start of the same code."""
+    constants = {
+        name: value
+        for name, value in sorted(globals().items())
+        if (name.isupper() or (name.startswith("_") and name[1:].isupper()))
+        and (isinstance(value, str) or (isinstance(value, dict) and value))
+    }
+    sample = SimpleNamespace(
+        name="sample", rules_version=1, state="build", state_note="note",
+        released_at=datetime(2026, 1, 1, tzinfo=UTC), policy_preset="sample",
+        claim_policy="sample", done_authority="sample", tag_authority="sample",
+        steward_writes="sample", lease_seconds=60, keep_the_why=True, rules_markdown="owner",
+        roles=[{"name": "sample", "base": "coder", "guide": "guide", "guide_by": "the owner"}],
+    )  # fmt: skip
+    rendered = [
+        generate(sample, "member", role, "the owner", supervised=supervised)
+        for role in ("coder", "sample")
+        for supervised in (False, True)
+    ]
+    text = json.dumps([constants, rendered], sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def sync_text(conn: Connection) -> int:
+    """Count the hub's generated text as a rules input (§6.9): a project whose digest is not
+    the current one gets one `rules_version` bump with `rules_changed`, and the digest.
+    The claim is made under the project lock, so two hubs starting together bump once.
+    Returns how many projects were bumped."""
+    current = text_digest()
+    stale = or_(t.project.c.rules_text_digest.is_(None), t.project.c.rules_text_digest != current)
+    bumped = 0
+    # In id order, so that two hubs starting together lock the projects in the same order.
+    stale_ids = conn.execute(select(t.project.c.id).where(stale).order_by(t.project.c.id))
+    for project_id in stale_ids.scalars().all():
+        project = lock_project(conn, project_id)
+        claimed = conn.execute(
+            update(t.project)
+            .where(t.project.c.id == project_id, stale)
+            .values(rules_text_digest=current)
+        )
+        if claimed.rowcount:
+            bump(conn, project, "rules_changed", ["all"], {"reason": "generated text"}, actor=None)
+            bumped += 1
+    return bumped
 
 
 def bump(

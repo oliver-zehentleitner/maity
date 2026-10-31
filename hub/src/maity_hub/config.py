@@ -73,6 +73,10 @@ class Settings:
     db_max_overflow: int = 16
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
     db_pool_recycle: int = 1800
+    # MAITY_DB_STATEMENT_TIMEOUT, MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT: seconds, set on every
+    # PostgreSQL connection of the hub (30 and 60; 0 turns one off, hub/context/persistence.md).
+    db_statement_timeout: float = 30.0
+    db_idle_in_transaction_timeout: float = 60.0
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
@@ -99,6 +103,16 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
+    # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN (§16.5): a number from 1 to 10000 or
+    # `unlimited`; None where the environment leaves the value to the instance admin.
+    max_agents_per_human: int | str | None = None
+    max_orgs_per_human: int | str | None = None
+    # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
+    # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
+    # (1–24) say when a page is rendered again.
+    public_pages: bool = False
+    public_pages_render: str = "on_change"
+    public_pages_interval_hours: int = 6
 
     @property
     def join_host(self) -> str | None:
@@ -151,6 +165,12 @@ class Settings:
             db_pool_recycle=int(
                 parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
+            db_statement_timeout=parse_number(
+                env, "MAITY_DB_STATEMENT_TIMEOUT", 30.0, minimum=0, maximum=3600
+            ),
+            db_idle_in_transaction_timeout=parse_number(
+                env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
+            ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
@@ -164,6 +184,15 @@ class Settings:
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            public_pages=parse_choice(env, "MAITY_PUBLIC_PAGES", ("on", "off"), "off") == "on",
+            public_pages_render=parse_choice(
+                env, "MAITY_PUBLIC_PAGES_RENDER", ("on_change", "interval"), "on_change"
+            ),
+            public_pages_interval_hours=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_INTERVAL_HOURS", 6, 1, 24
+            ),
+            max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
+            max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
         )
 
 
@@ -268,6 +297,29 @@ def parse_number(
     if not minimum <= number <= maximum:
         raise ConfigError(f"{name} must be between {minimum:g} and {maximum:g}")
     return number
+
+
+def parse_whole(env: dict[str, str], name: str, default: int, minimum: int, maximum: int) -> int:
+    """A whole number within its range; unset is the default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    if not value.isdigit() or not minimum <= int(value) <= maximum:
+        raise ConfigError(f"{name} must be a whole number from {minimum} to {maximum}")
+    return int(value)
+
+
+def parse_limit(env: dict[str, str], name: str) -> int | str | None:
+    """A cap (§16.5): a whole number from 1 to 10000, or `unlimited`; an unset or empty
+    variable is None, the instance admin's to decide, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return None
+    if value == "unlimited":
+        return value
+    if not value.isdigit() or not 1 <= int(value) <= 10000:
+        raise ConfigError(f"{name} must be a number from 1 to 10000, or unlimited")
+    return int(value)
 
 
 def parse_cli_install(value: str) -> str:

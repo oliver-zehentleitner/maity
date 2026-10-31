@@ -1,4 +1,4 @@
-"""`maity-hub serve` and `maity-hub migrate`."""
+"""`maity-hub serve` and `maity-hub migrate`, and the operator's account commands."""
 
 from __future__ import annotations
 
@@ -15,9 +15,19 @@ import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from maity_hub import __version__, clock, longpoll, namespace
+from maity_hub import (
+    __version__,
+    clock,
+    handle_register,
+    handles,
+    longpoll,
+    moderation,
+    namespace,
+    paths,
+    public_pages,
+)
 from maity_hub import tables as t
-from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema
+from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
@@ -50,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
         help="reset a human's second factor at once, the last way in (docs/api.md §2.8.3)",
     )
     reset.add_argument("--handle", required=True)
+    account = commands.add_parser("account", help="an account's moderation (docs/api.md §16.8)")
+    account_commands = account.add_subparsers(dest="account_command", required=True)
+    unsuspend = account_commands.add_parser(
+        "unsuspend", help="lift an instance admin's suspension of a human account"
+    )
+    unsuspend.add_argument("--handle", required=True)
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -73,6 +89,8 @@ def main(argv: list[str] | None = None) -> int:
         return _owner_create(settings, args.handle, args.display_name)
     if args.command == "second-factor":
         return _second_factor_reset(settings, args.handle)
+    if args.command == "account":
+        return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
     return _serve(settings)
@@ -98,6 +116,8 @@ def _owner_create(
         return _fail(
             "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
         )
+    if handle in paths.RESERVED_FIRST:  # a first segment of the hub (§16.11), the first account too
+        return _fail(f"the handle {handle!r} is a reserved first segment", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
     password = _read_password()
@@ -136,18 +156,34 @@ def _owner_create(
                         "or run quickstart again",
                         EXIT_FAILURE,
                     )
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
             else:
-                if handle in namespace.DASHBOARD_WORDS:  # never a namespace (§6.25)
-                    return _fail(f"the handle {handle!r} is a dashboard route", EXIT_FAILURE)
                 if conn.execute(select(t.human.c.id).where(t.human.c.handle == handle)).first():
                     return _fail(f"a human with the handle {handle!r} exists", EXIT_FAILURE)
+                if handle_register.taken(conn, handle):
+                    return _fail(f"an organisation has the handle {handle!r}", EXIT_FAILURE)
+                handles.lock(conn, handles.HUMANS, handle)
+                if handles.holder(conn, handles.HUMANS, handle) is not None:
+                    return _fail(
+                        f"a human kept the handle {handle!r} as an alias",
+                        EXIT_FAILURE,
+                    )
                 conn.execute(insert(t.human).values(**values))
+                if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
+                    raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
+    except _HandleTaken:
+        return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
     print(f"maity-hub: created {handle} ({human_id})")
     return 0
+
+
+class _HandleTaken(Exception):
+    """The register refused the new account's handle after the checks: roll it back."""
 
 
 def _second_factor_reset(settings: Settings, handle: str) -> int:
@@ -177,6 +213,34 @@ def _second_factor_reset(settings: Settings, handle: str) -> int:
     return 0
 
 
+def _unsuspend(settings: Settings, handle: str) -> int:
+    """The operator lifts a suspension (§16.8); nothing comes back by itself: the account
+    signs in again, and its agents and runners join and pair again."""
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        # A process without the app renders the page it brings back (docs: public-pages.md).
+        public_pages.configure(settings)
+        with engine.begin() as conn:
+            human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
+            if human_id is None:
+                return _fail(f"no human with the handle {handle!r}", EXIT_FAILURE)
+            lifted = moderation.unsuspend(conn, human_id)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    if not lifted:
+        return _fail(f"{handle} is not suspended", EXIT_FAILURE)
+    print(f"maity-hub: lifted the suspension of {handle}; they can sign in again")
+    return 0
+
+
 def _fail(message: str, code: int) -> int:
     print(f"maity-hub: {message}", file=sys.stderr)
     return code
@@ -196,6 +260,14 @@ def _migrate(settings: Settings) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        with engine.connect() as conn:
+            holders = namespace.reserved_holders(conn)
+        if holders:  # a release that reserves a held word does not go on (docs/api.md §16.11)
+            return _fail(
+                "a word that docs/api.md §16.11 reserves is already held, rename it first: "
+                + ", ".join(holders),
+                EXIT_FAILURE,
+            )
         before = current_revision(engine)
         migrate(engine)
         print(f"maity-hub: schema {before or 'empty'} -> {head_revision(engine)}")
@@ -207,12 +279,13 @@ def _migrate(settings: Settings) -> int:
 
 
 def _default_handle() -> str:
-    """The login name when it is a valid handle, else `owner`."""
+    """The login name when it is a valid handle that no route of the hub uses (`admin` is
+    one, §16.11), else `owner`."""
     try:
         login = getpass.getuser().lower()
     except (KeyError, OSError):  # no passwd entry, no LOGNAME
         return "owner"
-    return login if HANDLE.fullmatch(login) else "owner"
+    return login if HANDLE.fullmatch(login) and login not in paths.RESERVED_FIRST else "owner"
 
 
 def _quickstart(settings: Settings, handle: str | None, display_name: str | None) -> int:
@@ -268,7 +341,7 @@ def _quickstart(settings: Settings, handle: str | None, display_name: str | None
 
 def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
-        engine = make_engine(settings.database_url)
+        engine = serving_engine(settings)
         require_current_schema(engine)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:

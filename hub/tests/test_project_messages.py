@@ -52,8 +52,10 @@ def test_the_listing_is_newest_first_and_an_item_has_the_reading_shape(owner: fl
         "seq",
         "type",
         "from",
+        "from_instance",
         "to",
         "task_id",
+        "review",  # the object of a review result (§8.4), null for every other type
         "body",
         "sent_at",
         "mentions",
@@ -61,8 +63,10 @@ def test_the_listing_is_newest_first_and_an_item_has_the_reading_shape(owner: fl
         "redacted",
         "redaction",
     }
+    assert item["review"] is None
     assert item["id"] == f"evt-{second}" and item["type"] == "blocker" and item["to"] == "all"
     assert item["from"] == owner.id and item["body"] == "two"
+    assert item["from_instance"] is None  # a human has no instances (§6.17)
     assert item["attachments"] == [] and item["redacted"] is False and item["redaction"] is None
 
 
@@ -82,6 +86,20 @@ def test_a_member_lists_what_it_can_read_through_events(
         e["seq"] for e in on_events if e["kind"] == "message" and e["seq"] in (to_all, to_agent)
     ) == [to_all, to_agent]
     assert len(seqs(listed(owner))) == 5  # an owner reads every project message
+
+
+def test_an_agent_message_names_the_instance_that_wrote_it(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    by_agent = say(agent, "all", "from the agent")
+    by_owner = say(owner, "all", "from the owner")
+    items = listed(owner).json()["items"]
+    assert [(i["seq"], i["from_instance"]) for i in items] == [
+        (by_owner, None),
+        (by_agent, agent.instance),
+    ]
+    assert agent.instance
 
 
 def test_type_filters_as_a_set_and_chat_or_unknown_is_refused(owner: flow.Human) -> None:

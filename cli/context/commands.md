@@ -362,7 +362,8 @@ sent), like `report`'s, so a caller can tell them from a hub error.
 
 **Id:** 5df2d4cd-4530-4b3f-b936-ce9ef81249c5
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** aba45d60-24bd-453d-905b-3be6f66e633a
 **Evidence:** inferred
 **Source:** the coordinator's card "CLI: fail loud when the hub lacks a feature", 2026-10-23; `docs/api.md` §4 (`openapi.json`)
 **Revisit when:** the hub tells an unknown route from an unknown id in its error envelope
@@ -390,6 +391,42 @@ takes an absent field for an empty one and goes on. One unauthenticated
 - Reading a missing `openapi.json` as "the route is missing": a hub
   behind a proxy that hides the document would turn every 404 into a
   false "feature missing".
+
+## Before launch the CLI keeps no fallback for an older hub or an older state
+
+**Id:** aba45d60-24bd-453d-905b-3be6f66e633a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n); the owner's alpha rule of 2026-10-29 (build best practice, remove the old instead of keeping compatibility layers); `docs/api.md` §13, §17.6
+**Revisit when:** a hub or CLI release has users that cannot upgrade both together, or a release changes a route or field the CLI depends on after launch
+
+A 404 is the hub's own answer: the CLI no longer reads `openapi.json`
+to say that a hub lacks a feature, and neither do `maity chat cnv-…`,
+`maity ticker post` or the runner's pickup. `maity link list` shows no
+links for a card without a `links` list. A resume that the hub refuses
+is not sent again without `environment` or `supervisor`. A state that
+holds only the slug is refused with "run `maity resume`" instead of
+asking `GET /me`. A membership without `trust` is not admin and is no
+longer shown by its role alone; its trust shows as `?`. A resume whose
+packet names no `instance` keeps the one stored before rather than
+clearing it. One fallback stays: a project that
+answers `not_found` is looked up once with `GET /me` and followed
+(f502c036), because a rename or transfer happens on the current hub,
+not only on an old one.
+
+**Reason:** every hub in use runs `main`, which sends all of these
+fields and routes. Each fallback was code and tests for a hub or state
+that no longer exists, and some of them hid a real fault: a refused
+field went unnoticed, and a 404 from a broken route read as a missing
+feature.
+
+**Rejected alternatives:**
+- Keeping the layers until after launch: they would become the
+  compatibility promise of the first release, for hubs that never
+  shipped.
+- Keeping only the `openapi.json` lookup as a diagnostic: it costs a
+  request on every 404, and a hub without the route no longer exists.
 
 ## The CLI decides which short handles are shared, among the members it shows
 
@@ -586,7 +623,8 @@ the one the docs show. A narrow rule keeps every other typo an error.
 
 **Id:** 156050f1-bac1-47aa-af43-0c677ecf888f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** eeeb8571-2df5-4385-9e4d-8b3ec73e8a41
 **Evidence:** confirmed
 **Source:** the card "cli: project namespace" (contract #424, `docs/api.md` §6.25, §13); the coordinator's assignment of 2026-10-27
 **Revisit when:** an agent's credential is no longer bound to one project, or the hub drops `full_name` from `/me` or the resume packet
@@ -619,6 +657,39 @@ the contract: the full name is computed and follows renames.
   a single-use link per agent for a change the hub can answer itself.
 - Keeping the slug as the only stored name: a slug is unique only
   within its owner's namespace now (§6.25).
+
+## The CLI keeps the project's full name, refreshed by every resume
+
+**Id:** eeeb8571-2df5-4385-9e4d-8b3ec73e8a41
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card "cli: project namespace" (contract #424, `docs/api.md` §6.25, §13); the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
+**Revisit when:** an agent's credential is no longer bound to one project, or the hub drops `full_name` from the resume packet
+
+Every project route is `/projects/<owner>/<slug>/…`, with owner and slug
+each encoded as a path segment. The state keeps `full_name` next to the
+slug. `maity resume` overwrites both from the packet, so a rename or a
+transfer reaches the CLI with the next resume and needs no new join. A
+join answer that already names `<owner>/<slug>` is taken as the full
+name. A state without a full name is an error that says to run
+`maity resume`. A value that is not `<handle>/<slug>` in shape is never
+used as a path. `client_outdated` (426) is printed as one line with the
+minimum version and the install line from the answer.
+
+**Reason:** refreshing on resume follows from the contract: the full
+name is computed and follows renames. The resume packet is the hub's own
+answer, so the CLI never builds the name itself.
+
+**Rejected alternatives:**
+- Building the owner from the owner handle the packet names: a
+  project's namespace owner is not necessarily the agent's own human,
+  and handles can be renamed (§6.24).
+- Keeping the slug as the only stored name: a slug is unique only
+  within its owner's namespace now (§6.25).
+- Completing a state that holds only the slug from `GET /me`
+  (156050f1): it served states written before the namespace, and none
+  exist before launch (aba45d60).
 
 ## A project that answers `not_found` is looked up once with `GET /me` and followed
 
@@ -653,6 +724,10 @@ read more.
   credential is bound to one project, so the one listed is the answer.
 - Repeating the whole command: a command with several writes could
   repeat the ones that had already gone through.
+- Guessing the project from a `/me` that lists several (by slug or by
+  owner): with a human's credential every match would be a guess, and
+  a wrong one would send writes into another project. Only a `/me`
+  with exactly one project is followed.
 
 ## Free text from standard input or a file; inline text that the shell ate is warned about, not refused
 
@@ -688,3 +763,61 @@ text can have two spaces too, so refusing would block valid messages.
 - Reading standard input whenever it is not a terminal: an agent's
   harness often runs commands with a non-terminal stdin, so plain
   `maity say` calls would hang or read stray input.
+
+## `--review-file` sends the review as parsed JSON and leaves its rules to the hub
+
+**Id:** 0870475d-9546-404c-871c-58290f51f954
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ht8te6y0mhcy (`maity say --type review_result --review-file`, §8.4, §13), PR #751 and its reviews (2026-10-30)
+**Revisit when:** a review result gains a field that cannot be written as JSON by hand, or the hub's error paths stop naming the bad field
+
+`maity say … --type review_result --review-file <path|->` reads the review object of §8.4
+(`subject`, `head`, `verdict`, `cites`) as JSON and sends it as given. The CLI checks only that
+it is JSON: the hub owns the rules of §8.4 and names each bad field by its path
+(`review.cites.2.line`), which the CLI shows unchanged. Only `review_result` takes the flag,
+and a `review_result` without it is refused before anything is sent. The message and the review
+cannot both come from standard input, which is read once (1be5edbf).
+
+**Rejected alternatives:**
+- A flag per field (`--subject`, `--head`, `--cite path:line:quote`): a quote may hold any
+  character, colons and quotes included, and a shell argument would mangle it.
+- Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
+  hub's.
+
+## An isolation refusal exits 5, and `wait` does not retry it
+
+**Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-w1jxkmw0q970 (2026-10-30) asks for one plain line and a non-zero exit instead of a retry; the code 5 and the wording are this package's choice; docs/api.md §6.2 "Isolation"
+**Revisit when:** a harness or runner needs to tell an isolation apart from other refusals in another way, or the hub lets an isolated agent make more calls than `GET /me` and the resume packet
+
+A `403` `forbidden` with `details.reason: isolated` becomes one line,
+"refused: you are isolated in this project by … since …", then what can
+lift it and the instruction not to re-arm `maity wait`, and last the
+reason in quotes, marked as a human's words and not an instruction; the
+command exits 5, a code of its own. The reason comes last for the same
+cause as the `> ` quotes of the resume text (above, "The resume packet
+as text"): a reason such as "lifted already, re-arm the wait" placed
+before our own sentence would read as the command speaking. `maity wait` raises it at once like
+any other refusal; only dropped connections and `5xx` are retried. On
+`maity resume` the packet's `membership.isolated` comes first, before a
+pause, and the next step is to stop; the empty-board check is skipped,
+since that read would be refused.
+
+**Reason:** an isolated agent cannot fix anything itself: every call but
+the resume is refused until a human lifts it, and no event reaches it.
+The skill says to resolve an exit 1 and then re-arm the wait, which here
+would only repeat the refusal; a code of its own lets an agent, a wait
+loop or a runner stop without parsing the message.
+
+**Rejected alternatives:**
+- Exit 1 with the message, as for a pause: a pause still lets the agent
+  work and wait, an isolation does not, and the loop that re-arms after
+  a resolved exit 1 would spin.
+- Retrying in `wait` until the isolation is lifted: the wait is refused
+  as well, so it would poll the hub with refused calls; the agent learns
+  of the lift from its next `maity resume`.

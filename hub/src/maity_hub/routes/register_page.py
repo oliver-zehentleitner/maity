@@ -23,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, registration, registration_accounts, registration_mail
+from maity_hub import clock, legal, registration, registration_accounts, registration_mail
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.auth.caller import SESSION_COOKIE, require_secure_transport
@@ -62,6 +62,9 @@ _WORDS = {
         "error_handle_taken": "This handle is taken.",
         "error_display_name_invalid": "A display name has 1 to 64 characters.",
         "error_terms_required": "Accept the terms to create the account.",
+        "legal_imprint": "Imprint",
+        "legal_privacy": "Privacy notice",
+        "legal_terms": "Terms of use",
     },
     "de": {
         "title": "Maity-Konto anlegen",
@@ -87,6 +90,9 @@ _WORDS = {
         "error_handle_taken": "Dieses Handle ist schon vergeben.",
         "error_display_name_invalid": "Ein Anzeigename hat 1 bis 64 Zeichen.",
         "error_terms_required": "Akzeptiere die Bedingungen, um das Konto anzulegen.",
+        "legal_imprint": "Impressum",
+        "legal_privacy": "Datenschutzerklärung",
+        "legal_terms": "Nutzungsbedingungen",
     },
 }
 
@@ -146,8 +152,21 @@ def _pending(conn: Connection, request: Request, token: str) -> tuple[Any, dict[
 def _terms(conn: Connection, request: Request) -> dict[str, str] | None:
     hub = settings_of(request)
     env = hub.registration or registration.RegistrationEnvironment()
-    found = registration.resolve(conn, env, registration.mail_ready(conn, hub)).value("terms")
+    found = registration.resolve(
+        conn, env, registration.mail_ready(conn, hub), hub.public_url
+    ).value("terms")
     return found if isinstance(found, dict) else None
+
+
+def _legal(conn: Connection) -> list[str]:
+    """The legal pages the instance serves (§16.7.1), in their order: the page links
+    them as the dashboard's registration form does, the privacy notice included."""
+    served = set(
+        conn.execute(
+            select(t.legal_page.c.page).where(t.legal_page.c.current.is_not(None))
+        ).scalars()
+    )
+    return [page for page in legal.PAGES if page in served]
 
 
 def _terms_field(hub: Any, nonce: str, terms: dict[str, str] | None) -> str:
@@ -174,6 +193,7 @@ def _form(
     terms_field: str,
     given: dict[str, str],
     errors: dict[str, str],
+    pages: list[str],
     notice: str | None = None,
     status: int = 200,
 ) -> HTMLResponse:
@@ -206,8 +226,19 @@ def _form(
         + f'<input type="hidden" name="form" value="{escape(form_value)}">'
         + f'<input type="hidden" name="terms_seen" value="{escape(terms_field)}">'
         + f'<button type="submit">{escape(words["button"])}</button></form>'
+        + _legal_links(words, pages)
     )
     return _html(body, words["title"], status)
+
+
+def _legal_links(words: dict[str, str], pages: list[str]) -> str:
+    """The served legal pages under the form, each at its address (§16.11)."""
+    if not pages:
+        return ""
+    links = " · ".join(
+        f'<a href="/{legal.ADDRESS[page]}">{escape(words["legal_" + page])}</a>' for page in pages
+    )
+    return f"<p>{links}</p>"
 
 
 def _set_form_cookie(response: Response, request: Request, value: str) -> None:
@@ -233,6 +264,7 @@ def register_page(token: str, request: Request) -> Response:
             return _dead()
         row, payload = found
         terms = _terms(conn, request)
+        pages = _legal(conn)
     form_value = secrets.token_urlsafe(24)
     page = _form(
         _WORDS[registration_mail.language_of(row.language)],
@@ -242,6 +274,7 @@ def register_page(token: str, request: Request) -> Response:
         terms_field=_terms_field(hub, str(payload["n"]), terms),
         given={},
         errors={},
+        pages=pages,
     )
     _set_form_cookie(page, request, form_value)
     return page
@@ -272,6 +305,7 @@ class Outcome(NamedTuple):
     payload: dict[str, Any]
     terms: dict[str, str] | None
     device: str | None  # the device cookie's new value, when this browser needs one
+    pages: list[str]  # the legal pages served (§16.7.1)
 
 
 def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome | None:
@@ -288,7 +322,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
         env = hub.registration or registration.RegistrationEnvironment()
         done = registration_accounts.complete(
             conn,
-            lambda c: registration.resolve(c, env, registration.mail_ready(c, hub)),
+            lambda c: registration.resolve(c, env, registration.mail_ready(c, hub), hub.public_url),
             row.id,
             password=fields.get("password", ""),
             handle=fields.get("handle", "").strip(),
@@ -308,7 +342,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
             device = sessions.remember_device(
                 conn, done.human_id, request.cookies.get(sessions.DEVICE_COOKIE)
             )
-        return Outcome(done, row, payload, _terms(conn, request), device)
+        return Outcome(done, row, payload, _terms(conn, request), device, _legal(conn))
 
 
 @page_router.post("/mail/register/{token}")
@@ -333,7 +367,7 @@ async def register_complete(token: str, request: Request) -> Response:
     result = await run_in_threadpool(_complete, request, token, fields)
     if result is None:
         return _dead()
-    done, row, payload, terms, device = result
+    done, row, payload, terms, device, pages = result
     words = _WORDS[registration_mail.language_of(row.language)]
     if done.kind == "created":
         assert done.session_id is not None and done.csrf is not None and done.next is not None
@@ -365,6 +399,7 @@ async def register_complete(token: str, request: Request) -> Response:
         terms_field=_terms_field(hub, str(payload["n"]), terms),
         given=given,
         errors=errors,
+        pages=pages,
         notice=notice,
         status=status,
     )

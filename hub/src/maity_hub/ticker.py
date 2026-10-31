@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
+FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
@@ -60,6 +60,7 @@ class Member:
     principal: str
     trust: str
     role: str
+    role_base: str  # the built-in role whose scopes `role` has (§2.3)
     kind: str  # human, agent
     areas: tuple[str, ...]
 
@@ -76,6 +77,7 @@ def members(conn: Connection, project_id: str) -> list[Member]:
             r.agent_id or r.human_id,
             r.trust,
             r.role,
+            r.role_base,
             "agent" if r.agent_id else "human",
             tuple(r.areas or ()),
         )
@@ -112,7 +114,7 @@ def resolve(people: Sequence[Member], token: str) -> list[Member]:
     if kind == "member":
         return [m for m in people if m.principal == value]
     if kind in ("role", "trust"):
-        return [m for m in people if token in tokens_of(m.trust, m.role)]
+        return [m for m in people if token in tokens_of(m.trust, m.role, m.role_base)]
     if kind == "area":
         owner = area_owner(people, value)
         return [owner[0]] if owner else []
@@ -845,7 +847,7 @@ def write_merge(
                 for m in resolve(people, token):
                     audience.add(m.principal, f"contract_implementer:{section}")
         for m in people:
-            if "trust:admin" in tokens_of(m.trust, m.role):
+            if "trust:admin" in tokens_of(m.trust, m.role, m.role_base):
                 audience.add(m.principal, "trust:admin")
     apply_subscriptions(
         conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
