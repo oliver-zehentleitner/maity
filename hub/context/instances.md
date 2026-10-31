@@ -486,3 +486,14 @@ does not.
 - Storing the all-dormant availability like a limit: the limit's `until` and `source: self` rules do not
   fit it, and it would drift when an instance joins or leaves.
 
+For another owner's agent `patch_dormant` refuses at once what the change itself would refuse (`lead` is
+`invalid`), so the admin sees it now and not the owner at the `go` (`409`). Every further PATCH ends the open
+request first (`superseded`, as §6.2 and the member PATCH do); only then, one that changes nothing files nothing
+(`200`). Rejected: checking the no-op before withdrawing, which leaves a request an admin meant to take
+back with the counter-PATCH, for the owner's `go` to carry out against their last word.
+
+The jour fixe reads an agent's instances without the dormant ones (`dormant_since IS NULL` in
+`jourfixe/rounds._instances`): a dormant instance is never chosen, as if it were not listening (§6.17); an agent
+with only dormant ones is `limited`, `source: dormant` anyway. Rejected: choosing it and not waking it, since the
+round would wait for an instance that only its own token wakes.
+

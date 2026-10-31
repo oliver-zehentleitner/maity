@@ -835,9 +835,11 @@ def patch_dormant(
         # asks nobody.
         if value and target.lead_instance == held.instance:
             raise invalid({"dormant": "lead"}, "a team's lead is moved before it rests")
+        # A further PATCH ends the open request first, whatever it then asks (§6.2): the
+        # counter-PATCH of an admin who changed their mind must not leave it to be answered.
+        foreign_agent.withdraw_open(conn, target.id, actor, "superseded")
         if (held.dormant_since is not None) == value:
             return target, reader, None
-        foreign_agent.withdraw_open(conn, target.id, actor, "superseded")
         asked = foreign_agent.file(
             conn,
             project,

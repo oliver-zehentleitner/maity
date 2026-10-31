@@ -418,6 +418,11 @@ def test_a_further_request_supersedes_and_what_changes_nothing_or_is_refused_ask
     # Awake and asked to wake: nothing changes, nobody is asked, no request is filed.
     quiet = owner.patch(path, {"dormant": False, "instance": credential.instance})
     assert quiet.status_code == 200, quiet.text
+    with migrated.connect() as conn:  # the counter-PATCH ended the open request too
+        again_row = conn.execute(
+            select(t.request).where(t.request.c.id == again.json()["id"])
+        ).one()
+    assert again_row.status == "withdrawn" and again_row.withdraw_reason == "superseded"
     # The lead is refused now, not at the owner's go.
     with migrated.begin() as conn:
         conn.execute(
