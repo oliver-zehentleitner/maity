@@ -992,5 +992,9 @@ fault close to the change that caused it without making every author wait for it
 - Keep it in the gate and add runners: more machines for a suite whose value is the daily catch, not the per-PR one.
 - Nightly only: the culprit would sit among a day of merges instead of an hour's.
 - Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
+- One concurrency group for the hourly run and the hand start: GitHub keeps one waiting run per group, so a hand start for a
+  deploy candidate would be displaced by the next hourly run while it waits behind a running one; they have a group each.
+- Any commit for a hand start: the sha is free text and a commit of a fork's pull request can be checked out by it, which
+  would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
   channel the workflow can use without one.
