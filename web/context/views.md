@@ -3152,3 +3152,46 @@ on the hub, and one key keeps the choice from one chat to the next.
 for it per browser, and a reader would set it again in every chat. A
 field that grows with its text by itself: it moves the history while one
 types and still does not give a phone its screen.
+
+## The landing page is imported and exported as JSON in its editor; an import is checked by the preview call and saved only by Save
+
+**Id:** c174a492-2691-4887-9507-e1ba2e805a1f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-36d575f5yybz (the maintainer, 2026-10-30: load the prepared landing V3 with one click; paste or file, the body of PATCH …/landing or one page; the hub's refusals per field; nothing saved before the admin confirms; Export the draft); how it is checked is the implementer's
+**Revisit when:** the hub offers a check of a landing draft of its own, or imports grow to the legal pages
+
+Under the landing editor, **Import or export JSON**: a field and a file
+choice. **Export the draft** writes the draft as the hub takes it
+(enabled, default language, pages, footer) into the field; **Copy**
+copies it. **Load into the editor** reads either that body or one
+language's page (title, description, sections), asks before it
+replaces the whole draft or the page shown, draws the editor from it,
+and sends it to `POST …/landing/preview`, the hub's own check, which
+stores a draft for ten minutes and saves nothing. Its refusals are
+said at their fields as a save's are; **Save** stays the only call that
+saves, so the confirmation that counts is the admin's Save after
+looking the import over. A field the imported body leaves out keeps what
+the editor has, as a `PATCH` keeps the stored one: the prepared V3 file
+has no footer, and an empty operator line is one the hub refuses
+(`footer.operator` is 1 to 120 characters or none), so the editor sends
+none instead of an empty one. The hub checks an import before the
+editor is drawn from it; a body whose pages, sections or lists are of
+the wrong kind leaves the draft as it was. That kind check covers every
+value the editor binds to an object, not only lists: a button, a group
+and each footer link must be an object, or absent where optional, or the
+editor would break after the draft was replaced. Save asks for the
+step-up (§2.8.4) the hub requires for this call.
+
+**Reason:** the preview call already validates a draft exactly as a
+save does, so the import reuses it instead of a second check in the
+page that could drift from the hub's. Drawing the import into the
+editor before anything is stored lets the admin read and fix it there.
+
+**Rejected alternative:** saving on import, with a confirmation: one
+click from a file to visitors, without the editor in between. A check
+of the JSON in the page: a copy of the hub's rules that ages with each
+new section type. Drawing inside try/catch and restoring the draft
+afterwards: it would hide real drawing bugs and leave a half-built
+editor behind.
