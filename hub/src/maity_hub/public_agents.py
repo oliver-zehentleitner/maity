@@ -64,7 +64,7 @@ def served(conn: Connection, agent: Any, owner: Any) -> list[tuple[Any, int]] | 
 def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]:
     """The agent's counters over the projects of its page, summed, and its two medians over the
     samples of all of them (§6.22, the last 30 days): a median of medians would be none."""
-    totals: dict[str, Any] = {key: None for key, _ in public_projects._STAT_LABELS}
+    totals: dict[str, Any] = {key: None for key, _ in public_projects.STAT_LABELS}
     claim: list[int] = []
     review: list[int] = []
     for project, membership_id in found:
@@ -79,14 +79,14 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
         for key in ("cards_done", "reviews_given", "prs_merged", "handovers"):
             if row.get(key) is not None:
                 totals[key] = (totals[key] or 0) + row[key]
-        cut = swarm._day(window.as_of) - timedelta(days=public_projects.STAT_DAYS - 1)
+        cut = swarm.utc_day(window.as_of) - timedelta(days=public_projects.STAT_DAYS - 1)
         claim += [s for m, s, d in window.claim_to_done if m == membership_id and d >= cut]
         if window.reviews_since is not None:
             review += [s for m, s, d in window.review_to_done if m == membership_id and d >= cut]
     for key in ("cards_done", "prs_merged", "handovers"):
         totals[key] = totals[key] or 0
-    totals["claim_to_done_median_seconds"] = swarm._median(claim)
-    totals["review_to_done_median_seconds"] = swarm._median(review)
+    totals["claim_to_done_median_seconds"] = swarm.median_of(claim)
+    totals["review_to_done_median_seconds"] = swarm.median_of(review)
     return totals
 
 
@@ -109,8 +109,8 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     counters = (
         f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
         + "".join(
-            f"<li>{escape(label)}: {escape(public_projects._value(key, totals[key]))}</li>"
-            for key, label in public_projects._STAT_LABELS
+            f"<li>{escape(label)}: {escape(public_projects.stat_value(key, totals[key]))}</li>"
+            for key, label in public_projects.STAT_LABELS
         )
         + "</ul>"
     )

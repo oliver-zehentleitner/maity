@@ -11,7 +11,8 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock, public_pages, swarm
 from maity_hub import tables as t
-from tests import factory
+from tests import factory, flow
+from tests.conftest import ClientFactory
 from tests.test_public_projects_team import World, shown
 from tests.test_public_projects_team import world as world  # noqa: F401  (the fixture)
 
@@ -181,3 +182,81 @@ def test_the_agent_page_is_in_the_sitemap(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     sitemap: Any = world.anyone.get("/sitemap.xml").text
     assert f"https://hub.example/maintainer/agents/{handle_of(world)}" in sitemap
+
+
+def test_a_person_page_follows_an_agent_in_a_project_its_owner_is_no_member_of(
+    make_client: ClientFactory, migrated: Engine, world: World
+) -> None:
+    carol = flow.human(lambda **kw: make_client(public_pages=True, **kw), migrated, "carol")
+    assert carol.patch("/me", {"public_profile": True}).status_code == 200
+    bot = factory.agent(migrated, world.project_id, carol.id, "coder")
+    handle = bot.agent_id
+    # the join: the owner's page lists the agent, the agent has its page
+    with migrated.begin() as conn:
+        public_pages.touch(conn, "project", world.project_id)
+    assert f'<a href="/carol/agents/{handle}">' in person_page(world, "carol")
+    assert agent_page(world, handle, "carol") is not None
+    # a new name is on both at once
+    with migrated.begin() as conn:
+        conn.execute(
+            t.agent_profile.update()
+            .where(t.agent_profile.c.id == bot.agent_id)
+            .values(display_name="Carol Bot")
+        )
+        from maity_hub import public_projects
+
+        public_projects.touch_of_agent(conn, bot.agent_id)
+    assert ">Carol Bot</a>" in person_page(world, "carol")
+    # the isolation takes the link away at once, though carol is no member
+    isolate = f"/projects/maintainer/maity/members/{bot.agent_id}/isolate"
+    assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
+    assert f"/carol/agents/{handle}" not in person_page(world, "carol")
+    assert agent_page(world, handle, "carol") is None
+
+
+def _window(as_of: Any, **facts: Any) -> swarm.Window:
+    return swarm.Window(as_of=as_of, reviews_since=swarm.utc_day(as_of), **facts)
+
+
+def test_the_medians_are_pooled_over_the_projects_and_the_counters_summed(
+    world: World, migrated: Engine, monkeypatch: Any
+) -> None:
+    world.owner.patch("/me", {"public_profile": True})
+    agent_id = world.bot.get("/me").json()["member"]["id"]
+    second = world.owner.post("/projects", {"slug": "second", "name": "Second"})
+    assert second.status_code == 201, second.text
+    assert (
+        world.owner.patch("/projects/maintainer/second", {"public_page": "on"}).status_code == 200
+    )
+    with migrated.connect() as conn:
+        second_id = conn.execute(
+            select(t.project.c.id).where(t.project.c.slug == "second")
+        ).scalar_one()
+        first_member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+        ).scalar_one()
+    second_member = factory.membership(migrated, second_id, "member", agent_id=agent_id)
+    now = clock.now()
+    day = swarm.utc_day(now)
+    windows = {
+        world.project_id: _window(
+            now,
+            claim_to_done=[(first_member, s, day) for s in (100, 200, 300)],
+            reviews=[(first_member, day)] * 2,
+            prs=[({first_member}, day)],
+        ),
+        second_id: _window(
+            now,
+            claim_to_done=[(second_member, s, day) for s in (1000, 2000, 3000)],
+            reviews=[(second_member, day)] * 3,
+            prs=[({second_member}, day)] * 2,
+        ),
+    }
+    monkeypatch.setattr(swarm.CACHE, "get", lambda conn, project_id: windows[project_id])
+    with migrated.begin() as conn:
+        public_pages.touch(conn, "project", second_id)
+    text = agent_page(world) or ""
+    # the six samples pooled have the median 650 s (10 min); the medians of the two projects, 200 s
+    # and 2000 s, would average 1100 s (18 min)
+    assert stat(text, "Median, claim to done") == "10 min"
+    assert stat(text, "Reviews given") == "5" and stat(text, "Pull requests merged") == "3"
