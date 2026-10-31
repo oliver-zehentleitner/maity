@@ -818,6 +818,28 @@ def test_the_deletion_takes_the_campaign_origin_along(
         assert conn.execute(select(t.campaign_origin)).all() == []
 
 
+def test_the_deletion_takes_the_pins_along(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.9, §9.3: a pin is personal data of the account; the confirmed link removes it."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    project_id = factory.project(migrated, "pinned")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.conversation_pin).values(
+                human_id=pat.id,
+                project_id=project_id,
+                conversation_id="cnv-pinned",
+                pinned_at=clock.now(),
+            )
+        )
+    token = requested(pat, migrated)
+    assert press(pat, token).status_code == 200
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.conversation_pin)).all() == []
+
+
 def test_a_write_held_past_its_authentication_is_refused_after_the_deletion(
     make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
