@@ -6,7 +6,7 @@ hold, null for the default `["coder"]`.
 
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
-Revision ID: 20261031112210_agent_owners_policy
+Revision ID: 20261031112210_agent_owners
 Revises: 20261031065451_landing_variants
 Create Date: 2026-10-31
 """
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261031112210_agent_owners_policy"
+revision: str = "20261031112210_agent_owners"
 down_revision: str | None = "20261031065451_landing_variants"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

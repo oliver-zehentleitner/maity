@@ -161,6 +161,7 @@ window.Maity = window.Maity || {};
 
     function quote(msg) {
       if (!text) return;
+      if (text.composeOpen) text.composeOpen();
       text.value = parts.quoteOf(ctx, msg) + text.value;
       parts.drafts.set(key, text.value);
       text.focus();
