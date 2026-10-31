@@ -38,20 +38,35 @@ def parse(raw: Any) -> list[str] | None:
     return list(raw)
 
 
+def _handles_of(conn: Connection, human_id: str | None, org_id: str | None) -> set[str]:
+    """The handles a namespace owner answers to: an organisation's, or a human's current one and
+    their aliases (§6.24)."""
+    if human_id is not None:
+        found = set(handles.aliases(conn, [human_id])[human_id])
+        current = conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar()
+        if current is not None:
+            found.add(str(current))
+        return found
+    current = conn.execute(select(t.org.c.handle).where(t.org.c.id == org_id)).scalar()
+    return set() if current is None else {str(current)}
+
+
 def names_of(conn: Connection, project: Any) -> set[str]:
-    """Every full name the project answers to: its slug and its aliases' slugs, under its
-    owner's current handle and the handle aliases of an owner that is a human (§6.24, §6.25)."""
-    slugs = {project.slug}
-    slugs.update(
-        conn.execute(
-            select(t.project_alias.c.slug).where(t.project_alias.c.project_id == project.id)
-        ).scalars()
-    )
-    owner = namespace.owner_of(conn, project)
-    owners = {owner["handle"]}
-    if project.owner_human_id is not None:
-        owners.update(handles.aliases(conn, [project.owner_human_id])[project.owner_human_id])
-    return {f"{o}/{s}" for o in owners for s in slugs}
+    """Every full name the project answers to: its own slug under its owner's handles, and
+    each earlier name under the owner it had then, a transfer included (§6.24, §6.25)."""
+    found = {
+        f"{h}/{project.slug}"
+        for h in _handles_of(conn, project.owner_human_id, project.owner_org_id)
+    }
+    aliases = conn.execute(
+        select(
+            t.project_alias.c.slug, t.project_alias.c.owner_human_id, t.project_alias.c.owner_org_id
+        ).where(t.project_alias.c.project_id == project.id)
+    ).all()
+    for alias in aliases:
+        for handle in _handles_of(conn, alias.owner_human_id, alias.owner_org_id):
+            found.add(f"{handle}/{alias.slug}")
+    return found
 
 
 def admits(conn: Connection, allowed: list[str] | None, project: Any) -> bool:

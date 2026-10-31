@@ -539,6 +539,9 @@ def _settle_by_right(
     if placement.pending_change is not None or not approve:
         pl.withdraw_open_request(conn, placement, "settled by the runner's owner", actor)
         return pl.row(conn, placement.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == placement.project_id)).one()
+    if not allowed_projects.admits_membership(conn, placement.membership_id, project):
+        raise allowed_projects.not_allowed()  # as for a `go` on the consent request (§6.3)
     pl.answer_open_request(conn, placement, actor, by)
     return pl.approve(conn, placement, actor, by)
 

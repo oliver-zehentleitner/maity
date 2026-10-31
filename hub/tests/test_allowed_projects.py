@@ -9,10 +9,10 @@ import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_join_pickup import exchange, pick_up, setup  # noqa: F401  (the fixture)
-from tests.test_placements import Setup, place
+from tests.test_placements import Setup, admin_agent, place
 
 PROJECT = "/projects/maintainer/maity"
 FULL = "maintainer/maity"
@@ -216,6 +216,33 @@ def test_a_rejoin_is_refused_the_same_way(
     assert refused.json()["error"]["details"] == {"why": "project_not_allowed"}
 
 
+def test_an_owner_of_the_runner_cannot_approve_a_proposal_the_list_no_longer_admits(
+    setup: Setup, make_client: ClientFactory  # noqa: F811
+) -> None:
+    proposer = admin_agent(make_client, setup)
+    proposed = place(setup, proposer, reason="a second pair of hands")
+    assert proposed.status_code == 201, proposed.text
+    body = proposed.json()
+    assert body["approval"]["status"] == "pending"
+    allow(setup.owner, setup.agent.id, ["acme/elsewhere"])  # after the proposal was filed
+    base = f"{PROJECT}/placements/{body['id']}"
+    answer = f"{PROJECT}/requests/{body['approval']['request_id']}/answer"
+    # acting on it by right approves it; so does the owner's go on the consent request
+    for refused in (
+        setup.owner.post(f"{base}/restart", {}),
+        setup.owner.post(answer, {"reply_id": "go"}),
+    ):
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"]["reason"] == "project_not_allowed"
+    with setup.engine.connect() as conn:
+        status = conn.execute(
+            select(t.placement.c.approval_status).where(t.placement.c.id == body["id"])
+        ).scalar_one()
+    assert status == "pending"
+    allow(setup.owner, setup.agent.id, None)
+    assert setup.owner.post(f"{base}/restart", {}).status_code == 200
+
+
 # --- how a project is matched ---------------------------------------------------------------------
 
 
@@ -277,3 +304,29 @@ def test_allowed_in_is_a_full_name_and_a_tombstone_is_never_listed(
         assert refused.status_code == 400, (bad, refused.text)
         assert _fields(refused) == {"allowed_in": "format"}
     assert gone.id not in {a["id"] for a in owner.get(f"/agents?allowed_in={FULL}").json()["items"]}
+
+
+def test_an_earlier_name_keeps_the_owner_it_had_then(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A project renamed and then transferred is matched by `<old owner>/<old slug>` and
+    `<old owner>/<first slug>`, never by the new owner under an old slug."""
+    from maity_hub import allowed_projects as book
+
+    anna = flow.human(make_client, migrated, "anna")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "owner", human_id=anna.id)  # the receiver is an owner
+    assert owner.patch(PROJECT, {"slug": "maity-hub"}).status_code == 200
+    moved = owner.post(f"{PROJECT.replace('maity', 'maity-hub')}/transfer", {"to": anna.id})
+    assert moved.status_code == 202, moved.text
+    answered = anna.post(
+        f"/projects/maintainer/maity-hub/requests/{moved.json()['id']}/answer",
+        {"reply_id": "go"},
+    )
+    assert answered.status_code == 200, answered.text
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        names = book.names_of(conn, project)
+    assert names == {"anna/maity-hub", "maintainer/maity", "maintainer/maity-hub"}
+    assert "anna/maity" not in names  # never a name of this project
