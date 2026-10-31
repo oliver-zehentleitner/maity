@@ -842,7 +842,14 @@ def test_a_takeover_without_a_briefing_points_at_the_hand_over_above() -> None:
 
 
 @pytest.mark.parametrize(
-    "handover", [None, {"kind": "task"}, {"kind": "message", "id": "9"}, {"kind": "file"}]
+    "handover",
+    [
+        None,
+        {"kind": "task"},
+        {"kind": "message", "id": "9"},
+        {"kind": "message", "id": True},
+        {"kind": "file"},
+    ],
 )
 def test_a_takeover_without_a_hand_over_asks_where_it_is(handover: Any) -> None:
     """`handover` is optional (§3.1); one that names nothing readable prints nothing above

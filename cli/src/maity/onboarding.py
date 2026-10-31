@@ -736,7 +736,7 @@ def _handover_ref(ms: dict[str, Any]) -> str:
     kind, ref = handover.get("kind"), handover.get("id")
     if kind == "task" and isinstance(ref, str) and ref:
         return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
-    if kind == "message" and isinstance(ref, int):
+    if kind == "message" and isinstance(ref, int) and not isinstance(ref, bool):
         return f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
     return ""
 

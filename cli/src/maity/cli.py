@@ -454,6 +454,9 @@ def cmd_join(args: argparse.Namespace) -> int:
         try:
             session = Session()
             status = _resume(session, args, first=True)
+            # The resume text is on stdout, the closing lines on stderr: through one pipe, the
+            # way a harness reads both, stdout is buffered and would come after them.
+            sys.stdout.flush()
             _chat_note(state.load_state(session.dir, name=LAST_PACKET))
         except hub.HubError as exc:
             _err(
