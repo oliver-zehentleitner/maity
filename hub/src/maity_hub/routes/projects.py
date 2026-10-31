@@ -19,6 +19,7 @@ from maity_hub import (
     availability,
     clock,
     commitment,
+    forge,
     handles,
     idempotency,
     images,
@@ -172,6 +173,9 @@ class ProjectCreate(Strict):
     memory: MemoryIn | None = None
     setup: Any = None  # parsed by setup_cards.parse, for the reasons §6.21 names
     policy: PolicyIn | None = None
+    # `off` from anyone, `on` from the namespace owner only; left out: `on` for the namespace
+    # owner, `off` for anyone else (§6.1, §16.9).
+    public_page: Literal["off", "on"] | None = None
 
 
 class ProjectPatch(Strict):
@@ -253,6 +257,15 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
             "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
         )
     return {"repository_url": url, "repository_default_branch": repository.default_branch}
+
+
+def _looks_public(request: Request, repository: RepositoryIn | None) -> bool | None:
+    """The hub's first look at a repository: whether the forge reports it public. One it has not
+    looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none."""
+    if repository is None:
+        return None
+    url = _repository_columns(repository)["repository_url"]
+    return reader_of(request).repository_public(forge.repository_of(url))
 
 
 def _apply_policy(
@@ -515,6 +528,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         _repository_columns(body.repository)
     words = namespace.app_words(request.app)
     assert caller.human_id is not None  # a human caller
+    # Before the transaction, which waits for no forge: a page asked for `off` needs no look.
+    seen_public = _looks_public(request, body.repository) if body.public_page != "off" else None
 
     def action(conn: Connection) -> idempotency.Outcome:
         # The creator is the namespace owner, or an organisation they may create in:
@@ -525,6 +540,16 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
         owner_id, org, org_role = _creation_owner(conn, caller, body.owner)
         if namespace.taken(conn, owner_id, body.slug):
             raise invalid({"slug": "taken"}, "this namespace has a project with this slug")
+        # The page is the namespace owner's (§16.9): `on` is theirs to give or leave as the
+        # default, anyone else's project starts `off`; a repository the hub could not see
+        # public keeps it `off` whatever was sent, so no creation publishes what the creator
+        # could not see the hub see (§6.1).
+        owns_namespace = org is None or org_role == "owner"
+        if body.public_page == "on" and not owns_namespace:
+            raise orgs.org_role()
+        page = body.public_page or ("on" if owns_namespace else "off")
+        if page == "on" and body.repository is not None and not seen_public:
+            page = "off"
         now = clock.now()
         project_id = new_id("project")
         filled = policy.filled("hierarchical", caller.principal_id)
@@ -540,6 +565,9 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 state_changed_at=now,
                 keep_the_why=memory_on,
                 setup=setup_cards.stored(setup),
+                public_page=page,
+                # What the first look said, so the page need not wait for the probe's round.
+                repository_public=True if page == "on" and body.repository else None,
                 **_repository_columns(body.repository),
                 **policy.columns(filled),
                 settings={"release_checklist": []},
@@ -609,6 +637,8 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 reader_of(request),
             )
             project = _load(conn, project_id)
+        if page == "on":
+            public_pages.touch(conn, public_projects.KIND, project_id)
         return idempotency.Outcome(201, "project", project_id, _view(conn, project, request))
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -628,6 +658,9 @@ def patch_project(
 ) -> JSONResponse:
     given = body.model_fields_set
     words = namespace.app_words(request.app)
+    # The look at a new repository is the hub's own call to the forge, made before the
+    # transaction (§6.1): the page stays on only for one the hub sees public.
+    seen_public = _looks_public(request, body.repository) if "repository" in given else None
 
     def action(conn: Connection) -> idempotency.Outcome:
         if "setup" in given:
@@ -684,6 +717,15 @@ def patch_project(
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
                 values["repository_public"] = None  # the forge has not said anything of this one
+                if (
+                    columns["repository_url"] is not None
+                    and values.get("public_page", project.public_page) == "on"
+                    and not seen_public
+                ):
+                    # A repository the hub finds private or cannot read turns the page off, and
+                    # the namespace owner turns it on again if they want (§6.1, §16.9).
+                    values["public_page"] = "off"
+                    settings_changed["public_page"] = "off"
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -915,7 +957,7 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
-        if new_policy is not None or "public_page" in given:
+        if new_policy is not None or "public_page" in values:
             # The setting may come to read `members`: agents of owners who are none go (§6.2).
             agent_owners.reconcile(conn, project.id, actor)
         if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
