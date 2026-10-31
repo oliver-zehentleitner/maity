@@ -452,7 +452,9 @@ def cmd_join(args: argparse.Namespace) -> int:
     status = EXIT_OK
     if not args.no_resume:
         try:
-            status = _resume(Session(), args, first=True)
+            session = Session()
+            status = _resume(session, args, first=True)
+            _chat_note(state.load_state(session.dir, name=LAST_PACKET))
         except hub.HubError as exc:
             _err(
                 f"joined, but the first resume failed: {exc}; run `maity resume`. "
@@ -461,6 +463,15 @@ def cmd_join(args: argparse.Namespace) -> int:
             status = EXIT_ERROR
     _path_note()
     return status
+
+
+def _chat_note(packet: dict[str, Any]) -> None:
+    """The line an agent gives its human as its last message in the agent's window (§5.2):
+    the direct chat with its owner, where the two talk from then on. Left out when the
+    packet has no web address there (a human's membership, an older hub)."""
+    url = onboarding.get(packet, "membership", "chat_url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
 
 
 PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
