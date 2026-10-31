@@ -268,13 +268,13 @@ contract.
 - Any `#…` after a name voids the mention: ordinary text such as
   "@agent-b#1" would lose a mention its writer meant.
 
-## A chat message's and a request's instance are read from the credential behind them, not stored
+## A message's and a request's instance are read from the credential behind them, not stored
 
 **Id:** bcc55638-fc1f-4896-8e34-b92f5fce7826
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's scope for the hub half of the instance suffix (tsk-6sxbvsf87219), 2026-10-27: exactly what the contract promises, no migration; `docs/api.md` §9 (`from_instance`), §7 (`asked_by.instance`), §6.17
+**Source:** the coordinator's scope for the hub half of the instance suffix (tsk-6sxbvsf87219), 2026-10-27: exactly what the contract promises, no migration; `docs/api.md` §9 (`from_instance`), §7 (`asked_by.instance`), §6.17; `docs/api.md` §8.8 (#785, #787), 2026-10-30
 **Revisit when:** a request is filed by an agent without a live session in a way that matters, or the contract adds `from_instance` to the conversation list's `last_message`
 
 A conversation message's `from_instance` is the instance of the
@@ -286,6 +286,12 @@ files, and for an agent that asked without a live session. The list
 preview (`last_message`) carries no `from_instance`, since the
 contract's preview does not name one.
 
+The project message listing (§8.8, `routes/project_messages.py`)
+names `from_instance` the same way, through the same `instances_of`
+call, one query per page. A redacted message keeps it, as it keeps
+`from`: both come from the event's actor, which redaction leaves
+(§8.5), so the listing does not branch on `redacted` for it.
+
 **Reason:** both facts are already in the rows the hub writes today, so
 the fields the contract promised need no column and no migration, and
 older rows answer too.
@@ -294,7 +300,10 @@ older rows answer too.
 reading the event's own column): exact for a session-less ask, but a
 migration and a reserved number for a case the CLI does not produce,
 since it resumes before it asks. Adding `from_instance` to the preview:
-beyond the contract.
+beyond the contract. Storing a message's instance in its payload when
+it is written: older messages would answer `null`, and a redaction
+replaces the payload, so the tombstone would lose the field the
+contract says it keeps.
 
 ## An instance address resolves in one function, in a message, a request and a mention
 

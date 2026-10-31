@@ -34,6 +34,7 @@ from maity_hub import (
     not_listening_digest,
     org_invitations,
     probe,
+    public_agents,  # noqa: F401  (registers the kind of page)
     public_pages,
     public_people,  # noqa: F401  (registers the kind of page)
     public_project_views,  # noqa: F401  (registers the kind of page)

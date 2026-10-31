@@ -89,7 +89,7 @@ window.Maity = window.Maity || {};
   }
   // The dashboard's own first words and the hub's (§16.11, "Reserved first
   // segments"): never a namespace, a handle may not be one of them.
-  const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "health",
+  const OWN_WORDS = ["account", "admin", "agents", "all", "api", "assets", "badge", "chats", "components", "explore", "for", "health",
     "impressum", "imprint", "inbox", "invite", "join", "login", "mail", "new", "notifications", "observe", "privacy", "register",
     "requests", "runners", "settings", "sign-in", "terms"];
   // Read by js/ids.js: an id after one of them names no project. The hub's
@@ -113,6 +113,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
+    // /settings/forge: the account's forge access (§11.4, §16.11), where the hub's setup redirect lands.
+    if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     // /agents[/<id>]: one's agent profiles across projects (js/agents-page.js).
@@ -561,7 +563,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx));
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null);
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);

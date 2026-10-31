@@ -958,6 +958,8 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     registration_admin_step(run, page)
     reports_admin_step(run, page, alpha)
+    forge_access_step(run, page)
+    landing_json_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1178,7 +1180,35 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         box = compose.bounding_box()
         assert box["y"] + box["height"] <= 780 + 1, f"the composer is below the screen at {phone} px: {box}"
         run.shot(page, f"phone-{phone}-chat")
+        if phone == 390:
+            # The composer folds away for reading (tsk-k6nakahy6fnj): the history gets its room.
+            history = page.locator("ol.messages")
+            reading = history.bounding_box()["height"]
+            compose.get_by_role("button", name="Hide the composer", exact=True).click()
+            expect(page.locator("#chat-text")).to_be_hidden()
+            grown = history.bounding_box()["height"]
+            assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
+            run.shot(page, "phone-390-chat-composer-hidden")
+            run.a11y(page, "chat, the composer hidden")
+            # The check ends at its last width: back to the phone, where the button is.
+            page.set_viewport_size({"width": phone, "height": 780})
+            compose.get_by_role("button", name="Write a message", exact=True).click()
+            expect(page.locator("#chat-text")).to_be_focused()
     page.set_viewport_size({"width": 1280, "height": 900})
+    # On a wide screen the field grows to three times its height and back; no empty
+    # band between it and its buttons.
+    field = page.locator("#chat-text")
+    one = field.bounding_box()["height"]
+    actions = compose.locator(".compose-actions").bounding_box()
+    gap = actions["y"] - (field.bounding_box()["y"] + one)
+    assert gap <= 16, f"{gap} px between the message field and its buttons"
+    compose.locator(".compose-size").get_by_role("button", name="3×", exact=True).click()
+    three = field.bounding_box()["height"]
+    assert three >= one * 2.5, f"3× made the field {three} px from {one} px"
+    expect(compose.locator(".compose-size").get_by_role("button", name="3×", exact=True)).to_have_attribute("aria-pressed", "true")
+    run.shot(page, "chat-composer-3x")
+    compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
+    assert abs(field.bounding_box()["height"] - one) < 2
     no_problems(run, "chat")
 
     run.step("global chat: /chats has every project's chats and opens one in place")
@@ -2120,6 +2150,54 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def landing_json_step(run: Run, page: Page) -> None:
+    """Instance administration → Landing page (docs/api.md §16.7, tsk-36d575f5yybz): a draft
+    imported as JSON, checked by the hub's preview call, saved only by Save."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("landing page: the admin imports a page as JSON, the hub checks it, then it is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Landing page", exact=True).click()
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    # No footer, as the prepared landing V3 file: the editor's footer stays (§16.7, #808's review).
+    body = {
+        "enabled": False,
+        "default_language": "en",
+        "pages": {"en": {"title": "E2E landing", "description": "Imported by the e2e run.",
+                         "sections": [{"type": "text", "enabled": True, "markdown": "Hello from **e2e**."}]}},
+    }
+    page.locator("#lp-json").fill(json.dumps(body))
+    asked = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Landing page']")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    assert asked and asked[0].startswith("Replace the whole draft"), asked
+    expect(page.locator("#lp-pages-en-title")).to_have_value("E2E landing")
+    expect(page.locator("#lp-pages-en-sections-0-markdown")).to_have_value("Hello from **e2e**.")
+    saved_before = page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()
+    assert (saved_before.get("pages") or {}).get("en", {}).get("title") != "E2E landing", "the import saved before Save"
+    run.a11y(page, "landing page, a JSON import")
+    page.locator("form.lp-form").get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    saved = page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()
+    assert saved["pages"]["en"]["title"] == "E2E landing", saved
+    assert saved["footer"] == saved_before["footer"], (saved["footer"], saved_before["footer"])
+    io.get_by_role("button", name="Export the draft", exact=True).click()
+    assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
+    # The prepared landing V3 itself (tsk-k7pwrzs8vb8k): the real hub's check refuses nothing.
+    v3 = (WEB / "tools" / "landing-v3-complete.json").read_text(encoding="utf-8")
+    page.locator("#lp-json").fill(v3)
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    expect(page.locator("li.lp-section")).to_have_count(len(json.loads(v3)["pages"][json.loads(v3)["default_language"]]["sections"]))
+    run.shot(page, "landing-json")
+    no_problems(run, "landing JSON")
+
+
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
     reads the report and its snapshot as text, and resolves it with hide and a note."""
@@ -2156,6 +2234,30 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")
+
+
+def forge_access_step(run: Run, page: Page) -> None:
+    """Forge access (docs/api.md §11.4) at /settings/forge, where the hub's setup redirect
+    lands: this hub has no GitHub App and no secret key, and says so."""
+    run.step("forge: /settings/forge shows the account's forge access; no App, a token needs the secret key")
+    page.goto(f"{run.base}/settings/forge?error=link_state")
+    box = page.locator("section.forge-access")
+    expect(box).to_contain_text("The link expired or was started in another session")
+    expect(page).to_have_url(re.compile(r"/settings/forge$"))
+    expect(box).to_contain_text("This instance has no GitHub App configured")
+    expect(box).to_contain_text("No token is stored.")
+    page.locator("#forge-token").fill("github_pat_e2e_not_a_real_token")
+    box.get_by_role("button", name="Store the token", exact=True).click()
+    expect(box).to_contain_text("This hub has no secret key to store a token with")
+    # That refusal is this hub's configuration, the expected answer here.
+    refused = "PUT /api/v1/me/forge/github/token answered 409"
+    run.problems = [p for p in run.problems if p != refused]
+    run.shot(page, "forge-access")
+    run.a11y(page, "forge access")
+    no_problems(run, "forge access")
+    # Leave the account page: a later step opens it from the menu and must not find this one.
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:
