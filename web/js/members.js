@@ -148,6 +148,8 @@ window.Maity = window.Maity || {};
       const revoked = () => {
         credsOf.delete(m.id);
         load(true);
+        // Whoever shows a count of this member's instances (Your agents) reads it again.
+        if (view.revoked) view.revoked(m);
       };
       const fill = (got, refocus) => {
         append(clear(slot), got.error
@@ -722,11 +724,11 @@ window.Maity = window.Maity || {};
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
-    // page with this project chosen, an agent where its join is. A guest brings no agent (§3.1).
+    // page, an agent on Your agents' Join an agent, each with this project chosen. A guest brings no agent (§3.1).
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: ctx.link("agents") }, M.t("members.join_agent")) : null;
+      ? h("a", { class: "button primary members-join-agent", href: "/agents?project=" + encodeURIComponent(ctx.slug) }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),

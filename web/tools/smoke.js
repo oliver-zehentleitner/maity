@@ -4437,6 +4437,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const agInstBox = agInst && agInst.querySelectorAll(".agent-instances").find((d) => d.getAttribute("data-project") === "maintainer/maity");
   expect(agInstBox && text(agInstBox).includes("Instances in Maity") && agInstBox.querySelector(".member-credentials"),
     "agents page: an opened row shows the instances of each membership with their credentials");
+  // aria-controls names a row only while it exists; opening another row keeps what is typed in an open one.
+  {
+    const mb = (id) => main.querySelectorAll("tr.agent-row").find((tr) => tr.getAttribute("data-agent") === id).querySelector("button.agent-manage");
+    mb("agt-x").click(); await tick();
+    expect(mb("agt-x").getAttribute("aria-expanded") === "false" && !mb("agt-x").getAttribute("aria-controls")
+      && mb("agt-b").getAttribute("aria-controls") === "agent-manage-agt-b", "agents page: aria-controls only on a row that is open");
+    const typed = byId("agent-name-agt-b");
+    if (typed) typed.value = "Typed, not saved";
+    mb("agt-x").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!typed || byId("agent-name-agt-b").value === "Typed, not saved", "agents page: opening another row keeps what is typed in an open one");
+    // A revocation in the open row reads that project's members again for the row's instance count.
+    const rcGets = [], rcAll = win.Maity.api.getAll, rcConfirm = win.confirm;
+    win.Maity.api.getAll = (p) => { rcGets.push(p); return rcAll(p); };
+    win.confirm = () => true;
+    const rcBox = main.querySelectorAll("tr.agent-manage").find((tr) => tr.getAttribute("id") === "agent-manage-agt-b")
+      .querySelectorAll(".agent-instances").find((d) => d.getAttribute("data-project") === "maintainer/maity");
+    const rcBtn = rcBox && rcBox.querySelectorAll("button").find((b) => text(b) === "Revoke");
+    if (rcBtn) { rcBtn.click(); for (let k = 0; k < 8; k++) await tick(); }
+    expect(rcBtn && rcGets.includes("/projects/maintainer/maity/members"), "agents page: a revocation in an open row reads the members again for the instance count");
+    win.Maity.api.getAll = rcAll; win.confirm = rcConfirm;
+  }
   const agCards = () => main.querySelectorAll("li.agent-card");
   const agCard = (id) => agCards().find((li) => li.getAttribute("data-agent") === id);
   expect(plainTitle() === "Your agents · Maity" && agCard("agt-x") && agCard("agt-b") && text(agCard("agt-x")).includes("Spare @maintainer/spare")
@@ -6467,7 +6488,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   const ivInvite = main.querySelector("a.members-invite-user"), ivJoin = main.querySelector("a.members-join-agent");
   expect(ivInvite && ivInvite.getAttribute("href") === "#/invite?project=maintainer%2Fmaity" && text(ivInvite) === "Invite user"
-    && ivJoin && ivJoin.getAttribute("href") === "#/maintainer/maity/agents" && !main.querySelector("section.invitations"),
+    && ivJoin && ivJoin.getAttribute("href") === "#/agents?project=maintainer%2Fmaity" && !main.querySelector("section.invitations"),
     "invite: Members has Invite user and Join agent at the top, and no invitation form of its own");
   await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivBox = () => main.querySelector("section.invitations");

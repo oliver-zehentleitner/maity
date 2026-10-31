@@ -170,7 +170,8 @@ window.Maity = window.Maity || {};
   // The instances of one membership (§6.17), with their credentials and
   // revocation as Members' Manage has them (js/members.js credentialsPart),
   // read in that project's context once the row is opened.
-  function instancesPart(ctx, full, view, pctxs) {
+  // onRevoked(): an instance was revoked here, so a count shown elsewhere is stale.
+  function instancesPart(ctx, full, view, pctxs, onRevoked) {
     const slot = h("div", { class: "agent-instances", "data-project": full });
     const name = (ctx.projects.find((p) => p.full_name === full) || {}).name || full;
     append(slot, h("h4", null, M.t("agents.instances.in", { project: name })),
@@ -179,7 +180,7 @@ window.Maity = window.Maity || {};
       .then((pctx) => {
         const status = M.statusLine();
         const P = M.memberParts(pctx, { status, keyed: (k, el) => el, edits: new Map(), open: new Set(),
-          reload: () => Promise.resolve(), redraw: () => {} });
+          reload: () => Promise.resolve(), redraw: () => {}, revoked: () => { if (onRevoked) onRevoked(full); } });
         append(clear(slot), h("h4", null, M.t("agents.instances.in", { project: name })), P.credentialsPart(view), status.el);
       }, (err) => append(clear(slot), h("p", { class: "send-status failed" }, M.t("agents.instances.failed", { project: name, reason: err.message }))));
     return slot;
@@ -226,7 +227,8 @@ window.Maity = window.Maity || {};
         if (mine === seq) open.disabled = false;
       }
     }
-    pick.addEventListener("change", () => { mounted = null; clear(slot); open.hidden = false; });
+    // Another project chosen: a mount still reading for the old one is dropped.
+    pick.addEventListener("change", () => { seq += 1; mounted = null; mountedFor = null; clear(slot); open.hidden = false; open.disabled = false; status.done(); });
     open.addEventListener("click", () => mount(true));
     append(box, h("div", { class: "inline-form" }, h("label", { for: "agents-join-project" }, M.t("agents.join.project")), pick, open), status.el, slot);
     // Asked for from Members' Join agent: the panel open at once.
@@ -251,11 +253,18 @@ window.Maity = window.Maity || {};
     const opened = new Set(wanted ? [wanted] : []);
     const pctxs = {};
     let redrawing = null;
+    // What was read last: opening or closing a row draws from it, without reading again.
+    let read = null;
     const draw = async (words) => {
       const profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
       const views = await memberViews(profiles);
-      const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
-      redrawing = redraw;
+      read = { profiles, views };
+      render(words);
+    };
+    const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    redrawing = redraw;
+    function render(words) {
+      const { profiles, views } = read;
       clear(note);
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
       const instancesOf = (a) => (a.memberships || []).reduce((n, m) => {
@@ -266,21 +275,43 @@ window.Maity = window.Maity || {};
       const rows = profiles.map((a) => {
         const rowId = "agent-manage-" + a.id;
         const isOpen = opened.has(a.id);
-        const manage = h("button", { type: "button", class: "small agent-manage", "aria-expanded": String(isOpen), "aria-controls": rowId,
+        // aria-controls only while the row it names exists (as on Members).
+        const manage = h("button", { type: "button", class: "small agent-manage", "aria-expanded": String(isOpen), "aria-controls": isOpen ? rowId : null,
           "aria-label": M.t("agents.list.manage_label", { name: a.display_name }) }, M.t("agents.list.manage"));
-        manage.addEventListener("click", () => { if (opened.has(a.id)) opened.delete(a.id); else opened.add(a.id); redraw(); });
+        // Opening or closing touches this row alone: nothing is read again, and
+        // what is typed in another open row stays.
+        manage.addEventListener("click", () => {
+          const shown = Array.from(body.querySelectorAll("tr.agent-manage")).find((tr) => tr.getAttribute("id") === rowId);
+          if (shown) {
+            opened.delete(a.id);
+            shown.parentNode.removeChild(shown);
+            manage.setAttribute("aria-expanded", "false");
+            manage.removeAttribute("aria-controls");
+          } else {
+            opened.add(a.id);
+            head.parentNode.insertBefore(detail(), head.nextSibling);
+            manage.setAttribute("aria-expanded", "true");
+            manage.setAttribute("aria-controls", rowId);
+          }
+        });
         const names = (a.memberships || []).map((m) => (ctx.projects.find((p) => p.full_name === m.project) || {}).name || m.project);
+        const countCell = h("td", { "data-label": M.t("agents.list.instances") }, M.t("agents.list.instances_count", { count: instancesOf(a) }));
+        // A revocation in the open row: that project's member list read again, this row's count with it.
+        const recount = (full) => M.api.getAll("/projects/" + M.api.projectPath(full) + "/members").then((r) => {
+          const fresh = r.items.find((x) => x.id === a.id);
+          if (fresh) views[full + " " + a.id] = fresh;
+          countCell.textContent = M.t("agents.list.instances_count", { count: instancesOf(a) });
+        }, () => {});
         const head = h("tr", { class: "agent-row" + (wanted === a.id ? " wanted" : ""), "data-agent": a.id },
           h("th", { scope: "row" }, M.avatar(a, 24), " ", h("span", { class: "agent-row-name" }, a.display_name), h("span", { class: "muted" }, " @" + (a.name || a.handle))),
           h("td", { "data-label": M.t("agents.list.projects") }, names.length ? M.fmt.list(names) : h("span", { class: "muted" }, M.t("agents.card.no_project"))),
-          h("td", { "data-label": M.t("agents.list.instances") }, M.t("agents.list.instances_count", { count: instancesOf(a) })),
+          countCell,
           h("td", { "data-label": M.t("agents.list.presence") }, online(a) ? M.t("agents.list.online") : h("span", { class: "muted" }, M.t("agents.list.offline"))),
           h("td", { class: "agent-actions" }, manage));
-        if (!isOpen) return [head];
-        const inside = h("div", { class: "agent-manage-body" },
+        const detail = () => h("tr", { class: "agent-manage", id: rowId }, h("td", { colspan: "5" }, h("div", { class: "agent-manage-body" },
           h("ul", { class: "agent-cards" }, profileCard(ctx, a, { wanted, views, changed: redraw, add: true })),
-          (a.memberships || []).filter((m) => views[m.project + " " + a.id]).map((m) => instancesPart(ctx, m.project, views[m.project + " " + a.id], pctxs)));
-        return [head, h("tr", { class: "agent-manage", id: rowId }, h("td", { colspan: "5" }, inside))];
+          (a.memberships || []).filter((m) => views[m.project + " " + a.id]).map((m) => instancesPart(ctx, m.project, views[m.project + " " + a.id], pctxs, recount)))));
+        return isOpen ? [head, detail()] : [head];
       });
       append(clear(body),
         profiles.length
@@ -294,13 +325,14 @@ window.Maity = window.Maity || {};
           : h("p", { class: "muted" }, M.t("agents.none")),
         // A profile just made opens its row: its card is where it is named and placed.
         newProfile((made, said) => { if (made && made.id) opened.add(made.id); return redraw(made, said); }));
-      // /agents/<id> (a link to one profile): its card's title focused, once.
-      const title = wanted && !words ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
-      if (title) title.focus();
-    };
+    }
+    let titled = false;
     append(root, heading, h("p", { class: "hint" }, M.t("agents.intro")),
       M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }) : null, note, body);
     await draw();
+    // /agents/<id> (a link to one profile): its card's title focused, once.
+    const title = wanted && !titled ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
+    if (title) { titled = true; title.focus(); }
   };
 
   // A project's Agents (/<owner>/<slug>/agents, the maintainer, 2026-10-29):

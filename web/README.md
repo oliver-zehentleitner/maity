@@ -412,7 +412,7 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** (`/<owner>/<slug>/agents`, a tab before Runners and Why,
+3. **Agents** (`/<owner>/<slug>/agents`, a tab before Why,
    for humans; the maintainer, 2026-10-29): one's own agents in the
    project, each as its card on **Your agents** (`/agents`, one component,
    `js/agents-page.js`): picture, name and handle, its memberships, and
@@ -481,7 +481,7 @@ too.
    buttons: **Invite user** (a human with `members:admin`) to `/invite` with
    this project chosen, where the invitation form and its list are (§3.4;
    Members has none of its own any more), and **Join agent** (a human who is no
-   guest, §3.1) to the project's Agents, where the join is. Under
+   guest, §3.1) to Your agents' **Join an agent** with this project chosen (`/agents?project=…`). Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. The
@@ -1448,7 +1448,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 16. **Why**: the e2e project has no repository, so the view says it
     needs one (the hub's `ktw_not_configured`);
 17. at phone width (390 px) the inbox, overview, board, members, agents and (where offered) Why
-    and Runners views, each reached through its tab, and the instance's Runners view load without an error, none of
+    views, each reached through its tab (there is no Runners tab: the project's Runners are linked from its Settings),
+    and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
     row does), and every Revoke label stays on one line.
