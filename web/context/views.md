@@ -1625,7 +1625,8 @@ list: the wish was about the order, not the length.
 
 The instance admin's **Reports** section (`js/admin-reports.js`) lists
 the reports as the hub orders them (open first, newest first), filtered
-by status and type. One opened shows the reporter's text and the
+by status and type; it opens on the open ones, though the hub's default
+is all, because the open ones are the admin's work. One opened shows the reporter's text and the
 snapshot, every field as plain text in `pre` or a definition list,
 never as markup or a link. The action is chosen from the four with the
 effect of each said under the choice. **Suspend** asks for a
@@ -1675,14 +1676,18 @@ as the default would be guessing.
 limit": the hub refuses 0 (`invalid`), and the default would still need
 a gesture of its own.
 
+A refusal whose `fields` name no field shown here is said in the status
+line, because a display at the fields only would swallow it (merge of
+#782 into #778).
+
 ## The instance admin area shows one section at a time
 
 **Id:** 4c499cf2-cd9d-4ce1-be8d-639aa32306b6
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information)
-**Revisit when:** a section needs a link of its own (a route per section), or the area grows past one row of buttons
+**Source:** the designer's pass part 3 on #371 (tsk-w2xnkrwf147m), 2026-10-27: the admin page was one scroll of about 5,000 px (Statistics, Users, Mail settings, Landing page, Instance information); docs/api.md §18.2 (a `registration_pending` item links to Admin → Registration, a `report_open` item to the report in Admin → Reports) and the review of #778, 2026-10-31
+**Revisit when:** a section other than Registration and Reports needs a link of its own, or the area grows past one row of buttons
 
 `/admin` reads every section as before, then shows one: a row of
 buttons at the top names them (`aria-pressed` on the shown one), and the
@@ -1690,14 +1695,19 @@ page opens on the first, Statistics. A section whose read fails says so
 in its place (until 2026-10-30 a section the hub did not serve left the
 row, e1699490). The others stay
 in the page, hidden, so a form half filled in keeps what was typed.
+The two sections a notification leads into have an address:
+`/admin/registration`, and `/admin/reports/<id>`, which opens that
+report as well. The page is the same, opened on that section; the
+section is found by the hub path it reads, not by its label, which is
+translated.
 
 **Reason:** the admin comes for one thing at a time; five long sections
 under each other hid all but the first below the fold.
 
 **Rejected alternative:** a sticky list of anchors over the whole page,
 the designer's other option: the scroll stays 5,000 px, only the jump is
-shorter. A route per section (`/admin/users`): links into a section
-were not asked for. The older Users page at `/admin/users` was removed
+shorter. A route for every section (`/admin/users`): only the two
+sections a notification names need a link. The older Users page at `/admin/users` was removed
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
@@ -2311,6 +2321,30 @@ generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
 
+## The fixture hub serves an organisation's page by its switch, which the hub does not yet
+
+**Id:** efe947bc-444d-4b65-b694-610be9137806
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/routes/people.py` (`page_served` read from the store)
+**See:** https://github.com/oliver-zehentleitner/maity — 4423561d-6f8e-4ad5-8729-0b896fb37e3c — as of 2026-10-31
+**Revisit when:** the hub renders an organisation's page kind
+
+The fixture hub's `GET /people/{handle}` answers `page_served` for an
+organisation from its `public_page` switch, and lists its projects with
+a served page as `shared: false`. The real hub reads the store, where no
+organisation page exists yet, so it answers `false` for every
+organisation. The person view's **View public page** branch for an
+organisation is drawn only in the fixture.
+
+**Reason:** with the hub's answer the branch would never be drawn
+in smoke, and would break unseen when the hub starts serving the page.
+
+**Rejected alternative:** `page_served: false` for every organisation in
+the fixture, as the hub answers today: it matches the hub, but leaves
+those branches untested.
+
 ## A member's page is for reading; its Actions menu only leads to Members or Agents
 
 **Id:** dda6f237-ffeb-4b68-ba0a-844c77f269dd
@@ -2473,7 +2507,8 @@ role. What a picker offers stays its own rule: proxy only with trust
 admin and only from an owner, a member's own agent every role but `ops`
 and `proxy`. A security team counts as the role whose scopes it has
 (red team as tester, purple team as reviewer) where the dashboard asks
-who reviews, tests or prepares a release. The fixture hub keeps the
+who reviews, tests or prepares a release; the blue team counts as
+coder, which no dashboard question asks for. The fixture hub keeps the
 same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
 and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
 side is changed on the other in the same contract change. A member's

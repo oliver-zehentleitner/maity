@@ -100,13 +100,21 @@ def test_each_limit_is_named(friend: flow.Human, owner: flow.Human) -> None:
     # `manager` is within the limits too (#541); tests/test_manager.py brings one.
 
 
+def _raise(owner: flow.Human, friend: flow.Human, agent_id: str) -> None:
+    """The project's owner raises another owner's agent to admin: it waits for that owner's go
+    (§6.2, "Another owner's agent")."""
+    asked = owner.patch(f"{PROJECT}/members/{agent_id}", {"trust": "admin"})
+    assert asked.status_code == 202, asked.text
+    done = friend.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
+    assert done.status_code == 200, done.text
+
+
 def test_an_agent_raised_beyond_the_limits_gets_instances_only_from_an_admin(
     friend: flow.Human, make_client: ClientFactory, owner: flow.Human
 ) -> None:
     created = _bring(friend).json()
     agent_id = flow.exchange(make_client(), created).headers["Maity-Member-Id"]
-    raised = owner.patch(f"{PROJECT}/members/{agent_id}", {"trust": "admin"})
-    assert raised.status_code == 200, raised.text
+    _raise(owner, friend, agent_id)
     _refused(friend.post(JOINS, {"agent": {"id": agent_id}, "new_instance": True}), "agent")
 
 
@@ -238,7 +246,7 @@ def test_an_instance_join_is_void_once_an_admin_raised_the_agent(
     agent_id = flow.exchange(make_client(), created).headers["Maity-Member-Id"]
     _two_instances(friend, agent_id)
     extra = friend.post(JOINS, {"agent": {"id": agent_id}, "new_instance": True}).json()
-    owner.patch(f"{PROJECT}/members/{agent_id}", {"trust": "admin"})
+    _raise(owner, friend, agent_id)
     assert flow.exchange(make_client(), extra).status_code == 404
 
 

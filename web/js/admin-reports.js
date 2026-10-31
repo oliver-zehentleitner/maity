@@ -62,7 +62,8 @@ window.Maity = window.Maity || {};
       body ? h("pre", { class: "report-body" }, body) : null];
   }
 
-  async function section(ctx, root) {
+  // `openId0`: a report to open at once, from /admin/reports/<id> (a report_open notification).
+  async function section(ctx, root, openId0) {
     const status = M.statusLine();
     const list = h("div", { class: "reports-box" });
     const detail = h("div", { class: "report-detail" });
@@ -188,6 +189,7 @@ window.Maity = window.Maity || {};
         h("label", { for: "reports-type" }, M.t("reports.of_type")), typePick),
       status.el, list, more, detail);
     await load(filterNow(), null);
+    if (openId0) await open(openId0);
   }
 
   M.adminReports = { section };

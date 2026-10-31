@@ -10,7 +10,7 @@ import pytest
 from conftest import git
 from test_onboarding import packet
 
-from maity import cli, gitfacts, onboarding
+from maity import cli, gitfacts, onboarding, state
 
 EXPECTED = "https://github.com/acme/widget"
 
@@ -182,3 +182,25 @@ def test_closed_empty_board_asks_about_reopening(
     assert f"project is {state}" in text
     assert "Ask your human whether to reopen" in text
     assert "create cards" not in text
+
+
+def test_resume_shows_the_handover_and_acknowledges_past_it(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    p = _packet()
+    p["handover"] = {
+        "from": ["old1"],
+        "after": 4100,
+        "items": [{"seq": 4150, "kind": "task_updated", "subject": {"id": "tsk-9"}}],
+        "truncated": False,
+    }
+    p["events"] = {"after": 4200, "items": [], "cursor": 4300, "truncated": False}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda _: (200, p)
+    assert cli.main(["resume"]) == 0
+    assert "Handed over from agent-b#old1:\n  #4150 task_updated" in capsys.readouterr().out
+    # The handover ends once a cursor at or above the first packet's is acknowledged (§5.2):
+    # the stored cursor is that one, and the next resume sends it.
+    assert state.load_state(joined)["cursor"] == 4300
+    assert cli.main(["resume"]) == 0
+    resumes = [r for r in fake.signed() if r.path == "/api/v1/me/resume"]
+    assert resumes[-1].json()["cursor"] == 4300
