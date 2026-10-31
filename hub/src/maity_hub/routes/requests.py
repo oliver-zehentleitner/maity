@@ -934,9 +934,10 @@ def _self_answer() -> ApiError:
 
 
 def _check_answer(row: Any, body: AnswerIn) -> None:
-    """Exactly one of reply_id, text, talk (text may go with reply_id); a reply it offers."""
+    """One of reply_id, text, talk; text may go with reply_id or with talk, and talk is never
+    with reply_id (§7); a reply it offers."""
     given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
-    if not given or ("talk" in given and len(given) > 1):
+    if not given or {"talk", "reply_id"} <= given:
         raise invalid({"answer": "reply_id_or_text_or_talk"})
     reply_ids = {r["id"] for r in replies(klass(row), row.options)}
     if body.reply_id is not None and body.reply_id not in reply_ids:

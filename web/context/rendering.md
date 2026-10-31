@@ -731,3 +731,40 @@ from what someone typed.
 - Drawing a request's title as Markdown inside its button: a link or a
   copy control inside a button is not operable.
 
+## A field's label and control share one layout class; smoke fails on any label that runs inline
+
+**Id:** f8cb056b-9e0c-4729-bc97-c73341204bc0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the registration form on prod, where labels ran inline with their fields (tsk-egx8xpcrz5z2, #939); the audit of all forms in #939's reviews and the card tsk-jpaqk8m7j52v (one shared rule, and a check so this kind of bug cannot come back); the dashboard's implementation, 2026-10-31
+**Revisit when:** the dashboard gets a real browser layout check in smoke, or the jour fixe forms get their layout (then their exemption goes)
+
+A wrapper that holds a label and its control (and a hint or an error)
+carries the class `field-stack`: one column, the label above the control.
+One rule for every such wrapper, whatever else it is called. Smoke walks
+every page it shows, before leaving it and after arriving. It fails on
+any label with `for` whose control sits in the same parent when the CSS
+lays that parent out neither as grid nor as flex. A checkbox or a radio
+beside its label is meant, and so is skipped. A field's error is a
+`field-error`, which takes no space while empty; a box-shaped `.error`
+that is empty takes none either (`.error:empty { display: none; }`, for
+every such box rather than one by one, since the empty box on the
+account page came from one that missed its own rule). The jour fixe settings and
+action page (`jf-`, `jfa-`), with another implementer, are named
+exemptions until their forms get a layout.
+
+**Reason:** a label and an input are inline by default, so a wrapper
+without a rule runs them together, and nothing failed when one was
+missing: the registration form shipped that way, and an audit then found
+six more. A shared class makes the right layout the easy one, and a check
+on what smoke renders finds the next one before a person does.
+
+**Rejected alternative:** six rules, one per wrapper, which the next
+wrapper would miss in the same way. A check that every wrapper class has
+a rule, which needs a list of wrapper classes to keep up to date: the
+walk over rendered pages needs none. The check reads a rule in its
+context (a descendant selector counts only under its ancestor) and leaves
+out rules inside `@media` and CSS comments: a layout that holds at some
+widths only is no layout for the label.
+

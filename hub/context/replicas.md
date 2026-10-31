@@ -66,9 +66,9 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 
 **Id:** 387c2409-1c68-4bf8-a9a0-8a56a4002545
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polls `listing.stamp` every 0.5 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31; point 4 has a card of its own (tsk-5mspd6ftkacq)
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polled `listing.stamp` every 0.5 s; on PostgreSQL now held by `wakeups.held`, at the latest every 2 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 4 built in `listening` and migration `20261031125530_long_polls` (card tsk-5mspd6ftkacq), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -80,9 +80,9 @@ design:
    precedes its row and never announces a row that does not exist. The local `notifier.notify`
    after commit stays, so the writing pod wakes without the round trip; its own notification,
    which comes back through the listener, is skipped (the notifier remembers the last 4096
-   events it announced), so a write usually does not wake the writing pod's waiters twice; when
-   the listener hears the notice before the commit's own announcement has run, they are woken
-   twice, which costs one read more. The payload
+   events it wrote, taken when the event is written, before the commit), so a write does not
+   wake the writing pod's waiters twice, also when the listener hears the notice before the
+   commit's own announcement has run; an event rolled back leaves an entry naming no row. The payload
    says where to look, never what happened: the waiter reads the row with its own rights.
 2. Each pod opens one connection outside the pool that runs `LISTEN maity_events` (and the
    channels below) and feeds `longpoll.registry.notify`. When that connection drops, the pod wakes
@@ -118,14 +118,38 @@ design:
    Each opening wait costs that one transaction on PostgreSQL; SQLite and MariaDB announce nothing.
 4. **The listening registry moves to the database:** an `UNLOGGED` table `long_poll(wait_id,
    listening_key, pod, opened_at)`, one row per open wait, keyed by a fresh `wait_id`, inserted
-   when a wait opens and deleted by that `wait_id` when it closes, so two waits of one key (today
-   `listening._open` counts them, +1 and −1) never delete each other's row. `listening_key` is
-   what `is_listening` is asked with today: the agent session's id, or the runner's listening key;
-   superseding (point 3) keeps its own key, the credential or the cookie session. Each pod
-   refreshes a heartbeat row `hub_pod(pod, seen_at)` every 15 s, and a wait whose pod has not been
-   seen for 45 s does not count. `is_listening` counts the live rows of its key (batched per call
-   where `team_wakes` asks for many instances). A crashed pod's rows stop counting after 45 s and
-   are removed by the next pod's sweep.
+   when a wait opens and deleted by that `wait_id` when it closes, so two waits of one key never
+   delete each other's row. `listening_key` is what `is_listening` is asked with: the agent
+   session's id, or the runner's listening key; superseding (point 3) keeps its own key, the
+   credential or the cookie session. Each pod refreshes a heartbeat row `hub_pod(pod, seen_at)`
+   every 15 s, and a wait whose pod has not been seen for 45 s does not count; each heartbeat also
+   removes the rows of pods gone longer. Built in `listening` (card tsk-5mspd6ftkacq):
+   - The writes go through one thread per process, so opening a wait, which happens on the
+     event loop, never waits for the database; this process's own waits count at once from
+     memory, another pod's from the moment its thread has written the row. Rejected: writing
+     the row synchronously when the wait opens and closes, which would put a database round
+     trip on the event loop (or a worker thread) of every long-poll, twice per wait, and make a
+     slow database slow every long-poll; the queue costs a short delay before another pod sees
+     the wait, which the 45-second staleness already tolerates. A failed heartbeat (the
+     database gone, a failover) is tried again after a whole interval, not at once.
+   - Every moment in the registry is the database's (`now()`): `seen_at`, `opened_at` and the
+     staleness compared in `which` and in the sweep. Pods whose clocks differ by more than a
+     heartbeat would otherwise count each other as gone. In SQL it is `timezone('UTC', now())`:
+     the columns hold UTC without a zone, and a bare `now()` compared with them is shifted by
+     the server's `TimeZone` (a server on `Europe/Vienna` made a live pod an hour stale).
+     `now()` is the start of the caller's transaction, so `which` inside a long transaction
+     compares with a slightly older moment; against 45 seconds of staleness that is harmless.
+   - `which(keys, conn)` answers for many keys in one read, on the caller's connection: the
+     member views, the instance lists, the team wakes, the jour fixe and the statistics ask it
+     once per call instead of once per instance.
+   - **UNLOGGED, and empty after a crash:** a crash or a failover of PostgreSQL empties both
+     tables. That loses nothing worth keeping: a wait lives on its HTTP connection, and the
+     heartbeat, which compares the rows it finds with the waits open in its process, writes them
+     again within 15 s; until then those agents read as not listening, the same as a pod that
+     has just started. In exchange no write of the registry costs WAL, and a long-poll opens and
+     closes many times an hour per agent.
+   - SQLite and MariaDB, which run one replica, create the tables as ordinary ones and never
+     write them; the registry stays in the process there.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
    move onto the wake-ups on PostgreSQL (`wakeups.held`, `Held.pause`): a held wait sleeps until
    something wakes it, at the latest `FALLBACK_SECONDS` (2 s), and then compares its stamp or

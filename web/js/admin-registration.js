@@ -201,7 +201,7 @@ window.Maity = window.Maity || {};
       errors.domains,
       h("label", { for: id("addresses") }, M.t("reg.field.addresses"), source("addresses")), addresses, errors.addresses,
       h("label", { for: id("approval") }, M.t("reg.field.approval"), source("approval")), approval,
-      h("fieldset", { class: "reg-terms" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
+      h("fieldset", { class: "reg-terms field-stack" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
         h("label", { for: id("terms-url") }, M.t("reg.terms.url")), termsUrl,
         h("label", { for: id("terms-version") }, M.t("reg.terms.version")), termsVersion,
         h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages" ? M.t("reg.terms.from_legal") : M.t("reg.terms.hint")),

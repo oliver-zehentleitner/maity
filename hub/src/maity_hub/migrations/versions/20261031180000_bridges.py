@@ -9,7 +9,7 @@ is only its requests until both said `go`.
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261031180000_bridges
-Revises: 20261031150000_join_takes_over
+Revises: 20261031170000_chat_meat_proxy
 Create Date: 2026-10-31
 """
 
@@ -21,7 +21,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031180000_bridges"
-down_revision: str | None = "20261031150000_join_takes_over"
+down_revision: str | None = "20261031170000_chat_meat_proxy"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -69,6 +69,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_bridge_project_id"), table_name="bridge")
-    op.drop_index(op.f("ix_bridge_bridge"), table_name="bridge")
+    # The table goes whole, its indexes with it: MariaDB refuses to drop an index a foreign
+    # key still needs, so they are not dropped one by one first.
     op.drop_table("bridge")

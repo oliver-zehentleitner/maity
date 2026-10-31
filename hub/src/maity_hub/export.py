@@ -68,6 +68,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         # While the hub still keeps it, null otherwise: it ends with the first agent exchange or
         # after 30 days (§16.7.2).
         "campaign_origin": _campaign_origin(conn, human_id),
+        "conversation_meat_proxy": _conversation_meat_proxy(conn, human_id),
         "organisation_invitations": _org_invitations(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
@@ -80,6 +81,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "card_reports": _card_reports(conn, member_project_ids, my_ids, names, titles),
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
+        "pinned_conversations": _pinned_conversations(conn, human_id),
     }
 
 
@@ -290,6 +292,24 @@ def _organisations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
     return [{"handle": r.handle, "role": r.role, "joined": ts(r.joined_at)} for r in rows]
 
 
+def _pinned_conversations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The chats the caller pinned (§9.3 "Pinned"): project, chat id, when."""
+    rows = conn.execute(
+        select(t.conversation_pin)
+        .where(t.conversation_pin.c.human_id == human_id)
+        .order_by(t.conversation_pin.c.pinned_at, t.conversation_pin.c.conversation_id)
+    ).all()
+    names = namespace.full_names(conn, {r.project_id for r in rows})
+    return [
+        {
+            "project": names[r.project_id],
+            "conversation_id": r.conversation_id,
+            "pinned_at": ts(r.pinned_at),
+        }
+        for r in rows
+    ]
+
+
 def _campaign_origin(conn: Connection, human_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         select(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id)
@@ -301,6 +321,25 @@ def _campaign_origin(conn: Connection, human_id: str) -> dict[str, Any] | None:
         "campaign": row.campaign,
         "registered_on": row.registered_at.date().isoformat(),
     }
+
+
+def _conversation_meat_proxy(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The person's own choice of the meat-proxy mode per conversation (§9.3)."""
+    rows = conn.execute(
+        select(t.conversation_meat_proxy)
+        .where(t.conversation_meat_proxy.c.human_id == human_id)
+        .order_by(
+            t.conversation_meat_proxy.c.project_id, t.conversation_meat_proxy.c.conversation_id
+        )
+    )
+    return [
+        {
+            "project_id": r.project_id,
+            "conversation_id": r.conversation_id,
+            "meat_proxy": bool(r.meat_proxy),
+        }
+        for r in rows
+    ]
 
 
 def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:

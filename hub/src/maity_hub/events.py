@@ -69,18 +69,25 @@ class Notifier:
 
         return unsubscribe
 
-    def notify(self, project_id: str, seq: int) -> None:
+    def own(self, project_id: str, seq: int) -> None:
+        """An event this process is writing: its notice, which PostgreSQL also delivers back
+        to this process, wakes nobody here. Taken when the event is written, not after the
+        commit, since the listener may hear the notice before the commit's own announcement
+        has run; an event rolled back leaves an entry that names no row, harmless."""
         with self._lock:
-            listeners = list(self._listeners)
             self._announced[(project_id, seq)] = None
             if len(self._announced) > ANNOUNCED_KEPT:
                 self._announced.popitem(last=False)
+
+    def notify(self, project_id: str, seq: int) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
         for listener in listeners:
             listener(project_id, seq)
 
     def notify_from_elsewhere(self, project_id: str, seq: int) -> None:
-        """An event another replica committed (`wakeups`); this process's own, which it
-        announced at its commit already, comes back through PostgreSQL too and is skipped."""
+        """An event another replica committed (`wakeups`); this process's own (`own`), which
+        it announces at its commit itself, comes back through PostgreSQL too and is skipped."""
         with self._lock:
             if (project_id, seq) in self._announced:
                 return
@@ -226,6 +233,7 @@ def emit(
     if pending is None:
         raise RuntimeError("events.emit outside events.transaction(): nobody would be woken")
     pending.append((project_id, seq))
+    notifier.own(project_id, seq)
     if conn.dialect.name == "postgresql":
         # Every replica's listener hears it at commit, never for a rollback, so a wake-up
         # neither precedes its row nor announces one that does not exist. Only where to look,

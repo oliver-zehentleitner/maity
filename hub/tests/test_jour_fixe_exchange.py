@@ -21,7 +21,7 @@ STEP = timedelta(minutes=121)  # past the default window of 120 minutes
 @pytest.fixture(autouse=True)
 def _no_listeners() -> Iterator[None]:
     yield
-    listening._open.clear()
+    listening.reset()
 
 
 @pytest.fixture

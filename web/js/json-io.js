@@ -47,7 +47,7 @@ window.Maity = window.Maity || {};
       }
       if (await opts.load(data, io)) settled = area.value;
     }
-    const el = h("details", { class: "json-io" }, h("summary", null, M.t("jsonio.title")),
+    const el = h("details", { class: "json-io field-stack" }, h("summary", null, M.t("jsonio.title")),
       h("p", { class: "hint", id: opts.id + "-hint" }, opts.hint),
       h("label", { for: opts.id }, M.t("jsonio.label")), area,
       h("div", { class: "inline-form" }, h("label", { for: opts.id + "-file" }, M.t("jsonio.file")), file),

@@ -27,7 +27,7 @@ DAILY = {
 @pytest.fixture(autouse=True)
 def _no_listeners() -> Iterator[None]:
     yield
-    listening._open.clear()
+    listening.reset()
 
 
 @pytest.fixture
@@ -166,7 +166,7 @@ def test_a_round_needs_a_moderator_and_two_present_members(
     nobody = start(owner)
     assert nobody.status_code == 409 and nobody.json()["error"]["code"] == "no_moderator"
     lead = flow.agent(make_client, owner, role="admin")
-    listening._open.clear()
+    listening.reset()
     listen(lead)  # the moderator alone: the human declares itself away
     owner.post("/me/limit", {"until": clock.rfc3339(clock.now() + timedelta(hours=1))})
     lonely = start(owner)
@@ -330,7 +330,7 @@ def test_the_close_wakes_the_moderator_where_it_listens_now_or_nobody(
 ) -> None:
     lead, member = team(owner, make_client)
     start(lead)
-    listening._open.clear()  # the instance recorded at the opening stopped listening
+    listening.reset()  # the instance recorded at the opening stopped listening
     now[0] += timedelta(minutes=121)
     worker.sweep(migrated)
     [closed] = events(migrated, "jour_fixe_answers_closed")

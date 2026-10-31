@@ -148,6 +148,8 @@ window.Maity = window.Maity || {};
       const revoked = () => {
         credsOf.delete(m.id);
         load(true);
+        // Whoever shows a count of this member's instances (Your agents) reads it again.
+        if (view.revoked) view.revoked(m);
       };
       const fill = (got, refocus) => {
         append(clear(slot), got.error
@@ -640,13 +642,24 @@ window.Maity = window.Maity || {};
             // A seq is an id, not a quantity: written as the hub gives it, not formatted.
             ranges: m.isolation_windows.map((w) => M.t("members.isolation_window", { from: String(w.from_seq), to: String(w.to_seq) })).join(", "),
           })) : null,
+        // Whose work it continues and where the hand-over is (§6.2), for every reader.
+        m.kind === "agent" && (m.takes_over || m.handover)
+          ? h("p", { class: "muted member-takes-over" }, M.join.takeOverWords(ctx, m)) : null,
         m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: M.t("members.own_briefing.title") }, M.t("members.own_briefing")) : null);
     }
 
+    // The project's hierarchy follows trust (the maintainer, 2026-10-31): owner,
+    // admin, member, guest, each a level deeper; a level nobody holds leaves no
+    // empty step, the next moves up. `tiers`: the levels the list shows now.
+    // A trust the dashboard does not know counts as member.
+    const trustOf = (m) => (M.trust.TRUSTS.includes(m.trust) ? m.trust : "member");
+    let tiers = M.trust.TRUSTS;
+    const levelOf = (m) => Math.max(0, tiers.indexOf(trustOf(m)));
+
     function table(kind, list, columns) {
       const headingId = "members-" + kind;
-      return [h("h3", { id: headingId }, kind === "human" ? M.t("members.humans", { count: list.length }) : M.t("members.agents", { count: list.length })),
+      return [h("h3", { id: headingId }, M.t("members.all", { count: list.length })),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
@@ -656,7 +669,8 @@ window.Maity = window.Maity || {};
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
-              const row = h("tr", { class: "member" + (m.paused ? " paused" : "") + (m.id === wanted ? " wanted" : ""), role: "row", "data-member": m.id },
+              const row = h("tr", { class: "member member-" + m.kind + " member-level-" + levelOf(m) + (m.paused ? " paused" : "") + (m.id === wanted ? " wanted" : ""),
+                role: "row", "data-member": m.id, "data-level": String(levelOf(m)) },
                 nameCell(m),
                 columns.map((c) => {
                   const td = h("td", { "data-label": c.title, role: "cell" }, c.cell(m));
@@ -701,24 +715,38 @@ window.Maity = window.Maity || {};
     function draw() {
       presenceCells.clear();
       focusables.clear();
-      const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
-      const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
+      // One list, the project's hierarchy (the maintainer, 2026-10-31): by trust,
+      // owners at the top, then admins, members and guests, each a level deeper;
+      // within a level the hub's order. Only my agents keeps one's own agents.
+      const shown = items.filter((m) => (mineOnly ? m.kind === "agent" && ownAgent(m) : true));
+      tiers = M.trust.TRUSTS.filter((t) => shown.some((m) => trustOf(m) === t));
+      const list = shown.map((m, i) => ({ m, i })).sort((a, b) => levelOf(a.m) - levelOf(b.m) || a.i - b.i).map((x) => x.m);
+      const agents = shown.filter((m) => m.kind === "agent");
       const role = { title: M.t("members.col.role"), cell: (m) => M.trust.words(m) };
       const presence = { title: M.t("members.col.presence"), presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
       const joined = { title: M.t("members.col.joined"), cell: (m) => formatTime(m.joined_at) };
-      const owner = { title: M.t("members.col.owner"), cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
-      const paused = { title: M.t("members.col.paused"), cell: (m) => pausedText(m) || "—" };
-      const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
+      // An agent's own columns; a human's read "—".
+      const agentOnly = (cell) => (m) => (m.kind === "agent" ? cell(m) : "—");
+      const owner = { title: M.t("members.col.owner"), cell: agentOnly((m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id)) };
+      const paused = { title: M.t("members.col.paused"), cell: agentOnly((m) => pausedText(m) || "—") };
+      const ktw = { title: M.t("members.col.ktw"), cell: agentOnly(ktwCell) };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
-        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
-          : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
+      append(clear(box), mineFilter(), h("div", { class: "members-list" }, list.length
+        ? table("all", list, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
+        : [h("h3", { id: "members-all" }, M.t("members.all", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
+    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
+    // page, an agent on Your agents' Join an agent, each with this project chosen. A guest brings no agent (§3.1).
+    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
+      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
+    const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
+      ? h("a", { class: "button primary members-join-agent", href: "/agents?project=" + encodeURIComponent(ctx.slug) }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
+      inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,
       // A guest brings no agent (§3.1): no way there said to them.
@@ -728,14 +756,6 @@ window.Maity = window.Maity || {};
     draw();
     // A member marked by the URL keeps the focus across this redraw.
     const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
-    // Inviting a person (§3.4), below the members, for a human with members:admin.
-    if (M.invite) {
-      const slot = h("div", { class: "invitations-slot" });
-      append(root, slot);
-      M.invite.membersPanel(ctx).then((panel) => { if (panel) append(slot, panel); }, (err) => {
-        append(slot, h("p", { class: "send-status failed" }, M.t("members.invitations_failed", { reason: err.message })));
-      });
-    }
     // The member asked for (?manage=<id>): its row open, the focus on its
     // first field; an id that is no member here is said.
     if (wanted) {

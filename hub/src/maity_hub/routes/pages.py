@@ -48,7 +48,10 @@ def landing_html(
     the visitor's origin, `v` and (for a campaign the admin created) `c` (§16.7.2)."""
     pages = setting["variants"][variant]["pages"] if variant else setting["pages"]
     chosen = render.choose_language(
-        list(pages), setting["default_language"], lang, request.headers.get("accept-language")
+        render.ordered_languages(pages, setting["default_language"]),
+        setting["default_language"],
+        lang,
+        request.headers.get("accept-language"),
     )
     stats = landing_stats.current(conn) if landing_stats.named(setting) else None
     html = render.landing_document(
