@@ -28,8 +28,8 @@ router = APIRouter(route_class=ProjectRoute)
 PAGE_MAX = 200
 
 # §17.6: at most 20 manual posts per membership per hour, of them 5 to everyone.
-POSTS = Limiter(20, 3600)
-POSTS_TO_ALL = Limiter(5, 3600)
+POSTS = Limiter(20, 3600, name="routes.ticker.POSTS")
+POSTS_TO_ALL = Limiter(5, 3600, name="routes.ticker.POSTS_TO_ALL")
 URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20

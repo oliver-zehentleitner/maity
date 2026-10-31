@@ -2186,6 +2186,10 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
     if opened.search(page.url):
         expect(page.locator("main")).to_contain_text("answering")
+        # The owner is a participant: an answer by name, read back from the real hub.
+        page.locator("#jfa-went_well").fill("e2e: the board is clear")
+        page.locator("form.jfa-answer-form").get_by_role("button", name="Send my answer", exact=True).click()
+        expect(page.locator("section.jfa-answer")).to_contain_text("Your answer, by name.")
     else:
         # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
         refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"
@@ -2398,8 +2402,10 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
     expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
     expect(page.locator("#ktw-policy-select")).to_be_enabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("required")
     shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
-    assert shown["memory"]["provider"] == "keep-the-why", shown
+    # Nobody set the commitment in e2e-alpha: back under Keep the Why it reads required (§6.23).
+    assert shown["memory"]["provider"] == "keep-the-why" and shown["policy"]["keep_the_why"] == "required", shown
     run.a11y(page, "project settings, memory")
     no_problems(run, "memory provider")
 

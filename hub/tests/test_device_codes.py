@@ -253,13 +253,17 @@ def frozen_monotonic(monkeypatch: pytest.MonkeyPatch) -> None:
     clock the limiter and the breaker read stands still instead."""
     import time
     import types
+    from datetime import UTC, datetime
 
-    from maity_hub import ratelimit
+    from maity_hub import ratelimit, shared_counts
 
-    frozen = time.monotonic()
-    stub = types.SimpleNamespace(monotonic=lambda: frozen)
+    frozen, frozen_wall = time.monotonic(), time.time()  # the wall clock for the shared counts
+    stub = types.SimpleNamespace(monotonic=lambda: frozen, time=lambda: frozen_wall)
     monkeypatch.setattr(ratelimit, "time", stub)
     monkeypatch.setattr(routes, "time", stub)
+    # And the windows of the counts shared on PostgreSQL: all sixty fall into one.
+    frozen_at = datetime.now(UTC)
+    monkeypatch.setattr(shared_counts, "_now", lambda: frozen_at)
 
 
 @pytest.mark.usefixtures("frozen_monotonic")
@@ -398,12 +402,17 @@ def test_switched_off_in_the_environment_stops_every_step(
 def test_the_breaker_holds_for_a_minute(make_client: ClientFactory, desk: flow.Human) -> None:
     for n in range(60):
         redeem(make_client(peer=f"192.0.2.{n + 1}"), "ZZZZ-ZZZZ")
+    from maity_hub import shared_counts
+
     code = started(desk)["code"]
     tripped = routes._breaker["until"]
     assert redeem(make_client(peer="198.51.100.1"), code).status_code == 429
     routes.WRONG_CODES.reset()  # the window has emptied, the breaker still holds
     assert redeem(make_client(peer="198.51.100.2"), code).status_code == 429
-    routes._breaker["until"] = tripped - routes.BREAKER_SECONDS - 1  # the minute is over
+    if shared_counts.active():  # the minute is over, for every replica
+        shared_counts.clear("routes.device_codes.breaker")
+    else:  # the minute is over
+        routes._breaker["until"] = tripped - routes.BREAKER_SECONDS - 1
     assert redeem(make_client(peer="198.51.100.3"), code).status_code == 200
 
 

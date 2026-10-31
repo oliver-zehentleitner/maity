@@ -12,8 +12,8 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
-from maity_hub.jourfixe import worker
-from tests import flow
+from maity_hub.jourfixe import redaction, worker
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 DAILY = {
@@ -236,6 +236,31 @@ def test_named_and_anonymous_answers_and_who_reads_them(
     own = third.get(path + "?mine=true").json()["items"]
     assert [a["went_badly"] for a in own] == ["Too many wakes."]
     assert events(migrated, "jour_fixe_answer") == []  # no event per answer
+
+
+def test_a_proxy_with_trust_admin_does_not_read_the_answers(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    lead, member = team(owner, make_client)
+    owner.get("/me")
+    round_id = start(lead).json()["id"]
+    answer(member, round_id, went_well="named")
+    answer(lead, round_id, went_badly="hidden", anonymous=True)
+    admin = flow.human(make_client, migrated, "second-admin")
+    proxy = flow.human(make_client, migrated, "the-proxy")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, role="admin", human_id=admin.id)
+    factory.membership(migrated, project_id, role="proxy", human_id=proxy.id)
+    path = f"/projects/maintainer/maity/jour-fixe/rounds/{round_id}/answers"
+    assert admin.get(path).status_code == 200  # the admin team reads
+    assert proxy.get(path).status_code == 404  # a proxy, though of trust admin, does not
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.jour_fixe_round)).one()
+        stored = conn.execute(select(t.jour_fixe_answer)).first()
+        addressed = redaction._answer_readers(conn, row, stored)
+    assert f"member:{admin.id}" in addressed
+    assert f"member:{proxy.id}" not in addressed
 
 
 def test_an_anonymous_answer_withdrawn_leaves_nothing_but_the_tag(

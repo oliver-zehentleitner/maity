@@ -185,7 +185,7 @@ window.Maity = window.Maity || {};
     const counts = (o.board && o.board.counts) || {};
     const total = COLUMNS.reduce((n, s) => n + (counts[s] || 0), 0);
     const bar = h("div", { class: "overview-bar", role: "img",
-      "aria-label": new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(COLUMNS.map((s) => COLUMN_COUNTS[s](counts[s] || 0))) });
+      "aria-label": M.fmt.list(COLUMNS.map((s) => COLUMN_COUNTS[s](counts[s] || 0))) });
     COLUMNS.forEach((s) => {
       if (!counts[s]) return;
       const seg = h("span", { class: "overview-seg seg-" + s });

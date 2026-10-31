@@ -638,6 +638,11 @@ window.Maity = window.Maity || {};
       }
     });
   }
+  function jfRound(slug, id, path) {
+    const r = file(slug, "jour-fixe.json", path).rounds.find((x) => x.id === id);
+    if (!r) fail(404, "not_found", "Not found", path);
+    return r;
+  }
   // §20.1: policy.jour_fixe as the hub checks it, each refusal at its field path.
   const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   function jourFixeErrors(jf, members) {
@@ -2274,8 +2279,12 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         if ("jour_fixe" in body.policy && body.policy.jour_fixe !== null) {
-          const errors = jourFixeErrors(body.policy.jour_fixe, file(m[1], "members.json", path).items);
+          // Checked and stored with the defaults filled in, as the hub does (schedule.filled, §20.1).
+          const filled = Object.assign({ enabled: false, moderator: "admin_agent", answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 },
+            body.policy.jour_fixe);
+          const errors = jourFixeErrors(filled, file(m[1], "members.json", path).items);
           if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+          body.policy = Object.assign({}, body.policy, { jour_fixe: filled });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
@@ -2319,6 +2328,105 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => {
       const r = file(m[1], "jour-fixe.json", path).rounds.find((x) => x.id === m[2]);
       if (!r) fail(404, "not_found", "Not found", path);
+      return r;
+    }],
+    // §20.3–§20.8 the round's writes, as the hub checks them: one answer per member, the
+    // statement, posts once per topic and step, a further step, the report, redaction.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path, query) => {
+      const r = jfRound(m[1], m[2], path);
+      const all = r.answers || [];
+      // The author's own: a named one at any time, an anonymous one only while the window is open (§20.4).
+      if (query.get("mine") === "true") {
+        return { items: all.filter((a) => a.mine && (!a.anonymous || r.status === "answering"))
+          .map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+      }
+      const reader = (r.moderator || {}).member_id === me().member.id || (me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])));
+      if (!reader) fail(404, "not_found", "Not found", path);
+      return { items: all.map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!(r.participants || []).some((p) => p.member_id === me().member.id)) fail(403, "forbidden", "not a participant", path, { reason: "not_participant" });
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      r.answers = r.answers || [];
+      if (r.answers.some((a) => a.mine)) fail(409, "jour_fixe_answered", "one answer per round", path);
+      const texts = ["went_well", "went_badly", "would_help"].map((k) => body[k] || "");
+      if (!texts.some(Boolean)) fail(400, "invalid", "the request does not validate", path, { fields: { answer: "empty" } });
+      const id = "jfa-f" + String(r.answers.length + 1).padStart(3, "0");
+      r.answers.push({ id, anonymous: !!body.anonymous, author: body.anonymous ? null : me().member.id, withdrawn: false,
+        went_well: body.went_well || null, went_badly: body.went_badly || null, would_help: body.would_help || null, redaction: null, mine: true });
+      r.answers_received = (r.answers_received || 0) + 1;
+      return body.anonymous ? { round_id: r.id, anonymous: true } : { round_id: r.id, anonymous: false, id };
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers\/mine$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      const own = (r.answers || []).find((a) => a.mine && !a.withdrawn);
+      if (!own) fail(404, "not_found", "no answer", path);
+      // An anonymous one is gone outright; a named one keeps its record (§20.3, §20.4).
+      if (own.anonymous) r.answers = r.answers.filter((a) => a !== own);
+      else Object.assign(own, { withdrawn: true, went_well: null, went_badly: null, would_help: null });
+      return { round_id: r.id, withdrawn: true };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/statement$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "statement" || r.statement) fail(409, "jour_fixe_state", "not in step 1", path, { status: r.status });
+      const named = new Set((r.answers || []).filter((a) => !a.anonymous && !a.withdrawn).map((a) => a.author));
+      if ((body.topics || []).some((t) => (t.items || []).some((it) => it.from !== "anonymous" && !named.has(it.from)))) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { items: "not_an_answerer" } });
+      }
+      r.statement = { by: me().member.id, message_seq: null, topics: (body.topics || []).map((t, i) => ({ id: "t" + (i + 1), title: t.title, summary: t.summary || null,
+        items: (t.items || []).map((it, k) => ({ id: "t" + (i + 1) + ".i" + (k + 1), text: it.text, from: it.from, redaction: null })),
+        proposals: (t.proposals || []).map((x, k) => ({ id: "t" + (i + 1) + ".s" + (k + 1), title: x.title, reason: x.reason || null })), redaction: null })) };
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/posts$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      const open = (r.steps || []).find((x) => x.opened_at && !x.closed_at && x.kind !== "statement");
+      if (!open || open.kind !== body.step) fail(409, "jour_fixe_state", "not this step", path, { step: open ? open.kind : null });
+      if (!(open.eligible || []).includes(me().member.id)) fail(403, "forbidden", "not eligible", path, { reason: "not_eligible" });
+      r.posts = r.posts || [];
+      if (r.posts.some((x) => x.by === me().member.id && x.topic_id === body.topic_id && x.step === body.step)) fail(409, "jour_fixe_state", "once per topic", path, { step: body.step });
+      const post = { id: "p-f" + (r.posts.length + 1), step: body.step, topic_id: body.topic_id, by: me().member.id, to: body.to || [], in_reply_to: body.in_reply_to || [],
+        body: body.body, message_seq: null, redaction: null };
+      r.posts.push(post);
+      return post;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/steps$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "exchange" || (r.steps || []).filter((x) => x.kind === "further").length >= 3) fail(409, "jour_fixe_state", "no further step now", path, { status: r.status });
+      r.steps.push({ n: null, kind: "further", opened_at: null, closes_at: null, closed_at: null, reason: body.reason, eligible: (r.participants || []).map((p) => p.member_id) });
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/report$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "reporting") fail(409, "jour_fixe_state", "not reporting", path, { status: r.status });
+      const decider = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
+      if ((body.proposals || []).some((x) => x.triage === "decided") && !decider) fail(403, "forbidden", "may not decide", path, { reason: "may_not_decide" });
+      r.report = { by: me().member.id, source: "moderator", summary: body.summary || null, summary_redaction: null,
+        findings: (body.findings || []).map((f, i) => ({ id: "f" + (i + 1), topic_id: f.topic_id || null, text: f.text, derived_from: null, redaction: null })),
+        proposals: (body.proposals || []).map((x, i) => Object.assign({ id: "r" + (i + 1), humans_only: false, decision: null, request_id: null, task_id: null, redaction: null }, x,
+          x.triage === "to_owner" ? { request_id: "req-jf" + (i + 1) } : x.decision && x.decision.outcome === "adopt" ? { task_id: "tsk-jf" + (i + 1) } : {})),
+        proposals_not_carded: [] };
+      Object.assign(r, { status: "reported", reported_at: nowIso() });
+      return { round: r, requests: r.report.proposals.filter((x) => x.request_id).map((x) => x.request_id), tasks: r.report.proposals.filter((x) => x.task_id).map((x) => x.task_id) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/redact$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const tomb = { at: nowIso(), by: me().member.id, reason: body.reason };
+      const [kind, id] = String(body.target || "").split(":");
+      const rep = r.report || {};
+      if (kind === "answer") { const a = (r.answers || []).find((x) => x.id === id); if (!a) fail(404, "not_found", "Not found", path); Object.assign(a, { went_well: null, went_badly: null, would_help: null, redaction: tomb }); }
+      else if (kind === "summary") Object.assign(rep, { summary: null, summary_redaction: tomb });
+      else if (kind === "finding" || kind === "proposal") {
+        const x = (kind === "finding" ? rep.findings : rep.proposals || []).find((y) => y.id === id);
+        if (!x) fail(404, "not_found", "Not found", path);
+        if (kind === "finding") Object.assign(x, { text: null, redaction: tomb }); else Object.assign(x, { title: null, reason: null, redaction: tomb });
+      } else fail(400, "invalid", "the request does not validate", path, { fields: { target: "redact_the_message" } });
       return r;
     }],
     // §20.1: started by hand with a reason, by trust owner or admin; one round at a time.

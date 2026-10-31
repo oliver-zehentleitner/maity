@@ -151,38 +151,27 @@ window.Maity = window.Maity || {};
     return owner === String(m.name || "").split("/")[0] || (!!named && (named.aliases || []).indexOf(owner) >= 0);
   }
 
-  // A scanned text with its stored mentions (docs/api.md §8.6) as text
-  // nodes and member links. Offsets and lengths count code points; only the
-  // stored ones for this field are links, and only where the text there is
-  // "@" + the stored handle; nothing the writer typed becomes a member link.
-  // `at` (M.ids.where): the project the text belongs to, for the ids in
-  // the text between mentions as links (js/ids.js). `ctx` (optional): the
-  // member views it knows; a mention typed as an alias of the member (§6.24),
-  // alone or after an owner or an owner's alias, is a link as well.
-  function withMentions(text, mentions, field, hrefOf, at, ctx) {
+  // The stored mentions of a text (docs/api.md §8.6) that stand where they
+  // say: offsets and lengths count code points; only the stored ones for
+  // this field count, and only where the text there is "@" + the stored
+  // handle (or the long @owner/handle, or an alias the members in `ctx` know,
+  // §6.24), with an instance's #id after it; nothing the writer typed becomes
+  // a member link. js/markdown.js draws them as links.
+  function mentionSpans(text, mentions, field, ctx) {
     const chars = Array.from(String(text || ""));
-    const marks = (mentions || [])
-      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
-      .sort((a, b) => a.offset - b.offset);
     const out = [];
-    const plain = (s) => (at && M.ids ? M.ids.link(s, at) : [s]);
     let from = 0;
-    marks.forEach((x) => {
-      if (x.offset < from || x.offset + x.length > chars.length) return;
-      const said = chars.slice(x.offset, x.offset + x.length).join("");
-      // The hub stores a long mention (§8.6) with the whole @owner/handle,
-      // and an instance mention with its #id after either form.
-      const suffix = x.instance ? "#" + x.instance : "";
-      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
-      if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
-      // No href: a mention named where its member cannot be opened. An
-      // instance mention links to the member; the instance is in the title.
-      const href = hrefOf(x.member_id);
-      const title = x.instance ? "instance " + x.instance : null;
-      out.push(href ? h("a", { class: "mention", href, title }, said) : h("span", { class: "mention", title }, said));
-      from = x.offset + x.length;
-    });
-    if (from < chars.length) out.push(...plain(chars.slice(from).join("")));
+    (mentions || [])
+      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
+      .sort((a, b) => a.offset - b.offset)
+      .forEach((x) => {
+        if (x.offset < from || x.offset + x.length > chars.length) return;
+        const said = chars.slice(x.offset, x.offset + x.length).join("");
+        const suffix = x.instance ? "#" + x.instance : "";
+        if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
+        out.push({ offset: x.offset, length: x.length, said, member_id: x.member_id, instance: x.instance || null });
+        from = x.offset + x.length;
+      });
     return out;
   }
 
@@ -366,5 +355,5 @@ window.Maity = window.Maity || {};
       title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

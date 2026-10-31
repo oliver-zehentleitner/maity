@@ -1596,7 +1596,7 @@ window.MAITY_FIXTURES = {
               "handle": "maintainer",
               "length": 11,
               "member_id": "hum-maintainer",
-              "offset": 30
+              "offset": 25
             }
           ],
           "task_id": null,
@@ -3621,7 +3621,7 @@ window.MAITY_FIXTURES = {
         "area": "docs/",
         "assigned_to": "agt-a",
         "blocked_by_request": null,
-        "body": "The REST contract hub, CLI and dashboard build against.",
+        "body": "The REST contract hub, CLI and dashboard build against; ask @agent-b.",
         "checkpoint": null,
         "claim": {
           "expired": false,
@@ -3639,6 +3639,15 @@ window.MAITY_FIXTURES = {
         "kind": "task",
         "ktw_ref": null,
         "label": "feature",
+        "mentions": [
+          {
+            "field": "body",
+            "handle": "agent-b",
+            "length": 8,
+            "member_id": "agt-b",
+            "offset": 60
+          }
+        ],
         "parent": null,
         "related": [],
         "release": null,
@@ -5522,6 +5531,287 @@ window.MAITY_FIXTURES = {
   "sample/joins.json": {
     "items": [],
     "next_cursor": null
+  },
+  "sample/jour-fixe.json": {
+    "moderators": [
+      {
+        "handle": "maintainer",
+        "member_id": "hum-maintainer"
+      }
+    ],
+    "next_at": null,
+    "rounds": [
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": false,
+            "author": "agt-s1",
+            "id": "jfa-s1",
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "The <b>board</b> is clear.",
+            "withdrawn": false,
+            "would_help": "A second reviewer."
+          },
+          {
+            "anonymous": true,
+            "author": null,
+            "id": "jfa-s2",
+            "redaction": null,
+            "went_badly": "Reviews wait overnight.",
+            "went_well": null,
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-31T10:00:01Z",
+        "answers_received": 2,
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": null,
+        "id": "jfx-s3",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "instance": "s1aa",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": null,
+          "member_id": "hum-maintainer"
+        },
+        "opened_at": "2026-10-31T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": null,
+        "reported_at": null,
+        "scheduled_for": "2026-10-31T08:00:00Z",
+        "statement": null,
+        "status": "statement",
+        "steps": [
+          {
+            "closed_at": null,
+            "closes_at": "2026-10-31T12:00:01Z",
+            "eligible": [
+              "hum-maintainer"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-31T10:00:01Z",
+            "reason": null
+          }
+        ],
+        "trigger": "manual"
+      },
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": false,
+            "author": "hum-maintainer",
+            "id": "jfa-s9",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Short reviews.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-28T10:00:01Z",
+        "answers_received": 1,
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": null,
+        "id": "jfx-s2",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "instance": "s1aa",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": "s1aa",
+          "member_id": "agt-s1"
+        },
+        "opened_at": "2026-10-28T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": null,
+        "reported_at": null,
+        "scheduled_for": "2026-10-28T08:00:00Z",
+        "statement": {
+          "by": "agt-s1",
+          "message_seq": null,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [],
+              "proposals": [],
+              "redaction": null,
+              "summary": null,
+              "title": "Reviews wait"
+            }
+          ]
+        },
+        "status": "exchange",
+        "steps": [
+          {
+            "closed_at": "2026-10-28T10:30:00Z",
+            "eligible": [
+              "agt-s1"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-28T10:00:01Z",
+            "reason": null
+          },
+          {
+            "closed_at": null,
+            "closes_at": "2026-10-28T12:30:00Z",
+            "eligible": [
+              "agt-s1",
+              "hum-maintainer"
+            ],
+            "kind": "response",
+            "n": 2,
+            "opened_at": "2026-10-28T10:30:00Z",
+            "reason": null
+          }
+        ],
+        "trigger": "manual"
+      },
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": true,
+            "author": null,
+            "id": "jfa-s8",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Kept quiet.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-25T10:00:01Z",
+        "answers_received": 1,
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": "2026-10-25T12:30:00Z",
+        "id": "jfx-s1",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": null,
+          "member_id": "hum-maintainer"
+        },
+        "opened_at": "2026-10-25T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": "2026-10-26T00:30:00Z",
+        "reported_at": null,
+        "scheduled_for": "2026-10-25T08:00:00Z",
+        "statement": {
+          "by": "hum-maintainer",
+          "message_seq": null,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [],
+              "proposals": [
+                {
+                  "id": "t1.s1",
+                  "reason": "Halves the wait.",
+                  "title": "A second reviewer"
+                },
+                {
+                  "id": "t1.s2",
+                  "reason": null,
+                  "title": "Night shift"
+                }
+              ],
+              "redaction": null,
+              "summary": null,
+              "title": "Reviews wait"
+            }
+          ]
+        },
+        "status": "reporting",
+        "steps": [
+          {
+            "closed_at": "2026-10-25T10:30:00Z",
+            "eligible": [
+              "hum-maintainer"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-25T10:00:01Z",
+            "reason": null
+          }
+        ],
+        "trigger": "manual"
+      }
+    ]
   },
   "sample/members.json": {
     "items": [

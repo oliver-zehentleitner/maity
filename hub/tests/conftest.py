@@ -232,12 +232,16 @@ def _fresh_process_state() -> Iterator[None]:
         mentions,
         not_listening,
         public_pages,
+        shared_counts,
     )
     from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.board import notes
     from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
 
+    # The counts in the database belong to the previous test's app and engine; the tables
+    # are emptied between tests anyway, and the next app configures its own.
+    shared_counts.configure(None)
     badges.BY_ADDRESS.reset()
     public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
     badges.NOT_SERVED.reset()

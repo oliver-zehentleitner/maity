@@ -69,7 +69,7 @@ TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 3600
 WRONG_CODES_BEFORE_BURN = 3
 # What a member's own agent may hold (§3.1 "Bringing your own agent"): below governance.
 MEMBER_RULE_TRUSTS = ("member", "guest")
-EXCHANGE_BY_ADDRESS = Limiter(10, 60)
+EXCHANGE_BY_ADDRESS = Limiter(10, 60, name="routes.joins.EXCHANGE_BY_ADDRESS")
 _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 

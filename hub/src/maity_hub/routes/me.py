@@ -34,7 +34,7 @@ router = APIRouter()
 
 # One export per account in 10 minutes (§2.9): the document reads every project the
 # human was ever in, so a loop of it is a load on the hub, not a convenience.
-EXPORTS = Limiter(1, 600)
+EXPORTS = Limiter(1, 600, name="routes.me.EXPORTS")
 
 
 @router.get("/me")

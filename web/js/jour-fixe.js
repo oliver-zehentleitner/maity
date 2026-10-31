@@ -98,14 +98,18 @@ window.Maity = window.Maity || {};
       const fields = err.code === "invalid" && err.details && err.details.fields;
       if (!fields) return false;
       let first = null;
+      // A refusal of a path with no field here (policy.jour_fixe.recurrence, …) is named in the status line.
+      const rest = [];
       Object.entries(fields).forEach(([path, why]) => {
+        const said = Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why]() : why;
         const hit = fieldErrors[path];
-        if (!hit) return;
-        hit[0].textContent = Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why]() : why;
+        if (!hit) { rest.push(path.replace(/^policy\.jour_fixe\./, "") + ": " + said); return; }
+        hit[0].textContent = said;
         if (!first) first = hit[1];
       });
       if (first) first.focus();
-      return !!first;
+      if (!first && !rest.length) return false;
+      return [first ? M.t("settings.see_fields") : null].concat(rest).filter(Boolean).join("; ");
     }
     const weekly = h("div", { class: "jf-weekly" }, h("label", { for: id("interval") }, M.t("jf.interval")), interval, at("recurrence.interval", interval),
       h("fieldset", { class: "jf-days" }, h("legend", null, M.t("jf.weekdays")), days.map((d) => d[1])), at("recurrence.weekdays", days[0][0]));
@@ -352,6 +356,8 @@ window.Maity = window.Maity || {};
         h("h3", { id: "jf-statement-title" }, M.t("jf.statement")),
         h("ol", { class: "jf-topics" }, (r.statement.topics || []).map((t) => topicBox(ctx, t, r.posts || [])))) : null,
       r.report ? reportBox(ctx, r.report) : null);
+    // What this reader may do here (js/jour-fixe-act.js); a change draws the round again.
+    if (M.jourFixeAct) append(root, await M.jourFixeAct.parts(ctx, r, () => { clear(root); roundView(ctx, root, id); }));
   }
 
   M.jourFixe = { settingsForm, moderatorsPart };
