@@ -54,5 +54,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_conversation_pin_project", table_name="conversation_pin")
+    # The index goes with the table: MariaDB refuses to drop it alone while the project's
+    # foreign key needs it (error 1553).
     op.drop_table("conversation_pin")
