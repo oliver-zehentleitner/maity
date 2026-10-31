@@ -181,9 +181,9 @@ def moderator_order(conn: Connection, series_id: str, members: list[Any]) -> lis
 
 
 def record_presence(conn: Connection, now: datetime) -> None:
-    """The minute's count for every agent membership with an instance `online` (§5.3: a
-    call within 120 seconds or a long-poll open); older than a day is pruned. Shown to
-    nobody (§20.2)."""
+    """The minute's count for every agent membership with an instance `online` and every
+    human membership `online` (§5.3: a call within 120 seconds or a long-poll open); older
+    than a day is pruned. Shown to nobody (§20.2)."""
     from maity_hub import instances, listening
 
     minute = now.replace(second=0, microsecond=0)
@@ -195,13 +195,20 @@ def record_presence(conn: Connection, now: datetime) -> None:
         ).where(t.agent_session.c.live.is_(True))
     ).all()
     heard = listening.which((session for _, session, _ in live), conn)
-    online = sorted(
-        {
-            m
-            for m, session, seen in live
-            if instances.presence(seen, True, session in heard) == "online"
-        }
-    )
+    found = {
+        m
+        for m, session, seen in live
+        if instances.presence(seen, True, session in heard) == "online"
+    }
+    humans = conn.execute(
+        select(t.membership).where(
+            t.membership.c.active.is_(True), t.membership.c.human_id.isnot(None)
+        )
+    ).all()
+    if humans:
+        presences = availability.presences_of(conn, humans)
+        found |= {h.id for h in humans if presences.get(h.id) == "online"}
+    online = sorted(found)
     known = set(
         conn.execute(
             select(t.presence_minute.c.membership_id).where(t.presence_minute.c.minute == minute)
@@ -642,9 +649,12 @@ def due_slots(series: Any, now: datetime) -> list[datetime]:
 def handle_schedule(conn: Connection, project_id: str) -> None:
     """Open, skip or record as missed each series' due slots (§20.1): a slot noticed more than
     10 minutes late is missed, all such slots of a series in one record with `missed_slots`."""
+    from maity_hub.jourfixe import moderators
     from maity_hub.jourfixe import series as series_mod
 
     project = lock_project(conn, project_id)
+    moderators.end_gone(conn, project)  # rights whose member, owner or freedom went (§20.2)
+    moderators.file_missing(conn, project)  # the upgrade's consents still to file (§20.1)
     now = clock.now()
     for series in series_mod.of_project(conn, project_id):
         if (

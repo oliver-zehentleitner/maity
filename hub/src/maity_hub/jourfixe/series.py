@@ -235,7 +235,7 @@ def _checked(fields: dict[str, Any], enabled: bool) -> dict[str, Any]:
     return config
 
 
-def _announce(
+def announce(
     conn: Connection,
     project: Any,
     series: Any,
@@ -308,7 +308,7 @@ def create(
         )
     )
     row = find(conn, project.id, series_id)
-    _announce(conn, project, row, "created", actor, mine.principal_id)
+    announce(conn, project, row, "created", actor, mine.principal_id)
     return row
 
 
@@ -345,7 +345,7 @@ def update_series(
             update(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series.id).values(**values)
         )
     row = find(conn, project.id, series.id)
-    _announce(conn, project, row, "updated", actor, mine.principal_id)
+    announce(conn, project, row, "updated", actor, mine.principal_id)
     return row
 
 
@@ -371,7 +371,7 @@ def delete_series(
         .values(series_id=None)
     )
     conn.execute(delete(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series.id))
-    _announce(conn, project, series, "deleted", actor, mine.principal_id, audience=audience)
+    announce(conn, project, series, "deleted", actor, mine.principal_id, audience=audience)
     return final
 
 
@@ -416,7 +416,7 @@ def grant_at_once(
             )
         )
     principal = member.agent_id or member.human_id
-    _announce(conn, project, series, "moderator_granted", actor, mine.principal_id, principal)
+    announce(conn, project, series, "moderator_granted", actor, mine.principal_id, principal)
     return find(conn, project.id, series.id)
 
 
@@ -442,5 +442,5 @@ def end_right(
             t.jour_fixe_moderator.c.membership_id == member.id,
         )
     )
-    _announce(conn, project, series, "moderator_ended", actor, mine.principal_id, principal)
+    announce(conn, project, series, "moderator_ended", actor, mine.principal_id, principal)
     return find(conn, project.id, series.id)

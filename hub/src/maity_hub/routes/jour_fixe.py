@@ -16,7 +16,16 @@ from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, exchange, redaction, rounds, series, triage, views
+from maity_hub.jourfixe import (
+    answers,
+    exchange,
+    moderators,
+    redaction,
+    rounds,
+    series,
+    triage,
+    views,
+)
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 from maity_hub.namespace import ProjectRoute
@@ -208,6 +217,20 @@ idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
 idempotency.LOADERS["jour_fixe_series"] = _replay_series
 
 
+def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
+    """A replayed `202`: the series as it stands now, and the grant's consent requests."""
+    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
+    ids = [
+        r.owner_request_id or r.keeper_request_id
+        for r in series.grants(conn, series_id)
+        if r.state == "pending"
+    ]
+    return {"series": series.view(conn, row), "requests": [i for i in ids if i]}
+
+
+idempotency.LOADERS["jour_fixe_grant"] = _replay_grant
+
+
 def _last_reported(conn: Connection, series_id: str) -> Any | None:
     return conn.execute(
         select(t.jour_fixe_round)
@@ -334,8 +357,12 @@ def grant_moderator(
         project = events.lock_project(conn, mine.project.id)
         row = _visible(conn, mine, series_id)
         member = _member(conn, project.id, body.member_id)
-        row = series.grant_at_once(conn, project, row, mine, member, caller.actor(mine.id))
-        return idempotency.Outcome(201, "jour_fixe_series", row.id, series.view(conn, row))
+        status, shown = moderators.grant(
+            conn, project, row, mine, caller, member, caller.actor(mine.id)
+        )
+        if status == 202:
+            return idempotency.Outcome(202, "jour_fixe_grant", row.id, shown)
+        return idempotency.Outcome(201, "jour_fixe_series", row.id, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
