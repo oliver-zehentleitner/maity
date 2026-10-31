@@ -399,16 +399,21 @@ def post_message(
         # Only what `to` does not reach already, judged per token (§8.2): a team mention
         # is reached by `all`, its role or its own `member:`; an instance mention only by
         # `all`, its role or its own `instance:` token — `to` naming the team wakes the
-        # instances its wake rule chooses, not necessarily the one named (§8.6). The
-        # mention stays either way.
+        # instances its wake rule chooses, not necessarily the one named (§8.6); a dormant
+        # instance only by its own token (§6.17). The mention stays either way.
         pinged: dict[str, str] = {}  # token -> member
         for m in mentioned:
             token = mentions.instance_token(conn, mine.project.id, m["member_id"], m["instance"])
-            if not (
+            reached = (
                 "all" in audience
                 or token in audience
                 or bool(roles[m["member_id"]] & set(audience))
+            )
+            if m["instance"] is not None and instances.token_is_dormant(
+                conn, mine.project.id, token
             ):
+                reached = token in audience  # a dormant instance is reached by its token alone
+            if not reached:
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))

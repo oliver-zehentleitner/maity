@@ -2779,9 +2779,12 @@ window.MAITY_FIXTURES = {
     },
     "released_at": null,
     "repository": {
+      "confirmed_by": null,
       "default_branch": "main",
       "forge": "github",
+      "owner_confirmed": false,
       "probe_configured": true,
+      "probe_via": "instance",
       "url": "https://github.com/oliver-zehentleitner/maity"
     },
     "rules_version": 7,

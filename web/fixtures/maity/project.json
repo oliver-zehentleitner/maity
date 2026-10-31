@@ -13,7 +13,10 @@
     "url": "https://github.com/oliver-zehentleitner/maity",
     "default_branch": "main",
     "forge": "github",
-    "probe_configured": true
+    "probe_configured": true,
+    "probe_via": "instance",
+    "owner_confirmed": false,
+    "confirmed_by": null
   },
   "memory": {
     "provider": "keep-the-why"
