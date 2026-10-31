@@ -2463,9 +2463,11 @@ def _address(
     members = members if members is not None else _members(session)
     member = resolve_member(members, who, False)
     if chat_hint and member == who and not any(m["id"] == who for m in members):
-        if any(_conversation_id(c) == to for c in _conversations(session)):
-            shown = shlex.quote(onboarding.inline(to))
-            raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
+        # An unavailable advisory read must not replace the command's own outcome.
+        with contextlib.suppress(hub.HubError):
+            if any(_conversation_id(c) == to for c in _conversations(session)):
+                shown = shlex.quote(onboarding.inline(to))
+                raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
 
 
