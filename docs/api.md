@@ -9841,8 +9841,9 @@ one message, not the chat.
 GET /projects/{owner}/{slug}/conversations?observed=false&limit=50&cursor=…
 ```
 
-Every conversation the caller is in, both kinds, newest activity first
-(`last_message_at`, or `created_at` for a chat without messages), paged
+Every conversation the caller is in, both kinds, in the four bands of
+"Pinned" (below), each newest activity first (`last_message_at`, or
+`created_at` for a chat without messages), paged
 (§1.4). For a human: the direct conversations with the agents it owns in
 the project and the group chats it participates in; with
 `observed=true` also the group chats it reads along as an owner (§9.2).
@@ -9851,21 +9852,21 @@ chats stay in the list for their participants.
 
 ```json
 { "items": [
+    { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
+                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" } ],
+      "access": "party", "closed_at": null,
+      "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0, "pinned": false,
+      "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
+                        "sent_at": "2026-10-21T13:10:00Z", "redacted": false } },
     { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
       "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
                         { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" },
                         { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "name": "guest/agent-x" } ],
       "observers": ["hum-guest"], "access": "participant", "closed_at": null,
-      "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0,
+      "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0, "pinned": false,
       "last_message": { "seq": 5020, "from": "hum-maintainer", "body": "@agent-a can we tag today?",
-                        "sent_at": "2026-10-21T13:30:00Z", "redacted": false } },
-    { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
-      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
-                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" } ],
-      "access": "party", "closed_at": null,
-      "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0,
-      "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
-                        "sent_at": "2026-10-21T13:10:00Z", "redacted": false } }
+                        "sent_at": "2026-10-21T13:30:00Z", "redacted": false } }
   ],
   "next_cursor": null }
 ```
@@ -9887,7 +9888,9 @@ it at the top of its own list: `PUT …/conversations/{id}/pin` and
 A pin is the caller's own: no one else sees it, it emits no event, and it
 holds across the caller's devices because the hub stores it. At most 20
 per human across all projects; a 21st is `invalid` with
-`details.fields.pin: "too_many"`. A conversation the caller leaves or
+`details.fields.pin: "too_many"`. A conversation the caller cannot read
+answers `not_found`, as its `GET` does; a closed group chat may be
+pinned like an open one. A conversation the caller leaves or
 loses access to keeps no pin. Every item gains `pinned` (`true` or
 `false`; always `false` for an agent caller). Both lists (this one and
 `GET /me/conversations`) are ordered in four bands, each band by the
@@ -9909,8 +9912,9 @@ Human only; an agent gets `forbidden` (`humans_only`), since an agent
 lives in one project and reads §9.3 there. The items are those §9.3
 gives the caller in every project where it is an active member, under
 the same rules (`observed`, closed chats, windows, observers' `null`
-counts), merged into one list ordered by activity, newest first, then
-by `project.full_name` and then by `id`, both ascending, paged (§1.4). Activity is
+counts), merged into one list in the four bands of "Pinned" (below),
+each band ordered by activity, newest first, then by `project.full_name`
+and then by `id`, both ascending, paged (§1.4). Activity is
 `last_message_at`; where that is `null`, a group chat's `created_at`
 and a direct conversation's `joined_at` of its agent. The project's
 name is part of the order because one agent can be a member of several
@@ -10709,6 +10713,7 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/conversations/{id}/participants` | creator, human participant with `members:admin` | 9.2 |
 | PATCH | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; an agent participant for itself; the owner of an agent participant (`wake` only) | 9.2 |
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
+| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/pin` | human, a participant or an observer | 9.3 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments/{id}`, `/projects/{owner}/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
@@ -12500,13 +12505,16 @@ list, at most 20 entries, each `{type, enabled, …}`; the page shows the
 enabled ones in that order. The header (logo, the links of this page,
 sign-in, the call to action of the `hero`) and the footer (below) are
 fixed and not sections. The header's links are the enabled sections
-that are shown (not `activity` or `collab`, nor `profiles` and `explore`
-while public pages are off) and carry `nav_label`, in their order: any
+that draw something on the page (not `activity` or `collab`, not
+`profiles` or `explore` in this version, not a `stats` section with no
+counter left to show) and carry `nav_label`, in their order: any
 section may have one (trimmed, 1–24 characters), at most 4 among the
 enabled sections of a page (a fifth is `invalid`, `details.fields`
 naming it, `too_many`; a disabled section's label counts for nothing),
 and a section without one has no link; the link points at the section's
-anchor (`#s<index>`, its position in `sections`). A section title is never a link
+anchor (`#s<index>`, its 0-based position in `sections`, disabled
+sections included). A label on a section that draws nothing still
+counts toward the four. A section title is never a link
 text by itself, so a long title cannot break the header. The types and
 their fields:
 
@@ -13506,6 +13514,7 @@ names:
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
 | `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
+| `/invite` | the invitations the human issues across its projects: create one for a project (§3.4) and manage the open ones |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |

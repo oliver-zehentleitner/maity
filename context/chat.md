@@ -334,4 +334,7 @@ exactly that and keep the activity order inside each.
 - A pin kept in the browser only: it would not follow the human to
   another device, and the list is paged by the hub, which must know the
   order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows the bands.
 
