@@ -63,7 +63,7 @@ page_router = APIRouter(route_class=ProjectRoute)  # /r/{token}, outside the API
 
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 900, 60, 900
 WRONG_CODES_BEFORE_BURN = 3
-PAIR_BY_ADDRESS = Limiter(10, 60)
+PAIR_BY_ADDRESS = Limiter(10, 60, name="routes.runners.PAIR_BY_ADDRESS")
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 

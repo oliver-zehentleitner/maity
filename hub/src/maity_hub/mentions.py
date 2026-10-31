@@ -354,7 +354,7 @@ def members(mentions: list[dict[str, Any]]) -> list[str]:
 
 # At most PINGS_PER_WINDOW pings by one membership in PING_WINDOW seconds (§8.6).
 # In-process, like the other limits of one replica.
-PINGS = Limiter(PINGS_PER_WINDOW, PING_WINDOW)
+PINGS = Limiter(PINGS_PER_WINDOW, PING_WINDOW, name="mentions.PINGS")
 
 
 def charge(conn: Connection, membership_id: int, count: int) -> None:
