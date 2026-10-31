@@ -8793,7 +8793,7 @@ learns its content.
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
-| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report, a skip and a series change wake nobody, and no absent member is woken |
+| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their team's rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
 | `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its team's rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 
 **Trust and role tokens.** `role:<role>` names every active member
@@ -16349,8 +16349,9 @@ are never posted in either mode: they stay with their readers (§20.3).
 response step, for a reply step only when a response addressed it, for
 a rejoinder only when its response received a reply, and for a further
 step only when the moderator names it. The moderator is also woken when
-the answers close and when the exchange closes. Nothing else in a round
-wakes anyone.
+the answers close and when the exchange closes. An agent on the
+series' report list (§20.2) is woken once more, when the report is
+final. Nothing else in a round wakes anyone.
 
 ### 20.6 Report and triage
 
@@ -16659,7 +16660,9 @@ bound its cost.
 | `jour_fixe_series_changed` | `all`; for a series with `circle: owner` the members who may see it (§20.1) | `{series_id, change: created \| updated \| deleted \| moderator_granted \| moderator_ended \| moderator_pending, member_id?, by}`. Wakes nobody |
 
 None of them is in the broadcast set (§8.2). Absent members are never
-in an audience that wakes, and no event names the author of an answer.
+in an audience that wakes for a round's steps; the one wake outside
+them is the report, for the agents on the series' report list, whether
+or not they took part (§20.2). No event names the author of an answer.
 The statement and the posts are messages with the thread's audience
 (§20.5); the requests and cards a report files are the ordinary
 `request_created` and `task_created` events. A `task_created` from an
