@@ -162,9 +162,11 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
 
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
-    `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
+    `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
+    once by `main` (§2.3)."""
 
     on_request: str | None = None
+    for_target: str | None = None
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -184,6 +186,18 @@ class Session:
         self.client = ProjectClient(
             hub.hub_base(stored), key, on_request=Session.on_request, moved=self._moved
         )
+        if Session.for_target is not None:
+            # Resolved as the bridge itself, then sent as `Maity-For` on every call (§13).
+            self.client.for_member = (
+                Session.for_target
+                if Session.for_target.startswith("agt-")
+                else _member_id(self, Session.for_target)
+            )
+
+    @property
+    def for_member(self) -> str | None:
+        """The agent this command acts for through its bridge (`--for`), or None."""
+        return self.client.for_member
 
     @property
     def project(self) -> str:
@@ -212,6 +226,8 @@ class Session:
         full_name = self.data.get("full_name")
         if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
             return None
+        if self.client.for_member is not None:
+            return None  # `/me` is the bridge's own, never asked with --for (§13)
         old = self.project_path()
         if path != old and not path.startswith(old + "/"):
             return None
@@ -598,6 +614,29 @@ def _unread_note(session: Session, budget: float) -> None:
         )
 
 
+def _wait_cursor(session: Session) -> int:
+    """The cursor `wait` reads from: the bridge's own, or with `--for` the one it keeps per
+    served agent (`for_cursors.<member id>`), so its own never moves on that agent's events
+    (§13)."""
+    if session.for_member is None:
+        own = session.data.get("cursor") or 0
+        return own if isinstance(own, int) else 0
+    kept = session.data.get("for_cursors")
+    found = kept.get(session.for_member) if isinstance(kept, dict) else None
+    return found if isinstance(found, int) else 0
+
+
+def _save_wait_cursor(session: Session, cursor: Any) -> None:
+    if session.for_member is None:
+        session.data["cursor"] = cursor
+    else:
+        kept = session.data.get("for_cursors")
+        kept = kept if isinstance(kept, dict) else {}
+        kept[session.for_member] = cursor
+        session.data["for_cursors"] = kept
+    session.save()
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -616,8 +655,10 @@ def cmd_wait(args: argparse.Namespace) -> int:
     # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
     slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
     asked = False
-    cursor = session.data.get("cursor") or 0
+    cursor = _wait_cursor(session)
     path = session.project_path("events")
+    # A bridge reads for the agent it serves with `for` (§2.3): what that agent's token sees.
+    served = [("for", session.for_member)] if session.for_member else []
     backoff = 2.0
     warned = False
     skewed = False
@@ -641,7 +682,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             page = session.client.call(
                 "GET",
                 path,
-                query=[("after", str(cursor)), ("wait", str(poll))],
+                query=[("after", str(cursor)), ("wait", str(poll)), *served],
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
@@ -675,8 +716,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             if not wanted:
                 cursor = items[-1].get("seq", cursor)
                 if not args.keep_cursor:
-                    session.data["cursor"] = cursor
-                    session.save()
+                    _save_wait_cursor(session, cursor)
                 continue
             items = wanted
         if items:
@@ -694,15 +734,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
             # signal, a closed pipe) has acknowledged nothing it did not hand over.
             sys.stdout.flush()
             if not args.keep_cursor:  # with it, the next resume still lists the events
-                session.data["cursor"] = taken[-1].get("seq", cursor)
-                session.save()
+                _save_wait_cursor(session, taken[-1].get("seq", cursor))
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
             cursor = new_cursor  # this run polls on from here; --keep-cursor saves nothing
             if not args.keep_cursor:
-                session.data["cursor"] = cursor
-                session.save()
+                _save_wait_cursor(session, cursor)
         if time.monotonic() - started < 1:  # an empty answer that did not hold: do not spin
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
@@ -3465,6 +3503,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="show the release version and code build",
     )
+    parser.add_argument(
+        "--for",
+        dest="for_target",
+        metavar="AGENT",
+        help="act for an agent this bridge serves (handle or member id): every call of the "
+        "command carries Maity-For; not for commands that call /me",
+    )
     sub = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
     def add(name: str, summary: str, description: str) -> argparse.ArgumentParser:
@@ -4650,6 +4695,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
+    Session.for_target = args.for_target
+    if args.for_target is not None and args.command == "join":
+        _err("--for applies to project commands; join is the bridge's own: run it without --for")
+        return EXIT_USAGE
     try:
         _load_texts(args)
         return handler(args)
@@ -4668,7 +4717,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in exc.problems:
             _err(problem)
         return EXIT_ERROR
-    except (UsageError, runner_commands.Refused) as exc:
+    except (UsageError, runner_commands.Refused, hub.ForRefused) as exc:
         _err(str(exc))
         return EXIT_USAGE
     except LocalRefusal as exc:

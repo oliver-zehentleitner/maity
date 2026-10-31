@@ -217,6 +217,9 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     lead = ms.get("reports_to")
     if lead:
         lines.append(f"Your lead: @{_name(lead, names)}")
+    for carried in _items(ms.get("bridging_for")):  # the agents it lends its hands to (§2.3)
+        who = carried.get("handle") or carried.get("member_id") or "?"
+        lines.append(f"You carry for @{inline(who)}: {inline(carried.get('purpose') or '')}")
     if team:
         lines.append(_coordinate(handle, team, bool(lead)))
     if me.get("dormant") and instance:  # §6.17

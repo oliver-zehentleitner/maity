@@ -27,6 +27,10 @@ USER_AGENT = CLIENT
 NO_IDEMPOTENCY = ("/me/resume", "/join/", "/runner/hello", "/runner/placements/")
 
 
+class ForRefused(Exception):
+    """`--for` on a command that calls `/me/*`: a usage error, refused before any call (§13)."""
+
+
 class HubError(Exception):
     """The hub could not be reached or answered with an error."""
 
@@ -395,6 +399,8 @@ class Client:
     base: str
     key: sign.SigningKey
     on_request: str | None = None
+    # A bridge acting for an agent it serves (`maity --for`, §2.3): `Maity-For` on every call.
+    for_member: str | None = None
     clock_offset: float = 0.0
     timeout: float = 30.0
     _opener: urllib.request.OpenerDirector = field(default_factory=opener, repr=False)
@@ -425,6 +431,14 @@ class Client:
             # would put them, not with the `?` inside the signed path (§2.2).
             query = [*urllib.parse.parse_qsl(inline_query, keep_blank_values=True), *query]
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
+        if self.for_member is not None and (
+            full_path == f"{API}/me" or full_path.startswith(f"{API}/me/")
+        ):
+            # Before anything is sent: a bridge acts for an agent on project routes only (§13).
+            raise ForRefused(
+                "--for applies to project commands; this command calls /me, which is the "
+                "bridge's own: run it without --for"
+            )
         query_string = sign.canonical_query(query)
         if raw is not None:
             data = raw
@@ -507,7 +521,7 @@ class Client:
             stamp = int(time.time() + self.clock_offset)
             on_request = self.on_request if method != "GET" else None
             signed = sign.sign_headers(
-                self.key, method, full_path, query_string, data, stamp, on_request
+                self.key, method, full_path, query_string, data, stamp, on_request, self.for_member
             )
             request = urllib.request.Request(url, data=send, method=method)  # noqa: S310
             for name, value in {**headers, **signed}.items():

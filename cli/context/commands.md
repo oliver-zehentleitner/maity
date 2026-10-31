@@ -1278,3 +1278,23 @@ and the CLI keeps no rule of its own about it.
   second copy of the check-in rule in the client.
 - The hand-over's text in the output: the hub keeps no copy, and the
   card or message is read as any other.
+
+## `--for` is refused by the client on any `/me` path, and `wait --for` keeps a cursor per agent
+
+**Id:** 8f22e8a8-0e67-41b0-bd49-af4162ba2304
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §13 ("Acting for a served agent") and §2.3; implementation session for card tsk-emy3a9vtqxym, 2026-10-31
+**Revisit when:** a project command starts calling `/me` mid-way, which `--for` would then refuse after earlier calls went out
+
+`maity --for <handle | member id>` is a global option: `Session` resolves a handle through the
+member list as the bridge itself, then the client signs `Maity-For` (the `for:` line after a
+`Maity-On-Request` line) on every call of the command. The client refuses a path under `/me`
+before anything is sent (`hub.ForRefused`, exit 2), which covers `resume`, `dormant`, `ack`,
+`limit`, the avatar and the soul forms as a rule, as §13 asks, including commands added later;
+`join` is refused in `main`, since its first calls go through no `Session`. The project lookup
+after a `not_found` (`_moved`, `GET /me`) is skipped under `--for`. `wait --for` reads
+`events?for=<member id>` from `for_cursors.<member id>` in `state.json`, so the bridge's own
+`cursor` never moves on the served agent's events. Rejected: a list of commands that refuse
+`--for`, which every new `/me` command would have to join.
