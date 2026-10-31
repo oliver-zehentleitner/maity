@@ -120,6 +120,15 @@ def test_a_page_without_labels_has_a_header_without_links(
     assert '<nav class="site-nav"></nav>' in header(html)
 
 
+def test_a_label_of_blanks_is_one_error_and_counts_for_no_fifth(owner: flow.Human) -> None:
+    four = [text(f"T{n}", f"L{n}") for n in range(3)]
+    refused = put(owner, *four, text("Blank", "   "), text("Fourth", "L4"))
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {
+        "pages.en.sections.4.nav_label": "invalid"
+    }
+
+
 def test_the_label_is_trimmed_and_one_to_twenty_four_characters(owner: flow.Human) -> None:
     assert put(owner, text("T", "  How it works  ")).status_code == 200
     stored = owner.get(ADMIN).json()["pages"]["en"]["sections"][1]
@@ -175,14 +184,27 @@ def test_the_hero_shows_the_online_numbers_beside_a_one_line_note(
     )
 
 
-def test_the_online_numbers_are_left_out_under_the_floor_and_when_no_section_names_them(
+def test_the_online_numbers_are_left_out_under_the_floor(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     under = page(owner, make_client, ONLINE)  # one person, below the floor of five
     assert 'class="online"' not in under and "People online" not in under
+    assert '<div class="hero-meta"><div class="note">' in under  # the note stays
+
+
+def test_only_a_counter_an_enabled_stats_section_names_is_in_the_hero(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    many_online(make_client, migrated)  # six people online: above the floor
     unnamed = page(owner, make_client, {**STATS, "items": ["people"]})
-    assert 'class="online"' not in unnamed
-    assert '<div class="hero-meta"><div class="note">' in unnamed  # the note stays
+    assert 'class="online"' not in unnamed and "People online" not in unnamed
+    one = page(owner, make_client, {**STATS, "items": ["people_online"]})
+    assert "People online" in one and "Agents online" not in one
+    disabled = page(owner, make_client, {**ONLINE, "enabled": False})
+    assert 'class="online"' not in disabled  # a section that is off names nothing
+    both = page(owner, make_client, ONLINE)
+    assert "People online" in both  # named and above the floor
+    assert "Agents online" not in both  # named, but no agent is online: below the floor
 
 
 def test_a_counter_below_the_floor_leaves_its_cell_out(
@@ -305,3 +327,57 @@ def test_a_column_without_links_is_left_out(owner: flow.Human, make_client: Clie
     html = make_client().get("/").text
     columns = re.findall(r'<nav class="foot-col" aria-label="([^"]*)">', html)
     assert columns == ["Platform"]  # no open-source links, no legal pages, no social links
+
+
+def test_a_variants_page_follows_its_own_stats_sections(owner: flow.Human) -> None:
+    """The rule is per rendered page: a variant that alone names `people_online` shows it, and
+    the main page that does not name it does not (§16.7, §16.7.2)."""
+    from maity_hub import render
+
+    def page_of(*items: str) -> dict[str, Any]:
+        stats = {"type": "stats", "enabled": True, "items": list(items)}
+        return {"title": "Maity", "description": "", "sections": [hero(), stats]}
+
+    setting = {
+        "default_language": "en",
+        "pages": {"en": page_of("people")},
+        "variants": {"for-teams": {"pages": {"en": page_of("people", "people_online")}}},
+        "footer": {"operator": None, "social": []},
+    }
+    counters = {"people": 9, "people_online": 7, "agents_online": 6, "online_floor": 5}
+    legal: dict[str, Any] = {"pages": {}}
+
+    def draw(variant: str | None) -> str:
+        return render.landing_document(
+            setting,
+            "en",
+            public_url="https://hub.example",
+            legal=legal,
+            stats=counters,
+            variant=variant,
+        )
+
+    assert 'class="online"' not in draw(None)
+    named = draw("for-teams")
+    assert "People online" in named and "Agents online" not in named
+
+
+def test_the_languages_are_listed_default_first_then_alphabetically(owner: flow.Human) -> None:
+    """The order does not depend on how the database keeps the keys (jsonb sorts them)."""
+    from maity_hub import render
+
+    def page_in(title: str) -> dict[str, Any]:
+        return {"title": title, "description": "", "sections": [hero()]}
+
+    setting = {
+        "default_language": "en",
+        # the order PostgreSQL's jsonb would give: sorted keys
+        "pages": {"de": page_in("D"), "en": page_in("E"), "fr": page_in("F")},
+        "variants": {},
+        "footer": {"operator": None, "social": []},
+    }
+    html = render.landing_document(
+        setting, "en", public_url="https://hub.example", legal={"pages": {}}, stats=None
+    )
+    assert '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a> ' in html
+    assert re.findall(r'<link rel="alternate" hreflang="([a-z-]+)"', html) == ["en", "de", "fr"]

@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import availability, avatars, clock, events, mentions, namespace
+from maity_hub import allowed_projects, availability, avatars, clock, events, mentions, namespace
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -877,6 +877,8 @@ def _still_allowed(conn: Connection, placement: Any) -> None:
     project = conn.execute(select(t.project).where(t.project.c.id == placement.project_id)).one()
     if project.state in CLOSED_STATES:
         raise Refusal(409, "project_closed", f"the project is {project.state}")
+    if not allowed_projects.admits_membership(conn, placement.membership_id, project):
+        raise allowed_projects.not_allowed()  # nobody gives a go for what cannot start (§6.3)
     spec = {**view_spec(placement), **(placement.pending_change or {})}
     runner = _runner(conn, placement.runner_id)
     check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])

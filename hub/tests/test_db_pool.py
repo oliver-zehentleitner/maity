@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.pool import NullPool
 
@@ -124,15 +124,15 @@ def test_settings_read_the_pool_from_the_environment() -> None:
 # --- timeouts and the probe's own connection ------------------------------------------------
 
 
-def test_the_options_set_milliseconds_and_an_off_value_sets_nothing() -> None:
+def test_the_options_set_utc_and_milliseconds_and_an_off_value_sets_nothing() -> None:
     assert db.postgres_options(statement=30, idle_in_transaction=60) == (
-        "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000"
+        "-c TimeZone=UTC -c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000"
     )
-    assert db.postgres_options(statement=0.5) == "-c statement_timeout=500"
+    assert db.postgres_options(statement=0.5) == "-c TimeZone=UTC -c statement_timeout=500"
     assert db.postgres_options(idle_in_transaction=2) == (
-        "-c idle_in_transaction_session_timeout=2000"
+        "-c TimeZone=UTC -c idle_in_transaction_session_timeout=2000"
     )
-    assert db.postgres_options() == ""
+    assert db.postgres_options() == "-c TimeZone=UTC"
 
 
 def captured_connect_args(engine: Any, driver: str = "psycopg") -> dict[str, Any]:
@@ -157,15 +157,16 @@ def captured_connect_args(engine: Any, driver: str = "psycopg") -> dict[str, Any
 def test_a_postgres_engine_sets_the_timeouts_on_each_connection() -> None:
     engine = db.make_engine("postgresql+psycopg://u:p@localhost/h", 2, 0, 60, 30, 60)
     seen = captured_connect_args(engine)
-    assert (
-        seen["options"] == "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000"
+    assert seen["options"] == (
+        "-c TimeZone=UTC -c statement_timeout=30000 -c idle_in_transaction_session_timeout=60000"
     )
     assert seen["connect_timeout"] == db.CONNECT_TIMEOUT_SECONDS
 
 
 def test_an_engine_without_timeouts_is_unbounded_as_migrate_and_the_cli_use_it() -> None:
+    """No timeout, but UTC all the same: migrate and the CLI write timestamps too."""
     seen = captured_connect_args(db.make_engine("postgresql+psycopg://u:p@localhost/h"))
-    assert "options" not in seen
+    assert seen["options"] == "-c TimeZone=UTC"
 
 
 def test_mariadb_gets_no_postgres_options() -> None:
@@ -179,7 +180,8 @@ def test_the_probe_has_a_connection_of_its_own_outside_the_pool() -> None:
     assert health is not None and health is not main
     assert isinstance(health.pool, NullPool) and health.url == main.url
     seen = captured_connect_args(health)
-    assert seen["options"] == f"-c statement_timeout={db.HEALTH_STATEMENT_SECONDS * 1000}"
+    milliseconds = db.HEALTH_STATEMENT_SECONDS * 1000
+    assert seen["options"] == f"-c TimeZone=UTC -c statement_timeout={milliseconds}"
     assert len(health.dialect.dispatch.do_connect) == 1  # the DNS retry too
 
 
@@ -273,3 +275,20 @@ def test_the_hubs_name_wins_over_one_in_the_database_url() -> None:
     url = "postgresql+psycopg://u:p@localhost/h?application_name=ops-set"
     seen = captured_connect_args(db.make_engine(url, application_name=db.APPLICATION_SERVING))
     assert seen["application_name"] == "maity-hub"
+
+
+def test_a_postgres_session_is_utc_whatever_the_server_default(
+    engine: Engine, database_url: str
+) -> None:
+    """The test databases default to Vienna (conftest); the hub's own sessions read UTC, so a
+    timestamp PostgreSQL converts is never shifted by an hour."""
+    if engine.dialect.name != "postgresql":
+        pytest.skip("a session time zone is PostgreSQL's")
+    plain = create_engine(database_url, poolclass=NullPool)
+    try:
+        with plain.connect() as conn:
+            assert conn.execute(text("SHOW TimeZone")).scalar() != "UTC"
+    finally:
+        plain.dispose()
+    with engine.connect() as conn:
+        assert conn.execute(text("SHOW TimeZone")).scalar() == "UTC"

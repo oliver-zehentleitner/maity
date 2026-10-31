@@ -443,7 +443,13 @@ def _page(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
         labelled = 0
         for index, one in enumerate(raw):
             # Only an enabled section is a link, and the header holds at most four (§16.7).
-            if isinstance(one, dict) and one.get("enabled") is True and one.get("nav_label"):
+            label = one.get("nav_label") if isinstance(one, dict) else None
+            if (
+                isinstance(one, dict)
+                and one.get("enabled") is True
+                and isinstance(label, str)
+                and label.strip()  # a label of blanks is already invalid, and no second error
+            ):
                 labelled += 1
                 if labelled > NAV_LABELS_MAX:
                     found.add(f"{path}.sections.{index}.nav_label", "too_many")

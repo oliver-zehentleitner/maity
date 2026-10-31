@@ -308,6 +308,13 @@ line and the language switch; a column with no link is left out. The hero's onli
 (`people_online`, `agents_online`, only the ones an enabled `stats` section names), beside a note that is one plain line; a counter
 below the floor is left out, never shown as "< 5".
 
+The hero's online numbers follow the rule of `GET /landing`, applied to the page that is drawn: only a counter that an enabled `stats`
+section of that page names is shown, because the page is handed every counter and the renderer filters (`landing_document`). It is
+per page, not across languages, so a variant (which `GET /landing` does not publish) obeys it too and a language that does not name
+a counter shows none of it. Rejected: showing every online counter as soon as any `stats` section is on, which would publish a counter
+the operator took off. In a test the naming rule can only be seen with at least five online, since below the floor the counter is
+left out anyway.
+
 **Reason:** the live header wrapped to two lines because the five section titles were its link texts, so a short label of its own,
 chosen by the operator, is the only way to keep one line without a fixed list in the code. The footer needs no field of its own
 because every link it shows already exists elsewhere on the page, so a new contract field would only repeat them. The numbers come

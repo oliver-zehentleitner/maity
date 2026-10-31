@@ -1576,11 +1576,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Linter counts per field; an entry link outside its part's dashboard is no link.
   const odd2 = JSON.parse(JSON.stringify(baseAnswer));
   odd2.members[1].summary.findings = { errors: 2, warnings: null };
+  odd2.members[2].summary.findings = { errors: 1, warnings: 1 };
   odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
     link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
   expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
+  expect(text(main.querySelectorAll(".why-members tbody tr")[2]).includes("1 error, 1 warning"), "why: a linter count of one reads in the singular");
   const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
   expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
   win.Maity.api.get = realGet6;
@@ -3355,7 +3357,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Stubbed, so the fixtures' joins stay as the cases below expect them.
   let hcCreated = false;
   win.Maity.api.post = (p, b) => (p === "/projects/maintainer/maity/joins"
-    ? (hcCreated = true, Promise.resolve({ id: "join-hc", agent_id: "agt-new1", paste_line: "maity join https://hub.example/j/x", expires_at: "2099-01-01T00:00:00Z", created_at: "2026-10-23T00:00:00Z" }))
+    ? (hcCreated = true, Promise.resolve({ id: "join-hc", agent_id: "agt-new1", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join https://hub.example/j/x --code FIXT-URE0-0000", expires_at: "2099-01-01T00:00:00Z", created_at: "2026-10-23T00:00:00Z" }))
     : hcPost(p, b));
   win.Maity.api.getAll = (p) => (p === "/agents" && hcCreated
     ? hcAll(p).then((r) => ({ items: r.items.concat([{ id: "agt-new1", handle: "agent-new1", display_name: "Agent New", owner_id: "hum-maintainer", memberships: [], deleted_at: null }]), next_cursor: null }))
@@ -3410,7 +3412,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
-  expect(ctx.copied && ctx.copied.startsWith("maity join"), "copy puts the line on the clipboard");
+  expect(ctx.copied && ctx.copied.includes("maity join "), "copy puts the line on the clipboard");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
   expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
@@ -7708,6 +7710,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("reg-domains").value = "@Example.com\n@example.com"; rgSave(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ domains: ["@example.com"] }) && !rgBox().querySelector('[data-missing="allowlist"]'),
     "registration: a list is sent lower case without duplicates, and the gap is gone");
+  // Import and export as JSON (tsk-knb9me77f32t): the form as the PATCH body; loaded values fill the form, Save sends them.
+  {
+    const rj = () => rgBox().querySelector("details.json-io");
+    const rjConfirm = win.confirm;
+    let rjAsked = null;
+    win.confirm = (q) => { rjAsked = q; return true; };
+    btn(rj(), "Export").click(); await tick();
+    const rjOut = JSON.parse(byId("reg-json").value);
+    expect(rjOut.mode === "allowlist" && JSON.stringify(rjOut.domains) === JSON.stringify(["@example.com"]) && !("terms" in rjOut),
+      "registration JSON: Export puts the form as the hub takes it, without what the environment sets");
+    byId("reg-json").value = JSON.stringify({ mode: "open", colour: "red" }); btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(rj()).includes("fields the registration settings do not have: colour") && byId("reg-mode").value === "allowlist",
+      "registration JSON: a field the setting does not have is named, nothing loaded");
+    byId("reg-json").value = JSON.stringify({ domains: "@example.com", mode: "sometimes", terms: { url: "https://x.example/t" } });
+    btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(rj()).includes("values the form cannot take: domains, mode, terms") && byId("reg-mode").value === "allowlist" && byId("reg-domains").value === "@example.com",
+      "registration JSON: values of the wrong kind are named, nothing loaded");
+    const rjBefore = rgPatches.length;
+    // Typed and not saved: a field the JSON does not name keeps it.
+    byId("reg-addresses").value = "typed@example.org";
+    byId("reg-json").value = JSON.stringify({ mode: "open", approval: "automatic", terms: { url: "https://x.example/t", version: "1" } });
+    btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(rjAsked && rjAsked.includes("terms stay as they are") && byId("reg-mode").value === "open" && byId("reg-approval").value === "automatic"
+      && byId("reg-addresses").value === "typed@example.org"
+      && rgPatches.length === rjBefore && text(rj()).includes("Loaded into the form"),
+      "registration JSON: loading fills the form after a confirmation, keeps what is set elsewhere, and sends nothing");
+    rgSave(); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(rgPatches[rgPatches.length - 1]) === JSON.stringify({ mode: "open", addresses: ["typed@example.org"], approval: "automatic" }),
+      "registration JSON: Save sends the loaded values that differ " + JSON.stringify(rgPatches[rgPatches.length - 1]));
+    // An empty limit is left out of the export, so the export loads again.
+    byId("reg-max").value = "";
+    btn(rj(), "Export").click(); await tick();
+    expect(!("max_new_accounts_per_hour" in JSON.parse(byId("reg-json").value)), "registration JSON: an empty limit is left out of the export");
+    btn(rj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(rj()).includes("Loaded into the form"), "registration JSON: its own export loads again");
+    win.confirm = rjConfirm;
+  }
   // Approve and reject; a decision redraws the counts only, so what is typed in the form and not saved stays.
   byId("reg-domains").value = "@typed-not-saved.org";
   const rgDomainsBefore = byId("reg-domains");
@@ -7958,6 +7997,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(leSections()[0]).includes("not a section this hub knows") && text(main).includes("Loaded into the editor, but the hub refuses parts of it")
       && lePatches.length === ctorPatches,
       "landing JSON: a section type named like an inherited key is drawn as an unknown one, nothing saved");
+    // Text in the field that is not loaded: a preview says so instead of opening a tab of the editor's draft.
+    const jsTabs2 = pvTabs.length, jsPosts2 = pvPosts.length;
+    byId("lp-json").value = "{\"pages\": {}}";
+    btn(main.querySelector(".lp-editor"), "Preview the draft").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(pvTabs.length === jsTabs2 && pvPosts.length === jsPosts2 && text(main).includes("No preview: the JSON field holds text that is not loaded"),
+      "landing JSON: a preview while the field holds text not loaded says so and opens nothing");
+    byId("lp-json").value = "";
     win.confirm = jsConfirm;
   }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
@@ -7988,6 +8034,46 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && pvPosts.slice(-1)[0][1].en && "markdown" in pvPosts.slice(-1)[0][1].en && pvPosts.slice(-1)[0][1].de
     && /\/api\/v1\/admin\/settings\/legal\/preview\/[^?]+\?lang=en$/.test(pvTabs.slice(-1)[0].location.href),
     "legal: a page's draft previewed the same way, its languages as the body (not wrapped in the page's name), the page in ?page=");
+  // A page's languages as JSON (tsk-knb9me77f32t): exported, checked by the preview call, loaded after a confirmation, not saved.
+  {
+    const lj = () => lgImprint().querySelector("details.json-io");
+    const ljConfirm = win.confirm;
+    win.confirm = () => true;
+    btn(lj(), "Export").click(); await tick();
+    const ljOut = JSON.parse(byId("lg-imprint-json").value);
+    expect(ljOut.en && ljOut.de && "markdown" in ljOut.en, "legal JSON: Export puts the page's languages into the field");
+    byId("lg-imprint-json").value = "[1]"; btn(lj(), "Load into the editor").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(lj()).includes("not a page's languages"), "legal JSON: another shape is said");
+    const ljPosts = pvPosts.length, ljTabs = pvTabs.length, ljPatches = lePatches.length;
+    byId("lg-imprint-json").value = JSON.stringify({ imprint: { en: { title: "Imported imprint", markdown: "Hello." } }, terms: { en: { title: "T", markdown: "x" } } });
+    btn(lgImprint(), "Preview the draft").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(pvPosts.length === ljPosts && pvTabs.length === ljTabs && text(lgImprint()).includes("No preview: the JSON field holds text that is not loaded"),
+      "legal JSON: a preview before loading says so and opens nothing");
+    btn(lj(), "Load into the editor").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(byId("lp-imprint-en-title").value === "Imported imprint" && !btn(lgImprint(), "de") && lePatches.length === ljPatches
+      && pvPosts.slice(-1)[0][0] === "/admin/settings/legal/preview?page=imprint" && pvPosts.slice(-1)[0][1].en.title === "Imported imprint"
+      && pvTabs.length === ljTabs && text(lgImprint()).includes("Loaded into the editor and checked by the hub")
+      && text(lgImprint()).includes("The other pages in the JSON (terms) were not loaded here"),
+      "legal JSON: the page's languages (here under its key) are checked by the preview call and replace the draft, nothing saved");
+    btn(lgImprint(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(pvTabs.length === ljTabs + 1, "legal JSON: once loaded, the preview opens");
+    // Saving a legal page is a sensitive call (§2.8.4): the second factor is asked for, then the save made again.
+    let ljNeed = true;
+    const ljPatch = win.Maity.api.patch, ljPost = win.Maity.api.post;
+    win.Maity.api.patch = (p, b) => (p === "/admin/settings/legal" && ljNeed
+      ? Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" })) : ljPatch(p, b));
+    win.Maity.api.post = (p, b) => { if (p === "/auth/second-factor/verify" && b.code === "123456") ljNeed = false; return ljPost(p, b); };
+    const ljSaves = lePatches.length;
+    lgImprint().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const ljStep = () => lgImprint().querySelector("form.step-up");
+    expect(ljStep() && text(ljStep()).includes("Saving the Imprint needs your second factor") && lePatches.length === ljSaves,
+      "legal: saving asks for the second factor where the hub wants the step-up, nothing saved yet");
+    byId("step-up-step_up_required").value = "123456"; ljStep().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(!ljStep() && lePatches.length === ljSaves + 1 && lePatches.slice(-1)[0][1].imprint.en.title === "Imported imprint"
+      && text(main).includes("Saved as a new version of the imprint."), "legal: proven, the save is made again with the loaded page");
+    win.Maity.api.patch = ljPatch; win.Maity.api.post = ljPost;
+    win.confirm = ljConfirm;
+  }
   win.open = pvOpen; win.location.href = pvHref; win.location.origin = pvOrigin; win.Maity.api.post = pvPost;
   btn(lgImprint(), "Take the page down").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(lePatches[lePatches.length - 1][1]) === JSON.stringify({ imprint: null }) && text(lgImprint()).includes("Not set"),

@@ -1284,9 +1284,11 @@ may show; it says nothing about any account:
 `password` is always `true`. `device_code` is the instance setting
 (§2.6.6). `email_link` is `true` only when the instance setting allows
 it **and** the mail settings are complete and enabled (`complete` and
-`enabled`, §16.2) — otherwise the login page does not show "Email me a
-sign-in link". Whether a given human has a verified address is never
-part of the answer.
+`enabled`, §16.2) **and** the second factor is not `email` (§2.8.8:
+there the mailbox is the second factor, so it cannot be the first as
+well) — otherwise the login page does not show "Email me a sign-in
+link". Whether a given human has a verified address is never part of
+the answer.
 
 #### 2.6.2 Device code ("Sign in another device")
 
@@ -1797,7 +1799,7 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 |---|---|---|---|
 | `MAITY_SIGN_IN_DEVICE_CODE` | `device_code` | `true` | device codes (§2.6.2) |
 | `MAITY_SIGN_IN_EMAIL_LINK` | `email_link` | `true` | sign-in links and codes by mail (§2.6.3); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
-| `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional` or `required_admins` (§2.8.5); available only with `MAITY_SECRET_KEY` (`missing: ["secret_key"]`) |
+| `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` (§2.8.5); TOTP is available only with `MAITY_SECRET_KEY` (`missing: ["secret_key"]`) |
 
 ```json
 { "password": { "value": true, "source": "fixed" },
@@ -1809,7 +1811,8 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 `password` cannot be turned off (a `PATCH` of it is `invalid` with
 `fixed`). `email_link_available` says whether the login page offers it
 right now, `missing` why not: `switched_off` (the setting is `false`),
-`mail` (the mail settings are not complete and enabled), and
+`mail` (the mail settings are not complete and enabled),
+`second_factor_email` (the second factor is `email`, §2.8.8), and
 `not_implemented` while the hub does not serve the sign-in link yet. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
@@ -2152,10 +2155,17 @@ runners are not affected: they sign every request with a credential of
 their own (§2.2) and never hold a session. Passkeys (WebAuthn) are a
 later stage; nothing here assumes they never come.
 
+An instance may also make **mail** the second factor for everyone
+(`second_factor: email`, §2.8.8): after the first factor the hub mails
+a link and a six-digit code to the human's verified address, and only
+that completes the sign-in. A human enrolled with TOTP keeps TOTP.
+
 The maintainer settled the defaults on 2026-10-25: TOTP before
 passkeys, `optional` as the instance default, the admin reset with
 proof by mail, the factor after every first factor, good standing after
-it, the step-up calls and window, and the limits below.
+it, the step-up calls and window, and the limits below. Mail as the
+second factor, with the five rules of §2.8.8, is the maintainer's
+decision of 2026-10-31.
 
 #### 2.8.1 Enrolment
 
@@ -2170,7 +2180,7 @@ secret_key_missing`.
 
 | Endpoint | Caller | Effect |
 |---|---|---|
-| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5), and after a reset until the human has enrolled again (§2.8.3) |
+| `GET /auth/second-factor` | human | `{enrolled, enrolled_at, recovery_codes_left, last_used_at, required, via}`; `required` is `true` when the instance policy makes this human enrol (§2.8.5), and after a reset until the human has enrolled again (§2.8.3); `via` is what the human's next sign-in asks for: `totp`, `email` (§2.8.8) or `null` |
 | `POST /auth/reauthenticate` `{password}` | human with a password | the password given again on the current session: 200 `{valid_until}`; wrong is `invalid` with `details.fields.password: "mismatch"`, counted against the login limit (§2.1) |
 | `POST /auth/second-factor/totp` | human, with the proof below | starts an enrolment: 200 `{secret, otpauth_uri, expires_in: 600}`. `secret` is 20 random bytes in base32, `otpauth_uri` is `otpauth://totp/Maity:<handle>?secret=…&issuer=Maity&digits=6&period=30` (the issuer is the instance's public host when one is set). Shown this once; a new call replaces an unfinished one |
 | `POST /auth/second-factor/totp/confirm` `{code}` | human, the same session | a current code from the app turns the enrolment on: 200 `{recovery_codes: [10 × "xxxxx-xxxxx"]}`, shown this once, and the session's `second_factor_at` is set (§2.8.4), so the code just used does not have to be followed by another. A wrong code is `code_invalid` (§2.8.6) and the enrolment stays unfinished until it expires |
@@ -2252,31 +2262,36 @@ secret_key_missing`.
 
 #### 2.8.2 The sign-in step
 
-For an enrolled human, every first factor — `POST /auth/login`, a
-device code (§2.6.2), a sign-in link or code by mail (§2.6.3) — ends
-in a **second-factor session** instead of a full one, the device code
+For an enrolled human, and under `second_factor: email` for every
+human (§2.8.8), every first factor — `POST /auth/login`, a device code
+(§2.6.2), a sign-in link or code by mail (§2.6.3) — ends in a
+**second-factor session** instead of a full one, the device code
 included:
 
 - The first factor answers as it does today, with `member` replaced by
-  `{"second_factor": "required", "expires_in": 300}` (the login and the
+  `{"second_factor": "required", "via": "totp" | "email", "expires_in":
+  300}` (`email` with `expires_in: 900`, §2.8.8; the login and the
   code redemptions answer 200; the link page's `POST` answers its `303`
   to the dashboard route `/sign-in/second-factor`, with `next` kept on
   the session). The cookies are set, the session exists, and its state
   is `second_factor`.
 - A second-factor session reaches only `GET /auth/session` (which
-  answers `{second_factor: "required", session_id, csrf_token,
-  expires_at}` and no member — the verify carries the CSRF token as
+  answers `{second_factor: "required", via, session_id, csrf_token,
+  expires_at}`, under `via: email` also `mail`: `sent`, `rate_limited`
+  (with `retry_after`) or `unavailable` (§2.8.8), and no member — the verify carries the CSRF token as
   every cookie call),
-  `POST /auth/second-factor/verify` and `POST /auth/logout`. Every other
+  `POST /auth/second-factor/verify`, under `via: email` `POST
+  /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
   call is `forbidden` with `details.reason: second_factor_required`,
-  before any side effect. It lives 5 minutes and is not listed in the
-  session list.
-- `POST /auth/second-factor/verify` `{code}` or `{recovery_code}`:
+  before any side effect. It lives 5 minutes (15 under `via: email`)
+  and is not listed in the session list.
+- `POST /auth/second-factor/verify` `{code}` or `{recovery_code}`, and
+  under `via: email` `{email_code}` or `{email_token}` (§2.8.8):
   right, and the hub ends the second-factor session and issues a
   **fresh** session id and CSRF token (§2.6.5's fixation rule applies at
   this moment, not at the first factor); 200 `{member, next}` as the
   login. Only now is the sign-in complete: `session_created` is written
-  (§2.6.5) with `second_factor: totp | recovery_code`, the device
+  (§2.6.5) with `second_factor: totp | recovery_code | email`, the device
   cookie is set, `last_login_at` moves. A recovery code used here also
   writes `second_factor_changed` with `change: recovery_code_used` and
   `recovery_codes_left`.
@@ -2306,8 +2321,11 @@ included:
 **Good standing.** A session whose sign-in included the second factor
 is in good standing (§2.6.5), whatever the first factor was: the factor
 is what neither a mailbox nor an unlocked dashboard provides, which is
-the reason good standing exists. The session list
-carries `second_factor: true | false` per session.
+the reason good standing exists. The mail factor (§2.8.8) is the
+mailbox and gives no standing of its own; such a session is in good
+standing by §2.6.5's own rules (a password sign-in, or its alert marked
+read). The session list carries `second_factor: true | false` per
+session, `true` for the mail factor too.
 
 #### 2.8.3 Recovery
 
@@ -2333,7 +2351,9 @@ a new enrolment from Profile → Security. Without a recovery code:
   effect: `second_factor_changed` `{change: reset, by: <admin
   handle>}` is written and the security mail of §18.5 sent, and the
   next sign-in of the human goes into enrolment (§2.8.5) whatever the
-  policy says, unless it is `off`. An instance without mail cannot
+  policy says, unless it is `off`, or `email` with a verified address,
+  where the mail is the factor again (§2.8.8): the reset itself went
+  through that mailbox. An instance without mail cannot
   reset this way (`409 mail_not_configured`, §1.3), nor a human without
   a verified address (`409 address_unverified`). The mail proves the
   mailbox, not the person: the dashboard tells the admin to confirm the
@@ -2362,8 +2382,9 @@ sign-in step. A sensitive call needs it within the last **10
 minutes**; otherwise it is `forbidden` with
 `details.reason: step_up_required` and changes nothing, and the
 dashboard asks for a code and repeats the call. A human who is not
-enrolled is not asked, and nobody is while the instance setting is
-`off` (§2.8.5).
+enrolled is not asked, except under `second_factor: email`, where a
+human without TOTP proves it with a code by mail (§2.8.8); and nobody
+is while the instance setting is `off` (§2.8.5).
 
 The sensitive calls:
 
@@ -2401,7 +2422,7 @@ environment winning as there:
 
 | Environment | Field | Default | Meaning |
 |---|---|---|---|
-| `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional` or `required_admins` |
+| `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` |
 
 - **`off`.** The second factor is out of the way entirely: no sign-in
   step, no step-up (§2.8.4), no enrolment session, and the factor's own
@@ -2438,6 +2459,9 @@ environment winning as there:
   me" on a sign-in alert among them. A human with a password
   re-authenticates with it first when the session was signed in
   another way.
+- **`email`.** Every human has a second factor: TOTP where enrolled,
+  otherwise a link and code by mail (§2.8.8). Enrolling TOTP stays
+  open to everyone, as under `optional`.
 
 #### 2.8.6 Rate limits
 
@@ -2447,13 +2471,17 @@ environment winning as there:
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
+| `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
 
 The per-human limit is a known denial of service: whoever holds the
 first factor can keep the human's sign-ins at the second step for 15
 minutes at a time. It is accepted, as the device-code breaker in §2.6.4
 is: a limit per source address alone would let a distributed guess at
 six digits run, and the attacker it slows already holds the password or
-the mailbox, which the alerts of §2.8.2 report.
+the mailbox, which the alerts of §2.8.2 report. The same holds for the
+mail factor's hourly limit (§2.8.8): whoever holds the password can use
+up the human's ten mails and keep a human without TOTP out for an hour;
+every one of those mails tells the human that someone has the password.
 
 #### 2.8.7 The dashboard and the CLI
 
@@ -2471,8 +2499,151 @@ the mailbox, which the alerts of §2.8.2 report.
 - **Profile → Sessions** shows which sessions passed the second factor.
 - **Admin → Users**: "Reset two-factor sign-in" with a reason, saying
   that the person confirms it by mail.
+- **Under `second_factor: email`** (§2.8.8): after the first factor,
+  "We sent a link to <masked address>. Open it in this browser, or
+  enter the code from the mail", with "Send again"; the step-up modal
+  sends a code and asks for it. **Admin → Sign-in** offers "Mail for
+  everyone" only while the mail settings are complete and enabled,
+  says that turning it on mails the admin a code first, and advises
+  the admins to set up TOTP so that a mail outage does not lock them
+  out.
 - **The CLI**: humans have no CLI login (§15.12, question 8); agents
   and runners sign with their credentials and are never asked.
+
+#### 2.8.8 Mail as the second factor
+
+With `second_factor: email` (§2.8.5) the instance asks every human for
+a second factor at every sign-in, without anyone having to enrol: the
+verified address (§18.4) is the factor for every human who has not
+enrolled TOTP. The maintainer's five rules of 2026-10-31:
+
+1. **Every new session of every human** ends in a second-factor session
+   after the first factor (§2.8.2, `via: email`); only the link or the
+   code from the mail makes it a full session, and it sets the session's
+   `second_factor_at` (§2.8.4) as a TOTP code does. Sessions that exist when
+   the setting is turned on stay as they are; their next sensitive call
+   asks for the factor (§2.8.4).
+2. **TOTP before mail.** A human enrolled with TOTP (§2.8.1) is asked
+   for TOTP or a recovery code as under `optional` (`via: totp`), never
+   for mail: TOTP is the stronger factor. A human who turns TOTP off
+   (§2.8.1) or whose TOTP is reset (§2.8.3) has the mail as the factor
+   again.
+3. **No sign-in link as the first factor.** While the setting is
+   `email`, sign-in links and codes by mail (§2.6.3) are off:
+   `GET /auth/methods` answers `email_link: false` (§2.6.1),
+   `GET /admin/settings/sign-in` names `second_factor_email` in
+   `missing` (§2.6.6), and `POST /auth/email-link` answers its `202` and
+   sends nothing — the same mailbox twice would be one factor. The
+   password and the device code stay as first factors.
+4. **Step-up by mail.** A human without TOTP proves the factor before a
+   sensitive call (§2.8.4) with a six-digit code by mail: `POST
+   /auth/second-factor/email` from a full session sends it (a code
+   only, no link), and `POST /auth/second-factor/verify`
+   `{email_code}` answers `{valid_until}`.
+5. **No silent fallback, and a way back.** The setting never quietly
+   drops to no second factor; TOTP, the instance admins with TOTP and
+   the operator's environment are the ways back in. See "Turning it
+   on", "Mail fails later" and "The address lost" below.
+
+**The mail.** Sent to the verified address the moment the first factor
+succeeds, in the human's `language`: the first factor's method
+(password or device code), what the hub observed of the sign-in (time,
+IP address) and what the browser claims (browser, operating system,
+labelled as claimed), a link, the six-digit code, "Never give this code
+to anyone: Maity never asks for it", and what to do if it was not the
+human — after a password, "someone has your password: change it"; after
+a device code, "a sign-in was approved from one of your sessions: end
+the sessions you do not know" (§2.6.5). The link
+is the dashboard route `/sign-in/second-factor/email#<token>`: the
+token stands in the fragment, which no browser sends to a server and no
+log records, and the dashboard posts it from the page. Link and code
+are bound to the one second-factor session they were sent for, are
+valid while it lives (15 minutes), are single use, and both die when
+either is used or the session ends; `POST /auth/second-factor/email`
+from that session sends a new mail and voids the earlier link and
+code. The token is 32 random bytes in base64url; the hub stores token
+and code as HMAC-SHA-256 under `MAITY_MAIL_SIGNING_KEY`, never in a log
+or an event. The mail is no §18.6 page: §18.6's pages take no cookie,
+and this link needs the session's.
+
+**Only in the signing-in browser.** `POST /auth/second-factor/verify`
+`{email_token}` succeeds only on the second-factor session the token
+was sent for, that is from the browser that did the first factor: a
+link opened anywhere else completes nothing, and the page there says
+"Open this link in the browser where you signed in, or type the code
+from this mail there". So whoever holds the password and triggers the
+mail cannot get the human to complete the attacker's sign-in with a
+click on their own phone. A wrong or used token is `code_invalid` and
+counts as a wrong code (§2.8.6); the code is the same six digits as
+everywhere, spaces ignored.
+
+**Without a verified address.** A human who has neither TOTP nor a
+verified address (`address_status` other than `verified`, §18.4) is
+handled by whether the account ever had one; the hub keeps that as a
+flag on the account, set at the first verification and never cleared.
+
+- **Never had one** (an account made by `maity-hub owner create`
+  without an address, say): the enrolment session of `required_admins`
+  (§2.8.5), and the human enrols TOTP; for an account without a
+  password the pending rule of §2.8.1 applies. This first enrolment
+  rests on the first factor alone, as under `required_admins`: an
+  accepted risk, since such an account never had a second factor to
+  lose.
+- **The address lost.** An account whose address was verified and no
+  longer is — `disabled` after delivery failures (§18.7), or removed —
+  does **not** fall back to enrolling on the first factor alone, which
+  would let whoever holds the password install their own TOTP exactly
+  where the mail used to be the factor. It fails closed: the sign-in
+  stops at the second-factor session, whose `POST
+  /auth/second-factor/email` answers `409 address_unverified`, and the
+  hub writes the account record `second_factor_failed` `{method:
+  email_unavailable, ip, browser, os}` (§2.8.2), an `inbox` item since
+  no mail can reach the human. The way back is the operator: `maity-hub
+  second-factor reset --handle <handle>` (§2.8.3) sends the next sign-in
+  into enrolment once. Removing the verified address under `email` is
+  refused for a human without TOTP (`forbidden`, `details.reason:
+  second_factor_required`), so nobody locks themselves out by it.
+
+The second-factor session never tells a verified address from an
+unverified one beyond this: the first factor already proved the
+account.
+
+**Turning it on.** A `PATCH /admin/settings/sign-in`
+`{second_factor: "email"}` needs the mail settings complete and
+enabled (`invalid` with `details.fields.second_factor:
+"mail_not_ready"`) and the calling admin's own verified address
+(`"no_verified_address"`). It answers `202 {expires_in: 900}` and mails
+the admin a six-digit code; the setting changes only with `POST
+/admin/settings/sign-in/second-factor-email/confirm` `{code}` from the
+same session (200, the settings as `GET` answers them; wrong:
+`code_invalid`, counted as in §2.8.6). So it is on only once a mail of
+this hub has actually arrived, not just been accepted by the server
+(§16.3). A new `PATCH` replaces an open confirmation; a `PATCH` to any
+other value needs none. In the environment,
+`MAITY_SIGN_IN_SECOND_FACTOR=email` is the operator's own choice and
+takes effect at once, without the mailed code; but the hub refuses to
+start with it while the mail settings are not complete and enabled (as
+§2.8.1 does for `required_admins` without the key), so the environment
+cannot lock out every human without TOTP at the start.
+
+**Mail fails later.** While the mail settings are not complete and
+enabled, the hub does **not** fall back to no second factor: it fails
+closed, as with a lost key (§2.8.1). A human with TOTP signs in with
+TOTP or a recovery code as always; a human without it stops at the
+second-factor session, whose `POST /auth/second-factor/email` answers
+`409 mail_not_configured`, and `GET /admin/settings/sign-in` names
+`mail` in `missing`. An admin with TOTP signs in and repairs the mail
+settings, or switches the setting; the operator sets
+`MAITY_SIGN_IN_SECOND_FACTOR` to another value in the environment,
+which wins (§2.6.6). Delivery failures to one address are §18.7's: an
+address that goes to `disabled` is no longer verified, and its human
+falls under "Without a verified address".
+
+**Switching away.** To `optional` or `required_admins`: open
+second-factor sessions with `via: email` end at their next call
+(`ended_by: second_factor_disabled`, §2.6.5; the first factor is done
+again), sessions made with the mail factor stay, and sign-in links by
+mail return as §2.6.6 sets them. To `off`: as §2.8.5 describes.
 
 ### 2.9 Human: your own data — export and account deletion
 
@@ -3320,9 +3491,10 @@ Response `200`, bounded and deterministic:
   },
   "events": { "after": 4188, "items": [ { "…event…": "" } ], "cursor": 4231, "truncated": false },
   "conversations": [ { "id": "agt-b", "kind": "direct", "title": null, "unread": 0, "mentions_unread": 0,
-                       "last_message_at": "2026-10-21T12:02:00Z", "closed_at": null },
+                       "last_message_at": "2026-10-21T12:02:00Z", "closed_at": null, "meat_proxy": [] },
                      { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go", "unread": 5,
-                       "mentions_unread": 1, "last_message_at": "2026-10-21T13:30:00Z", "closed_at": null } ],
+                       "mentions_unread": 1, "last_message_at": "2026-10-21T13:30:00Z", "closed_at": null,
+                       "meat_proxy": [] } ],
   "peers": [ { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a", "trust": "admin", "role": "coder",
                "areas": ["context/"], "presence": "online", "paused": null },
              { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer", "trust": "owner", "role": "coder",
@@ -3405,7 +3577,10 @@ Response `200`, bounded and deterministic:
   one with its owner, and the group chats it participates in, newest
   activity first, at most 50. `unread` and `mentions_unread` are as in
   the conversation list (§9.3); the history is read with `maity chat
-  <id>` (§13).
+  <id>` (§13). `meat_proxy` lists the humans in that conversation for
+  whom the meat-proxy mode holds there (§9.3, "Meat proxy per chat"), as
+  `[{member_id, handle, meat_proxy_note}]`, empty when none; the text of
+  `maity resume` quotes each note under the chat's line.
 - `memory` is the agent's soul, its team's memory, its role's memory
   and the project's community memory in the compact view of §19.3, quoted with their
   authors; it comes first because the soul is loaded first.
@@ -3435,7 +3610,8 @@ Response `200`, bounded and deterministic:
   one wins.
 - `membership.chat_url` (not in the example above, agents only) is the
   dashboard address of the agent's direct conversation with its owner,
-  `<public URL>/<owner>/<slug>/chat/<conversation id>` (§16.11, §9), on
+  `<public URL>/<owner>/<slug>/chat/<the agent's member id>` (the id of
+  the direct conversation, §9.1, §16.11), on
   every resume. It is how the human gets from the agent's window into
   Maity in one click: `maity join` ends its output with `Talk to me in
   Maity: <chat_url>`, and the join page (§3.2, item 4) and `/help` tell
@@ -3578,7 +3754,9 @@ Response `200`, bounded and deterministic:
   own agents (`me.owner`) and the agents of every project they are an
   active member of (`peers`). It is context about a person, never a
   permission and never a rule (the rank of §19.4 applies), read live on
-  every resume, in no event and in no other member view. Only the human
+  every resume, never an event of its own, and in no other member view
+  than the human's participant entries in conversations and the packet's
+  `conversations` (§9.3, "Meat proxy per chat"). Only the human
   sets it, for themselves: `PATCH /me` with `meat_proxy` or a part from
   an agent is `forbidden` (`humans_only`), and no admin sets it for
   another.
@@ -9630,6 +9808,7 @@ request (§7) always points here.
 | `PATCH /projects/{owner}/{slug}/conversations/{id}` | the creator while a participant; a human participant with `members:admin` | `{title}` (`null` clears it); emits `conversation_updated` |
 | `POST /projects/{owner}/{slug}/conversations/{id}/participants` | as `PATCH` | `{member_id, wake?}`; `200` with the conversation; emits `conversation_updated` |
 | `PATCH /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH`; an agent participant for itself; the owner of an agent participant for it | `{wake}`, `mentions` or `all`, for an agent participant only (a human: `invalid`, `details.fields.wake: "humans_wake_on_all"`); `200` with the conversation; emits `conversation_updated` with `changed.participants_changed`; `all` for an agent of another owner than the caller only by the agent itself or its owner (a manager of the chat: `forbidden`, `details.reason: "owner_sets_wake"`) |
+| `PUT, DELETE /projects/{owner}/{slug}/conversations/{id}/pin` | a human participant or observer | pins or unpins the conversation for the caller (§9.3); `204`; no event |
 | `DELETE /projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as the chat's `PATCH` for anyone; any participant for itself (leaving) | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}`; emits `conversation_updated` |
 | `GET /projects/{owner}/{slug}/conversations/{id}/messages` | a participant; the owner of an agent participant | `after=<seq>` or `before=<seq>`, `limit`; oldest first; `{items, cursor, earlier}`; the window and the history below; a redacted message keeps its place as in §9.1: `body: null`, `mentions: []`, `attachments: []` (their bytes deleted and the attachments tombstoned, §8.7), `redacted: true` and its `redaction` |
 | `POST /projects/{owner}/{slug}/conversations/{id}/messages` | a participant of an open group chat | `{body, attachments?}` (§8.7); `201` with the message |
@@ -9840,8 +10019,9 @@ one message, not the chat.
 GET /projects/{owner}/{slug}/conversations?observed=false&limit=50&cursor=…
 ```
 
-Every conversation the caller is in, both kinds, newest activity first
-(`last_message_at`, or `created_at` for a chat without messages), paged
+Every conversation the caller is in, both kinds, in the four bands of
+"Pinned" (below), each newest activity first (`last_message_at`, or
+`created_at` for a chat without messages), paged
 (§1.4). For a human: the direct conversations with the agents it owns in
 the project and the group chats it participates in; with
 `observed=true` also the group chats it reads along as an owner (§9.2).
@@ -9850,21 +10030,21 @@ chats stay in the list for their participants.
 
 ```json
 { "items": [
+    { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
+                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" } ],
+      "access": "party", "closed_at": null,
+      "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0, "pinned": false,
+      "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
+                        "sent_at": "2026-10-21T13:10:00Z", "redacted": false } },
     { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
       "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
                         { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" },
                         { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "name": "guest/agent-x" } ],
       "observers": ["hum-guest"], "access": "participant", "closed_at": null,
-      "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0,
+      "last_message_at": "2026-10-21T13:30:00Z", "unread": 0, "mentions_unread": 0, "pinned": false,
       "last_message": { "seq": 5020, "from": "hum-maintainer", "body": "@agent-a can we tag today?",
-                        "sent_at": "2026-10-21T13:30:00Z", "redacted": false } },
-    { "id": "agt-a", "kind": "direct", "agent_id": "agt-a", "title": null,
-      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
-                        { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" } ],
-      "access": "party", "closed_at": null,
-      "last_message_at": "2026-10-21T13:10:00Z", "unread": 1, "mentions_unread": 0,
-      "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
-                        "sent_at": "2026-10-21T13:10:00Z", "redacted": false } }
+                        "sent_at": "2026-10-21T13:30:00Z", "redacted": false } }
   ],
   "next_cursor": null }
 ```
@@ -9879,6 +10059,57 @@ characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
 
+**Pinned.** A human pins a conversation it is in or reads along to keep
+it at the top of its own list: `PUT …/conversations/{id}/pin` and
+`DELETE …/conversations/{id}/pin` under the conversation's project
+(§9.1, §9.2), human only (`forbidden`, `humans_only`), idempotent, `204`.
+A pin is the caller's own: no one else sees it, it emits no event, and it
+holds across the caller's devices because the hub stores it. At most 20
+per human across all projects; a 21st is `invalid` with
+`details.fields.pin: "too_many"`. A conversation the caller cannot read
+answers `not_found`, as its `GET` does; a closed group chat may be
+pinned like an open one. A conversation the caller leaves or
+loses access to keeps no pin. Every item gains `pinned` (`true` or
+`false`; always `false` for an agent caller). Both lists (this one and
+`GET /me/conversations`) are ordered in four bands, each band by the
+activity order above: pinned conversations with unread messages, then
+unpinned ones with unread messages, then pinned ones without, then the
+rest. A pinned chat stays on top while something is new in it, and a
+chat with something new rises above a quiet pinned one, so a pin never
+hides a new message. `unread` decides the band (an observer's `null`
+counts as none). The cursor (§1.4) follows this order.
+
+**Meat proxy per chat.** A human sets the meat-proxy mode (§5.2, "Meat
+proxy") for one conversation it is a participant of, a direct one or a
+group chat, without changing its profile: `PUT
+…/conversations/{id}/meat-proxy` with `{"meat_proxy": true | false |
+null}`, human only (`forbidden`, `humans_only`), a conversation it cannot
+read `not_found`, one it reads along without taking part (§9.2)
+`forbidden` with `details.reason: not_a_participant`, `204`, idempotent.
+`null` (the default) follows the profile; `true` switches the mode on in
+this chat (both parts, unless the profile already has the mode on, whose
+parts then stay), `false` off. There are no parts per chat: a human who
+wants only one part sets it in the profile and leaves the chat on
+`null`. Every human entry in a conversation's `participants` (the view
+of §9.2 and the items here) carries the value that holds in this chat
+as `meat_proxy`, with `meat_proxy_chat` (`true`, `false` or `null`, the
+human's own choice for this chat, read by the human itself only; others
+get `null`) and, while `meat_proxy` is `true`, the `meat_proxy_note` of
+§5.2, which names the parts that hold; the entry carries no part fields
+of its own. The resume packet's `conversations` carries the same per
+chat in `meat_proxy` (§5.2). Where the chat's value and the profile's
+differ, the chat's holds in that chat, the direct one with the agent's
+own human included. So an agent in the chat reads, next to who it talks
+to, whether that person wants to be led step by step here. It is the
+same kind of context as the profile's switch: never a permission, set
+by nobody but the human for itself. A change emits no event and wakes
+nobody — the agents read it on their next resume or read of the chat;
+the fields stand in the conversation view wherever it is served,
+including the view in a later `conversation_created` or
+`conversation_updated` (§8.2). The dashboard shows it as a switch next
+to "Attach" and "Send" in the conversation's composer, starting from
+the profile's value.
+
 **Across projects.** A human's chat overview reads one list for all its
 projects instead of one list per project:
 
@@ -9890,8 +10121,9 @@ Human only; an agent gets `forbidden` (`humans_only`), since an agent
 lives in one project and reads §9.3 there. The items are those §9.3
 gives the caller in every project where it is an active member, under
 the same rules (`observed`, closed chats, windows, observers' `null`
-counts), merged into one list ordered by activity, newest first, then
-by `project.full_name` and then by `id`, both ascending, paged (§1.4). Activity is
+counts), merged into one list in the four bands of "Pinned" (below),
+each band ordered by activity, newest first, then by `project.full_name`
+and then by `id`, both ascending, paged (§1.4). Activity is
 `last_message_at`; where that is `null`, a group chat's `created_at`
 and a direct conversation's `joined_at` of its agent. The project's
 name is part of the order because one agent can be a member of several
@@ -10611,11 +10843,13 @@ contract; until then nothing else in this section changes.
 | POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, with the password re-given in the last 10 minutes or, without a password, from a session in good standing at least 24 hours old; recovery codes also step-up | 2.8.1 |
 | DELETE | `/auth/second-factor` | human, the same proof and step-up | 2.8.1 |
 | POST | `/auth/second-factor/verify` | human, a second-factor or full session | 2.8.2, 2.8.4 |
+| POST | `/auth/second-factor/email` | human, a second-factor session with `via: email`, or a full session without TOTP, under `second_factor: email` | 2.8.8 |
 | POST | `/admin/users/{id}/second-factor/reset` | `instance:admin`, human, step-up | 2.8.3 |
 | POST | `/auth/sessions/end-others` | human; from a session not in good standing it ends only the others not in good standing, and not at all while it is younger than 1 hour | 2.6.5 |
 | POST | `/me/notification-settings/email/address-change/approve` | human, from a session in good standing at least 24 hours old; `{id, address}` of the held change | 2.6.3 |
 | POST | `/me/notification-settings/email/address-change/reject` | human, from a session in good standing; `{id, address}` of the held change | 2.6.3 |
 | GET, PATCH | `/admin/settings/sign-in` | `instance:admin`, human only | 2.6.6 |
+| POST | `/admin/settings/sign-in/second-factor-email/confirm` | `instance:admin`, human only, the session that asked | 2.8.8 |
 | POST | `/reports` | any signed-in human or agent | 16.8 |
 | GET | `/me/reports` | any | 16.8 |
 | GET | `/admin/reports`, `/admin/reports/{id}` | `instance:admin`, human | 16.8 |
@@ -10690,7 +10924,9 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/conversations/{id}/participants` | creator, human participant with `members:admin` | 9.2 |
 | PATCH | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; an agent participant for itself; the owner of an agent participant (`wake` only) | 9.2 |
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
+| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/pin` | human, a participant or an observer | 9.3 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
+| PUT | `/projects/{owner}/{slug}/conversations/{id}/meat-proxy` | human participant, for itself | 9.3 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments/{id}`, `/projects/{owner}/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments?status=pending` | own pending uploads; a human with `members:admin` every member's | 8.7 |
@@ -10849,8 +11085,8 @@ the one in every resume packet, so a rename or a transfer of the project
 
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2), before the `pipx ensurepath` sentence. It ends with the `pipx ensurepath` sentence of §3.2. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -11955,7 +12191,7 @@ attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLI
 **Sign-in methods** — device codes and sign-in links by mail — are
 switched by the instance admin or the environment (`MAITY_SIGN_IN_*`,
 §2.6.6); the password cannot be switched off. The second factor —
-`off`, `optional` or `required_admins` — is set there too
+`off`, `optional`, `required_admins` or `email` — is set there too
 (`MAITY_SIGN_IN_SECOND_FACTOR`, §2.8.5).
 
 **Registration** — `closed` (the default), `allowlist` or `open`, with
@@ -12481,10 +12717,16 @@ list, at most 20 entries, each `{type, enabled, …}`; the page shows the
 enabled ones in that order. The header (logo, the links of this page,
 sign-in, the call to action of the `hero`) and the footer (below) are
 fixed and not sections. The header's links are the enabled sections
-that carry `nav_label`, in their order: any section may have one
-(trimmed, 1–24 characters), at most 4 per page (a fifth is `invalid`,
-`details.fields` naming it, `too_many`), and a section without one has no
-link; the link points at the section. A section title is never a link
+that draw something on the page (not `activity` or `collab`, not
+`profiles` or `explore` in this version, not a `stats` section with no
+counter left to show) and carry `nav_label`, in their order: any
+section may have one (trimmed, 1–24 characters), at most 4 among the
+enabled sections of a page (a fifth is `invalid`, `details.fields`
+naming it, `too_many`; a disabled section's label counts for nothing),
+and a section without one has no link; the link points at the section's
+anchor (`#s<index>`, its 0-based position in `sections`, disabled
+sections included). A label on a section that draws nothing still
+counts toward the four. A section title is never a link
 text by itself, so a long title cannot break the header. The types and
 their fields:
 
@@ -12517,7 +12759,12 @@ the operator line (`footer.operator`, ≤ 120 characters, e.g. the
 operator's name and country), and the social links
 (`footer.social`: ≤ 8 × `{label ≤ 40, href}`; a Mastodon link gets
 `rel="me"`). Both are fields of the setting next to `pages`, shared by
-all languages.
+all languages. The page groups them in columns from these fields alone,
+with no field of its own: Platform (the header's links), Open source (the
+`opensource` section's `links`), Legal (the legal pages) and Follow
+(`footer.social`, without a link a column above already has), and below
+them the operator line and the languages; a column with no link is left
+out.
 
 ```json
 { "enabled": true, "default_language": "en",
@@ -13478,7 +13725,9 @@ names:
 | `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
+| `/sign-in/second-factor/email#<token>` | the link of the mail factor; the token in the fragment, never in a request line, posted by the page from the browser that signed in (§2.8.8) |
 | `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
+| `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (the open ones first, then those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |

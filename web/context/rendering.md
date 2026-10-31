@@ -636,7 +636,12 @@ progress" in the board bar's name, "2 urgent") is one key per word with
 `{count}`, not the label lowercased after a number. A key that counts
 has its plural forms even where English writes them alike ("Earlier
 joins ({count}): …", "{count} urgent"): another language may not, and the
-form chosen by `Intl.PluralRules` is there to be translated. A key per value also lets a
+form chosen by `Intl.PluralRules` is there to be translated. Two counts
+in one sentence (Why's "1 error, 2 warnings") are a plural key each inside
+a frame key, since each may be one or many on its own and a count the
+export does not carry reads "—" with no plural rule. Rejected: one
+sentence with two numbers, which no single `count` can choose a form
+for. A key per value also lets a
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`

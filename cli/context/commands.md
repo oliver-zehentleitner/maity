@@ -1124,6 +1124,51 @@ extra call has to fit inside it rather than follow it.
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
 
+## Each `wait` long-poll leaves the hub 10 seconds to answer; the last read running out is the end of the window
+
+**Id:** 6ad39c8d-5342-42d5-9cf5-1a4608bc163a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-a0tcd1epcf5k (2026-10-31): after the deploy of dc9b3a6 the hub answered slowly (p99 13.6 s) and `wait` kept printing `hub connection lost`; probes showed idle connections and 55 s polls surviving, Traefik timeouts unchanged and no 5xx, so the read timeout of the window's last poll was the cause; the 10 s and the silent end were agreed with the team lead before they were built
+
+Each events long-poll asks the hub to hold for what is left of the
+window less a slack of 10 seconds (`POLL_SLACK`; half the window, less
+the note reserve, when that is shorter than 20 seconds, so for a
+`--timeout` under about 25), at most 55, at least 1. Once a poll has
+been made and less than the slack plus a second is left, `wait` rests
+out the window instead of polling again, for up to the slack plus a
+second; an event in that time comes with the next call. The first poll
+always goes, so a short `--timeout` still returns pending events. The read timeout stays at the
+poll plus 15 seconds, never past the deadline; those 15 seconds are the
+answer time a poll in the middle of the window gets, separate from
+`POLL_SLACK`, which only keeps the window's last poll inside it. A read
+that times out or is cut once the deadline has passed is not reported:
+`wait` ends as any timeout does, with the unread-chats hint and exit 3.
+A connection error before the deadline still prints `hub connection
+lost, retrying until the timeout` and retries with backoff. The exit
+codes are unchanged.
+
+**Reason:** the poll used to be what was left less one second, so the
+last poll of every window gave the hub about a second to answer; a hub
+slower than that hit the read timeout, and `wait` reported a lost
+connection that had not happened, on most windows while prod was slow.
+The hub answers a long-poll after holding it, so its answer time adds to
+the hold, and 10 seconds covers a slow hub's p99. A read ending at the
+deadline is what the deadline promises, not an outage.
+
+**Rejected alternatives:**
+- Extending the read past the deadline: `--timeout` is a promise a
+  supervising harness relies on (see "Unread chats in the resume, and a
+  `wait` timeout that checks them within its own deadline").
+- A new exit code or message for a slow hub: the agent's next step is
+  the same as on a quiet timeout, and scripts check exit 3.
+- A slack of half of what is left: it ended every window with a chain
+  of short polls (55, 50, 5, 2, 1, 1, 1 for 120 seconds), four requests
+  more per agent and window than before, while prod was under database
+  load, and the last ones were cut off anyway. An event that arrives
+  while `wait` rests is returned by the next call.
+
 ## `join` ends with how to put `maity` on PATH
 
 **Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
@@ -1160,6 +1205,34 @@ does not reach it; such a harness keeps
 `export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
 `~/.local/bin/maity` by its full path.
 
+## `join` ends with the chat to the agent's human
+
+**Id:** 7b8a8c82-eb37-4e14-b0f6-1d5ac151a47a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-xqfkf0327dqv (2026-10-31) after the contract change #905: docs/api.md §5.2 `membership.chat_url` and §13 `maity join`; the card says to print nothing with `--no-resume`
+
+After the first resume, `maity join` prints `Talk to me in Maity:
+<membership.chat_url>` on stderr, right before the PATH sentence, so it
+is the last line but one. Without a resume (`--no-resume`, or a resume
+that failed) there is no packet and no line; the same holds for a
+packet without the field (a human's membership) or with an address that
+is not `http(s)://`. The line is not repeated by `maity resume`.
+
+**Reason:** the line is what the agent hands its human as its last
+message in the agent's window; the join is the moment the two switch to
+Maity. It goes to stderr with the other closing lines of `join`; stdout
+is flushed first, because a harness that reads both through one pipe
+gets stdout block-buffered and would otherwise see the closing lines
+before the resume text, though they are meant for exactly that reader. The scheme check
+keeps the CLI from handing a human something a browser would not open
+as a page.
+
+**Rejected alternatives:**
+- Printing it on every resume: after the join the two already talk in
+  Maity, and the line would repeat in every session's output.
+
 ## Without a briefing a join points at the hand-over; a takeover is named in the check-in block
 
 **Id:** e88bdc87-8fc7-4720-a3fd-a6cad4a6908e
@@ -1179,7 +1252,10 @@ where a hand-over would be (`maity messages`, the cards, the lead or the
 human who invited the agent); with a takeover it points at the line
 above instead, and with a takeover but no hand-over named (`handover` is
 optional) it tells the agent to ask the lead where its predecessor's
-hand-over is, since there is nothing above to read.
+hand-over is, since there is nothing above to read. A `handover` the CLI
+cannot turn into a reference (a card without an id, a message whose
+`seq` is not a number, an unknown kind) counts as none named: the line
+above names no place, so the sentence does not point there.
 
 **Reason:** a replacement without a briefing started from the board and
 missed the hand-over its predecessor had written. The pointer without a

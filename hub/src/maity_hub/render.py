@@ -511,12 +511,24 @@ def landing_document(
     # A variant has pages of its own, and a language it lacks falls back to its own page in the
     # default language, never to the main page's (§16.7.2).
     pages: dict[str, Any] = setting["variants"][variant]["pages"] if variant else setting["pages"]
+    # The languages in one fixed order, whatever order the database keeps the keys in (PostgreSQL's
+    # jsonb sorts them): the default first, then the rest alphabetically.
+    tags = sorted(pages, key=lambda tag: (tag != setting["default_language"], tag))
     default = pages.get(setting["default_language"]) or next(iter(pages.values()))
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
+    # The hero's online numbers follow the rule of `GET /landing`: only a counter that an enabled
+    # `stats` section of this page names is shown, so one the operator left off is published
+    # nowhere (§16.7); the page is handed every counter, the renderer filters.
+    named = {item for _, s in sections if s["type"] == "stats" for item in s["items"]}
+    hero_stats = {k: v for k, v in (stats or {}).items() if k in named}
     drawn = [
-        (i, s, _hero(i, s, words, stats) if s["type"] == "hero" else _section(i, s, words, stats))
+        (
+            i,
+            s,
+            _hero(i, s, words, hero_stats) if s["type"] == "hero" else _section(i, s, words, stats),
+        )
         for i, s in sections
     ]
     # The header's links are the shown sections that carry a `nav_label`, in their order (§16.7):
@@ -542,7 +554,7 @@ def landing_document(
     open_source = [
         link for _, s, _ in drawn if s["type"] == "opensource" for link in s.get("links", [])
     ]
-    footer = _landing_footer(setting, words, legal, lang, list(pages), links, open_source)
+    footer = _landing_footer(setting, words, legal, lang, tags, links, open_source)
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
     head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
     if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
@@ -557,7 +569,7 @@ def landing_document(
         description=page.get("description") or "",
         head=head,
         body=banner + header + f"<main>{body}</main>" + footer,
-        languages=list(pages),
+        languages=tags,
         style="" if sheet else STYLE,
     )
 
