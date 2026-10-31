@@ -145,7 +145,8 @@ instance the carried read wakes as the `member:` token: an instance mention or a
 to one instance does not wake it (`wakes(carried=True)`), and the runner supervision read from
 the bridge's session does not apply. A conversation read through the bridge marks nothing
 delivered or read, and its unread count starts at the furthest cursor of the served agent's own
-live sessions (`conversation_list.agent_cursor`), never the bridge's.
+sessions, ended ones too, since a new session takes the cursor over
+(`conversation_list.agent_cursor`), never the bridge's.
 
 A served agent without a live session of its own shows the best presence of its live bridges
 (`views._carried_presence`), after its instances' presence and before `availability`, which reads

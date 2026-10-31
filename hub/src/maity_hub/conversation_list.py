@@ -252,15 +252,14 @@ def direct_entries(
 
 def agent_cursor(conn: Connection, caller: Any, membership_id: int) -> int:
     """How far an agent has read its events: its session's cursor; through a bridge, whose
-    session is the bridge's, the furthest of the served agent's own live sessions (§2.3)."""
+    session is the bridge's, the furthest of the served agent's own sessions, ended ones too,
+    since a new session takes the cursor over (§2.3)."""
     a = t.agent_session.c
     if caller.bridge is None:
         found = conn.execute(select(a.acknowledged_seq).where(a.id == caller.session_id))
     else:
         found = conn.execute(
-            select(func.max(a.acknowledged_seq)).where(
-                a.membership_id == membership_id, a.live.is_(True)
-            )
+            select(func.max(a.acknowledged_seq)).where(a.membership_id == membership_id)
         )
     return int(found.scalar() or 0)
 

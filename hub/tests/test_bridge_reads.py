@@ -184,11 +184,20 @@ def test_ending_the_connection_ends_the_open_wait_for_the_agent(
             bridge,
             f"{PROJECT}/events?for={served.agent_id}&after={after}&wait=20",
         )
-        time.sleep(0.5)
+        _until_waiting("|for:")
         ended = owner.delete(f"{PROJECT}/members/{served.agent_id}/bridges/{row.id}")
         assert ended.status_code == 200, ended.text
         answered = waiting.result(timeout=10)
     assert answered.json()["items"] == [] and time.monotonic() - start < 10
+
+
+def _until_waiting(marker: str) -> None:
+    """Until a long-poll whose key holds `marker` is registered, not a fixed sleep: under
+    load the call may open later than that."""
+    deadline = time.monotonic() + 10
+    while not any(marker in key for key in list(longpoll.registry._by_key)):
+        assert time.monotonic() < deadline, "the wait never opened"
+        time.sleep(0.05)
 
 
 def test_the_registry_ends_a_bridges_waits_with_the_connection_or_its_isolation() -> None:
@@ -272,9 +281,18 @@ def test_unread_through_the_bridge_is_the_served_agents_not_the_bridges_cursor(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     served, bridge = _pair(migrated, owner)
+    old = owner.post(f"{PROJECT}/conversations/{served.agent_id}/messages", {"body": "old"})
+    assert old.status_code == 201, old.text
     said = owner.post(f"{PROJECT}/conversations/{served.agent_id}/messages", {"body": "news"})
     assert said.status_code == 201, said.text
-    with migrated.begin() as conn:  # the bridge's own session has read far past it
+    with migrated.begin() as conn:
+        # The served agent read the first in a session that has ended since; the bridge's
+        # own session has read far past both.
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == served.session_id)
+            .values(acknowledged_seq=old.json()["seq"], live=None)
+        )
         conn.execute(
             update(t.agent_session)
             .where(t.agent_session.c.id == bridge.session_id)
