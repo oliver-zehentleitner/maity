@@ -537,6 +537,8 @@ def join_line(
         page.locator(".join-result").get_by_role("button", name="Join another", exact=True).click()
         expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
         panel.get_by_role("button", name="Close", exact=True).click()
+    # The line installs the CLI first (§3.2): the join is its last five words.
+    words = words[-5:]
     assert words[:2] == ["maity", "join"] and words[3] == "--code", words
     return words[2], words[4]
 

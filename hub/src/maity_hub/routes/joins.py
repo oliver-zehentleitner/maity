@@ -64,7 +64,7 @@ from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
 from maity_hub.scopes import MEMBER_RULE_ROLES, has_scope
-from maity_hub.views import join_view, member_view, principal_id
+from maity_hub.views import join_view, member_view, principal_id, routing_boss
 
 router = APIRouter(route_class=ProjectRoute)
 page_router = APIRouter(route_class=ProjectRoute)  # /join/{token}, outside the API prefix
@@ -1094,7 +1094,8 @@ def _told_of_takeover(conn: Connection, project: Any, new: Any) -> list[str]:
         )
         .order_by(t.membership.c.id.desc())
     ).first()
-    lead = principal_id(conn, named.reports_to) if named is not None else None
+    # An isolated lead is routed past, as everywhere events go to a boss (§6.2).
+    lead = routing_boss(conn, named.reports_to) if named is not None else None
     if lead is not None:
         told.append(f"member:{lead}")
     return list(dict.fromkeys(told))

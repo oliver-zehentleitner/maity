@@ -136,6 +136,27 @@ def test_member_joined_is_also_told_to_the_lead_of_the_member_it_continues(
     assert plain == ["all"]
 
 
+def test_an_isolated_lead_is_not_told_who_continues_the_work(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    lead = flow.agent(
+        make_client, owner, agent={"handle": "the-boss", "display_name": "Boss"}, role="manager"
+    )
+    old = flow.agent(
+        make_client, owner, agent={"handle": "old-three", "display_name": "Old"}, reports_to=lead.id
+    )
+    isolated = owner.post(f"{PROJECT}/members/{lead.id}/isolate", {"reason": "it went astray"})
+    assert isolated.status_code == 200, isolated.text
+    _exchanged(make_client, new_join(owner, 9, takes_over=old.id).json())
+    with migrated.connect() as conn:
+        told = conn.execute(
+            select(t.event.c.audience)
+            .where(t.event.c.kind == "member_joined")
+            .order_by(t.event.c.seq.desc())
+        ).first()
+    assert told is not None and f"member:{lead.id}" not in told.audience
+
+
 def test_takes_over_is_for_a_first_join_only(
     owner: flow.Human, old: flow.Agent, make_client: ClientFactory
 ) -> None:
