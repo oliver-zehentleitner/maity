@@ -735,7 +735,6 @@ from what someone typed.
 
 **Id:** f8cb056b-9e0c-4729-bc97-c73341204bc0
 **Type:** decision
-**Type:** incident
 **Status:** active
 **Evidence:** confirmed
 **Source:** the registration form on prod, where labels ran inline with their fields (tsk-egx8xpcrz5z2, #939); the audit of all forms in #939's reviews and the card tsk-jpaqk8m7j52v (one shared rule, and a check so this kind of bug cannot come back); the dashboard's implementation, 2026-10-31
@@ -764,5 +763,8 @@ on what smoke renders finds the next one before a person does.
 **Rejected alternative:** six rules, one per wrapper, which the next
 wrapper would miss in the same way. A check that every wrapper class has
 a rule, which needs a list of wrapper classes to keep up to date: the
-walk over rendered pages needs none.
+walk over rendered pages needs none. The check reads a rule in its
+context (a descendant selector counts only under its ancestor) and leaves
+out rules inside `@media` and CSS comments: a layout that holds at some
+widths only is no layout for the label.
 
