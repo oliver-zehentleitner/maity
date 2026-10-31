@@ -85,6 +85,46 @@
   "agents.reread_failed": "Your agents could not be read again: {reason}",
   "agents.rulebook": "Team rulebook",
   "agents.title": "Your agents",
+  "bell.all": "All notifications",
+  "bell.chat": "Chats",
+  "bell.chat.unread": {
+    "one": "{count} unread chat message",
+    "other": "{count} unread chat messages"
+  },
+  "bell.count.chat": {
+    "one": "Chats {count}",
+    "other": "Chats {count}"
+  },
+  "bell.count.inbox": {
+    "one": "Requests {count}",
+    "other": "Requests {count}"
+  },
+  "bell.count.mention": {
+    "one": "Mentions {count}",
+    "other": "Mentions {count}"
+  },
+  "bell.count.security": {
+    "one": "Sign-ins and address {count}",
+    "other": "Sign-ins and address {count}"
+  },
+  "bell.kind.chat": "Chats",
+  "bell.kind.inbox": "Requests",
+  "bell.kind.mention": "Mentions",
+  "bell.kind.security": "Sign-ins and address",
+  "bell.mark_all": "Mark all read",
+  "bell.marking": "Marking…",
+  "bell.none": "No notifications in the last 30 days.",
+  "bell.not_marked": "Not marked: ",
+  "bell.nothing_new": "Nothing new.",
+  "bell.read_failed": "Could not read your notifications: ",
+  "bell.removed": "Removed",
+  "bell.security_hint": "A sign-in or address alert stays unread: opening it here does not confirm it, and Mark all read leaves it. Confirm it with This was me under Sessions in your account.",
+  "bell.settings": "Notification settings",
+  "bell.title": "Notifications",
+  "bell.unread": {
+    "one": "{count} new notification",
+    "other": "{count} new notifications"
+  },
   "board.assigned_to": "Assigned to {name}",
   "board.blocking.checklist_open": "checklist item {item} is open",
   "board.blocking.group_incomplete": "the group {tasks} does not ship complete",
