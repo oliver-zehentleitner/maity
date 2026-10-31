@@ -153,10 +153,28 @@ window.Maity = window.Maity || {};
 
   // Sessions & credentials: the instances with their sessions; the
   // credentials where the hub shows them to the viewer (an admin, the owner).
-  async function sessions(ctx, m, box) {
+  // `chosen`: the instance an address's #id leads to (tsk-bczgjkfpw1wg),
+  // marked as the current one and given the focus.
+  // Tried until the line is in the page, a few seconds at most, and not
+  // after the reader went elsewhere meanwhile.
+  function focusWhenShown(el, tries, path) {
+    const here = path || M.route.current().path;
+    if (M.route.current().path !== here) return;
+    if (el.isConnected === false) { if (tries > 0) window.setTimeout(() => focusWhenShown(el, tries - 1, here), 100); return; }
+    el.focus();
+  }
+
+  async function sessions(ctx, m, box, chosen) {
     const live = (m.instances || []);
+    const picked = live.some((i) => i.id === chosen) ? chosen : null;
+    let pickedLine = null;
     append(box, h("h3", null, "Instances"), live.length
-      ? h("ul", { class: "member-instances" }, live.map((i) => h("li", { class: i.revoked_at ? "revoked" : null },
+      ? h("ul", { class: "member-instances" }, live.map((i) => { const line = h("li", {
+        id: "member-instance-" + i.id,
+        class: [i.revoked_at ? "revoked" : null, i.id === picked ? "chosen" : null].filter(Boolean).join(" ") || null,
+        "aria-current": i.id === picked ? "true" : null,
+        tabindex: i.id === picked ? "-1" : null,
+      },
         h("span", { class: "mono" }, i.label || i.id), " ",
         h("span", { class: "muted" }, [i.revoked_at ? "revoked " + formatAgo(i.revoked_at) : PRESENCE[i.presence] || i.presence,
           i.harness, i.model, i.last_seen_at ? "seen " + formatAgo(i.last_seen_at) : null,
@@ -164,8 +182,16 @@ window.Maity = window.Maity || {};
         // Its open session (§6.17): id, since when, and since when it has not been listening.
         i.session ? h("p", { class: "muted member-session" }, "Session ", h("span", { class: "mono" }, i.session.id),
           i.session.started_at ? " · since " + formatTime(i.session.started_at) : "",
-          i.session.not_listening_since ? [" · ", h("span", { class: "flag-inline" }, "not listening since " + formatAgo(i.session.not_listening_since))] : "") : null)))
+          i.session.not_listening_since ? [" · ", h("span", { class: "flag-inline" }, "not listening since " + formatAgo(i.session.not_listening_since))] : "") : null);
+        if (i.id === picked) pickedLine = line;
+        return line;
+      }))
       : h("p", { class: "muted" }, m.kind === "agent" ? "No instance yet." : "A human has no instances."));
+    // The view is put into the page once it is drawn: the chosen line takes
+    // the focus as soon as it is there (tried for a few seconds at most).
+    if (pickedLine) focusWhenShown(pickedLine, 40);
+    // An address naming an instance this member does not list says so, rather than a page that looks as usual.
+    else if (chosen) append(box, h("p", { class: "flag member-instance-missing", role: "status" }, M.t("member.instance_missing", { id: chosen })));
     if (m.kind !== "agent" || !(ctx.canAdmin || ownAgentOf(ctx, m)) || !M.agentParts) return;
     const slot = h("div", { class: "member-credentials" }, h("p", { class: "muted" }, "Reading the credentials…"));
     append(box, slot);
@@ -178,7 +204,7 @@ window.Maity = window.Maity || {};
           c.revoked_at ? "revoked " + formatAgo(c.revoked_at) : c.last_used_at ? "used " + formatAgo(c.last_used_at) : "never used"].filter(Boolean).join(" · ")))))));
   }
 
-  async function page(ctx, root, id, tab) {
+  async function page(ctx, root, id, tab, instanceId) {
     const m = (ctx.members || []).find((x) => x.id === id);
     const crumb = h("nav", { class: "breadcrumb", "aria-label": "Breadcrumb" }, h("a", { href: ctx.link("members") }, "Members"), " / ",
       h("span", { "aria-current": "page" }, m ? "@" + M.dom.handleOf(ctx, m) : id));
@@ -201,7 +227,7 @@ window.Maity = window.Maity || {};
     if (chosen === "activity") await activity(ctx, m, body);
     else if (chosen === "cards") await cards(ctx, m, body);
     else if (chosen === "briefing") await briefing(ctx, m, body);
-    else await sessions(ctx, m, body);
+    else await sessions(ctx, m, body, instanceId);
   }
 
   M.memberPage = { page, TABS };

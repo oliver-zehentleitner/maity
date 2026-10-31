@@ -1394,14 +1394,15 @@ silence of a request that is dropped, a dead end for everyone.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27
-**Revisit when:** the contract gives an instance a name of its own, or the hub names harness and model on a chat message
+**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27; the maintainer, 2026-10-31 (tsk-bczgjkfpw1wg): `@handle#id` offered by the @ picker and shown as two links everywhere
+**Revisit when:** the contract gives an instance a name of its own or a view of its own, or the hub names harness and model on a chat message
 
 `M.dom.memberRef` takes `opts.instance` (an id, or a record with
 `instance`, `harness`, `model`). With one, an agent reads
 `<handle>#<id>` (`owner/handle#id` where two agents share the handle,
 `@…` where the view names handles; the name, where a reference read
-across projects carries no handle), the `#id` muted, beside the link and not in it, with
+across projects carries no handle), the `#id` muted, a link of its own
+beside the handle's and not in it, with
 "Instance <id> · <harness> · <model>" as its tooltip where the record
 says them (an event's `actor` does, a chat message does not). Chats
 (direct, group, global), the project messages, the ticker, the inbox's
@@ -1409,14 +1410,31 @@ asker, the overview's reports and a card's notes and history pass what
 their record carries; without an instance, or for a human, the name stays
 as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
-under one name.
+under one name. The handle leads to the member's page, the `#id` to
+the same page's Sessions with that instance's line marked and focused
+(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+member the project does not list, a view from outside) both stay text.
+A stored mention `@handle#id` in a text reads the same: two links, the
+member and its instance. The @ picker offers, after each agent, its
+instances that are not revoked as `@handle#id`, a dormant one marked,
+in the slots the members leave free, so a short `@` shows as many
+members as before; typing `#` after a full handle narrows to that
+agent's instances. An address naming an instance the member does not
+list says so on Sessions instead of marking nothing. Until
+2026-10-31 the `#id` led nowhere (the designer's pass on #429: it
+names, it leads nowhere else); the maintainer asked for it to lead to
+the instance.
 
 **Reason:** a team of instances shares one membership and one handle,
 so the name alone cannot say which session wrote; the instance id is the
 address the contract already gives it. Keeping it in the one helper keeps
 the form the same on every page.
 
-**Rejected alternative:** the display name with the id after it: the
+**Rejected alternative:** the handle and the `#id` as one link: the two
+lead to different places, the member and its instance, and one link
+could only reach one of them. The `#id` leading to an instance view of
+its own: the contract has none, the member page's Sessions already lists
+the instances. The display name with the id after it: the
 contract names an instance by handle, and that is what a reader types to
 reach it (`@handle#id`). Showing the instance only on hover: the
 maintainer wants it seen without looking for it.
@@ -3143,11 +3161,15 @@ placements of someone else's agent.
 
 The composer of a direct chat and of a group chat has one head
 (`M.chatParts.composeHead`): its label, then on a phone a button
-**Hide the composer** / **Write a message** (`aria-expanded`,
-controlling the field) and on a wider screen a group of **1×**, **2×**
+**Hide the composer** / **Write a message** (controlling the form; its
+label says what a press does, so it carries no `aria-expanded` as well)
+and on a wider screen a group of **1×**, **2×**
 and **3×** (`aria-pressed`) that sets the field's rows to one, two or
 three times its own. Hidden, only the head stays, so the history takes
-the room; shown again, the field has the focus. Both choices are kept in
+the room; shown again, the field has the focus. Quote opens a hidden
+composer, so the quote it puts in is seen. On a phone the field is
+capped at 40% of the screen's height, since a 2× or 3× chosen on a wide
+screen still sets its rows there. Both choices are kept in
 `localStorage` under one key for every chat, and a browser that keeps
 nothing still applies them for the visit. An empty status line and an
 empty list of files take no room in the composer any more, and its rows

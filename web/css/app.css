@@ -908,7 +908,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
   /* No keys to press on a phone, mostly: the hint goes, the button is laid out as it was. */
   .compose-actions { flex-wrap: wrap; }
-  /* On a phone the field keeps its rows; the composer folds away for reading instead. */
+  /* On a phone the composer folds away for reading; the 2× or 3× chosen on a
+     wide screen still sets its rows, so the field is capped here (#824's review). */
+  .compose textarea { max-height: 40vh; }
   .compose-size { display: none; }
   .compose-toggle { display: inline-flex; }
   .compose.compose-hidden > :not(.compose-head) { display: none; }
@@ -1451,6 +1453,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
 .member-activity, .member-cards, .member-instances, .member-creds { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .member-instances li.revoked, .member-creds li.revoked { opacity: 0.7; }
+/* The instance an address's #id leads to (tsk-bczgjkfpw1wg). */
+.member-instances li.chosen { border-left: 3px solid var(--accent); padding-left: 8px; }
 /* Phone: avatar, text, then the buttons at full width (the handover). */
 @media (max-width: 600px) {
   .member-head { grid-template-columns: minmax(0, 1fr); }

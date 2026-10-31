@@ -795,6 +795,29 @@ def test_no_mail_row_keeps_the_address(
     assert "sent" in statuses and "failed" in statuses  # the counters' metadata stays
 
 
+def test_the_deletion_takes_the_campaign_origin_along(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§16.7.2: the origin is personal data of the account; the confirmed link removes it."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.campaign_origin).values(
+                human_id=pat.id,
+                variant="maintainers",
+                campaign="x-h1-w1",
+                registered_at=clock.now(),
+            )
+        )
+    token = requested(pat, migrated)
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.campaign_origin)).all() != []  # a request alone keeps it
+    assert press(pat, token).status_code == 200
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.campaign_origin)).all() == []
+
+
 def test_a_write_held_past_its_authentication_is_refused_after_the_deletion(
     make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

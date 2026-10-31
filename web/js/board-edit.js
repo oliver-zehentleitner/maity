@@ -13,36 +13,38 @@ window.Maity = window.Maity || {};
 
   const CLOSED = new Set(["done", "cancelled"]);
   // Scopes by role (docs/api.md §2.3).
-  const LABELS = [["", "no label"], ["feature", "feature"], ["fix", "fix"], ["chore", "chore"]];
-  const KINDS = [["task", "Task"], ["maintenance_round", "Context round"]];
+  // A card's labels and kinds, read from the catalog when drawn.
+  const LABELS = [["", () => M.t("cards.label.none")], ["feature", () => M.t("cards.label.feature")], ["fix", () => M.t("cards.label.fix")], ["chore", () => M.t("cards.label.chore")]];
+  const KINDS = [["task", () => M.t("cards.kind.task")], ["maintenance_round", () => M.t("cards.kind.maintenance_round")]];
 
   // The hub's refusals, in words; anything else is shown as it comes.
   const REFUSALS = {
-    invalid_transition: "The hub does not allow that move.",
-    dependencies_open: "Not done yet: a card it depends on is still open.",
-    not_holder: "Only the holder moves this card to done.",
-    lease_active: "It is claimed with a live lease; it can be assigned once the lease has run out.",
-    release_not_ready: "The release is not ready; its card says what still blocks it.",
-    release_card: "A release is never shipped with other cards; it ships them.",
-    project_closed: "The project is closed; no new cards.",
-    not_a_member: "Not a member of this project.",
-    cycle: "That would make the cards depend on each other in a circle.",
-    unknown: "Not a known value.",
-    missing: "Required.",
+    invalid_transition: () => M.t("cards.refused.invalid_transition"),
+    dependencies_open: () => M.t("cards.refused.dependencies_open"),
+    not_holder: () => M.t("cards.refused.not_holder"),
+    lease_active: () => M.t("cards.refused.lease_active"),
+    release_not_ready: () => M.t("cards.refused.release_not_ready"),
+    release_card: () => M.t("cards.refused.release_card"),
+    project_closed: () => M.t("cards.refused.project_closed"),
+    not_a_member: () => M.t("cards.refused.not_a_member"),
+    cycle: () => M.t("cards.refused.cycle"),
+    unknown: () => M.t("cards.refused.unknown"),
+    missing: () => M.t("cards.refused.missing"),
   };
+  const refusal = (code) => (Object.hasOwn(REFUSALS, code) ? REFUSALS[code]() : null);
 
   function said(err) {
     // A parent waits for its subtasks (§6.4): the open ones by id.
     const kids = err.code === "dependencies_open" && err.details && err.details.children;
     if (kids && kids.length) {
       const deps = (err.details.open || []).filter((id) => !kids.includes(id));
-      return { message: "Not done yet: " + (kids.length === 1 ? "its subtask " : "its subtasks ") + kids.join(", ") + " still open"
-        + (deps.length ? ", and " + deps.join(", ") + " it depends on" : "") + "." };
+      const o = { count: kids.length, subtasks: M.fmt.list(kids), deps: M.fmt.list(deps) };
+      return { message: deps.length ? M.t("cards.refused.subtasks_and_deps", o) : M.t("cards.refused.subtasks", o) };
     }
-    if (REFUSALS[err.code]) return { message: REFUSALS[err.code] };
+    if (refusal(err.code)) return { message: refusal(err.code) };
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields) {
-      const words = Object.entries(fields).map(([f, r]) => f.replace("_", " ") + ": " + (REFUSALS[r] || r));
+      const words = Object.entries(fields).map(([f, r]) => f.replace("_", " ") + ": " + (refusal(r) || r));
       return { message: words.join("; ") };
     }
     return err;
@@ -88,17 +90,20 @@ window.Maity = window.Maity || {};
     return cmp(a.created_at || "", b.created_at || "") || cmp(a.id, b.id);
   }
 
-  // The board's columns, in order (docs/api.md §6.4), with their names.
+  // The board's columns, in order (docs/api.md §6.4), with their names. A
+  // column is [status, name]; the name is read from the catalog each time
+  // it is read, so a language set after the page loads applies.
+  const column = (status, name) => Object.defineProperty([status], 1, { get: name, enumerable: true });
   const COLUMNS = [
-    ["proposed", "Proposed"],
-    ["open", "Open"],
-    ["in_progress", "In progress"],
-    ["blocked", "Blocked"],
-    ["review", "Review"],
-    ["done", "Done"],
-    ["cancelled", "Cancelled"],
+    column("proposed", () => M.t("cards.column.proposed")),
+    column("open", () => M.t("cards.column.open")),
+    column("in_progress", () => M.t("cards.column.in_progress")),
+    column("blocked", () => M.t("cards.column.blocked")),
+    column("review", () => M.t("cards.column.review")),
+    column("done", () => M.t("cards.column.done")),
+    column("cancelled", () => M.t("cards.column.cancelled")),
   ];
-  const columnName = (s) => (COLUMNS.find(([v]) => v === s) || [s, s.replace("_", " ")])[1];
+  const columnName = (s) => { const c = COLUMNS.find(([v]) => v === s); return c ? c[1] : s.replace("_", " "); };
 
   // Icons for Place, in the text colour: an arrow up or down, with a bar
   // for "to the top" or "to the bottom".
@@ -127,10 +132,10 @@ window.Maity = window.Maity || {};
   // cards keep the order they had: nothing to plan there.
   const orderable = (ctx, c) => isAdmin(ctx) && !CLOSED.has(c.status);
   const PLACES = [
-    ["top", "Move to top"],
-    ["up", "Move up"],
-    ["down", "Move down"],
-    ["bottom", "Move to bottom"],
+    ["top", () => M.t("cards.place.top")],
+    ["up", () => M.t("cards.place.up")],
+    ["down", () => M.t("cards.place.down")],
+    ["bottom", () => M.t("cards.place.bottom")],
   ];
   function orderControl(ctx, c, column, place) {
     if (!orderable(ctx, c) || column.length < 2) return null;
@@ -143,8 +148,9 @@ window.Maity = window.Maity || {};
       down: at < last ? { after: column[at + 1].id } : null,
       bottom: at < last ? { to: "bottom" } : null,
     };
-    return h("div", { class: "card-order", role: "group", "aria-label": "Place in column" },
-      PLACES.map(([way, label]) => {
+    return h("div", { class: "card-order", role: "group", "aria-label": M.t("cards.place.label") },
+      PLACES.map(([way, word]) => {
+        const label = word();
         const key = "order:" + c.id + ":" + way;
         return h("button", {
           type: "button",
@@ -164,9 +170,9 @@ window.Maity = window.Maity || {};
     const allowed = targets(ctx, c);
     if (!allowed.length) return null;
     const menu = M.menuButton({
-      label: c.id + ": " + columnName(c.status) + ", move to another column",
+      label: M.t("cards.move.label", { id: c.id, column: columnName(c.status) }),
       face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => allowed.map((s) => ({ label: "Move to " + columnName(s), onSelect: () => move(c, s, "move:" + c.id) })),
+      items: () => allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) })),
     });
     menu.button.setAttribute("data-focus", "move:" + c.id);
     menu.el.className = "menu-box card-move";
@@ -177,9 +183,9 @@ window.Maity = window.Maity || {};
   // full name as the tooltip; picking one assigns at once.
   function assignControl(ctx, c, assign) {
     if (!isAdmin(ctx) || CLOSED.has(c.status)) return null;
-    const word = c.assigned_to ? "Reassign" : "Assign";
+    const word = c.assigned_to ? M.t("cards.reassign") : M.t("cards.assign");
     const menu = M.menuButton({
-      label: word + " " + c.id,
+      label: c.assigned_to ? M.t("cards.reassign.label", { id: c.id }) : M.t("cards.assign.label", { id: c.id }),
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
       // A guest is never assigned a card (§2.3).
       items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m)).map((m) => ({
@@ -199,21 +205,21 @@ window.Maity = window.Maity || {};
   function newCardForm(ctx, cards, create, onCancel, parent) {
     const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
-    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: "What, acceptance, pointers (Markdown)" }));
-    const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l)));
+    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: M.t("cards.new.body.placeholder") }));
+    const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l())));
     label.value = "";
-    const kind = h("select", { id: id("kind") }, KINDS.map(([v, l]) => h("option", { value: v }, l)));
+    const kind = h("select", { id: id("kind") }, KINDS.map(([v, l]) => h("option", { value: v }, l())));
     kind.value = "task";
     const areas = [...new Set(ctx.members.flatMap((m) => m.areas || []))].sort();
     const area = h("input", { id: id("area"), list: id("areas"), placeholder: "hub/", autocomplete: "off", spellcheck: "false" });
     const areaList = h("datalist", { id: id("areas") }, areas.map((a) => h("option", { value: a })));
-    const status = h("select", { id: id("status") }, h("option", { value: "proposed" }, "Proposed: to talk about first"),
-      h("option", { value: "open" }, "Open: ready to be claimed"));
+    const status = h("select", { id: id("status") }, h("option", { value: "proposed" }, M.t("cards.new.status.proposed")),
+      h("option", { value: "open" }, M.t("cards.new.status.open")));
     status.value = "proposed";
     const locked = parent && childProposed(ctx);
     if (locked) status.disabled = true;
     const assignee = isAdmin(ctx)
-      ? h("select", { id: id("assigned") }, h("option", { value: "" }, "by area (the hub routes it)"),
+      ? h("select", { id: id("assigned") }, h("option", { value: "" }, M.t("cards.new.assigned.by_area")),
         ctx.members.filter((m) => !M.trust.guest(m)).map((m) => h("option", { value: m.id }, m.display_name)))
       : null;
     if (assignee) assignee.value = "";
@@ -227,15 +233,15 @@ window.Maity = window.Maity || {};
     const reason = needsReason ? h("input", { id: id("reason"), required: true, autocomplete: "off" }) : null;
     const status_ = M.statusLine();
     const chosen = (sel) => Array.from(sel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
-    const submit = h("button", { type: "submit" }, parent ? "Create subtask" : "Create card");
+    const submit = h("button", { type: "submit" }, parent ? M.t("cards.new.create_subtask") : M.t("cards.new.create"));
     const form = h("form", {
       class: "project-form " + (parent ? "new-subtask" : "new-card"),
       novalidate: true,
       onsubmit: async (e) => {
         e.preventDefault();
-        if (!title.value.trim()) { status_.fail("Not created: ", { message: "the card needs a title" }); title.focus(); return; }
+        if (!title.value.trim()) { status_.fail(M.t("cards.new.not_created"), { message: M.t("cards.new.title_needed") }); title.focus(); return; }
         if (reason && !reason.value.trim()) {
-          status_.fail("Not created: ", { message: "the project is in " + ctx.project.state + "; say why this card is needed now" });
+          status_.fail(M.t("cards.new.not_created"), { message: M.t("cards.new.reason_needed", { state: ctx.project.state }) });
           reason.focus();
           return;
         }
@@ -251,30 +257,30 @@ window.Maity = window.Maity || {};
         if (reason) card.reason = reason.value.trim();
         if (parent) card.parent = parent.id;
         submit.disabled = true;
-        status_.busy("Creating…");
+        status_.busy(M.t("cards.new.creating"));
         try {
           await create(card);
         } catch (err) {
-          status_.fail("Not created: ", said(err));
+          status_.fail(M.t("cards.new.not_created"), said(err));
         } finally {
           submit.disabled = false;
         }
       },
     },
-    h("h3", null, parent ? "New subtask" : "New card"),
-    parent ? h("p", { class: "muted new-card-parent" }, "A subtask of " + parent.id + " · " + parent.title) : null,
-    h("label", { for: id("title") }, "Title"), title,
-    h("label", { for: id("body") }, "Body (" + M.dom.SEND_KEYS + " creates the card)"), body,
-    h("label", { for: id("kind") }, "Kind"), kind,
-    h("label", { for: id("label") }, "Label"), label,
-    h("label", { for: id("area") }, "Area"), area, areaList,
-    h("label", { for: id("status") }, "Status"), status,
-    locked ? h("p", { class: "hint" }, "Starts as proposed: under this project's subtask policy an admin opens it.") : null,
-    assignee ? [h("label", { for: id("assigned") }, "Assigned to"), assignee] : null,
-    h("label", { for: id("depends") }, "Depends on (Ctrl or Shift to choose several)"), deps,
-    h("label", { for: id("ships") }, "Ships with"), ships,
-    reason ? [h("label", { for: id("reason") }, "Why now (the project is in " + ctx.project.state + ")"), reason] : null,
-    h("div", { class: "actions" }, h("button", { type: "button", onclick: onCancel }, "Cancel"), submit),
+    h("h3", null, parent ? M.t("cards.new.subtask_title") : M.t("cards.new.title")),
+    parent ? h("p", { class: "muted new-card-parent" }, M.t("cards.new.subtask_of", { id: parent.id }), " · " + parent.title) : null,
+    h("label", { for: id("title") }, M.t("cards.new.field.title")), title,
+    h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body,
+    h("label", { for: id("kind") }, M.t("cards.new.field.kind")), kind,
+    h("label", { for: id("label") }, M.t("cards.new.field.label")), label,
+    h("label", { for: id("area") }, M.t("cards.new.field.area")), area, areaList,
+    h("label", { for: id("status") }, M.t("cards.new.field.status")), status,
+    locked ? h("p", { class: "hint" }, M.t("cards.new.proposed_hint")) : null,
+    assignee ? [h("label", { for: id("assigned") }, M.t("cards.new.field.assigned")), assignee] : null,
+    h("label", { for: id("depends") }, M.t("cards.new.field.depends")), deps,
+    h("label", { for: id("ships") }, M.t("cards.new.field.ships")), ships,
+    reason ? [h("label", { for: id("reason") }, M.t("cards.new.field.reason", { state: ctx.project.state })), reason] : null,
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: onCancel }, M.t("cards.new.cancel")), submit),
     status_.el);
     return { form, focus: () => title.focus(), body };
   }

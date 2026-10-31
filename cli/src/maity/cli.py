@@ -22,7 +22,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import (
+    __version__,
+    environment,
+    gitfacts,
+    hub,
+    onboarding,
+    pointer,
+    proc,
+    sign,
+    state,
+    versioninfo,
+)
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -65,6 +76,18 @@ plain HTTP:
 """
 
 Handler = Callable[[argparse.Namespace], int]
+
+
+class VersionAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        print(versioninfo.version_text(__version__))
+        parser.exit()
 
 
 class UsageError(Exception):
@@ -1584,7 +1607,7 @@ def cmd_say(args: argparse.Namespace) -> int:
         raise UsageError(str(exc)) from None
     text = _say_body(args.body, attach)
     if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
-        to = _address(Session(), to)  # a handle or a former one names the member (§6.24)
+        to = _address(Session(), to, chat_hint=True)  # handles and aliases (§6.24)
     to_owner = to == "human"
     if not to_owner and args.type is None:
         # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
@@ -2424,14 +2447,27 @@ _TOKENS = ("all", "human", "owner")
 _TOKEN_PREFIXES = ("role:", "trust:", "area:", "member:")
 
 
-def _address(session: Session, to: str, members: list[dict[str, Any]] | None = None) -> str:
+def _address(
+    session: Session,
+    to: str,
+    members: list[dict[str, Any]] | None = None,
+    *,
+    chat_hint: bool = False,
+) -> str:
     """An addressee with a handle in it resolved to the member id (§6.24): `<handle>` and
     `<handle>#<instance>` (§6.17). Tokens, ids and names no member has go on unchanged: the
     hub answers for those as before."""
     if to in _TOKENS or to.startswith(_TOKEN_PREFIXES):
         return to
     who, hash_, instance = to.partition("#")
-    member = resolve_member(members if members is not None else _members(session), who, False)
+    members = members if members is not None else _members(session)
+    member = resolve_member(members, who, False)
+    if chat_hint and member == who and not any(m["id"] == who for m in members):
+        # An unavailable advisory read must not replace the command's own outcome.
+        with contextlib.suppress(hub.HubError):
+            if any(_conversation_id(c) == to for c in _conversations(session)):
+                shown = shlex.quote(onboarding.inline(to))
+                raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
 
 
@@ -3388,7 +3424,13 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=OUTPUT_DISCIPLINE,
         formatter_class=fmt,
     )
-    parser.add_argument("--version", action="version", version=f"maity {__version__}")
+    parser.add_argument(
+        "--version",
+        action=VersionAction,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="show the release version and code build",
+    )
     sub = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
     def add(name: str, summary: str, description: str) -> argparse.ArgumentParser:

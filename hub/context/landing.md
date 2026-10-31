@@ -215,3 +215,21 @@ page then requires.
 **Rejected alternative:** a default of `""` for `public_url`. It silently dropped
 `source: legal_pages` for `/auth/methods` (found in review of #635), the form showed no terms, and no
 test noticed.
+
+## Variants and campaigns are fields of the landing setting, served by the same renderer, and a link is rewritten only while they are set
+
+**Id:** b8c0fea6-0888-4a32-9473-8524010b15be
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.7.2, §16.7, §16.11; the maintainer's decision of 2026-10-31 (A/B tests before the launch); `context/scope.md` (the entry that supersedes 02f126c2); the card tsk-tk10nnqdh8h1
+**Revisit when:** a variant needs a header, footer or theme of its own, or the counts need more than the daily sums
+
+`variants` (at most 5, by slug) and `campaigns` (at most 200, `{code, label}`) are two more JSON columns of `instance_landing` and two more fields of the setting that `landing.check` validates: a variant is `{pages}` checked by the very function that checks the main page's pages, so every rule of §16.7 holds under the path `variants.<slug>.pages…`, and the whole counts towards the 256 KiB cap. `GET /landing` answers the `FIELDS` of the page only (`ADMIN_FIELDS` is what the admin reads and writes): a campaign's code and label and a variant's pages are the admin's, and a visitor sees a variant only at its address. `/for/<slug>` is rendered by `render.landing_document(variant=…)` from the variant's pages; a language it lacks falls back to its own page in the default language, never the main page's, and the page says `noindex` and points its canonical at the root. A link to `/register` carries `v` and `c` (`render.carry_origin`, a rewrite of the finished page) only while `landing.configured` is true, together with `Cache-Control: private, max-age=60` instead of `public`; a code that is not in `campaigns` is treated as none and never echoed. An unknown or disabled variant answers the app shell, like any unknown path. The rewrite covers a link to `/register` as a path and as this hub's own address (an operator may write either as a button's target), and the visible language switch keeps the campaign so that a visitor who changes language does not lose it; the `alternate` links of the head are for search engines and carry nothing. `campaign_count` keeps "no campaign" as `""` because a primary key cannot hold `null`; the statistics (PR 2) give it as `null` and, in the CSV, empty.
+
+**Reason:** a variant is the same kind of page as the main one with its own words, so one renderer and one validator keep the two from drifting; and a hub that does nothing about campaigns must stay exactly what §16.7 says, so everything new hangs on one predicate.
+
+**Rejected alternatives:**
+- A table of variants: five small documents that are always read and written together with the page, so a column is simpler and keeps the setting one row with one lock.
+- A per-visitor choice of the variant: the contract has the link decide, no cookie, nothing that tells a visitor from another.
+- Rewriting the links in the renderer's helpers (`_button`, `_link`): every new place that links to `/register` would have to know; one rewrite of the finished page cannot miss one.

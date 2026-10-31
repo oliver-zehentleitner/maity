@@ -547,7 +547,7 @@ hub, would then refuse each other until both shipped together.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
+**Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order; cards tsk-w0zws1c72zm3 and tsk-q7wxkw6zkfx4 (2026-10-31), for the group-chat usage diagnostic
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
 `say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
@@ -566,6 +566,27 @@ name no member has is matched against the placements' own handles, and two
 matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
+
+A positional recipient that matches no member in `say` is compared with
+the actual conversation IDs from `GET …/conversations`; a known chat gets
+a usage hint pointing to `--chat <id>`. First-day feedback
+showed that asking for `--type` sent the caller toward the wrong command
+form. Member resolution runs first: handles and aliases may begin with
+`cnv-`, and actual member IDs stay opaque under §1.1. An unknown recipient
+still goes to the hub; explicit `--chat` selects conversation delivery.
+The first implementation rejected that prefix before lookup. Review
+rejected that approach because it made valid `cnv-bot` handles and opaque
+member IDs unreachable.
+
+The chat comparison intentionally reads the paginated conversation list
+only for unmatched recipients, including before a missing-`--type` error.
+That error-path cost lets it compare opaque IDs without guessing their
+shape; resolved members and recipient tokens need no extra read.
+Hub/transport failures of this advisory read skip the hint, preserving
+the normal message-type check or the hub's response to the send. The
+initial propagation of hint-read failures was rejected because it let
+an optional diagnostic replace the command's own outcome. Member lookup
+and sending keep their normal error handling.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
 only in mentions and at login. An agent that learnt a member by an old

@@ -1,0 +1,3 @@
+### Added
+
+- hub: landing variants and campaigns (§16.7.2, the setting): `variants` (at most 5, each `{pages}` with every rule of the main page) and `campaigns` (at most 200 `{code, label}`) in `PATCH /admin/settings/landing`, not in `GET /landing`; a variant at `/for/<slug>` (canonical to the root, `noindex`, not in the sitemap, the app shell when unknown or disabled), its draft in the preview with `?variant=`; while either is set, `?c=<known code>` and the variant put `v` and `c` into every link to `/register` and the page answers `Cache-Control: private` (migration `20261031065451_landing_variants`, tsk-tk10nnqdh8h1).
