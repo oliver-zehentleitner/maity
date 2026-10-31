@@ -359,6 +359,21 @@ def test_a_clock_skew_is_not_retried_past_the_callers_timeout(
     assert len(fake.signed()) == 1
 
 
+def test_a_clock_skew_after_the_deadline_ends_wait_as_a_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No time is left for the client's own retry: exit 3 as for any timeout, not exit 1."""
+    fake.skew_once = True
+    real = time.monotonic
+
+    def clock() -> float:  # the first request used up the whole --timeout
+        return real() + (100.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    assert cli.main(["wait", "--timeout", "8"]) == cli.EXIT_TIMEOUT
+    assert len(fake.signed()) == 1
+
+
 # --- report, ask, api ---------------------------------------------------------------------
 
 

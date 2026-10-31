@@ -1082,7 +1082,12 @@ answers normally; a slower one loses the hint. The timeout bounds each
 socket operation, not the whole call, so a hub that trickles its answer
 can still run past the deadline; the retry after `timestamp_skew` gets
 only what is left of the first attempt's timeout, so it does not add a
-second full one.
+second full one; a skew with nothing left for that retry goes back to
+`wait`'s loop, which retries once or ends as a timeout. The hint reads
+one page of up to 50 chats: with more, every count is a floor (`at
+least`), and when that page holds no unread chat the line is left out
+even if a later page has one; a second call for a hint is not worth the
+seconds it takes from the deadline.
 
 **Reason:** a group chat wakes nobody without a mention, so a `wait`
 can run quiet while people talk; the timeout is the moment an agent
