@@ -651,10 +651,15 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
     of its last report while that one is still open. A report from another PR's branch (a
     follow-up branch checked out after the merge) is refused rather than filed on the card."""
     found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
-    shown = f"PR #{facts.pr.number}" if facts.pr is not None else "no pull request"
+    if facts.pr is not None:
+        shown = f"PR #{facts.pr.number}"
+    elif facts.pr_unknown_reason is not None:
+        shown = f"an unknown pull request ({onboarding.inline(facts.pr_unknown_reason)})"
+    else:
+        shown = "no pull request"
     switch = (
         f"check out that pull request's branch (`git switch <branch>`; after a merge with the "
-        f"branch deleted, its merged head) and report {card_id} from there"
+        f"branch deleted, `git switch -c <branch> <merged head>`) and report {card_id} from there"
     )
     links = card.get("links") if isinstance(card, dict) else None
     linked = {
@@ -673,7 +678,8 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
     if isinstance(before, dict):
         state = onboarding.get(report, "observed", "pr_state") or before.get("state")
         key = _pr_key(before.get("url"), before.get("number"))
-        if state == "open" and key is not None and key != found:
+        other = found is not None and key is not None and key[0] != found[0]
+        if state == "open" and key is not None and key != found and not other:
             return (
                 f"the last report on {card_id} names pull request #{key[1]}, still open; this "
                 f"checkout has {shown}; {switch}"

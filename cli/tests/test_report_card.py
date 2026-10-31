@@ -102,9 +102,22 @@ def test_a_branch_without_a_pull_request_on_a_linked_card_is_refused(
     assert "this checkout has no pull request" in capsys.readouterr().err
 
 
-def _before(number: int, state: str, observed: str | None = None) -> dict[str, Any]:
+def test_a_checkout_whose_pull_request_is_unknown_is_refused_on_a_linked_card(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without gh the CLI cannot show that the report is the card's pull request."""
+    _card(fake, links=[_link(780)])
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "this checkout has an unknown pull request (gh is not installed)" in err
+    assert not _sent(fake)
+
+
+def _before(
+    number: int, state: str, observed: str | None = None, repo: str = REPO
+) -> dict[str, Any]:
     return {
-        "pr": {"number": number, "url": f"{REPO}/pull/{number}", "state": state},
+        "pr": {"number": number, "url": f"{repo}/pull/{number}", "state": state},
         "observed": {"pr_state": observed} if observed else None,
     }
 
@@ -126,6 +139,7 @@ def test_another_pull_request_than_the_open_one_reported_before_is_refused(
         _before(780, "open", observed="merged"),  # the probe saw it merged: a follow-up PR is fine
         _before(780, "closed"),
         _before(12, "open"),  # the same pull request again
+        _before(780, "open", repo="https://github.com/acme/other"),  # another repository
     ],
 )
 def test_a_report_after_a_merged_closed_or_the_same_pull_request_goes_through(

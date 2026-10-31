@@ -258,7 +258,8 @@ It refuses with exit 4, before anything is sent, on any of these:
   requests (`kind: pr`, `maity link`), or its last report names another
   pull request that is still open. A report for another PR is sent from
   that PR's branch (`git switch`), or after a merge with the branch
-  deleted, from its merged head
+  deleted, from that branch recreated at its merged head
+  (`git switch -c <branch> <merged head>`)
 
 Before sending, `report` prints what it reports on standard error:
 `reporting <branch> at <head>, PR #<n> (<state>)`.

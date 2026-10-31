@@ -109,7 +109,7 @@ itself.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** a member's report that `maity report` for a merged pull request, sent from the branch of the next one, filed the wrong head and pull request on the card (2026-10-30); the coordinator's decision on the card tsk-scw537kndwwg between a `--pr` flag and a card check, 2026-10-31
+**Source:** a member's report that `maity report` for a merged pull request, sent from the branch of the next one, filed the wrong head and pull request on the card (2026-10-30); the coordinator's decision on the card tsk-scw537kndwwg between a `--pr` flag and a card check, and to refuse a checkout without a found pull request, 2026-10-31; the contract text of §6.6 in PR #816
 **See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-31
 **Revisit when:** reports for a pull request other than the checked-out one become routine, or cards carry no pull request link and no earlier report often enough that the check never applies
 
@@ -128,6 +128,17 @@ card itself says which pull request it belongs to, once it is linked or
 reported, so the check needs no new input and keeps every fact coming
 from git and the forge. A merged or closed earlier pull request does not
 refuse, since a follow-up pull request on the same card is legitimate.
+A checkout without a found pull request (`pr_status` `none`, or `unknown`
+because gh is missing or the remote is not on a host gh knows) is refused
+on a card with pull request links as well, rather than let through: the
+check exists to show that the report describes the card's pull request,
+and a report that cannot name one cannot show that. Letting it through
+would file the checkout's facts on the card exactly in the case the check
+cannot see, the same partial truth 66da7721 refuses; the message says
+which of the two it is, and the way out is the card's branch, or gh, or
+`--no-code` when the report carries no code. An open pull request of the
+last report in another repository of the owner does not refuse either,
+as a link there does not: it says nothing about this checkout.
 
 **Rejected alternatives:**
 - A `--pr N` flag that reads head, branch and state of that pull request
@@ -138,3 +149,9 @@ refuse, since a follow-up pull request on the same card is legitimate.
   card check covers the case without a flag.
 - Only printing the reported branch and pull request: it helps an agent
   that reads it, and the agent that made the mistake had no reason to.
+- Letting a checkout without a found pull request through, and checking
+  only a pull request that was found: a missing gh, or a branch whose
+  pull request is not open yet, would then skip the check on a linked
+  card, and the report would file that checkout's head as the card's
+  work unchecked. The refusal costs a reachable fix (the card's branch,
+  or installing gh); a wrong report on the card costs a reviewer's time.
