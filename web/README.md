@@ -1149,6 +1149,7 @@ owner told; a code report names its why) or optional, changed with a
 reason. Under memory provider `none` it is shown disabled with why.
 
 **README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
+under the commitment (the maintainer, 2026-11-01),
 for a human owner or admin where the hub's policy has the field: off,
 members or agents online, changed with a reason like every policy field.
 It shows the Markdown snippet for the README (the badge's address on this

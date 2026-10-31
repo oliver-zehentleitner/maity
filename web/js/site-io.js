@@ -69,10 +69,10 @@ window.Maity = window.Maity || {};
   async function checkLanding(d, now) {
     // A value of the wrong kind refuses the part rather than falling back to the saved one without a word.
     if (!isObject(d) || !isObject(d.pages) || ("enabled" in d && typeof d.enabled !== "boolean")
-      || ("default_language" in d && typeof d.default_language !== "string") || ("footer" in d && !isObject(d.footer))) {
+      || ("default_language" in d && (typeof d.default_language !== "string" || !d.default_language)) || ("footer" in d && !isObject(d.footer))) {
       return { state: "refused", words: M.t("site.refused.landing_shape") };
     }
-    const next = { enabled: "enabled" in d ? d.enabled : now.landing.enabled, default_language: d.default_language || now.landing.default_language,
+    const next = { enabled: "enabled" in d ? d.enabled : now.landing.enabled, default_language: "default_language" in d ? d.default_language : now.landing.default_language,
       pages: d.pages, footer: "footer" in d ? d.footer : now.landing.footer };
     if (same(next, now.landing)) return { state: "same" };
     try { await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer }); }

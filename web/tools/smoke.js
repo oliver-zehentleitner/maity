@@ -5079,6 +5079,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href")))
     && byId("memory-provider") && byId("memory-provider").value === "keep-the-why" && text(memPanel).includes("It makes no setup card and cancels none"),
     "settings: the memory provider with links to its setup cards and the dashboard's path, changeable by the owner (tsk-41hpr02cvej8)");
+  // The Keep the Why commitment stands above the README badge (the maintainer, 2026-11-01).
+  const setForms = main.querySelectorAll("form");
+  const ktwAt = setForms.findIndex((f) => f.className.split(" ").includes("ktw-policy-form"));
+  const badgeAt = setForms.findIndex((f) => f.className.split(" ").includes("badge-form"));
+  expect(ktwAt >= 0 && badgeAt >= 0 && ktwAt < badgeAt, "settings: the Keep the Why commitment above the README badge (" + ktwAt + ", " + badgeAt + ")");
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
@@ -8400,10 +8405,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
       "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
     // A landing value of the wrong kind refuses the part, never the saved value in its place.
-    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }].map((bad) =>
+    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }].map((bad) =>
       SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));
     expect(siKinds.every((r) => r.parts && r.parts.landing.state === "refused"),
-      "site: a landing footer, enabled or default language of the wrong kind refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
+      "site: a landing footer, enabled or default language of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
     // Registration all from the environment: the export leaves the part out, and imports again.
     const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
     const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);
