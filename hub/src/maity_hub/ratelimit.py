@@ -39,7 +39,10 @@ class Limiter:
 
     def take(self, key: str, count: int) -> int:
         """Record `count` attempts at once; 0 when all fit, else the seconds until
-        enough have left the window for all of them (none is recorded then)."""
+        enough have left the window for all of them (none is recorded then). `count`
+        is at most the limit: more never fits, and no wait would be true."""
+        if count > self.limit:
+            raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
         if shared_counts.active():
             return self._shared_take(key, count)[0]
         return self._take_at(key, count, time.monotonic())
@@ -66,17 +69,15 @@ class Limiter:
             if fits_at < 1:
                 return max(1, math.ceil((fits_at - window.elapsed) * self.window))
         before = current - count  # what this window already held, the next window's previous
-        if before <= 0 or count > limit:
-            return max(1, math.ceil(remaining + (self.window if count > limit else 0)))
+        if before <= 0:
+            return max(1, math.ceil(remaining))
         fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
         return max(1, math.ceil(remaining + fits_at * self.window))
 
     def _log_wait(self, log: shared_counts.Log, count: int) -> int:
         """Seconds until enough attempts of an exact log have left the window for `count`
         more, as the process counts."""
-        over = log.total + count - self.limit
-        if over > log.total:  # more than the whole window holds
-            return max(1, math.ceil(self.window))
+        over = log.total + count - self.limit  # at most `log.total`: `count` fits the limit
         seen = 0
         for at, held in log.entries:
             seen += held
@@ -93,59 +94,45 @@ class Limiter:
             while hits and hits[0] <= now - self.window:
                 hits.popleft()
             over = len(hits) + count - self.limit
-            if over > 0:
-                if over > len(hits):  # more than the whole window holds
-                    return max(1, math.ceil(self.window))
+            if over > 0:  # at most len(hits), as `count` is at most the limit
                 return max(1, math.ceil(hits[over - 1] + self.window - now))
             hits.extend([now] * count)
             return 0
 
-    def place(self, key: str) -> tuple[int, Mark]:
-        """Like `hit`, and the mark of the attempt it recorded (None when refused), for
-        `release` to give back exactly that one later."""
+    def place(self, key: str, count: int = 1) -> tuple[int, Mark]:
+        """Like `take`, and the mark of the attempts it recorded (None when refused), for
+        `release` to give back exactly those later: work that did not happen after all."""
+        if count > self.limit:
+            raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
         if shared_counts.active():
-            wait, start = self._shared_take(key, 1)
+            wait, start = self._shared_take(key, count)
             return wait, (None if wait else start)
         now = time.monotonic()
-        wait = self._take_at(key, 1, now)
+        wait = self._take_at(key, count, now)
         return wait, (None if wait else now)
 
-    def release(self, key: str, mark: Mark) -> None:
-        """Give back the attempt `place` recorded at `mark`; nothing when it has left the
-        window already, so a late release never frees an attempt made after it."""
+    def release(self, key: str, mark: Mark, count: int = 1) -> None:
+        """Give back the `count` attempts `place` recorded at `mark`; nothing when they have
+        left the window already, so a late release never frees an attempt made after them."""
         if mark is None:
             return
         if isinstance(mark, datetime) and self.exact:
-            # The attempt's own row; once it has left the window it counts for nothing anyway.
-            shared_counts.subtract(self.name, key, mark, 1)
+            # The attempts' own row; once it has left the window it counts for nothing anyway.
+            shared_counts.subtract(self.name, key, mark, count)
             return
         if isinstance(mark, datetime):
-            # The window it was counted in, while that window is still read (current or
+            # The window they were counted in, while that window is still read (current or
             # previous); an older one counts for nothing any more.
             current = shared_counts.read(self.name, key, self.window).start
             if mark >= current - timedelta(seconds=self.window):
-                shared_counts.subtract(self.name, key, mark, 1)
+                shared_counts.subtract(self.name, key, mark, count)
             return
         with self._lock:
             hits = self._hits.get(key)
-            if hits is not None and mark in hits:
+            for _ in range(count):
+                if hits is None or mark not in hits:
+                    break
                 hits.remove(mark)
-
-    def give_back(self, key: str, count: int) -> None:
-        """Forget the `count` newest attempts: what `take` recorded for work that
-        did not happen after all."""
-        if shared_counts.active() and self.exact:
-            shared_counts.log_drop_newest(self.name, key, self.window, count)
-            return
-        if shared_counts.active():
-            current = shared_counts.read(self.name, key, self.window).start
-            shared_counts.subtract(self.name, key, current, count)
-            return
-        with self._lock:
-            hits = self._hits.get(key)
-            for _ in range(min(count, len(hits or ()))):
-                assert hits is not None
-                hits.pop()
 
     def blocked(self, key: str) -> int:
         """Like `hit`, without recording an attempt."""
@@ -154,11 +141,11 @@ class Limiter:
             return 0 if log.total + 1 <= self.limit else self._log_wait(log, 1)
         if shared_counts.active():
             window = shared_counts.read(self.name, key, self.window)
-            if window.estimate() < self.limit:
-                return 0
             one_more = shared_counts.Window(  # as if one more attempt were taken now
                 window.current + 1, window.previous, window.elapsed, window.start
             )
+            if one_more.estimate() <= self.limit:  # what `hit` would let through
+                return 0
             return self._wait(one_more, 1)
         now = time.monotonic()
         with self._lock:

@@ -196,25 +196,6 @@ def log_read(bucket: str, key: str, seconds: float) -> Log:
         return _log(conn, bucket, _key(key), seconds, _now())
 
 
-def log_drop_newest(bucket: str, key: str, seconds: float, count: int) -> None:
-    """Forget the `count` newest attempts inside the window."""
-    key, now = _key(key), _now()
-    c = t.rate_count.c
-    with _db().begin() as conn:
-        write_guard.exempt(conn)  # a count is no write of an account
-        _hold(conn, bucket, key)
-        for at, held in reversed(_log(conn, bucket, key, seconds, now).entries):
-            if count <= 0:
-                break
-            taken = min(held, count)
-            conn.execute(
-                update(t.rate_count)
-                .where(c.bucket == bucket, c.subject == key, c.window_start == at)
-                .values(count=c.count - taken)
-            )
-            count -= taken
-
-
 def read(bucket: str, key: str, seconds: float) -> Window:
     with _db().connect() as conn:
         return _window(conn, bucket, _key(key), seconds, _now())

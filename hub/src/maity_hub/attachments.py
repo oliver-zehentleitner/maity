@@ -12,6 +12,7 @@ import threading
 import time
 import unicodedata
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -25,7 +26,7 @@ from maity_hub.access import Membership
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.ratelimit import Limiter
+from maity_hub.ratelimit import Limiter, Mark
 from maity_hub.views import principal_ids, ts
 
 FILE_CAP = 10 * 1024 * 1024  # per file, before re-encoding
@@ -116,29 +117,42 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def charge(uploads_key: str, size: int) -> int:
+@dataclass(frozen=True)
+class Charged:
+    """What one upload was counted as, for `give_back` to return exactly that."""
+
+    upload: Mark
+    volume: Mark
+    units: int
+
+
+def charge(uploads_key: str, size: int) -> tuple[int, Charged | None]:
     """Count one upload of `size` bytes against the membership's rate, or the seconds to
     wait; nothing is counted then."""
     units = max(1, math.ceil(size / RATE_UNIT))
-    wait = UPLOADS.hit(uploads_key)
+    counted = min(units, VOLUME.limit)
+    wait, upload = UPLOADS.place(uploads_key)
     if wait:
-        return wait
-    wait = VOLUME.take(uploads_key, min(units, VOLUME.limit))
+        return wait, None
+    wait, volume = VOLUME.place(uploads_key, counted)
     if wait or units > VOLUME.limit:
-        UPLOADS.give_back(uploads_key, 1)
-        return wait or RATE_WINDOW
-    return 0
+        UPLOADS.release(uploads_key, upload)
+        VOLUME.release(uploads_key, volume, counted)
+        return wait or RATE_WINDOW, None
+    return 0, Charged(upload, volume, counted)
 
 
-def give_back(uploads_key: str, size: int) -> None:
-    UPLOADS.give_back(uploads_key, 1)
-    VOLUME.give_back(uploads_key, min(max(1, math.ceil(size / RATE_UNIT)), VOLUME.limit))
+def give_back(uploads_key: str, charged: Charged) -> None:
+    """Return an upload's count when nothing was stored after all."""
+    UPLOADS.release(uploads_key, charged.upload)
+    VOLUME.release(uploads_key, charged.volume, charged.units)
 
 
-def check_rate(uploads_key: str, size: int) -> None:
-    wait = charge(uploads_key, size)
-    if wait:
-        raise rate_limited(wait)
+def check_rate(uploads_key: str, size: int) -> Charged:
+    wait, charged = charge(uploads_key, size)
+    if wait or charged is None:
+        raise rate_limited(wait or RATE_WINDOW)
+    return charged
 
 
 def used(conn: Connection, project_id: str) -> int:

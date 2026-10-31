@@ -122,13 +122,13 @@ def check_rate(owner_id: str) -> None:
 def count_change(conn: Connection | None, owner_id: str) -> None:
     """Count one `PUT` or `DELETE` of this avatar, or refuse it. Inside a transaction
     (`conn`), a rollback or a retry of it gives the count back."""
-    wait = CHANGES.hit(owner_id)
+    wait, mark = CHANGES.place(owner_id)
     if wait:
         raise rate_limited(wait)
     if conn is not None:
         from maity_hub.events import on_rollback
 
-        on_rollback(conn, lambda: CHANGES.give_back(owner_id, 1))
+        on_rollback(conn, lambda: CHANGES.release(owner_id, mark))
 
 
 def _rows(conn: Connection, owner_ids: Iterable[str]) -> dict[str, Any]:
