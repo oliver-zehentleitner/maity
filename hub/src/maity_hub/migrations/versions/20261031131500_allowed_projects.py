@@ -5,8 +5,8 @@ may join, by any way a membership or an instance comes to be.
 
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
-Revision ID: 20261031131500_agent_allowed_projects
-Revises: 20261031112210_agent_owners_policy
+Revision ID: 20261031131500_allowed_projects
+Revises: 20261031112210_agent_owners
 Create Date: 2026-10-31
 """
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20261031131500_agent_allowed_projects"
-down_revision: str | None = "20261031112210_agent_owners_policy"
+revision: str = "20261031131500_allowed_projects"
+down_revision: str | None = "20261031112210_agent_owners"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
