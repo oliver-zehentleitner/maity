@@ -3272,6 +3272,43 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## The legal pages and registration import and export JSON too; text not loaded stops a preview
+
+**Id:** 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-knb9me77f32t (the maintainer, 2026-10-31, after importing Landing V3: the same importer for the legal pages and registration); the coordinator's note that a preview of an imported but not loaded draft should say so instead of flickering (2026-10-31); docs/api.md §16.4, §16.7.1; the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub offers a dry check for the registration setting, or a PATCH of the legal pages may change several pages at once
+**See:** views.md#the-landing-page-is-imported-and-exported-as-json-in-its-editor-an-import-is-checked-by-the-preview-call-and-saved-only-by-save — c174a492-2691-4887-9507-e1ba2e805a1f — as of 2026-10-31
+
+Each legal page has its own Import or export JSON, for its languages (or
+the same under the page's key). A load is checked by the page's preview
+call and replaces the page's draft after a confirmation. Registration has
+one for the body of its PATCH: a load fills the form after a
+confirmation, keeps the fields the environment or the legal pages set,
+and names a field the setting does not have. A field the JSON does not
+name keeps what the form shows, typed and not saved included, since the
+load starts from the form; an empty limit is left out of the export, so
+an export always loads again. A legal page's load from a file of several
+pages takes only its own and names the others. The hub checks the values
+when the admin saves. Both editors share one part (`js/json-io.js`). In
+every editor, the landing page's included, a preview while the JSON
+field holds text that was neither loaded nor exported says so and opens
+no tab.
+
+**Reason:** a PATCH of the legal pages changes one page per call, so one
+import per page matches what a save can carry. Registration has no
+preview call, and a PATCH would save, so the form is the place to look
+the values over. A preview of the editor's draft beside unloaded text
+looked like a broken preview: the tab opened and closed at once.
+
+**Rejected alternative:** one import for all three legal pages, which
+would need three saves the admin does not see. Checking registration by
+the real PATCH, which saves on success. Moving the landing editor onto
+the shared part in the same change: its import also takes one page of
+several and redraws the section list, so it keeps its own for now.
+
 ## The jour fixe is a tab of its own; its series and moderator order are in Project settings
 
 **Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
@@ -3384,3 +3421,39 @@ to a card (a8e479be's earlier rule): an agent cannot change the
 provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
+
+## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
+
+**Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+
+The header's row beside the state shows the repository, then the
+project's own links that are set (issues, wiki, discussions, chat, each
+with its mark), then the Keep the Why dashboard. Each is plain https
+only and opens in a tab of its own with `rel="noopener noreferrer"`. The
+repository's button reads "Repository" for every forge. Its mark and
+its name for a screen reader ("Repository on GitHub") still say which
+forge. The overview's Project tab shows the same links as buttons
+beside the repository. They are not in the header's list of projects:
+each entry there is itself a link, which cannot hold four more, and `/me`
+does not carry a project's links; §6.11 was changed to name the header
+beside the project's state instead (review of #884). Project settings have four fields that send only
+the links that changed; an empty field clears its link, and each refusal
+of the hub is said at its field.
+
+**Reason:** with up to six buttons in the row, the forge's name as the
+label took room the four new ones need, and the mark already shows the
+forge. The hub merges links by key (§6.11), so a form that sent all four
+would overwrite another admin's change to a link it did not touch.
+
+**Rejected alternatives:**
+- The forge's name as the label, as before (the old header): wider, and
+  it said twice what the mark says.
+- Sending all four links on every save (#846): it loses another admin's
+  change made meanwhile.
+

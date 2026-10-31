@@ -726,14 +726,19 @@ def _takes_over(packet: dict[str, Any]) -> list[str]:
     who = ms.get("takes_over")
     if not isinstance(who, dict):
         return []
-    line = f"Takes over from @{label(who)}"
+    return [f"Takes over from @{label(who)}{_handover_ref(ms)}."]
+
+
+def _handover_ref(ms: dict[str, Any]) -> str:
+    """`; the hand-over is in <card | message #seq>: <command>` for a hand-over the join named
+    in a form that can be read; empty otherwise, so nothing points at it as `above`."""
     handover = _dict(ms.get("handover"))
     kind, ref = handover.get("kind"), handover.get("id")
-    if kind == "task" and ref:
-        line += f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
-    elif kind == "message" and isinstance(ref, int):
-        line += f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
-    return [line + "."]
+    if kind == "task" and isinstance(ref, str) and ref:
+        return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
+    if kind == "message" and isinstance(ref, int) and not isinstance(ref, bool):
+        return f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
+    return ""
 
 
 def _check_in(packet: dict[str, Any]) -> list[str]:
@@ -843,12 +848,18 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             "",
         ]
     elif first:
-        # A link does not say yet whom it replaces (tsk-f32nnh1de7gn): point at where a
-        # handover would be, so a replacement does not start blind.
+        # Without a briefing, point at the hand-over: the one the join named, or where one
+        # would be when the join named no takeover, so a replacement does not start blind.
         lead = ms.get("reports_to")
         ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
-        if isinstance(ms.get("takes_over"), dict):
+        takes_over = ms.get("takes_over")
+        if isinstance(takes_over, dict) and _handover_ref(ms):
             line = f"No briefing was given with this join: read the hand-over above and {ask}."
+        elif isinstance(takes_over, dict):
+            line = (
+                f"No briefing was given with this join and no hand-over named: {ask} where the "
+                f"hand-over of @{label(takes_over)} is before you take work."
+            )
         else:
             line = (
                 "No briefing was given with this join. If you replace someone, look for the "

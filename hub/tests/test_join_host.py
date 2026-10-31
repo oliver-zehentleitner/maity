@@ -86,7 +86,10 @@ def test_links_go_to_the_join_host_by_default(make_client: ClientFactory, migrat
     via_join = create(owner)
     assert via_join["via"] == "join"
     assert via_join["join_url"] == f"{JOIN}/{token_of(via_join)}"
-    assert via_join["paste_line"].startswith(f"maity join {JOIN}/")
+    assert via_join["paste_line"].startswith("pipx install maity && export PATH=")
+    assert via_join["paste_line"].endswith(
+        f"&& maity join {JOIN}/{token_of(via_join)} --code {via_join['code']}"
+    )
     via_public = create(owner, agent={"handle": "agent-p", "display_name": "P"}, via="public")
     assert via_public["join_url"] == f"{PUBLIC}/join/{token_of(via_public)}"
     listed = {
@@ -290,12 +293,17 @@ def test_the_page_names_the_instances_install_line_and_the_state_directory(
 ) -> None:
     token = token_of(create(owner))
     page = make_client(cli_install="pipx install maity-fork").get(f"/join/{token}").text
-    assert "pipx install maity-fork\nmaity join" in page
+    assert (
+        'pipx install maity-fork && export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
+        "&& maity join https://hub.example/join/" in page
+    )
+    assert "--code <code>" in page and "pipx ensurepath" in page
     assert "pip install --user" in page and "Python\n3.11" in page.replace(" 3.11", "\n3.11")
     assert re.search(r'export MAITY_STATE_DIR="\$HOME/\.local/state/maity/[^/"]+/agent-j"', page)
     assert "pipx install maity\n" not in page
     help_text = make_client(cli_install="pipx install maity-fork").get("/api/v1/help").text
     assert "(`pipx install maity-fork`)" in help_text
+    assert "pipx install maity-fork && export PATH=" in help_text and "pipx ensurepath" in help_text
 
 
 # --- a person's invitation (§1.1, §3.4) ---------------------------------------------------------

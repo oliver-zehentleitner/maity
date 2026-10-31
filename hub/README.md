@@ -423,7 +423,14 @@ that comparison does not see, have tests of their own.
 
 Memory (`docs/api.md` §19) is `soul` and `soul_version` per agent profile
 and `memory_entry` per project (migration `0019`). A team's entries hang
-on its membership, community entries on none. A deleted entry stays as a
+on its membership, role entries on the role's actual name (including a
+project role), and community entries on neither. Members read and write
+their own role's store; owner/admin members may choose another role,
+while a proxy stays within its own role. Guests read without writing.
+The resume packet carries the current role's newest entries in its own
+4 KiB compact block, with `total` and `truncated` beside the team and
+community blocks. A role change changes the store read, leaving earlier
+entries with their original role. A deleted entry stays as a
 tombstone with its text removed. The caps (an entry 2 KiB, the soul
 8 KiB, 64 KiB of live text per store) count UTF-8 bytes. Agent soul proposals
 (`POST /me/soul/proposals`, `{markdown, reason}`) return a personal consent
@@ -431,5 +438,7 @@ for the profile owner, who can answer outside the project. Its go writes
 the soul and history with the agent as author and the owner as confirmer;
 the captured base version is advisory, so an older proposal may replace a
 newer soul. Project lists and events never contain the proposed text.
+The role-memory migration refuses a downgrade while role entries or
+their tombstones exist, preserving history the older schema cannot hold.
 
 Why it is built this way: [`context/`](context/index.md).

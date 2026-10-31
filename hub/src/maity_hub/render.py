@@ -184,7 +184,12 @@ WORDS: dict[str, dict[str, str]] = {
         "theme": "Switch between the light and the dark theme",
         "rings": "People and agents in three rings: you, your team, the community",
         "you": "you",
-        "approve": "Approve",
+        "yes": "Yes",
+        "no": "No",
+        "reply": "Reply",
+        "platform": "Platform",
+        "open_source": "Open source",
+        "follow": "Follow",
     },
     "de": {
         "sign_in": "Anmelden",
@@ -196,19 +201,24 @@ WORDS: dict[str, dict[str, str]] = {
         "older": "Dies ist eine frühere Fassung, Stand {version}. Die aktuelle steht unter {current}.",
         "language": "Sprache",
         "people": "Menschen",
-        "agents": "Agenten",
+        "agents": "Agents",
         "public_projects": "Öffentliche Projekte",
         "cards_done_week": "Karten diese Woche erledigt",
         "people_online": "Menschen online",
-        "agents_online": "Agenten online",
+        "agents_online": "Agents online",
         "imprint": "Impressum",
         "privacy": "Datenschutz",
         "terms": "Nutzungsbedingungen",
         "preview": "Vorschau eines ungespeicherten Entwurfs",
         "theme": "Zwischen hellem und dunklem Farbschema wechseln",
-        "rings": "Menschen und Agenten in drei Ringen: du, dein Team, die Community",
+        "rings": "Menschen und Agents in drei Ringen: du, dein Team, die Community",
         "you": "du",
-        "approve": "Freigeben",
+        "yes": "Ja",
+        "no": "Nein",
+        "reply": "Antworten",
+        "platform": "Plattform",
+        "open_source": "Open Source",
+        "follow": "Folgen",
     },
 }
 LEGAL_ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}
@@ -279,9 +289,7 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     value = stats[key]
     label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
-        if key in ("people_online", "agents_online"):
-            return f'<div class="stat"><b>&lt; {int(stats.get("online_floor", 5))}</b>{label}</div>'
-        return None
+        return None  # below the floor, or public pages off: the counter is left out (§16.7)
     return f'<div class="stat"><b><span data-lp-count>{int(value)}</span></b>{label}</div>'
 
 
@@ -317,7 +325,10 @@ def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
             '<div class="inbox-item card d5" data-lp-inbox>'
             f'<div class="from">{escape(item["from"])}</div>'
             f'<p class="question">{escape(item["question"])}</p>{context}'
-            f'<span class="yes" aria-hidden="true">{escape(words["approve"])}</span></div>'
+            '<div class="answers" aria-hidden="true">'
+            f'<span class="yes">{escape(words["yes"])}</span>'
+            f'<span class="no">{escape(words["no"])}</span>'
+            f'<span class="reply">{escape(words["reply"])}</span></div></div>'
         )
     steps = "".join(
         f'<li class="step s{n}"><h3>{escape(step["title"])}</h3><p>{escape(step["text"])}</p></li>'
@@ -342,7 +353,7 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
         cells = [c for c in (_counter(stats, k, words) for k in section["items"]) if c]
         if not cells:
             return ""
-        return _wrap(index, "section", f'<div class="stats">{"".join(cells)}</div>')
+        return _wrap(index, "section strip", f'<div class="stats">{"".join(cells)}</div>')
     if kind == "steps":
         items = "".join(
             '<li class="card"><h3>{}</h3><p>{}</p>{}</li>'.format(
@@ -367,8 +378,12 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             )
             for item in section["items"]
         )
+        rings = landing_files.svg("scales-rings.svg")
         return _wrap(
-            index, "section section-alt scales", f'{heading}<div class="scales-grid">{cards}</div>'
+            index,
+            "section section-alt scales",
+            f'{heading}<div class="scales-layout"><div class="scales-grid">{cards}</div>'
+            f'<div class="scales-art hide-m">{rings}</div></div>',
         )
     if kind == "demo":
         return _demo(index, section, words)
@@ -410,7 +425,23 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
     return ""  # activity, profiles, explore, collab: nothing to show in this version
 
 
-def _hero(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
+def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
+    """The hero's line of who is online, from the shared stats; a counter below the floor, or one
+    no enabled `stats` section names, is left out, and the line with it when none is left."""
+    cells = []
+    for key in ("people_online", "agents_online"):
+        value = (stats or {}).get(key)
+        if value is not None:
+            cells.append(
+                f'<span class="online-item"><b><span data-lp-count>{int(value)}</span></b> '
+                f"{escape(words[key])}</span>"
+            )
+    if not cells:
+        return ""
+    return f'<span class="online"><span class="dot pulse" aria-hidden="true"></span>{"".join(cells)}</span>'
+
+
+def _hero(index: int, section: dict[str, Any], words: dict[str, str], stats: Any = None) -> str:
     parts = []
     if section.get("eyebrow"):
         parts.append(f'<p class="eyebrow">{escape(section["eyebrow"])}</p>')
@@ -421,8 +452,10 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     if section.get("cta_secondary"):
         buttons.append(_button(section["cta_secondary"], "btn-secondary"))
     parts.append(f'<div class="cta">{"".join(buttons)}</div>')
-    if section.get("note"):
-        parts.append(f'<div class="note">{markdown(section["note"])}</div>')
+    note = f'<div class="note">{markdown(section["note"])}</div>' if section.get("note") else ""
+    online = _online(stats, words)
+    if note or online:  # the note is one plain line, the online numbers beside it (§16.7)
+        parts.append(f'<div class="hero-meta">{note}{online}</div>')
     rings = (
         landing_files.svg("hero-rings.svg")
         .replace("{label}", escape(words["rings"], quote=True))
@@ -478,15 +511,30 @@ def landing_document(
     # A variant has pages of its own, and a language it lacks falls back to its own page in the
     # default language, never to the main page's (§16.7.2).
     pages: dict[str, Any] = setting["variants"][variant]["pages"] if variant else setting["pages"]
+    # The languages in one fixed order, whatever order the database keeps the keys in (PostgreSQL's
+    # jsonb sorts them): the default first, then the rest alphabetically.
+    tags = sorted(pages, key=lambda tag: (tag != setting["default_language"], tag))
     default = pages.get(setting["default_language"]) or next(iter(pages.values()))
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
-    nav = "".join(
-        f'<a href="#s{i}">{escape(s["title"])}</a>'
+    # The hero's online numbers follow the rule of `GET /landing`: only a counter that an enabled
+    # `stats` section of this page names is shown, so one the operator left off is published
+    # nowhere (§16.7); the page is handed every counter, the renderer filters.
+    named = {item for _, s in sections if s["type"] == "stats" for item in s["items"]}
+    hero_stats = {k: v for k, v in (stats or {}).items() if k in named}
+    drawn = [
+        (
+            i,
+            s,
+            _hero(i, s, words, hero_stats) if s["type"] == "hero" else _section(i, s, words, stats),
+        )
         for i, s in sections
-        if s["type"] in ("steps", "scales", "demo", "opensource", "faq") and s.get("title")
-    )
+    ]
+    # The header's links are the shown sections that carry a `nav_label`, in their order (§16.7):
+    # a section that draws nothing is no link, and a title is never a link text.
+    links = [(i, s["nav_label"]) for i, s, html in drawn if s.get("nav_label") and html]
+    nav = "".join(f'<a href="#s{i}">{escape(label)}</a>' for i, label in links)
     hero = next(((i, s) for i, s in sections if s["type"] == "hero"), None)
     cta = _button(hero[1]["cta_primary"], "btn-primary") if hero else ""
     banner = (
@@ -496,17 +544,17 @@ def landing_document(
     )
     header = (
         '<header class="site-header dz"><div class="wrap">'
-        f'<a class="brand" href="/">{landing_files.svg("mark.svg")}Maity</a>'
+        f'<a class="brand" href="/">{landing_files.svg("mark.svg")}maity</a>'
         f'<nav class="site-nav">{nav}</nav>'
         f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
         f'aria-label="{escape(words["theme"], quote=True)}">◐</button>'
         f'<a class="signin" href="/login">{escape(words["sign_in"])}</a>{cta}</div></header>'
     )
-    body = "".join(
-        _hero(i, s, words) if s["type"] == "hero" else _section(i, s, words, stats)
-        for i, s in sections
-    )
-    footer = _landing_footer(setting, words, legal, lang, list(pages))
+    body = "".join(html for _, _, html in drawn)
+    open_source = [
+        link for _, s, _ in drawn if s["type"] == "opensource" for link in s.get("links", [])
+    ]
+    footer = _landing_footer(setting, words, legal, lang, tags, links, open_source)
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
     head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
     if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
@@ -521,9 +569,16 @@ def landing_document(
         description=page.get("description") or "",
         head=head,
         body=banner + header + f"<main>{body}</main>" + footer,
-        languages=list(pages),
+        languages=tags,
         style="" if sheet else STYLE,
     )
+
+
+def _column(title: str, items: list[str]) -> str:
+    if not items:
+        return ""
+    rows = "".join(f"<li>{item}</li>" for item in items)
+    return f'<nav class="foot-col" aria-label="{escape(title, quote=True)}"><h3>{escape(title)}</h3><ul>{rows}</ul></nav>'
 
 
 def _landing_footer(
@@ -532,38 +587,49 @@ def _landing_footer(
     legal: dict[str, Any],
     lang: str,
     tags: list[str],
+    sections: list[tuple[int, str]] | None = None,
+    open_source: list[dict[str, Any]] | None = None,
 ) -> str:
-    links = []
-    for key, address in LEGAL_ADDRESS.items():
-        if legal["pages"].get(key):
-            links.append(f'<a href="/{address}">{escape(words[key])}</a>')
+    """Columns as the design has them: the platform (the header's links, sign-in and
+    registration), open source (the links of the `opensource` sections), the legal pages and the
+    social links; below them the operator's line and the language switch (§16.7)."""
+    platform = [f'<a href="#s{i}">{escape(label)}</a>' for i, label in sections or []]
+    platform.append(f'<a href="/login">{escape(words["sign_in"])}</a>')
+    platform.append(f'<a href="/register">{escape(words["register"])}</a>')
+    source = [_link(item["label"], item["href"]) for item in open_source or []]
+    legal_links = [
+        f'<a href="/{address}">{escape(words[key])}</a>'
+        for key, address in LEGAL_ADDRESS.items()
+        if legal["pages"].get(key)
+    ]
     footer = setting["footer"]
-    parts = []
-    if footer.get("operator"):
-        parts.append(f"<p>{escape(footer['operator'])}</p>")
-    social = "".join(
+    social = [
         _link(
             item["label"],
             item["href"],
             me="mastodon" in item["label"].lower() or "/@" in item["href"],
         )
-        + " "
         for item in footer.get("social", [])
+    ]
+    columns = (
+        _column(words["platform"], platform)
+        + _column(words["open_source"], source)
+        + _column(words["legal"], legal_links)
+        + _column(words["follow"], social)
+    )
+    operator = (
+        f'<p class="operator">{escape(footer["operator"])}</p>' if footer.get("operator") else ""
     )
     switch = (
-        " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
+        '<p class="langs">'
+        + " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
+        + "</p>"
         if len(tags) > 1
         else ""
     )
-    row = (
-        "".join(links)
-        + f'<a href="/login">{escape(words["sign_in"])}</a>'
-        + f'<a href="/register">{escape(words["register"])}</a>'
-    )
     return (
-        f'<footer class="site-footer"><div class="wrap"><p>{row}</p>{"".join(parts)}'
-        f'{"<p>" + social + "</p>" if social else ""}{"<p>" + switch + "</p>" if switch else ""}'
-        "</div></footer>"
+        f'<footer class="site-footer"><div class="wrap"><div class="foot-cols">{columns}</div>'
+        f"{operator}{switch}</div></footer>"
     )
 
 

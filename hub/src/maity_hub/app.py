@@ -27,6 +27,7 @@ from maity_hub import (
     forge,
     forge_access,
     images,
+    join_line,
     landing_files,
     listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
@@ -390,6 +391,8 @@ def render_help(settings: Settings) -> str:
         hub_version=__version__,
         public_url=settings.public_url,
         cli_install=settings.cli_install,
+        join_line=join_line.command(settings.cli_install, "<url>", "<code>"),
+        ensurepath=join_line.ENSUREPATH,
     )
 
 

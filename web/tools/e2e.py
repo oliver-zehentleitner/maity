@@ -537,6 +537,8 @@ def join_line(
         page.locator(".join-result").get_by_role("button", name="Join another", exact=True).click()
         expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
         panel.get_by_role("button", name="Close", exact=True).click()
+    # The line installs the CLI first (§3.2): the join is its last five words.
+    words = words[-5:]
     assert words[:2] == ["maity", "join"] and words[3] == "--code", words
     return words[2], words[4]
 
@@ -961,7 +963,9 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    legal_json_step(run, page)
     jour_fixe_step(run, page)
+    project_links_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2179,6 +2183,32 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def project_links_step(run: Run, page: Page) -> None:
+    """The project's own links (docs/api.md §6.11): set in Project settings against the real
+    hub, shown beside the state in the header, refused at the field where the hub refuses them."""
+    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.links-form")
+    expect(form).to_be_visible()
+    page.locator("#link-wiki").fill("https://wiki.example.org:8443/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("#link-wiki-error")).to_have_text("Not an https address on a DNS name without a port or user name.")
+    refused = "PATCH /api/v1/projects/owner/e2e-alpha answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#link-wiki").fill("")
+    page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Links saved.")
+    issues = page.locator("header .project-state a.header-link", has_text="Issues")
+    expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
+    expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    run.shot(page, "project-links")
+    run.a11y(page, "project links")
+    no_problems(run, "project links")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+
+
 def jour_fixe_step(run: Run, page: Page) -> None:
     """The jour fixe (docs/api.md §20): the series saved in Project settings against the
     real hub, the view says the next slot, and a start by hand opens a round or says why
@@ -2264,6 +2294,42 @@ def landing_json_step(run: Run, page: Page) -> None:
     expect(page.locator("li.lp-section")).to_have_count(len(json.loads(v3)["pages"][json.loads(v3)["default_language"]]["sections"]))
     run.shot(page, "landing-json")
     no_problems(run, "landing JSON")
+
+
+def legal_json_step(run: Run, page: Page) -> None:
+    """Instance administration → Legal pages (docs/api.md §16.7.1, tsk-knb9me77f32t): a page's
+    languages imported as JSON, checked by its preview call, saved only by Save; a preview
+    while the field holds text not loaded says so."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("legal pages: the admin imports the imprint as JSON, the hub checks it, then it is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Legal pages", exact=True).click()
+    imprint = page.locator("section.lg-page[aria-label='Imprint']")
+    io = imprint.locator("details.json-io")
+    io.locator("summary").click()
+    page.locator("#lg-imprint-json").fill(
+        json.dumps({"imprint": {"en": {"title": "E2E imprint", "markdown": "Operated by **e2e**."}}})
+    )
+    # Not loaded yet: a preview says so and opens no tab.
+    if imprint.get_by_role("button", name="Preview the draft", exact=True).count():
+        imprint.get_by_role("button", name="Preview the draft", exact=True).click()
+        expect(imprint.locator(".send-status").first).to_contain_text("not loaded into the editor")
+    asked = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    expect(imprint.locator(".send-status").first).to_contain_text("checked by the hub")
+    assert asked and asked[0].startswith("Replace the Imprint"), asked
+    expect(page.locator("#lp-imprint-en-title")).to_have_value("E2E imprint")
+    before = page.request.get(f"{run.base}/api/v1/admin/settings/legal").json()
+    assert ((before.get("pages") or {}).get("imprint") or {}).get("languages", {}).get("en", {}).get("title") != "E2E imprint", "the import saved before Save"
+    run.a11y(page, "legal pages, a JSON import")
+    imprint.locator("form.lg-form").get_by_role("button", name="Save the imprint", exact=True).click()
+    expect(page.locator("section.lg-page[aria-label='Imprint']")).to_contain_text("Served at /impressum")
+    saved = page.request.get(f"{run.base}/api/v1/admin/settings/legal").json()
+    assert saved["pages"]["imprint"]["languages"]["en"]["title"] == "E2E imprint", saved
+    no_problems(run, "legal JSON")
 
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:

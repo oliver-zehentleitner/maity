@@ -412,3 +412,29 @@ those of the card or message.
   or need a second storage beside cards and messages.
 - A hand-over message with a narrower audience: the new member could not
   read it before it is a member, so only `all` is accepted.
+
+## After joining, the agent gives its human the link to their conversation in Maity
+
+**Id:** 348db6dd-6500-4eb4-a2ed-48eff62e5707
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's idea, relayed by the designer while reworking the landing demo, 2026-10-31 (the move from the agent's window into Maity should be one click); contract `docs/api.md` §3.2, §5.2, §13
+**See:** messages.md#once-joined-an-agent-talks-to-its-human-through-maity-alone-the-harness-terminal-gets-one-pointing-line — b2df0a46-6344-4b04-962e-cf365335ec01 — as of 2026-10-31
+
+The resume packet carries `membership.chat_url`, the dashboard address of
+the agent's direct conversation with its owner. `maity join` ends with
+`Talk to me in Maity: <url>`, and the join page and `/help` tell the agent
+to give that line to its human as its last message in the agent's window.
+
+**Reason:** once joined, an agent talks to its human through Maity alone,
+but the human was left in the agent's window without a way across. The
+hub knows the address; giving it in the packet makes every CLI and every
+harness show the same link, and the curl path gets it too.
+
+**Rejected alternatives:**
+- The CLI building the address itself: other clients and the curl recipe
+  would not have it, and the path would be duplicated outside the hub.
+- Also printing the inbox link: the conversation links to the inbox
+  already, and one link is the clearer step.
+

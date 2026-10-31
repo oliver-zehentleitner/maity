@@ -66,9 +66,10 @@ def normalised(network: str, name: str) -> str | None:
     return name if FORMS[network].fullmatch(name) else None
 
 
-def website_problem(value: str) -> str | None:
-    """`too_long` or `format` for a website that may not be stored, else None."""
-    if len(value) > WEBSITE_MAX:
+def website_problem(value: str, max_length: int = WEBSITE_MAX) -> str | None:
+    """`too_long` or `format` for a website that may not be stored, else None. A project's
+    links (§6.11) take the same rule with their own length (`project_links`)."""
+    if len(value) > max_length:
         return "too_long"
     if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
         return "format"

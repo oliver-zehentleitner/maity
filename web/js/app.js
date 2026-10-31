@@ -223,6 +223,17 @@ window.Maity = window.Maity || {};
     other: "M9.5 3.25a2.25 2.25 0 113 2.12V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.13a2.25 2.25 0 11-1.5 0V5.37a2.25 2.25 0 111.5 0v1.84A2.49 2.49 0 016 7h4a1 1 0 001-1v-.63A2.25 2.25 0 019.5 3.25z",
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
+  // The project's own links (§6.11), in this order, each with its word and a 16 × 16 mark
+  // (Octicons, MIT): an issue, a book, a speech bubble, a chat bubble.
+  const OWN_LINKS = [
+    ["issues", () => M.t("project.link.issues"), "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"],
+    ["wiki", () => M.t("project.link.wiki"), BOOK],
+    ["discussions", () => M.t("project.link.discussions"), "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z"],
+    ["chat", () => M.t("project.link.chat"), "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z"],
+  ];
+  // The links that are set, as plain https only: what the header and the overview show.
+  const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
+    .filter((x) => x.url);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -239,11 +250,16 @@ window.Maity = window.Maity || {};
     const exp = project.keep_the_why_export;
     const root = exp && (exp.members || []).find((m) => m.path === "");
     const why = root && M.dom.safeUrl(root.dashboard_url);
-    const name = FORGES[forge] || "Repository";
+    // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
+    // and the project's own links stand beside it.
+    const name = M.t("project.link.repository");
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": (FORGES[forge] ? "Repository on " + name : "Repository") + " (opens in a new tab)", title: repo },
+        "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
+      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
+      mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
       mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
@@ -420,6 +436,59 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  // The project's own links (§6.11), for project:admin: four fields, only
+  // the changed ones sent (the hub merges by key, so another admin's change
+  // to another link meanwhile stays), each refusal said at its field.
+  function linksForm(ctx) {
+    const current = ctx.project.links || {};
+    const status = statusLine();
+    const WORDS = { format: () => M.t("settings.links.format"), too_long: () => M.t("settings.links.too_long"), unknown: () => M.t("settings.links.unknown") };
+    const fields = OWN_LINKS.map(([key, label]) => {
+      const id = "link-" + key;
+      const input = h("input", { id, type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", maxlength: "500",
+        "aria-describedby": ["links-hint", id + "-error"].join(" ") });
+      input.value = current[key] || "";
+      const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+      return { key, input, error, nodes: [h("label", { for: id }, label()), input, error] };
+    });
+    return h("form", {
+      class: "inline-form links-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        fields.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
+        const links = {};
+        fields.forEach((f) => {
+          const value = f.input.value.trim();
+          if (value !== (current[f.key] || "")) links[f.key] = value || null;
+        });
+        if (!Object.keys(links).length) { status.done(); append(status.el, h("span", null, M.t("settings.links.unchanged"))); return; }
+        status.busy(M.t("settings.links.saving"));
+        try {
+          await M.api.patch(ctx.base, { links });
+          settingsSaved = M.t("settings.links.saved");
+          render();
+        } catch (err) {
+          const refused = err.code === "invalid" && err.details && err.details.fields;
+          const hits = refused ? fields.filter((f) => refused["links." + f.key]) : [];
+          if (!hits.length) { status.fail(M.t("settings.links.not_saved"), err); return; }
+          status.done();
+          hits.forEach((f) => {
+            const why = refused["links." + f.key];
+            f.error.textContent = Object.hasOwn(WORDS, why) ? WORDS[why]() : why;
+            f.input.setAttribute("aria-invalid", "true");
+          });
+          hits[0].input.focus();
+        }
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.links.title")),
+    h("p", { class: "hint", id: "links-hint" }, M.t("settings.links.hint")),
+    fields.map((f) => f.nodes),
+    h("button", { type: "submit" }, M.t("settings.links.save")),
+    status.el);
+  }
+
   // §8.5's blind removal: an owner or admin removes a reported message of a
   // closed group chat by its number, without reading it; the hub answers
   // {seq, redacted} only, never the message.
@@ -570,7 +639,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null);
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null, linksForm(ctx));
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
@@ -1295,6 +1364,7 @@ window.Maity = window.Maity || {};
       stateLabel: (state) => STATE_LABELS[state] || state,
       stateBadge,
       releasedMark,
+      ownLinks,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.

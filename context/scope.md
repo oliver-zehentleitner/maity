@@ -739,8 +739,10 @@ app shell, and the page has no script; since 2026-10-30 a first-party
 script improves it but is never needed, e6abaa96-ef56-4c12-bd09-dd0e5f6c9c37). The imprint,
 privacy notice and terms of use are three more pages of the same kind,
 versioned, and the terms page feeds the acceptance at registration.
-Live numbers are computed every five minutes; online counts below five
-show as "< 5".
+Live numbers are computed every five minutes; an online count below
+five is left out of the page (until 2026-10-31 it showed as "< 5", which
+next to a small total such as "2 people" read as a contradiction; the
+maintainer pointed it out on the live page).
 
 **Reason:** the maintainer wants a full landing page that works without
 script and is found by search engines, and legal pages before opening
@@ -825,3 +827,30 @@ policy closed to anything the operator or a visitor could inject.
   break; content stays the operator's, design stays code.
 - Rendering the page in the browser from `GET /landing`: crawlers and
   visitors without script would see nothing.
+
+## The landing header links only the sections that carry a short `nav_label`, at most four
+
+**Id:** 7817872f-1876-40b2-8ec8-7ee4e2802991
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the designer's review of the live landing page against the board, 2026-10-31 (header wrapping to two lines with five long section titles as links, the mobile header stacking them); contract `docs/api.md` §16.7
+**See:** scope.md#the-landing-and-legal-pages-are-instance-content-in-sections-rendered-by-the-hub-as-static-html — cd44707b-7b79-47ae-a78d-586195d465dc — as of 2026-10-31
+
+A section may carry `nav_label` (1–24 characters); the header links
+exactly the enabled sections that have one, in their order, at most four
+per page. A section title is never a link text by itself.
+
+**Reason:** with every section title as a header link, the header wrapped
+to two lines on a desktop and stacked on a phone, pushing sign-in and the
+call to action out of the first line. Short labels written for the header
+keep it on one line in every language, and the operator decides which
+sections are worth a link.
+
+**Rejected alternatives:**
+- Section titles as links (the state before): too long, and the number of
+  links grew with the page.
+- A fixed list of links in the template: the template has no words of its
+  own for an instance's page in every language, and the operator could
+  not choose.
+

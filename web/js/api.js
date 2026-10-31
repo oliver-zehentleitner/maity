@@ -600,11 +600,18 @@ window.Maity = window.Maity || {};
     landingText(pg.description, at + ".description", 300, false, errors);
     const sections = pg.sections || [];
     if (sections.length > 20) errors[at + ".sections"] = "too_many";
+    // The header holds at most four links: only an enabled section with a label is one (§16.7).
+    let labelled = 0;
+    sections.forEach((s, i) => {
+      if (s && s.enabled === true && s.nav_label) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
+    });
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
       const known = Object.hasOwn(LANDING_TYPES, s.type) ? LANDING_TYPES[s.type] : null;
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
-      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
+      if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
         landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
@@ -702,6 +709,19 @@ window.Maity = window.Maity || {};
       }
     }
     return e;
+  }
+  // As hub/person_links.website_problem: https, a DNS name (a dot, labels of [a-z0-9-], a last
+  // label not all digits) as the whole authority (no user part, no port), no space or control
+  // character, at most `max` characters, checked first.
+  function websiteProblem(value, max) {
+    if (value.length > max) return "too_long";
+    if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
+    const m = /^https:\/\/([^/?#]*)/.exec(value);
+    if (!m) return "format";
+    const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
+    const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+    if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
+    return null;
   }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
@@ -2242,6 +2262,29 @@ window.Maity = window.Maity || {};
         }) });
       }
 
+      // §6.11 the project's own links, merged by key, each checked as the hub's
+      // person_links.website_problem does (500 characters): too_long first, then the form.
+      if ("links" in body) {
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const merged = {};
+        if (body.links !== null) {
+          if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
+          Object.entries(p.links || {}).forEach(([k, v]) => { if (KEYS.includes(k) && v) merged[k] = v; });
+          const fields = {};
+          Object.entries(body.links).forEach(([k, v]) => {
+            if (!KEYS.includes(k)) fields["links." + k] = "unknown";
+            else if (v === null || v === "") delete merged[k];
+            else if (typeof v !== "string") fields["links." + k] = "format";
+            else {
+              const problem = websiteProblem(v, 500);
+              if (problem) fields["links." + k] = problem; else merged[k] = v;
+            }
+          });
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        }
+        p.links = Object.fromEntries(KEYS.map((k) => [k, merged[k] || null]));
+      }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
@@ -3422,7 +3465,7 @@ window.Maity = window.Maity || {};
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
       });
       return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",
+        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],

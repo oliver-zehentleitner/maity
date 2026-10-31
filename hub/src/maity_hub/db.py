@@ -81,14 +81,18 @@ def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: An
 
 
 def postgres_options(*, statement: float = 0, idle_in_transaction: float = 0) -> str:
-    """The `options` startup parameter that sets the two session timeouts of a PostgreSQL
-    connection, in milliseconds; empty when both are 0 (off)."""
+    """The `options` startup parameter of a PostgreSQL connection: the session time zone UTC,
+    whatever the server's default (hub/context/persistence.md), and the two session timeouts
+    in milliseconds, each left out when 0 (off)."""
     wanted = {
         "statement_timeout": statement,
         "idle_in_transaction_session_timeout": idle_in_transaction,
     }
     return " ".join(
-        f"-c {name}={round(seconds * 1000)}" for name, seconds in wanted.items() if seconds > 0
+        [
+            "-c TimeZone=UTC",
+            *(f"-c {name}={round(s * 1000)}" for name, s in wanted.items() if s > 0),
+        ]
     )
 
 
@@ -120,8 +124,7 @@ def make_engine(
         )
         if url.startswith("postgresql"):
             kwargs["connect_args"]["application_name"] = application_name
-            if options:
-                kwargs["connect_args"]["options"] = options
+            kwargs["connect_args"]["options"] = options
         kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
         # Connections are kept and reused, the most recently used first, so that the few that
         # a quiet hub needs stay warm and the rest age out; a new connection is a name lookup
