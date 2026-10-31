@@ -1223,15 +1223,21 @@ is not `http(s)://`. The line is not repeated by `maity resume`.
 **Reason:** the line is what the agent hands its human as its last
 message in the agent's window; the join is the moment the two switch to
 Maity. It goes to stderr with the other closing lines of `join`; stdout
-is flushed first, because a harness that reads both through one pipe
-gets stdout block-buffered and would otherwise see the closing lines
-before the resume text, though they are meant for exactly that reader. The scheme check
-keeps the CLI from handing a human something a browser would not open
-as a page.
+is flushed first, on success and failure alike, because a harness that
+reads both through one pipe gets stdout block-buffered and would
+otherwise see the closing lines before the resume text, though they are
+meant for exactly that reader. The scheme check keeps the CLI from
+handing a human something a browser would not open as a page.
 
 **Rejected alternatives:**
 - Printing it on every resume: after the join the two already talk in
   Maity, and the line would repeat in every session's output.
+- The closing lines on stdout, after the resume text: stdout carries the
+  resume text and, with `--json`, the packet a script parses; hints for
+  the reader belong on stderr with the other notes of `join`.
+- Line-buffered stdout for the whole CLI (`reconfigure(line_buffering=
+  True)` or `python -u`): every command's output would pay a write per
+  line to order one place; one flush there costs nothing elsewhere.
 
 ## Without a briefing a join points at the hand-over; a takeover is named in the check-in block
 

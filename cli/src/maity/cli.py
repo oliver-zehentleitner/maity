@@ -453,10 +453,13 @@ def cmd_join(args: argparse.Namespace) -> int:
     if not args.no_resume:
         try:
             session = Session()
-            status = _resume(session, args, first=True)
-            # The resume text is on stdout, the closing lines on stderr: through one pipe, the
-            # way a harness reads both, stdout is buffered and would come after them.
-            sys.stdout.flush()
+            try:
+                status = _resume(session, args, first=True)
+            finally:
+                # The resume text is on stdout, the closing lines on stderr: through one pipe,
+                # the way a harness reads both, stdout is buffered and would come after them.
+                # On every way out, so a resume that fails after printing keeps the order too.
+                sys.stdout.flush()
             _chat_note(state.load_state(session.dir, name=LAST_PACKET))
         except hub.HubError as exc:
             _err(
