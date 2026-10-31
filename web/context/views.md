@@ -3111,7 +3111,9 @@ control. The fixture hub answers both routes as §6.2 describes.
 Lift isolation sits in a small form with one box, **Hide what happened
 while it was isolated**, unticked, and a line on what it means; ticked,
 the `DELETE` carries `{"hide_isolation_events": true}`, unticked it
-carries no body. A member with hidden windows (`isolation_windows`)
+carries no body. The choice survives a redraw of the table (another
+action, the presence refresh) as a typed reason does: it cannot be made
+up for after the lift, the window comes only from the lift itself. A member with hidden windows (`isolation_windows`)
 shows them under its name, as event ranges, to every reader of the
 list, as `isolated` is shown; a seq is written as the hub gives it, not
 formatted as a number.

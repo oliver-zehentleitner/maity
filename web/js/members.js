@@ -287,13 +287,17 @@ window.Maity = window.Maity || {};
     function liftForm(m, isoPath) {
       const hideId = "member-lift-hide-" + m.id;
       const hide = keyed("lift-hide:" + m.id, h("input", { type: "checkbox", id: hideId }));
+      // The choice survives a redraw (another action, the presence refresh) as the isolation's reason does.
+      hide.checked = !!(edits.get(m.id) || {}).liftHide;
+      hide.addEventListener("change", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { liftHide: hide.checked })); });
       return h("form", {
         class: "inline-form member-lift",
         onsubmit: (e) => {
           e.preventDefault();
           const done = hide.checked ? M.t("members.isolate.lifted_hidden", { name: m.display_name }) : M.t("members.isolate.lifted", { name: m.display_name });
           act(M.t("members.isolate.lifting"), done,
-            () => (hide.checked ? M.api.del(isoPath, { hide_isolation_events: true }) : M.api.del(isoPath)), "isolate-reason:" + m.id);
+            () => (hide.checked ? M.api.del(isoPath, { hide_isolation_events: true }) : M.api.del(isoPath)), "isolate-reason:" + m.id,
+            () => { const d = edits.get(m.id); if (d) delete d.liftHide; });
         },
       },
       h("label", { class: "check", for: hideId }, hide, " ", M.t("members.isolate.hide")),

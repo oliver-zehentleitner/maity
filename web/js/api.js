@@ -434,7 +434,10 @@ window.Maity = window.Maity || {};
       // included, joins isolation_windows; the agent reads none of it again (§6.2).
       const log = eventsOf(m[1]);
       const head = log.length ? log[log.length - 1].seq : 0;
-      const from = isolatedFrom.get(target);
+      // An isolation the fixture did not start (loaded as isolated): as the hub does for one
+      // made before it kept the first seq, the first event at or after it began.
+      const from = isolatedFrom.has(target) ? isolatedFrom.get(target)
+        : (log.find((e) => target.isolated && target.isolated.since && e.at >= target.isolated.since) || {}).seq;
       if (target.isolated && (body || {}).hide_isolation_events === true && from !== undefined && from <= head) {
         target.isolation_windows = (target.isolation_windows || []).concat([{ from_seq: from, to_seq: head }]);
       }

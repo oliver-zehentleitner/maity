@@ -801,8 +801,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector("form.member-isolate").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
     win.confirm = isoConfirm;
     await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "while it was isolated" });
+    byId("member-lift-hide-agt-b").checked = true; byId("member-lift-hide-agt-b").dispatch("change");
+    // The choice survives a redraw (#867's review): another row opened and closed rebuilds the table.
+    const liftFormBefore = main.querySelector("form.member-lift");
+    btn(agRow("agt-a"), "Manage").click(); await tick();
+    btn(agRow("agt-a"), "Done").click(); await tick();
+    expect(main.querySelector("form.member-lift") !== liftFormBefore && byId("member-lift-hide-agt-b").checked,
+      "isolate: the ticked box survives a redraw of the table");
     const isoAgain = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
-    byId("member-lift-hide-agt-b").checked = true;
     isoAgain.querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
     const isoWin = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b").isolation_windows || [];
     expect(isoDels.length === 2 && JSON.stringify(isoDels[1][1]) === JSON.stringify({ hide_isolation_events: true })

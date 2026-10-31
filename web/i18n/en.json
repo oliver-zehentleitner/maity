@@ -941,7 +941,7 @@
   "members.isolate.confirm": "Isolate {name}? It stops at once: its claims are released and its owner is told.",
   "members.isolate.done": "{name} is isolated.",
   "members.isolate.hide": "Hide what happened while it was isolated",
-  "members.isolate.hide.hint": "Unticked, the agent may read the events of that time again by asking for them. Ticked, they stay hidden from it for good, as if it had not been a member then; what it finds now (cards, requests, chats) it sees either way.",
+  "members.isolate.hide.hint": "Unticked, the agent may read the events of that time again by asking for them. Ticked, they stay hidden from it for good, as if it had not been a member then: the messages, a group chat's earlier history and a card's history of that time. What it finds now it sees either way: a card's fields, a request and its answer, who is in a chat.",
   "members.isolate.hint": "Stops the agent at once, whoever owns it: its claims are released, it leaves every group chat, its placements close, and its owner is told. Lifting it gives access back, not the claims or chats.",
   "members.isolate.isolating": "Isolating",
   "members.isolate.label": "Isolate with a reason",
