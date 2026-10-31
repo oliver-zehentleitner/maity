@@ -16,8 +16,8 @@ the old setting named or would have chosen: the member named in `moderator`, els
 agent holds it at once when its owner set the policy, and otherwise waits as `pending` for its
 owner's consent (the keepers' is given: the policy was theirs), whose request the hub files
 (`jourfixe.series`). The four project columns then go. The `jour_fixe_series_changed` event and
-the rules bump of the upgrade are the hub's on its next start (`jourfixe.series.announce`),
-since a migration writes no events.
+one rules bump per project are written here, as `rules.bump` writes them: the rules text names
+the series.
 
 Revision ID: 20261031190604_jour_fixe_series
 Revises: 20261031125530_long_polls
@@ -119,6 +119,60 @@ def _grantees(
     if order:
         return [m for agent_id in order for m in members if m.agent_id == agent_id]
     return [m for m in members if m.agent_id and m.trust == "admin" and m.role != "proxy"]
+
+
+def _announce(conn: sa.Connection, project_id: str, series_id: str, now: datetime) -> None:
+    """One `jour_fixe_series_changed` (`change: created`, `by: null`) and one rules bump, as
+    `rules.bump` writes them, never before the project's last event (§18.2)."""
+    last = conn.execute(
+        sa.text("SELECT MAX(at) FROM event WHERE project_id = :p"), {"p": project_id}
+    ).scalar()
+    if isinstance(last, str):  # SQLite hands an aggregate's timestamp back as text
+        last = datetime.fromisoformat(last)
+    if last is not None and last.tzinfo is not None:
+        last = last.astimezone(UTC).replace(tzinfo=None)
+    at = max(now, last) if last is not None else now
+    version = (
+        conn.execute(
+            sa.text("SELECT rules_version FROM project WHERE id = :p"), {"p": project_id}
+        ).scalar_one()
+        + 1
+    )
+    event = sa.table(
+        "event",
+        sa.column("project_id"),
+        sa.column("kind"),
+        sa.column("at"),
+        sa.column("subject_type"),
+        sa.column("subject_id"),
+        sa.column("audience", JSON_VALUE),
+        sa.column("payload", JSON_VALUE),
+        sa.column("redacted"),
+    )
+    conn.execute(
+        event.insert().values(
+            project_id=project_id,
+            kind="jour_fixe_series_changed",
+            at=at,
+            subject_type="jour_fixe_series",
+            subject_id=series_id,
+            audience=["all"],
+            payload={
+                "series_id": series_id,
+                "change": "created",
+                "by": None,
+                "rules_version": version,
+            },
+            redacted=False,
+        )
+    )
+    seq = conn.execute(  # the migration runs alone: the newest event is this one
+        sa.text("SELECT MAX(seq) FROM event WHERE project_id = :p"), {"p": project_id}
+    ).scalar()
+    conn.execute(
+        sa.text("UPDATE project SET rules_version = :v, rules_changed_seq = :s WHERE id = :p"),
+        {"v": version, "s": seq, "p": project_id},
+    )
 
 
 def upgrade() -> None:
@@ -272,6 +326,7 @@ def upgrade() -> None:
             sa.text("UPDATE jour_fixe_round SET series_id = :s WHERE project_id = :p"),
             {"s": series_id, "p": project_id},
         )
+        _announce(conn, project_id, series_id, now)
         for member in _grantees(conn, project_id, policy, order):
             at_once = member.agent_id is None or member.owner_id == setter
             conn.execute(

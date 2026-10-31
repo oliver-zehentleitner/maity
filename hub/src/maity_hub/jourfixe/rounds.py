@@ -647,6 +647,18 @@ def handle_schedule(conn: Connection, project_id: str) -> None:
     project = lock_project(conn, project_id)
     now = clock.now()
     for series in series_mod.of_project(conn, project_id):
+        if (
+            series.circle == "owner"
+            and series.enabled
+            and not series_mod.owner_member(conn, series)
+        ):
+            # The owner left: the series opens no round until they return (§20.1).
+            conn.execute(
+                update(t.jour_fixe_series)
+                .where(t.jour_fixe_series.c.id == series.id)
+                .values(enabled=False)
+            )
+            continue
         slots = due_slots(series, now)
         if not slots:
             continue

@@ -457,7 +457,7 @@ def start(
             conn, row_series.id
         ):
             raise series.keeper_refused()
-        if row_series.circle == "owner" and not _owner_member(conn, project.id, row_series):
+        if row_series.circle == "owner" and not series.owner_member(conn, row_series):
             raise ApiError(
                 409, "jour_fixe_state", "the series' owner left", {"reason": "circle_owner_gone"}
             )
@@ -475,19 +475,6 @@ def start(
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
 
     return idempotency.run(engine_of(request), request, caller, action)
-
-
-def _owner_member(conn: Connection, project_id: str, row_series: Any) -> bool:
-    return (
-        conn.execute(
-            select(t.membership.c.id).where(
-                t.membership.c.project_id == project_id,
-                t.membership.c.human_id == row_series.circle_owner,
-                t.membership.c.active.is_(True),
-            )
-        ).first()
-        is not None
-    )
 
 
 # --- answers ------------------------------------------------------------------------------------

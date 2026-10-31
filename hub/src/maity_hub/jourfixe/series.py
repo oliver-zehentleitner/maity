@@ -100,6 +100,13 @@ def _agent_owner(conn: Connection, agent_id: str | None) -> str | None:
     return owner
 
 
+def owner_member(conn: Connection, series: Any) -> bool:
+    """Whether an owner series' `circle_owner` is still a member (§20.1, `circle_owner_gone`)."""
+    return series.circle_owner is not None and _is_member(
+        conn, series.project_id, series.circle_owner
+    )
+
+
 def is_keeper(series: Any, mine: Membership) -> bool:
     """Who creates, changes and deletes the series (§20.1): its `circle_owner`, or for the
     other circles a human with `project:admin`. Never an agent."""
