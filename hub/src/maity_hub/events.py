@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import ColumnElement, Connection, Engine, insert, select
+from sqlalchemy import ColumnElement, Connection, Engine, and_, insert, not_, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, ticker_read
@@ -309,6 +309,48 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+def windows_of(membership: Any) -> list[dict[str, int]]:
+    """The reader's `isolation_windows` (§6.2): a reader that is no membership row has none."""
+    found: list[dict[str, int]] = getattr(membership, "isolation_windows", None) or []
+    return found
+
+
+def in_window(row: Any, membership: Any) -> bool:
+    """The event lies in one of the reader's hidden windows (§6.2)."""
+    windows = windows_of(membership)
+    return bool(windows) and any(w["from_seq"] <= row.seq <= w["to_seq"] for w in windows)
+
+
+def outside_windows(membership: Any) -> Any:
+    """SQL for the events the reader may read besides its hidden windows, or `None`."""
+    windows = windows_of(membership)
+    if not windows:
+        return None
+    return and_(*(not_(t.event.c.seq.between(w["from_seq"], w["to_seq"])) for w in windows))
+
+
+def window_times(conn: Connection, project_id: str, membership: Any) -> list[tuple[Any, Any]]:
+    """Each hidden window of the reader as the times of its first and last event: what a card's
+    history, which is not an event, hides by `at` (§6.2, §6.15)."""
+    found = []
+    for window in windows_of(membership):
+        first = conn.execute(
+            select(t.event.c.at)
+            .where(t.event.c.project_id == project_id, t.event.c.seq >= window["from_seq"])
+            .order_by(t.event.c.seq)
+            .limit(1)
+        ).scalar()
+        last = conn.execute(
+            select(t.event.c.at)
+            .where(t.event.c.project_id == project_id, t.event.c.seq <= window["to_seq"])
+            .order_by(t.event.c.seq.desc())
+            .limit(1)
+        ).scalar()
+        if first is not None and last is not None:
+            found.append((first, last))
+    return found
+
+
 def _isolated(membership: Any) -> bool:
     """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
     outside the project, is none."""
@@ -325,6 +367,8 @@ def readable_by(
     own; owners and admins read every event of the project."""
     if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
+    if in_window(row, membership):
+        return False  # as if it had never been a member then, whatever its trust (§8.2)
     audience = row.audience or []
     humans_only = row.kind in HUMANS_ONLY_KINDS or (
         row.kind == "event_redacted" and row.subject_id in hidden

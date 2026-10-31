@@ -707,6 +707,12 @@ membership = Table(
     Column("isolated_reason", String(500)),
     Column("isolated_since", UtcDateTime),
     Column("isolated_by", String(ID)),
+    # The project's newest event when it was isolated, plus one: where the window of an
+    # isolation lifted with `hide_isolation_events` starts (§6.2); null while free.
+    Column("isolated_from_seq", Integer),
+    # The windows of event seqs the agent may never read: `[{from_seq, to_seq}]`, both ends
+    # included, one per isolation lifted with `hide_isolation_events` (§6.2, §8.2).
+    Column("isolation_windows", JSON_VALUE),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the

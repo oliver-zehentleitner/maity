@@ -639,6 +639,9 @@ def member_views(
                 "presence": shown_presence,
                 "paused": stopped,
                 "isolated": isolated(row),
+                # The windows of events it may never read, after a lift with
+                # `hide_isolation_events`; the readers of `isolated` read them (§6.2).
+                "isolation_windows": list(row.isolation_windows or []),
                 "availability": availability.view(
                     row,
                     shown_presence,
