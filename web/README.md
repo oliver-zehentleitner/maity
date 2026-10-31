@@ -412,8 +412,9 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** (`/<owner>/<slug>/agents`, a tab before Why,
-   for humans; the maintainer, 2026-10-29): one's own agents in the
+3. **Agents** (`/<owner>/<slug>/agents`, the tab right after Members,
+   for humans; the maintainer, 2026-10-29 and 2026-10-31; the row reads Inbox, Overview,
+   Board, Members, Agents, Chat, Messages, Ticker, Why, Jour fixe, Settings): one's own agents in the
    project as a list like **Your agents** limited to this project (2026-10-31): a row
    per agent (trust and role here, presence, active instances here) with **Manage**,
    which opens under it its card (`/agents`, one component,
@@ -1706,7 +1707,9 @@ imported again:
 Each part has the shape its own section imports; a part the file leaves
 out stays as it is. An unknown `format` refuses the file, and so does an
 unknown key anywhere in it, named by its path (`landing.enabeld`,
-`legal.privacy.foo`). The landing page's `variants` and `campaigns` are
+`legal.privacy.foo`) down to each part and legal page; deeper keys, and
+values of the wrong kind, refuse their part (the hub's preview names
+the field). The landing page's `variants` and `campaigns` are
 not in `maity-site/1` while the landing editor's import does not take
 them, so they are refused as well. **Export** reads the three settings
 again first (copy, or **Download as a file**), so an edit saved in

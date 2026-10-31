@@ -880,6 +880,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const agARow = await agOpen("agt-a");
+  const agALevel = main.querySelectorAll("tr.member").find((r) => r.getAttribute("data-member") === "agt-a").getAttribute("data-level");
+  expect(agALevel !== "0" && agARow.className.split(" ").includes("member-level-" + agALevel),
+    "members: the open Manage card carries its member's level, for the indent on a phone (level " + agALevel + ")");
   const agConfirm = win.confirm;
   win.confirm = () => true;
   btn(agARow.querySelector(".credentials"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
@@ -1145,6 +1148,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(tabNames[tabNames.length - 1] === "Settings" && tabNames.indexOf("Runners") < tabNames.indexOf("Settings")
     && tabNames.indexOf("Why") < tabNames.indexOf("Settings") && tabNames.indexOf("Why") > tabNames.indexOf("Runners"),
     "header: the project's Settings are its last tab, after Runners and Why " + JSON.stringify(tabNames));
+  // The row as the maintainer set it (2026-10-31): Agents right after Members, Jour fixe between Why and Settings.
+  expect(JSON.stringify(tabNames) === JSON.stringify(["Inbox", "Overview", "Board", "Members", "Agents", "Chat", "Messages", "Ticker", "Why", "Jour fixe", "Settings"]),
+    "header: a human's project tabs in order, Agents beside Members, Jour fixe before Settings " + JSON.stringify(tabNames));
   const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
   expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
   gearButton().click(); await tick();
@@ -2066,6 +2072,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mPhone = (mCss.match(/@media \(max-width: 600px\) \{[\s\S]*?\n\}/g) || []).join("\n");
   expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("\\.members tr\\.member-level-" + (i + 1) + " \\{ margin-inline-start: \\d+px; \\}").test(mPhone)),
     "members: on a phone each level indents its card");
+  // The open Manage card keeps its member's indent: the level class on its row, no inline margin in its phone rule (#953).
+  expect(/\.members tr\.member-manage \{ margin-block: [^;]+; \}/.test(mPhone) && !/\.members tr\.member-manage \{[^}]*margin(-inline)?(-start)?:/.test(mPhone),
+    "members: on a phone the open Manage card sets block margins only, so its level indent stays");
   const ths = tables[0].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(JSON.stringify(ths) === JSON.stringify(["Name", "Trust and role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Actions"]),
     "members: an admin's agent columns, with the owner; the credentials are in Manage and on Agents " + JSON.stringify(ths));
@@ -8390,6 +8399,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       legal: { privacy: { languages: template.legal.privacy.languages, foo: 1 }, faq: {} }, registration: { colour: "red" } }, siNow);
     expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
       "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
+    // A landing value of the wrong kind refuses the part, never the saved value in its place.
+    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }].map((bad) =>
+      SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));
+    expect(siKinds.every((r) => r.parts && r.parts.landing.state === "refused"),
+      "site: a landing footer, enabled or default language of the wrong kind refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
     // Registration all from the environment: the export leaves the part out, and imports again.
     const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
     const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);
@@ -8403,7 +8417,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siConfirm = win.confirm; win.confirm = () => true;
     btn(siBox().querySelector("details.json-io"), "Check the file").click(); for (let k = 0; k < 10; k++) await tick();
     const siParts = () => siBox().querySelectorAll("li.site-part").map((li) => li.getAttribute("data-part") + ":" + li.className.split(" ").find((c) => c.startsWith("site-") && c !== "site-part"));
-    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-changes", "legal:site-changes", "registration:site-missing"]) || siParts().every((x) => !x.endsWith("site-refused")),
+    // The fixture's landing page is the template's, so only the legal pages change.
+    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "registration:site-missing"]),
       "site: Check shows each part's state " + JSON.stringify(siParts()));
     const siPatches = [], siPatchReal = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { siPatches.push(p); return siPatches.length === 2

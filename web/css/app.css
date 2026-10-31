@@ -652,7 +652,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .members tr.member > td::before { content: attr(data-label) ": "; color: var(--muted); }
   .members .member-actions { text-align: left; }
   .members .member-actions::before { content: none; }
-  .members tr.member-manage { margin: -8px 0 8px; }
+  /* Block margins only: the level class beside it gives the open card its member's indent. */
+  .members tr.member-manage { margin-block: -8px 8px; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }

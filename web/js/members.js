@@ -474,14 +474,15 @@ window.Maity = window.Maity || {};
       M.withMembers(ctx, items);
     }
 
-    function manage(m, rowId) {
+    // level: the member's row's, so the open card keeps its indent on a phone.
+    function manage(m, rowId, level) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
       // Without members:admin, one's own agent's row holds what its owner
       // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
       // preferences switch.
       if (!ctx.canAdmin) {
-        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+        return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
           P.reportsToPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           P.teamForm(m, memberPath)));
@@ -494,7 +495,7 @@ window.Maity = window.Maity || {};
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
-      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
+      return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
     }
 
     // Would m reporting to boss close a circle? Follow boss's chain upwards.
@@ -689,7 +690,7 @@ window.Maity = window.Maity || {};
                       if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw((ctx.canAdmin ? "role:" : "owner-reports:") + m.id); }
                     },
                   }, expanded ? M.t("members.manage.done") : M.t("members.manage")))));
-              return expanded ? [row, manage(m, rowId)] : row;
+              return expanded ? [row, manage(m, rowId, levelOf(m))] : row;
             }))))];
     }
 

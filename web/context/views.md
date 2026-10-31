@@ -2311,7 +2311,7 @@ reporting line that is not there.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
+**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); the maintainer's request relayed by the coordinator on the card tsk-ttywzxsaj1ht, 2026-10-31 (Agents right after Members, Jour fixe between Why and Settings); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
 **Members** lists everyone in the project the same way for every
@@ -2335,7 +2335,10 @@ redrawn there when a member event arrived; since 2026-10-30 it is the
 Team page's Organisation tab (58c58a28-d6b1-453f-99dc-7f21179b3ee2). The join panel and the
 placements belong to Agents because both are about one's own agents:
 a join makes one, and where they run is managed by their owner or the
-runner's; a list everybody reads is no place for either.
+runner's; a list everybody reads is no place for either. In the row
+Agents stands right after Members, and Jour fixe between Why and
+Settings: Inbox, Overview, Board, Members, Agents, Chat, Messages,
+Ticker, Why, Jour fixe, Settings (an agent sees no Agents tab).
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as
@@ -3394,7 +3397,7 @@ editor behind.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
@@ -3418,7 +3421,9 @@ Its placeholders are in square brackets: the hub's Markdown rules read
 `<Operator>` as an HTML tag and refuse the text.
 
 An unknown key anywhere in the file refuses the whole file, named by its
-path; `variants` and `campaigns` are not in `maity-site/1` while the
+path, down to each part and legal page (deeper, in a page's languages or
+the landing page's pages, the hub's preview refuses the part with its own
+field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
 landing editor's import does not know them, and are refused the same
 way. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
