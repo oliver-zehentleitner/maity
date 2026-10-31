@@ -515,8 +515,17 @@ def landing_document(
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
+    # The hero's online numbers follow the rule of `GET /landing`: only a counter that an enabled
+    # `stats` section of this page names is shown, so one the operator left off is published
+    # nowhere (§16.7); the page is handed every counter, the renderer filters.
+    named = {item for _, s in sections if s["type"] == "stats" for item in s["items"]}
+    hero_stats = {k: v for k, v in (stats or {}).items() if k in named}
     drawn = [
-        (i, s, _hero(i, s, words, stats) if s["type"] == "hero" else _section(i, s, words, stats))
+        (
+            i,
+            s,
+            _hero(i, s, words, hero_stats) if s["type"] == "hero" else _section(i, s, words, stats),
+        )
         for i, s in sections
     ]
     # The header's links are the shown sections that carry a `nav_label`, in their order (§16.7):
