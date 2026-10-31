@@ -3297,6 +3297,34 @@ window.MAITY_FIXTURES = {
         "to": "hum-maintainer",
         "tried": "",
         "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent C",
+          "member_id": "agt-c",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "info",
+        "created_at": "2026-10-21T11:45:00Z",
+        "id": "req-0013",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "priority": "low",
+        "replies": [],
+        "status": "open",
+        "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
+        "task": null,
+        "task_id": null,
+        "title": "Which Python version does the runner image pin?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
       }
     ],
     "next_cursor": null
@@ -4739,7 +4767,7 @@ window.MAITY_FIXTURES = {
       {
         "full_name": "maintainer/maity",
         "name": "Maity",
-        "open_requests": 3,
+        "open_requests": 4,
         "role": "coder",
         "slug": "maity",
         "state": "build",

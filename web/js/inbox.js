@@ -171,6 +171,18 @@ window.Maity = window.Maity || {};
   // A card as an entry names it: its reference, title and status (the hub's word).
   const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
 
+  // Talk ("neither, let's talk") is the human's who owns the asking agent
+  // (§7). The request does not say so: inside a project the member list
+  // does; across projects and for a personal request the owner is not known
+  // here, so Talk is offered and the hub refuses it for anyone else. Nothing
+  // to talk to where the hub filed the request itself.
+  function canTalk(ctx, req) {
+    if (!req.asked_by) return false;
+    if (ctx.scope !== "project" || req.personal) return true;
+    const agent = (ctx.memberById || {})[req.asked_by.member_id];
+    return !!agent && agent.kind === "agent" && agent.owner_id === ctx.me.id;
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
     const at = textAt(ctx, req);
@@ -275,15 +287,31 @@ window.Maity = window.Maity || {};
 
     const textId = "reply-" + String(req.slug).replace("/", "-") + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
+    // The one field above the buttons is always writable: a reply or Talk
+    // takes its text along when it holds any (§7); Send is the answer in
+    // words alone, offered where there are no replies to press. A preference
+    // proposal's words go with its Decline, in the review.
+    const noField = preference || unread;
+    const replies = noField ? [] : req.replies || [];
+    const withText = (payload) => {
+      const value = text.value.trim();
+      return value ? Object.assign({}, payload, { text: value }) : payload;
+    };
     const sendWords = () => {
       const value = text.value.trim();
       if (!value) { text.focus(); return; }
       send({ text: value });
     };
-    const sendText = h("button", { type: "button", onclick: sendWords }, M.t("inbox.send"));
-    M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+    const sendText = noField || replies.length ? null : h("button", { type: "button", class: "reply", onclick: sendWords }, M.t("inbox.send"));
+    if (sendText) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
     append(body,
-      // Right-aligned, the secondary ones first: Later, talk, then the replies.
+      noField ? null : h("div", { class: "free-text" },
+        h("label", { for: textId }, replies.length ? M.t("inbox.note_label") : M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
+        text,
+        // @ offers this project's members; the hub links them, it pings nobody (§8.6).
+        // Not for a personal request: its project may be one the human is not in.
+        req.personal ? null : M.mentionPicker(text, () => M.api.getAll("/projects/" + M.api.projectPath(req.slug) + "/members").then((r) => r.items), ctx.me.id)),
+      // Right-aligned, the secondary ones first: Later, Talk, then the replies.
       h("div", { class: "replies" },
         h("button", {
           type: "button",
@@ -291,7 +319,7 @@ window.Maity = window.Maity || {};
           title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
-        h("button", { type: "button", class: "reply talk", onclick: () => send({ talk: true }) }, M.t("inbox.talk")),
+        canTalk(ctx, req) ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
         // Its human may withdraw a personal request, as nobody else can (§7).
         req.personal ? h("button", {
           type: "button",
@@ -303,16 +331,9 @@ window.Maity = window.Maity || {};
           },
         }, M.t("inbox.withdraw")) : null,
         // The primary reply last, the others in the hub's order before it.
-        (preference || unread ? [] : [...(req.replies || []).filter((r) => replyClass(req, r) !== "reply primary"),
-          ...(req.replies || []).filter((r) => replyClass(req, r) === "reply primary")]).map((r) =>
-          h("button", { type: "button", class: replyClass(req, r), onclick: () => send({ reply_id: r.id }) }, r.label))),
-      // A preference proposal's words go with its Decline, in the review.
-      preference || unread ? null : h("div", { class: "free-text" },
-        h("label", { for: textId }, M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
-        text,
-        // @ offers this project's members; the hub links them, it pings nobody (§8.6).
-        // Not for a personal request: its project may be one the human is not in.
-        req.personal ? null : M.mentionPicker(text, () => M.api.getAll("/projects/" + M.api.projectPath(req.slug) + "/members").then((r) => r.items), ctx.me.id),
+        [...replies.filter((r) => replyClass(req, r) !== "reply primary"),
+          ...replies.filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
+          h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
         sendText),
       status.el);
 

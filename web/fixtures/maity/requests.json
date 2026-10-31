@@ -115,6 +115,28 @@
       "answer": { "reply_id": "keep", "text": "Keep it; @agent-d sorts the tabs.", "mentions": [{ "member_id": "agt-d", "handle": "agent-d", "field": "text", "offset": 9, "length": 8 }], "talk": false, "by": "hum-maintainer", "on_behalf_of": null, "at": "2026-10-21T10:20:00Z", "conversation_id": null },
       "created_at": "2026-10-21T10:05:00Z",
       "answered_at": "2026-10-21T10:20:00Z"
+    },
+    {
+      "id": "req-0013",
+      "class": "info",
+      "title": "Which Python version does the runner image pin?",
+      "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
+      "tried": "",
+      "options": [],
+      "replies": [],
+      "priority": "low",
+      "to": "hum-maintainer",
+      "asked_by": { "member_id": "agt-c", "display_name": "Agent C", "trust": "member", "role": "coder", "session_id": null },
+      "on_behalf_of": null,
+      "task_id": null,
+      "task": null,
+      "while_open": "proceed_provisionally",
+      "needs_in_session": null,
+      "ktw_ref": null,
+      "status": "open",
+      "answer": null,
+      "created_at": "2026-10-21T11:45:00Z",
+      "answered_at": null
     }
   ],
   "next_cursor": null

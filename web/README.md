@@ -260,8 +260,15 @@ too.
    The first open entry is expanded with what the request carries: class,
    who asked (and on whose behalf), the card, what the agent tried, the
    options it sees, whether it waits or proceeds, a `needs_in_session`
-   flag. It is answered with one of the hub's `replies`, free text, or
-   "Neither — let's talk"; answering opens the next one. **Later** moves
+   flag. One free-text field stands above the buttons and is always
+   writable; it is answered with one of the hub's `replies`, or **Talk**,
+   and the field's text goes along with whichever is pressed (`{reply_id,
+   text}`, `{talk: true, text}`; no text, no key). A request without
+   `replies` offers **Send** (`{text}`) beside Talk. Talk is offered only
+   where the human owns the asking agent (known inside a project from the
+   member list; across projects the hub decides) and is labelled "Talk" in
+   every language: a language file leaves `inbox.talk` out rather than
+   translate it. Answering opens the next one. **Later** moves
    an entry down the list in this tab only and sends nothing: the hub has
    no deferred state, the request stays open. A **personal request**
    (`docs/api.md` §7: to you as the owner of an agent profile, not to the
@@ -1212,7 +1219,7 @@ word or in inline code offers nothing. The picker only helps to type; the hub re
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
-Later, "Neither — let's talk", the replies with the primary one last;
+Later, Talk, the replies with the primary one last;
 Hide, Copy), in that order in
 the page too, so the tab order is the order on screen; destructive ones
 (Revoke, Remove) stand apart. On a phone (≤ 600 px) they stack, full width.
