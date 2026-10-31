@@ -17,6 +17,15 @@ the proposal carrying served, bridge, purpose and, for a change of purpose, the 
 `settle` writes or changes the row at the `go` that leaves none open, after `check` again with the
 project as it is then. A change of purpose leaves the old purpose in the row until that `go`.
 
+An ended connection keeps its row with `ended_at`, `ended_by` (null for the hub's own endings)
+and `end_reason`, so `DELETE` answers `200` with the connection in its final state (§12) and a
+replayed request finds it; `live` is true until then and NULL after (the idiom of
+`agent_profile`), so `UniqueConstraint("served", "bridge", "live")` holds one live connection per
+pair and the pair may connect again at once. Every read of connections filters on `live`. The
+bridge's owner may be no member: `DELETE` lets that human end the connection and shows them that
+one connection, nothing else of the project (an exception to §1.3's `not_found`, as the
+coordinator ruled on #932).
+
 The limit of five counts held connections and the open requests of new pairs together, read from
 the requests, so a pending pair takes its place without a row. A further `POST` for the same pair
 or `PATCH` of the same connection withdraws the open requests (`superseded`) before filing anew;

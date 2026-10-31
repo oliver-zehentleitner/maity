@@ -18,6 +18,7 @@ from maity_hub import (
     agent_owners,
     attachments,
     availability,
+    bridges,
     clock,
     commitment,
     forge,
@@ -1218,6 +1219,8 @@ def get_rules(slug: str, request: Request, caller: AnyCaller) -> Response:
             mine.role,
             arbiter_text(conn, mine.project),
             supervised=supervised,
+            # An agent that serves others reads the bridge's guide here too (§2.3).
+            bridging=bool(bridges.views(conn, [mine.id])[mine.id]["bridging_for"]),
         )
     return Response(
         text,

@@ -815,8 +815,16 @@ bridge = Table(
     Column("cross_owner", Boolean, nullable=False),
     Column("created_by", String(ID), nullable=False),  # the human who asked
     Column("created_at", UtcDateTime, nullable=False),
-    UniqueConstraint("served", "bridge"),
+    # An ended connection stays, in its final state (§12): who ended it (a member id, or
+    # null for the hub) and why (`bridge_ended`, `member_removed`, `owner_not_member`).
+    # `live` is true until then and NULL after, so the pair may connect again at once.
+    Column("ended_at", UtcDateTime),
+    Column("ended_by", String(ID)),
+    Column("end_reason", String(32)),
+    Column("live", Boolean, server_default=true()),  # true until ended; an insert names none
+    UniqueConstraint("served", "bridge", "live"),
     CheckConstraint("served <> bridge", name="not_self"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
 

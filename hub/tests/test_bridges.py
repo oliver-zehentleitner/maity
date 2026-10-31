@@ -65,8 +65,13 @@ def _requests(engine: Engine) -> list[Any]:
 
 
 def _bridges(engine: Engine) -> list[Any]:
+    """The live connections; an ended one keeps its row (§12)."""
     with engine.connect() as conn:
-        return list(conn.execute(select(t.bridge).order_by(t.bridge.c.created_at)))
+        return list(
+            conn.execute(
+                select(t.bridge).where(t.bridge.c.live.is_(True)).order_by(t.bridge.c.created_at)
+            )
+        )
 
 
 def _fields(response: Any) -> Any:
@@ -163,9 +168,21 @@ def test_who_ends_a_bridge(owner: flow.Human, make_client: ClientFactory, migrat
     bridge_id = connect(owner, served, bridge).json()["id"]
     path = f"{PROJECT}/members/{served}/bridges/{bridge_id}"
     assert coder.delete(path).status_code == 403
-    assert owner.delete(path).status_code == 204
+    ended = owner.delete(path)
+    assert ended.status_code == 200, ended.text
+    body = ended.json()  # the connection in its final state (§12)
+    assert (body["id"], body["ended_by"], body["end_reason"]) == (
+        bridge_id,
+        owner.id,
+        "bridge_ended",
+    )
+    assert body["ended_at"] is not None
     assert _bridges(migrated) == []
     assert owner.get(f"{PROJECT}/members/{served}").json()["bridges"] == []
+    assert owner.delete(path).status_code == 404  # ended is gone for the route
+    again = connect(owner, served, bridge)  # the pair connects again with a new row
+    assert again.status_code == 201, again.text
+    assert again.json()["id"] != bridge_id
 
 
 def test_removing_a_member_or_making_it_a_proxy_ends_its_bridges(
@@ -274,7 +291,7 @@ def test_ending_a_bridge_withdraws_an_open_change(
     [row] = _bridges(migrated)
     path = f"{PROJECT}/members/{served}/bridges/{row.id}"
     change = owner.patch(path, {"purpose": "reviews"}).json()["id"]
-    assert owner.delete(path).status_code == 204
+    assert owner.delete(path).status_code == 200
     with migrated.connect() as conn:
         closed = conn.execute(select(t.request).where(t.request.c.id == change)).one()
     assert (closed.status, closed.withdraw_reason) == ("withdrawn", "bridge_ended")
@@ -335,6 +352,9 @@ def test_the_resume_of_a_bridge_names_whom_it_carries_for(
     assert "You lend your hands to the agents listed in `bridging_for`" in (
         body["rules"]["markdown"]
     )
+    assert body["membership"]["bridges"] == []
+    rules = carrier.get(f"{PROJECT}/rules")
+    assert "You lend your hands to the agents listed in `bridging_for`" in rules.text
 
 
 def test_a_group_chat_shows_a_bridge_across_owners_as_an_observer(
@@ -357,3 +377,34 @@ def test_a_group_chat_shows_a_bridge_across_owners_as_an_observer(
         conn.execute(update(t.bridge).values(cross_owner=False))
     view = owner.get(f"{PROJECT}/conversations/{chat['id']}").json()
     assert bridge not in view["observers"]
+
+
+def test_a_replayed_post_answers_the_connection_again(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge = _agent(migrated, owner), _agent(migrated, owner)
+    path = f"{PROJECT}/members/{served}/bridges"
+    body = {"bridge": bridge, "purpose": PURPOSE}
+    headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "bridge-replay-000001"}
+    first = owner.client.post(f"/api/v1{path}", json=body, headers=headers)
+    assert first.status_code == 201, first.text
+    again = owner.client.post(f"/api/v1{path}", json=body, headers=headers)
+    assert again.status_code == 201, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["id"] == first.json()["id"]
+
+
+def test_the_bridges_owner_outside_the_project_ends_the_connection(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    answer(friend, connect(owner, served, bridge).json()["id"], "go")
+    [row] = _bridges(migrated)
+    path = f"{PROJECT}/members/{served}/bridges/{row.id}"
+    stranger = flow.human(make_client, migrated, "stranger")
+    assert stranger.delete(path).status_code == 404  # owns neither agent
+    ended = friend.delete(path)
+    assert ended.status_code == 200, ended.text
+    assert (ended.json()["ended_by"], ended.json()["end_reason"]) == (friend.id, "bridge_ended")
+    assert _bridges(migrated) == []
+    assert friend.get(f"{PROJECT}/members/{served}").status_code == 404  # nothing else

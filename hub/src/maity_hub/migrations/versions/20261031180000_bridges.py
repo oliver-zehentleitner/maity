@@ -1,9 +1,10 @@
 """Bridges: an agent that lends its hands to another agent of the project (docs/api.md §2.3,
 "The bridge").
 
-`bridge` holds one row per connection that exists, served and bridge as memberships, the purpose
-and whether the two agents have different owners. A connection that waits for consent is only
-its requests until both said `go`.
+`bridge` holds one row per connection, served and bridge as memberships, the purpose and whether
+the two agents have different owners; an ended one keeps its row with `ended_at`, `ended_by` and
+`end_reason`, and `live` NULL so the pair may connect again. A connection that waits for consent
+is only its requests until both said `go`.
 
 The chain follows whatever head `main` has when it lands.
 
@@ -44,7 +45,12 @@ def upgrade() -> None:
         sa.Column("cross_owner", sa.Boolean(), nullable=False),
         sa.Column("created_by", sa.String(length=40), nullable=False),
         sa.Column("created_at", TIMESTAMP, nullable=False),
+        sa.Column("ended_at", TIMESTAMP, nullable=True),
+        sa.Column("ended_by", sa.String(length=40), nullable=True),
+        sa.Column("end_reason", sa.String(length=32), nullable=True),
+        sa.Column("live", sa.Boolean(), server_default=sa.true(), nullable=True),
         sa.CheckConstraint("served <> bridge", name=op.f("ck_bridge_not_self")),
+        sa.CheckConstraint("live IS NOT FALSE", name=op.f("ck_bridge_live_true_or_null")),
         sa.ForeignKeyConstraint(
             ["bridge"], ["membership.id"], name=op.f("fk_bridge_bridge_membership")
         ),
@@ -55,7 +61,7 @@ def upgrade() -> None:
             ["served"], ["membership.id"], name=op.f("fk_bridge_served_membership")
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_bridge")),
-        sa.UniqueConstraint("served", "bridge", name=op.f("uq_bridge_served_bridge")),
+        sa.UniqueConstraint("served", "bridge", "live", name=op.f("uq_bridge_served_bridge_live")),
         **MYSQL,
     )
     op.create_index(op.f("ix_bridge_bridge"), "bridge", ["bridge"])
