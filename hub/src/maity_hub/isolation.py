@@ -104,6 +104,8 @@ def isolate(
             isolated_reason=reason,
             isolated_since=clock.now(),
             isolated_by=human_id,
+            # Where a hidden window would start: the first event this isolation makes (§6.2).
+            isolated_from_seq=_head(conn, project.id) + 1,
         )
     )
     release_claims(conn, target.id)
@@ -121,30 +123,55 @@ def isolate(
     on_commit(conn, lambda: longpoll.registry.end(target.id))
 
 
-def lift(conn: Connection, project: Any, target: Any, human_id: str, actor: Actor) -> None:
-    """Lift the isolation: access only, not the claims or the chats (§6.2)."""
+def _head(conn: Connection, project_id: str) -> int:
+    """The project's newest event seq, 0 for none."""
+    head = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project_id)
+    ).scalar()
+    return int(head or 0)
+
+
+def lift(
+    conn: Connection,
+    project: Any,
+    target: Any,
+    human_id: str,
+    actor: Actor,
+    *,
+    hide: bool = False,
+) -> None:
+    """Lift the isolation: access only, not the claims or the chats (§6.2). With `hide` the
+    events between the isolation and now stay out of what the agent may read for good: the
+    window `{from_seq, to_seq}`, both ends included, joins its `isolation_windows`."""
     lock_project(conn, project.id)
     target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if not is_isolated(target) or target.active is None:
         return
+    windows = list(target.isolation_windows or [])
+    to_seq = _head(conn, project.id)  # before the lift's own events: the agent reads those
+    if hide and target.isolated_from_seq is not None and target.isolated_from_seq <= to_seq:
+        windows.append({"from_seq": target.isolated_from_seq, "to_seq": to_seq})
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
-        .values(isolated_reason=None, isolated_since=None, isolated_by=None)
+        .values(
+            isolated_reason=None,
+            isolated_since=None,
+            isolated_by=None,
+            isolated_from_seq=None,
+            isolation_windows=windows or None,
+        )
     )
     # What happened while it was left out is not read afterwards: its sessions' cursors
     # move to the project's head, where the next resume starts (§6.2).
-    head = conn.execute(
-        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project.id)
-    ).scalar()
-    if head is not None:
+    if to_seq:
         conn.execute(
             update(t.agent_session)
             .where(
                 t.agent_session.c.membership_id == target.id,
-                t.agent_session.c.acknowledged_seq < head,
+                t.agent_session.c.acknowledged_seq < to_seq,
             )
-            .values(acknowledged_seq=head)
+            .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)
     _tell_owner(
