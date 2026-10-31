@@ -80,7 +80,8 @@ window.Maity = window.Maity || {};
   }
   function sectionOk(sec) {
     if (!isObject(sec)) return false;
-    const type = TYPES[sec.type];
+    // Own keys only: "constructor" or "__proto__" as a type is no section type.
+    const type = Object.hasOwn(TYPES, sec.type) ? TYPES[sec.type] : null;
     if (!type) return true;
     return fieldsOk(type.fields || [], sec) && listsOf(type).every((l) => sec[l.key] === undefined
       || (Array.isArray(sec[l.key]) && sec[l.key].every((item) => isObject(item) && fieldsOk(l.fields, item))));
@@ -230,7 +231,7 @@ window.Maity = window.Maity || {};
   function sectionBox(lang, sections, i, errors, redraw) {
     const s = sections[i];
     const path = "pages." + lang + ".sections." + i;
-    const type = TYPES[s.type];
+    const type = Object.hasOwn(TYPES, s.type) ? TYPES[s.type] : null;
     const on = h("input", { type: "checkbox", id: "lp-" + lang + "-" + i + "-enabled" });
     on.checked = s.enabled !== false;
     on.addEventListener("change", () => { s.enabled = on.checked; });
@@ -238,7 +239,7 @@ window.Maity = window.Maity || {};
     errors[path] = error;
     errors[path + ".type"] = error;
     const head = h("div", { class: "lp-section-head" },
-      h("h5", { class: "lp-section-title" }, (i + 1) + ". " + (type ? type.label : KEPT[s.type] || s.type)),
+      h("h5", { class: "lp-section-title" }, (i + 1) + ". " + (type ? type.label : Object.hasOwn(KEPT, s.type) ? KEPT[s.type] : s.type)),
       h("label", { class: "check", for: "lp-" + lang + "-" + i + "-enabled" }, on, " Shown"),
       small("Up", () => move(sections, i, -1), i === 0, redraw), small("Down", () => move(sections, i, 1), i === sections.length - 1, redraw),
       small("Remove", () => sections.splice(i, 1), false, redraw));

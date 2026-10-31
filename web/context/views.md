@@ -3181,10 +3181,8 @@ editor is drawn from it; a body whose pages, sections or lists are of
 the wrong kind leaves the draft as it was. That kind check covers every
 value the editor binds to an object, not only lists: a button, a group
 and each footer link must be an object, or absent where optional, or the
-editor would break after the draft was replaced. Rejected: drawing
-inside try/catch and restoring the draft afterwards, which would hide
-real drawing bugs and leave a half-built editor behind. Save asks for the step-up
-(§2.8.4) the hub requires for this call.
+editor would break after the draft was replaced. Save asks for the
+step-up (§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
 save does, so the import reuses it instead of a second check in the
@@ -3194,4 +3192,6 @@ editor before anything is stored lets the admin read and fix it there.
 **Rejected alternative:** saving on import, with a confirmation: one
 click from a file to visitors, without the editor in between. A check
 of the JSON in the page: a copy of the hub's rules that ages with each
-new section type.
+new section type. Drawing inside try/catch and restoring the draft
+afterwards: it would hide real drawing bugs and leave a half-built
+editor behind.

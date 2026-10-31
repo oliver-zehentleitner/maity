@@ -580,7 +580,7 @@ window.Maity = window.Maity || {};
     if (sections.length > 20) errors[at + ".sections"] = "too_many";
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
-      const known = LANDING_TYPES[s.type];
+      const known = Object.hasOwn(LANDING_TYPES, s.type) ? LANDING_TYPES[s.type] : null;
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       const items = s.items || [];

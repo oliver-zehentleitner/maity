@@ -7483,6 +7483,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const v3Saved = lePatches[lePatches.length - 1][1];
     expect(text(main).includes("Saved. Visitors see it within a minute.") && Object.keys(v3Saved.pages).sort().join() === Object.keys(v3.pages).sort().join()
       && v3Saved.footer.operator === "Maintainer, Austria", "landing JSON: the V3 file saved with both languages and the footer kept");
+    // A type that is a key every object inherits is no section type (#808): the hub refuses it, the editor draws it as one it keeps.
+    const ctorPatches = lePatches.length;
+    byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Ctor", description: "x", sections: [{ type: "constructor", enabled: true }] } } });
+    await jsLoad();
+    expect(leBox().querySelector("form.lp-form") && leSections().length === 1 && text(leSections()[0].querySelector(".lp-section-title")) === "1. constructor"
+      && text(leSections()[0]).includes("not a section this hub knows") && text(main).includes("Loaded into the editor, but the hub refuses parts of it")
+      && lePatches.length === ctorPatches,
+      "landing JSON: a section type named like an inherited key is drawn as an unknown one, nothing saved");
     win.confirm = jsConfirm;
   }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
