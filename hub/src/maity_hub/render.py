@@ -780,6 +780,50 @@ def legal_document(
     )
 
 
+# --- a form page outside the app (§2.7.1) ---------------------------------------------------
+
+FORM_STYLE = """
+:root{--danger:#c92a2a}@media (prefers-color-scheme:dark){:root{--danger:#ff8787}}
+.panel{max-width:28rem;margin:2rem auto;background:var(--card);border:1px solid var(--line);
+border-radius:.8rem;padding:1.5rem}.panel h1{font-size:1.6rem;margin:0 0 .6rem}
+.field{margin:1rem 0 0}.field label{display:block;font-weight:600;margin:0 0 .3rem}
+.field input{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);
+border-radius:.5rem;background:var(--bg);color:var(--fg)}
+.field input:focus,.check input:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
+.field input[aria-invalid=true]{border-color:var(--danger)}
+.check{margin:1rem 0 0}.check label{display:flex;gap:.5rem;align-items:flex-start}
+.check input{margin:.3rem 0 0;flex:none}
+.error{color:var(--danger);margin:.3rem 0 0;font-size:.92rem}
+.panel .note{margin:1rem 0 0}
+button{margin:1.4rem 0 0;width:100%;font:inherit;font-weight:600;padding:.65rem 1rem;
+border:1px solid var(--accent);border-radius:.5rem;background:var(--accent);color:var(--accent-fg);
+cursor:pointer}
+footer p{margin:0}footer a{margin-right:0}
+@media (max-width:30rem){.panel{margin:1rem 0;padding:1.1rem}}
+"""
+
+
+def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
+    """A page outside the app that a link in a mail opens, such as the registration's (§2.7.1):
+    the legal pages' head and colours, one centred panel and the given footer, no script and
+    nothing loaded from elsewhere. `content` and `footer` are HTML of escaped text and elements."""
+    header = (
+        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a></div></header>'
+    )
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head="",
+        body=(
+            f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
+            + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
+        ),
+        languages=[],
+        style=STYLE + FORM_STYLE,
+    )
+
+
 # --- a public page (§16.9) --------------------------------------------------------------------
 
 DESCRIPTION_MAX = 160
