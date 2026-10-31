@@ -162,7 +162,7 @@ def test_online_uses_canonical_presence(
     assert value(response) == "0 agents online" and 'fill="#5e6670"' in response.text
     assert "<style" not in response.text
     offline_etag = response.headers["etag"]
-    listening.opened(recent.session_id or "")
+    wait = listening.opened(recent.session_id or "")
     try:
         response = public.get("/badge/maintainer/maity.svg")
         assert value(response) == "1 agent online" and 'fill="#1a7f37"' in response.text
@@ -172,7 +172,7 @@ def test_online_uses_canonical_presence(
         cached = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": animated_etag})
         assert cached.status_code == 304 and cached.content == b""
     finally:
-        listening.closed(recent.session_id or "")
+        listening.closed(recent.session_id or "", wait)
     resting = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": animated_etag})
     assert resting.status_code == 200 and "<style" not in resting.text
     assert resting.headers["etag"] == offline_etag

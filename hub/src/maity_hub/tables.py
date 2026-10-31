@@ -987,6 +987,27 @@ rate_count = Table(
     **MYSQL_TABLE,
 )
 
+# Who listens, across replicas (hub/context/replicas.md 387c2409, point 4; UNLOGGED on PostgreSQL).
+hub_pod = Table(
+    "hub_pod",
+    metadata,
+    Column("pod", String(64), primary_key=True),
+    Column("seen_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+long_poll = Table(
+    "long_poll",
+    metadata,
+    Column("wait_id", String(32), primary_key=True),
+    Column("listening_key", String(255), nullable=False),
+    Column("pod", String(64), nullable=False),
+    Column("opened_at", UtcDateTime, nullable=False),
+    Index("ix_long_poll_key", "listening_key"),
+    Index("ix_long_poll_pod", "pod"),
+    **MYSQL_TABLE,
+)
+
 agent_session = Table(
     "agent_session",
     metadata,

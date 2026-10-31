@@ -20,7 +20,7 @@ from tests.test_jour_fixe_triage import TO_OWNER, decided, report
 @pytest.fixture(autouse=True)
 def _no_listeners() -> Iterator[None]:
     yield
-    listening._open.clear()
+    listening.reset()
 
 
 @pytest.fixture

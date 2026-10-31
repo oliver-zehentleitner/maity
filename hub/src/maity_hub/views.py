@@ -533,6 +533,7 @@ def member_views(
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
@@ -613,7 +614,7 @@ def member_views(
         if row.agent_id is not None:
             session = live.get(row.id)
             latest = latest_of.get(row.id)
-            is_listening = session is not None and listening.is_listening(session.id)
+            is_listening = session is not None and session.id in heard
             view["harness"] = latest.harness if latest else None
             view["model"] = latest.model if latest else None
             view["session"] = (
