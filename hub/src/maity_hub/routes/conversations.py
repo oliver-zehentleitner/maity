@@ -589,9 +589,19 @@ def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -
     return membership(conn, caller, slug)
 
 
+def _is_pinned(conn: Connection, mine: Any, conversation_id: str) -> bool:
+    """Whether the caller pinned the chat; never for an agent (§9.3 "Pinned")."""
+    if mine.kind != "human":
+        return False
+    return (mine.project.id, conversation_id) in pins.pinned(conn, mine.principal_id)
+
+
 def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str, Any]:
     group, found = _group(conn, mine, conversation_id)
-    return group_chats.view(conn, group, found)
+    return {
+        **group_chats.view(conn, group, found),
+        "pinned": _is_pinned(conn, mine, conversation_id),
+    }
 
 
 def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -> dict[str, Any]:
@@ -602,7 +612,7 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     found = group_chats.access(conn, conversation_id, mine)
     if found is None:  # a replay shows nothing the caller may no longer read (as #271)
         raise not_found()
-    return group_chats.view(conn, row, found)
+    return {**group_chats.view(conn, row, found), "pinned": _is_pinned(conn, mine, conversation_id)}
 
 
 idempotency.LOADERS["conversation"] = _load_for_caller
@@ -620,7 +630,7 @@ def get_conversation(
         _party(conn, mine, conversation_id, hidden=True)
         item = _direct_item(conn, mine, caller, conversation_id)
         del item["_activity"]
-        return JSONResponse(item)
+        return JSONResponse({**item, "pinned": _is_pinned(conn, mine, conversation_id)})
 
 
 def _manager(conn: Connection, mine: Membership, conversation_id: str) -> Any:

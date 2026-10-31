@@ -73,6 +73,11 @@ def test_a_human_pins_and_unpins_idempotently_and_only_it_sees_the_pin(
     assert mine == {chat["id"]: True, agent.id: True}
     assert [i["pinned"] for i in listed(guest)] == [False]  # a pin is its holder's own
     assert {i["pinned"] for i in listed(agent)} == {False}  # an agent never has one
+    # a chat's own view says it too, a direct one's being its list item (§9.1)
+    assert owner.get(f"{BASE}/{chat['id']}").json()["pinned"] is True
+    assert owner.get(f"{BASE}/{agent.id}").json()["pinned"] is True
+    assert guest.get(f"{BASE}/{chat['id']}").json()["pinned"] is False
+    assert agent.get(f"{BASE}/{chat['id']}").json()["pinned"] is False
     assert [i["pinned"] for i in listed(owner, ME)] == [True, True]
     for _ in range(2):
         assert unpin(owner, chat["id"]).status_code == 204
