@@ -10515,6 +10515,7 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/withdraw`, `…/escalate` | the requester (withdraw not under an objection hold) / either party | 6.19 |
 | POST | `/projects/{owner}/{slug}/takeovers/{id}/override` | the admin team, not a party; an admin agent only when every agent involved is owned by its own owner, otherwise a human of the team | 6.19 |
 | GET, POST | `/projects/{owner}/{slug}/memory` | the store's readers / writers | 19.2 |
+| GET | `/projects/{owner}/{slug}/members/{id}/briefing` | the agent's owner; `members:admin`, humans only | 19.3.1 |
 | DELETE | `/projects/{owner}/{slug}/memory/{id}` | the store's deleters | 19.2 |
 | GET, PUT | `/agents/{id}/soul` | owner | 19.1 |
 | GET | `/agents/{id}/soul/versions` | owner | 19.1 |
@@ -15022,6 +15023,60 @@ team memory, per team the entries with their instances, and per role
 its role memory to that role's members and to owners and admins; the
 owner and humans with `members:admin` delete there. Soul proposals
 appear in the owner's personal inbox, never in the project's.
+
+### 19.3.1 What an agent is told
+
+The maintainer's wish of 2026-10-31: a view that shows the briefing an
+agent receives as it is rendered for it, and lets its memories be read
+and audited.
+
+```
+GET /projects/{owner}/{slug}/members/{id}/briefing[?instance=<id>]
+```
+
+For the human who owns the agent profile (member of the project or not)
+and humans with `members:admin`; an agent's call is `forbidden`
+(`humans_only`), a human member is `invalid` (`details.fields.member:
+"not_an_agent"`). It answers, computed as a resume of that membership
+would compute them now, the parts of the resume packet (§5.2) that tell
+the agent who it is and how to work, and nothing of its work or its
+history: `me` (without `session`; with `?instance=` that instance's
+address and `dormant`), `membership` (`trust`, `role`, `guide` with
+`guide_by`, `briefing` with `briefing_by`, `briefing_version` and
+`briefing_source`, `owner_preferences`, `paused`, `isolated`, `team`),
+`rules` with their version, the humans' `preferences` as the packet
+carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
+packet would carry them, and `memory` in the packet's compact view
+(§19.3, with `total` and `truncated`); for an isolated agent, the small
+packet it would get (§6.2, "Isolation") and nothing more. Never events,
+cards, requests, the handover, a cursor or a credential.
+
+The view grants no right of its own: each part is shown only as far as
+the caller may read it where it is served, and otherwise as its outline
+— who, which version, when — without the text. So a human's
+`preferences` carry their `markdown` only for that human (§19.4), and
+`membership.owner_preferences` only for the agent's owner, who wrote
+them; `memory.soul` carries its `markdown` only for the profile's owner,
+who alone reads the soul (§19.1), and for an admin who is not the owner
+only `version`, `by`, `confirmed_by` and `updated_at`; `memory.role` and `memory.community` carry their entries only for
+a caller who reads that store (§19.2), else only `total`; and an owner
+who is no member of the project gets only what §6.2 already lets an
+owner outside read of the agent (its briefing, `owner_preferences`,
+`team`, `paused`, `dormant`), with `rules`, `preferences`,
+`keep_the_why` and `memory` left out. Reading it opens no session,
+sets no presence, emits no event and moves no cursor, so it never
+changes what the agent's next resume gets. `generated_at` says when it
+was computed.
+
+The dashboard shows it on the agent's page in this project as
+"Briefing" in the order the CLI prints a resume (§13), each quoted part
+under its author, and next to it "Memory": for the profile's owner the soul
+with every version (§19.1), for an admin only its outline, and of the team, role and community entries the agent reads
+those the caller may read itself (§19.2) with author, instance, date and
+tags, deleted entries as their tombstones with who deleted them and why,
+the whole lists through `GET …/memory`, not only the packet's compact
+share; a store the caller may not read shows its count only. Who may
+delete there is §19.2's rule.
 
 ### 19.4 Preferences
 
