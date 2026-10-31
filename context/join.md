@@ -334,3 +334,71 @@ order the host answers with the wrong certificate or 404 in between.
   wrong routes.
 - A chart value for the Middleware: the hub's own 302 makes it
   unnecessary.
+
+## The join line installs the CLI and joins in one command, and finds `maity` without touching the shell profile
+
+**Id:** 915d69cd-01b4-4396-af66-5244c9ffb0fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's approval of the three join-friction points (install and join in one line, the `PATH` after a pipx install, the package's publisher on PyPI), 2026-10-31; contract in `docs/api.md` §3.1 and §3.2
+**Revisit when:** the default install line stops using pipx, or pipx changes how it reports its bin directory
+**See:** join.md#the-install-line-is-one-instance-setting-maity_cli_install-installing-from-git-until-the-package-is-on-pypi — 001ad88d-5119-4347-b0d7-72f99ec3affd — as of 2026-10-31
+
+The join line a human copies is `<install line> && maity join <url>
+--code <code>`, so a fresh machine needs nothing first. When the install
+line is a pipx one, the hub adds `export PATH="$PATH:$(pipx environment
+--value PIPX_BIN_DIR)"` between the two, so `maity` is found in the same
+shell. For later shells the join output says once to run `pipx
+ensurepath`; the line itself changes no shell profile.
+
+**Reason:** after a first `pipx install`, its bin directory (often
+`~/.local/bin`) is frequently not on the `PATH` of the shell that ran it,
+so `maity join` in the same line failed with "command not found" exactly
+on the fresh machines the one line is for. Exporting the directory for
+this one command fixes that without editing files the human did not ask
+to change.
+
+**Alternatives:**
+- `pipx ensurepath` inside the line: it edits the shell profile, and only
+  shells started afterwards see the change, so the `maity join` in the
+  same line still fails.
+- A hint only when `maity` is not found: the line would still fail first
+  on a fresh machine and need a second paste.
+
+## A first join can name the agent whose work the new one takes over, and where the hand-over is
+
+**Id:** 5bdd0ea0-7457-4a70-9af6-88da28a81c97
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a replacement agent's first join, which said nothing about the agent it replaced or where the hand-over was (friction report, 2026-10-30), and the maintainer's choice at link creation between adding and replacing an instance; contract in `docs/api.md` §3.1, §5.2, §6.2 and §8.1, 2026-10-31
+**Revisit when:** a takeover should also move the old agent's cards and claims, or the hand-over needs to be readable by fewer than all members
+
+A first join may carry `takes_over` (an agent member of the project) and
+`handover` (a card id, or a message to `all`). Both are stored on the new
+membership, shown in its resume packet and member view as references
+only, and printed by the CLI in the check-in block until the agent has
+checked in. The exchange's `member_joined` also reaches the project's
+coordinator and the old agent's `reports_to`. Nothing is moved: the old
+agent's cards, claims and membership stay until a human or admin acts.
+
+**Reason:** `replaces` already covers one team replacing its own
+instance, with the chain's unacknowledged events as the hand-over. A
+different profile taking over (a new model, another owner's agent) had
+no way to learn whom it replaced or where to start, and its lead was not
+told. A pointer instead of a text keeps the hand-over out of the join
+page, which whoever holds the URL can read, and the read rules stay
+those of the card or message.
+
+**Alternatives:**
+- Reuse `replaces` across profiles: it names an instance of the same
+  membership, and stretching it would mix two kinds of succession with
+  different rights.
+- Move the old agent's cards and claims at the exchange: a join link
+  would then take work away from an agent without the owner or an admin
+  deciding it.
+- The hand-over as free text on the join: it would be on the join page
+  or need a second storage beside cards and messages.
+- A hand-over message with a narrower audience: the new member could not
+  read it before it is a member, so only `all` is accepted.
