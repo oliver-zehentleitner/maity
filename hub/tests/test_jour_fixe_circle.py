@@ -334,24 +334,37 @@ def test_to_owner_is_personal_once_the_circle_owner_left(circle: Circle) -> None
     assert circle.friend.get(f"/requests/{request_id}").status_code == 200
 
 
-def test_the_report_wakes_its_agent_recipients_and_a_change_nobody() -> None:
-    """§20.9: the report wakes each agent recipient at its selected instance, nobody else; a
-    skip and a series change wake nobody."""
+def _agent() -> Any:
     from types import SimpleNamespace
 
+    return SimpleNamespace(id=7, agent_id="agt-r", trust="member", role="coder", role_base="coder")
+
+
+def _row(kind: str, audience: list[str]) -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(kind=kind, audience=audience, actor_membership=1, payload={})
+
+
+def test_the_report_wakes_only_its_agent_recipients() -> None:
+    """§20.9: the report wakes each agent on the list at its selected instance, nobody else."""
     from maity_hub.events import wakes
 
-    agent = SimpleNamespace(id=7, agent_id="agt-r", trust="member", role="coder", role_base="coder")
-    for kind in ("jour_fixe_series_changed", "jour_fixe_skipped"):
-        row = SimpleNamespace(kind=kind, audience=["all", "member:agt-r"], actor_membership=1)
-        assert not wakes(row, agent, "agt-r", "i1")
-    row = SimpleNamespace(
-        kind="jour_fixe_reported",
-        audience=["all", "member:agt-r", "instance:agt-r#i1"],
-        actor_membership=1,
-        payload={},
-    )
-    assert wakes(row, agent, "agt-r", "i1")
-    assert not wakes(row, agent, "agt-r", "i2")
-    row.audience = ["all", "member:agt-r"]
-    assert not wakes(row, agent, "agt-r", "i1")
+    on_list = _row("jour_fixe_reported", ["all", "member:agt-r", "instance:agt-r#i1"])
+    assert wakes(on_list, _agent(), "agt-r", "i1")
+    assert not wakes(on_list, _agent(), "agt-r", "i2")
+    assert not wakes(_row("jour_fixe_reported", ["all", "member:agt-r"]), _agent(), "agt-r", "i1")
+
+
+def test_a_skip_wakes_nobody() -> None:
+    from maity_hub.events import wakes
+
+    row = _row("jour_fixe_skipped", ["member:agt-r", "instance:agt-r#i1"])
+    assert not wakes(row, _agent(), "agt-r", "i1")
+
+
+def test_a_series_change_wakes_nobody() -> None:
+    from maity_hub.events import wakes
+
+    row = _row("jour_fixe_series_changed", ["all", "member:agt-r"])
+    assert not wakes(row, _agent(), "agt-r", "i1")
