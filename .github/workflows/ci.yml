@@ -13,10 +13,14 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its run still in the queue or running;
-# main keeps one run per merge (its group is the commit), never cancelled.
+# A new push to a pull request cancels its run still in the queue or running.
+# Main has one group for all pushes and is never cancelled while it runs: GitHub keeps the
+# running run and replaces a run still waiting by the newest, so at most one main run is
+# running and one is waiting, however fast merges follow each other. The waiting run that
+# is replaced is cancelled by GitHub and shows as cancelled; that is not a failure, the
+# newer commit's run covers it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:

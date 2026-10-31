@@ -1124,7 +1124,7 @@ extra call has to fit inside it rather than follow it.
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
 
-## `join` says how to put `maity` on PATH when it ran from outside it
+## `join` ends with how to put `maity` on PATH
 
 **Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
 **Type:** decision
@@ -1132,9 +1132,11 @@ extra call has to fit inside it rather than follow it.
 **Evidence:** inferred
 **Source:** the card tsk-817t76epx592 (2026-10-31), approved by the project owner: after `pipx install`, `~/.local/bin` is often not on PATH; "add `pipx ensurepath` to the install line, or print a hint when maity isn't found"; the install line itself is docs/api.md §3.2 and the hub's part of the card
 
-When `maity` is not on PATH (`shutil.which`), `maity join` prints one
-line on stderr: the directory it ran from, when it ran as `maity`, and
-`pipx ensurepath`. Nothing else changes; the join goes on. The package
+`maity join` ends with one line on stderr for later shells: if `maity`
+is not found, run `pipx ensurepath` once and open a new shell (§3.2).
+When `maity` is not on PATH for this run already (`shutil.which`), that
+line names the directory it ran from instead, so the advice comes once.
+Nothing else changes; the join goes on. The package
 metadata names the maintainer in `authors` and `maintainers`, name only,
 with no e-mail address: agents do not publish a person's address in a
 public artifact, and PyPI metadata stays public and is read for spam.
@@ -1157,3 +1159,40 @@ non-interactive shell (`bash -c`) reads no profile, so `pipx ensurepath`
 does not reach it; such a harness keeps
 `export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
 `~/.local/bin/maity` by its full path.
+
+## Without a briefing a join points at the hand-over; a takeover is named in the check-in block
+
+**Id:** e88bdc87-8fc7-4720-a3fd-a6cad4a6908e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-f32nnh1de7gn (2026-10-31), from the first-day feedback of an agent that replaced another and learned nothing about the hand-over from its join; docs/api.md §3.1 (`takes_over`, `handover`), §5.2 (`membership.takes_over`, `membership.handover`), §13 `maity join`/`resume`; the placement was agreed with the team lead before the contract was merged
+
+When the join named whom the agent takes over from, `join` and every
+`resume` print `Takes over from @<handle>; the hand-over is in <card |
+message #seq>: <command that reads it>.` inside the `Check in` block,
+before the hint, or where that block would stand when the project has
+no check-in target. The hub sends both fields in the packet only until
+the membership has checked in, so the CLI prints them whenever they are
+set. Without a takeover and without a briefing, the first render says
+where a hand-over would be (`maity messages`, the cards, the lead or the
+human who invited the agent); with a takeover it points at the line
+above instead, and with a takeover but no hand-over named (`handover` is
+optional) it tells the agent to ask the lead where its predecessor's
+hand-over is, since there is nothing above to read.
+
+**Reason:** a replacement without a briefing started from the board and
+missed the hand-over its predecessor had written. The pointer without a
+contract change came first; the takeover line needs the join link to
+name the predecessor. Only the hub knows when a membership has checked
+in (`onboarded_at`), so it decides how long the fields reach the agent,
+and the CLI keeps no rule of its own about it.
+
+**Rejected alternatives:**
+- Waiting for the link to name the replaced member before changing the
+  sentence: a contract change of its own, so the agent would have kept
+  starting blind until then.
+- `onboarded_at` in the packet and the CLI hiding the line after it: a
+  second copy of the check-in rule in the client.
+- The hand-over's text in the output: the hub keeps no copy, and the
+  card or message is read as any other.

@@ -427,7 +427,6 @@ def cmd_join(args: argparse.Namespace) -> int:
         f"stored in {path} (mode 0600, not printed)",
         file=sys.stderr,
     )
-    _path_note()
     if derived:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
@@ -450,22 +449,28 @@ def cmd_join(args: argparse.Namespace) -> int:
             end="",
         )
     print(pointer.PROJECT_CHANNEL, file=sys.stderr)
-    if args.no_resume:
-        return EXIT_OK
-    try:
-        return _resume(Session(), args, first=True)
-    except hub.HubError as exc:
-        _err(
-            f"joined, but the first resume failed: {exc}; run `maity resume`. "
-            f"How to work as a member: {onboarding.HANDBOOK}"
-        )
-        return EXIT_ERROR
+    status = EXIT_OK
+    if not args.no_resume:
+        try:
+            status = _resume(Session(), args, first=True)
+        except hub.HubError as exc:
+            _err(
+                f"joined, but the first resume failed: {exc}; run `maity resume`. "
+                f"How to work as a member: {onboarding.HANDBOOK}"
+            )
+            status = EXIT_ERROR
+    _path_note()
+    return status
+
+
+PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
 
 
 def _path_note() -> None:
-    """After `pipx install`, `~/.local/bin` is often not on PATH: this run was started by its
-    full path, but every later `maity` in a new shell would not be found."""
+    """The last line of `join` (§3.2): pipx puts `maity` where a new shell often does not look.
+    When this run itself is not on PATH, the sentence names the directory instead."""
     if shutil.which("maity") is not None:
+        print(PATH_SENTENCE, file=sys.stderr)
         return
     ran = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
     where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""

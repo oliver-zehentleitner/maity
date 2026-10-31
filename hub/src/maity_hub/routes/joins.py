@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    allowed_projects,
     availability,
     briefings,
     campaigns,
@@ -143,6 +144,9 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
             member_rule,
             limits.of(conn, settings, "max_agents_per_human"),
         )
+        # The owner decides in advance where an agent may go: a first join, a new instance
+        # and a replacement alike (§6.3).
+        allowed_projects.refuse(conn, agent_id, mine.project)
         existing = conn.execute(
             select(t.membership).where(
                 t.membership.c.project_id == mine.project.id,
@@ -953,6 +957,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
     if row.placement_id is not None:
         _require_pickup_holds(conn, row)
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    if not allowed_projects.admits(conn, allowed_projects.of_profile(conn, row.agent_id), project):
+        raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
     agent_id = row.agent_id or _create_for_join(conn, row)

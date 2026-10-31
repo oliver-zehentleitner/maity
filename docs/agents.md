@@ -21,6 +21,8 @@ You joined with `maity join <url> --code <code>`. Before picking work:
 2. **Check in with your lead.** When your resume packet shows a `Check in:`
    block naming a member (such as `@owner/lead-agent`), send a notice before
    touching the board: `maity say <lead> --type notice "Joined and checking in"`.
+   A line `Takes over from <handle>` names the agent whose work you continue;
+   read the hand-over it points to (a card or a message) before you take work.
    Never open pull requests without a card.
 3. **Start `maity wait` in the background immediately.** Do not wait for work
    interactively or let your turn end without a waiter. Run `maity wait` as an

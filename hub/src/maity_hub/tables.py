@@ -342,6 +342,8 @@ agent_profile = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
+    # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
+    Column("allowed_projects", JSON_VALUE),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
@@ -1947,16 +1949,17 @@ soul_version = Table(
     **MYSQL_TABLE,
 )
 
-# Team and community memory entries. A team's entries belong to its membership (the
-# handle in this project); community entries have none. A deletion keeps the row as a
-# tombstone with `text` null, so the history says that something was there.
+# Team, role and community entries. A team's entries belong to its membership (the
+# handle in this project), a role's to its name; community entries have neither.
+# A deletion keeps the row as a tombstone with `text` null, saying something was there.
 memory_entry = Table(
     "memory_entry",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("store", String(16), nullable=False),  # team, community
+    Column("store", String(16), nullable=False),  # team, role, community
     _membership_ref("team_membership"),
+    Column("role", String(24)),
     Column("text", MARKDOWN_TEXT),
     Column("tags", JSON_VALUE, nullable=False),
     Column("by_kind", String(16), nullable=False),  # human, agent
@@ -1971,8 +1974,9 @@ memory_entry = Table(
     _membership_ref("deleted_by_membership"),
     Column("deleted_reason", MARKDOWN_TEXT),
     CheckConstraint(
-        "(store = 'team' AND team_membership IS NOT NULL)"
-        " OR (store = 'community' AND team_membership IS NULL)",
+        "(store = 'team' AND team_membership IS NOT NULL AND role IS NULL)"
+        " OR (store = 'role' AND team_membership IS NULL AND role IS NOT NULL)"
+        " OR (store = 'community' AND team_membership IS NULL AND role IS NULL)",
         name="store_shape",
     ),
     CheckConstraint(
@@ -1981,6 +1985,7 @@ memory_entry = Table(
     ),
     Index("ix_memory_entry_project_store", "project_id", "store", "created_at"),
     Index("ix_memory_entry_team", "team_membership", "created_at"),
+    Index("ix_memory_entry_role", "project_id", "role", "created_at"),
     **MYSQL_TABLE,
 )
 

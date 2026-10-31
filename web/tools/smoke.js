@@ -1576,11 +1576,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Linter counts per field; an entry link outside its part's dashboard is no link.
   const odd2 = JSON.parse(JSON.stringify(baseAnswer));
   odd2.members[1].summary.findings = { errors: 2, warnings: null };
+  odd2.members[2].summary.findings = { errors: 1, warnings: 1 };
   odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
     link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
   expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
+  expect(text(main.querySelectorAll(".why-members tbody tr")[2]).includes("1 error, 1 warning"), "why: a linter count of one reads in the singular");
   const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
   expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
   win.Maity.api.get = realGet6;
@@ -2803,6 +2805,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
     && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
     "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
+  const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
+    { id: "tsk-0001", title: "Links", links: [
+      { kind: "pr", repository: "acme/widget", number: 7, forge_url: "https://github.com/acme/widget/pull/7", observed: { title: "Add the API", state: "merged" } },
+      { kind: "issue", repository: "acme/widget", number: 8, forge_url: "https://github.com/acme/widget/issues/8" },
+      { kind: "url", url: "https://example.com/spec", label: "The spec" }] }, win.Maity.dom.h("article"), () => {})
+    .el.querySelectorAll(".card-links li").map((li) => text(li));
+  expect(JSON.stringify(cpLinks) === JSON.stringify(["Pull request acme/widget#7: Add the API (merged)", "Issue acme/widget#8", "The spec"]),
+    "card panel: the links in words, a pull request with its observed title and state " + JSON.stringify(cpLinks));
   byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
   expect(!cpPosts.length, "card panel: an empty note is not sent");
   byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
