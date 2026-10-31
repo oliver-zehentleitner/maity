@@ -20,6 +20,8 @@ from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
 from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
 
+TEST_TZ = "Europe/Vienna"  # the PostgreSQL test databases' default time zone, never UTC
+
 
 @pytest.fixture(scope="session")
 def _server_database_url(worker_id: str) -> str | None:
@@ -30,9 +32,7 @@ def _server_database_url(worker_id: str) -> str | None:
     if not configured:
         return None
     url = make_url(normalize_database_url(configured))
-    if worker_id == "master":
-        return url.render_as_string(hide_password=False)
-    name = f"{url.database}_{worker_id}"
+    name = url.database if worker_id == "master" else f"{url.database}_{worker_id}"
     admin_configured = os.environ.get("MAITY_TEST_ADMIN_DATABASE_URL", configured)
     admin_url = make_url(normalize_database_url(admin_configured))
     admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
@@ -44,7 +44,10 @@ def _server_database_url(worker_id: str) -> str | None:
                 ).first()
                 if not exists:
                     connection.execute(text(f'CREATE DATABASE "{name}"'))
-            else:
+                # A server default other than UTC, as on a host in Vienna: the hub's times must
+                # not depend on it (hub/context/persistence.md).
+                connection.execute(text(f"ALTER DATABASE \"{name}\" SET timezone TO '{TEST_TZ}'"))
+            elif worker_id != "master":
                 connection.execute(text(f"CREATE DATABASE IF NOT EXISTS `{name}`"))
                 if admin_url.username != url.username:
                     connection.execute(text(f"GRANT ALL ON `{name}`.* TO '{url.username}'@'%'"))
