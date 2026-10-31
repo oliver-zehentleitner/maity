@@ -140,22 +140,6 @@ def presence(conn: Connection, project: Any, members: list[Any]) -> dict[int, di
 # --- the moderator order (§20.2) --------------------------------------------------------------
 
 
-def admin_agents_only(conn: Connection, project_id: str, order: list[str]) -> bool:
-    """Whether every id names an active admin agent: trust `admin`, never a proxy."""
-    agents = set(
-        conn.execute(
-            select(t.membership.c.agent_id).where(
-                t.membership.c.project_id == project_id,
-                t.membership.c.active.is_(True),
-                t.membership.c.trust == "admin",
-                t.membership.c.role != "proxy",
-                t.membership.c.agent_id.isnot(None),
-            )
-        ).scalars()
-    )
-    return all(m in agents for m in order)
-
-
 def _handles(conn: Connection, agent_ids: list[str]) -> dict[str, str]:
     if not agent_ids:
         return {}
@@ -169,36 +153,31 @@ def _handles(conn: Connection, agent_ids: list[str]) -> dict[str, str]:
     }
 
 
-def moderator_order(conn: Connection, project: Any) -> list[Any]:
-    """The admin agents in moderating order: an explicit list first, then by minutes
-    online in the last 24 hours, most first, ties by handle and member id."""
-    admins = conn.execute(
-        select(t.membership).where(
-            t.membership.c.project_id == project.id,
-            t.membership.c.active.is_(True),
-            t.membership.c.trust == "admin",
-            t.membership.c.role != "proxy",
-            t.membership.c.agent_id.isnot(None),
-        )
-    ).all()
+def moderator_order(conn: Connection, series_id: str, members: list[Any]) -> list[Any]:
+    """The members holding the series' moderator right (§20.2), most minutes online in the last
+    24 hours first, ties by handle and member id."""
+    from maity_hub.jourfixe import series as series_mod
+
+    holding = set(series_mod.moderators(conn, series_id))
+    candidates = [m for m in members if m.id in holding]
+    if not candidates:
+        return []
     since = clock.now() - timedelta(hours=24)
     minutes: dict[int, int] = dict(
         conn.execute(
             select(t.presence_minute.c.membership_id, func.count())
             .where(
-                t.presence_minute.c.membership_id.in_([a.id for a in admins] or [-1]),
+                t.presence_minute.c.membership_id.in_([c.id for c in candidates]),
                 t.presence_minute.c.minute > since,
             )
             .group_by(t.presence_minute.c.membership_id)
         ).all()
     )
-    handles = _handles(conn, [a.agent_id for a in admins])
-    by_default = sorted(
-        admins, key=lambda a: (-int(minutes.get(a.id, 0)), handles[a.agent_id], a.agent_id)
+    who = _who(conn, candidates)
+    return sorted(
+        candidates,
+        key=lambda m: (-int(minutes.get(m.id, 0)), who[m.id]["handle"] or "", _principal(m)),
     )
-    explicit = project.jour_fixe_moderators or []
-    first = [a for agent_id in explicit for a in admins if a.agent_id == agent_id]
-    return first + [a for a in by_default if a not in first]
 
 
 def record_presence(conn: Connection, now: datetime) -> None:
@@ -249,14 +228,47 @@ def _refuse(code: str, message: str, details: dict[str, Any] | None = None) -> R
     return Refused(409, code, message, details)
 
 
-def current(conn: Connection, project_id: str) -> Any | None:
-    """The round that is not yet final."""
+def current(conn: Connection, series_id: str) -> Any | None:
+    """The series' round that is not yet final; rounds of different series run side by
+    side (§20.1)."""
     return conn.execute(
         select(t.jour_fixe_round).where(
-            t.jour_fixe_round.c.project_id == project_id,
+            t.jour_fixe_round.c.series_id == series_id,
             t.jour_fixe_round.c.status.in_(OPEN),
         )
     ).first()
+
+
+def _opted_out(conn: Connection, series_id: str) -> set[int]:
+    return set(
+        conn.execute(
+            select(t.jour_fixe_opt_out.c.membership_id).where(
+                t.jour_fixe_opt_out.c.series_id == series_id
+            )
+        ).scalars()
+    )
+
+
+def _in_circle(conn: Connection, series: Any, members: list[Any]) -> set[int]:
+    """The memberships of the series' circle (§20.2): an owner with that owner's agents, the
+    humans, or everyone."""
+    if series.circle == "all":
+        return {m.id for m in members}
+    if series.circle == "humans":
+        return {m.id for m in members if m.agent_id is None}
+    owners = dict(
+        conn.execute(
+            select(t.agent_profile.c.id, t.agent_profile.c.owner_id).where(
+                t.agent_profile.c.id.in_([m.agent_id for m in members if m.agent_id] or [""])
+            )
+        ).all()
+    )
+    return {
+        m.id
+        for m in members
+        if m.human_id == series.circle_owner
+        or (m.agent_id is not None and owners.get(m.agent_id) == series.circle_owner)
+    }
 
 
 def _members(conn: Connection, project_id: str) -> list[Any]:
@@ -296,31 +308,37 @@ def _who(conn: Connection, rows: list[Any]) -> dict[int, dict[str, Any]]:
     }
 
 
-def prepare(conn: Connection, project: Any, config: dict[str, Any]) -> dict[str, Any]:
+def prepare(conn: Connection, project: Any, series: Any) -> dict[str, Any]:
     """Who would be invited, who moderates and who is absent, or `Refused` naming why the
-    round cannot open now."""
+    round cannot open now (§20.1, §20.2). The circle decides who is asked; a moderator
+    outside it moderates and answers nothing."""
     if project.state in CLOSED_STATES:
         raise _refuse("project_closed", f"the project is {project.state}")
-    running = current(conn, project.id)
+    running = current(conn, series.id)
     if running is not None:
         raise _refuse("jour_fixe_open", "an earlier round is not yet final", {"round": running.id})
-    members = _members(conn, project.id)
+    out = _opted_out(conn, series.id)
+    members = [m for m in _members(conn, project.id) if m.id not in out]
     present = presence(conn, project, members)
     who = _who(conn, members)
-    if config["moderator"] == "admin_agent":
-        candidates = moderator_order(conn, project)
-    else:
-        candidates = [m for m in members if _principal(m) == config["moderator"]]
-    moderator = next((m for m in candidates if present[m.id]["present"]), None)
+    circle = _in_circle(conn, series, members)
+    moderator = next(
+        (m for m in moderator_order(conn, series.id, members) if present[m.id]["present"]), None
+    )
     if moderator is None:
         raise _refuse("no_moderator", "nobody to moderate is present")
-    invited = [m for m in members if present[m.id]["present"]]
-    if len(invited) < 2:
+    invited = [m for m in members if m.id in circle and present[m.id]["present"]]
+    taking_part = {m.id for m in invited} | {moderator.id}
+    if len(taking_part) < 2 or not invited:
         raise _refuse("too_few", "fewer than two members are present")
     return {
         "moderator": {
             "member_id": _principal(moderator),
             "instance": present[moderator.id].get("instance"),
+        },
+        "moderator_entry": {
+            **who[moderator.id],
+            **({"instance": present[moderator.id]["instance"]} if moderator.agent_id else {}),
         },
         "invited": [
             {**who[m.id], **({"instance": present[m.id]["instance"]} if m.agent_id else {})}
@@ -329,13 +347,13 @@ def prepare(conn: Connection, project: Any, config: dict[str, Any]) -> dict[str,
         "absent": [
             {**who[m.id], "absent_reason": present[m.id]["absent_reason"]}
             for m in members
-            if not present[m.id]["present"]
+            if m.id in circle and not present[m.id]["present"]
         ],
     }
 
 
 def questions(
-    config: dict[str, Any], moderator_handle: str, close_at: datetime, local_date: date
+    config: dict[str, Any], topic: str, moderator_handle: str, close_at: datetime, local_date: date
 ) -> str:
     zone = ZoneInfo(config.get("timezone") or "UTC")
     local = close_at.astimezone(zone).strftime("%H:%M")
@@ -343,7 +361,7 @@ def questions(
     tz_name = config.get("timezone") or "UTC"
     return "\n".join(
         [
-            f"Jour fixe {local_date.isoformat()}, moderated by {moderator_handle}. "
+            f"Jour fixe {local_date.isoformat()} — {topic} — moderated by {moderator_handle}.",
             "Your answer goes to the moderator only.",
             f"Answer by {local} {tz_name} ({utc}Z), or not at all — both are fine.",
             *QUESTIONS,
@@ -363,31 +381,42 @@ def _wake_tokens(entries: list[dict[str, Any]]) -> list[str]:
     return tokens
 
 
+def round_config(conn: Connection, series: Any) -> dict[str, Any]:
+    """The series as it is at a round's start, without its moderators (§20.7 `config`)."""
+    from maity_hub.jourfixe import series as series_mod
+
+    shown = series_mod.view(conn, series)
+    return {k: v for k, v in shown.items() if k not in ("moderators", "pending_moderators")}
+
+
 def open_round(
     conn: Connection,
     project: Any,
+    series: Any,
     *,
     trigger: str,
     scheduled_for: datetime,
     reason: str | None,
     actor: Actor | None,
 ) -> Any:
-    """Open a round now with the policy as it is, or the defaults when it has none; `Refused`
-    when it cannot (§20.1). The questions go out once, in `jour_fixe_opened`."""
+    """Open a round of the series now; `Refused` when it cannot (§20.1). The questions go out
+    once, in `jour_fixe_opened`."""
+    from maity_hub.jourfixe import exchange
+    from maity_hub.jourfixe import series as series_mod
+
     lock_project(conn, project.id)
-    config = project.jour_fixe or defaults()
-    prepared = prepare(conn, project, config)
+    config = round_config(conn, series)
+    prepared = prepare(conn, project, series)
     now = clock.now()
     close_at = now + timedelta(minutes=config["answer_window_minutes"])
     round_id = new_id("jour_fixe")
-    from maity_hub.jourfixe import exchange
-
     zone = ZoneInfo(config.get("timezone") or "UTC")
     day = now.astimezone(zone).date()
     conn.execute(
         insert(t.jour_fixe_round).values(
             id=round_id,
             project_id=project.id,
+            series_id=series.id,
             status="answering",
             trigger=trigger,
             mode="chat",
@@ -406,27 +435,28 @@ def open_round(
             created_at=now,
         )
     )
-    # This hub runs group chats: every round runs in its own thread (§20.5), created once
-    # the round exists, so the thread's view names it.
-    thread = exchange.open_thread(
-        conn, project, f"Jour fixe {day.isoformat()}", [i["member_id"] for i in prepared["invited"]]
-    )
+    # Every round runs in its own thread (§20.5), created once the round exists, so the
+    # thread's view names it. The moderator is in it whether or not it is in the circle.
+    people = [i["member_id"] for i in prepared["invited"]]
+    if prepared["moderator"]["member_id"] not in people:
+        people.append(prepared["moderator"]["member_id"])
+    thread = exchange.open_thread(conn, project, f"Jour fixe {day.isoformat()}", people)
     conn.execute(
         update(t.jour_fixe_round)
         .where(t.jour_fixe_round.c.id == round_id)
         .values(conversation_id=thread)
     )
-    moderator_entry = next(
-        i for i in prepared["invited"] if i["member_id"] == prepared["moderator"]["member_id"]
-    )
-    text = questions(config, moderator_entry["handle"], close_at, day)
+    text = questions(config, series.topic, prepared["moderator_entry"]["handle"], close_at, day)
+    audience = [*_wake_tokens(prepared["invited"]), *series_mod.keeper_tokens(conn, series)]
     emit(
         conn,
         project.id,
         "jour_fixe_opened",
-        [*_wake_tokens(prepared["invited"]), "trust:owner"],
+        list(dict.fromkeys(audience)),
         {
             "round_id": round_id,
+            "series_id": series.id,
+            "topic": series.topic,
             "moderator": prepared["moderator"]["member_id"],
             "questions": text,
             "answers_close_at": clock.rfc3339(close_at),
@@ -440,6 +470,7 @@ def open_round(
 def record_skip(
     conn: Connection,
     project: Any,
+    series: Any,
     *,
     slot: datetime,
     status: str,
@@ -454,6 +485,7 @@ def record_skip(
         insert(t.jour_fixe_round).values(
             id=round_id,
             project_id=project.id,
+            series_id=series.id,
             status=status,
             trigger="schedule",
             mode="chat",
@@ -461,7 +493,7 @@ def record_skip(
             missed_slots=missed_slots,
             scheduled_for=slot,
             steps=[],
-            config=project.jour_fixe,
+            config=round_config(conn, series),
             invited=[],
             absent=[],
             answers_received=0,
@@ -469,13 +501,16 @@ def record_skip(
             created_at=now,
         )
     )
+    from maity_hub.jourfixe import series as series_mod
+
     emit(
         conn,
         project.id,
         "jour_fixe_skipped",
-        ["trust:owner", "trust:admin"],
+        series_mod.keeper_tokens(conn, series) or ["trust:owner"],
         {
             "round_id": round_id,
+            "series_id": series.id,
             "status": status,
             "skip_reason": skip_reason,
             "scheduled_for": clock.rfc3339(slot),
@@ -486,13 +521,14 @@ def record_skip(
     return round_id
 
 
-def manual_starts_today(conn: Connection, project_id: str) -> int:
+def manual_starts_today(conn: Connection, series_id: str) -> int:
+    """Rounds of the series started by hand in the last 24 hours (§20.1: at most 2)."""
     since = clock.now() - timedelta(hours=24)
     found: int = conn.execute(
         select(func.count())
         .select_from(t.jour_fixe_round)
         .where(
-            t.jour_fixe_round.c.project_id == project_id,
+            t.jour_fixe_round.c.series_id == series_id,
             t.jour_fixe_round.c.trigger == "manual",
             t.jour_fixe_round.c.created_at > since,
         )
@@ -569,57 +605,83 @@ def close_answers(conn: Connection, round_row: Any) -> None:
 # --- the schedule's slots (§20.1) -------------------------------------------------------------
 
 
-def anchor_date(project: Any) -> date:
-    """The day the weekly interval counts from: the first occurrence after the schedule
-    was last set, in its zone."""
-    policy = project.jour_fixe
-    set_at = project.jour_fixe_anchor or clock.now()
+def anchor_date(series: Any) -> date:
+    """The day the weekly interval counts from: the first occurrence after the schedule was
+    last set, in its zone."""
+    from maity_hub.jourfixe import series as series_mod
+
+    policy = series_mod.schedule_of(series)
+    set_at = series.anchor or clock.now()
     weekly_once = {**policy, "recurrence": {**policy["recurrence"], "interval": 1}}
     first = schedule.next_slot(weekly_once, set_at, set_at.date())
     zone = ZoneInfo(policy["timezone"])
     return (first or set_at).astimezone(zone).date()
 
 
-def due_slots(project: Any, now: datetime) -> list[datetime]:
-    """The slots between the last one handled and now."""
-    policy = project.jour_fixe
-    if not policy or not policy.get("enabled"):
+def next_at(series: Any, now: datetime) -> datetime | None:
+    """The series' next slot in UTC, or None when it opens none (§20.9)."""
+    from maity_hub.jourfixe import series as series_mod
+
+    policy = series_mod.schedule_of(series)
+    if not policy["enabled"] or policy.get("recurrence") is None:
+        return None
+    return schedule.next_slot(policy, now, anchor_date(series))
+
+
+def due_slots(series: Any, now: datetime) -> list[datetime]:
+    """The series' slots between the last one handled and now."""
+    from maity_hub.jourfixe import series as series_mod
+
+    policy = series_mod.schedule_of(series)
+    if not policy["enabled"] or policy.get("recurrence") is None:
         return []
-    after = project.jour_fixe_last_slot or project.jour_fixe_anchor or now
-    return schedule.slots_between(policy, after, now, anchor_date(project))
+    after = series.last_slot or series.anchor or now
+    return schedule.slots_between(policy, after, now, anchor_date(series))
 
 
 def handle_schedule(conn: Connection, project_id: str) -> None:
-    """Open, skip or record as missed the project's due slots (§20.1): a slot noticed more
-    than 10 minutes late is missed, all such slots in one record with `missed_slots`."""
+    """Open, skip or record as missed each series' due slots (§20.1): a slot noticed more than
+    10 minutes late is missed, all such slots of a series in one record with `missed_slots`."""
+    from maity_hub.jourfixe import series as series_mod
+
     project = lock_project(conn, project_id)
     now = clock.now()
-    slots = due_slots(project, now)
-    if not slots:
-        return
-    conn.execute(
-        update(t.project).where(t.project.c.id == project.id).values(jour_fixe_last_slot=slots[-1])
-    )
-    late = [s for s in slots if now - s > LATE]
-    timely = [s for s in slots if now - s <= LATE]
-    if late:
-        record_skip(
-            conn,
-            project,
-            slot=late[-1],
-            status="missed",
-            skip_reason="hub_down",
-            missed_slots=len(late),
+    for series in series_mod.of_project(conn, project_id):
+        slots = due_slots(series, now)
+        if not slots:
+            continue
+        conn.execute(
+            update(t.jour_fixe_series)
+            .where(t.jour_fixe_series.c.id == series.id)
+            .values(last_slot=slots[-1])
         )
-    for slot in timely[-1:]:  # several at once only after an outage: the newest counts
-        try:
-            with conn.begin_nested():
-                open_round(
-                    conn, project, trigger="schedule", scheduled_for=slot, reason=None, actor=None
-                )
-        except Refused as refused:
-            reason = "round_open" if refused.code == "jour_fixe_open" else refused.code
-            record_skip(conn, project, slot=slot, status="skipped", skip_reason=reason)
+        late = [s for s in slots if now - s > LATE]
+        timely = [s for s in slots if now - s <= LATE]
+        if late:
+            record_skip(
+                conn,
+                project,
+                series,
+                slot=late[-1],
+                status="missed",
+                skip_reason="hub_down",
+                missed_slots=len(late),
+            )
+        for slot in timely[-1:]:  # several at once only after an outage: the newest counts
+            try:
+                with conn.begin_nested():
+                    open_round(
+                        conn,
+                        project,
+                        series,
+                        trigger="schedule",
+                        scheduled_for=slot,
+                        reason=None,
+                        actor=None,
+                    )
+            except Refused as refused:
+                reason = "round_open" if refused.code == "jour_fixe_open" else refused.code
+                record_skip(conn, project, series, slot=slot, status="skipped", skip_reason=reason)
 
 
 def handle_deadlines(conn: Connection, project_id: str) -> None:
