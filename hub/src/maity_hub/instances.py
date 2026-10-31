@@ -423,6 +423,7 @@ def unpaused_presences(conn: Connection, membership_ids: Iterable[int]) -> dict[
         )
     ).all()
     sessions = _live_sessions(conn, [c.id for c in credentials])
+    heard = listening.which((s.id for s in sessions.values()), conn)  # one read for all
     found: dict[int, list[str]] = {}
     for c in credentials:
         shown = found.setdefault(c.membership_id, [])
@@ -433,7 +434,7 @@ def unpaused_presences(conn: Connection, membership_ids: Iterable[int]) -> dict[
             presence(
                 c.last_used_at,
                 session is not None,
-                session is not None and listening.is_listening(session.id),
+                session is not None and session.id in heard,
             )
         )
     return found

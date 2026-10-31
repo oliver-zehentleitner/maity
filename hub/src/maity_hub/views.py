@@ -402,6 +402,7 @@ def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
     )
     per_instance = instances.unpaused_presences(conn, carriers)
     live, _ = _sessions(conn, carriers)
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     shown: dict[int, str] = {}
     for membership_id, row in rows.items():
         if row.isolated_since is not None or row.paused_since is not None:
@@ -413,9 +414,7 @@ def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
                 shown[membership_id] = min(per_instance[membership_id], key=PRESENCE_ORDER.index)
             continue
         session = live.get(membership_id)
-        shown[membership_id] = presence(
-            row, session, session is not None and listening.is_listening(session.id)
-        )
+        shown[membership_id] = presence(row, session, session is not None and session.id in heard)
     best: dict[int, str] = {}
     for served, carrier in pairs:
         if carrier not in shown:
