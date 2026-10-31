@@ -1499,3 +1499,5 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .error { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
+/* The header's "+" menu (an agent, a person): a bold plus as its face. */
+.add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }

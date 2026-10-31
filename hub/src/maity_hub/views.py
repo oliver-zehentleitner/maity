@@ -19,6 +19,7 @@ from maity_hub import (
     namespace,
     onboarding,
     policy,
+    project_links,
     ticker_read,
 )
 from maity_hub import handles as handle_book
@@ -278,6 +279,8 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
+        # The project's own links (§6.11), all four keys, null where none is set.
+        "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
@@ -530,6 +533,7 @@ def member_views(
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
@@ -610,7 +614,7 @@ def member_views(
         if row.agent_id is not None:
             session = live.get(row.id)
             latest = latest_of.get(row.id)
-            is_listening = session is not None and listening.is_listening(session.id)
+            is_listening = session is not None and session.id in heard
             view["harness"] = latest.harness if latest else None
             view["model"] = latest.model if latest else None
             view["session"] = (
@@ -660,6 +664,9 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # Whose work this agent continues and where the hand-over is, never a text (§3.1).
+            view["takes_over"] = row.takes_over
+            view["handover"] = row.handover
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
@@ -928,6 +935,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,
         "instance": row.instance,
+        "takes_over": row.takes_over,
+        "handover": row.handover,
     }
 
 

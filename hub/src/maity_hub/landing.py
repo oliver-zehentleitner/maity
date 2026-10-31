@@ -137,6 +137,10 @@ def _points() -> Spec:
     return ("list", ("text", 120, True), 0, 5, False)
 
 
+# The text of a header link, on any section: the header shows only the sections that have one.
+NAV_LABEL: Spec = ("text", 24, False)
+NAV_LABELS_MAX = 4
+
 SECTIONS: dict[str, dict[str, Spec]] = {
     "hero": {
         "eyebrow": ("text", 40, False),
@@ -399,7 +403,9 @@ def _section(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
     elif not isinstance(value["enabled"], bool):
         found.add(f"{path}.enabled", "invalid")
     body = {k: v for k, v in value.items() if k not in ("type", "enabled")}
-    checked = _object(body, SECTIONS[value["type"]], path, found)
+    if isinstance(body.get("nav_label"), str):
+        body["nav_label"] = body["nav_label"].strip()  # trimmed, then 1–24 characters (§16.7)
+    checked = _object(body, {**SECTIONS[value["type"]], "nav_label": NAV_LABEL}, path, found)
     if checked is None or not isinstance(value.get("enabled"), bool):
         return None
     return {"type": value["type"], "enabled": value["enabled"], **checked}
@@ -434,6 +440,19 @@ def _page(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
             checked = _section(one, f"{path}.sections.{index}", found)
             if checked is not None:
                 sections.append(checked)
+        labelled = 0
+        for index, one in enumerate(raw):
+            # Only an enabled section is a link, and the header holds at most four (§16.7).
+            label = one.get("nav_label") if isinstance(one, dict) else None
+            if (
+                isinstance(one, dict)
+                and one.get("enabled") is True
+                and isinstance(label, str)
+                and label.strip()  # a label of blanks is already invalid, and no second error
+            ):
+                labelled += 1
+                if labelled > NAV_LABELS_MAX:
+                    found.add(f"{path}.sections.{index}.nav_label", "too_many")
     if title is None:
         return None
     return {"title": title, "description": description, "sections": sections}

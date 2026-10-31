@@ -76,7 +76,9 @@ def test_an_event_another_replica_commits_wakes_this_one(
     postgres: Engine, listener: wakeups.Listener, heard: list[tuple[str, int]]
 ) -> None:
     _notify(postgres, "prj-elsewhere:42")
-    assert _until(lambda: _mine(heard, "prj-elsewhere") == [("prj-elsewhere", 42)])
+    _notify(postgres, "prj-marker-elsewhere:1")  # after it: a duplicate would come before
+    assert _until(lambda: ("prj-marker-elsewhere", 1) in heard)
+    assert _mine(heard, "prj-elsewhere") == [("prj-elsewhere", 42)]  # exactly once
 
 
 def test_emit_announces_at_commit_and_never_for_a_rollback(postgres: Engine) -> None:
@@ -88,8 +90,10 @@ def test_emit_announces_at_commit_and_never_for_a_rollback(postgres: Engine) -> 
             raise RuntimeError("abort")
         with events.transaction(postgres) as conn:
             seq = events.emit(conn, project_id, "state_changed", ["all"], {"old": "build"})
-        payloads = [n.payload for n in watch.notifies(timeout=2, stop_after=2)]
-    assert payloads == [f"{project_id}:{seq}"]  # where to look, never what happened
+        # Everything for two seconds: another writer on the database may notify meanwhile.
+        payloads = [n.payload for n in watch.notifies(timeout=2)]
+    mine = [p for p in payloads if p.startswith(f"{project_id}:")]
+    assert mine == [f"{project_id}:{seq}"]  # where to look, never what happened
 
 
 def test_an_event_of_this_process_wakes_its_waiters_once(
@@ -126,7 +130,9 @@ def test_a_lost_connection_wakes_every_waiter_and_listens_again(
     assert ended == [True]
     assert _until(lambda: spreads == [wakeups.RESPREAD_SECONDS] and listener.listening.is_set())
     _notify(postgres, "prj-after:7")
-    assert _until(lambda: _mine(heard, "prj-after") == [("prj-after", 7)])
+    _notify(postgres, "prj-marker-after:1")  # after it: a duplicate would come before
+    assert _until(lambda: ("prj-marker-after", 1) in heard)
+    assert _mine(heard, "prj-after") == [("prj-after", 7)]  # exactly once
 
 
 def test_a_wake_up_that_is_no_project_and_seq_is_ignored(heard: list[tuple[str, int]]) -> None:
@@ -165,8 +171,8 @@ def test_a_newer_wait_on_another_replica_supersedes_this_one(
         wakeups.opened(postgres, "events", "cred-1", lambda: ended.append("cred-1"))
     )
     other = asyncio.run(wakeups.opened(postgres, "bell", "cred-1", lambda: ended.append("bell")))
-    _notify(postgres, "prj-marker:1")  # after both announcements, in commit order
-    assert _until(lambda: ("prj-marker", 1) in heard)
+    _notify(postgres, "prj-marker-supersede:1")  # after both announcements, in commit order
+    assert _until(lambda: ("prj-marker-supersede", 1) in heard)
     assert ended == []  # its own announcement ends nothing
     elsewhere = wakeups._digest("events", "cred-1")
     with postgres.begin() as conn:  # what the other replica's `opened` sends, a moment later

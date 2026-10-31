@@ -841,11 +841,27 @@ def test_a_takeover_without_a_briefing_points_at_the_hand_over_above() -> None:
     assert "If you replace someone" not in text
 
 
-def test_a_takeover_without_a_hand_over_asks_where_it_is() -> None:
-    """`handover` is optional (§3.1): there is nothing above to point at."""
-    ms = packet()["membership"] | {"takes_over": TAKES_OVER, "handover": None, "briefing": None}
+@pytest.mark.parametrize(
+    "handover",
+    [
+        None,
+        {"kind": "task"},
+        {"kind": "message", "id": "9"},
+        {"kind": "message", "id": True},
+        {"kind": "file"},
+    ],
+)
+def test_a_takeover_without_a_hand_over_asks_where_it_is(handover: Any) -> None:
+    """`handover` is optional (§3.1); one that names nothing readable prints nothing above
+    either, so the sentence does not point there."""
+    ms = packet()["membership"] | {
+        "takes_over": TAKES_OVER,
+        "handover": handover,
+        "briefing": None,
+    }
     ms["reports_to"] = "agt-a"
     text = onboarding.render(packet(membership=ms), first=True)
     assert "read the hand-over above" not in text
     assert "and no hand-over named: ask your lead @" in text
     assert "where the hand-over of @agent-ops-opus is before you take work." in text
+    assert "Takes over from @agent-ops-opus.\n" in text

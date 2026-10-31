@@ -41,7 +41,7 @@ def test_under_lead_only_the_lead_wakes_and_nobody_when_it_does_not_listen(
     owner: flow.Human,  # noqa: F811
     make_client: ClientFactory,
     migrated: Engine,
-    listens: list[str],  # noqa: F811
+    listens: list[tuple[str, str]],  # noqa: F811
 ) -> None:
     lead, other = _pair(make_client, owner)
     _team(owner, lead.id, wake="lead", lead_instance=lead.instance)
@@ -58,7 +58,7 @@ def test_under_next_free_one_listening_instance_wakes(
     owner: flow.Human,  # noqa: F811
     make_client: ClientFactory,
     migrated: Engine,
-    listens: list[str],  # noqa: F811
+    listens: list[tuple[str, str]],  # noqa: F811
 ) -> None:
     first, second = _pair(make_client, owner)
     _team(owner, first.id, wake="next_free")
@@ -75,7 +75,7 @@ def test_a_named_instance_wakes_whatever_the_rule_says(
     owner: flow.Human,  # noqa: F811
     make_client: ClientFactory,
     migrated: Engine,
-    listens: list[str],  # noqa: F811
+    listens: list[tuple[str, str]],  # noqa: F811
 ) -> None:
     lead, other = _pair(make_client, owner)
     _team(owner, lead.id, wake="lead", lead_instance=lead.instance)

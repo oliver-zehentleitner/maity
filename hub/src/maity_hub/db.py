@@ -16,7 +16,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, MetaData, create_engine, event
+from sqlalchemy import URL, Engine, MetaData, create_engine, event, make_url
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.pool import NullPool
 
@@ -81,15 +81,28 @@ def connect_once_more_on_dns[T](connect: Callable[..., T], args: Any, kwargs: An
 
 
 def postgres_options(*, statement: float = 0, idle_in_transaction: float = 0) -> str:
-    """The `options` startup parameter that sets the two session timeouts of a PostgreSQL
-    connection, in milliseconds; empty when both are 0 (off)."""
+    """The `options` startup parameter of a PostgreSQL connection: the session time zone UTC,
+    whatever the server's default (hub/context/persistence.md), and the two session timeouts
+    in milliseconds, each left out when 0 (off)."""
     wanted = {
         "statement_timeout": statement,
         "idle_in_transaction_session_timeout": idle_in_transaction,
     }
     return " ".join(
-        f"-c {name}={round(seconds * 1000)}" for name, seconds in wanted.items() if seconds > 0
+        [
+            "-c TimeZone=UTC",
+            *(f"-c {name}={round(s * 1000)}" for name, s in wanted.items() if s > 0),
+        ]
     )
+
+
+def with_url_options(url: str | URL, options: str) -> str:
+    """The hub's `options` after any the DATABASE_URL carries (`?options=-c search_path=…`):
+    the driver takes the hub's value instead of the URL's, so the URL's would be lost, and
+    with both the later `-c` wins, so the hub's time zone and timeouts still hold."""
+    given = make_url(url).query.get("options")
+    parts = [given] if isinstance(given, str) else list(given or ())
+    return " ".join([*parts, options])
 
 
 def make_engine(
@@ -120,8 +133,7 @@ def make_engine(
         )
         if url.startswith("postgresql"):
             kwargs["connect_args"]["application_name"] = application_name
-            if options:
-                kwargs["connect_args"]["options"] = options
+            kwargs["connect_args"]["options"] = with_url_options(url, options)
         kwargs["pool_size"], kwargs["max_overflow"] = pool_size, max_overflow
         # Connections are kept and reused, the most recently used first, so that the few that
         # a quiet hub needs stay warm and the rest age out; a new connection is a name lookup
@@ -174,7 +186,9 @@ def make_health_engine(engine: Engine) -> Engine | None:
         "connect_args": {"connect_timeout": CONNECT_TIMEOUT_SECONDS},
     }
     if engine.dialect.name == "postgresql":
-        kwargs["connect_args"]["options"] = postgres_options(statement=HEALTH_STATEMENT_SECONDS)
+        kwargs["connect_args"]["options"] = with_url_options(
+            engine.url, postgres_options(statement=HEALTH_STATEMENT_SECONDS)
+        )
         kwargs["connect_args"]["application_name"] = APPLICATION_HEALTH
     elif engine.dialect.name in ("mysql", "mariadb"):
         # No server-side statement timeout to set per session here: the driver stops waiting.

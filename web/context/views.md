@@ -961,6 +961,39 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
+## A first join may name whom it takes over from and the hand-over; a message's hand-over links to Messages
+
+**Id:** 3d623647-4575-492b-9252-e215afa0e87e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §3.1, §5.2, §6.2 (contract #896); the card tsk-tj523m1r2z7y; the hub's part (#900); the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub gives a message a page of its own, or offers a search for cards and messages a field could use
+**See:** views.md#a-join-for-an-agent-that-is-already-a-member-asks-which-instance-it-makes-replace-preselected — 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90 — as of 2026-10-31
+
+The join panel has two more fields for a first join, hidden like the
+membership's fields when the chosen agent is already a member:
+**Takes over from**, a choice of the project's agent members other than
+the chosen agent (for a member bringing their own agent, only their own
+agents, as the hub allows), hidden when there is none to choose; and
+**Hand-over**, a text field for a card id or a message's number, sent as
+a number when it is all digits. The hub's refusals (`first_join_only`,
+`not_an_agent_member`, `not_found`, `not_readable`, a member's limit on
+`takes_over`) are said in words at the field. A join and a member that
+named them say "Takes over from @handle; the hand-over is in …", the
+handle linking to the member and a card to its page. A message has no
+page of its own, so "message #seq" links to the project's Messages view.
+
+**Reason:** the contract lets the hub check both values, and its answer
+is the final word. A text field takes either kind of hand-over without
+the panel first reading every card and message. A link to Messages
+still leads the reader to where the message is listed.
+
+**Rejected alternative:** a picker of cards and recent messages: it
+would read the whole board and the event window for one optional field,
+and a message to all from before that window could not be named. An
+unlinked "message #seq": it leaves the reader nowhere to look.
+
 ## Project memory is chosen on /new with its setup options
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
@@ -1187,6 +1220,39 @@ column: a column is too narrow for a description and a history, and
 every board reload would close it again. A modal dialog: on a phone the
 same as the panel, on a desktop it hides the board the card belongs to.
 
+## The header gets a "+" menu to bring someone in; invitations get their own page; Runners lose their tab
+
+**Id:** 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
+**Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
+
+The signed-in header reads Chat, Lead, "+", the gear, the bell, the
+profile. "+" is a menu like the gear's with Agent (the agents page) and
+User (`/invite`), for humans only. `/invite` lists the projects where the
+human adds members. The one chosen (`?project=`, as Members' Invite user
+links it) shows the invitation form and its list. The other projects
+show their lists without a form. Members has two blue buttons at the top,
+Invite user and Join agent; its own invitation form is gone. The project
+view `runners` keeps its route and its Settings tab mark, but has no tab:
+the project's Settings links it. `/invite` reads the projects one after
+the other and draws again when another project is chosen. A counter
+drops an older pass still reading, as `renderSeq` does in the router;
+without it, two passes append their lists twice.
+
+**Reason:** the layout is the maintainer's (confirmed); why is read
+from the card, not stated by him: bringing someone in is one act whether
+it is an agent or a person, so it gets one place in the header, and an
+owner of several projects finds all their invitations on one page. Why
+the Runners tab goes was not given (unknown).
+
+**Rejected alternative:** the header first and `/invite` in a later
+pull request, which would have shipped a User item leading to no page.
+Reading all projects at once with `Promise.all` and no counter: a choice
+made mid-read would still append twice.
+
 ## The header's Chat badge counts unread chat messages from the notifications, not chats
 
 **Id:** 3ad5cf20-0240-4536-aaef-3bd8b411288f
@@ -1196,8 +1262,9 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Source:** the maintainer's instruction of 2026-10-25 for Chat and Notifications buttons in the signed-in header (tsk-wnk7wv6p4se7), and the coordinator's ruling the same day on the badge; docs/api.md §9.3, §18.2; the dashboard's implementation, 2026-10-26
 **Revisit when:** the hub counts conversations with unread messages (a per-conversation count on /me/notifications), or the message count proves misleading in practice
 
-Where the theme menu was, the signed-in header has Chat, then the bell,
-then the gear and the profile. Chat leads to `/chats` and carries
+Where the theme menu was, the signed-in header has Chat; since
+2026-10-31 the order is Chat, Lead, "+", the gear, the bell and the
+profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc). Chat leads to `/chats` and carries
 `counts.chat` from `/me/notifications`, which the header already reads,
 worded "N unread chat messages". `/chats` reads each project's
 conversation list (§9.3) once when it opens, unread first. On a hub
@@ -3287,7 +3354,11 @@ the same under the page's key). A load is checked by the page's preview
 call and replaces the page's draft after a confirmation. Registration has
 one for the body of its PATCH: a load fills the form after a
 confirmation, keeps the fields the environment or the legal pages set,
-and names a field the setting does not have. The hub checks the values
+and names a field the setting does not have. A field the JSON does not
+name keeps what the form shows, typed and not saved included, since the
+load starts from the form; an empty limit is left out of the export, so
+an export always loads again. A legal page's load from a file of several
+pages takes only its own and names the others. The hub checks the values
 when the admin saves. Both editors share one part (`js/json-io.js`). In
 every editor, the landing page's included, a preview while the JSON
 field holds text that was neither loaded nor exported says so and opens
@@ -3309,7 +3380,7 @@ several and redraws the section list, so it keeps its own for now.
 
 **Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
 **Revisit when:** a project may run more than one series, or an agent moderator's work (the statement, the report) is to be done in the dashboard
@@ -3417,3 +3488,39 @@ to a card (a8e479be's earlier rule): an agent cannot change the
 provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
+
+## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
+
+**Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+
+The header's row beside the state shows the repository, then the
+project's own links that are set (issues, wiki, discussions, chat, each
+with its mark), then the Keep the Why dashboard. Each is plain https
+only and opens in a tab of its own with `rel="noopener noreferrer"`. The
+repository's button reads "Repository" for every forge. Its mark and
+its name for a screen reader ("Repository on GitHub") still say which
+forge. The overview's Project tab shows the same links as buttons
+beside the repository. They are not in the header's list of projects:
+each entry there is itself a link, which cannot hold four more, and `/me`
+does not carry a project's links; §6.11 was changed to name the header
+beside the project's state instead (review of #884). Project settings have four fields that send only
+the links that changed; an empty field clears its link, and each refusal
+of the hub is said at its field.
+
+**Reason:** with up to six buttons in the row, the forge's name as the
+label took room the four new ones need, and the mark already shows the
+forge. The hub merges links by key (§6.11), so a form that sent all four
+would overwrite another admin's change to a link it did not touch.
+
+**Rejected alternatives:**
+- The forge's name as the label, as before (the old header): wider, and
+  it said twice what the mark says.
+- Sending all four links on every save (#846): it loses another admin's
+  change made meanwhile.
+

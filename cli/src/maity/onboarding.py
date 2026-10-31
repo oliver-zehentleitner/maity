@@ -726,14 +726,19 @@ def _takes_over(packet: dict[str, Any]) -> list[str]:
     who = ms.get("takes_over")
     if not isinstance(who, dict):
         return []
-    line = f"Takes over from @{label(who)}"
+    return [f"Takes over from @{label(who)}{_handover_ref(ms)}."]
+
+
+def _handover_ref(ms: dict[str, Any]) -> str:
+    """`; the hand-over is in <card | message #seq>: <command>` for a hand-over the join named
+    in a form that can be read; empty otherwise, so nothing points at it as `above`."""
     handover = _dict(ms.get("handover"))
     kind, ref = handover.get("kind"), handover.get("id")
-    if kind == "task" and ref:
-        line += f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
-    elif kind == "message" and isinstance(ref, int):
-        line += f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
-    return [line + "."]
+    if kind == "task" and isinstance(ref, str) and ref:
+        return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
+    if kind == "message" and isinstance(ref, int) and not isinstance(ref, bool):
+        return f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
+    return ""
 
 
 def _check_in(packet: dict[str, Any]) -> list[str]:
@@ -848,7 +853,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         lead = ms.get("reports_to")
         ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
         takes_over = ms.get("takes_over")
-        if isinstance(takes_over, dict) and ms.get("handover"):
+        if isinstance(takes_over, dict) and _handover_ref(ms):
             line = f"No briefing was given with this join: read the hand-over above and {ask}."
         elif isinstance(takes_over, dict):
             line = (

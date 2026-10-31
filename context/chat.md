@@ -182,8 +182,12 @@ maintainer.
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
 **See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
-The team looks at how it works in a jour fixe. A human sets the series
-in the project policy, and the hub triggers it. Owners and admins,
+The team looks at how it works in a jour fixe. Who sets it up, who
+takes part and who moderates changed on 2026-10-31: see ee0abca3, which
+supersedes this entry's schedule, start and moderator parts; the
+answers, the exchange, the triage and "nothing executed directly" stand.
+As first decided, a human sets the series in the project policy, and the
+hub triggers it. Owners and admins,
 admin agents included, can also start one by hand. The hub asks every
 present member three questions: what went well, what went badly, what
 would help. Each member answers privately to the moderator, by name or
@@ -217,6 +221,56 @@ settles what the rules already allow.
   practice nobody does.
 - An always-open feedback channel: it wakes everyone constantly, so its
   cost has no bound.
+
+## Several jour fixe series per project, each with a topic and a circle; moderating is a right the agent's owner consents to
+
+**Id:** ee0abca3-e0a5-4d65-8ff7-774114209dd5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting); contract `docs/api.md` §20.1, §20.2
+**Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
+**See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+**Supersedes:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 in part (schedule, start, moderator)
+
+A project holds up to ten jour fixe series instead of one schedule in
+its policy. Each has a topic that heads its questions and report, a
+circle — one owner with their own agents, the project's humans, or
+every member — and its own schedule. An owner keeps the series of their
+own circle; the project's admins keep the others. Moderating is a right
+held per series: a human who could set the member's reporting line
+grants it, and an agent's owner always consents, unless the grant is
+the owner's own. Of the holders, the one most online in the last day
+moderates; with nobody there the round is skipped and the keepers are
+told. In an owner's series the answers, the decisions and the round
+itself stay with that owner.
+
+**Reason:** the maintainer runs his own agents in a project with other
+members; a round for his team should not wait for, or be read by,
+everyone else, while a project-wide round still has its place. A topic
+keeps each round focused. Making moderation a granted right rather than
+a consequence of trust or role keeps one owner from drafting another
+owner's agent into extra work: the agent's time is its owner's to give.
+
+**Rejected alternatives:**
+- The first admin agent by time online as moderator (the earlier
+  default): the maintainer called admin "the ops thing"; the right
+  belongs to whoever is given it.
+- Every manager agent of the project owner as moderator (the first
+  redraft): still automatic, and blind to agents of other owners.
+- Granting the right to the agents below one in the org chart without
+  their owner: reporting to someone does not hand them the agent's time
+  (the maintainer: the owner must always consent).
+- One jour fixe per project with the circle as a setting: the
+  maintainer chose several, each with its topic.
+- A grant with the agent's owner's consent alone: the moderator reads
+  every answer, so an owner could make their own agent moderator of a
+  project-wide series, or an admin could put another owner's agent into
+  an owner's private round; a keeper of the series consents too (found
+  in review).
+- A silent substitute moderator when nobody with the right is present
+  (this contract's reading): the keepers are told instead, since only
+  they can grant the right to someone else.
 
 ## A request carries its own discussion thread; the decision stays a separate click
 
@@ -334,4 +388,42 @@ exactly that and keep the activity order inside each.
 - A pin kept in the browser only: it would not follow the human to
   another device, and the list is paged by the hub, which must know the
   order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows the bands.
+
+## A human switches the meat-proxy mode per chat; the profile gives the default
+
+**Id:** 1bdcfac7-9bf9-4ae3-9ad6-23b7f8e9a535
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (a meat-proxy button next to "Attach" and "Send" that switches the mode on and off for this chat; with "I am a meat proxy" in the settings the chat starts in that mode); contract `docs/api.md` §9.3
+
+A human sets the meat-proxy mode for one conversation: `true`, `false`,
+or `null` to follow the profile. The value that holds in a chat is on the
+human's entry in that chat's participants, with the profile's note while
+it is on, so the agents in the chat read it next to the person. Only the
+human sets it, for itself; it is context, never a permission.
+
+**Reason:** the same person may want to be led step by step with one
+agent and talk briefly with another, or in one project and not in the
+next. Changing the profile for every chat would switch it for all of
+them at once. Putting the value on the participant entry means the
+agents see it where they already see who is in the chat, without a new
+field elsewhere.
+
+**Alternatives:**
+- Only the profile switch (the state before): all or nothing across
+  every chat and project.
+- A per-project switch: still too coarse for the case of one chat with
+  one agent, which is the one the maintainer described.
+- Both parts per chat (`{lead, hands}` per conversation): the button the
+  maintainer asked for is one on/off switch; whoever wants one part only
+  sets it in the profile and leaves the chat on `null` (this contract's
+  reading).
+- A change as an event that wakes the agents in the chat: it would cost
+  a model run per agent for context that matters only at their next
+  turn; a change emits no event, and the agents read it on their next
+  resume or read of the chat (this contract's reading).
 

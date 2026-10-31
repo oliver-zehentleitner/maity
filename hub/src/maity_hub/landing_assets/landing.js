@@ -5,7 +5,8 @@
 // - the theme switch: data-theme on <html>, kept in this browser only;
 // - the demo's loop: .demo-on on a .demo section while it is on screen
 //   (the CSS types and fades its lines);
-// - the scales as tabs: .scales-tabs, one column shown at a time;
+// - the scales as tabs: .scales-tabs, one column shown at a time, its ring
+//   ([data-ring] in .scales-rings) marked is-active;
 // - counters ([data-lp-count]) counting up to the number the page holds.
 // It reads only this page's DOM, makes no request, and writes text with
 // textContent, never content as HTML. Under prefers-reduced-motion it adds
@@ -92,12 +93,17 @@
         list.appendChild(b);
         return b;
       });
+      // The rings beside the tabs: 1 you, 2 the team, 3 the community; a
+      // fourth tab and beyond stay on the outer ring.
+      const rings = Array.prototype.slice.call(section.querySelectorAll("[data-ring]"));
       function pick(n, focus) {
         buttons.forEach((b, i) => {
           b.setAttribute("aria-selected", String(i === n));
           b.tabIndex = i === n ? 0 : -1;
           columns[i].setAttribute("aria-hidden", String(i !== n));
         });
+        const ring = String(Math.min(n + 1, 3));
+        rings.forEach((c) => c.classList.toggle("is-active", c.getAttribute("data-ring") === ring));
         if (focus) buttons[n].focus();
       }
       buttons.forEach((b, i) => {

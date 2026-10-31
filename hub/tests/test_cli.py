@@ -277,7 +277,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     pool: Any = served[0].pool
     assert (pool.size(), pool._max_overflow, pool._recycle) == (7, 3, 60)
     assert captured_connect_args(served[0])["options"] == (
-        "-c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
+        "-c TimeZone=UTC -c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
     )
 
 

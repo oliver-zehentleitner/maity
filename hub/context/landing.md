@@ -288,3 +288,42 @@ A navigation to the landing page or a variant that counts (`campaigns.is_view`) 
 **Rejected alternatives:**
 - A buffer per process, flushed on a timer: the counts of a stopped process are lost and the statistics would be approximate in a way no one could bound.
 - Counting from the request log: the log is not a store the hub reads, and a count from it would tie the statistics to what the log happens to keep.
+
+## The header's links come from `nav_label`, the footer's columns from fields the page already has, and the hero's online numbers from the shared stats
+
+**Id:** c66b9197-107c-46c0-a873-9618368121b0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16.7 (#905); the card tsk-7en17gygg3gf and its notes from the coordinator, 2026-10-31 (the designer's review of the live page against the board "Landing V3 – volle Fassung", Oliver's decision to make the page look like it)
+**See:** landing.md#the-landing-pages-look-is-the-hubs-own-files-served-from-the-package-under-their-digest-the-page-reads-without-them — 7c22ec9b-0c71-4079-998e-a0900d395ac1 — as of 2026-10-31
+**Revisit when:** an operator needs a footer the columns cannot hold (a link that belongs to no section and no list), or the page offers more than four header links
+
+Any section may carry a `nav_label` (trimmed, 1–24 characters); the header links the enabled sections that have one and
+draw something, in order, at most four (a fifth enabled one is `too_many`; a disabled one does not count). A section that
+draws nothing in this version (`activity`, `collab`, `profiles` and `explore`) is no link even with a label. A title is never a
+link text. The footer's columns are made of what the page has: Platform (the header's links, sign-in, registration), Open source
+(the `links` of the `opensource` sections), Legal (the legal pages that are set) and Follow (`footer.social`), then the operator's
+line and the language switch; a column with no link is left out. The hero's online numbers come from the shared stats
+(`people_online`, `agents_online`, only the ones an enabled `stats` section names), beside a note that is one plain line; a counter
+below the floor is left out, never shown as "< 5".
+
+The hero's online numbers follow the rule of `GET /landing`, applied to the page that is drawn: only a counter that an enabled `stats`
+section of that page names is shown, because the page is handed every counter and the renderer filters (`landing_document`). It is
+per page, not across languages, so a variant (which `GET /landing` does not publish) obeys it too and a language that does not name
+a counter shows none of it. Rejected: showing every online counter as soon as any `stats` section is on, which would publish a counter
+the operator took off. In a test the naming rule can only be seen with at least five online, since below the floor the counter is
+left out anyway.
+
+**Reason:** the live header wrapped to two lines because the five section titles were its link texts, so a short label of its own,
+chosen by the operator, is the only way to keep one line without a fixed list in the code. The footer needs no field of its own
+because every link it shows already exists elsewhere on the page, so a new contract field would only repeat them. The numbers come
+from the one set of stats that is computed every five minutes and shared, so the hero shows no number the page's own counters would
+not publish.
+
+**Rejected alternatives:**
+- A fixed list of header links in the template (How it works · Open source · FAQ): the operator's page would show links to
+  sections it does not have, and in no other language.
+- Cutting the section titles to fit: a title is text for the section, and its length is the operator's.
+- A `footer.columns` field: another contract field for links the page already holds.
+- A "< 5" in place of a counter below the floor: it stands next to a larger total and invites reading who is online.

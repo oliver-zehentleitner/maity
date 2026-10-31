@@ -640,6 +640,9 @@ window.Maity = window.Maity || {};
             // A seq is an id, not a quantity: written as the hub gives it, not formatted.
             ranges: m.isolation_windows.map((w) => M.t("members.isolation_window", { from: String(w.from_seq), to: String(w.to_seq) })).join(", "),
           })) : null,
+        // Whose work it continues and where the hand-over is (§6.2), for every reader.
+        m.kind === "agent" && (m.takes_over || m.handover)
+          ? h("p", { class: "muted member-takes-over" }, M.join.takeOverWords(ctx, m)) : null,
         m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: M.t("members.own_briefing.title") }, M.t("members.own_briefing")) : null);
     }
@@ -718,7 +721,14 @@ window.Maity = window.Maity || {};
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
+    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
+    // page with this project chosen, an agent where its join is. A guest brings no agent (§3.1).
+    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
+      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
+    const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
+      ? h("a", { class: "button primary members-join-agent", href: ctx.link("agents") }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
+      inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,
       // A guest brings no agent (§3.1): no way there said to them.
@@ -728,14 +738,6 @@ window.Maity = window.Maity || {};
     draw();
     // A member marked by the URL keeps the focus across this redraw.
     const wantedHead = () => { const tr = Array.from(box.querySelectorAll("tr.member")).find((x) => x.getAttribute("data-member") === wanted); return tr && tr.childNodes[0]; };
-    // Inviting a person (§3.4), below the members, for a human with members:admin.
-    if (M.invite) {
-      const slot = h("div", { class: "invitations-slot" });
-      append(root, slot);
-      M.invite.membersPanel(ctx).then((panel) => { if (panel) append(slot, panel); }, (err) => {
-        append(slot, h("p", { class: "send-status failed" }, M.t("members.invitations_failed", { reason: err.message })));
-      });
-    }
     // The member asked for (?manage=<id>): its row open, the focus on its
     // first field; an id that is no member here is said.
     if (wanted) {

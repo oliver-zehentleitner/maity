@@ -227,6 +227,48 @@ and the server time's milliseconds engine-dependent.
 PostgreSQL, but MySQL has no zone-aware type and SQLite stores text, so
 the three engines would hand back different kinds of values.
 
+## Every PostgreSQL session of the hub runs in UTC, and a time in an SQL expression is typed as its column
+
+**Id:** 5bde7bae-2fc7-4157-a43d-e259a2a85906
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-mpj3t0rn67we (2026-10-31): two availability tests failed on PostgreSQL with the server's `TimeZone=Europe/Vienna`, the lease exactly one hour late; reproduced locally, the cause found in `availability.renewed_lease` and the resume's `resumed_at`
+
+`db.postgres_options` starts every connection's `options` with
+`-c TimeZone=UTC`, for the server, `migrate` and the CLI commands
+alike. An `options` the `DATABASE_URL` carries (`?options=-c
+search_path=…`) is kept and goes first (`db.with_url_options`): the
+driver takes the hub's value in place of the URL's, and of two `-c` for
+the same setting the later one wins, so the URL keeps its own settings
+but cannot undo the hub's. A time that goes into an SQL expression rather than straight into
+a column (`case(..., else_=)`, `func.coalesce`) is bound with
+`literal(value, <column>.type)`. The PostgreSQL test databases default
+to `Europe/Vienna` (`tests/conftest.py`), so a run in CI is not on UTC
+by accident.
+
+**Reason:** a value bound through `UtcDateTime` arrives as a naive UTC
+timestamp. An untyped aware `datetime` in an expression goes to
+PostgreSQL as `timestamptz`, and storing it into a `timestamp` column
+converts it with the session's time zone: on a server whose default is
+not UTC every such time was shifted, while CI on UTC saw nothing. Either
+fix alone makes the two tests pass; the pinned zone also covers an
+untyped bind added later, and the typed binds keep the values right
+where a session's zone is not the hub's to set.
+
+**Rejected alternatives:**
+- Only typing the two binds: the next untyped time in an expression
+  would bring the shift back, unseen by a CI database on UTC.
+- `timestamptz` columns: rejected for the timestamps as a whole (see
+  "Timestamps: aware UTC in Python, naive UTC with microseconds in the
+  database"), since MySQL has no zone-aware type and SQLite stores text.
+- `ALTER ROLE … SET timezone = 'UTC'` instead of a setting per
+  connection: the role belongs to the operator, not to the hub, as with
+  the session timeouts, which are set per connection for the same
+  reason.
+- The hub's `options` replacing the URL's: a `search_path` for a schema
+  of its own would be dropped, and `migrate` would write into `public`.
+
 ## On MySQL and MariaDB every table is utf8mb4 with the binary collation
 
 **Id:** ae5662be-59b8-4f99-a4cc-665ce4aedc6a

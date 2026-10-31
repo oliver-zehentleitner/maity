@@ -23,7 +23,7 @@ def _fresh() -> Iterator[None]:
     swarm.CACHE.clear()
     clock.set_source(lambda: NOW)
     yield
-    listening._open.clear()
+    listening.reset()
     swarm.CACHE.clear()
 
 
