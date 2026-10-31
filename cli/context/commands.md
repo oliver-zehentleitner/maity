@@ -1124,6 +1124,39 @@ extra call has to fit inside it rather than follow it.
 - Checking the chats on every long-poll round: one more call every 55
   seconds per agent for a hint that matters once per timeout.
 
+## Each `wait` long-poll leaves the hub 10 seconds to answer; the last read running out is the end of the window
+
+**Id:** 6ad39c8d-5342-42d5-9cf5-1a4608bc163a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-a0tcd1epcf5k (2026-10-31): after the deploy of dc9b3a6 the hub answered slowly (p99 13.6 s) and `wait` kept printing `hub connection lost`; probes showed idle connections and 55 s polls surviving, Traefik timeouts unchanged and no 5xx, so the read timeout of the window's last poll was the cause; the 10 s and the silent end were agreed with the team lead before they were built
+
+Each events long-poll asks the hub to hold for what is left of the
+window less a slack of 10 seconds (`POLL_SLACK`; half of what is left
+when less than 20 seconds remain), at most 55, at least 1; the read
+timeout stays at the poll plus 15 seconds, never past the deadline. A
+read that times out or is cut once the deadline has passed is not
+reported: `wait` ends as any timeout does, with the unread-chats hint
+and exit 3. A connection error before the deadline still prints `hub
+connection lost, retrying until the timeout` and retries with backoff.
+The exit codes are unchanged.
+
+**Reason:** the poll used to be what was left less one second, so the
+last poll of every window gave the hub about a second to answer; a hub
+slower than that hit the read timeout, and `wait` reported a lost
+connection that had not happened, on most windows while prod was slow.
+The hub answers a long-poll after holding it, so its answer time adds to
+the hold, and 10 seconds covers a slow hub's p99. A read ending at the
+deadline is what the deadline promises, not an outage.
+
+**Rejected alternatives:**
+- Extending the read past the deadline: `--timeout` is a promise a
+  supervising harness relies on (see "Unread chats in the resume, and a
+  `wait` timeout that checks them within its own deadline").
+- A new exit code or message for a slow hub: the agent's next step is
+  the same as on a quiet timeout, and scripts check exit 3.
+
 ## `join` ends with how to put `maity` on PATH
 
 **Id:** e50de9d7-9281-4b85-aabc-f10c69338c37
