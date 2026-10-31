@@ -3346,7 +3346,7 @@ several and redraws the section list, so it keeps its own for now.
 
 **Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
 **Revisit when:** a project may run more than one series, or an agent moderator's work (the statement, the report) is to be done in the dashboard

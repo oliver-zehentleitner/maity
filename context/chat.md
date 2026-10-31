@@ -182,8 +182,12 @@ maintainer.
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
 **See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
-The team looks at how it works in a jour fixe. A human sets the series
-in the project policy, and the hub triggers it. Owners and admins,
+The team looks at how it works in a jour fixe. Who sets it up, who
+takes part and who moderates changed on 2026-10-31: see ee0abca3, which
+supersedes this entry's schedule, start and moderator parts; the
+answers, the exchange, the triage and "nothing executed directly" stand.
+As first decided, a human sets the series in the project policy, and the
+hub triggers it. Owners and admins,
 admin agents included, can also start one by hand. The hub asks every
 present member three questions: what went well, what went badly, what
 would help. Each member answers privately to the moderator, by name or
@@ -227,6 +231,7 @@ settles what the rules already allow.
 **Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting); contract `docs/api.md` §20.1, §20.2
 **Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
 **See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+**Supersedes:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 in part (schedule, start, moderator)
 
 A project holds up to ten jour fixe series instead of one schedule in
 its policy. Each has a topic that heads its questions and report, a
@@ -258,6 +263,11 @@ owner's agent into extra work: the agent's time is its owner's to give.
   (the maintainer: the owner must always consent).
 - One jour fixe per project with the circle as a setting: the
   maintainer chose several, each with its topic.
+- A grant with the agent's owner's consent alone: the moderator reads
+  every answer, so an owner could make their own agent moderator of a
+  project-wide series, or an admin could put another owner's agent into
+  an owner's private round; a keeper of the series consents too (found
+  in review).
 - A silent substitute moderator when nobody with the right is present
   (this contract's reading): the keepers are told instead, since only
   they can grant the right to someone else.
