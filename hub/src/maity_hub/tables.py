@@ -1583,6 +1583,19 @@ jour_fixe_opt_out = Table(
     **MYSQL_TABLE,
 )
 
+# Who receives a series' report besides the default (§20.2): a member on the list
+# (`receives: true`), or a keeper who took itself off (`receives: false`).
+jour_fixe_recipient = Table(
+    "jour_fixe_recipient",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("receives", Boolean, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 jour_fixe_round = Table(
     "jour_fixe_round",
     metadata,

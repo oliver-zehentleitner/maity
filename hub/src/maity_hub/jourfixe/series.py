@@ -356,6 +356,9 @@ def delete_series(
     )
     conn.execute(delete(t.jour_fixe_opt_out).where(t.jour_fixe_opt_out.c.series_id == series.id))
     conn.execute(
+        delete(t.jour_fixe_recipient).where(t.jour_fixe_recipient.c.series_id == series.id)
+    )
+    conn.execute(
         update(t.jour_fixe_round)
         .where(t.jour_fixe_round.c.series_id == series.id)
         .values(series_id=None)

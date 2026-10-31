@@ -3,7 +3,8 @@
 `jour_fixe_series` holds a series' topic, circle and schedule (`config`, the shape the schedule
 reads), `jour_fixe_moderator` the right to moderate a series (`active`, or `pending` until the
 agent's owner and a keeper both said go), `jour_fixe_opt_out` the members who left a series,
-and every round names its series.
+`jour_fixe_recipient` who receives a series' report besides its keepers (or a keeper who took
+itself off), and every round names its series.
 
 The upgrade ("From the single schedule", §20.1): a project with `policy.jour_fixe`, or with
 rounds started by hand, gets one series, `circle: all`, topic "How we work", the schedule and
@@ -186,6 +187,25 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("series_id", "membership_id", name=op.f("pk_jour_fixe_opt_out")),
         **TABLE_OPTIONS,
     )
+    op.create_table(
+        "jour_fixe_recipient",
+        sa.Column("series_id", sa.String(length=40), nullable=False),
+        sa.Column("membership_id", sa.Integer(), nullable=False),
+        sa.Column("receives", sa.Boolean(), nullable=False),
+        sa.Column("at", TIMESTAMP, nullable=False),
+        sa.ForeignKeyConstraint(
+            ["series_id"],
+            ["jour_fixe_series.id"],
+            name=op.f("fk_jour_fixe_recipient_series_id_jour_fixe_series"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["membership_id"],
+            ["membership.id"],
+            name=op.f("fk_jour_fixe_recipient_membership_id_membership"),
+        ),
+        sa.PrimaryKeyConstraint("series_id", "membership_id", name=op.f("pk_jour_fixe_recipient")),
+        **TABLE_OPTIONS,
+    )
     with op.batch_alter_table("jour_fixe_round", schema=None) as batch_op:
         batch_op.add_column(sa.Column("series_id", sa.String(length=40), nullable=True))
         batch_op.create_foreign_key(
@@ -317,6 +337,7 @@ def downgrade() -> None:
             op.f("fk_jour_fixe_round_series_id_jour_fixe_series"), type_="foreignkey"
         )
         batch_op.drop_column("series_id")
+    op.drop_table("jour_fixe_recipient")
     op.drop_table("jour_fixe_opt_out")
     op.drop_table("jour_fixe_moderator")
     op.drop_index("ix_jour_fixe_series_project_id", table_name="jour_fixe_series")

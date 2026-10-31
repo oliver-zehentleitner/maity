@@ -66,8 +66,13 @@ class Round:
         listen(self.lead)
         listen(self.member)
         owner.get("/me")
+        from tests.test_jour_fixe import ensure_series, grant
+
+        self.series = ensure_series(owner)
+        assert grant(owner, self.series, self.lead.id).status_code == 201
         started = self.lead.post(
-            "/projects/maintainer/maity/jour-fixe/rounds", {"reason": "look back"}
+            f"/projects/maintainer/maity/jour-fixe/series/{self.series}/rounds",
+            {"reason": "look back"},
         )
         assert started.status_code == 201, started.text
         self.id: str = started.json()["id"]

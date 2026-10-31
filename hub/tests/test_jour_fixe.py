@@ -51,15 +51,47 @@ def events(engine: Engine, kind: str) -> list[Any]:
         )
 
 
-def start(who: Any) -> Any:
-    return who.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "let us look back"})
+BASE = "/projects/maintainer/maity"
+
+
+def series_id(who: Any) -> str:
+    """The first series the caller sees: the one `team` sets up."""
+    items = who.get(f"{BASE}/jour-fixe/series").json()["items"]
+    found: str = items[0]["id"]
+    return found
+
+
+def ensure_series(owner: flow.Human, **fields: Any) -> str:
+    """A series with `circle: all` kept by the project's admins, made once (§20.1)."""
+    items = owner.get(f"{BASE}/jour-fixe/series").json()["items"]
+    if items:
+        return str(items[0]["id"])
+    body = {"topic": "How we work", "circle": "all", "reason": "t", **fields}
+    made = owner.post(f"{BASE}/jour-fixe/series", body)
+    assert made.status_code == 201, made.text
+    return str(made.json()["id"])
+
+
+def grant(owner: flow.Human, sid: str, member_id: str) -> Any:
+    """The right to moderate the series (§20.2): the owner's own agent takes effect at once."""
+    return owner.post(
+        f"{BASE}/jour-fixe/series/{sid}/moderators", {"member_id": member_id, "reason": "t"}
+    )
+
+
+def start(who: Any, sid: str | None = None) -> Any:
+    sid = sid or series_id(who)
+    return who.post(f"{BASE}/jour-fixe/series/{sid}/rounds", {"reason": "let us look back"})
 
 
 def team(owner: flow.Human, make_client: ClientFactory) -> tuple[flow.Agent, flow.Agent]:
+    """A lead holding the moderator right of the series and a worker, both listening."""
     lead = flow.agent(make_client, owner, role="admin")
     worker_agent = flow.agent(make_client, owner)
     listen(lead)
     listen(worker_agent)
+    sid = ensure_series(owner)
+    assert grant(owner, sid, lead.id).status_code == 201
     return lead, worker_agent
 
 
