@@ -3241,6 +3241,39 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## The jour fixe is a tab of its own; its series and moderator order are in Project settings
+
+**Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
+**Revisit when:** the round's actions (answers, posts, the statement, the report and its triage, redaction) are added, or a project may run more than one series
+
+**Jour fixe** is a tab of the project. At `jour-fixe` it lists the
+rounds, the next slot and the open round, and offers a start by hand to
+trust owner and admin, the holders of `jour_fixe:start`. At
+`jour-fixe/<id>` it shows one round as a member reads it (§20.7): phase
+and deadline, moderator, the number of answers but never an answer,
+participants and the absent with their reason, the steps, the
+statement, the posts and the report with each proposal's triage. The
+series (`policy.jour_fixe`) is a form in Project settings, sent whole
+with a reason as the contract replaces it. Beside it is the moderator
+order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
+human with `project:admin`, as every policy field is.
+
+**Reason:** a round is read by every member, so it belongs in the
+project's tabs. The series is a policy field and sits with the others.
+The contract keeps answers with their readers, so the round's page
+never shows one, only the count.
+
+**Rejected alternatives:**
+- The rounds inside Project settings: members without `project:admin`
+  read rounds too.
+- Editing the series field by field: the contract replaces
+  `policy.jour_fixe` whole, so a partial form would reset the fields it
+  leaves out.
+
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
 **Id:** c72e8c45-838f-4304-bf9f-9e1d3a7693a7

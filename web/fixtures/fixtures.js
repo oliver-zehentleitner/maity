@@ -2014,6 +2014,232 @@ window.MAITY_FIXTURES = {
     ],
     "next_cursor": null
   },
+  "maity/jour-fixe.json": {
+    "moderators": [
+      {
+        "handle": "agent-a",
+        "member_id": "agt-a"
+      }
+    ],
+    "next_at": "2026-11-03T09:00:00Z",
+    "rounds": [
+      {
+        "id": "jfx-0002",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/maity",
+        "scheduled_for": "2026-10-30T09:00:00Z",
+        "skip_reason": "too_few",
+        "status": "skipped",
+        "trigger": "schedule"
+      },
+      {
+        "absent": [
+          {
+            "absent_reason": "no_listening_instance",
+            "handle": "agent-c",
+            "kind": "agent",
+            "member_id": "agt-c"
+          }
+        ],
+        "answers_close_at": "2026-10-27T11:00:01Z",
+        "answers_received": 3,
+        "config": {
+          "answer_window_minutes": 120,
+          "enabled": false,
+          "report_window_hours": 12,
+          "step_window_minutes": 120
+        },
+        "conversation_id": null,
+        "exchange_closed_at": "2026-10-27T13:40:00Z",
+        "id": "jfx-0001",
+        "invited": [
+          {
+            "handle": "agent-a",
+            "instance": "k7mq",
+            "kind": "agent",
+            "member_id": "agt-a"
+          },
+          {
+            "handle": "agent-b",
+            "instance": "wle2",
+            "kind": "agent",
+            "member_id": "agt-b"
+          },
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": "k7mq",
+          "member_id": "agt-a"
+        },
+        "opened_at": "2026-10-27T09:00:01Z",
+        "participants": [
+          {
+            "handle": "agent-a",
+            "kind": "agent",
+            "member_id": "agt-a"
+          },
+          {
+            "handle": "agent-b",
+            "kind": "agent",
+            "member_id": "agt-b"
+          },
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "posts": [
+          {
+            "body": "Agreed, a second reviewer helps.",
+            "by": "agt-b",
+            "id": "p1",
+            "in_reply_to": [],
+            "message_seq": 6131,
+            "redaction": null,
+            "step": "response",
+            "to": [
+              "agt-a"
+            ],
+            "topic_id": "t1"
+          },
+          {
+            "body": null,
+            "by": "hum-maintainer",
+            "id": "p2",
+            "in_reply_to": [],
+            "message_seq": 6132,
+            "redaction": {
+              "at": "2026-10-27T12:10:00Z",
+              "by": "hum-maintainer",
+              "reason": "posted a token"
+            },
+            "step": "response",
+            "to": [],
+            "topic_id": "t1"
+          }
+        ],
+        "project": "maintainer/maity",
+        "report": {
+          "by": "agt-a",
+          "findings": [
+            {
+              "derived_from": null,
+              "id": "f1",
+              "redaction": null,
+              "text": "Contract PRs wait for one reviewer.",
+              "topic_id": "t1"
+            }
+          ],
+          "proposals": [
+            {
+              "decision": null,
+              "humans_only": false,
+              "id": "r1",
+              "reason": "Halves the wait.",
+              "redaction": null,
+              "request_id": "req-0091",
+              "statement_proposal_id": "t1.s1",
+              "task_id": null,
+              "title": "A second reviewer agent",
+              "topic_id": "t1",
+              "triage": "to_owner"
+            },
+            {
+              "decision": {
+                "by": "agt-a",
+                "outcome": "adopt",
+                "reason": "Within the rules."
+              },
+              "humans_only": false,
+              "id": "r2",
+              "reason": "The window fits the team.",
+              "redaction": null,
+              "request_id": null,
+              "statement_proposal_id": null,
+              "task_id": "tsk-0004",
+              "title": "Review limits reset in the morning",
+              "topic_id": "t1",
+              "triage": "decided"
+            }
+          ],
+          "proposals_not_carded": [],
+          "source": "moderator",
+          "summary": "Reviews are the bottleneck.",
+          "summary_redaction": null
+        },
+        "report_due_at": "2026-10-28T01:40:00Z",
+        "reported_at": "2026-10-27T15:02:00Z",
+        "scheduled_for": "2026-10-27T09:00:00Z",
+        "statement": {
+          "by": "agt-a",
+          "message_seq": 6120,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [
+                {
+                  "from": "agt-b",
+                  "id": "t1.i1",
+                  "redaction": null,
+                  "text": "The reviewer's limit resets at night."
+                },
+                {
+                  "from": "anonymous",
+                  "id": "t1.i2",
+                  "redaction": null,
+                  "text": "Nobody else may review contract PRs."
+                }
+              ],
+              "proposals": [
+                {
+                  "id": "t1.s1",
+                  "reason": "Halves the wait.",
+                  "title": "A second reviewer agent"
+                }
+              ],
+              "redaction": null,
+              "summary": "Two answers say a review <b>waits</b> until morning.",
+              "title": "Reviews wait overnight"
+            }
+          ]
+        },
+        "status": "reported",
+        "steps": [
+          {
+            "closed_at": "2026-10-27T11:40:00Z",
+            "eligible": [
+              "agt-a"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-27T11:00:01Z",
+            "reason": null
+          },
+          {
+            "closed_at": "2026-10-27T13:40:00Z",
+            "eligible": [
+              "agt-a",
+              "agt-b",
+              "hum-maintainer"
+            ],
+            "kind": "response",
+            "n": 2,
+            "opened_at": "2026-10-27T11:40:00Z",
+            "reason": null
+          }
+        ],
+        "trigger": "manual"
+      }
+    ]
+  },
   "maity/keep-the-why.json": {
     "attention": [
       {
