@@ -13,7 +13,8 @@ window.Maity = window.Maity || {};
 
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
-  // opts: id (the element ids' prefix), hint (what the body is), body() (the
+  // opts: id (the element ids' prefix), hint (what the body is), loadLabel (the load button's
+  // words where loading does more than fill an editor), body() (the
   // editor's state as the hub takes it), load(data, io) (checks the parsed
   // value and loads it into the editor: true when it did, else it has said
   // why in io).
@@ -52,7 +53,7 @@ window.Maity = window.Maity || {};
       h("label", { for: opts.id }, M.t("jsonio.label")), area,
       h("div", { class: "inline-form" }, h("label", { for: opts.id + "-file" }, M.t("jsonio.file")), file),
       h("div", { class: "actions" },
-        h("button", { type: "button", onclick: loadIt }, M.t("jsonio.load")),
+        h("button", { type: "button", onclick: loadIt }, opts.loadLabel || M.t("jsonio.load")),
         h("button", { type: "button", onclick: exportIt }, M.t("jsonio.export")),
         h("button", { type: "button", onclick: copy }, M.t("jsonio.copy"))),
       io.el);
