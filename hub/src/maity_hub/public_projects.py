@@ -31,6 +31,7 @@ from maity_hub.config import Settings
 from maity_hub.errors import invalid
 
 KIND = "project"
+VIEWS = "project_views"  # the kind of its Board, Members and Organisation pages
 ABOUT_MAX_BYTES = 4096  # 4 KiB (§16.9)
 
 
@@ -129,11 +130,14 @@ _STAT_LABELS = (
 )
 
 
-def agent_statistics(conn: Connection, project_id: str) -> dict[str, Any]:
+def agent_statistics(
+    conn: Connection, project_id: str, named: list[Any] | None = None
+) -> dict[str, Any]:
     """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
     the agents only, so that no human's contribution appears. `totals` (with
     `cards_done_per_day`) count every agent that is not isolated; `members` has a row, with its
-    counters, for each agent the page names (a public owner profile, no hold)."""
+    counters, for each agent the page names (a public owner profile, no hold). `named` is what
+    `team` found, when the caller has it already."""
     m = t.membership.c
     rows = conn.execute(
         select(m.id, m.agent_id).where(
@@ -145,9 +149,10 @@ def agent_statistics(conn: Connection, project_id: str) -> dict[str, Any]:
     ).all()
     agents = {row.id for row in rows}
     by_agent = {row.agent_id: row.id for row in rows}
-    _, named, _ = team(conn, project_id)
+    if named is None:
+        _, named, _ = team(conn, project_id)
     people = {
-        by_agent[a.id]: {"handle": a.handle, "display_name": a.display_name}
+        by_agent[a.id]: {"handle": a.handle, "name": a.display_name, "display_name": a.display_name}
         for a in named
         if a.id in by_agent
     }
@@ -219,7 +224,7 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    return [(KIND, project_id) for project_id in ids]
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
 
 
 def render_project(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
@@ -250,7 +255,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
         f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
     )
-    statistics_html = _statistics_html(agent_statistics(conn, project.id))
+    statistics_html = _statistics_html(agent_statistics(conn, project.id, agents))
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}{statistics_html}'
@@ -319,4 +324,9 @@ def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None
         public_pages.touch(conn, KIND, project_id, removal=removal)
 
 
-public_pages.register(public_pages.Kind(KIND, render_project, targets))
+def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
+    """The views of a project follow its page: served, named and shown alike."""
+    return [(VIEWS, project_id)]
+
+
+public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

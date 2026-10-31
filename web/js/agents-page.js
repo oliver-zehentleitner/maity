@@ -72,7 +72,7 @@ window.Maity = window.Maity || {};
     return h("li", { class: "agent-membership" },
       h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project),
       h("span", { class: "muted" }, " · " + M.trust.words(m)),
-      active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { count: active, max }) : M.t("agents.instances", { count: active }))),
+      active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { active, count: max }) : M.t("agents.instances", { count: active }))),
       " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook")));
   }
 

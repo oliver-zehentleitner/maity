@@ -36,6 +36,7 @@ from maity_hub import (
     probe,
     public_pages,
     public_people,  # noqa: F401  (registers the kind of page)
+    public_project_views,  # noqa: F401  (registers the kind of page)
     public_projects,  # noqa: F401  (registers the kind of page)
     registration_accounts,
     reports,

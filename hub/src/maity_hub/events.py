@@ -213,11 +213,29 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
+    elif kind in CARD_KINDS and project.public_page == "on":
+        # The Board follows its cards: a new one adds, any other change may take one off.
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "project_views", project_id, removal=kind != "task_created")
     return seq
 
 
 # The events of a membership: what a public page shows of the team follows them (§16.9).
 MEMBER_KINDS = frozenset({"member_joined", "member_updated"})
+
+# The events of a card: the Board of a public page follows them (§16.9).
+CARD_KINDS = frozenset(
+    {
+        "task_created",
+        "task_updated",
+        "task_claimed",
+        "task_released",
+        "task_assigned",
+        "task_reported",
+        "task_merged",
+    }
+)
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")
