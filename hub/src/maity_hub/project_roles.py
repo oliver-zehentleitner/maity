@@ -97,9 +97,9 @@ def parse(raw: Any) -> list[dict[str, Any]]:
 def uses(conn: Connection, project: Any, name: str) -> list[str]:
     """What still names the project role `name` (§2.3 `role_in_use`): a membership, an
     open join or invitation, an open request's `to`, a placement that has not made its
-    membership yet, the onboarding's `check_in_with`, an entry in a `substitutes` list.
-    A card's `needs` and the role memory store are not in the hub yet; their pull
-    request adds them here."""
+    membership yet, the onboarding's `check_in_with`, an entry in a `substitutes` list,
+    or live role memory. A card's `needs` is not in the hub yet; its pull request
+    adds it here."""
     from maity_hub import clock
 
     found: list[str] = []
@@ -162,6 +162,15 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
     ).scalars()
     if any(f"role:{name}" in (policy or {}).get("substitutes", []) for policy in policies):
         found.append("substitutes")
+    if conn.execute(
+        select(t.memory_entry.c.id).where(
+            t.memory_entry.c.project_id == project.id,
+            t.memory_entry.c.store == "role",
+            t.memory_entry.c.role == name,
+            t.memory_entry.c.deleted_at.is_(None),
+        )
+    ).first():
+        found.append("memory")
     return found
 
 

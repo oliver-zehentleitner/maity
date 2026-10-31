@@ -1,4 +1,4 @@
-"""Memory: the soul of an agent profile, team memory and community memory (docs/api.md §19).
+"""Memory: an agent's soul, team, role and community stores (docs/api.md §19).
 
 The domain side: views, writes and the resume packet's block. The endpoints are in
 `routes/memory.py`; a proposal's settle (§19.1, §19.2) belongs here too.
@@ -24,12 +24,13 @@ from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
+from maity_hub.scopes import in_admin_team
 from maity_hub.views import ts
 
 # §1.7: in bytes of UTF-8, so that a cap means the same in every script.
 ENTRY_MAX = 2048
 SOUL_MAX = 8192
-STORE_MAX = 65536  # live text per team, and for the community
+STORE_MAX = 65536  # live text per team, per role, and for the community
 PACKET_TEXT = 4096  # each store's newest entries in the resume packet (§19.3)
 PACKET_BATCH = 50
 NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
@@ -209,7 +210,7 @@ def soul_versions(conn: Connection, agent_id: str) -> list[dict[str, Any]]:
     ]
 
 
-# --- team and community memory (§19.2) -----------------------------------------------------------
+# --- team, role and community memory (§19.2) -----------------------------------------------------
 
 
 def member(conn: Connection, membership_id: int | None) -> Any:
@@ -242,6 +243,7 @@ def entry_view(conn: Connection, row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "store": row.store,
+        **({"role": row.role} if row.store == "role" else {}),
         "member_id": team.agent_id if team is not None else None,
         "text": row.text,
         "tags": row.tags or [],
@@ -267,6 +269,8 @@ def _load_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[
     slug = namespace.name_of(conn, row.project_id)
     mine = membership(conn, request.state.caller, str(slug))  # not_found once it left
     if row.store == "team" and not reads_team(conn, mine, member(conn, row.team_membership)):
+        raise not_found()
+    if row.store == "role" and not reads_role(mine, row.role):
         raise not_found()
     return entry_view(conn, row)
 
@@ -307,22 +311,43 @@ def readable_teams(mine: Membership) -> Any:
     return c.team_membership.in_(owned)
 
 
-def _live_size(conn: Connection, project_id: str, team_membership: int | None) -> int:
+def role_admin(mine: Membership) -> bool:
+    """Owner/admin members, agents included; a proxy has no unconsented governance."""
+    return in_admin_team(mine.trust, mine.role_base)
+
+
+def reads_role(mine: Membership, role: str) -> bool:
+    return mine.role == role or role_admin(mine)
+
+
+def readable_roles(mine: Membership) -> Any:
+    c = t.memory_entry.c
+    return and_(c.store == "role", c.role.is_not(None) if role_admin(mine) else c.role == mine.role)
+
+
+def _live_size(
+    conn: Connection, project_id: str, team_membership: int | None, role: str | None = None
+) -> int:
     c = t.memory_entry.c
     where = [c.project_id == project_id, c.deleted_at.is_(None)]
-    where.append(
-        c.team_membership == team_membership
-        if team_membership is not None
-        else c.store == "community"
-    )
+    if role is not None:
+        where.extend((c.store == "role", c.role == role))
+    else:
+        where.append(
+            c.team_membership == team_membership
+            if team_membership is not None
+            else c.store == "community"
+        )
     texts = conn.execute(select(c.text).where(*where)).scalars()
     return sum(size(text) for text in texts)
 
 
 def _audience(conn: Connection, row: Any) -> list[str]:
-    """Team: the team and the agent's owner when a member; community: `all` (§19.3)."""
+    """Team and its owner; the named role; or community `all` (§19.3)."""
     if row.store == "community":
         return ["all"]
+    if row.store == "role":
+        return [f"role:{row.role}"]
     team = member(conn, row.team_membership)
     owner = owner_of(conn, team)
     audience = [f"member:{team.agent_id}"]
@@ -343,6 +368,7 @@ def announce(
         _audience(conn, row),
         {"id": row.id, "store": row.store,
          "member_id": team.agent_id if team is not None else None,
+         **({"role": row.role} if row.store == "role" else {}),
          "by": {"kind": by[0], "member_id": by[1]}},  # fmt: skip
         actor=actor,
         subject=("memory", row.id),
@@ -356,6 +382,7 @@ class Writer:
     membership: Any  # the membership row
     kind: str  # human, agent
     session_id: str | None
+    instance: str | None = None
 
     @property
     def principal(self) -> str:
@@ -364,7 +391,12 @@ class Writer:
 
     @classmethod
     def of(cls, mine: Membership, caller: Caller) -> Writer:
-        return cls(mine.row, mine.kind, caller.session_id if mine.kind == "agent" else None)
+        return cls(
+            mine.row,
+            mine.kind,
+            caller.session_id if mine.kind == "agent" else None,
+            caller.instance,
+        )
 
 
 def add_entry(
@@ -377,13 +409,15 @@ def add_entry(
     tags: list[str],
     confirmed_by: str | None = None,
     request_id: str | None = None,
+    role: str | None = None,
 ) -> str:
     """Store one entry, within the caps (§19.2); `memory_full` rather than evicting."""
     if size(text) > ENTRY_MAX:
         raise invalid({"text": "too_long"}, "an entry is at most 2 KiB")
     team = writer.membership.id if store == "team" else None
+    role = (role or writer.membership.role) if store == "role" else None
     events.lock_project(conn, project_id)  # the cap is checked and kept in one step
-    if _live_size(conn, project_id, team) + size(text) > STORE_MAX:
+    if _live_size(conn, project_id, team, role) + size(text) > STORE_MAX:
         raise ApiError(409, "memory_full", f"the {store} memory is full; delete entries first",
                        {"store": store, "cap": STORE_MAX})  # fmt: skip
     entry_id = new_id("memory")
@@ -393,12 +427,13 @@ def add_entry(
             project_id=project_id,
             store=store,
             team_membership=team,
+            role=role,
             text=text,
             tags=list(dict.fromkeys(tags)),
             by_kind=writer.kind,
             by_membership=writer.membership.id,
             by_session_id=writer.session_id,
-            by_instance=None,  # agent instances (§6.17) are not built yet
+            by_instance=writer.instance if store == "role" else None,
             confirmed_by=confirmed_by,
             request_id=request_id,
             created_at=clock.now(),
@@ -544,6 +579,7 @@ def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int)
     ).all()
     mine_changed = any(
         (e.payload or {}).get("store") == "community"
+        or ((e.payload or {}).get("store") == "role" and (e.payload or {}).get("role") == mine.role)
         or (e.payload or {}).get("member_id") == agent_id
         or (e.kind == "soul_changed" and (e.payload or {}).get("agent_id") == agent_id)
         for e in changed
@@ -552,6 +588,12 @@ def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int)
         "notice": NOTICE,
         "soul": soul_view(conn, agent_id),
         "team": _compact(conn, and_(c.project_id == mine.project.id, c.team_membership == mine.id)),
+        "role": {
+            "role": mine.role,
+            **_compact(
+                conn, and_(c.project_id == mine.project.id, c.store == "role", c.role == mine.role)
+            ),
+        },
         "community": _compact(conn, and_(c.project_id == mine.project.id, c.store == "community")),
         "changed_since_cursor": mine_changed,
     }
