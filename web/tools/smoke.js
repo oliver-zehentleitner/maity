@@ -3923,6 +3923,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
     expect(fgRepo() && text(fgRepo()).includes("Not confirmed by the namespace owner") && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: a project owner who is not the namespace owner gets no Confirm button");
+    // An organisation's project (§11.4, §6.26): another owner of the organisation may replace a confirmation
+    // with their own grants; the owner who confirmed it is offered nothing.
+    // The project's view and its members, as an owner of the organisation reads them (org_owner, §6.26).
+    const fgOrgRepo = (by) => (p) => (p === "/projects/maintainer/sample"
+      ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "org-acme", handle: "acme" },
+        repository: Object.assign({}, x.repository, { owner_confirmed: true, confirmed_by: by }) }))
+      : p === "/projects/maintainer/sample/members"
+        ? fgGet(p).then((x) => Object.assign({}, x, { items: x.items.map((m) => (m.id === "hum-maintainer" ? Object.assign({}, m, { org_owner: true }) : m)) }))
+        : fgGet(p));
+    win.Maity.api.get = fgOrgRepo({ id: "hum-someone", handle: "someone" });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    const fgOther = !!btn(fgRepo(), "Confirm this repository for my grants") && text(fgRepo()).includes("Confirmed for the grants of @someone");
+    win.Maity.api.get = fgOrgRepo({ id: "hum-maintainer", handle: "maintainer" });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgOther && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: on an organisation's project another owner may confirm with their own grants; the one who confirmed is offered nothing");
     win.Maity.api.get = fgGet;
     await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
     btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
