@@ -520,7 +520,9 @@ window.Maity = window.Maity || {};
         settingsSaved = label + " saved.";
         render();
       } catch (err) {
-        if (atFields && atFields(err)) { status.fail(label + " not saved: ", { message: M.t("settings.see_fields") }); return; }
+        // true: said at the fields; a text: what the status line says besides them.
+        const atField = atFields && atFields(err);
+        if (atField) { status.fail(label + " not saved: ", { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
         status.fail(label + " not saved: ", err);
       }
     };
