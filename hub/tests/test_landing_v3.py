@@ -301,12 +301,12 @@ def test_the_faq_is_details_and_the_band_carries_the_loader(
     )
 
 
-def test_a_counter_is_its_number_for_the_script_and_a_floor_is_left_out(
+def test_a_counter_is_its_number_for_the_script(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     html = page(owner, make_client, SECTIONS[1])
     assert re.search(r'<b><span data-lp-count>1</span></b><span class="label">People</span>', html)
-    assert "People online" not in html and "&lt; 5" not in html  # a floor is left out (§16.7)
+    assert "&lt; 5" not in html  # no "< 5" stands in place of a number (§16.7)
 
 
 def test_an_operators_words_are_escaped_in_every_new_section(

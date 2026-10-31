@@ -297,6 +297,7 @@ A navigation to the landing page or a variant that counts (`campaigns.is_view`) 
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.7 (#905); the card tsk-7en17gygg3gf and its notes from the coordinator, 2026-10-31 (the designer's review of the live page against the board "Landing V3 – volle Fassung", Oliver's decision to make the page look like it)
 **See:** landing.md#the-landing-pages-look-is-the-hubs-own-files-served-from-the-package-under-their-digest-the-page-reads-without-them — 7c22ec9b-0c71-4079-998e-a0900d395ac1 — as of 2026-10-31
+**See:** https://github.com/oliver-zehentleitner/maity — 05b29565-5505-4bab-a67f-cfacef328964 — as of 2026-10-31
 **Revisit when:** an operator needs a footer the columns cannot hold (a link that belongs to no section and no list), or the page offers more than four header links
 
 Any section may carry a `nav_label` (trimmed, 1–24 characters); the header links the enabled sections that have one and
@@ -306,14 +307,13 @@ link text. The footer's columns are made of what the page has: Platform (the hea
 (the `links` of the `opensource` sections), Legal (the legal pages that are set) and Follow (`footer.social`), then the operator's
 line and the language switch; a column with no link is left out. The hero's online numbers come from the shared stats
 (`people_online`, `agents_online`, only the ones an enabled `stats` section names), beside a note that is one plain line; a counter
-below the floor is left out, never shown as "< 5".
+is its real number, a small one and `0` included (there is no floor since #963, and so no "< 5").
 
 The hero's online numbers follow the rule of `GET /landing`, applied to the page that is drawn: only a counter that an enabled `stats`
 section of that page names is shown, because the page is handed every counter and the renderer filters (`landing_document`). It is
 per page, not across languages, so a variant (which `GET /landing` does not publish) obeys it too and a language that does not name
 a counter shows none of it. Rejected: showing every online counter as soon as any `stats` section is on, which would publish a counter
-the operator took off. In a test the naming rule can only be seen with at least five online, since below the floor the counter is
-left out anyway.
+the operator took off.
 
 The board's last details are drawn by the same renderer: an online counter in the strip has the live dot before its number, the hero line
 puts the online numbers before the note, a `github.com` link is left out of the Follow column when the Open source column has one (the
@@ -334,7 +334,8 @@ not publish.
   sections it does not have, and in no other language.
 - Cutting the section titles to fit: a title is text for the section, and its length is the operator's.
 - A `footer.columns` field: another contract field for links the page already holds.
-- A "< 5" in place of a counter below the floor: it stands next to a larger total and invites reading who is online.
+- A "< 5" in place of a counter below a floor: it stands next to a larger total and invites reading who is online. The floor itself
+  was dropped later (#963), knowingly, with the numbers shown as they are (scope.md 05b29565).
 
 ## A page's languages are listed with the default first and the rest alphabetically
 
