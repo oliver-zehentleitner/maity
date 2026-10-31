@@ -140,6 +140,9 @@ def engine(database_url: str, request: pytest.FixtureRequest) -> Iterator[Engine
         else:
             downgrade(engine)  # a shared server database may hold a previous run's schema
             migrate(engine)
+            # The same rows as after any other test: the migration's nonce epoch is now, and a
+            # request signed a few seconds back would fall before it (auth.nonces).
+            _empty_the_tables(engine)
     else:
         downgrade(engine)
     yield engine
