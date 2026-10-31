@@ -669,9 +669,11 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* ---- organisation --------------------------------------------------- */
 
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
-/* Members as the project's hierarchy: owners at the top, others one level in, guests two. */
+/* Members as the project's hierarchy by trust: owner, admin, member, guest, each a level deeper;
+   with all four held, a guest is level 3. */
 tr.member-level-1 > th { padding-inline-start: 28px; }
 tr.member-level-2 > th { padding-inline-start: 56px; }
+tr.member-level-3 > th { padding-inline-start: 84px; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .role { color: var(--muted); }

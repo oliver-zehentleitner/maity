@@ -2027,6 +2027,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Members · Maity · Maity" && tables.length === 1 && text(main).includes("Members (6)")
     && JSON.stringify(mLevels) === JSON.stringify(["hum-maintainer:0", "agt-a:1", "agt-b:2", "agt-c:2", "agt-d:2", "agt-r:2"]),
     "members: one list by trust, owner, admin, members, each a level deeper " + JSON.stringify(mLevels));
+  // Every level the four trusts can give has its indent (review of #949: with all four held, a guest is level 3).
+  const mCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("tr\\.member-level-" + (i + 1) + " > th \\{ padding-inline-start: \\d+px; \\}").test(mCss)),
+    "members: an indent for every level the trusts can give");
   const ths = tables[0].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(JSON.stringify(ths) === JSON.stringify(["Name", "Trust and role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Actions"]),
     "members: an admin's agent columns, with the owner; the credentials are in Manage and on Agents " + JSON.stringify(ths));

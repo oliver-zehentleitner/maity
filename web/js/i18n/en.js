@@ -1548,7 +1548,7 @@ window.MAITY_I18N["en"] = {
   "members.edit.trust": "Trust",
   "members.filter.mine": "Only my agents",
   "members.filter.mine_none": "You own no agent in this project.",
-  "members.hint": "Everyone in {project}, humans first, each with a chat.",
+  "members.hint": "Everyone in {project}, owners first, then admins, members and guests, each a level deeper, each with a chat.",
   "members.hint.admin": "Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member.",
   "members.invite_user": "Invite user",
   "members.isolate.confirm": "Isolate {name}? It stops at once: its claims are released and its owner is told.",
