@@ -1073,7 +1073,7 @@ window.Maity = window.Maity || {};
     if (!nav) return;
     if (ctx.scope !== "project") {
       nav.querySelectorAll("a").forEach((a) => {
-        const page = ALL_PAGES.find((x) => a.getAttribute("href") === x.href);
+        const page = ALL_PAGES.find((x) => a.getAttribute("href") === M.route.href(x.href));
         if (!page) return;
         const old = a.querySelector(".count");
         if (old) old.remove();
@@ -1083,7 +1083,8 @@ window.Maity = window.Maity || {};
       return;
     }
     nav.querySelectorAll("a").forEach((a) => {
-      const route = NAV.find((n) => a.getAttribute("href") === projectLink(ctx.slug, n.route));
+      // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
+      const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
       if (!route) return;
       const old = a.querySelector(".count");
       if (old) old.remove();

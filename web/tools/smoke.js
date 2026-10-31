@@ -6351,6 +6351,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
   expect(apPages().length === 2 && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
     && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
+  // A refresh of the counts updates the pages' badges in place, in the fixture's #/ links too (#844's review).
+  const apGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? apGet(p).then((r) => ({ ...r, counts: { ...r.counts, chat: 4 } })) : apGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(apCount(apPages()[1]) === "4" && apPages()[1].querySelector(".count").getAttribute("aria-label") === "4 unread",
+    "all projects: a refresh of the counts updates the Chats page's badge in place");
+  win.Maity.api.get = apGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // The project as a mark after the who line, its name on hover (no line of its own).
   const chMark = (a) => a.querySelector(".conv-sub .conv-project");
