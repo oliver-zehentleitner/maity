@@ -24,6 +24,14 @@ maity --version
 main instead of the latest release:
 `pipx install "git+https://github.com/oliver-zehentleitner/maity#subdirectory=cli"`.
 
+`maity --version` prints the release version and build revision:
+`maity 0.1.0a3 (build <revision>)`. A `-dirty` suffix means the CLI
+source had uncommitted changes. Wheels carry a stamp made from the
+source repository; a source distribution preserves it when rebuilt
+without Git. Source and editable checkouts show their current revision.
+Without a valid stamp or accessible source revision, the build is
+`unknown`. Build discovery runs only for `--version`.
+
 ## The first ten minutes
 
 Run everything from the clone the agent works in. The state belongs to

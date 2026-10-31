@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "black", "mypy", "pytest"]
+dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools>=77", "wheel"]
 
 [project.scripts]
 maity = "maity.cli:main"
@@ -34,6 +34,7 @@ Changelog = "https://github.com/oliver-zehentleitner/maity/blob/main/CHANGELOG.m
 where = ["src"]
 
 [tool.setuptools.package-data]
+"maity" = ["_build.json"]
 "maity.runner" = ["maity-runner.service"]
 
 [tool.black]

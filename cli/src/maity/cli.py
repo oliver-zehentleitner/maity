@@ -22,7 +22,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import (
+    __version__,
+    environment,
+    gitfacts,
+    hub,
+    onboarding,
+    pointer,
+    proc,
+    sign,
+    state,
+    versioninfo,
+)
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -65,6 +76,18 @@ plain HTTP:
 """
 
 Handler = Callable[[argparse.Namespace], int]
+
+
+class VersionAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        print(versioninfo.version_text(__version__))
+        parser.exit()
 
 
 class UsageError(Exception):
@@ -3335,7 +3358,13 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=OUTPUT_DISCIPLINE,
         formatter_class=fmt,
     )
-    parser.add_argument("--version", action="version", version=f"maity {__version__}")
+    parser.add_argument(
+        "--version",
+        action=VersionAction,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="show the release version and code build",
+    )
     sub = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
     def add(name: str, summary: str, description: str) -> argparse.ArgumentParser:
