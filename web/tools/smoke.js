@@ -3680,6 +3680,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ownerMention = (t, len) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
   expect(ownerMention("@old/agent-b hi", 12)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: the owner's old handle before an agent without aliases is a link");
   expect(typeof ownerMention("@stranger/agent-b hi", 17)[0] === "string", "mentions: an owner part that is none of the owner's names stays text");
+  const noOwner = { memberById: { "agt-b": { handle: "agent-b", aliases: [], owner_id: "hum-o" } } };  // no name to take the owner from
+  expect(typeof win.Maity.dom.withMentions("@/agent-b hi", [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: 9 }], "body", (id) => "/m/" + id, null, noOwner)[0] === "string", "mentions: an empty owner part is no link");
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
