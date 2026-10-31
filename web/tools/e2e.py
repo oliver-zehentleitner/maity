@@ -1786,6 +1786,23 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         event = run.wait_event(wait)
         assert event.get("kind") == "message" and event["payload"].get("to") == "role:reviewer", event
     run.shot(page, "message-the-project")
+    # An agent's instance (tsk-bczgjkfpw1wg): after "#" the @ picker offers its instances; Enter puts
+    # the address in, and the address's #id leads to the member page's Sessions with that instance marked.
+    body = page.locator("#message-body")
+    body.fill("")
+    body.press_sequentially("Hi @e2e-agent#")
+    option = page.locator(".mention-list li").first
+    expect(option.locator(".mention-handle")).to_have_text(re.compile(r"^@e2e-agent#[2-9a-hjkmnp-z]{4,5}$"))
+    address = option.locator(".mention-handle").inner_text()
+    body.press("Enter")
+    expect(body).to_have_value(f"Hi {address} ")
+    instance = address.split("#", 1)[1]
+    body.fill("")
+    page.goto(f"{run.base}/owner/e2e-alpha/members/{agent_id}/sessions/{instance}")
+    chosen = page.locator(f"#member-instance-{instance}")
+    expect(chosen).to_have_attribute("aria-current", "true")
+    expect(chosen).to_be_focused()
+    run.a11y(page, "member page, an instance chosen")
     # In a private chat an @name tells nobody: the hub resolves nothing there.
     wait = run.wait_start(alpha)
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")

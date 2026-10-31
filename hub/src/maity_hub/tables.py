@@ -28,6 +28,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -252,6 +253,9 @@ pending_registration = Table(
     Column("language", String(35)),
     Column("terms_version", String(64)),  # what the request saw, never an acceptance
     Column("next", String(2048)),
+    # The campaign link the visitor came by, `{variant, campaign}` (§16.7.2): only what still
+    # names a variant and a campaign when the registration is made.
+    Column("origin", JSON_VALUE),
     Column("nonce_hash", String(64)),
     Column("wrong_passwords", Integer, nullable=False, server_default="0"),
     Column("created_at", UtcDateTime, nullable=False),
@@ -1730,8 +1734,39 @@ instance_landing = Table(
     Column("default_language", String(8), nullable=False),
     Column("pages", JSON_VALUE, nullable=False),
     Column("footer", JSON_VALUE),
+    # The variants of the landing page, by slug (`{pages}`), and the campaign codes the
+    # instance admin created, `[{code, label}]` (docs/api.md §16.7.2); null is none.
+    Column("variants", JSON_VALUE),
+    Column("campaigns", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
     Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The origin of an account that registered through a campaign link (§16.7.2): kept until the
+# account's first agent exchange or 30 days, whichever is first, and then deleted; read only
+# to count that activation and to put it in the person's own export.
+campaign_origin = Table(
+    "campaign_origin",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("variant", String(40), nullable=False),  # `default` is the main page
+    Column("campaign", String(40)),
+    Column("registered_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# What the hub counts about the landing page and its variants, per UTC day, variant and
+# campaign (`""` for none): sums, never a visit (§16.7.2). Kept for 400 days.
+campaign_count = Table(
+    "campaign_count",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("variant", String(40), primary_key=True),
+    Column("campaign", String(40), primary_key=True),
+    Column("views", Integer, nullable=False, server_default="0"),
+    Column("registrations", Integer, nullable=False, server_default="0"),
+    Column("activations", Integer, nullable=False, server_default="0"),
     **MYSQL_TABLE,
 )
 
