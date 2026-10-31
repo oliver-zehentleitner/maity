@@ -649,12 +649,8 @@ window.Maity = window.Maity || {};
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ).
     if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
-    // The jour fixe's series and moderator order (§20.1, §20.2), humans only as every policy field.
-    if (humanAdmin && M.jourFixe) {
-      const order = h("div", { class: "jf-moderators-slot" });
-      append(panel, M.jourFixe.settingsForm(ctx, save), order);
-      M.jourFixe.moderatorsPart(ctx).then((box) => append(order, box));
-    }
+    // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
+    if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {
