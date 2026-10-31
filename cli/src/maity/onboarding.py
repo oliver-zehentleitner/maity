@@ -342,24 +342,56 @@ def _event(event: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]
     return [head, *("  " + q for q in _capped(payload.get("body") or "", pointer))]
 
 
-def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
-    events = _dict(packet.get("events"))
+def _event_list(
+    items: list[dict[str, Any]], slug: str, names: dict[str, str], cut_after: Any = None
+) -> tuple[list[str], Any]:
+    """The events as text, cut at MAX_EVENTS_CHARS: the lines, and the `seq` to read on after
+    when cut (None when every event fits). `cut_after` replaces the last shown `seq` there,
+    for a list that is not in `seq` order."""
     lines: list[str] = []
     size, last = 0, None
-    for event in _items(events.get("items")):
+    for event in items:
         if event.get("kind") == "ticker":
             continue  # printed in the Ticker section (§17.9), never twice
         block = _event(event, slug, names)
         cost = sum(len(line) + 1 for line in block)
         if lines and size + cost > MAX_EVENTS_CHARS:
-            return [*lines, f"  … more events after #{inline(last)}: {_read_more(slug, last)}"]
+            return lines, last if cut_after is None else cut_after
         lines += block
         size += cost
         last = event.get("seq")
-    if events.get("truncated"):
-        cursor = events.get("cursor")
-        lines.append(f"  … more events after #{inline(cursor)}: {_read_more(slug, cursor)}")
+    return lines, None
+
+
+def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
+    events = _dict(packet.get("events"))
+    lines, cut = _event_list(_items(events.get("items")), slug, names)
+    if cut is None and events.get("truncated"):
+        cut = events.get("cursor")
+    if cut is not None:
+        lines.append(f"  … more events after #{inline(cut)}: {_read_more(slug, cut)}")
     return lines
+
+
+def _handover(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
+    """What the instances this one replaced left undone (§5.2 `handover`): a heading that
+    names the chain, newest first, then its events in the hub's order (those addressed to an
+    instance first). Paging on starts at `after`, since the items are not in `seq` order."""
+    handover = packet.get("handover")
+    if not isinstance(handover, dict):
+        return []
+    handle = inline(get(packet, "me", "handle") or "?")
+    chain = [x for x in handover.get("from") or [] if isinstance(x, str)]
+    named = ", ".join(f"{handle}#{inline(x)}" for x in chain) or "a replaced instance"
+    after = handover.get("after")
+    lines, cut = _event_list(_items(handover.get("items")), slug, names, cut_after=after)
+    if cut is None and handover.get("truncated"):
+        cut = after
+    if not lines and cut is None:
+        return []  # the chain left nothing undone
+    if cut is not None:
+        lines.append(f"  … more handed-over events after #{inline(cut)}: {_read_more(slug, cut)}")
+    return ["", f"Handed over from {named}:", *lines]
 
 
 def ticker_lines(item: dict[str, Any]) -> list[str]:
@@ -636,11 +668,14 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             ],
         ),
         *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
-        ("Events since your last session:", _events(packet, slug, names)),
     ]
     for title, lines in sections:
         if lines:
             out += ["", title, *lines]
+    out += _handover(packet, slug, names)
+    events = _events(packet, slug, names)
+    if events:
+        out += ["", "Events since your last session:", *events]
 
     peers = _items(packet.get("peers"))
     if peers:

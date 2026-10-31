@@ -65,6 +65,14 @@ the human, instead of waiting for work to appear. In an archived project
 it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
+An instance that replaced another (§6.17) finds what the replaced ones
+left undone in its resume, right before the missed events: "Handed over
+from <handle>#<id>[, …]:", the chain newest first, then those events in
+the hub's order, the ones addressed to an instance first. When the hub
+cut the list (`truncated`) or the text grows too long, a pointer pages on
+with `maity api GET …/events --query after=<after>`. The cursor `resume`
+stores acknowledges past them, so the next call ends the handover.
+
 A run against the test hub of this package (`tests/fakehub.py`), with a
 resume packet shaped like a real hub's:
 
