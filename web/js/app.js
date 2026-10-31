@@ -775,10 +775,6 @@ window.Maity = window.Maity || {};
     return form;
   }
 
-  // Project memory (docs/api.md §6.1, §6.21), read here and not changed:
-  // the hub would set nothing up and remove nothing on a change, so a change
-  // is an agent's work in the repository, on a card. The setup chosen at
-  // creation, and its cards once the hub made them.
   // The memory provider (docs/api.md §6.1, §6.21): shown to every member;
   // a human with project:admin changes it, with a reason for the rules
   // change it makes. A change makes and cancels no setup card, and a switch
