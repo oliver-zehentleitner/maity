@@ -139,7 +139,10 @@ def registered(conn: Connection, human_id: str, origin: dict[str, Any] | None) -
 
 def activated(conn: Connection, human_id: str | None) -> None:
     """An agent of the account completed an exchange (§3.3): the first one, within 30 days of the
-    registration, counts once as an activation and ends the origin."""
+    registration, counts once as an activation and ends the origin. The origin ends whether or not
+    anything is configured now, but nothing is counted while neither variants nor campaigns are
+    set. Only the request whose `delete` removed the row counts, so two first exchanges of one
+    account at once count one."""
     if human_id is None:
         return
     row = conn.execute(
@@ -147,9 +150,13 @@ def activated(conn: Connection, human_id: str | None) -> None:
     ).first()
     if row is None:
         return
-    conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
+    gone = conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     now = clock.now()
-    if row.registered_at + timedelta(days=ORIGIN_DAYS) > now:
+    if (
+        gone.rowcount == 1
+        and row.registered_at + timedelta(days=ORIGIN_DAYS) > now
+        and landing.configured(landing.stored(conn))
+    ):
         count(conn, row.variant, row.campaign, activations=1, day=now.date())
 
 

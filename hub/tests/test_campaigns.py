@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, delete, insert, select
 
 from maity_hub import campaigns, clock
 from maity_hub import tables as t
@@ -321,6 +321,39 @@ def test_the_origins_end_after_30_days_and_the_sums_after_400(
 def _rows(engine: Engine) -> list[Any]:
     with engine.connect() as conn:
         return list(conn.execute(select(t.campaign_count)))
+
+
+def test_an_exchange_while_nothing_is_configured_ends_the_origin_and_counts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    configure(owner)
+    flow.project(owner)
+    seed_origin(migrated, owner.id)
+    owner.patch(ADMIN, {"variants": {}, "campaigns": []})
+    flow.agent(make_client, owner)
+    assert sums(migrated) == {} and origins(migrated) == []
+
+
+def test_a_first_exchange_whose_row_was_taken_meanwhile_counts_nothing(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """Two first exchanges of one account at once: the one whose `delete` finds the row gone
+    (the other read it too, and ended it first) counts no second activation."""
+    configure(owner)
+    seed_origin(migrated, owner.id)
+    with migrated.begin() as conn:
+        original = conn.execute
+
+        def rival(statement: Any, *args: Any, **kwargs: Any) -> Any:
+            result = original(statement, *args, **kwargs)
+            if getattr(statement, "is_select", False) and "campaign_origin" in str(statement):
+                conn.execute = original  # type: ignore[method-assign]
+                original(delete(t.campaign_origin))  # the other request ended the origin
+            return result
+
+        conn.execute = rival  # type: ignore[method-assign]
+        campaigns.activated(conn, owner.id)
+    assert sums(migrated) == {} and origins(migrated) == []
 
 
 # --- the statistics -------------------------------------------------------------------------

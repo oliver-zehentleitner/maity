@@ -252,3 +252,39 @@ test noticed.
 - Keeping the origin on the account for good: it would be a profile of where a person came from, long after the count needed it.
 - Counting activations by looking at accounts later: that requires the permanent link between an account and its campaign.
 - A cookie or a visitor id to count unique visitors: nothing in the contract tells one visitor from another, and the sums do not need it.
+
+## A sum is raised by an increment in the database, the first of the day inserts the row inside a savepoint, and a lost insert race falls back to the increment
+
+**Id:** 8be346aa-c8c0-4461-a790-b0f2375c683a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `hub/src/maity_hub/campaigns.py` (`count`); `docs/api.md` §16.7.2; the review of #882
+**Verification:** corroborated
+**Revisit when:** the hub keeps the sums somewhere else than a table, or one dialect gives an upsert all three can share
+
+`campaigns.count` runs `UPDATE campaign_count SET views = views + n …` for the day, variant and campaign; when no row matched it inserts the row inside a savepoint, and when that insert loses to another request's (`IntegrityError`) it runs the same `UPDATE` again. Two visitors at once, also on different replicas of the hub, are both counted, because the addition happens in the database and no request holds a value it read.
+
+**Reason:** the sums are the whole point of the feature, and the hub may run several copies against one database; a sum that two requests read and write back loses a visit whenever they overlap.
+
+**Rejected alternatives:**
+- Reading the row and writing the sum back: loses counts under concurrency.
+- An upsert statement (`INSERT … ON CONFLICT`, `ON DUPLICATE KEY UPDATE`): one syntax per dialect, three code paths to keep right, for one statement that the update-then-insert fallback already makes correct on all three.
+
+## Every counted view is a write in the request that served it, not a buffer flushed later
+
+**Id:** bbc7f964-21e1-4153-910f-7a85203e37f5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `hub/src/maity_hub/routes/pages.py` (`_count_view`); `docs/api.md` §16.7.2; the review of #882
+**Verification:** corroborated
+**Revisit when:** the landing page takes enough traffic that the write shows in its latency, or the hub gets a place for a counter that every replica reads
+
+A navigation to the landing page or a variant that counts (`campaigns.is_view`) increments `campaign_count` before the response is sent, only while variants or campaigns are set. There is no in-memory buffer and no background flush.
+
+**Reason:** a buffer is lost when the process stops, differs between replicas and needs a flush the hub has no place for; one small write per view is exact, and the page is cached only privately (`private, max-age=60`) while counting, so a browser asks the hub at most once a minute.
+
+**Rejected alternatives:**
+- A buffer per process, flushed on a timer: the counts of a stopped process are lost and the statistics would be approximate in a way no one could bound.
+- Counting from the request log: the log is not a store the hub reads, and a count from it would tie the statistics to what the log happens to keep.
