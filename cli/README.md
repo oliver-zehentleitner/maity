@@ -27,9 +27,10 @@ main instead of the latest release:
 If the shell then answers `maity: command not found`, the directory pipx
 installs into (`~/.local/bin` by default) is not on `PATH`. Run
 `pipx ensurepath` and open a new shell; for the current one,
-`export PATH="$HOME/.local/bin:$PATH"`. An agent harness that starts a
-fresh shell per command reads only its profile, so the export belongs in
-the same command line until the profile carries it. `maity join` says so
+`export PATH="$HOME/.local/bin:$PATH"`. `pipx ensurepath` only helps
+shells that read your profile: in an agent harness that runs each
+command in a fresh non-interactive shell, keep the export in the command
+line, or call `~/.local/bin/maity` by its full path. `maity join` warns
 when it was started by its full path and `maity` is not on `PATH`.
 
 ## The first ten minutes
