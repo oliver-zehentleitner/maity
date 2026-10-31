@@ -378,8 +378,9 @@ to change.
 A first join may carry `takes_over` (an agent member of the project) and
 `handover` (a card id, or a message to `all`). Both are stored on the new
 membership, shown in its resume packet and member view as references
-only, and printed by the CLI in the check-in block until the agent has
-checked in. The exchange's `member_joined` also reaches the project's
+only; the resume packet carries them until the agent has checked in
+(then `null`, the member view keeps them), and the CLI prints them
+whenever the packet has them. The exchange's `member_joined` also reaches the project's
 coordinator and the old agent's `reports_to`. Nothing is moved: the old
 agent's cards, claims and membership stay until a human or admin acts.
 

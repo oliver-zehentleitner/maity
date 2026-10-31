@@ -3435,12 +3435,15 @@ Response `200`, bounded and deterministic:
   removed, with its handle as it was then — and `handover` as `{kind,
   id}` with `kind` `task` (the card id) or `message` (the `seq`). The
   hub keeps neither text nor copy: the card or message is read as any
-  other (`maity task show`, `GET …/events?after=`). Until the membership
-  has checked in (§6.1, "Checked in"), the CLI prints them in the
-  check-in block of `maity join` and of every `maity resume`, before the
-  briefing: `Takes over from <handle>; the hand-over is in <card id |
-  message seq>.` A join without them prints nothing there, never "no
-  hand-over was given".
+  other (`maity task show`, `GET …/events?after=`). The packet carries
+  them only until the membership has checked in (`onboarded_at`, §6.1,
+  "Checked in": a message to the check-in target or a first claim), then
+  `null`; the member view (§6.2) keeps them. Whenever they are set, the
+  CLI prints one line before the briefing, in the check-in block when
+  there is one: `Takes over from <handle>; the hand-over is in <card id>.`
+  or `… is in message #<seq>.` followed by the command that reads it. A
+  join without them prints nothing there, never "no hand-over was
+  given".
 - `membership.guide` says what this agent's trust and role mean in
   practice. For the trusts and the built-in roles these are the same
   texts on every instance and in every project, written into the hub,
