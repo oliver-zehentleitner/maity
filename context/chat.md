@@ -430,3 +430,32 @@ field elsewhere.
   turn; a change emits no event, and the agents read it on their next
   resume or read of the chat (this contract's reading).
 
+
+## An inbox answer carries a note with any button; "Talk" takes one too
+
+**Id:** 6e357e0c-e95e-447c-9b4d-9a6dbb4b9f3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (the text field above the answer buttons, always writable, its text sent with whichever button is pressed, "Send" renamed "Talk"); contract `docs/api.md` §7
+
+The inbox shows one free-text field above the reply buttons. Whatever
+is typed there goes along with the button pressed: a reply (`reply_id`
+with `text`), or "Talk" (`talk: true` with `text`). A request without
+prepared replies keeps a send button for a free-text answer beside
+"Talk". The note on "Talk" is stored as the answer's text; the hub
+posts nothing into the direct chat for it.
+
+**Reason:** the maintainer often wants to pick an option and add a small
+remark ("o1, but keep the old name"), or ask to talk about one point.
+With the field below the buttons and its own send button, a remark was a
+second, separate answer that the hub refused once the request was
+answered. The contract already let `text` accompany `reply_id`; only
+`talk` lacked it.
+
+**Alternatives:**
+- Keeping the field as its own answer path with "Send": a choice and a
+  remark could not be given together.
+- Posting the note on "Talk" as the human's first message in the direct
+  chat: it would write a chat message on the human's behalf; the agent
+  reads the answer's text before it opens the conversation anyway.

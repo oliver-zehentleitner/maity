@@ -1045,6 +1045,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/agt-c"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelectorAll("tr.agent-manage").length === 1 && main.querySelector("tr.agent-manage").getAttribute("id") === "agent-here-agt-c"
     && main.querySelector("tr.agent-manage").querySelector("li.agent-card"), "project agents: the agent in the address has its row open with its card");
+  // A revocation in an open card reads the members again, so the row's count follows (review of #952).
+  {
+    const prGets = [], prAll = win.Maity.api.getAll, prConfirm = win.confirm, prPost = win.Maity.api.post;
+    win.Maity.api.getAll = (p) => { prGets.push(p); return prAll(p); };
+    // The revocation answered without touching the fixtures, which later cases count.
+    win.Maity.api.post = (p, b) => (/\/credentials\/[^/]+\/revoke$/.test(p) ? Promise.resolve({}) : prPost(p, b));
+    win.confirm = () => true;
+    const prBtn = main.querySelector("tr.agent-manage").querySelectorAll("button").find((b) => text(b) === "Revoke");
+    const before = prGets.length;
+    if (prBtn) { prBtn.click(); for (let k = 0; k < 8; k++) await tick(); }
+    expect(prBtn && prGets.slice(before).includes("/projects/maintainer/maity/members"), "project agents: a revocation in an open card reads the members again for the row's count");
+    win.Maity.api.getAll = prAll; win.confirm = prConfirm; win.Maity.api.post = prPost;
+  }
   const teamOf = (id) => main.querySelectorAll("form.member-team").find((f) => f.contains(byId("team-max-" + id)));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
   byId("team-max-agt-b").value = "3"; teamOf("agt-b").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
@@ -2095,6 +2108,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
   expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("tr\\.member-level-" + (i + 1) + " > th \\{ padding-inline-start: \\d+px; \\}").test(mCss)),
     "members: an indent for every level the trusts can give");
+  // On a phone the cell padding wins over the name cell's indent: the card itself moves in per level (review of #949).
+  const mPhone = (mCss.match(/@media \(max-width: 600px\) \{[\s\S]*?\n\}/g) || []).join("\n");
+  expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("\\.members tr\\.member-level-" + (i + 1) + " \\{ margin-inline-start: \\d+px; \\}").test(mPhone)),
+    "members: on a phone each level indents its card");
   const ths = tables[0].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(JSON.stringify(ths) === JSON.stringify(["Name", "Trust and role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Actions"]),
     "members: an admin's agent columns, with the owner; the credentials are in Manage and on Agents " + JSON.stringify(ths));
