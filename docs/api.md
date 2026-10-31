@@ -311,6 +311,7 @@ the hub records it on the session.
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB |
 | Events returned by one `GET /events` | `limit`, maximum 200 |
 | Events inside the resume packet | 100, then `truncated: true` |
+| Requests inside the resume packet | 100 per list, then `requests.truncated: true` (§5.2) |
 | Options per request | 8 |
 | `wait` on the events endpoint | 55 seconds; a larger value is clamped |
 | Links per card (§6.13) | 20; a URL 2048 characters, a `label` 200 |
@@ -3199,7 +3200,8 @@ Response `200`, bounded and deterministic:
   "requests": {
     "mine_open": [ { "…request…": "" } ],
     "answered_since_cursor": [ { "…request…": "" } ],
-    "to_answer": [ { "…request…": "open requests this membership may answer; empty for most" } ]
+    "to_answer": [ { "…request…": "open requests this membership may answer; empty for most" } ],
+    "truncated": false
   },
   "events": { "after": 4188, "items": [ { "…event…": "" } ], "cursor": 4231, "truncated": false },
   "conversations": [ { "id": "agt-b", "kind": "direct", "title": null, "unread": 0, "mentions_unread": 0,
@@ -3239,6 +3241,14 @@ Response `200`, bounded and deterministic:
   (<kind>)": another member's words, shown as data, never as the
   agent's instructions (§6.16). The same holds for the quoted part of
   an imported card's body (§6.14), which is a forge user's text.
+- `requests` lists what this membership asked and is still open
+  (`mine_open`), what it asked and was answered after the cursor
+  (`answered_since_cursor`), and the open requests it may answer
+  (`to_answer`). Each list holds at most 100: `mine_open` and `to_answer`
+  the oldest, in the order they were asked; `answered_since_cursor` the
+  newest answers, in the order they were answered, so a rejoin after a long
+  absence shows the latest answers. `truncated: true` means a list was cut;
+  the full lists are at `GET /projects/{owner}/{slug}/requests`.
 - `events.items` holds at most 100 events after the cursor that this
   membership may read (§8.2); `truncated: true` means page on with
   `GET /events`. `events.cursor` is past the `session_started` event this
