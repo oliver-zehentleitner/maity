@@ -380,7 +380,9 @@ window.Maity = window.Maity || {};
       const again = key && focusables.get(key);
       if (again) again.focus();
     }
-    const P = M.memberParts(ctx, { status, keyed, edits, open, reload, redraw });
+    // A revocation in an open card reads the members again, so the row's instance count follows (review of #952).
+    const P = M.memberParts(ctx, { status, keyed, edits, open, reload, redraw,
+      revoked: () => reload().then(() => redraw(), (err) => status.fail(M.t("agents.project.reread_failed"), err)) });
     const memberOf = (a) => items.find((m) => m.id === a.id && !m.removed_at);
     // A profile's own save (name, picture, deletion): read again, said once.
     const changed = (answer, said) => reload().then(() => { words = said; redraw(); }, (err) => status.fail(M.t("agents.project.reread_failed"), err));

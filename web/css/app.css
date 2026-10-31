@@ -645,6 +645,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .members thead { display: none; }
   .members tr.member { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 4px 0; }
   .members tr.member > * { border-bottom: none; padding: 3px 10px; }
+  /* The hierarchy's levels on a phone (review of #949): the padding above wins over the name cell's indent, so the card itself moves in. */
+  .members tr.member-level-1 { margin-inline-start: 16px; }
+  .members tr.member-level-2 { margin-inline-start: 32px; }
+  .members tr.member-level-3 { margin-inline-start: 48px; }
   .members tr.member > td::before { content: attr(data-label) ": "; color: var(--muted); }
   .members .member-actions { text-align: left; }
   .members .member-actions::before { content: none; }
