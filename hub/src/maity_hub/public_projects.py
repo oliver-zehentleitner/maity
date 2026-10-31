@@ -131,22 +131,31 @@ _STAT_LABELS = (
 
 def agent_statistics(conn: Connection, project_id: str) -> dict[str, Any]:
     """The project's statistics reduced for the public (§16.9, §6.22): the last 30 days over
-    the agents only, so that no human's contribution appears; `totals` of the swarm fold."""
-    agents = set(
-        conn.execute(
-            select(t.membership.c.id).where(
-                t.membership.c.project_id == project_id,
-                t.membership.c.active.is_(True),
-                t.membership.c.agent_id.is_not(None),
-                t.membership.c.isolated_since.is_(None),  # an isolated agent is not counted
-            )
-        ).scalars()
-    )
+    the agents only, so that no human's contribution appears. `totals` (with
+    `cards_done_per_day`) count every agent that is not isolated; `members` has a row, with its
+    counters, for each agent the page names (a public owner profile, no hold)."""
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id).where(
+            m.project_id == project_id,
+            m.active.is_(True),
+            m.agent_id.is_not(None),
+            m.isolated_since.is_(None),  # an isolated agent is not counted
+        )
+    ).all()
+    agents = {row.id for row in rows}
+    by_agent = {row.agent_id: row.id for row in rows}
+    _, named, _ = team(conn, project_id)
+    people = {
+        by_agent[a.id]: {"handle": a.handle, "display_name": a.display_name}
+        for a in named
+        if a.id in by_agent
+    }
     found = swarm.CACHE.get(conn, project_id)
-    totals: dict[str, Any] = swarm.fold(
-        found, {}, days=STAT_DAYS, include=lambda member: member in agents
-    )["totals"]
-    return totals
+    folded: dict[str, Any] = swarm.fold(
+        found, people, days=STAT_DAYS, include=lambda member: member in agents
+    )
+    return {"totals": folded["totals"], "members": folded["members"]}
 
 
 def _duration(seconds: int | None) -> str:
@@ -156,13 +165,42 @@ def _duration(seconds: int | None) -> str:
     return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
 
 
-def _statistics_html(totals: dict[str, Any]) -> str:
-    rows = []
-    for key, label in _STAT_LABELS:
-        value = totals[key]
-        shown = _duration(value) if key.endswith("seconds") else ("-" if value is None else value)
-        rows.append(f"<li>{escape(label)}: {escape(str(shown))}</li>")
-    return f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{''.join(rows)}</ul>"
+def _value(key: str, value: Any) -> str:
+    if key.endswith("seconds"):
+        return _duration(value)
+    return "-" if value is None else str(value)
+
+
+def _per_day_html(series: list[dict[str, Any]]) -> str:
+    """The cards done per day as bars: inline style only, the text of each day in its title."""
+    peak = max((day["count"] for day in series), default=0) or 1
+    bars = "".join(
+        f'<span title="{escape(day["date"])}: {day["count"]}" style="display:inline-block;'
+        f"width:6px;margin-right:2px;background:currentColor;opacity:.6;"
+        f'height:{1 + 40 * day["count"] // peak}px"></span>'
+        for day in series
+    )
+    return f'<p aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</p>'
+
+
+def _statistics_html(stats: dict[str, Any]) -> str:
+    totals = stats["totals"]
+    items = "".join(
+        f"<li>{escape(label)}: {escape(_value(key, totals[key]))}</li>"
+        for key, label in _STAT_LABELS
+    )
+    html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
+    html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
+    if stats["members"]:
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in _STAT_LABELS)
+        body = "".join(
+            f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
+            + "".join(f"<td>{escape(_value(key, row[key]))}</td>" for key, _ in _STAT_LABELS)
+            + "</tr>"
+            for row in stats["members"]
+        )
+        html += f"<h3>Per agent</h3><table><tr><th>Agent</th>{head}</tr>{body}</table>"
+    return html
 
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
