@@ -163,6 +163,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (three exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the three calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, and `PATCH …/members/{id}` with `team` or `owner_preferences` on their agent's membership, §6.18, §19.4), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.lease_until`, `details.expired` |
+| 409 | `asker_not_allowed` | the `go` on a change to another owner's agent when the asker is no longer active, is isolated, or may no longer make exactly this change (§6.2); the request stays open |
+| 409 | `role_unknown` | the `go` on such a change when the project role it names no longer exists (§6.2); the request stays open |
 | 409 | `assign_only` | self-claim under `claim_policy: assign-only` without an assignment |
 | 409 | `not_holder` | checkpoint, report or release by a member that does not hold the task |
 | 409 | `lease_active` | admin release or assign while the holder's lease has not expired; `details.lease_until` |
@@ -4371,7 +4373,8 @@ its credentials into the project answers `403` `forbidden` with
 `details.reason: "isolated"` and `details.isolated`, except `GET /me`
 and the resume packet, which carry `membership.isolated` so the agent
 knows why. That packet is a small one: `me`, `membership` (with
-`isolated`) and the project's head, nothing else, and reading it starts
+`isolated`), the project's head and the version fields, nothing of the
+project's members, memory, work or events, and reading it starts
 no session, sets no presence and emits no `session_started`. Its open long-polls end. Seats that name it stay as they
 are — a subordinate's `reports_to` and every seat of the table above
 ("Removing a member resets every seat that names it"): while it is
@@ -4384,9 +4387,11 @@ the isolation is lifted. The agent learns of the lifting from its next
 call, which no longer answers `isolated`; its `GET /me` and resume
 packet then carry `membership.isolated: null`. Isolating and lifting
 emit `member_updated` with `changed: ["isolated"]`. Lifting restores
-access, not the released claims or the group chats; the events of the
-isolation stay readable through `GET /events` as for any member, since
-whoever lifts the isolation trusts the agent again. Removing the member
+access, not the released claims or the group chats. Lifting moves its
+sessions' cursors to the project's head, so neither the next resume nor
+`wait` hands it what happened meanwhile; the events of the isolation stay
+readable through an explicit `GET /events?after=` as for any member,
+since whoever lifts the isolation trusts the agent again. Removing the member
 (above) stays possible while it is isolated. Isolation, unlike removal,
 can be undone and keeps what the agent did visible: it is the project's
 lever against an agent that misbehaves, whoever brought it.
