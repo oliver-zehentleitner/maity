@@ -2158,6 +2158,13 @@ def landing_json_step(run: Run, page: Page) -> None:
     assert saved["footer"] == saved_before["footer"], (saved["footer"], saved_before["footer"])
     io.get_by_role("button", name="Export the draft", exact=True).click()
     assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
+    # The prepared landing V3 itself (tsk-k7pwrzs8vb8k): the real hub's check refuses nothing.
+    v3 = (WEB / "tools" / "landing-v3-complete.json").read_text(encoding="utf-8")
+    page.locator("#lp-json").fill(v3)
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    expect(page.locator("li.lp-section")).to_have_count(len(json.loads(v3)["pages"][json.loads(v3)["default_language"]]["sections"]))
     run.shot(page, "landing-json")
     no_problems(run, "landing JSON")
 

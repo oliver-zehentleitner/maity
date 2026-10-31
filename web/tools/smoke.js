@@ -7422,6 +7422,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "landing editor: an emptied operator line is left out, and Save goes through the step-up");
     byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
     await leSave();
+    // The prepared landing V3 itself (tsk-k7pwrzs8vb8k, tools/landing-v3-complete.json): loaded, checked without a refusal,
+    // every section of both languages in the editor, the footer kept; saved as it is.
+    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/landing-v3-complete.json"), "utf8"));
+    byId("lp-json").value = JSON.stringify(v3);
+    await jsLoad();
+    const v3Patches = lePatches.length;
+    expect(text(main).includes("Loaded into the editor and checked by the hub") && leSections().length === v3.pages[v3.default_language].sections.length
+      && byId("lp-footer-operator").value === "Maintainer, Austria" && lePatches.length === v3Patches,
+      "landing JSON: the prepared V3 file loads, the hub's check refuses nothing, its sections are in the editor, nothing saved yet");
+    await leSave();
+    const v3Saved = lePatches[lePatches.length - 1][1];
+    expect(text(main).includes("Saved. Visitors see it within a minute.") && Object.keys(v3Saved.pages).sort().join() === Object.keys(v3.pages).sort().join()
+      && v3Saved.footer.operator === "Maintainer, Austria", "landing JSON: the V3 file saved with both languages and the footer kept");
     win.confirm = jsConfirm;
   }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
