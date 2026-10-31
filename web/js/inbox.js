@@ -171,15 +171,21 @@ window.Maity = window.Maity || {};
   // A card as an entry names it: its reference, title and status (the hub's word).
   const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
 
+  // The member ids of the reader's own agent profiles (GET /agents), read once
+  // per view: who Talk may go to across projects and for personal requests.
+  let ownAgents = new Set();
+
   // Talk ("neither, let's talk") is the human's who owns the asking agent
-  // (§7). The request does not say so: inside a project the member list
-  // does; across projects and for a personal request the owner is not known
-  // here, so Talk is offered and the hub refuses it for anyone else. Nothing
-  // to talk to where the hub filed the request itself.
+  // (§7), and the agent must read the answer. The request does not say so, so
+  // it is worked out: never for a request the hub filed itself (no asking
+  // agent reads it) or one that cannot be read in full; inside a project the
+  // member list names the asker's owner; across projects and for a personal
+  // request the reader's own profiles do. A human asker is nobody's agent.
   function canTalk(ctx, req) {
-    if (!req.asked_by) return false;
-    if (ctx.scope !== "project" || req.personal) return true;
-    const agent = (ctx.memberById || {})[req.asked_by.member_id];
+    if (!req.asked_by || req.filed_by === "hub" || (req.personal && req.status === "open" && req.unreadable)) return false;
+    const id = req.asked_by.member_id;
+    if (ctx.scope !== "project" || req.personal) return ownAgents.has(id);
+    const agent = (ctx.memberById || {})[id];
     return !!agent && agent.kind === "agent" && agent.owner_id === ctx.me.id;
   }
 
@@ -390,6 +396,10 @@ window.Maity = window.Maity || {};
   // the project's inbox does not hold is said.
   M.views.inbox = async function (ctx, root, args) {
     const items = await load(ctx);
+    ownAgents = new Set();
+    try {
+      ownAgents = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
+    } catch (ignored) { /* no Talk where the reader's agents are unknown */ }
     const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
     const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
     let showAll = false;

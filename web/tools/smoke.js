@@ -229,11 +229,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
   // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
   // The total also holds a personal request of a project the human is no member of (member: false), on no project's pill.
-  expect(chipCount("All projects") === "8" && chipCount("Maity") === "6" && chipCount("Sample shop") === "1", "switcher counts 8 / 6 / 1");
-  expect(document.title.startsWith("(8) "), "the tab title starts with what asks for the human");
+  expect(chipCount("All projects") === "11" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 11 / 9 / 1");
+  expect(document.title.startsWith("(11) "), "the tab title starts with what asks for the human");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
-  expect(allChip.getAttribute("aria-label") === "6 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
-  expect(main.querySelectorAll(".project-label").length === 7, "every entry labelled with its project, a personal request as Personal");
+  expect(allChip.getAttribute("aria-label") === "9 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
+  expect(main.querySelectorAll(".project-label").length === 10, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
     && /^#\/maintainer\/(maity|sample)\/inbox$/.test(firstRow.childNodes[0].getAttribute("href")) && firstRow.childNodes[1].className === "entry-head",
@@ -246,7 +246,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "logo: the switcher shows a project's logo, decorative next to its name");
   expect(markOf("Sample shop").tagName === "SPAN" && markOf("Sample shop").textContent === "SS" && markOf("Sample shop").getAttribute("aria-hidden") === "true"
     && /^#[0-9a-f]{6}$/.test(markOf("Sample shop").style.background), "logo: without one, a monogram from the initials in a colour of the slug");
-  expect(main.querySelectorAll(".project-label .project-mark").length === 5, "logo: every #/all entry carries its project's mark");
+  expect(main.querySelectorAll(".project-label .project-mark").length === 8, "logo: every #/all entry carries its project's mark");
   expect(!gets.includes("/projects"), "logo: with logos on /me's projects, no extra read of the project views");
   const refuses = (src) => { try { win.Maity.dom.h("img", { src }); return false; } catch (e) { return true; } };
   expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
@@ -258,14 +258,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
   expect(cur && text(cur).includes("Argon2id"), "Later moves to the next entry without answering");
-  expect(chipCount("All projects") === "8", "Later sends nothing, counts unchanged");
+  expect(chipCount("All projects") === "11", "Later sends nothing, counts unchanged");
   // Answers as the page sends them (§7): the text goes along with a reply or Talk, alone with Send.
   const ansCalls = [];
   const ansPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/answer")) ansCalls.push([p, b]); return ansPost(p, b); };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ reply_id: "sha" }]), "answer: only a reply, no text key " + JSON.stringify(ansCalls));
-  expect(chipCount("All projects") === "7" && chipCount("Maity") === "5", "answer re-reads /me counts");
+  expect(chipCount("All projects") === "10" && chipCount("Maity") === "8", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   const sortLabels = main.querySelectorAll(".project-label").map((el) => el.textContent);
   expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
@@ -285,7 +285,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
-  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 6
+  expect(JSON.stringify(groupHeads) === JSON.stringify(["Personal", "Maity", "Sample shop"]) && main.querySelectorAll("li.entry").length === 9
     && main.querySelectorAll("section.entry-group").every((sec) => sec.querySelector("ol.entries") && sec.querySelector("ol.entries").childNodes.every((li) => li.className.includes("entry"))),
     "inbox: grouped by project, in the switcher's order, each group its own list " + JSON.stringify(groupHeads));
   // The entry expanded is the first on screen, not the first of the ungrouped order.
@@ -537,10 +537,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   c2.querySelector("textarea").value = "  3.12  ";
   btn(c2, "Send").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ text: "3.12" }]), "answer: Send is the text alone " + JSON.stringify(ansCalls));
+  // Talk is offered only for an agent of the reader's: not for another owner's agent, a human asker, a request the hub filed itself.
+  const talkAnswer = async (_id, title, why) => {
+    const head = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes(title));
+    if (head.attrs["aria-expanded"] !== "true") { head.click(); await tick(); }
+    const cur = main.querySelector(".current");
+    expect(text(cur).includes(title) && btn(cur, "Yes") && btn(cur, "Later") && !btn(cur, "Talk"), "Talk is absent: " + why);
+    btn(cur, "Yes").click(); await tick(); await tick();
+  };
+  let talkForeign = "accepted";
+  try { await ansPost("/projects/maintainer/maity/requests/req-0014/answer", { talk: true }); } catch (e) { talkForeign = JSON.stringify(e.details && e.details.fields); }
+  expect(talkForeign.includes("only_the_owner_of_the_agent"), "fixture hub: Talk for another owner's agent is refused, only_the_owner_of_the_agent " + talkForeign);
+  let talkHub = "accepted";
+  try { await ansPost("/projects/maintainer/maity/requests/req-0016/answer", { talk: true }); } catch (e) { talkHub = JSON.stringify(e.details && e.details.fields); }
+  expect(talkHub.includes("only_the_owner_of_the_agent"), "fixture hub: Talk for a request the hub filed is refused");
+  await talkAnswer("req-0014", "Foreign agent", "another owner's agent");
+  await talkAnswer("req-0015", "Human asker", "a human asker");
+  await talkAnswer("req-0016", "Hub-filed", "filed by the hub");
   win.Maity.api.post = ansPost;
   expect(text(main).includes("No open requests."), "inbox empty");
   const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); await tick();
-  expect(main.querySelectorAll(".entry").length === 5, "show all: 5 entries in maity, answered ones too");
+  expect(main.querySelectorAll(".entry").length === 8, "show all: 8 entries in maity, answered ones too");
   const ansHead = main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("Merge PR #2"));
   ansHead.click(); await tick();
   expect(text(main.querySelector(".current")).includes("Answered: Talk") && text(main.querySelector(".current")).includes("let us go over it"),
@@ -555,7 +572,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "the text of a plain answer is shown on the answered request");
   const sortSel = byId("inbox-sort"); sortSel.value = "agent"; sortSel.dispatch("change"); await tick();
   const names = main.querySelectorAll(".entry-head .meta").map((e) => e.textContent.split(" · ")[0]);
-  expect(JSON.stringify(names) === JSON.stringify(["Agent A for Reviewer", "Agent B", "Agent C", "Agent C", "Agent D"].filter((n) => names.includes(n))) && names.length >= 3, "sort by agent: " + names.join(", "));
+  expect(JSON.stringify(names) === JSON.stringify(["Agent A for Reviewer", "Agent B", "Agent C", "Agent C", "Agent C", "Agent D", "Agent Z", "Anna"].filter((n) => names.includes(n))) && names.length >= 3, "sort by agent: " + names.join(", "));
 
   // malformed and unknown routes
   await go("#/p/%E0%A4%A");
@@ -8532,6 +8549,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(pfU && !btn(pfU, "Go") && !btn(pfU, "No") && !pfU.querySelector(".pref-review") && !byId("reply-maity-req-p002")
     && text(pfU).includes("could not be read in full") && btn(pfU, "Try again") && btn(pfU, "Later"),
     "preferences review: an unreadable personal request offers no plain Go, only Try again");
+  expect(!btn(pfU, "Talk"), "Talk is absent: an unreadable personal request");
   win.Maity.api.get = pfGet0;
   btn(pfU, "Try again").click(); await pfSettle();
   expect(main.querySelector(".current .pref-review") && btn(main.querySelector(".current"), "Accept") && !text(main.querySelector(".current")).includes("could not be read in full"),

@@ -265,8 +265,10 @@ too.
    and the field's text goes along with whichever is pressed (`{reply_id,
    text}`, `{talk: true, text}`; no text, no key). A request without
    `replies` offers **Send** (`{text}`) beside Talk. Talk is offered only
-   where the human owns the asking agent (known inside a project from the
-   member list; across projects the hub decides) and is labelled "Talk" in
+   where the human owns the asking agent (inside a project from the member
+   list, across projects and for a personal request from `GET /agents`);
+   never for a human asker, a request the hub filed itself or one not read
+   in full. It is labelled "Talk" in
    every language: a language file leaves `inbox.talk` out rather than
    translate it. Answering opens the next one. **Later** moves
    an entry down the list in this tab only and sends nothing: the hub has

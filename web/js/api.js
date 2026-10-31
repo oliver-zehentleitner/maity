@@ -212,7 +212,7 @@ window.Maity = window.Maity || {};
   // §7 answering: exactly one of reply_id, text, talk, with text allowed beside
   // reply_id or talk; reply_id one of the request's replies; talk only from
   // the human who owns the asking agent (here: the asker's owner_id in the
-  // project's members; a personal request has no list to read, so it passes).
+  // project's members or the human's own agent profiles).
   function checkAnswer(req, body, path, slug) {
     const given = ["reply_id", "text", "talk"].filter((k) => body[k] !== undefined && body[k] !== null);
     if (!given.length || (given.includes("talk") && given.includes("reply_id"))) fail(400, "invalid", "reply_id, text or talk", path, { fields: { answer: "reply_id_or_text_or_talk" } });
@@ -220,8 +220,11 @@ window.Maity = window.Maity || {};
       fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "not_a_reply" } });
     }
     if (body.talk) {
-      const asker = slug && req.asked_by && ((fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === req.asked_by.member_id));
-      if (!req.asked_by || (slug && !(asker && asker.owner_id === me().member.id))) {
+      // The asker's profile: the project's member, else one of the human's own.
+      const asking = req.asked_by && req.asked_by.member_id;
+      const asker = asking && ((slug && (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === asking))
+        || fixtures()["agents.json"].items.find((x) => x.id === asking));
+      if (req.filed_by === "hub" || !(asker && asker.kind !== "human" && asker.owner_id === me().member.id)) {
         fail(400, "invalid", "only the agent's own human can talk", path, { fields: { talk: "only_the_owner_of_the_agent" } });
       }
     }
