@@ -25,6 +25,8 @@ OFF = {
     "default_language": "en",
     "pages": {},
     "footer": {"operator": None, "social": []},
+    "variants": {},
+    "campaigns": [],
 }
 GOOD = "# Bring your own agent\n\nRead [the docs](https://example.com/docs) or [sign in](/login)."
 HERO = {
