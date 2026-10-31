@@ -165,6 +165,7 @@ class MePatch(Strict):
     public page (`public_profile`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
+    dormant: StrictBool | None = None  # the calling instance rests or wakes (§6.17)
     meat_proxy: StrictBool | None = None
     handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
     meat_proxy_lead: StrictBool | None = None
@@ -488,7 +489,17 @@ def _packet(
     siblings = [
         {
             key: view[key]
-            for key in ("id", "address", "harness", "model", "presence", "paused", "lead", "claims")
+            for key in (
+                "id",
+                "address",
+                "harness",
+                "model",
+                "presence",
+                "paused",
+                "dormant",
+                "lead",
+                "claims",
+            )
         }
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
@@ -523,6 +534,8 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
+            # Put to rest: only its own address wakes it (§6.17); `null` when awake.
+            "dormant": instances.dormant_view(_credential(conn, caller)),
             "owner": {
                 "id": owner.id,
                 "handle": owner.handle,
@@ -768,8 +781,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     given = body.model_fields_set
 
     def human_action(conn: Connection) -> idempotency.Outcome:
-        if "paused" in given:
-            raise invalid({"paused": "agents_only"})
+        if "paused" in given or "dormant" in given:
+            raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
         public = {"public_profile", "public_bio"} & given
         links = {"website", "social", "links_visible"} & given
@@ -860,6 +873,20 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             raise humans_only("only a human sets their own profile")
         if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
             raise humans_only("only the owner of an agent profile renames its handle")
+        if "dormant" in given:
+            if given != {"dormant"} or body.dormant is None:
+                raise invalid({"dormant": "alone"}, "set dormant on its own, true or false")
+            mine = _own_membership(conn, caller)
+            instances.set_dormant(
+                conn,
+                mine.row,
+                _credential(conn, caller),
+                body.dormant,
+                caller.principal_id,
+                caller.actor(mine.id),
+                own=True,
+            )
+            return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)
