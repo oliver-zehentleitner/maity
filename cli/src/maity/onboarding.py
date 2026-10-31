@@ -343,11 +343,10 @@ def _event(event: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]
 
 
 def _event_list(
-    items: list[dict[str, Any]], slug: str, names: dict[str, str], cut_after: Any = None
-) -> tuple[list[str], Any]:
-    """The events as text, cut at MAX_EVENTS_CHARS: the lines, and the `seq` to read on after
-    when cut (None when every event fits). `cut_after` replaces the last shown `seq` there,
-    for a list that is not in `seq` order."""
+    items: list[dict[str, Any]], slug: str, names: dict[str, str]
+) -> tuple[list[str], bool, Any]:
+    """The events as text, cut at MAX_EVENTS_CHARS: the lines, whether they were cut, and the
+    `seq` of the last event shown."""
     lines: list[str] = []
     size, last = 0, None
     for event in items:
@@ -356,42 +355,58 @@ def _event_list(
         block = _event(event, slug, names)
         cost = sum(len(line) + 1 for line in block)
         if lines and size + cost > MAX_EVENTS_CHARS:
-            return lines, last if cut_after is None else cut_after
+            return lines, True, last
         lines += block
         size += cost
         last = event.get("seq")
-    return lines, None
+    return lines, False, last
 
 
 def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
     events = _dict(packet.get("events"))
-    lines, cut = _event_list(_items(events.get("items")), slug, names)
-    if cut is None and events.get("truncated"):
-        cut = events.get("cursor")
-    if cut is not None:
-        lines.append(f"  … more events after #{inline(cut)}: {_read_more(slug, cut)}")
+    lines, cut, last = _event_list(_items(events.get("items")), slug, names)
+    more = last if cut else events.get("cursor") if events.get("truncated") else None
+    if more is not None:
+        lines.append(f"  … more events after #{inline(more)}: {_read_more(slug, more)}")
     return lines
 
 
 def _handover(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
     """What the instances this one replaced left undone (§5.2 `handover`): a heading that
     names the chain, newest first, then its events in the hub's order (those addressed to an
-    instance first). Paging on starts at `after`, since the items are not in `seq` order."""
+    instance first). Paging on starts at `after`, never at the last `seq` shown, since the
+    items are not in `seq` order; without a usable `after`, at the packet's `events.after`,
+    the lower bound of every handover item."""
     handover = packet.get("handover")
     if not isinstance(handover, dict):
         return []
     handle = inline(get(packet, "me", "handle") or "?")
     chain = [x for x in handover.get("from") or [] if isinstance(x, str)]
     named = ", ".join(f"{handle}#{inline(x)}" for x in chain) or "a replaced instance"
-    after = handover.get("after")
-    lines, cut = _event_list(_items(handover.get("items")), slug, names, cut_after=after)
-    if cut is None and handover.get("truncated"):
-        cut = after
-    if not lines and cut is None:
+    lines, cut, _ = _event_list(_items(handover.get("items")), slug, names)
+    more = cut or bool(handover.get("truncated"))
+    if not lines and not more:
         return []  # the chain left nothing undone
-    if cut is not None:
-        lines.append(f"  … more handed-over events after #{inline(cut)}: {_read_more(slug, cut)}")
+    if more:
+        start = next(
+            (x for x in (handover.get("after"), get(packet, "events", "after")) if _is_seq(x)),
+            None,
+        )
+        # The read returns every event this member may read from there, not only the chain's.
+        scope = f"all events you may read; those for {named} or you are the handed-over ones"
+        if start is None:
+            pointer = f"`maity api GET /projects/{slug}/events`"
+            lines.append(f"  … more handed-over events ({scope}): {pointer}")
+        else:
+            lines.append(
+                f"  … more handed-over events after #{inline(start)} ({scope}): "
+                f"{_read_more(slug, start)}"
+            )
     return ["", f"Handed over from {named}:", *lines]
+
+
+def _is_seq(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def ticker_lines(item: dict[str, Any]) -> list[str]:

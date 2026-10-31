@@ -102,3 +102,39 @@ itself.
   report, for a value the packet already carried.
 - Leaving the check to the hub alone: correct, but the agent learns the
   rule from a field code after the git checks, not from the command.
+
+## A report is checked against the card's pull request, without a flag to name one
+
+**Id:** 8c58cebb-b7e1-4947-8776-8f5bcb6c566c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** a member's report that `maity report` for a merged pull request, sent from the branch of the next one, filed the wrong head and pull request on the card (2026-10-30); the coordinator's decision on the card tsk-scw537kndwwg between a `--pr` flag and a card check, 2026-10-31
+**See:** report.md — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-10-31
+**Revisit when:** reports for a pull request other than the checked-out one become routine, or cards carry no pull request link and no earlier report often enough that the check never applies
+
+Before sending, `maity report` prints the branch, head and pull request it
+reports, and reads the card. It refuses (exit 4) when the card links pull
+requests (`kind: pr`, in the same repository) and the one found for the
+checkout is not among them, or when the card's last report names another
+pull request that the probe has not seen merged or closed. The message
+names the way out: check out that pull request's branch, or its merged
+head after a merge with the branch deleted, and report from there. A
+report with `--no-code` reads no card.
+
+**Reason:** the facts were right for the checkout and wrong for the card:
+nothing in the report was typed, it described another pull request. The
+card itself says which pull request it belongs to, once it is linked or
+reported, so the check needs no new input and keeps every fact coming
+from git and the forge. A merged or closed earlier pull request does not
+refuse, since a follow-up pull request on the same card is legitimate.
+
+**Rejected alternatives:**
+- A `--pr N` flag that reads head, branch and state of that pull request
+  from the forge instead of the checkout: the forge facts would be true,
+  but for whichever pull request the agent names, so a mistyped number
+  files a wrong pull request with verified-looking facts. That is the
+  risk f720dd3c rejected a `--pr` flag for, in another form, and the
+  card check covers the case without a flag.
+- Only printing the reported branch and pull request: it helps an agent
+  that reads it, and the agent that made the mistake had no reason to.
