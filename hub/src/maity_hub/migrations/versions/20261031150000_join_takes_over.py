@@ -8,7 +8,7 @@ the hand-over is stored.
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261031150000_join_takes_over
-Revises: 20261031065451_landing_variants
+Revises: 20261031112210_agent_owners
 Create Date: 2026-10-31
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261031150000_join_takes_over"
-down_revision: str | None = "20261031065451_landing_variants"
+down_revision: str | None = "20261031112210_agent_owners"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
