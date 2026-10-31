@@ -421,23 +421,42 @@ window.Maity = window.Maity || {};
     const mine = me().projects.find((p) => p.slug === slug);
     return governing(mine);
   };
-  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  // The first seq of each running isolation, as the hub keeps isolated_from_seq (§6.2).
+  const isolatedFrom = new WeakMap();
   function isolate(m, body, path, on) {
     const who = caller(m[1], path);
     if (who.member.kind !== "human") fail(403, "forbidden", "a human's call", path, { reason: "humans_only" });
     if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
     const target = member(m[1], m[2], path);
     if (target.kind !== "agent") fail(400, "invalid", "only an agent is isolated", path, { fields: { member: "not_an_agent" } });
-    if (!on) { target.isolated = null; return Object.assign({}, target); }
+    if (!on) {
+      // Lifting with hide_isolation_events: the window from the isolation to now, both ends
+      // included, joins isolation_windows; the agent reads none of it again (§6.2).
+      const log = eventsOf(m[1]);
+      const head = log.length ? log[log.length - 1].seq : 0;
+      // An isolation the fixture did not start (loaded as isolated): as the hub does for one
+      // made before it kept the first seq, the first event at or after it began.
+      const from = isolatedFrom.has(target) ? isolatedFrom.get(target)
+        : (log.find((e) => target.isolated && target.isolated.since && e.at >= target.isolated.since) || {}).seq;
+      if (target.isolated && (body || {}).hide_isolation_events === true && from !== undefined && from <= head) {
+        target.isolation_windows = (target.isolation_windows || []).concat([{ from_seq: from, to_seq: head }]);
+      }
+      target.isolated = null;
+      isolatedFrom.delete(target);
+      return Object.assign({}, target);
+    }
     const reason = typeof (body || {}).reason === "string" ? body.reason.trim() : "";
     if (!reason || reason.length > 500) fail(400, "invalid", "a reason of 1 to 500 characters", path, { fields: { reason: reason ? "too_long" : "required" } });
     if (!target.isolated) {
       target.isolated = { reason, since: nowIso(), by: who.member.id };
+      const log = eventsOf(m[1]);
+      isolatedFrom.set(target, (log.length ? log[log.length - 1].seq : 0) + 1);
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
     }
     return Object.assign({}, target);
   }
 
+  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);

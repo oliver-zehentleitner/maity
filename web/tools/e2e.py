@@ -2430,9 +2430,16 @@ def isolate_step(run: Run, page: Page) -> None:
     expect(manage.locator(".member-isolate")).to_contain_text("e2e: isolated on purpose")
     run.a11y(page, "members, an isolated agent")
     run.shot(page, "member-isolated")
+    # Lifting with the box ticked (tsk-zwxtdfmdscf7): the isolation's events stay hidden from the agent.
+    hide = manage.locator("input[id^=member-lift-hide-]")
+    expect(hide).not_to_be_checked()
+    hide.check()
     manage.get_by_role("button", name="Lift isolation", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("The isolation of E2E Agent is lifted.")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text(
+        "The isolation of E2E Agent is lifted; what happened meanwhile stays hidden from it."
+    )
     expect(row.locator(".badge.member-isolated")).to_have_count(0)
+    expect(row.locator(".member-hidden-windows")).to_contain_text("Hidden from it after an isolation: events ")
     expect(manage.locator("input[id^=member-isolate-]")).to_be_visible()
     row.get_by_role("button", name="Done managing E2E Agent").click()
     # The owner is told of both in their inbox (§6.2, a hub notice with one reply, Seen):
