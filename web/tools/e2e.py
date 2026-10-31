@@ -898,6 +898,7 @@ def scenario(run: Run, page: Page) -> None:
     why_step(run, page, alpha)
     runners_step(run, page)
     isolate_step(run, page)
+    memory_provider_step(run, page, alpha)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -2377,6 +2378,30 @@ def join_expiry_step(run: Run, page: Page) -> None:
     second.unroute_all(behavior="ignoreErrors")
     other.close()
     no_problems(run, "joins")
+
+
+def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
+    """The memory provider in Project settings (docs/api.md §6.1, §6.21, tsk-41hpr02cvej8): to None and back."""
+    run.step("memory: the owner switches the provider to None and back; the commitment follows")
+    project_settings(page)
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    page.locator("#memory-provider").select_option("none")
+    page.locator("#memory-reason").fill("e2e: without a memory provider")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("main p.ok")).to_have_text("Project memory saved.")
+    expect(page.locator("#ktw-policy-select")).to_be_disabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("optional")
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    assert shown["memory"]["provider"] == "none" and shown["policy"]["keep_the_why"] == "optional", shown
+    page.locator("#memory-provider").select_option("keep-the-why")
+    page.locator("#memory-reason").fill("e2e: back to Keep the Why")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    expect(page.locator("#ktw-policy-select")).to_be_enabled()
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    assert shown["memory"]["provider"] == "keep-the-why", shown
+    run.a11y(page, "project settings, memory")
+    no_problems(run, "memory provider")
 
 
 def isolate_step(run: Run, page: Page) -> None:
