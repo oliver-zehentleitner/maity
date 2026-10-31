@@ -392,7 +392,8 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
         )
         rounds.record_presence(conn, now[0])
         counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
-    assert counted == {member_of[working.id]}
+    agents = {member_of[a.id] for a in (working, idle)}
+    assert counted & agents == {member_of[working.id]}  # humans online count too (§20.2)
 
 
 def test_the_schedule_opens_skips_and_records_a_missed_slot(
