@@ -295,7 +295,7 @@
   "forge.unread": "Forge access could not be read: ",
   "forge.via.app": "The repository is read with the namespace owner's GitHub App installation.",
   "forge.via.instance": "The repository is read with the instance's token, so only while it is public.",
-  "forge.via.none": "No grant reads the repository now. Your Forge access shows whether an installation or your token needs attention.",
+  "forge.via.none": "No grant reads the repository now. The namespace owner's Forge access shows whether an installation or a token needs attention.",
   "forge.via.owner_token": "The repository is read with the namespace owner's own token.",
   "group.back": "← Conversations",
   "group.closed_flag": "closed",
