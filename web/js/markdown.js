@@ -83,7 +83,7 @@ window.Maity = window.Maity || {};
         const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
         // An https link opens apart, without an opener.
         out.push(!url ? m[0] : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
-        if (url && looks) out.push(h("span", { class: "md-real-href" }, M.t("md.goes_to", { host: hostOf(m[2]) })));
+        if (url && looks) out.push(h("span", { class: "md-real-href" }, " ", M.t("md.goes_to", { host: hostOf(m[2]) })));
       } else if (m[3] !== undefined) {
         const url = safeUrl(m[3]);
         out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);

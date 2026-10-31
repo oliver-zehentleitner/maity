@@ -22,7 +22,7 @@ window.Maity = window.Maity || {};
       if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
       mark({ ids: [x.id] });
     } }, title);
-    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " (unread)");
+    const unread = x.read ? null : h("span", { class: "visually-hidden" }, " ", M.t("waiting.unread"));
     // Marked read in place: the row, its words and its button change, the
     // focus goes to its link, the pages read so far stay.
     const markButton = markable ? h("button", { type: "button", class: "small mark-read", "aria-label": M.t("waiting.mark_read.label", { title }) }, M.t("waiting.mark_read")) : null;

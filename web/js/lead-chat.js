@@ -49,7 +49,9 @@ window.Maity = window.Maity || {};
   // Into the chat with `member`: one's own agent's direct chat; another
   // owner's agent in a group of exactly the two (an open one reused, else
   // made), which its owner can read. Never a wider existing chat, never a
-  // direct chat with someone else's agent.
+  // direct chat with someone else's agent. A chat made here is titled from
+  // the catalog in the maker's language and keeps that title; it is found
+  // again by its participants, never by its title.
   async function open(ctx, member) {
     if (member.owner_id === ctx.me.id) { M.route.go(ctx.link("chat", member.id)); return; }
     const page = await M.api.getAll(ctx.base + "/conversations");
@@ -84,7 +86,7 @@ window.Maity = window.Maity || {};
   }
 
   // A group chat of exactly the reader and these agents, an open one
-  // reused, else made (§9.2); their owners can read along.
+  // reused, else made (§9.2), titled as in open(); their owners can read along.
   async function openGroup(ctx, members) {
     const want = new Set([ctx.me.id].concat(members.map((m) => m.id)));
     const page = await M.api.getAll(ctx.base + "/conversations");

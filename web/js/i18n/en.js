@@ -141,7 +141,7 @@ window.MAITY_I18N["en"] = {
   "chat.instance.team": "The whole team",
   "chats.conversations": "Conversations",
   "chats.hint": "Your chats in every project, unread first.",
-  "chats.in_project": ", in {project}",
+  "chats.in_project": "in {project}",
   "chats.no_project": "No project of yours named {project}.",
   "chats.none": "You own no agents in your projects, and are in no group chat.",
   "chats.pick": "Pick a conversation.",
@@ -581,7 +581,7 @@ window.MAITY_I18N["en"] = {
   "md.copy": "Copy",
   "md.copy.label": "Copy {what}",
   "md.copy_failed": "Copy failed — select the text",
-  "md.goes_to": " (goes to {host})",
+  "md.goes_to": "(goes to {host})",
   "md.invisible": "This code contains invisible characters (bidi or zero-width); what you copy may differ from what you see.",
   "meat.hint": "While this is on, your own agents and the agents of every project you are a member of are told so when they resume.",
   "meat.hint.off": "While this is on, your own agents and the agents of every project you are a member of are told so when they resume; switched on, they would read:",
@@ -628,6 +628,7 @@ window.MAITY_I18N["en"] = {
   "members.reports.you": "you ({name})",
   "mention.ambiguous": "{handle} is {count} agents here: write {names}",
   "mention.ambiguous_unnamed": "a handle here is two agents: write its long form, @owner/handle",
+  "mentions.agent": "agent",
   "mentions.list": "Members to mention",
   "menu.agents": "Agents",
   "menu.change_password": "Change password",
@@ -1512,5 +1513,6 @@ window.MAITY_I18N["en"] = {
   "waiting.read_failed": "Could not read notifications: ",
   "waiting.removed": "Removed",
   "waiting.title": "Notifications",
+  "waiting.unread": "(unread)",
   "waiting.untitled": "Notification"
 };

@@ -62,7 +62,7 @@ window.Maity = window.Maity || {};
         const name = pctx.project.name || x.slug;
         const who = a && a.querySelector(".conv-sub");
         if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
-        if (a) append(a, h("span", { class: "visually-hidden" }, M.t("chats.in_project", { project: name })));
+        if (a) append(a, h("span", { class: "visually-hidden" }, ", ", M.t("chats.in_project", { project: name })));
         append(ul, li);
       });
       none.hidden = all.length > 0 || Object.keys(read).length === 0;

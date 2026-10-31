@@ -111,7 +111,7 @@ window.Maity = window.Maity || {};
           // mousedown, not click: the textarea keeps its focus and caret.
           onmousedown: (e) => { e.preventDefault(); pick(m); },
         }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m)), " ", h("span", { class: "muted" }, m.display_name
-          + (m.kind === "agent" ? " · agent" : ""))));
+          + (m.kind === "agent" ? " · " + M.t("mentions.agent") : ""))));
       });
       list.hidden = !shown.length;
       if (shown.length) textarea.setAttribute("aria-activedescendant", listId + "-" + active);
