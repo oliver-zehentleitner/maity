@@ -14,17 +14,17 @@ window.Maity = window.Maity || {};
   function said(err, receiver) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields && fields.slug === "taken") {
-      return { message: receiver ? "@" + receiver + " has a project of that name already, or had one" : "that name is taken in this namespace, now or as an earlier name" };
+      return { message: receiver ? M.t("names.refused.taken_receiver", { handle: receiver }) : M.t("names.refused.taken") };
     }
-    if (fields && fields.slug === "reserved") return { message: "that word is part of the dashboard's addresses; choose another slug" };
-    if (fields && fields.to === "not_an_owner") return { message: "the receiver has to be an owner of the project first" };
-    if (err.code === "forbidden" && err.details && err.details.reason === "org_role") return { message: "only an owner or admin of that organisation can move a project into it" };
-    if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") return { message: "that organisation is suspended and takes no project now" };
-    if (err.code === "invalid_transition" && err.details && err.details.reason === "transfer_stale") return { message: "the transfer no longer holds; ask again" };
-    if (err.code === "alias_limit") return { message: "the project has kept " + ((err.details && err.details.limit) || 8) + " earlier names, the most it may" };
-    if (err.code === "rate_limited") return { message: "at most 3 renames and transfers a day; try again tomorrow" };
+    if (fields && fields.slug === "reserved") return { message: M.t("names.refused.reserved") };
+    if (fields && fields.to === "not_an_owner") return { message: M.t("names.refused.not_an_owner") };
+    if (err.code === "forbidden" && err.details && err.details.reason === "org_role") return { message: M.t("names.refused.org_role") };
+    if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") return { message: M.t("names.refused.moderation_hold") };
+    if (err.code === "invalid_transition" && err.details && err.details.reason === "transfer_stale") return { message: M.t("names.refused.transfer_stale") };
+    if (err.code === "alias_limit") return { message: M.t("names.refused.alias_limit", { count: (err.details && err.details.limit) || 8 }) };
+    if (err.code === "rate_limited") return { message: M.t("names.refused.rate_limited") };
     if (err.code === "forbidden" && err.details && err.details.reason === "step_up_required") {
-      return { message: "the hub asks for your second factor first; sign in again with it and try once more" };
+      return { message: M.t("names.refused.step_up") };
     }
     return err;
   }
@@ -33,10 +33,10 @@ window.Maity = window.Maity || {};
   function section(ctx) {
     const p = ctx.project;
     if (ctx.me.kind !== "human" || !ctx.isOwner) return null;
-    const box = h("div", { class: "project-names" }, h("h2", { class: "panel-title", id: "names-heading" }, "Project name"),
-      h("p", null, "This project is ", h("code", null, p.full_name), "."),
+    const box = h("div", { class: "project-names" }, h("h2", { class: "panel-title", id: "names-heading" }, M.t("names.title")),
+      h("p", null, M.tn("names.current", { name: h("code", null, p.full_name) })),
       p.aliases.length
-        ? h("p", { class: "muted project-aliases" }, "Earlier names, still leading here: ", p.aliases.join(", "), ".")
+        ? h("p", { class: "muted project-aliases" }, M.t("names.aliases", { names: M.fmt.list(p.aliases) }))
         : null,
       renameForm(ctx));
     const transfer = transferForm(ctx);
@@ -54,7 +54,7 @@ window.Maity = window.Maity || {};
     input.value = p.slug;
     const error = h("p", { class: "field-error", id: "project-rename-error", role: "alert" });
     const fail = (text) => { error.textContent = text; input.setAttribute("aria-invalid", "true"); input.focus(); };
-    const button = h("button", { type: "submit" }, "Rename");
+    const button = h("button", { type: "submit" }, M.t("names.rename"));
     return h("form", {
       class: "inline-form project-rename",
       novalidate: true,
@@ -64,25 +64,25 @@ window.Maity = window.Maity || {};
         error.textContent = "";
         input.removeAttribute("aria-invalid");
         const slug = input.value.trim();
-        if (slug === p.slug) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
+        if (slug === p.slug) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("names.unchanged"))); return; }
         if (!rule.test.test(slug)) { fail(rule.text); return; }
-        if (!window.confirm("Rename " + p.full_name + " to " + owner + "/" + slug + "? The old name stays an earlier name that leads here.")) return;
+        if (!window.confirm(M.t("names.rename.confirm", { from: p.full_name, to: owner + "/" + slug }))) return;
         button.disabled = true;
-        status.busy("Renaming…");
+        status.busy(M.t("names.renaming"));
         try {
           const updated = await M.api.patch(ctx.base, { slug });
           M.route.go(ctx.projectLink((updated && updated.full_name) || owner + "/" + slug, "settings"));
         } catch (err) {
           const why = said(err);
           if (err.code === "invalid" && err.details && err.details.fields && err.details.fields.slug) { status.done(); fail(why.message); }
-          else status.fail("Not renamed: ", why);
+          else status.fail(M.t("names.not_renamed"), why);
         } finally {
           button.disabled = false;
         }
       },
     },
-    h("label", { for: "project-rename" }, "Slug"), input,
-    h("p", { class: "hint", id: "project-rename-hint" }, rule.text + " Links to the old name keep working; at most 8 earlier names, and 3 renames or transfers a day."),
+    h("label", { for: "project-rename" }, M.t("names.slug")), input,
+    h("p", { class: "hint", id: "project-rename-hint" }, rule.text, " ", M.t("names.rename.hint")),
     error, button, status.el);
   }
 
@@ -100,8 +100,8 @@ window.Maity = window.Maity || {};
       // Out of an organisation, an owner may take it into their own namespace.
       const owners = ctx.members.filter((m) => m.kind === "human" && M.trust.owner(m) && (ofOrg || m.id !== ctx.me.id));
       if (!owners.length && !orgs.length) {
-        append(M.dom.clear(box), h("h3", null, "Transfer"),
-          h("p", { class: "muted" }, "To move this project into another person's namespace, make them an owner of it first (Members)."));
+        append(M.dom.clear(box), h("h3", null, M.t("names.transfer")),
+          h("p", { class: "muted" }, M.t("names.transfer.none")));
         return;
       }
       append(M.dom.clear(box), form(owners, orgs));
@@ -110,12 +110,12 @@ window.Maity = window.Maity || {};
       const status = M.statusLine();
       const ask = h("div", { class: "step-up-slot" });
       ask.hidden = true;
-      const targets = owners.map((m) => ({ id: m.id, handle: M.dom.handleOf(ctx, m), name: m.id === ctx.me.id ? "yourself" : m.display_name, org: null }))
+      const targets = owners.map((m) => ({ id: m.id, handle: M.dom.handleOf(ctx, m), name: m.id === ctx.me.id ? M.t("names.transfer.yourself") : m.display_name, org: null }))
         .concat(orgs.map((o) => ({ id: o.id, handle: o.handle, name: o.display_name, org: o })));
       const select = h("select", { id: "project-transfer-to" },
-        targets.map((t) => h("option", { value: t.id }, t.org ? "@" + t.handle + " · " + t.name + " (organisation)" : t.name + " (@" + t.handle + ")")));
+        targets.map((t) => h("option", { value: t.id }, t.org ? M.t("names.transfer.org_option", { handle: t.handle, name: t.name }) : M.t("names.transfer.person_option", { handle: t.handle, name: t.name }))));
       select.value = targets[0].id;
-      const button = h("button", { type: "submit" }, "Transfer");
+      const button = h("button", { type: "submit" }, M.t("names.transfer"));
       const result = h("div", { class: "transfer-result" });
       return h("form", {
         class: "inline-form project-transfer",
@@ -125,31 +125,29 @@ window.Maity = window.Maity || {};
           const to = targets.find((t) => t.id === select.value);
           if (!to) { select.focus(); return; }
           const at = once(to);
-          if (!window.confirm((at ? "Move " + p.full_name + " to " : "Ask " + to.name + " to take over " + p.full_name + " as ")
-            + to.handle + "/" + p.slug + "?" + (at ? "" : " It moves when they accept;") + " The old name stays an earlier name.")) return;
+          const o = { project: p.full_name, name: to.name, to: to.handle + "/" + p.slug };
+          if (!window.confirm(at ? M.t("names.transfer.confirm_move", o) : M.t("names.transfer.confirm_ask", o))) return;
           button.disabled = true;
-          status.busy(at ? "Moving…" : "Asking…");
+          status.busy(at ? M.t("names.transfer.moving") : M.t("names.transfer.asking"));
           try {
-            const answer = await M.stepUp.run(() => M.api.post(ctx.base + "/transfer", { to: to.id }), ask, "Transferring " + p.full_name);
+            const answer = await M.stepUp.run(() => M.api.post(ctx.base + "/transfer", { to: to.id }), ask, M.t("names.transfer.step_up", { project: p.full_name }));
             status.done();
             // Moved in the call: the project answers under its new name.
             if (answer && answer.full_name) { M.route.go(ctx.projectLink(answer.full_name, "settings")); return; }
-            append(M.dom.clear(result), h("p", { class: "ok" }, (to.org ? "Asked the owners of @" + to.handle + ". The project moves when one of them accepts"
-              : "Asked " + to.name + ". The project moves when they accept") + " in their inbox; a rename or another transfer withdraws this one."),
+            append(M.dom.clear(result), h("p", { class: "ok" }, to.org ? M.t("names.transfer.asked_org", { handle: to.handle }) : M.t("names.transfer.asked_person", { name: to.name })),
             // Into an organisation the owners' requests are personal (§6.26): withdrawn on /requests.
             answer && answer.id ? withdrawButton(ctx, answer.id, result, !!to.org) : null);
           } catch (err) {
             if (err.code === "cancelled") status.done();
-            else status.fail("Not transferred: ", said(err, to.handle));
+            else status.fail(M.t("names.transfer.failed"), said(err, to.handle));
           } finally {
             button.disabled = false;
           }
         },
       },
-      h("h3", null, "Transfer"),
-      h("label", { for: "project-transfer-to" }, "To"), select,
-      h("p", { class: "hint" }, "A person must be an owner of this project, and accepts in their inbox. An organisation you own takes it at once; "
-        + "one you administer asks its owners."),
+      h("h3", null, M.t("names.transfer")),
+      h("label", { for: "project-transfer-to" }, M.t("names.transfer.to")), select,
+      h("p", { class: "hint" }, M.t("names.transfer.hint")),
       ask, button, status.el, result);
     };
     // Without a direct word: to oneself, or into an organisation one owns.
@@ -170,15 +168,15 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const button = h("button", { type: "button", class: "small", onclick: async () => {
       button.disabled = true;
-      status.busy("Withdrawing…");
+      status.busy(M.t("names.withdrawing"));
       try {
         await M.api.post((personal ? "" : ctx.base) + "/requests/" + encodeURIComponent(id) + "/withdraw", {});
-        append(M.dom.clear(result), h("p", { class: "ok" }, "Withdrawn."));
+        append(M.dom.clear(result), h("p", { class: "ok" }, M.t("names.withdrawn")));
       } catch (err) {
         button.disabled = false;
-        status.fail("Not withdrawn: ", err);
+        status.fail(M.t("names.not_withdrawn"), err);
       }
-    } }, "Withdraw the request");
+    } }, M.t("names.withdraw"));
     return [button, status.el];
   }
 
