@@ -7364,6 +7364,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
   expect(pvTabs.length === 2 && pvTabs[1].closed && text(byId("lp-pages-de-title-error")) === "required", "landing editor: a refused preview closes its tab and says why at the field");
   byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
+  // Import and export as JSON (tsk-36d575f5yybz): the draft as text; text as the draft after a confirmation, checked by
+  // the hub's preview call, which stores nothing and opens no tab; only Save saves.
+  {
+    const js = () => main.querySelector("details.lp-json");
+    const jsLoad = async () => { btn(js(), "Load into the editor").click(); for (let k = 0; k < 6; k++) await tick(); };
+    const jsPatches = lePatches.length, jsPosts = pvPosts.length, jsTabs = pvTabs.length;
+    const jsConfirm = win.confirm;
+    let jsAsked = null;
+    btn(js(), "Export the draft").click(); await tick();
+    const exported = JSON.parse(byId("lp-json").value);
+    expect(Object.keys(exported).join() === "enabled,default_language,pages,footer" && exported.pages.de.title === "Maity — bring deine Agents"
+      && exported.footer.operator === "Maintainer, Austria", "landing JSON: Export puts the draft as the hub takes it into the field");
+    byId("lp-json").value = "{nope"; await jsLoad();
+    expect(text(js()).includes("Not loaded: this is not JSON"), "landing JSON: text that is not JSON is said, nothing replaced");
+    byId("lp-json").value = "[1]"; await jsLoad();
+    expect(text(js()).includes("neither the landing page's body (with pages) nor one page (with sections)"), "landing JSON: JSON of another shape is said");
+    exported.pages.en.title = "Imported title"; exported.default_language = "en";
+    byId("lp-json").value = JSON.stringify(exported);
+    win.confirm = (q) => { jsAsked = q; return false; };
+    await jsLoad();
+    expect(jsAsked && jsAsked.startsWith("Replace the whole draft in the editor") && byId("lp-pages-de-title").value === "Maity — bring deine Agents"
+      && pvPosts.length === jsPosts, "landing JSON: a whole body asks first; declined, the draft stays and nothing is checked");
+    win.confirm = () => true;
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "Imported title" && pvPosts.length === jsPosts + 1 && pvPosts[jsPosts][0] === "/admin/settings/landing/preview"
+      && pvTabs.length === jsTabs && lePatches.length === jsPatches && text(main).includes("Loaded into the editor and checked by the hub. Nothing is saved yet"),
+      "landing JSON: accepted, the draft is replaced and checked by the preview call; no tab, nothing saved");
+    byId("lp-json").value = JSON.stringify({ title: "", description: "One page", sections: [] });
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === "" && byId("lp-pages-en-description").value === "One page" && text(byId("lp-pages-en-title-error")) === "required"
+      && text(main).includes("Loaded into the editor, but the hub refuses parts of it") && lePatches.length === jsPatches,
+      "landing JSON: one page goes into the language shown; the hub's refusal is said at its field, nothing saved");
+    byId("lp-pages-en-title").value = "Imported title"; byId("lp-pages-en-title").dispatch("input");
+    await leSave();
+    expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
+      "landing JSON: Save saves the imported draft, as one typed by hand");
+    win.confirm = jsConfirm;
+  }
   // The legal pages (§16.7.1): one page per save, a new version; taking one down.
   const lgBox = () => main.querySelectorAll("section.lg-page");
   const lgImprint = () => lgBox().find((x) => x.attrs["aria-label"] === "Imprint");

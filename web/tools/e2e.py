@@ -958,6 +958,7 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     registration_admin_step(run, page)
     reports_admin_step(run, page, alpha)
+    landing_json_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2118,6 +2119,46 @@ def registration_admin_step(run: Run, page: Page) -> None:
     run.shot(page, "registration-admin")
     run.a11y(page, "registration admin")
     no_problems(run, "registration admin")
+
+
+def landing_json_step(run: Run, page: Page) -> None:
+    """Instance administration → Landing page (docs/api.md §16.7, tsk-36d575f5yybz): a draft
+    imported as JSON, checked by the hub's preview call, saved only by Save."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("landing page: the admin imports a page as JSON, the hub checks it, then it is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Landing page", exact=True).click()
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    body = {
+        "enabled": False,
+        "default_language": "en",
+        "pages": {"en": {"title": "E2E landing", "description": "Imported by the e2e run.",
+                         "sections": [{"type": "text", "enabled": True, "markdown": "Hello from **e2e**."}]}},
+        "footer": {"operator": "E2E, Austria", "social": []},
+    }
+    page.locator("#lp-json").fill(json.dumps(body))
+    asked = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Landing page']")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    assert asked and asked[0].startswith("Replace the whole draft"), asked
+    expect(page.locator("#lp-pages-en-title")).to_have_value("E2E landing")
+    expect(page.locator("#lp-pages-en-sections-0-markdown")).to_have_value("Hello from **e2e**.")
+    saved_before = page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()
+    assert (saved_before.get("pages") or {}).get("en", {}).get("title") != "E2E landing", "the import saved before Save"
+    run.a11y(page, "landing page, a JSON import")
+    page.locator("form.lp-form").get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    saved = page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()
+    assert saved["pages"]["en"]["title"] == "E2E landing" and saved["footer"]["operator"] == "E2E, Austria", saved
+    io.get_by_role("button", name="Export the draft", exact=True).click()
+    assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
+    run.shot(page, "landing-json")
+    no_problems(run, "landing JSON")
 
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:

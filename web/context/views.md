@@ -3087,3 +3087,34 @@ the row holds Chat and Manage only (54a49af9), every other member action
 is in Manage. Isolating without a confirmation like the pause: the pause
 is a soft stop the owner may lift, isolation releases claims and closes
 placements of someone else's agent.
+
+## The landing page is imported and exported as JSON in its editor; an import is checked by the preview call and saved only by Save
+
+**Id:** c174a492-2691-4887-9507-e1ba2e805a1f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-36d575f5yybz (the maintainer, 2026-10-30: load the prepared landing V3 with one click; paste or file, the body of PATCH …/landing or one page; the hub's refusals per field; nothing saved before the admin confirms; Export the draft); how it is checked is the implementer's
+**Revisit when:** the hub offers a check of a landing draft of its own, or imports grow to the legal pages
+
+Under the landing editor, **Import or export JSON**: a field and a file
+choice. **Export the draft** writes the draft as the hub takes it
+(enabled, default language, pages, footer) into the field; **Copy**
+copies it. **Load into the editor** reads either that body or one
+language's page (title, description, sections), asks before it
+replaces the whole draft or the page shown, draws the editor from it,
+and sends it to `POST …/landing/preview`, the hub's own check, which
+stores a draft for ten minutes and saves nothing. Its refusals are
+said at their fields as a save's are; **Save** stays the only call that
+saves, so the confirmation that counts is the admin's Save after
+looking the import over.
+
+**Reason:** the preview call already validates a draft exactly as a
+save does, so the import reuses it instead of a second check in the
+page that could drift from the hub's. Drawing the import into the
+editor before anything is stored lets the admin read and fix it there.
+
+**Rejected alternative:** saving on import, with a confirmation: one
+click from a file to visitors, without the editor in between. A check
+of the JSON in the page: a copy of the hub's rules that ages with each
+new section type.
