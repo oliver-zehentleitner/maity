@@ -400,9 +400,7 @@ dropped connection) succeeds and says so.
 `…` stands for the project's routes, `/api/v1/projects/<owner>/<slug>`
 (§6.25). The CLI keeps the project's `full_name` (`oliver/maity`) in its
 state and takes it anew from every `maity resume`, so a renamed or
-transferred project needs no new join. A hub that
-needs a newer CLI answers `client_outdated` (426), and the CLI prints the
-minimum version and the upgrade line from the answer.
+transferred project needs no new join.
 
 | Command | Call (`docs/api.md`) |
 |---|---|

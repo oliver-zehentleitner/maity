@@ -1,6 +1,5 @@
 """The project namespace on the CLI (§6.25): routes as /projects/{owner}/{slug}/…, the full
-name kept in state and refreshed by every resume, and `client_outdated` (426) said as an
-upgrade line."""
+name kept in state and refreshed by every resume."""
 
 from __future__ import annotations
 
@@ -62,19 +61,6 @@ def test_resume_refreshes_the_full_name_after_a_rename(joined: Path, fake: fakeh
     fake.routes[("GET", route)] = lambda s: (200, CARD)
     assert cli.main(["task", "show", "tsk-4", "--json"]) == cli.EXIT_OK
     assert fake.signed()[-1].path == route
-
-
-def test_client_outdated_says_how_to_upgrade(
-    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
-) -> None:
-    details = {"minimum": "0.2.0", "install": "pipx upgrade maity"}
-    refusal = {"error": {"code": "client_outdated", "message": "client_outdated",
-                         "details": details}}  # fmt: skip
-    fake.routes[("GET", f"{P}/tasks/tsk-4")] = lambda s: (426, refusal)
-    assert cli.main(["task", "show", "tsk-4"]) == cli.EXIT_ERROR
-    err = capsys.readouterr().err
-    assert "is older than the hub needs (0.2.0)" in err
-    assert "Upgrade with: pipx upgrade maity" in err
 
 
 @pytest.mark.parametrize("bad", ["oliver/", "/maity", "Oliver/maity", "a/b/c", "oliver maity"])
