@@ -3161,11 +3161,15 @@ placements of someone else's agent.
 
 The composer of a direct chat and of a group chat has one head
 (`M.chatParts.composeHead`): its label, then on a phone a button
-**Hide the composer** / **Write a message** (`aria-expanded`,
-controlling the field) and on a wider screen a group of **1×**, **2×**
+**Hide the composer** / **Write a message** (controlling the form; its
+label says what a press does, so it carries no `aria-expanded` as well)
+and on a wider screen a group of **1×**, **2×**
 and **3×** (`aria-pressed`) that sets the field's rows to one, two or
 three times its own. Hidden, only the head stays, so the history takes
-the room; shown again, the field has the focus. Both choices are kept in
+the room; shown again, the field has the focus. Quote opens a hidden
+composer, so the quote it puts in is seen. On a phone the field is
+capped at 40% of the screen's height, since a 2× or 3× chosen on a wide
+screen still sets its rows there. Both choices are kept in
 `localStorage` under one key for every chat, and a browser that keeps
 nothing still applies them for the visit. An empty status line and an
 empty list of files take no room in the composer any more, and its rows
