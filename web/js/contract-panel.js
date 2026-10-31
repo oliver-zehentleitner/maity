@@ -16,17 +16,17 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatAgo, safeUrl } = M.dom;
 
   const DEFAULT_PATH = "docs/api.md";
-  // The hub's reasons a section is not shown, in words; any other code as
-  // it comes.
+  // The hub's reasons a section is not shown, in words from the catalog;
+  // any other code as it comes.
   const WHY = {
-    unset: "the card names no section yet",
-    not_found_on_forge: "the file is not in the repository's default branch",
-    not_found_in_file: "the file has no heading with this number",
-    ambiguous_in_file: "the file has two headings with this number; the hub shows neither",
-    too_large: "the file is larger than 1 MiB",
-    not_text: "the file is not UTF-8 text",
-    probe_not_configured: "the hub has no forge token for this repository",
-    probe_unavailable: "the forge did not answer",
+    unset: () => M.t("contract.why.unset"),
+    not_found_on_forge: () => M.t("contract.why.not_found_on_forge"),
+    not_found_in_file: () => M.t("contract.why.not_found_in_file"),
+    ambiguous_in_file: () => M.t("contract.why.ambiguous_in_file"),
+    too_large: () => M.t("contract.why.too_large"),
+    not_text: () => M.t("contract.why.not_text"),
+    probe_not_configured: () => M.t("contract.why.probe_not_configured"),
+    probe_unavailable: () => M.t("contract.why.probe_unavailable"),
   };
 
   // Cards whose panel was open when their place was saved: the board draws
@@ -45,11 +45,11 @@ window.Maity = window.Maity || {};
     let loaded = false;
     // Refresh is a small text button in the line that says what was read
     // (the designer's pass part 3), not a row of its own.
-    const refresh = () => h("button", { type: "button", class: "link-button contract-refresh", onclick: () => read() }, "Refresh");
+    const refresh = () => h("button", { type: "button", class: "link-button contract-refresh", onclick: () => read() }, M.t("contract.refresh"));
 
     async function read() {
       loaded = true;
-      append(clear(body), h("p", { class: "muted" }, "Reading the section from the repository…"));
+      append(clear(body), h("p", { class: "muted" }, M.t("contract.reading")));
       let s;
       try {
         s = await M.api.get(ctx.base + "/tasks/" + encodeURIComponent(c.id) + "/contract");
@@ -57,19 +57,20 @@ window.Maity = window.Maity || {};
         const fields = (err.details && err.details.fields) || {};
         const code = fields["contract.section"] || fields["contract.path"] || err.code || "error";
         append(clear(body), h("p", { class: "flag contract-unresolved" },
-          h("code", null, (k.path || DEFAULT_PATH) + (k.section ? " § " + k.section : "")), " is not shown: ",
-          WHY[code] || err.message || code, " (", h("code", null, code), "). ", refresh()));
+          M.tn("contract.unresolved", { where: h("code", null, where), why: Object.hasOwn(WHY, code) ? WHY[code]() : err.message || code, code: h("code", null, code) }),
+          " ", refresh()));
         return;
       }
       const url = safeUrl(s.url);
       append(clear(body),
-        h("p", { class: "muted contract-meta" }, s.path + " at ", h("code", null, String(s.ref || "").slice(0, 7)),
-          " · read " + formatAgo(s.fetched_at, M.api.now()),
-          url ? [" · ", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, "the file on the forge")] : null,
+        h("p", { class: "muted contract-meta" }, M.tn("contract.meta.at", { path: s.path, ref: h("code", null, String(s.ref || "").slice(0, 7)) }),
+          " · ", M.t("contract.meta.read", { ago: formatAgo(s.fetched_at, M.api.now()) }),
+          url ? [" · ", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, M.t("contract.meta.file"))] : null,
           " · ", refresh()),
         h("div", { class: "md contract-text" }, M.markdown(s.text)),
-        s.truncated ? h("p", { class: "flag" }, "Cut at 64 KiB; the whole section is in the file",
-          url ? [" (", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, "open it"), ")"] : null, ".") : null);
+        s.truncated ? h("p", { class: "flag" }, url
+          ? M.tn("contract.truncated.link", { link: h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, M.t("contract.truncated.open")) })
+          : M.t("contract.truncated")) : null);
     }
 
     // Where the section is read from changes rarely: its form waits behind
@@ -80,16 +81,16 @@ window.Maity = window.Maity || {};
         place.hidden = !place.hidden;
         change.setAttribute("aria-expanded", String(!place.hidden));
         if (!place.hidden) place.querySelector("input").focus();
-      } }, "Change source") : null;
+      } }, M.t("contract.change")) : null;
     if (place) place.hidden = true;
     const box = h("details", { class: "contract-section" },
-      h("summary", null, "Contract section: ", h("code", null, where)),
+      h("summary", null, M.tn("contract.summary", { where: h("code", null, where) })),
       body,
       change ? h("p", { class: "contract-change-row" }, change) : null,
       place,
       status.el);
     box.addEventListener("toggle", () => { if (box.open && !loaded && k.section) read(); });
-    if (!k.section) append(body, h("p", { class: "muted" }, "The card names no section yet."));
+    if (!k.section) append(body, h("p", { class: "muted" }, M.t("contract.none")));
     // Without a section the form is what there is to do: open at once.
     if (place && !k.section) { place.hidden = false; change.setAttribute("aria-expanded", "true"); }
     if (reopen.delete(c.id)) {
@@ -113,20 +114,20 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         const next = { path: path.value.trim() || DEFAULT_PATH, section: section.value.trim() || null };
         if (next.path === (k.path || DEFAULT_PATH) && next.section === (k.section || null)) return;
-        status.busy("Saving…");
+        status.busy(M.t("contract.saving"));
         try {
           const updated = await M.api.patch(ctx.base + "/tasks/" + encodeURIComponent(c.id), { contract: next });
           status.done();
           reopen.add(c.id);
           onSaved(updated, idOf("contract-section"));
         } catch (err) {
-          status.fail("Not saved: ", M.boardEdit ? M.boardEdit.said(err) : err);
+          status.fail(M.t("contract.not_saved"), M.boardEdit ? M.boardEdit.said(err) : err);
         }
       },
     },
-    h("label", { for: idOf("contract-path") }, "File"), path,
-    h("label", { for: idOf("contract-section") }, "Section (the heading's number)"), section,
-    h("button", { type: "submit" }, "Save"));
+    h("label", { for: idOf("contract-path") }, M.t("contract.file")), path,
+    h("label", { for: idOf("contract-section") }, M.t("contract.section")), section,
+    h("button", { type: "submit" }, M.t("contract.save")));
   }
 
   M.contractPanel = { panel };

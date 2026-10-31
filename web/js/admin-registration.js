@@ -12,6 +12,8 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime } = M.dom;
   const SETTINGS = "/admin/settings/registration";
   const PENDING = "/admin/registrations";
+  // How long a rejected or expired registration blocks its address (§16.4).
+  const BLOCK_DAYS = 30;
 
   // Getters: the words are the catalog's when shown.
   const MODES = ["closed", "allowlist", "open"];
@@ -222,7 +224,7 @@ window.Maity = window.Maity || {};
       const approve = h("button", { type: "button", class: "primary" }, M.t("reg.pending.approve"));
       const reject = h("button", { type: "submit", class: "danger" }, M.t("reg.pending.reject"));
       const fail = (err) => rowStatus.fail(M.t("reg.pending.not_done"), err.code === "invalid_transition"
-        ? { message: M.t("reg.pending.decided", { from: (err.details || {}).from || "decided" }) } : err);
+        ? { message: (err.details || {}).from ? M.t("reg.pending.decided", { from: err.details.from }) : M.t("reg.pending.decided_unknown") } : err);
       approve.addEventListener("click", async () => {
         approve.disabled = true;
         rowStatus.busy(M.t("reg.pending.approving"));
@@ -245,7 +247,7 @@ window.Maity = window.Maity || {};
             rowStatus.busy(M.t("reg.pending.rejecting"));
             try {
               await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/reject", { reason: why.value.trim() });
-              await decided(M.t("reg.pending.rejected", { handle: r.handle, count: 30 }));
+              await decided(M.t("reg.pending.rejected", { handle: r.handle, count: BLOCK_DAYS }));
             } catch (err) { reject.disabled = false; fail(err); if (err.code === "invalid_transition") load(); }
           },
         }, h("label", { for: reasonId }, M.t("reg.pending.reject_label")), why, reject),
@@ -277,7 +279,7 @@ window.Maity = window.Maity || {};
         go.disabled = false;
       },
     }, h("h3", null, M.t("reg.block.title")),
-    h("p", { class: "hint" }, M.t("reg.block.hint", { count: 30 })),
+    h("p", { class: "hint" }, M.t("reg.block.hint", { count: BLOCK_DAYS })),
     h("label", { for: "reg-block-address" }, M.t("reg.block.address")), address, go, status.el);
   }
 

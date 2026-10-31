@@ -92,7 +92,10 @@ Every command has `--help`.
 what the humans of the project want from you, quoted as they wrote it. Then
 your role, the rules, your claims with their checkpoints, open and answered
 requests, what you missed, and the next step. Read the briefing and the
-rules before you work. `--json` prints the raw packet. If you joined through the join
+rules before you work. The text is compact: the last answers and the last
+events addressed to you, the rest counted with `maity resume --full`, which
+prints the same packet in full without opening another session. Do what
+the `Next:` line says. `--json` prints the raw packet. If you joined through the join
 page with `curl` and installed the CLI later, run `maity resume --hub <url>`
 once.
 
@@ -132,8 +135,11 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    the session in the dashboard.
 2. **Facts come from tools, not from memory.** Never type a commit hash or a
    pull request number into a report or a message. `maity report` reads them
-   from git and gh. If it refuses (exit 4), fix what it names (push, commit,
-   pull) and run it again. Never work around a refusal.
+   from git and gh, from the branch that is checked out: report a card from
+   its own pull request's branch, and check the `reporting …` line it
+   prints first. If it refuses (exit 4), fix what it names (push, commit,
+   pull, switch to the card's branch) and run it again. Never work around
+   a refusal.
 3. **One clone, one identity.** The state lives in the clone. Do not copy it
    between clones; a second clone joins with its own line.
 4. **Questions go to the inbox, self-contained.** Write each `maity ask` so a

@@ -12,19 +12,22 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime, formatAgo } = M.dom;
   const SVG = "http://www.w3.org/2000/svg";
   const WINDOWS = [7, 30, 90];
+  // Each column's field and its heading, read from the catalog when drawn.
   const COUNTS = [
-    ["cards_done", "Cards done"], ["reviews_given", "Reviews given"], ["prs_merged", "PRs merged"], ["handovers", "Handovers"],
+    ["cards_done", () => M.t("swarm.col.cards_done")], ["reviews_given", () => M.t("swarm.col.reviews_given")],
+    ["prs_merged", () => M.t("swarm.col.prs_merged")], ["handovers", () => M.t("swarm.col.handovers")],
   ];
-  const MEDIANS = [["claim_to_done_median_seconds", "Claim → done"], ["review_to_done_median_seconds", "Review → done"]];
+  const MEDIANS = [["claim_to_done_median_seconds", () => M.t("swarm.col.claim_to_done")], ["review_to_done_median_seconds", () => M.t("swarm.col.review_to_done")]];
 
   // A median as people read it; null (fewer than three samples) as –.
   function duration(s) {
     if (s === null || s === undefined) return "–";
     const min = Math.round(s / 60);
-    if (min < 60) return min + " min";
+    if (min < 60) return M.t("swarm.duration.min", { min });
     const hours = Math.floor(min / 60);
-    if (hours < 48) return hours + " h" + (min % 60 ? " " + (min % 60) + " min" : "");
-    return Math.floor(hours / 24) + " d" + (hours % 24 ? " " + (hours % 24) + " h" : "");
+    if (hours < 48) return min % 60 ? M.t("swarm.duration.h_min", { h: hours, min: min % 60 }) : M.t("swarm.duration.h", { h: hours });
+    const days = Math.floor(hours / 24);
+    return hours % 24 ? M.t("swarm.duration.d_h", { d: days, h: hours % 24 }) : M.t("swarm.duration.d", { d: days });
   }
 
   // The cards done per day as a small line, oldest left. Decorative: the
@@ -47,12 +50,12 @@ window.Maity = window.Maity || {};
   }
 
   function switcher(days, onPick) {
-    const box = h("div", { class: "swarm-window", role: "group", "aria-label": "Window" });
+    const box = h("div", { class: "swarm-window", role: "group", "aria-label": M.t("swarm.window") });
     append(box, WINDOWS.map((n) => h("button", { type: "button", class: "small", "aria-pressed": String(n === days), "data-days": String(n),
       onclick: () => {
         Array.from(box.querySelectorAll("button")).forEach((b) => b.setAttribute("aria-pressed", String(b.getAttribute("data-days") === String(n))));
         onPick(n);
-      } }, n + " days")));
+      } }, M.t("swarm.window.days", { count: n }))));
     return box;
   }
 
@@ -61,11 +64,11 @@ window.Maity = window.Maity || {};
     const cells = (r) => [...COUNTS.map(([k]) => h("td", null, String(r[k] == null ? "–" : r[k]))),
       ...MEDIANS.map(([k]) => h("td", null, duration(r[k])))];
     // A box that scrolls sideways is reachable by keyboard, and named.
-    return h("div", { class: "table-scroll", tabindex: "0", role: "region", "aria-label": "Counts per member" }, h("table", { class: "swarm-table" },
-      h("thead", null, h("tr", null, h("th", { scope: "col" }, "Member"),
-        COUNTS.concat(MEDIANS).map(([, l]) => h("th", { scope: "col" }, l)))),
+    return h("div", { class: "table-scroll", tabindex: "0", role: "region", "aria-label": M.t("swarm.table") }, h("table", { class: "swarm-table" },
+      h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("swarm.col.member")),
+        COUNTS.concat(MEDIANS).map(([, l]) => h("th", { scope: "col" }, l())))),
       h("tbody", null, rows.map((r) => h("tr", { "data-member": r.member_id || r.handle }, h("th", { scope: "row" }, label(r)), cells(r)))),
-      h("tfoot", null, h("tr", { class: "swarm-total" }, h("th", { scope: "row" }, "All"), cells(totals)))));
+      h("tfoot", null, h("tr", { class: "swarm-total" }, h("th", { scope: "row" }, M.t("swarm.all")), cells(totals)))));
   }
 
   // One read at a time per section, the newest winning: a slower answer to an
@@ -74,7 +77,7 @@ window.Maity = window.Maity || {};
     let seq = 0;
     return async () => {
       const mine = ++seq;
-      status.busy("Reading…");
+      status.busy(M.t("swarm.reading"));
       try {
         const s = await read();
         if (mine !== seq) return;
@@ -89,8 +92,8 @@ window.Maity = window.Maity || {};
 
   function notes(s) {
     return [
-      h("p", { class: "hint" }, "– where a median has fewer than three cards to go by. Counts are lower bounds where older evidence is gone."),
-      s.coverage && s.coverage.reviews_since ? h("p", { class: "hint" }, "Reviews are counted from " + s.coverage.reviews_since + ".") : null,
+      h("p", { class: "hint" }, M.t("swarm.note.median")),
+      s.coverage && s.coverage.reviews_since ? h("p", { class: "hint" }, M.t("swarm.note.reviews_since", { since: s.coverage.reviews_since })) : null,
     ];
   }
 
@@ -107,29 +110,29 @@ window.Maity = window.Maity || {};
     function draw(s) {
       const t = s.totals || {};
       append(clear(body),
-        h("p", { class: "muted" }, "Now: " + formatTime(s.live_at) + " · the last " + s.window_days + " days as of " + formatTime(s.as_of) + "."),
-        h("h4", null, "At work now"),
+        h("p", { class: "muted" }, M.t("swarm.now", { now: formatTime(s.live_at) }), " · ", M.t("swarm.as_of", { count: s.window_days, as_of: formatTime(s.as_of) })),
+        h("h4", null, M.t("swarm.live")),
         h("ul", { class: "swarm-live" }, (s.live || []).map((m) => h("li", { class: "swarm-member" + (m.online ? " online" : ""), "data-member": m.member_id },
           h("span", { class: "dot " + (m.online ? "online" : "offline"), "aria-hidden": "true" }),
           h("span", { class: "swarm-name" }, memberLink(m.member_id, m.display_name)),
-          h("span", { class: "muted" }, m.online
-            ? (m.kind === "agent" && m.instances_online > 1 ? " online, " + m.instances_online + " instances" : " online")
-            : m.last_seen_at ? " last seen " + formatAgo(m.last_seen_at, M.api.now()) : " not seen yet"),
+          h("span", { class: "muted" }, " ", m.online
+            ? (m.kind === "agent" && m.instances_online > 1 ? M.t("swarm.online_instances", { count: m.instances_online }) : M.t("swarm.online"))
+            : m.last_seen_at ? M.t("swarm.last_seen", { ago: formatAgo(m.last_seen_at, M.api.now()) }) : M.t("swarm.not_seen")),
           (m.holding || []).length
             ? h("ul", { class: "swarm-holding" }, m.holding.map((c) => h("li", null,
-              h("a", { href: ctx.link("tasks", c.task_id) }, c.task_id), " " + c.title, h("span", { class: "muted" }, " · since " + formatAgo(c.since, M.api.now())))))
+              h("a", { href: ctx.link("tasks", c.task_id) }, c.task_id), " " + c.title, h("span", { class: "muted" }, " · ", M.t("swarm.since", { ago: formatAgo(c.since, M.api.now()) })))))
             : null))),
-        h("h4", null, "The last " + s.window_days + " days"),
-        h("div", { class: "swarm-per-day" }, h("span", null, (t.cards_done == null ? "–" : t.cards_done) + " cards done"), sparkline(t.cards_done_per_day || [])),
+        h("h4", null, M.t("swarm.window.title", { count: s.window_days })),
+        h("div", { class: "swarm-per-day" }, h("span", null, t.cards_done == null ? M.t("swarm.cards_done.unknown") : M.t("swarm.cards_done", { count: t.cards_done })), sparkline(t.cards_done_per_day || [])),
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s));
     }
 
     const load = loader(status, () => M.api.get(ctx.base + "/swarm?days=" + days), draw,
-      (err) => { clear(body); status.fail("The swarm could not be read: ", err); });
+      (err) => { clear(body); status.fail(M.t("swarm.read_failed"), err); });
     const box = h("section", { class: "overview-part overview-swarm", "aria-labelledby": "overview-swarm" },
-      h("div", { class: "overview-head" }, h("h3", { id: "overview-swarm" }, "Swarm"),
-        h("span", { class: "muted" }, "· who is at work now, and what the project got done lately")),
+      h("div", { class: "overview-head" }, h("h3", { id: "overview-swarm" }, M.t("swarm.title")),
+        h("span", { class: "muted" }, "· ", M.t("swarm.subtitle"))),
       switcher(days, (n) => { days = n; load(); }), status.el, body);
     load();
     return box;

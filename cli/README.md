@@ -65,6 +65,38 @@ the human, instead of waiting for work to appear. In an archived project
 it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
+The text of `join` and `resume` is compact by default; the sections that
+ask for action (held and assigned cards, open requests, requests to
+answer, the handover) stay whole. `Answered since your last session:`
+shows the last 10 answers, then `… <n> earlier answers: maity resume
+--full`. `Events since your last session:` shows the last 10 events whose
+`audience` holds this member's `member:` or this instance's `instance:`
+token, of any kind, then one line `Not shown: <n> events (<k> <kind>, …;
+<m> earlier for you): maity resume --full`, the five most frequent kinds
+named. A message body in the events and an answer's text are cut at 5
+lines or 200 characters, with the usual pointer; requests, the ones to
+answer with their `summary` included, stay whole. Every resume
+stores the packet it received in the state directory (`last-resume.json`,
+0600, overwritten each time); `maity resume --full` renders that packet
+in full without calling the hub, since a second resume would open
+another session. Its first line, `Stored packet of the resume at
+<started_at>; run maity resume for what changed since.`, keeps an old
+`Next:` from being taken as current; the resume's board check for
+an admin is kept beside it, so the same line shows. Without a stored
+packet it resumes and prints in full. Answers are ordered by
+`answered_at`, so an old request answered last is among the ten.
+A realistic rejoin (300 events, 30 answers, the rules in full) prints
+under 8 KB, measured in `tests/test_compact.py`.
+
+The text ends with one line `Next: …` that the agent can act on without
+asking its human: continue the held card, claim the assigned one, read a
+handover first, or after a join without work report to its lead
+(`reports_to`, else `maity say human`), each followed by `then start
+maity wait in the background and keep working from what it returns. Do
+not wait for your human in the terminal.` After a resume without work
+it says only that. Isolated, paused and an admin's empty board keep
+their own lines.
+
 An instance that replaced another (§6.17) finds what the replaced ones
 left undone in its resume, right before the missed events: "Handed over
 from <handle>#<id>[, …]:", the chain newest first, then those events in
@@ -104,7 +136,7 @@ Assigned to you, not claimed yet:
 
 Members: agent-a (admin, online), maintainer (owner, away)
 
-Next: `maity claim tsk-0004`, the card assigned to you.
+Next: maity claim tsk-0004, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.
 How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
@@ -254,6 +286,15 @@ It refuses with exit 4, before anything is sent, on any of these:
   is reported as the remote head
 - a remote head that differs from the local one
 - a pull request whose head differs from the local one
+- a pull request that is not the card's: the card links other pull
+  requests (`kind: pr`, `maity link`), or its last report names another
+  pull request that is still open. A report for another PR is sent from
+  that PR's branch (`git switch`), or after a merge with the branch
+  deleted, from that branch recreated at its merged head
+  (`git switch -c <branch> <merged head>`)
+
+Before sending, `report` prints what it reports on standard error:
+`reporting <branch> at <head>, PR #<n> (<state>)`.
 
 `pr_status` is `found`, `none`, or `unknown`. `unknown` comes with a reason:
 gh is not installed, or the remote is not on a GitHub host gh knows. A gh

@@ -282,7 +282,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
             pass  # An unavailable board is unknown, not empty; resume still succeeds.
-    text = None if args.json else onboarding.render(packet, first=first, board_empty=board_empty)
+    full = bool(getattr(args, "full", False))
+    text = (
+        None
+        if args.json
+        else onboarding.render(packet, first=first, board_empty=board_empty, full=full)
+    )
     session_id = field(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
@@ -311,7 +316,10 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"
     )
+    session.data["board_empty"] = board_empty  # the board check `--full` cannot repeat
     session.save()
+    # What `--full` renders again without a second resume, which would open another session.
+    state.save_state(session.dir, packet, name=LAST_PACKET)
     if text is None:
         _print_json(packet)
     else:
@@ -463,8 +471,26 @@ def _identity_dir(url: str, target: str, outside: Exception) -> Path:
     return state.identity_dir(host, handle.group(1))
 
 
+LAST_PACKET = "last-resume.json"
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
-    return _resume(Session(args.hub), args)
+    """`--full` renders the packet the last resume stored, in full and without calling the hub;
+    without one it resumes as usual and prints in full."""
+    session = Session(args.hub)
+    stored = state.load_state(session.dir, name=LAST_PACKET) if args.full else {}
+    if not stored:
+        return _resume(session, args)
+    if args.json:
+        _print_json(stored)
+        return EXIT_OK
+    # The packet may be hours old, and its `Next:` with it: say so before anything else.
+    started = onboarding.get(stored, "session", "started_at")
+    when = f"the resume at {onboarding.inline(started)}" if started else "the last resume"
+    print(f"Stored packet of {when}; run maity resume for what changed since.\n")
+    board_empty = session.data.get("board_empty") is True
+    print(onboarding.render(stored, board_empty=board_empty, full=True), end="")
+    return EXIT_OK
 
 
 BATCH_MAX = 50
@@ -623,6 +649,70 @@ def _why(args: argparse.Namespace) -> dict[str, str] | None:
     return None
 
 
+_PR_URL = re.compile(r"^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)/?$")
+
+
+def _described(facts: gitfacts.Facts) -> str:
+    """What the report states, in one line: branch, head and pull request."""
+    where = f"{onboarding.inline(facts.branch)} at {facts.head[:12]}"
+    if facts.pr is not None:
+        return f"{where}, PR #{facts.pr.number} ({onboarding.inline(facts.pr.state.lower())})"
+    if facts.pr_unknown_reason is not None:
+        return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
+    return f"{where}, no pull request"
+
+
+def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
+    """`(owner/repo, number)` of a pull request URL, lowercased; None for anything else."""
+    match = _PR_URL.match(url) if isinstance(url, str) else None
+    if match is None:
+        return None
+    return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
+
+
+def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
+    """Why the pull request found for this checkout is not the card's, or None (§6.6, §6.13).
+
+    Two things on the card name its pull request: a link of kind `pr`, and the pull request
+    of its last report while that one is still open. A report from another PR's branch (a
+    follow-up branch checked out after the merge) is refused rather than filed on the card."""
+    found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
+    if facts.pr is not None:
+        shown = f"PR #{facts.pr.number}"
+    elif facts.pr_unknown_reason is not None:
+        shown = f"an unknown pull request ({onboarding.inline(facts.pr_unknown_reason)})"
+    else:
+        shown = "no pull request"
+    switch = (
+        f"check out that pull request's branch (`git switch <branch>`; after a merge with the "
+        f"branch deleted, `git switch -c <branch> <merged head>`) and report {card_id} from there"
+    )
+    links = card.get("links") if isinstance(card, dict) else None
+    linked = {
+        key
+        for link in (links if isinstance(links, list) else [])
+        if isinstance(link, dict) and link.get("kind") == "pr"
+        if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+    }
+    if found is not None:  # links to another repository of the owner say nothing about this one
+        linked = {key for key in linked if key[0] == found[0]}
+    if linked and found not in linked:
+        named = ", ".join(f"#{number}" for _, number in sorted(linked))
+        return f"{card_id} links pull request {named}, this checkout has {shown}; {switch}"
+    report = onboarding.get(card, "report")
+    before = onboarding.get(report, "pr")
+    if isinstance(before, dict):
+        state = onboarding.get(report, "observed", "pr_state") or before.get("state")
+        key = _pr_key(before.get("url"), before.get("number"))
+        other = found is not None and key is not None and key[0] != found[0]
+        if state == "open" and key is not None and key != found and not other:
+            return (
+                f"the last report on {card_id} names pull request #{key[1]}, still open; this "
+                f"checkout has {shown}; {switch}"
+            )
+    return None
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
@@ -657,6 +747,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     body = _report_body(facts, args.summary.strip(), args.done)
     if why is not None:
         body["why"] = why
+    # Said before anything is sent, so a report from the wrong checkout shows as such.
+    _err(f"reporting {_described(facts)}")
+    card = session.client.call("GET", session.project_path("tasks", args.task))
+    mismatch = _card_pr_mismatch(card, facts, args.task)
+    if mismatch:
+        _err(f"report refused: {mismatch}")
+        return EXIT_REFUSED
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
     pr = body["pr"]
@@ -2866,8 +2963,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Open a session and print what it says: the briefing, identity and role, the project's "
         "state and rules (in full when they changed), the cards you hold with their checkpoints, "
         "answered and open requests, the events since your last session, and the next step. "
-        "--json prints the resume packet itself. Run it at the start of every session and after "
-        "a context compaction.",
+        "The text is compact: the last 10 answers and the last 10 events addressed to you, the "
+        "rest counted; --full prints the packet of the last resume in full, without opening "
+        "another session. --json prints the resume packet itself. Run it at the start of every "
+        "session and after a context compaction.",
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
         "--hub", help="the hub URL, once, when the credential came from the page-driven join"

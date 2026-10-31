@@ -3122,3 +3122,121 @@ the row holds Chat and Manage only (54a49af9), every other member action
 is in Manage. Isolating without a confirmation like the pause: the pause
 is a soft stop the owner may lift, isolation releases claims and closes
 placements of someone else's agent.
+
+## A chat's composer hides for reading on a phone and grows on a wide screen; both are the browser's choice
+
+**Id:** 5af3970c-0f6a-42e7-a211-13ba27fbae5d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-10-31, with a phone screenshot (card tsk-k6nakahy6fnj): fold the composer away on a phone to read, less empty space between the buttons and the field, the field 2× and 3× as high on a desktop with one click; kept per browser, no hub field
+**Revisit when:** the GUI round moves the composer's controls, or the hub keeps per-viewer view settings
+
+The composer of a direct chat and of a group chat has one head
+(`M.chatParts.composeHead`): its label, then on a phone a button
+**Hide the composer** / **Write a message** (`aria-expanded`,
+controlling the field) and on a wider screen a group of **1×**, **2×**
+and **3×** (`aria-pressed`) that sets the field's rows to one, two or
+three times its own. Hidden, only the head stays, so the history takes
+the room; shown again, the field has the focus. Both choices are kept in
+`localStorage` under one key for every chat, and a browser that keeps
+nothing still applies them for the visit. An empty status line and an
+empty list of files take no room in the composer any more, and its rows
+stand 4 px apart.
+
+**Reason:** reading a long chat on a phone wants the screen, writing a
+long message on a desktop wants the field; neither is worth a setting
+on the hub, and one key keeps the choice from one chat to the next.
+
+**Rejected alternative:** a choice per conversation: the maintainer asked
+for it per browser, and a reader would set it again in every chat. A
+field that grows with its text by itself: it moves the history while one
+types and still does not give a phone its screen.
+
+## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
+
+**Id:** 861705c6-539c-4d4c-9532-658311c463b7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-6pbe89e1yt50 with the maintainer's decision that the hosted instance carries no platform GitHub token, 2026-10-31; docs/api.md §11.4 (links, own token, step-up, the setup redirect to `/settings/forge`, the owner's confirmation), §16.11 (the path), §6.1 (`probe_via`, `owner_confirmed`)
+**Revisit when:** installations on a forge organisation may serve a Maity organisation (§11.4 "Follow-up"), or a second forge is added
+
+**Forge access** is a section of the account page, next to the
+sessions. It shows:
+- the linked installations of the instance's GitHub App, each with its
+  status and the repositories it covers;
+- **Link the GitHub App**, offered only where `app_configured`;
+- **Unlink**, which says it does not uninstall the App on GitHub and
+  links to GitHub's page;
+- the human's own fine-grained token: stored, replaced or removed,
+  with a hint naming the read permissions the probe needs.
+
+A token is never shown, only that one is set, its login and its status.
+`/settings/forge`, the path the hub's setup redirect lands on, is the
+same account page opened at that section. Its `?error=<reason>` is said
+in words and dropped from the address. A project's settings say which
+grant reads its repository (`probe_via` in words) and whether the
+namespace owner confirmed it, with **Confirm this repository for my
+grants** for the namespace owner (for an organisation's project any of
+its owners, who may replace another owner's confirmation with their
+own grants) and a link to Forge access.
+
+**Reason:** the grants are the human's own and serve every project they
+own, so they belong on the account, not on one project. The project's
+settings are where an admin wonders why nothing is read. Without the
+owner's confirmation their grants are never used for the repository,
+so the confirmation stands next to the grant it unlocks.
+
+**Rejected alternatives:**
+- A page of its own at `/settings/forge`: a second "account" with one
+  section, beside the account that has all the others.
+- Redirecting `/settings/forge` to `/account/forge`: the contract names
+  `/settings/forge` (§16.11), and a redirect would add a hop to the
+  setup's return.
+- Showing the probe's `details.reason` on the settings: it comes from a
+  failed read, not from the project view, and the view's `probe_via`
+  with the confirmation already says what is missing.
+
+## The landing page is imported and exported as JSON in its editor; an import is checked by the preview call and saved only by Save
+
+**Id:** c174a492-2691-4887-9507-e1ba2e805a1f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-36d575f5yybz (the maintainer, 2026-10-30: load the prepared landing V3 with one click; paste or file, the body of PATCH …/landing or one page; the hub's refusals per field; nothing saved before the admin confirms; Export the draft); how it is checked is the implementer's
+**Revisit when:** the hub offers a check of a landing draft of its own, or imports grow to the legal pages
+
+Under the landing editor, **Import or export JSON**: a field and a file
+choice. **Export the draft** writes the draft as the hub takes it
+(enabled, default language, pages, footer) into the field; **Copy**
+copies it. **Load into the editor** reads either that body or one
+language's page (title, description, sections), asks before it
+replaces the whole draft or the page shown, draws the editor from it,
+and sends it to `POST …/landing/preview`, the hub's own check, which
+stores a draft for ten minutes and saves nothing. Its refusals are
+said at their fields as a save's are; **Save** stays the only call that
+saves, so the confirmation that counts is the admin's Save after
+looking the import over. A field the imported body leaves out keeps what
+the editor has, as a `PATCH` keeps the stored one: the prepared V3 file
+has no footer, and an empty operator line is one the hub refuses
+(`footer.operator` is 1 to 120 characters or none), so the editor sends
+none instead of an empty one. The hub checks an import before the
+editor is drawn from it; a body whose pages, sections or lists are of
+the wrong kind leaves the draft as it was. That kind check covers every
+value the editor binds to an object, not only lists: a button, a group
+and each footer link must be an object, or absent where optional, or the
+editor would break after the draft was replaced. Save asks for the
+step-up (§2.8.4) the hub requires for this call.
+
+**Reason:** the preview call already validates a draft exactly as a
+save does, so the import reuses it instead of a second check in the
+page that could drift from the hub's. Drawing the import into the
+editor before anything is stored lets the admin read and fix it there.
+
+**Rejected alternative:** saving on import, with a confirmation: one
+click from a file to visitors, without the editor in between. A check
+of the JSON in the page: a copy of the hub's rules that ages with each
+new section type. Drawing inside try/catch and restoring the draft
+afterwards: it would hide real drawing bugs and leave a half-built
+editor behind.

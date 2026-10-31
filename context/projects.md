@@ -705,3 +705,37 @@ by hand.
   created or bumped in between would be bumped again for nothing, and
   the once-only guarantee would need a lock of its own; the project lock
   already serialises the bump.
+
+## A project links its issues, wiki, discussions and chat as four fixed fields, on any host
+
+**Id:** 11b7e786-ecf7-4971-ae04-48760fd1fd41
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wishes in the chat with the contract owner, 2026-10-31 ("Issues, Wiki, Discussion board in maity verlinkbar in projekt settings wie repo und ktw und auch als buttons ... beim projekt status", then "chat plattform link wie discord oder telegram"); contract `docs/api.md` §6.11 "The project's own links", §16.9
+**Revisit when:** projects ask for a fifth kind of link, or a link on a public page is abused
+
+A project carries `links` with four fixed keys (issues, wiki,
+discussions, chat), each an https URL on any host under the same rule as
+a person's website. The overview and the project list show them as
+buttons; a public project's page shows them as plain links, except a
+link into a private repository's own path on the forge, which it shows
+only while the repository is public, like the repository URL. The hub
+never fetches them.
+
+**Reason:** a project's people talk and write in places Maity does not
+host, and the maintainer wants them one click away next to the
+repository (confirmed). An issue tracker, wiki or chat is often not on
+the forge, so the host is free; a link into a private repository would
+publish what the repository URL rule keeps private, so it follows that
+rule.
+
+**Rejected alternatives:**
+- Links only on the configured forge host, like `repository`: a chat
+  or a wiki elsewhere could not be linked.
+- Building the links from names, as for a person's social networks:
+  an issue tracker or chat has no fixed address pattern.
+- A free list of links: the overview needs to know which button is
+  which; four fixed kinds cover what was asked.
+- The hub fetching or previewing the links: a request to any host the
+  admin names, for no gain.

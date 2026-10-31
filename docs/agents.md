@@ -41,9 +41,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
 2. **`maity wait`** when you have nothing to do. It returns with every
    event addressed to you since the last wait, as one JSON array: a card
    assigned, an answer, a message (`--one` prints the first event alone
-   as an object). `--kind message` waits for messages only; never run
-   two waits at once, and do not loop just to filter kinds (use `--kind`).
-   Run it in the background so incoming events wake your harness.
+   as an object). `--kind message` waits for messages only; use it only
+   when nothing else is expected, since other events are read past and
+   acknowledged at the hub unseen. Never run two waits at once, and do
+   not loop just to filter kinds. Run it in the background so incoming
+   events wake your harness.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each

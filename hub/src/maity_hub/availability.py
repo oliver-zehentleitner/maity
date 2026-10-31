@@ -84,7 +84,13 @@ def _live(until: datetime | None, now: datetime) -> bool:
 
 
 def computed(
-    row: Any, presence: str, human: Any | None, project: Any, now: datetime
+    row: Any,
+    presence: str,
+    human: Any | None,
+    project: Any,
+    now: datetime,
+    *,
+    dormant: bool = False,
 ) -> dict[str, Any]:
     """The state of §6.12's table and what goes with it, before any reader's shaping:
     `{state, until?, source?, harness?, reason?, show_reason_in?}`."""
@@ -98,6 +104,9 @@ def computed(
             "harness": row.limit_harness,
             "reason": row.limit_reason,
         }
+    if row.agent_id is not None and dormant:
+        # Every active instance is dormant: only an instance address reaches the team (§6.17).
+        return {"state": "limited", "until": None, "source": "dormant"}
     if row.agent_id is None and human is not None and _live(human.limit_until, now):
         return {
             "state": "limited",
@@ -111,6 +120,13 @@ def computed(
     if presence == "offline":
         return {"state": "offline"}
     return {"state": "available"}
+
+
+def dormants_of(conn: Connection, rows: Sequence[Any]) -> set[int]:
+    """The agent memberships among `rows` whose every active instance is dormant (§6.17)."""
+    from maity_hub import instances  # instances reads the tables availability also reads
+
+    return instances.dormant_members(conn, [r.id for r in rows if r.agent_id is not None])
 
 
 def in_outage(row: Any, state: str) -> bool:
@@ -145,19 +161,21 @@ def view(
     *,
     own: bool = False,
     project_name: str | None = None,
+    dormant: bool = False,
 ) -> dict[str, Any]:
     """`availability` of a member view. A human's `reason` only in a project its limit
     names in `show_reason_in` by its full name `project_name` (§6.25), or to the human
     itself (`own`, `GET /me`)."""
     now = clock.now()
-    found = computed(row, presence, human, project, now)
+    found = computed(row, presence, human, project, now, dormant=dormant)
     shown: dict[str, Any] = {
         "state": found["state"],
         "since": clock.rfc3339(_since(row, found, min(row.joined_at, now))),
     }
     if found["state"] != "limited":
         return shown
-    shown["until"] = clock.rfc3339(found["until"])
+    if found.get("until") is not None:  # a dormant member has none (§6.17)
+        shown["until"] = clock.rfc3339(found["until"])
     shown["source"] = found["source"]
     if row.agent_id is not None:
         shown["harness"] = found.get("harness")
@@ -274,8 +292,12 @@ def _any_available(
     rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(membership_ids))).all()
     presences = presences_of(conn, rows)
     humans = humans_of(conn, rows)
+    dormant = dormants_of(conn, rows)
     return any(
-        computed(r, presences[r.id], humans.get(r.human_id), project, now)["state"] == "available"
+        computed(r, presences[r.id], humans.get(r.human_id), project, now, dormant=r.id in dormant)[
+            "state"
+        ]
+        == "available"
         for r in rows
     )
 
@@ -309,7 +331,11 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
     now = clock.now()
     rows = conn.execute(select(t.membership).where(t.membership.c.id.in_(ids))).all()
     presences = presences_of(conn, rows)
-    found = {r.id: computed(r, presences[r.id], None, project, now) for r in rows}
+    dormant = dormants_of(conn, rows)
+    found = {
+        r.id: computed(r, presences[r.id], None, project, now, dormant=r.id in dormant)
+        for r in rows
+    }
     if not all(_out_beyond_grace(r, found[r.id], now) for r in rows):
         return None
     # A coordinator under cover: its substitute is the coordinator for the gate too.
@@ -327,7 +353,12 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
         ).first()
         if stand_in is not None:
             shown = computed(
-                stand_in, presences_of(conn, [stand_in])[stand_in.id], None, project, now
+                stand_in,
+                presences_of(conn, [stand_in])[stand_in.id],
+                None,
+                project,
+                now,
+                dormant=stand_in.id in dormants_of(conn, [stand_in]),
             )
             if shown["state"] == "available":
                 return None
@@ -394,8 +425,16 @@ def act_due(conn: Connection, project_id: str, actor: Actor | None = None) -> No
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
     presences = presences_of(conn, rows)
     humans = humans_of(conn, rows)
+    dormant = dormants_of(conn, rows)
     for row in rows:
-        found = computed(row, presences[row.id], humans.get(row.human_id), project, now)
+        found = computed(
+            row,
+            presences[row.id],
+            humans.get(row.human_id),
+            project,
+            now,
+            dormant=row.id in dormant,
+        )
         if not in_outage(row, found["state"]) or not policy_due(row, found, now):
             continue
         if row.cover_state == "none_available" and policy_of(row)["on_unavailable"] != "substitute":
@@ -447,6 +486,7 @@ def reconcile(
     now = clock.now()
     presences = presences_of(conn, rows)
     humans = humans_of(conn, rows)
+    dormant = dormants_of(conn, rows)
     projects: dict[str, Any] = {}
     announced = []
     returned: set[str] = set()
@@ -455,7 +495,14 @@ def reconcile(
         if project is None:
             project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
             projects[row.project_id] = project
-        found = computed(row, presences[row.id], humans.get(row.human_id), project, now)
+        found = computed(
+            row,
+            presences[row.id],
+            humans.get(row.human_id),
+            project,
+            now,
+            dormant=row.id in dormant,
+        )
         state = found["state"]
         if row.availability_state is None and row.agent_id is not None:
             # An agent's first look after the migration or the join is a baseline, not
@@ -525,7 +572,8 @@ def _payload(row: Any, found: dict[str, Any], since: datetime, cover: str | None
         "since": clock.rfc3339(since),
     }
     if found["state"] == "limited":
-        payload["until"] = clock.rfc3339(found["until"])
+        if found.get("until") is not None:
+            payload["until"] = clock.rfc3339(found["until"])
         payload["source"] = found["source"]
     payload["cover"] = cover
     return payload

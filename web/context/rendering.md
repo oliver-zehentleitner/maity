@@ -621,7 +621,12 @@ A value from a set the hub defines (the ticker's types, a reason's role
 or trust) is one key per value, the sentence whole with the language's
 article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
-or "an" in code, which only English has. A language offered for choice
+or "an" in code, which only English has. In "X of Y" the plural form
+follows the total, Y ("1 of 3 instances active"), as English writes it.
+Rejected: the form of X, which read "1 of 3 instance active". Facts
+put side by side with a middle dot between them are allowed where each
+is a whole text of its own ("3 waiting for approval · 1 registered in
+the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
 is named in itself ("English", "Deutsch"), never through the catalog: a
 reader looks for their own language's name, not its name in the
 language shown now. Still the hub's words: an
@@ -635,7 +640,16 @@ form chosen by `Intl.PluralRules` is there to be translated. A key per value als
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
-checks as written, with commands and product names. Still put together from
+checks as written, with commands and product names. A text the
+dashboard writes into the hub for the reader (the title of a chat the
+Lead button makes) is taken from the catalog in the writer's language
+and stays as written, as a title they typed would: the hub keeps no
+language beside it, the other participants read it as it is, and the
+chat is found again by its participants, never by its title; its
+maker may rename it (§9.2). Rejected: a chat without a title (the
+hub allows one), named from its participants when read: every list
+that shows the chat would need that naming, and the participants alone
+do not say what the chat is for. Still put together from
 pieces: a status line's prefix and its reason ("Not saved: " + the
 hub's words, `status.fail`), for a later part of stage 2.
 

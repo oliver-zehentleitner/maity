@@ -30,7 +30,15 @@ CLOSED = ("done", "cancelled")
 class Person:
     """A member as the views show them: `handle` is None for one that is not shown."""
 
-    def __init__(self, row: Any, handle: str | None, name: str | None, human: bool) -> None:
+    def __init__(
+        self,
+        row: Any,
+        handle: str | None,
+        name: str | None,
+        human: bool,
+        address: str | None = None,
+    ) -> None:
+        self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
         self.role = row.role
         self.trust = row.trust
@@ -79,20 +87,54 @@ def members(conn: Connection, project_id: str) -> dict[int, Person]:
         if row.human_id:
             human = humans[row.human_id]
             ok = public_people.served(conn, human)
-            found[row.id] = Person(row, human.handle if ok else None, human.display_name, True)
+            found[row.id] = Person(
+                row,
+                human.handle if ok else None,
+                human.display_name,
+                True,
+                f"/{human.handle}" if ok else None,
+            )
         else:
             agent = agents[row.agent_id]
             ok = agent.id not in held and public_people.served(conn, owners[agent.owner_id])
-            found[row.id] = Person(row, agent.handle if ok else None, agent.display_name, False)
+            owner = owners[agent.owner_id]
+            found[row.id] = Person(
+                row,
+                agent.handle if ok else None,
+                agent.display_name,
+                False,
+                f"/{owner.handle}/agents/{agent.handle}" if ok else None,
+            )
     return found
 
 
-def _who(person: Person | None) -> str:
+def _who(person: Person | None, gone_agent: bool = False) -> str:
+    """The holder of a card: by name only while the page names them. A holder no longer among
+    the members (isolated, removed) is "an agent" when it was one, else "a member"."""
     if person is None:
-        return "a member"
+        return "an agent" if gone_agent else "a member"
     if person.shown:
         return f"{escape(person.name or '')} ({escape(person.handle or '')})"
     return "a member" if person.human else "an agent"
+
+
+def _gone_agents(conn: Connection, project_id: str, who: dict[int, Person]) -> set[int]:
+    """The memberships of agents that hold a card of the project and are not among `who`."""
+    m = t.membership.c
+    holders = {
+        h
+        for h in conn.execute(
+            select(t.card.c.claim_holder).where(
+                t.card.c.project_id == project_id, t.card.c.claim_holder.is_not(None)
+            )
+        ).scalars()
+        if h not in who
+    }
+    if not holders:
+        return set()
+    return set(
+        conn.execute(select(m.id).where(m.id.in_(holders), m.agent_id.is_not(None))).scalars()
+    )
 
 
 def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
@@ -105,6 +147,7 @@ def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
             list(conn.execute(select(c.id).where(c.project_id == project_id)).scalars()),
         )
     )
+    gone = _gone_agents(conn, project_id, who)
     columns = []
     for status in cards.STATUSES:
         query = select(c.id, c.title, c.label, c.claim_holder).where(
@@ -112,16 +155,16 @@ def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
         )
         if status in CLOSED:
             query = query.where(c.closed_at >= cutoff)
-        rows = [
-            r
-            for r in conn.execute(query.order_by(c.created_at.desc(), c.id.desc()))
-            if r.id not in held
-        ][:BOARD_LIMIT]
+        if held:  # the cards under a hold are left out in the query, so the limit counts the rest
+            query = query.where(c.id.notin_(held))
+        rows = list(
+            conn.execute(query.order_by(c.created_at.desc(), c.id.desc()).limit(BOARD_LIMIT))
+        )
         items = "".join(
             f'<li><span class="tag">{escape(r.id)}</span> {escape(r.title)}'
             + (f' <span class="tag">{escape(r.label)}</span>' if r.label else "")
             + (
-                f' <span class="tag">{_who(who.get(r.claim_holder))}</span>'
+                f' <span class="tag">{_who(who.get(r.claim_holder), r.claim_holder in gone)}</span>'
                 if r.claim_holder
                 else ""
             )
@@ -138,12 +181,8 @@ def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
 def members_html(who: dict[int, Person]) -> str:
     shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
     items = "".join(
-        (
-            f'<li><a href="/{escape(p.handle or "", quote=True)}">{escape(p.name or "")}</a>'
-            if p.human
-            else f"<li>{escape(p.name or '')}"
-        )
-        + f" ({escape(p.handle or '')}) "
+        f'<li><a href="{escape(p.address or "", quote=True)}">{escape(p.name or "")}</a>'
+        f" ({escape(p.handle or '')}) "
         f'<span class="tag">{escape(p.trust)} · {escape(p.role)}</span></li>'
         for p in shown
     )
