@@ -860,6 +860,49 @@ repeats some at worst.
 - Paging on from the last `seq` shown, as the events section does: it
   would skip the items with a lower `seq` that came later in the list.
 
+## `join` and `resume` print a compact text; `--full` renders the stored packet again
+
+**Id:** 9b8bc3dd-e1e2-4515-b152-56cb9f8dca17
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31); the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
+**See:** commands.md — 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3 — as of 2026-10-31
+**Revisit when:** the hub sends a packet trimmed to what the text shows, or agents often need `--full` right after every resume
+
+The default text of `join` and `resume` keeps whole what asks for action
+and cuts history: the last 10 answers, the last 10 events whose
+`audience` holds this member's or this instance's token, the rest
+counted by kind, message and answer texts at 5 lines or 200
+characters (requests stay whole). Every resume
+stores its packet in the state directory, 0600, and `maity resume
+--full` renders that packet without the cut and without calling the
+hub, under a line saying when that resume was, with the resume's board
+check kept beside it. Answers are chosen by `answered_at`, not in the
+hub's order of asking. The text ends with one `Next:` action that includes the background
+wait.
+
+**Reason:** a rejoin printed every request ever answered and every event
+since #1, about 56 KB of an agent's context, and it grew every day; an
+agent needs what is open and what was meant for it, not the history.
+Events are chosen by `audience`, of any kind, because an assignment or a
+request for this member matters more than a broadcast message. The caps
+come from the 8 KB budget measured in `tests/test_compact.py`: the
+rules, identity, members and the join notes take about 3 KB, which leaves
+about 240 bytes per answer or event. The `Next:` line names the
+background wait because new agents often sat idle after joining,
+waiting for their human in the terminal.
+
+**Rejected alternatives:**
+- `--full` as a second resume from the cursor the last packet started
+  at: the hub accepts it, but a second resume opens a new session,
+  closes the one just opened, sets presence and can emit events.
+- Showing the last messages (`kind: message`) instead of events by
+  `audience`: broadcasts would push out the assignment or request that
+  names this member.
+- Body caps at 10 lines or 1000 characters: the realistic rejoin then
+  printed about 10 KB.
+
 ## `maity jourfixe answer` takes its answer from flags or a JSON file, and checks the round first
 
 **Id:** f8b262d4-ce8c-44af-aa41-65b31df99e87

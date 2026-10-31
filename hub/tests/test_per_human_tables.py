@@ -44,6 +44,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
     ("credential", "ktw_acknowledge_by"): False,  # a deadline
+    ("credential", "dormant_by"): True,
     ("credential", "paused_by"): True,
     ("credential", "revoke_due_by"): True,
     ("credential", "revoked_by"): True,
