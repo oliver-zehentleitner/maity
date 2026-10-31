@@ -43,8 +43,9 @@ window.Maity = window.Maity || {};
     // One's own agents in the project (js/agents-page.js), the component of
     // /agents; before Runners and Why (the maintainer, 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
-    // The account-level view is views.runners; this one is the project's.
-    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
+    // The account-level view is views.runners; this one is the project's,
+    // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
+    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
     // The project's own settings, its last tab (the maintainer's request,
@@ -106,6 +107,8 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
+    // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
+    if (parts[0] === "invite") return { scope: "invitations" };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
@@ -1168,7 +1171,12 @@ window.Maity = window.Maity || {};
     const fresh = M.notify.bell(ctx, () => ctx.refreshCounts());
     if (old && fresh) { old.parentNode.insertBefore(fresh, old); old.remove(); }
     else if (old) old.remove();
-    else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
+    // A bell that was not there goes where it stands: before the profile.
+    else if (fresh) {
+      const me = header.querySelector(".me");
+      const profileBox = me ? Array.from(me.children).find((c) => c.querySelector && c.querySelector(".profile-menu")) : null;
+      if (me) me.insertBefore(fresh, profileBox || null);
+    }
   }
 
   // The Chat button follows the counts too, keeping the focus if it had it.
@@ -1227,6 +1235,17 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
+    // "+": bring someone in, an agent or a person (the maintainer, 2026-10-31):
+    // the agents page with its join, the invitations page. Humans only.
+    const add = ctx.me.kind === "human" ? M.menuButton({
+      label: M.t("menu.add.label"),
+      class: "add-menu",
+      face: h("span", { class: "add-face", "aria-hidden": "true" }, "+"),
+      items: () => [
+        { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
+        { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+      ],
+    }) : null;
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: M.t("menu.profile.label", { name: ctx.me.display_name }),
@@ -1250,13 +1269,14 @@ window.Maity = window.Maity || {};
         brandTitle(true),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"),
+          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
             "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
-        // Chat, Notifications, the gear, the profile: in one row on a phone too.
-        h("span", { class: "me" }, M.notify.chatButton(ctx), M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        // Chat, (Lead,) "+", the gear, Notifications, the profile: in one row on a phone too.
+        // The Lead button goes in right after Chat once known (renderLead), so "+" stays to its right.
+        h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -1315,6 +1335,8 @@ window.Maity = window.Maity || {};
     if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
+      // The project's runners, no tab of their own any more.
+      h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
       projectPanel(ctx));
     settingsSaved = null;
@@ -1651,8 +1673,9 @@ window.Maity = window.Maity || {};
     const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = (item && item.current) || where.route;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    // `section`: a view whose tab stands for another (`current`) keeps its own name here.
+    else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
@@ -1688,6 +1711,8 @@ window.Maity = window.Maity || {};
         await M.views.instanceAdmin(ctx, root, where);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
+      } else if (where.scope === "invitations") {
+        await M.views.invitations(ctx, root);
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
       } else if (where.scope === "person") {
@@ -1714,6 +1739,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = "Your agents";
     else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = "Instance administration";
