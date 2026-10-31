@@ -159,26 +159,23 @@ def refuse_lift(conn: Connection, project: Any, row: Any) -> None:
 
 
 def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str, Any]) -> None:
-    """A trust or role change that would put an outsider's agent beyond the limits is
-    `invalid` (`role` / `trust: outside_owner`, §6.2); an isolated member may be changed to
-    bring it within them, and a project that reads `members` has no limits to hold."""
+    """A trust or role an outsider's agent is set to must be one it may hold: `invalid` with
+    `trust` / `role: outside_owner` otherwise (§6.2). Each field is judged by its own new value,
+    so an isolated agent is brought within the limits one field after the other, and no PATCH,
+    isolated or not, gives it trust `admin` or a role that reviews. A project that reads
+    `members` holds no limits."""
     if row.agent_id is None or not ({"trust", "role"} & values.keys()):
         return
     if effective(conn, project) != "anyone" or not is_outside(conn, project, row):
         return
-    trust = values.get("trust", row.trust)
-    role = values.get("role", row.role)
-    base = values.get("role_base", row.role_base)
-    if within_limits(project, trust, role, base):
-        return
     errors: dict[str, str] = {}
-    if "trust" in values and trust not in OUTSIDE_TRUST:
+    if "trust" in values and values["trust"] not in OUTSIDE_TRUST:
         errors["trust"] = "outside_owner"
-    if "role" in values and (
-        role not in policy.outside_roles(project) or base not in policy.OUTSIDE_BASES
-    ):
-        errors["role"] = "outside_owner"
-    if errors and not isolation.is_isolated(row):
+    if "role" in values:
+        base = values.get("role_base") or project_roles.base_of(project, values["role"])
+        if values["role"] not in policy.outside_roles(project) or base not in policy.OUTSIDE_BASES:
+            errors["role"] = "outside_owner"
+    if errors:
         raise invalid(errors, "an agent of an owner from outside stays within outside_roles")
 
 
