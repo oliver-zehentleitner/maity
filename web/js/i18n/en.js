@@ -1505,13 +1505,13 @@ window.MAITY_I18N["en"] = {
   "members.act.busy": "{action}…",
   "members.act.failed": "{action} failed: ",
   "members.act.refresh_failed": "{done} Could not refresh: ",
-  "members.agents": {
-    "one": "Agents ({count})",
-    "other": "Agents ({count})"
-  },
   "members.agents.none": "No agents yet.",
   "members.agents_link.add": "Adding an agent of yours is on Agents.",
   "members.agents_link.own": "Your own agents here are on Agents.",
+  "members.all": {
+    "one": "Members ({count})",
+    "other": "Members ({count})"
+  },
   "members.capability.tag": "May tag a release (tag)",
   "members.chat": "Chat",
   "members.chat.label": "Chat with {name}",
@@ -1548,12 +1548,8 @@ window.MAITY_I18N["en"] = {
   "members.edit.trust": "Trust",
   "members.filter.mine": "Only my agents",
   "members.filter.mine_none": "You own no agent in this project.",
-  "members.hint": "Everyone in {project}, humans first, each with a chat.",
+  "members.hint": "Everyone in {project}, owners first, then admins, members and guests, each a level deeper, each with a chat.",
   "members.hint.admin": "Manage a row to change its role, see and revoke an agent's credentials, edit its briefing, pause it or remove a member.",
-  "members.humans": {
-    "one": "Humans ({count})",
-    "other": "Humans ({count})"
-  },
   "members.invite_user": "Invite user",
   "members.isolate.confirm": "Isolate {name}? It stops at once: its claims are released and its owner is told.",
   "members.isolate.done": "{name} is isolated.",
