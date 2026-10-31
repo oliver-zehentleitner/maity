@@ -1,12 +1,12 @@
 # Self-hosted runner for the database jobs
 
-The three hub jobs that run the whole suite against a database (`hub-sqlite`,
-`hub-postgresql`, `hub-mariadb` in `.github/workflows/ci.yml`) may run on a machine
+The hub jobs that run the whole suite against a database (`hub-sqlite` and
+`hub-postgresql` in `.github/workflows/ci.yml`, `hub-mariadb` in `.github/workflows/hub-mariadb.yml`) may run on a machine
 of the maintainer's instead of a GitHub-hosted runner. Everything else stays hosted.
 
 ## Which runner a job gets
 
-`ci.yml` reads the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
+`ci.yml` (and `hub-mariadb.yml`) read the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
 Actions → Variables): a label prefix, for example `maity-hub`. Each database job then asks for one
 runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub-postgresql` for
 `maity-hub-pg`, `hub-mariadb` for `maity-hub-maria`.

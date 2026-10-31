@@ -1,0 +1,144 @@
+name: hub-mariadb
+
+# The hub's test suite against MariaDB, outside the pull request gate: at most once an hour on main,
+# and only when hub code changed since the last green run (a quiet hour skips). PostgreSQL (what
+# production runs) and SQLite stay per pull request in ci.yml; MariaDB is the self-hoster's
+# database and the slowest suite, so it checks main on a clock instead of holding every merge.
+# A red run opens (or comments on) one issue labelled ci-red that names the commit range, so the
+# change that broke it is found within the hour; a green scheduled run closes it.
+# Before a deploy or release, run it by hand for that commit: Actions, hub-mariadb, Run workflow, sha.
+# Runner: the same variables as ci.yml (HUB_RUNNER_LABEL, HUB_RUNNER_TYPES) put it on the maria machines.
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to test (empty: the head of main), for example a deploy candidate"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# One at a time, none cancelled: an hourly run that overlaps the previous one waits.
+concurrency:
+  group: hub-mariadb
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: hub
+
+jobs:
+  # Decides whether there is anything to test: by hand always; on the clock when no earlier run
+  # was green, or when files under hub/ (or the join page doc, or this workflow) changed since the
+  # head of the last successful run. A skipped hour counts as green for that, which is right: it
+  # only skips when nothing relevant had changed since the last green one.
+  decide:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run: ${{ steps.d.outputs.run }}
+      sha: ${{ steps.d.outputs.sha }}
+      base: ${{ steps.d.outputs.base }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - id: d
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status success --json headSha --jq '.[0].headSha // ""')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no earlier green run to compare with: running"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          changed="$(git diff --name-only "$base" "$sha" -- hub docs/join-page.md .github/workflows/hub-mariadb.yml)"
+          if [ -n "$changed" ]; then
+            printf 'changed since %s:\n%s\n' "$base" "$changed"; echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing relevant changed since $base: skipping"; echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  hub-mariadb:
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ')) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    services:
+      mariadb:
+        image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it
+        env:
+          MARIADB_USER: maity
+          MARIADB_PASSWORD: ci-only
+          MARIADB_DATABASE: maity
+          MARIADB_ROOT_PASSWORD: ci-only  # the test workers create their own databases
+        ports: ["127.0.0.1:3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
+      MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3306/maity
+    steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
+        working-directory: .  # before the checkout, `hub` does not exist yet
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make install
+      - run: make test
+
+  # Red: one issue labelled ci-red names the range; more red runs comment on it. Green on the
+  # clock closes it. A hand run for a deploy candidate never closes the issue of main.
+  report:
+    needs: [decide, hub-mariadb]
+    if: always() && needs.decide.outputs.run == 'true' && needs.hub-mariadb.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.hub-mariadb.result }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ needs.decide.outputs.sha }}
+          BASE: ${{ needs.decide.outputs.base }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          num="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq '.[0].number // ""')"
+          if [ "$RESULT" = success ]; then
+            if [ "$EVENT" = schedule ] && [ -n "$num" ]; then
+              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
+            fi
+          elif [ "$RESULT" = failure ]; then
+            text="hub-mariadb is red at $SHA ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$text"
+            else
+              gh label create ci-red --repo "$GITHUB_REPOSITORY" --color B60205 --description "the hourly MariaDB run on main is red" 2>/dev/null || true
+              gh issue create --repo "$GITHUB_REPOSITORY" --label ci-red --title "hub-mariadb is red on main" --body "$text"
+            fi
+          fi
