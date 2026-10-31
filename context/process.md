@@ -980,7 +980,8 @@ pull request and in `ci-ok`.
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
 green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
-closes it. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
+closes it. The next hour always runs again after a run that did not end green or while the issue is open, so a revert
+closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
 (Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
 
 **Reason:** MariaDB is the self-hoster's database and the slowest suite; held in front of every merge it made main's
