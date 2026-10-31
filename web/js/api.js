@@ -3414,6 +3414,7 @@ window.Maity = window.Maity || {};
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
+        if (body.takes_over && !fixtures()["agents.json"].items.some((a) => a.id === body.takes_over && a.owner_id === me().member.id)) limit("takes_over");
         if (!body.new_instance && !body.replaces) {
           const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
           file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
@@ -3455,6 +3456,25 @@ window.Maity = window.Maity || {};
           fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
         }
       }
+      // §3.1: takes_over for a first join only, naming another active agent member;
+      // handover a card of the project or a message of it to all.
+      if (body.takes_over != null) {
+        if (member || body.new_instance != null || body.replaces != null) fail(400, "invalid", "takes_over is for a first join only", path, { fields: { takes_over: "first_join_only" } });
+        const named = file(m[1], "members.json", path).items.find((x) => x.id === body.takes_over && x.kind === "agent" && !x.removed_at);
+        if (!named || body.takes_over === agentId) fail(400, "invalid", "no such agent member", path, { fields: { takes_over: "not_an_agent_member" } });
+      }
+      let handover = null;
+      if (body.handover != null) {
+        if (typeof body.handover === "number") {
+          const e = eventsOf(m[1]).find((x) => x.seq === body.handover && x.kind === "message");
+          if (!e) fail(400, "invalid", "no such message in this project", path, { fields: { handover: "not_found" } });
+          if (e.redacted || !(e.audience || []).includes("all")) fail(400, "invalid", "the message is not addressed to all", path, { fields: { handover: "not_readable" } });
+          handover = { kind: "message", id: body.handover };
+        } else {
+          if (!file(m[1], "tasks.json", path).items.some((x) => x.id === body.handover)) fail(400, "invalid", "no such card in this project", path, { fields: { handover: "not_found" } });
+          handover = { kind: "task", id: body.handover };
+        }
+      }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -3463,7 +3483,9 @@ window.Maity = window.Maity || {};
         id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
+        takes_over: body.takes_over || null, handover,
       });
+      // §3.2 "The install line": installs and joins in one command.
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,

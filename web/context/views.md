@@ -961,6 +961,39 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
+## A first join may name whom it takes over from and the hand-over; a message's hand-over links to Messages
+
+**Id:** 3d623647-4575-492b-9252-e215afa0e87e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §3.1, §5.2, §6.2 (contract #896); the card tsk-tj523m1r2z7y; the hub's part (#900); the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub gives a message a page of its own, or offers a search for cards and messages a field could use
+**See:** views.md#a-join-for-an-agent-that-is-already-a-member-asks-which-instance-it-makes-replace-preselected — 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90 — as of 2026-10-31
+
+The join panel has two more fields for a first join, hidden like the
+membership's fields when the chosen agent is already a member:
+**Takes over from**, a choice of the project's agent members other than
+the chosen agent (for a member bringing their own agent, only their own
+agents, as the hub allows), hidden when there is none to choose; and
+**Hand-over**, a text field for a card id or a message's number, sent as
+a number when it is all digits. The hub's refusals (`first_join_only`,
+`not_an_agent_member`, `not_found`, `not_readable`, a member's limit on
+`takes_over`) are said in words at the field. A join and a member that
+named them say "Takes over from @handle; the hand-over is in …", the
+handle linking to the member and a card to its page. A message has no
+page of its own, so "message #seq" links to the project's Messages view.
+
+**Reason:** the contract lets the hub check both values, and its answer
+is the final word. A text field takes either kind of hand-over without
+the panel first reading every card and message. A link to Messages
+still leads the reader to where the message is listed.
+
+**Rejected alternative:** a picker of cards and recent messages: it
+would read the whole board and the event window for one optional field,
+and a message to all from before that window could not be named. An
+unlinked "message #seq": it leaves the reader nowhere to look.
+
 ## Project memory is chosen on /new with its setup options
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1

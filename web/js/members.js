@@ -640,6 +640,9 @@ window.Maity = window.Maity || {};
             // A seq is an id, not a quantity: written as the hub gives it, not formatted.
             ranges: m.isolation_windows.map((w) => M.t("members.isolation_window", { from: String(w.from_seq), to: String(w.to_seq) })).join(", "),
           })) : null,
+        // Whose work it continues and where the hand-over is (§6.2), for every reader.
+        m.kind === "agent" && (m.takes_over || m.handover)
+          ? h("p", { class: "muted member-takes-over" }, M.join.takeOverWords(ctx, m)) : null,
         m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: M.t("members.own_briefing.title") }, M.t("members.own_briefing")) : null);
     }
