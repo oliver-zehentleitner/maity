@@ -14,10 +14,11 @@ assigned to it. `created_by` is the human named by the last `policy_changed` eve
 the old setting named or would have chosen: the member named in `moderator`, else the agents of
 `jour_fixe_moderators`, else the project's admin agents. A named human holds it at once; an
 agent holds it at once when its owner set the policy, and otherwise waits as `pending` for its
-owner's consent (the keepers' is given: the policy was theirs), whose request the hub files
-(`jourfixe.series`). The four project columns then go. The `jour_fixe_series_changed` event and
-one rules bump per project are written here, as `rules.bump` writes them: the rules text names
-the series.
+owner's consent (the keepers' is given: the policy was theirs). The migration files no request: the
+jour fixe sweep files it on the agent's behalf, with its event and record as the hub writes them,
+for every `pending` grant without one (part 2 of the card, #947, deployed with this). The four
+project columns then go. The `jour_fixe_series_changed` event and one rules bump per project are
+written here, as `rules.bump` writes them: the rules text names the series.
 
 Revision ID: 20261031190604_jour_fixe_series
 Revises: 20261031125530_long_polls
@@ -387,10 +388,11 @@ def downgrade() -> None:
             )
         )
     with op.batch_alter_table("jour_fixe_round", schema=None) as batch_op:
-        batch_op.drop_index("ix_jour_fixe_round_series_id")
+        # The foreign key first: MariaDB refuses to drop an index a foreign key needs.
         batch_op.drop_constraint(
             op.f("fk_jour_fixe_round_series_id_jour_fixe_series"), type_="foreignkey"
         )
+        batch_op.drop_index("ix_jour_fixe_round_series_id")
         batch_op.drop_column("series_id")
     op.drop_table("jour_fixe_recipient")
     op.drop_table("jour_fixe_opt_out")
