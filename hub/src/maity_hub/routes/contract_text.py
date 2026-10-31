@@ -27,7 +27,7 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
         card = _project_card(conn, mine, card_id)
     if card.kind != "contract":
         raise invalid({"contract": "contracts_only"})
-    contract = card.contract or {}
+    contract = card.contract
     path = contract["path"]  # every stored contract names its place (0101)
     section = contract.get("section")
     if section is None:
