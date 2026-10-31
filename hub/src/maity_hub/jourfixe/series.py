@@ -226,6 +226,25 @@ def _is_member(conn: Connection, project_id: str, human_id: str) -> bool:
     )
 
 
+def _topic(value: Any) -> str:
+    """1–300 characters once trimmed (§20.1); null or only spaces is `invalid`."""
+    topic = value.strip() if isinstance(value, str) else ""
+    if not topic:
+        raise invalid({"topic": "required"})
+    return topic
+
+
+def _enabled(value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise invalid({"enabled": "not_a_boolean"})
+    return value
+
+
+def _taken(series: list[Any], owner: str | None, topic: str) -> bool:
+    """§20.1: at most one owner series per `circle_owner` and topic."""
+    return any(s.circle == "owner" and s.circle_owner == owner and s.topic == topic for s in series)
+
+
 def _checked(fields: dict[str, Any], enabled: bool) -> dict[str, Any]:
     """The schedule as stored, or `invalid` naming every field that is wrong."""
     config = schedule.filled({k: v for k, v in fields.items() if k in SCHEDULE_FIELDS})
@@ -283,12 +302,10 @@ def create(
     existing = of_project(conn, project.id)
     if len(existing) >= MAX_SERIES:
         raise invalid({"series": "too_many"})
-    topic = str(fields["topic"]).strip()
-    if circle == "owner" and any(
-        s.circle == "owner" and s.circle_owner == owner and s.topic == topic for s in existing
-    ):
+    topic = _topic(fields["topic"])
+    if circle == "owner" and _taken(existing, owner, topic):
         raise invalid({"topic": "taken"})
-    enabled = bool(fields.get("enabled", False))
+    enabled = _enabled(fields.get("enabled", False))
     config = _checked(fields, enabled)
     now = clock.now()
     series_id = new_id("jour_fixe_series")
@@ -329,8 +346,11 @@ def update_series(
         raise invalid(fixed)
     values: dict[str, Any] = {}
     if "topic" in fields:
-        values["topic"] = str(fields["topic"]).strip()
-    enabled = bool(fields.get("enabled", series.enabled))
+        values["topic"] = _topic(fields["topic"])
+        others = [s for s in of_project(conn, project.id) if s.id != series.id]
+        if series.circle == "owner" and _taken(others, series.circle_owner, values["topic"]):
+            raise invalid({"topic": "taken"})
+    enabled = _enabled(fields.get("enabled", series.enabled))
     if "enabled" in fields:
         values["enabled"] = enabled
     given = {k: v for k, v in fields.items() if k in SCHEDULE_FIELDS}
@@ -353,7 +373,8 @@ def delete_series(
     conn: Connection, project: Any, series: Any, mine: Membership, actor: Actor
 ) -> dict[str, Any]:
     """`DELETE …/jour-fixe/series/{jfs}` (§20.1): `200` with its final state. A round of it
-    that is not yet final runs to its end; its rounds keep their `series_id` for reading."""
+    that is not yet final runs to its end; its rounds lose the reference, and keep the
+    series' id, topic and circle in the `config` they opened with (`views.series_fields`)."""
     if not may_delete(series, mine):
         raise keeper_refused()
     final = view(conn, series)

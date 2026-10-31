@@ -573,3 +573,52 @@ def test_a_replay_answers_only_a_member(
     assert removed.status_code == 200, removed.text
     replay = other.client.post(path, json={"reason": "r"}, headers=headers)
     assert replay.status_code == 404, replay.text  # no way around access (§1.5)
+
+
+def test_a_round_names_its_series_also_after_the_series_is_gone(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """ap44 at #941 (§20.7): `series_id`, `topic` and `circle` on every round, kept from the
+    state the round opened with when the series is deleted."""
+    lead, _ = team(owner, make_client)
+    owner.get("/me")
+    sid = series_id(owner)
+    round_ = start(lead, sid).json()
+    assert (round_["series_id"], round_["topic"], round_["circle"]) == (sid, "How we work", "all")
+    gone = owner.client.request(
+        "DELETE",
+        f"/api/v1{BASE}/jour-fixe/series/{sid}",
+        json={"reason": "t"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert gone.status_code == 200, gone.text
+    kept = owner.get(f"{BASE}/jour-fixe/rounds/{round_['id']}").json()
+    assert (kept["series_id"], kept["topic"], kept["circle"]) == (sid, "How we work", "all")
+
+
+def test_a_patch_refuses_an_empty_topic_a_null_flag_and_a_taken_topic(
+    owner: flow.Human,
+) -> None:
+    """ap44 at #941 (§20.1): a topic is 1–300 characters once trimmed, `enabled` a boolean, and
+    an owner holds one series per topic."""
+    me = owner.id
+    first = owner.post(
+        f"{BASE}/jour-fixe/series",
+        {"topic": "Mine", "circle": "owner", "circle_owner": me, "reason": "t"},
+    ).json()
+    second = owner.post(
+        f"{BASE}/jour-fixe/series",
+        {"topic": "Other", "circle": "owner", "circle_owner": me, "reason": "t"},
+    ).json()
+    path = f"{BASE}/jour-fixe/series/{second['id']}"
+    for body, fields in (
+        ({"topic": "   "}, {"topic": "required"}),
+        ({"topic": None}, {"topic": "required"}),
+        ({"enabled": None}, {"enabled": "not_a_boolean"}),
+        ({"topic": "Mine"}, {"topic": "taken"}),
+    ):
+        refused = owner.patch(path, {**body, "reason": "t"})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == fields
+    assert owner.patch(path, {"topic": "Other", "reason": "t"}).status_code == 200
+    assert first["topic"] == "Mine"
