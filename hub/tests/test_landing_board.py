@@ -432,3 +432,18 @@ def test_a_github_link_stays_in_follow_when_open_source_has_none(
     footer = footer_page(owner, make_client, OPENSOURCE)  # its link is on example.com
     follow = re.search(r'aria-label="Follow">(.*?)</nav>', footer, re.S)
     assert follow is not None and "GitHub" in follow.group(1)
+
+
+def test_one_helper_orders_the_languages_for_every_use() -> None:
+    from maity_hub import render
+
+    assert render.ordered_languages(["de", "en", "fr"], "en") == ["en", "de", "fr"]
+    assert render.ordered_languages(["fr", "de"], "en") == ["de", "fr"]  # the default not offered
+    assert render.ordered_languages({"fr": 1, "en": 2, "de": 3}, "de") == ["de", "en", "fr"]
+    # nothing matches: the default, and only then the first of the fixed order
+    ordered = render.ordered_languages(["de", "fr"], "en")
+    assert render.choose_language(ordered, "en", None, "ja") == "de"
+    assert (
+        render.choose_language(render.ordered_languages(["de", "en"], "en"), "en", None, "ja")
+        == "en"
+    )

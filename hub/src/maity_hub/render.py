@@ -14,6 +14,7 @@ fenced code and links whose target passes `landing.safe_target`.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from html import escape, unescape
 from typing import Any
 from urllib.parse import urlsplit
@@ -22,6 +23,14 @@ from maity_hub import landing_files
 from maity_hub.landing import FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
+
+
+def ordered_languages(pages: Iterable[str], default: str) -> list[str]:
+    """The languages of a setting in one fixed order, the default first and the rest
+    alphabetically: never the order a database keeps the keys in (PostgreSQL's jsonb sorts them,
+    MySQL's JSON does too), so the language bar, `hreflang`, the fallback page and the choice of
+    a language when nothing matches are the same on every database (§16.7)."""
+    return sorted(pages, key=lambda tag: (tag != default, tag))
 
 
 def choose_language(
@@ -517,10 +526,8 @@ def landing_document(
     # A variant has pages of its own, and a language it lacks falls back to its own page in the
     # default language, never to the main page's (§16.7.2).
     pages: dict[str, Any] = setting["variants"][variant]["pages"] if variant else setting["pages"]
-    # The languages in one fixed order, whatever order the database keeps the keys in (PostgreSQL's
-    # jsonb sorts them): the default first, then the rest alphabetically.
-    tags = sorted(pages, key=lambda tag: (tag != setting["default_language"], tag))
-    default = pages.get(setting["default_language"]) or next(iter(pages.values()))
+    tags = ordered_languages(pages, setting["default_language"])
+    default = pages.get(setting["default_language"]) or pages[tags[0]]
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
