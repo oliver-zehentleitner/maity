@@ -352,7 +352,7 @@ window.Maity = window.Maity || {};
     const env = h("input", { id: "ticker-post-env", placeholder: "staging" });
     const ver = h("input", { id: "ticker-post-version", placeholder: M.t("ticker.post.version_placeholder") });
     const log = h("input", { id: "ticker-post-log", type: "url", placeholder: "https://…" });
-    const field = (id, label, input, cls) => h("div", { class: "field " + (cls || "") }, h("label", { for: id }, label), input);
+    const field = (id, label, input, cls) => h("div", { class: "field field-stack " + (cls || "") }, h("label", { for: id }, label), input);
     const forNote = field("ticker-post-areas", M.t("ticker.post.areas"), areas, "only-note");
     const forRelease = field("ticker-post-release", M.t("ticker.post.release"), release, "only-release");
     const forDeploy = [field("ticker-post-env", M.t("ticker.post.environment"), env, "only-deploy"), field("ticker-post-version", M.t("ticker.post.version"), ver, "only-deploy"),

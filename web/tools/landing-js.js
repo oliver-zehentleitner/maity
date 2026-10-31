@@ -54,7 +54,9 @@ function page(reduced, saved) {
   const theme = el("button", "", { "data-lp-theme": "", hidden: "" });
   const demo = el("section", "demo", { "data-lp-demo": "" });
   const grid = el("div", "scales-grid", {}, ["Solo", "Team", "Company"].map((t) => el("div", "", {}, [el("h3", "", {}, [], t)])));
-  const scales = el("section", "scales", {}, [grid]);
+  // The rings as the hub draws them: without a script ring 1 is active.
+  const rings = el("svg", "scales-rings", {}, ["1", "2", "3"].map((n) => el("circle", n === "1" ? "is-active" : "", { "data-ring": n })));
+  const scales = el("section", "scales", {}, [el("div", "scales-body", {}, [grid, el("div", "scales-art", {}, [rings])])]);
   const count = el("span", "", { "data-lp-count": "" }, [], "1,234");
   const few = el("span", "", { "data-lp-count": "" }, [], "< 5");
   const body = el("body", "", {}, [theme, demo, scales, count, few]);
@@ -73,7 +75,7 @@ function page(reduced, saved) {
   // As in a browser, the window's members are globals too.
   const ctx = vm.createContext(Object.assign({}, win, { window: win, Intl, performance: { now: () => 0 }, Math, Array, String, parseInt }));
   vm.runInContext(SRC, ctx, { filename: "landing.js" });
-  return { html, theme, demo, grid, scales, count, few, observers, store, frames };
+  return { html, theme, demo, grid, rings, scales, count, few, observers, store, frames };
 }
 
 // The theme: the button shown, data-theme switched and kept.
@@ -99,9 +101,16 @@ const tabs = p.scales.querySelectorAll("button");
 expect(p.scales.classList.contains("scales-tabs") && tabs.map((b) => b.textContent).join() === "Solo,Team,Company"
   && tabs[0].getAttribute("aria-selected") === "true" && p.grid.children.map((c) => c.getAttribute("aria-hidden")).join() === "false,true,true",
   "scales: three tabs from the columns' titles, the first shown");
+// The tab bar sits above the two columns (.scales-body), not inside them.
+expect(p.scales.children[0].className === "scales-tablist" && p.scales.children[1].classList.contains("scales-body")
+  && !p.scales.children[1].children.some((c) => c.className === "scales-tablist"),
+  "scales: the tab bar is a sibling before .scales-body");
+const activeRing = () => p.rings.children.filter((c) => c.classList.contains("is-active")).map((c) => c.getAttribute("data-ring")).join();
+expect(activeRing() === "1", "scales: the first tab keeps ring 1 active");
 tabs[2].click();
 expect(p.grid.children.map((c) => c.getAttribute("aria-hidden")).join() === "true,true,false" && tabs[2].tabIndex === 0,
   "scales: a click shows its column");
+expect(activeRing() === "3", "scales: the chosen tab's ring is the active one, alone");
 tabs[2].fire("keydown", { key: "ArrowRight" });
 expect(tabs[0].getAttribute("aria-selected") === "true" && doc.focused === tabs[0], "scales: the arrow keys move between tabs, round");
 

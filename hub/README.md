@@ -275,7 +275,10 @@ With `-n`, each worker gets a database of its own next to that one
 (`maity_test_gw0`, `maity_test_gw1`, …). The suite creates it through
 `MAITY_TEST_ADMIN_DATABASE_URL`, which defaults to the same URL; set it to an
 account that may create databases (on MariaDB, root, which also grants the
-test user) when the test user may not. `pytest -m wheel` runs only the tests
+test user) when the test user may not. On PostgreSQL the suite also sets the
+test database's default time zone to `Europe/Vienna` (`ALTER DATABASE`), so a
+time that depends on the session's zone fails there instead of passing on UTC;
+the test user must own that database, including a database it runs without `-n`. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
 
@@ -303,9 +306,10 @@ agent picks its answer up with its next resume; then each agent waits
 wakes. It exits 0 only when all of that worked.
 
 CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
-suite on PostgreSQL 17 and MariaDB 11.4 and against the built wheel on
-Python 3.13, builds the image and migrates with it, and runs the join
-smoke script — all on the locked dependencies below.
+suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
+the image and migrates with it, and runs the join smoke script — all on the
+locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
+(`.github/workflows/hub-mariadb.yml`), not per pull request.
 
 ### Dependencies
 

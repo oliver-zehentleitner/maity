@@ -540,6 +540,8 @@ project = Table(
     Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # The project's own links (§6.11): issues, wiki, discussions, chat, each an https URL.
+    Column("links", JSON_VALUE),
     # The project's public page and the text on it (§16.9): both belong to the namespace
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),
@@ -982,6 +984,27 @@ rate_count = Table(
     Column("subject", String(255), primary_key=True),
     Column("window_start", UtcDateTime, primary_key=True),
     Column("count", BigInteger, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Who listens, across replicas (hub/context/replicas.md 387c2409, point 4; UNLOGGED on PostgreSQL).
+hub_pod = Table(
+    "hub_pod",
+    metadata,
+    Column("pod", String(64), primary_key=True),
+    Column("seen_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+long_poll = Table(
+    "long_poll",
+    metadata,
+    Column("wait_id", String(32), primary_key=True),
+    Column("listening_key", String(255), nullable=False),
+    Column("pod", String(64), nullable=False),
+    Column("opened_at", UtcDateTime, nullable=False),
+    Index("ix_long_poll_key", "listening_key"),
+    Index("ix_long_poll_pod", "pod"),
     **MYSQL_TABLE,
 )
 
@@ -1721,6 +1744,21 @@ conversation_participant = Table(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
     CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A human's pinned conversations (docs/api.md §9.3 "Pinned"): its own, across projects,
+# at most 20 (`pins.LIMIT`). A direct conversation's id is its agent's member id, so the
+# project is part of the key. A row lives while its human reads the chat (`pins.prune`).
+conversation_pin = Table(
+    "conversation_pin",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("pinned_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    Index("ix_conversation_pin_project", "project_id"),
     **MYSQL_TABLE,
 )
 

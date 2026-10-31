@@ -718,6 +718,39 @@ def test_through_a_pipe_the_chat_line_still_comes_after_the_resume_text(
     assert done.stdout.index("No briefing was given") < done.stdout.index("Talk to me")
 
 
+def test_a_resume_that_fails_after_printing_keeps_its_text_before_the_closing_lines(
+    clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flush is on every way out of the first resume, not only on success."""
+    import io
+
+    from maity import hub
+
+    seen: list[str] = []
+
+    class Buffered(io.StringIO):  # stdout through a pipe: nothing reaches the reader unflushed
+        def flush(self) -> None:
+            seen.append(self.getvalue())
+            self.seek(0)
+            self.truncate()
+
+    class Unbuffered(io.StringIO):
+        def write(self, text: str) -> int:
+            seen.append(text)
+            return len(text)
+
+    def resume(*args: Any, **kwargs: Any) -> int:
+        print("partial resume text")
+        raise hub.HubError("reset", status=None)
+
+    monkeypatch.setattr(cli, "_resume", resume)
+    monkeypatch.setattr(sys, "stdout", Buffered())
+    monkeypatch.setattr(sys, "stderr", Unbuffered())
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 1
+    text = "".join(seen)
+    assert text.index("partial resume text") < text.index("the first resume failed")
+
+
 def test_a_join_without_resume_has_no_chat_line(
     clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

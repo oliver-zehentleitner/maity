@@ -27,6 +27,7 @@ from maity_hub import (
     instances,
     namespace,
     paging,
+    pins,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
@@ -395,14 +396,22 @@ def list_conversations(
             items += conversation_list.group_entries(conn, [mine], observed)
         elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
             items = conversation_list.group_entries(conn, [mine], True)
+        _mark_pinned(conn, caller, items)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
-        bound = paging.scope(observed=observed)
+        items.sort(key=_band)
+        bound = paging.scope(observed=observed, bands=True)
         if cursor is not None:
-            at, after_id = paging.uncursor(cursor, bound)
-            items = [i for i in items if (i["_activity"], i["id"]) < (at, after_id)]
+            at, after = paging.uncursor(cursor, bound)
+            band, after_id = _after_band(after)
+            items = [
+                i
+                for i in items
+                if _band(i) > band
+                or (_band(i) == band and (i["_activity"], i["id"]) < (at, after_id))
+            ]
         page = items[:limit]
         next_cursor = (
-            paging.cursor(page[-1]["_activity"], page[-1]["id"], bound)
+            paging.cursor(page[-1]["_activity"], f"{_band(page[-1])}\x1f{page[-1]['id']}", bound)
             if len(items) > limit
             else None
         )
@@ -435,28 +444,40 @@ def list_my_conversations(
         by_project = {m.project.id: m.project for m in mines}
         for item in items:
             item["_name"] = names[item["_project"]]
-        # Newest first; where the moment is the same, by project name and id.
+        _mark_pinned(conn, caller, items)
+        # Newest first; where the moment is the same, by project name and id; in bands.
         items.sort(key=lambda i: (i["_name"], i["id"]))
         items.sort(key=lambda i: i["_activity"], reverse=True)
+        items.sort(key=_band)
         counted = [i for i in items if i["unread"] is not None]
         totals = {
             "unread": sum(i["unread"] for i in counted),
             "mentions_unread": sum(i["mentions_unread"] for i in counted),
         }
-        bound = paging.scope(me=True, observed=observed)
+        bound = paging.scope(me=True, observed=observed, bands=True)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
-            name, _, after_id = after.partition("\x1f")
+            band, rest = _after_band(after)
+            name, _, after_id = rest.partition("\x1f")
             items = [
                 i
                 for i in items
-                if i["_activity"] < at
-                or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+                if _band(i) > band
+                or (
+                    _band(i) == band
+                    and (
+                        i["_activity"] < at
+                        or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+                    )
+                )
             ]
         page = items[:limit]
+        last = page[-1] if page else None
         next_cursor = (
-            paging.cursor(page[-1]["_activity"], f"{page[-1]['_name']}\x1f{page[-1]['id']}", bound)
-            if len(items) > limit
+            paging.cursor(
+                last["_activity"], f"{_band(last)}\x1f{last['_name']}\x1f{last['id']}", bound
+            )
+            if last is not None and len(items) > limit
             else None
         )
         for item in page:
@@ -471,6 +492,31 @@ def list_my_conversations(
             }
             del item["_activity"], item["_project"]
         return JSONResponse({"items": page, "next_cursor": next_cursor, "totals": totals})
+
+
+def _mark_pinned(conn: Connection, caller: Caller, items: list[dict[str, Any]]) -> None:
+    """`pinned` on every item: the human's own pins, never an agent's (§9.3)."""
+    held = (
+        pins.pinned(conn, caller.human_id) if caller.kind == "human" and caller.human_id else set()
+    )
+    for item in items:
+        item["pinned"] = (item["_project"], item["id"]) in held
+
+
+def _band(item: dict[str, Any]) -> int:
+    """The item's band in a list (§9.3 "Pinned"): pinned with something new, the others
+    with something new, pinned without, the rest. An observer's `null` counts as none."""
+    if item["unread"]:
+        return 0 if item["pinned"] else 1
+    return 2 if item["pinned"] else 3
+
+
+def _after_band(after: str) -> tuple[int, str]:
+    """A cursor's band and the rest of its position."""
+    band, _, rest = after.partition("\x1f")
+    if band not in ("0", "1", "2", "3"):
+        raise invalid({"cursor": "invalid"})
+    return int(band), rest
 
 
 PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
@@ -492,6 +538,43 @@ def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> l
         }
         for i in items[:PACKET_CONVERSATIONS]
     ]
+
+
+# --- pins (§9.3 "Pinned") ------------------------------------------------------------------
+
+
+def _pin_target(conn: Connection, caller: Caller, slug: str, conversation_id: str) -> Any:
+    """The caller, as of the project lock, for a chat it reads; `not_found` as GET for
+    any other (§9.1, §9.2)."""
+    if caller.kind != "human" or caller.human_id is None:
+        raise humans_only("only a human pins a chat")
+    events.lock_project(conn, _reader(conn, caller, slug).project.id)
+    mine = _reader(conn, caller, slug)
+    if group_chats.is_group(conversation_id):
+        _group(conn, mine, conversation_id)
+    else:
+        _party(conn, mine, conversation_id, hidden=True)
+    return mine
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/pin")
+def pin_conversation(
+    slug: str, conversation_id: str, request: Request, caller: AnyCaller
+) -> Response:
+    with engine_of(request).begin() as conn:
+        mine = _pin_target(conn, caller, slug, conversation_id)
+        pins.pin(conn, str(caller.human_id), mine.project.id, conversation_id)
+    return Response(status_code=204)
+
+
+@router.delete("/projects/{owner}/{slug}/conversations/{conversation_id}/pin")
+def unpin_conversation(
+    slug: str, conversation_id: str, request: Request, caller: AnyCaller
+) -> Response:
+    with engine_of(request).begin() as conn:
+        mine = _pin_target(conn, caller, slug, conversation_id)
+        pins.unpin(conn, str(caller.human_id), mine.project.id, conversation_id)
+    return Response(status_code=204)
 
 
 # --- group chats (§9.2) --------------------------------------------------------------------
@@ -532,9 +615,19 @@ def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -
     return membership(conn, caller, slug)
 
 
+def _is_pinned(conn: Connection, mine: Any, conversation_id: str) -> bool:
+    """Whether the caller pinned the chat; never for an agent (§9.3 "Pinned")."""
+    if mine.kind != "human":
+        return False
+    return (mine.project.id, conversation_id) in pins.pinned(conn, mine.principal_id)
+
+
 def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str, Any]:
     group, found = _group(conn, mine, conversation_id)
-    return group_chats.view(conn, group, found, _viewer(mine))
+    return {
+        **group_chats.view(conn, group, found, _viewer(mine)),
+        "pinned": _is_pinned(conn, mine, conversation_id),
+    }
 
 
 def _viewer(mine: Any) -> str | None:
@@ -550,7 +643,10 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     found = group_chats.access(conn, conversation_id, mine)
     if found is None:  # a replay shows nothing the caller may no longer read (as #271)
         raise not_found()
-    return group_chats.view(conn, row, found, _viewer(mine))
+    return {
+        **group_chats.view(conn, row, found, _viewer(mine)),
+        "pinned": _is_pinned(conn, mine, conversation_id),
+    }
 
 
 idempotency.LOADERS["conversation"] = _load_for_caller
@@ -568,7 +664,7 @@ def get_conversation(
         _party(conn, mine, conversation_id, hidden=True)
         item = _direct_item(conn, mine, caller, conversation_id)
         del item["_activity"]
-        return JSONResponse(item)
+        return JSONResponse({**item, "pinned": _is_pinned(conn, mine, conversation_id)})
 
 
 def _manager(conn: Connection, mine: Membership, conversation_id: str) -> Any:

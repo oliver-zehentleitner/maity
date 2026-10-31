@@ -1969,9 +1969,14 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-21T08:00:00Z",
         "created_by": "hum-maintainer",
         "expires_at": "2026-10-21T08:15:00Z",
+        "handover": {
+          "id": "tsk-0001",
+          "kind": "task"
+        },
         "id": "join-0009",
         "revoked_at": null,
         "role": "coder",
+        "takes_over": "agt-a",
         "trust": "member",
         "used_at": null
       },
@@ -2565,6 +2570,10 @@ window.MAITY_FIXTURES = {
         "capabilities": [],
         "display_name": "Agent D",
         "handle": "agent-d",
+        "handover": {
+          "id": 6001,
+          "kind": "message"
+        },
         "harness": "Claude Code",
         "id": "agt-d",
         "joined_at": "2026-10-21T13:00:00Z",
@@ -2584,6 +2593,11 @@ window.MAITY_FIXTURES = {
           "listening": false,
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T13:00:00Z"
+        },
+        "takes_over": {
+          "handle": "agent-c",
+          "member_id": "agt-c",
+          "name": "maintainer/agent-c"
         },
         "trust": "member"
       },
@@ -2975,6 +2989,12 @@ window.MAITY_FIXTURES = {
           "superseded": 1
         }
       }
+    },
+    "links": {
+      "chat": "https://discord.gg/maity",
+      "discussions": null,
+      "issues": "https://github.com/oliver-zehentleitner/maity/issues",
+      "wiki": null
     },
     "logo": {
       "available": true,

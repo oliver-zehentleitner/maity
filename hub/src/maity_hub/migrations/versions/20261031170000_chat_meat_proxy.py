@@ -7,7 +7,7 @@ follows the profile. Deleted with the account and in the person's own export.
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261031170000_chat_meat_proxy
-Revises: 20261031150000_join_takes_over
+Revises: 20261031161000_conversation_pins
 Create Date: 2026-10-31
 """
 
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261031170000_chat_meat_proxy"
-down_revision: str | None = "20261031150000_join_takes_over"
+down_revision: str | None = "20261031161000_conversation_pins"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

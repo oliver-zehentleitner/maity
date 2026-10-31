@@ -81,6 +81,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "card_reports": _card_reports(conn, member_project_ids, my_ids, names, titles),
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
+        "pinned_conversations": _pinned_conversations(conn, human_id),
     }
 
 
@@ -289,6 +290,24 @@ def _organisations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .order_by(t.org_member.c.joined_at, t.org.c.id)
     ).all()
     return [{"handle": r.handle, "role": r.role, "joined": ts(r.joined_at)} for r in rows]
+
+
+def _pinned_conversations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
+    """The chats the caller pinned (§9.3 "Pinned"): project, chat id, when."""
+    rows = conn.execute(
+        select(t.conversation_pin)
+        .where(t.conversation_pin.c.human_id == human_id)
+        .order_by(t.conversation_pin.c.pinned_at, t.conversation_pin.c.conversation_id)
+    ).all()
+    names = namespace.full_names(conn, {r.project_id for r in rows})
+    return [
+        {
+            "project": names[r.project_id],
+            "conversation_id": r.conversation_id,
+            "pinned_at": ts(r.pinned_at),
+        }
+        for r in rows
+    ]
 
 
 def _campaign_origin(conn: Connection, human_id: str) -> dict[str, Any] | None:

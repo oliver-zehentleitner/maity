@@ -291,6 +291,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 }
 
 .error p { margin: 4px 0 0; }
+/* An error box with nothing in it is no box (tsk-rsbefb9b67gh: an empty one showed on the account page). */
+.error:empty { display: none; }
 
 .flag {
   background: var(--flag-bg);
@@ -669,6 +671,11 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* ---- organisation --------------------------------------------------- */
 
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
+/* Members as the project's hierarchy by trust: owner, admin, member, guest, each a level deeper;
+   with all four held, a guest is level 3. */
+tr.member-level-1 > th { padding-inline-start: 28px; }
+tr.member-level-2 > th { padding-inline-start: 56px; }
+tr.member-level-3 > th { padding-inline-start: 84px; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .role { color: var(--muted); }
@@ -1300,8 +1307,12 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .landing-form textarea { font-family: var(--mono); }
 /* Sign-in without a password (js/device-sign-in.js, docs/api.md §2.6). */
 .sign-in-options { display: grid; gap: 12px; margin: 16px auto 0; max-width: 32rem; }
-.sign-in-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.sign-in-form button { justify-self: end; }
+/* Sign-in and registration lay out alike: a label on its own line, the field full width under it, the button below. */
+.sign-in-form, .register-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+/* A field's wrapper inside a form (a label and its control, a hint, an error): one column, the label above the
+   control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
+.field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
+.sign-in-form button, .register-form button { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
 .device-account { display: flex; align-items: center; gap: 8px; }
@@ -1497,5 +1508,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
-.handle-form .error { flex-basis: 100%; margin: 0; }
+.handle-form .field-error { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
+/* The header's "+" menu (an agent, a person): a bold plus as its face. */
+.add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }

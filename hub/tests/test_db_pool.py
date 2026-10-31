@@ -169,6 +169,19 @@ def test_an_engine_without_timeouts_is_unbounded_as_migrate_and_the_cli_use_it()
     assert seen["options"] == "-c TimeZone=UTC"
 
 
+def test_options_in_the_database_url_are_kept_before_the_hubs() -> None:
+    """A schema of its own (`search_path`) stays; the hub's settings come later and win."""
+    url = "postgresql+psycopg://u:p@localhost/h?options=-c%20search_path%3Dmaity"
+    seen = captured_connect_args(db.make_engine(url, 2, 0, 60, 30))
+    assert seen["options"] == "-c search_path=maity -c TimeZone=UTC -c statement_timeout=30000"
+    health = db.make_health_engine(db.make_engine(url, 2, 0))
+    assert health is not None
+    milliseconds = db.HEALTH_STATEMENT_SECONDS * 1000
+    assert captured_connect_args(health)["options"] == (
+        f"-c search_path=maity -c TimeZone=UTC -c statement_timeout={milliseconds}"
+    )
+
+
 def test_mariadb_gets_no_postgres_options() -> None:
     engine = db.make_engine("mysql+pymysql://u:p@localhost/h", 2, 0, 60, 30, 60)
     assert "options" not in captured_connect_args(engine, "pymysql")

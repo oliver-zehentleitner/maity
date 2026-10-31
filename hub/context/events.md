@@ -311,6 +311,36 @@ statements per stay; that and the per-agent direct count are replaced by `unread
 `tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
 mark.
 
+## A pin belongs to the human, lives while it reads the chat, and is dropped where access ends
+
+**Id:** cc8d2f9e-a34c-4d3c-8008-8619dcc77b72
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.3 "Pinned" (contract #914) and the card tsk-9a3ph3jvhhrb; the contract fixes the routes, the 20 across projects, the four bands and that a chat left keeps no pin; how the hub keeps that is this entry's reading
+**Revisit when:** a way to lose access to a chat appears that neither ends a stay nor removes a membership (a trust change that ends reading a round's thread along is one today), or the lists move into SQL
+
+`conversation_pin` is keyed by human, project and chat id, not by membership: an owner outside the
+project reads its agents' chats along without a membership (§9.2) and may pin them, and the 20 are
+counted across projects. `pins.prune(project)` runs where a stay in a group chat ends
+(`group_chats.remove`, which a membership's removal and an isolation pass through) and after a
+membership's removal (its direct chats), and drops every pin of the project its holder no longer
+reads; `PUT …/pin` prunes the holder's own pins before it counts, under the human's row lock, so a
+pin lost some other way never blocks a new one and two projects cannot both take the 21st. A chat
+left and joined again therefore comes back unpinned. The lists add `pinned` after the entries are
+built and sort in Python, a stable sort per band; the cursor carries the band, and the cursor scope
+changed so a cursor from before the bands is refused instead of read wrongly.
+
+**Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
+and come back on a later join. The places where access ends are few and already central.
+
+**Rejected alternatives:**
+- A pin valid while its `pinned_at` is after the start of the current access: every list would need
+  each chat's access start, which the entries do not carry, and the 20 would still count dead rows.
+- Pruning while reading a list: a `GET` that writes, and a list without `observed` cannot tell a
+  chat read along from one no longer read.
+- Keying by membership: an owner outside the project holds none, and the limit is per human.
+
 ## A review result's `review` is checked for its shape and stored as given; the repository is never read
 
 **Id:** d6ea47d4-3ad6-435e-8806-f1faa96a6360
