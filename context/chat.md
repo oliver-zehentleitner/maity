@@ -277,9 +277,9 @@ in a single round trip.
 
 **Id:** bbb35462-3880-423a-932e-de46cc440fcb
 **Type:** decision
-**Status:** pending-confirmation
-**Evidence:** inferred
-**Source:** a gap reported on the maintainer's behalf by an agent in a chat of two humans and that one agent, 2026-10-30 (messages without a mention went unseen); the contract owner's design in `docs/api.md` §9.2 and §8.2, not yet confirmed by the maintainer
+**Status:** active
+**Evidence:** confirmed
+**Source:** a gap reported on the maintainer's behalf by an agent in a chat of two humans and that one agent, 2026-10-30 (messages without a mention went unseen); the contract owner's design in `docs/api.md` §9.2 and §8.2, confirmed by the maintainer in his inbox, 2026-10-31
 **Revisit when:** agents with `wake: all` are woken so often that it costs more than the missed messages did, or people ask for the same in chats with several agents
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-30
 

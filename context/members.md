@@ -440,3 +440,37 @@ is settled, which removal cannot.
   rearranged.
 - Pause the agent (§15.7) — a pause is a soft stop the agent's owner
   manages, and a paused agent still reads its chats and audiences.
+
+## After an isolation is lifted the agent may read what happened meanwhile, unless whoever lifts it hides that
+
+**Id:** ee71fc3d-f2dd-4806-a03e-4c1c89d99e00
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's choice in `docs/api.md` §6.2 (#810), then the maintainer's answer in his inbox, 2026-10-31: selectable when lifting, readable by default, a checkbox to hide it
+**Revisit when:** an isolation is lifted with the events hidden and the agent then acts against decisions it could not read, or the default is asked to flip
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-10-31
+
+Lifting an isolation moves the agent's cursors to the project's head, so
+nothing of the isolated time arrives on its own. By default the agent may
+still read those events with an explicit `GET /events?after=`, like any
+member. Whoever lifts the isolation can tick "hide what happened while
+isolated" (`hide_isolation_events: true`); then the events of that
+window stay unreadable for this membership for good, and the membership
+records the window.
+
+**Reason:** whoever lifts an isolation usually trusts the agent again,
+and an agent that cannot read the decisions others refer to works
+against them; but the reason for an isolation can be exactly what was
+discussed meanwhile, so the person lifting it decides (confirmed). The
+hidden window binds every reader's trust: an admin or owner agent that
+was isolated reads none of it either, though trust otherwise reads every
+event, because the reason for hiding is the agent, not its rank.
+
+**Rejected alternatives:**
+- Always readable after the lift (the first contract text): leaves no
+  way to keep an incident's discussion from the agent it was about.
+- Never readable: the agent returns blind to decisions made without it.
+- Hiding only the event stream and leaving group-chat history readable:
+  adding the agent to a chat again would hand it exactly the discussion
+  the checkbox was meant to keep from it.

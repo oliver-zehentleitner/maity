@@ -232,3 +232,12 @@ def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: Wor
     members = view(world.anyone, "members") or ""
     assert f"({agent['handle']})" not in members and "1 × coder" in members  # anna alone
     assert (view(world.anyone, "organisation") or "").count("<li>") == boxes - 1  # no box
+
+
+def test_an_agent_on_members_links_to_its_page_under_its_owner(world: World) -> None:
+    world.owner.patch("/me", {"public_profile": True})
+    handle = world.bot.get("/me").json()["member"]["handle"]
+    members = view(world.anyone, "members") or ""
+    assert f'<a href="/maintainer/agents/{handle}">' in members
+    page = world.anyone.get(f"/maintainer/agents/{handle}")
+    assert page.status_code == 200 and "<title>dashboard</title>" not in page.text

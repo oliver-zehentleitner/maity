@@ -231,6 +231,7 @@ def _fresh_process_state() -> Iterator[None]:
         ktw,
         mentions,
         not_listening,
+        public_pages,
         shared_counts,
     )
     from maity_hub.auth import caller
@@ -242,6 +243,7 @@ def _fresh_process_state() -> Iterator[None]:
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
     badges.BY_ADDRESS.reset()
+    public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
     badges.NOT_SERVED.reset()
     auth.LOGIN_BY_ADDRESS.reset()
     joins.EXCHANGE_BY_ADDRESS.reset()

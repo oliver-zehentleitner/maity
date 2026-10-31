@@ -3122,3 +3122,33 @@ the row holds Chat and Manage only (54a49af9), every other member action
 is in Manage. Isolating without a confirmation like the pause: the pause
 is a soft stop the owner may lift, isolation releases claims and closes
 placements of someone else's agent.
+
+## A chat's composer hides for reading on a phone and grows on a wide screen; both are the browser's choice
+
+**Id:** 5af3970c-0f6a-42e7-a211-13ba27fbae5d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-10-31, with a phone screenshot (card tsk-k6nakahy6fnj): fold the composer away on a phone to read, less empty space between the buttons and the field, the field 2× and 3× as high on a desktop with one click; kept per browser, no hub field
+**Revisit when:** the GUI round moves the composer's controls, or the hub keeps per-viewer view settings
+
+The composer of a direct chat and of a group chat has one head
+(`M.chatParts.composeHead`): its label, then on a phone a button
+**Hide the composer** / **Write a message** (`aria-expanded`,
+controlling the field) and on a wider screen a group of **1×**, **2×**
+and **3×** (`aria-pressed`) that sets the field's rows to one, two or
+three times its own. Hidden, only the head stays, so the history takes
+the room; shown again, the field has the focus. Both choices are kept in
+`localStorage` under one key for every chat, and a browser that keeps
+nothing still applies them for the visit. An empty status line and an
+empty list of files take no room in the composer any more, and its rows
+stand 4 px apart.
+
+**Reason:** reading a long chat on a phone wants the screen, writing a
+long message on a desktop wants the field; neither is worth a setting
+on the hub, and one key keeps the choice from one chat to the next.
+
+**Rejected alternative:** a choice per conversation: the maintainer asked
+for it per browser, and a reader would set it again in every chat. A
+field that grows with its text by itself: it moves the history while one
+types and still does not give a phone its screen.
