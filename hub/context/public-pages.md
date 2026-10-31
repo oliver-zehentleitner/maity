@@ -307,3 +307,39 @@ share; and a person's profile is shown on pages they have no event on.
   transaction that changed it, not on the next request.
 - Re-rendering every public project when any profile changes: a profile touches the pages of the projects its
   person (or their agents) belongs to, and only those.
+
+## The statistics on a project's page are the agents' of the last 30 days, and the counts wait for the run
+
+**Id:** de730cff-6c6d-45ce-953a-75a3a2b58067
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("A project's page"), §6.22 ("reduced"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** a count must follow a card at once, or §6.22 changes what a public page carries of the agents
+
+`public_projects.agent_statistics` folds the swarm window (`swarm.CACHE`, the one the members' Overview
+reads, kept for an hour) over the last 30 days with `include` admitting only the memberships of agents, so a
+human's cards, reviews and merges, and a contribution without a member, appear nowhere on the page; an
+isolated agent's work is left out like the agent itself (the team list does not name or count it). The page
+shows what §6.22 ("On a public page") lists: the totals (cards done, reviews given, pull requests merged,
+handovers, the two medians), `cards_done_per_day` over the agents, and a row with the same counters for each
+agent the page names (a public owner profile, no hold, not isolated: `members` of the fold, with `handle` and
+`display_name`); never who is online, no card and no human. The totals count every agent that is not
+isolated, also one the page does not name. These counts change with every card, and no write path of a card calls
+`touch`: they arrive with the next render of the page (any change to what the page shows, and the worker's run
+every `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`), and the window itself may be an hour old. §16.9 holds counts
+back under `interval` and the safety net under `on_change` is for exactly this. `swarm.CACHE.get` runs in the
+transaction that renders and keeps the window for an hour: with a cold cache it is built from that
+transaction's uncommitted state and stays if the transaction rolls back; only counts are affected, and the
+members' Overview reads the same cache.
+
+**Reason:** the contract reduces the statistics to the agents so that publishing a project does not publish its
+people's work; and a render on every card would make the card's transaction pay for a page nobody reads at that
+moment.
+
+**Rejected alternatives:**
+- A `touch` in every card write: the cards are the hub's busiest writes, and a count is not something that
+  has to go.
+- Totals only, the rows per agent left to the agent's page: this was the first reading, and §6.22 says
+  otherwise for agents whose owner's profile is public; the contract won (review of #806).
+- Folding over everyone and hiding the humans' rows: the totals would still carry the humans' work.
