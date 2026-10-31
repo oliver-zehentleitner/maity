@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from maity_hub import landing_files
-from maity_hub.landing import FENCE, safe_target
+from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
 
@@ -435,9 +435,44 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             f'{landing_files.svg("band-loader.svg")}<div><h2>{escape(section["title"])}</h2>'
             f'{text}{_button(section["cta"], "btn-primary")}</div></div></section>'
         )
+    if kind == "works_with":
+        return _works_with(index, section)
     if kind == "text":
         return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
+
+
+def _works_with(index: int, section: dict[str, Any]) -> str:
+    """The label and a band of the agents' logos. Each agent is named once for screen readers;
+    the second copy of the list, which makes the loop seamless, is `aria-hidden` and inert. The
+    logos are the hub's own files, drawn by a CSS mask so one color serves both themes; the
+    names and files come from `landing.AGENTS`, never from the page (§16.7)."""
+
+    def logos(copy: str) -> str:
+        cells = []
+        for slug in section["items"]:
+            address = landing_files.url(f"agents/{slug}.svg")
+            if address is None:
+                continue
+            mask = f"-webkit-mask-image:url({address});mask-image:url({address})"
+            shape = "agent-logo agent-alpha" if slug in ALPHA_MARKS else "agent-logo"
+            cells.append(
+                f'<li class="agent" tabindex="0" title="{escape(AGENTS[slug], quote=True)}">'
+                f'<span class="{shape}" style="{escape(mask, quote=True)}"></span>'
+                f'<span class="agent-name">{escape(AGENTS[slug])}</span></li>'
+                if copy == "first"
+                else f'<li class="agent"><span class="{shape}" style="{escape(mask, quote=True)}"></span></li>'
+            )
+        return "".join(cells)
+
+    more = f'<p class="agents-more">{escape(section["more"])}</p>' if section.get("more") else ""
+    return _wrap(
+        index,
+        "section works-with",
+        f'<p class="agents-label">{escape(section["label"])}</p>'
+        f'<div class="agents-band"><ul class="agents-list agents-first">{logos("first")}</ul>'
+        f'<ul class="agents-list agents-copy" aria-hidden="true" inert>{logos("copy")}</ul></div>{more}',
+    )
 
 
 def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
