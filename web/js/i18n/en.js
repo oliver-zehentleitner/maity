@@ -986,6 +986,8 @@ window.MAITY_I18N["en"] = {
   "mention.ambiguous": "{handle} is {count} agents here: write {names}",
   "mention.ambiguous_unnamed": "a handle here is two agents: write its long form, @owner/handle",
   "mentions.agent": "agent",
+  "mentions.instance": "instance",
+  "mentions.instance.dormant": "instance, dormant",
   "mentions.list": "Members to mention",
   "menu.agents": "Agents",
   "menu.change_password": "Change password",

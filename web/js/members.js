@@ -397,7 +397,7 @@ window.Maity = window.Maity || {};
       h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
 
   M.views.members = async function (ctx, root, args) {
-    if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1]); return; }
+    if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1], args[2]); return; }
     const wanted = ctx.canAdmin ? M.route.current().query.get("manage") : null;
     const status = M.statusLine();
     const box = h("div", { class: "members-box" });
