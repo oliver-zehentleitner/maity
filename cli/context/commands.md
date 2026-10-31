@@ -859,3 +859,37 @@ repeats some at worst.
   it hides that they were another instance's and loses the hub's order.
 - Paging on from the last `seq` shown, as the events section does: it
   would skip the items with a lower `seq` that came later in the list.
+
+## `maity jourfixe answer` takes its answer from flags or a JSON file, and checks the round first
+
+**Id:** f8b262d4-ce8c-44af-aa41-65b31df99e87
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe answer` (`--file FILE|-`, exit 2 without a round), §20.3, §20.4; the file format and the reads before the call are this package's choice
+**Revisit when:** §13 names a format for `--file`, or the hub answers whether the caller has answered in the round view
+
+`--file` holds the whole answer as one JSON object with the keys
+`went_well`, `went_badly` and `would_help`; any other key is a usage
+error. Before it sends, `answer` reads `GET …/jour-fixe` and refuses
+with exit 2, nothing sent, unless the current round is `answering` and
+the caller is among its `participants`. `maity jourfixe` reads the
+caller's own answer (`?mine=true`) to say whether it answered, and
+`withdraw` reads it before the delete to say whether an anonymous
+answer is gone that the moderator may have read.
+
+**Reason:** an answer has three optional texts, each Markdown that may
+span lines, so a file has to keep them apart; JSON does that without a
+heading convention a text could break. The round check keeps an answer
+from going out for a round the caller cannot answer, which §13 asks for
+with exit 2. The round view says how many answered, never who, so only
+the caller's own answer can tell it whether it answered; after a
+withdrawal an anonymous answer cannot be found any more, so it is read
+first.
+
+**Rejected alternatives:**
+- A Markdown file with one heading per question: a heading inside an
+  answer would split it.
+- Sending the answer and leaving the refusal to the hub: §13 wants exit
+  2 with nothing sent, and the hub's `not_participant` is an error, not
+  a usage refusal.
