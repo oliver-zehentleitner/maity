@@ -898,6 +898,14 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
 
 
+def cmd_request_withdraw(args: argparse.Namespace) -> int:
+    body = {} if args.reason is None else {"reason": _text(args.reason, "--reason")}
+    session = Session()
+    path = session.project_path("requests", args.request, "withdraw")
+    request = session.client.call("POST", path, body=body)
+    return _done(args, request, f"withdrawn {onboarding.inline(args.request)}")
+
+
 def _done(args: argparse.Namespace, result: Any, line: str, ascii_json: bool = False) -> int:
     """Print the hub's answer with --json, otherwise one status line. `ascii_json` escapes
     every non-ASCII character, for answers that carry other members' text."""
@@ -3388,6 +3396,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_ask)
+
+    p = add(
+        "request",
+        "manage project requests",
+        "Manage project requests. Use withdraw to withdraw an open request; "
+        "ask creates a new request.",
+    )
+    rsub = p.add_subparsers(dest="request_command", metavar="<action>", required=True)
+    r = rsub.add_parser(
+        "withdraw",
+        help="withdraw an open project request",
+        description="Withdraw an open project request (POST …/requests/{id}/withdraw). "
+        "The asker or a holder of requests:answer may withdraw a non-personal request. "
+        "The hub checks rights "
+        "and request state; its refusals are printed as they come.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    r.add_argument("--reason", help="why the request is withdrawn")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_withdraw)
 
     p = add(
         "claim",
