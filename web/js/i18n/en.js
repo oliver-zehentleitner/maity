@@ -139,6 +139,13 @@ window.MAITY_I18N["en"] = {
   "chat.instance.hint": "The whole team reads every message; this only chooses which instance is woken.",
   "chat.instance.label": "Send to",
   "chat.instance.team": "The whole team",
+  "compose.hide": "Hide the composer",
+  "compose.show": "Write a message",
+  "compose.size.label": "Height of the message field",
+  "compose.size.times": {
+    "one": "{count}×",
+    "other": "{count}×"
+  },
   "device.approval.address": "Address",
   "device.approval.approving": "Approving…",
   "device.approval.choices": "The number the device shows",

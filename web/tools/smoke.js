@@ -2201,6 +2201,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let chatNoConv = null;
   try { await mPost0("/projects/maintainer/maity/events", { kind: "message", type: "chat", to: "agt-a", body: "x" }); } catch (err) { chatNoConv = err; }
   expect(badRole && badRole.details.fields.to && chatNoConv && chatNoConv.details.fields.conversation_id === "missing", "message: the mock refuses an unknown role and a chat without its conversation");
+  // The composer's head (tsk-k6nakahy6fnj): on a phone it hides for reading and comes back, on a wide screen the field
+  // grows to two or three times its rows; both kept in this browser for every chat.
+  {
+    const cpStore = {};
+    const cpLs = win.localStorage;
+    win.localStorage = { getItem: (k) => (k in cpStore ? cpStore[k] : null), setItem: (k, v) => { cpStore[k] = String(v); }, removeItem: (k) => { delete cpStore[k]; } };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    const cpForm = () => main.querySelector("form.compose");
+    const cpToggle = () => cpForm().querySelector(".compose-toggle");
+    const cpSize = (n) => cpForm().querySelectorAll(".compose-size button").find((b) => b.attrs["data-size"] === String(n));
+    expect(cpForm().querySelector(".compose-head label") && cpToggle() && text(cpToggle()) === "Hide the composer" && cpToggle().getAttribute("aria-expanded") === "true"
+      && cpToggle().getAttribute("aria-controls") === "chat-text" && byId("chat-text").getAttribute("rows") === "3"
+      && cpSize(1).getAttribute("aria-pressed") === "true" && text(cpSize(3)) === "3×" && cpForm().querySelector(".compose-size").getAttribute("aria-label") === "Height of the message field",
+      "composer: a head with its label, Hide the composer (expanded, controlling the field) and the heights 1× 2× 3×, 1× pressed");
+    cpToggle().click(); await tick();
+    expect(cpForm().classList.contains("compose-hidden") && text(cpToggle()) === "Write a message" && cpToggle().getAttribute("aria-expanded") === "false"
+      && JSON.parse(cpStore["maity.compose"]).hidden === true, "composer: hidden for reading, the button says how to bring it back, kept in this browser");
+    cpSize(3).click(); await tick();
+    expect(byId("chat-text").getAttribute("rows") === "9" && cpSize(3).getAttribute("aria-pressed") === "true" && cpSize(1).getAttribute("aria-pressed") === "false"
+      && JSON.parse(cpStore["maity.compose"]).size === 3, "composer: 3× makes the field three times its rows, pressed and kept");
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    expect(cpForm().classList.contains("compose-hidden") && byId("chat-text").getAttribute("rows") === "9", "composer: both choices kept on the next chat");
+    cpToggle().click(); cpSize(1).click(); await tick();
+    expect(!cpForm().classList.contains("compose-hidden") && byId("chat-text").getAttribute("rows") === "3", "composer: shown again and back to its own height");
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-d"); for (let k = 0; k < 4; k++) await tick();
+    cpSize(2).click(); await tick();
+    expect(byId("chat-text").getAttribute("rows") === "6" && !cpForm().classList.contains("compose-hidden"), "composer: a browser that keeps nothing still sizes the field");
+    win.localStorage = cpLs;
+  }
   // From a chat: an @name there tells nobody; the hint offers a project message with it.
   await go("#/maintainer/maity/chat/agt-d");
   const chatText = byId("chat-text");
@@ -4494,6 +4524,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   gfProto.focus = function () { document.activeElement = this; };
   main.querySelector(".group-chat .jump-latest").click(); await tick();
   expect(document.activeElement === byId("chat-text"), "group chat: Newest leaves the focus in the composer");
+  expect(main.querySelector(".group-chat form.compose .compose-head .compose-toggle") && main.querySelectorAll(".group-chat .compose-size button").length === 3,
+    "group chat: the composer has the same head, Hide the composer and the three heights");
   gfProto.focus = gfFocus; document.activeElement = undefined;
   expect(main.querySelector(".group-chat ol.messages") && main.querySelector(".group-chat .jump-latest") && main.querySelector(".group-chat .jump-latest").hidden,
     "group chat: it has the same Newest pill, hidden at the end");
