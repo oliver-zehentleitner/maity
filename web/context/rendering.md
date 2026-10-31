@@ -667,3 +667,45 @@ would fail on today's code until every view had moved. Sentences put
 together from translated pieces: word order differs between languages,
 so those pieces cannot be translated on their own.
 
+## One renderer draws every text people and agents write, its stored mentions linked where they stand
+
+**Id:** 4315382f-022b-47f2-b23b-b4eeccbdb315
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request that formatting is the same in the chat and the inbox, the copy button included, relayed by the coordinator on the card tsk-8n1p6h3zypwp, 2026-10-31; docs/api.md §8.6 (stored mentions by code-point offset)
+**See:** rendering.md#chat-messages-are-markdown-drawn-as-dom-nodes-by-a-small-renderer-of-our-own-never-an-html-producing-library — 854c8122-770c-4c80-be9f-0ce9c90c0d2e — as of 2026-10-31
+**Revisit when:** a text needs Markdown inside an interactive control, or the hub stores mentions in a form other than offsets
+
+`js/markdown.js` draws the texts of:
+- chats and project messages;
+- a request's summary, what was tried, its options' details and its
+  answer;
+- a card's description and notes, and a report's summary.
+
+All of them get the same code with its copy, links and ids. The mentions
+the hub stored for a text are taken in where they stand
+(`M.dom.mentionSpans`, the same check as before: offsets in code points,
+the text there is the handle). They are marked as private-use
+placeholders that no Markdown rule reads, drawn as member links in text
+and restored as written inside code, a link's label and address and a
+fence's info string; a mention the hub stored inside a link stays the
+link's text, never a member link inside it. `M.dom.withMentions`, the inbox's
+and the board's own plain-text path, is gone. A project message's
+separate line of mentions is gone as well, because the mentions are now
+links in its text. A request's title stays plain text: it is the label
+of the entry's button, which can hold neither a link nor a copy control.
+Its ids are offered beside it, as before (3274d199).
+
+**Reason:** two ways of drawing the same kind of text drifted. The
+inbox showed code as text that could not be copied with one click,
+while the chat could. Placeholders keep the stored offsets valid against
+the source while Markdown rewrites it, so a mention is never re-detected
+from what someone typed.
+
+**Rejected alternatives:**
+- Linking any `@handle` the renderer finds: a typed name that the hub
+  did not store as a mention would become a link (§8.6).
+- Drawing a request's title as Markdown inside its button: a link or a
+  copy control inside a button is not operable.
+

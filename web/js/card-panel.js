@@ -70,7 +70,8 @@ window.Maity = window.Maity || {};
       heading,
       cardSlot,
       h("h3", null, "Description"),
-      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where)) : h("p", { class: "muted" }, "No description."),
+      c.body ? h("div", { class: "md card-body" }, M.markdown(c.body, where, { mentions: c.mentions, hrefOf: (id) => ctx.link("members", id), ctx }))
+        : h("p", { class: "muted" }, "No description."),
       (c.links || []).length ? [h("h3", null, "Links"), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       h("h3", null, "Notes"), notesBox,
       h("h3", null, "History"), historyBox);
@@ -88,7 +89,7 @@ window.Maity = window.Maity || {};
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
-          h("div", { class: "md" }, M.markdown(n.body, where)))))
+          h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
         : h("p", { class: "muted" }, "No open notes."));
       const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
