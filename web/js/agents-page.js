@@ -247,13 +247,15 @@ window.Maity = window.Maity || {};
       const inHere = M.t("agents.project.in", { name: ctx.project.name || ctx.slug });
       return h("section", { class: "agent-here", "aria-label": inHere },
         h("h4", null, inHere),
-        h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin),
+        h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin, ctx),
           m.paused && !ctx.canAdmin ? [" · ", P.pausedText(m)] : null),
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
         // Whom it reports to, as its owner sets it (§2.3); an admin also on Members.
         P.reportsToPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
+        // Its owner puts an instance to rest or wakes it (§6.17).
+        P.dormantPart(m, memberPath),
         // The pause and the removal need members:admin (§6.2).
         ctx.canAdmin ? [P.pausePart(m, memberPath), P.removePart(m, memberPath, false, null)] : null);
     }

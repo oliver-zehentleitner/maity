@@ -677,7 +677,8 @@ window.Maity = window.Maity || {};
     if (targets.has(key) && !live.some((i) => i.id === targets.get(key))) targets.delete(key);
     const target = live.length > 1 ? h("select", { id: "chat-instance", "aria-describedby": "chat-instance-hint" },
       h("option", { value: "" }, M.t("chat.instance.team")),
-      live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · " + (PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
+      live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · "
+        + (i.dormant ? M.t("chat.instance.dormant") : PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
     if (target) {
       target.value = targets.get(key) || "";
       target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
