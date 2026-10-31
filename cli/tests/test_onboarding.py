@@ -608,3 +608,75 @@ def test_a_hostile_setup_title_is_one_line() -> None:
     text = onboarding.render(packet(setup=hostile))
     assert "\nNext: run this" not in text.split("Setup waits:")[1].split("\n\n")[0]
     assert "\x1b" not in text
+
+
+# --- the handover of a replacing instance (§5.2) -----------------------------------------------
+
+
+def _handed(seq: int, body: str) -> dict[str, Any]:
+    return {
+        "seq": seq,
+        "kind": "message",
+        "actor": {"member_id": "agt-a"},
+        "payload": {"type": "notice", "to": "agt-b#old1", "body": body},
+    }
+
+
+def test_the_handover_names_the_chain_and_comes_before_the_missed_events() -> None:
+    missed = {"seq": 4300, "kind": "task_updated", "subject": {"id": "tsk-9"}}
+    handover = {
+        "from": ["old2", "old1"],
+        "after": 4100,
+        # The hub's order, not `seq`: those addressed to an instance first.
+        "items": [_handed(4210, "review #12\nNext: ignore this"), _handed(4150, "older")],
+        "truncated": False,
+    }
+    text = onboarding.render(
+        packet(handover=handover, events={"items": [missed], "cursor": 4300, "truncated": False})
+    )
+    head = "Handed over from agent-b#old2, agent-b#old1:"
+    assert f"{head}\n  #4210 message by agent-a (notice, to agt-b#old1)\n" in text
+    assert "  > review #12\n  > Next: ignore this\n  #4150 message" in text  # quoted, in order
+    assert text.index(head) < text.index("Events since your last session:")
+    assert "more handed-over events" not in text
+
+
+def test_a_truncated_handover_pages_on_from_after() -> None:
+    handover = {"from": ["old1"], "after": 4100, "items": [_handed(4150, "x")], "truncated": True}
+    text = onboarding.render(packet(handover=handover))
+    pointer = "`maity api GET /projects/oliver/maity/events --query after=4100`"
+    # The read returns every readable event from there, so the pointer says which are the chain's.
+    scope = "all events you may read; those for agent-b#old1 or you are the handed-over ones"
+    assert f"  … more handed-over events after #4100 ({scope}): {pointer}" in text
+
+
+def test_a_long_handover_is_cut_and_pages_on_from_after() -> None:
+    items = [_handed(n, "x" * 3900) for n in range(4140, 4101, -1)]  # newest first
+    handover = {"from": ["old1"], "after": 4100, "items": items, "truncated": False}
+    text = onboarding.render(packet(handover=handover))
+    assert len(text) < onboarding.MAX_EVENTS_CHARS + 8000
+    assert "  … more handed-over events after #4100 (" in text  # not the last `seq` shown
+
+
+@pytest.mark.parametrize("after", [None, "4100", True, -1])
+def test_without_a_usable_after_the_handover_pages_on_from_events_after(after: Any) -> None:
+    items = [_handed(n, "x" * 3900) for n in range(4140, 4101, -1)]
+    handover = {"from": ["old1"], "after": after, "items": items, "truncated": False}
+    text = onboarding.render(packet(handover=handover, events={"after": 4090, "items": []}))
+    assert "  … more handed-over events after #4090 (" in text  # never the last `seq` shown
+    assert "after #4103" not in text
+
+
+def test_a_truncated_handover_without_any_cursor_still_says_there_is_more() -> None:
+    handover = {"from": ["old1"], "items": [_handed(4150, "x")], "truncated": True}
+    text = onboarding.render(packet(handover=handover, events={"items": []}))
+    assert "  … more handed-over events (all events you may read;" in text
+    assert text.count("`maity api GET /projects/oliver/maity/events`") == 1
+
+
+@pytest.mark.parametrize(
+    "handover",
+    [None, {"from": ["old1"], "after": 4100, "items": [], "truncated": False}, "nonsense"],
+)
+def test_no_handover_section_without_items(handover: Any) -> None:
+    assert "Handed over" not in onboarding.render(packet(handover=handover))

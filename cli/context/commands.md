@@ -807,10 +807,11 @@ refusal and the line `maity wait` adds for a pause end with the reason
 the same way. Inside the quote a `"` shows as `\"` and a backslash as
 `\\`, as in JSON: otherwise a reason could close the quote itself and
 the rest of it would stand outside, as if the command had said it.
-`maity wait` raises it at once like any other refusal; only dropped connections and `5xx` are retried. On
-`maity resume` the packet's `membership.isolated` comes first, before a
-pause, and the next step is to stop; the empty-board check is skipped,
-since that read would be refused.
+`maity wait` raises it at once like any other refusal; only dropped
+connections and `5xx` are retried. On `maity resume` the packet's
+`membership.isolated` comes first, before a pause, and the next step is
+to stop; the empty-board check is skipped, since that read would be
+refused.
 
 **Reason:** an isolated agent cannot fix anything itself: every call but
 the resume is refused until a human lifts it, and no event reaches it.
@@ -825,3 +826,35 @@ loop or a runner stop without parsing the message.
 - Retrying in `wait` until the isolation is lifted: the wait is refused
   as well, so it would poll the hub with refused calls; the agent learns
   of the lift from its next `maity resume`.
+
+## The handover of a replacing instance is its own section, paged on from `after`
+
+**Id:** 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-sjnbmecwd1c7 (2026-10-31) after the hub side (#786); docs/api.md §5.2 `handover` ("The CLI prints them under 'handed over from <handle>#<from>'"); the section's place and the paging are this package's choice, the §13 sentence follows in a contract PR
+**Revisit when:** the hub gives the handover items a cursor of their own, or puts them into `events.items`
+
+`maity resume` prints `handover` as a section of its own, "Handed over
+from <handle>#<id>[, …]:", right before "Events since your last
+session:", the chain from `from` newest first and the items in the
+order the hub sent them. The items are rendered as missed events are,
+people's text quoted behind `> `, and cut at the same size. When the
+hub cut them (`truncated`) or the text is cut, the pointer pages on
+with `after=<after>`, not after the last `seq` shown. Nothing is sent
+to acknowledge them: the cursor stored from `events.cursor` is at or
+above the first packet's, which ends the handover on the next call.
+
+**Reason:** the items are what the replaced instances left undone, a
+task list rather than news, so they come before the events and name
+whose work they were. The hub orders them by audience, instance-
+addressed first, so they are not in `seq` order; paging on from the
+last `seq` shown could skip older items, while paging from `after`
+repeats some at worst.
+
+**Rejected alternatives:**
+- Merging them into "Events since your last session:" sorted by `seq`:
+  it hides that they were another instance's and loses the hub's order.
+- Paging on from the last `seq` shown, as the events section does: it
+  would skip the items with a lower `seq` that came later in the list.

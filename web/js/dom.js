@@ -147,6 +147,7 @@ window.Maity = window.Maity || {};
     if ([m.handle].concat(m.aliases || []).indexOf(typed.slice(slash + 1)) < 0) return false;
     const owner = typed.slice(0, slash);
     const named = ctx.memberById[m.owner_id];
+    if (!owner) return false;  // "@/handle" names no owner
     return owner === String(m.name || "").split("/")[0] || (!!named && (named.aliases || []).indexOf(owner) >= 0);
   }
 

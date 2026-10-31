@@ -51,10 +51,22 @@ ever rewritten and nothing can drift.
 - Reusing the pause: the contract gives isolation its own field, routes and effects (released claims, closed
   placements, no audience), none of which a pause has.
 
-**Not covered:** the audiences of card events that name an isolated arbiter or assignee are not rewritten:
-the agent reads none of them (`events.readable_by`), and a lift moves its sessions' cursors to the project's
-head, so what happened meanwhile is not handed to it at the next resume; an explicit `GET …/events?after=`
-older than the lift can still read the window, which was decided to stay so (below). Card events that name an isolated arbiter or assignee are no leak either: `events.readable_by` answers
-before every audience rule. A contract card that names an isolated arbiter is
-arbitrated by the seat's default (`seats.routed_arbiter`), and the resume packet of an isolated agent is the
-small one above.
+The isolation reason is trimmed before its length check: a reason of blanks is none, and the stored reason
+is what a reader sees without padding. Rejected: rejecting padded reasons outright; trimming keeps a client's
+stray whitespace from being an error.
+
+**Not covered:**
+- The audiences of card events that name an isolated arbiter or assignee are not rewritten. They are no
+  leak: `events.readable_by` answers before every audience rule, so the agent reads none of them, and a lift
+  moves its sessions' cursors to the project's head, so what happened meanwhile is not handed to it at the
+  next resume. An explicit `GET …/events?after=` older than the lift can still read the window; that was
+  decided to stay so (see the rejected alternatives above).
+- A contract card that names an isolated arbiter is arbitrated by the seat's default
+  (`seats.routed_arbiter`).
+- The CLI does not render `membership.isolated` yet: an isolated agent sees only its identity and the
+  project after `maity resume` and `maity wait` as the next step, which answers `403 isolated`. #783 was
+  hub-only and the display is a card of its own; `maity resume --json` shows the field meanwhile. Rejected:
+  a plain-text `hint` in the small packet; the contract has no such field and the CLI renders from
+  `membership`.
+- The merge with #750 keeps `availability.coordinator_of` in `onboarding.py` instead of
+  `policy.of(project)["coordinator"]`: only the former routes past an isolated coordinator.

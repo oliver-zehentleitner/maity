@@ -2135,12 +2135,14 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
         {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
     )
     assert filed.get("id"), filed
-    page.goto(f"{run.base}/admin")
-    page.locator("nav.admin-nav").get_by_role("button", name="Reports", exact=True).click()
+    # The admin is told (§16.8), and the item names the report the bell links to (§18.2).
+    told = page.request.get(f"{run.base}/api/v1/me/notifications?limit=20").json()["items"]
+    assert any((i.get("target") or {}) == {"type": "report", "id": filed["id"]} for i in told), told
+    # Where the report_open notification leads (§18.2): the section, that report opened.
+    page.goto(f"{run.base}/admin/reports/{filed['id']}")
     section = page.locator("section.admin-section[aria-label='Reports']")
-    row = section.locator(f"li.report-item[data-report='{filed['id']}']")
-    expect(row).to_be_visible()
-    row.get_by_role("button").click()
+    expect(section).to_be_visible()
+    expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_be_visible()
     opened = section.locator("section.report-open")
     expect(opened).to_contain_text("e2e: a card to report")
     # The reporter's text and the snapshot are text, never markup.

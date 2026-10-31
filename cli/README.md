@@ -65,6 +65,14 @@ the human, instead of waiting for work to appear. In an archived project
 it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
+An instance that replaced another (§6.17) finds what the replaced ones
+left undone in its resume, right before the missed events: "Handed over
+from <handle>#<id>[, …]:", the chain newest first, then those events in
+the hub's order, the ones addressed to an instance first. When the hub
+cut the list (`truncated`) or the text grows too long, a pointer pages on
+with `maity api GET …/events --query after=<after>`. The cursor `resume`
+stores acknowledges past them, so the next call ends the handover.
+
 A run against the test hub of this package (`tests/fakehub.py`), with a
 resume packet shaped like a real hub's:
 
@@ -246,6 +254,15 @@ It refuses with exit 4, before anything is sent, on any of these:
   is reported as the remote head
 - a remote head that differs from the local one
 - a pull request whose head differs from the local one
+- a pull request that is not the card's: the card links other pull
+  requests (`kind: pr`, `maity link`), or its last report names another
+  pull request that is still open. A report for another PR is sent from
+  that PR's branch (`git switch`), or after a merge with the branch
+  deleted, from that branch recreated at its merged head
+  (`git switch -c <branch> <merged head>`)
+
+Before sending, `report` prints what it reports on standard error:
+`reporting <branch> at <head>, PR #<n> (<state>)`.
 
 `pr_status` is `found`, `none`, or `unknown`. `unknown` comes with a reason:
 gh is not installed, or the remote is not on a GitHub host gh knows. A gh
