@@ -24,7 +24,9 @@ from maity_hub.scopes import has_scope
 TTL_DEFAULT, TTL_MIN, TTL_MAX = 86_400, 60, 604_800
 NOTE_MAX = 1024  # bytes of UTF-8
 LISTED_FOR = timedelta(days=30)  # a used, revoked, voided or expired one stays listed
-PER_PROJECT = Limiter(20, 3600)  # issued per project per hour (§3.4)
+PER_PROJECT = Limiter(
+    20, 3600, name="invitations.PER_PROJECT"
+)  # issued per project per hour (§3.4)
 KINDS = ("invitation_created", "invitation_revoked", "invitation_voided", "invitation_used")
 # Only the owner invites to these: the roles that themselves invite (§3.4).
 # What only a caller with trust `owner` grants (§2.3 "The owner's rights").

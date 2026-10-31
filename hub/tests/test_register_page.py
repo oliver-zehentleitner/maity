@@ -333,7 +333,7 @@ def test_the_login_limit_covers_the_page(make_client: ClientFactory, migrated: E
         LOGIN_BY_ADDRESS.hit("203.0.113.7")
     limited = answer(client, link, page)
     assert limited.status_code == 429 and humans(migrated) == []
-    LOGIN_BY_ADDRESS._hits.clear()
+    LOGIN_BY_ADDRESS.reset()
 
 
 def test_the_page_follows_the_languages_of_the_request(

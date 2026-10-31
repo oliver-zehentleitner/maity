@@ -940,6 +940,21 @@ nonce_epoch = Table(
     **MYSQL_TABLE,
 )
 
+# The counts of the rate limits, breakers and guess counters, shared by every replica on
+# PostgreSQL, where the migration makes the table UNLOGGED (hub/context/replicas.md 2bd65fec,
+# `shared_counts`). A count per bucket, subject (the limit's key) and fixed window; a breaker's
+# "shut until" is a row whose `window_start` is the epoch and whose `count` is the moment in
+# seconds. SQLite and MariaDB keep the counts in the process.
+rate_count = Table(
+    "rate_count",
+    metadata,
+    Column("bucket", String(64), primary_key=True),
+    Column("subject", String(255), primary_key=True),
+    Column("window_start", UtcDateTime, primary_key=True),
+    Column("count", BigInteger, nullable=False),
+    **MYSQL_TABLE,
+)
+
 agent_session = Table(
     "agent_session",
     metadata,

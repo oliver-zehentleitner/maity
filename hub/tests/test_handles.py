@@ -320,7 +320,7 @@ def test_the_admin_search_finds_an_account_by_an_alias_and_login_is_limited_per_
     assert admin.patch("/me", {"handle": "boss"}).status_code == 200
     found = admin.get("/admin/users", params={"q": "maintainer"})
     assert [u["handle"] for u in found.json()["items"]] == ["boss"]
-    auth.LOGIN_BY_HANDLE._hits.clear()
+    auth.LOGIN_BY_HANDLE.reset()
     wrong = make_client()
     codes = []
     for name in ("boss", "maintainer") * 5:
@@ -328,7 +328,7 @@ def test_the_admin_search_finds_an_account_by_an_alias_and_login_is_limited_per_
             wrong.post("/api/v1/auth/login", json={"handle": name, "password": "wrong"}).status_code
         )
     assert 429 in codes  # alias and handle share one account's limit
-    auth.LOGIN_BY_HANDLE._hits.clear()
+    auth.LOGIN_BY_HANDLE.reset()
 
 
 def test_an_agent_naming_a_handle_is_forbidden_even_when_it_is_null_and_a_human_needs_a_field(

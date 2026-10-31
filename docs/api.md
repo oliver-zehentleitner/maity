@@ -512,7 +512,7 @@ first V1.x security item; asymmetric keys are the revisit condition
 
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
-nonce is unique per credential, remembered for 600 s, else `nonce_reused`;
+nonce is unique per credential, remembered for 600 s (on PostgreSQL at least 600 s, until a sweep deletes it), else `nonce_reused`;
 an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
