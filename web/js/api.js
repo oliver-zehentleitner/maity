@@ -247,6 +247,9 @@ window.Maity = window.Maity || {};
   const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
   const IMAGE_MAX = 1024 * 1024;
   const uploaded = {};  // "<slug>/<kind>" -> object URL
+  // Whether a human set policy.keep_the_why on a project, and to what (§6.23): a switch
+  // of memory.provider back to keep-the-why reads `required` only where nobody did.
+  const ktwSet = new WeakMap();
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
   let uploadSerial = 0;
@@ -2068,6 +2071,8 @@ window.Maity = window.Maity || {};
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).
           badge: setup.maity_badge ? "members" : "off",
+          // The commitment reads required under Keep the Why, optional under None (§6.23).
+          keep_the_why: provider === "none" ? "optional" : "required",
         }),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
@@ -2191,6 +2196,18 @@ window.Maity = window.Maity || {};
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
+      // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
+      // made or cancelled. The commitment reads optional under none, and required
+      // under keep-the-why unless a human set it (§6.23).
+      if (body.memory) {
+        const provider = body.memory.provider;
+        if (!["keep-the-why", "none"].includes(provider)) fail(400, "invalid", "the request does not validate", path, { fields: { "memory.provider": "unknown_provider" } });
+        if (provider !== (p.memory || {}).provider) {
+          p.memory = { provider };
+          p.rules_version = (p.rules_version || 1) + 1;
+          p.policy = Object.assign({}, p.policy, { keep_the_why: provider === "none" ? "optional" : ktwSet.get(p) || "required" });
+        }
+      }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
         // policy (docs/api.md §6.1).
@@ -2216,6 +2233,7 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
+        if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
       return p;
     }],

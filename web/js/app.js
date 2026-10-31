@@ -567,7 +567,7 @@ window.Maity = window.Maity || {};
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
-    if (M.projectSetup) append(panel, memoryPanel(ctx));
+    if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ).
     if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
     // The change ticker (§17.3), read by every member, changed by a human
@@ -768,28 +768,52 @@ window.Maity = window.Maity || {};
   // the hub would set nothing up and remove nothing on a change, so a change
   // is an agent's work in the repository, on a card. The setup chosen at
   // creation, and its cards once the hub made them.
-  function memoryPanel(ctx) {
+  // The memory provider (docs/api.md §6.1, §6.21): shown to every member;
+  // a human with project:admin changes it, with a reason for the rules
+  // change it makes. A change makes and cancels no setup card, and a switch
+  // to Keep the Why lets the commitment below be required.
+  function memoryPanel(ctx, save, humanAdmin) {
     const { PROVIDERS, OPTIONS } = M.projectSetup;
     const provider = ctx.project.memory && ctx.project.memory.provider;
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
     // The dashboard's option names its path (§6.1 setup.dashboard_path).
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path ? title + " under " + s.dashboard_path : title)) : [];
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
+      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title)) : [];
     let setup;
-    if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
+    if (!s) setup = h("p", { class: "muted" }, M.t("memory.setup.predates"));
     else if (Array.isArray(s.cards) && s.cards.length) {
-      setup = [h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)])),
-        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, "The dashboard is published under " + s.dashboard_path + ".") : null];
-    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
-    else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
-    return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
-      h("h2", { class: "panel-title", id: "memory-heading" }, "Project memory"),
-      h("p", null, h("strong", null, named || "—"),
-        provider === "keep-the-why" ? ": joining agents load the Keep the Why skill and keep the project's reasons in the repository's context/."
-          : provider === "none" ? ": the project works without a memory provider." : null),
-      h("p", { class: "hint" }, "Chosen when the project was created. A change is work in the repository: write a card for an agent; "
-        + "the hub sets nothing up and removes nothing."),
-      setup);
+      setup = [h("p", null, M.tn("memory.setup.cards", { cards: s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]) })),
+        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, M.t("memory.setup.published", { path: s.dashboard_path })) : null];
+    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, M.t("memory.setup.none"));
+    else setup = [h("p", null, M.t("memory.setup.chosen", { options: chosen.join("; ") })), h("p", { class: "muted" }, M.t("memory.setup.later"))];
+    const what = provider === "keep-the-why" ? M.t("memory.keep_the_why") : provider === "none" ? M.t("memory.none") : null;
+    const shown = h("p", null, h("strong", null, named || "—"), what ? [": ", what] : null);
+    if (!humanAdmin) {
+      return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
+        h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
+        h("p", { class: "hint" }, M.t("memory.hint.read")), setup);
+    }
+    const select = h("select", { id: "memory-provider" },
+      PROVIDERS.map(([value, label]) => h("option", { value, selected: value === provider }, label)));
+    select.value = provider || "keep-the-why";
+    const reason = h("input", { id: "memory-reason", required: true, placeholder: M.t("memory.reason.placeholder") });
+    return h("form", {
+      class: "inline-form memory-panel",
+      "aria-labelledby": "memory-heading",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === provider) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ memory: { provider: select.value }, reason: reason.value.trim() }, M.t("memory.saved_label"));
+      },
+    },
+    h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
+    h("p", { class: "hint" }, M.t("memory.hint.change")),
+    h("label", { for: "memory-provider" }, M.t("memory.label")), select,
+    h("label", { for: "memory-reason" }, M.t("memory.reason")), reason,
+    h("button", { type: "submit" }, M.t("memory.change")),
+    setup);
   }
 
   // policy.badge (docs/api.md §6.20): off unless an admin switches it on, a
