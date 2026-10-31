@@ -7,7 +7,7 @@ window's worth again. The other databases create it as an ordinary table and kee
 the process. Nothing is copied: the process held nothing worth keeping.
 
 Revision ID: 20261031011834_rate_counts
-Revises: 20261030180344_request_nonces
+Revises: 20261031052946_dormant_agent_ins
 Create Date: 2026-10-31
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031011834_rate_counts"
-down_revision: str | None = "20261030180344_request_nonces"
+down_revision: str | None = "20261031052946_dormant_agent_ins"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
