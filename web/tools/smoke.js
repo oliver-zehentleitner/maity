@@ -8405,10 +8405,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
       "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
     // A landing value of the wrong kind refuses the part, never the saved value in its place.
-    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }].map((bad) =>
+    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }].map((bad) =>
       SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));
     expect(siKinds.every((r) => r.parts && r.parts.landing.state === "refused"),
-      "site: a landing footer, enabled or default language of the wrong kind refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
+      "site: a landing footer, enabled or default language of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
     // Registration all from the environment: the export leaves the part out, and imports again.
     const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
     const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);
