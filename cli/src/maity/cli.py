@@ -1576,11 +1576,9 @@ def cmd_say(args: argparse.Namespace) -> int:
         to = _id(args.to)
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
-    if to.startswith("cnv-"):
-        raise UsageError("group chats take --chat <id>: maity say --chat <id> <message>")
     text = _say_body(args.body, attach)
     if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
-        to = _address(Session(), to)  # a handle or a former one names the member (§6.24)
+        to = _address(Session(), to, chat_hint=True)  # handles and aliases (§6.24)
     to_owner = to == "human"
     if not to_owner and args.type is None:
         # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
@@ -2420,14 +2418,25 @@ _TOKENS = ("all", "human", "owner")
 _TOKEN_PREFIXES = ("role:", "trust:", "area:", "member:")
 
 
-def _address(session: Session, to: str, members: list[dict[str, Any]] | None = None) -> str:
+def _address(
+    session: Session,
+    to: str,
+    members: list[dict[str, Any]] | None = None,
+    *,
+    chat_hint: bool = False,
+) -> str:
     """An addressee with a handle in it resolved to the member id (§6.24): `<handle>` and
     `<handle>#<instance>` (§6.17). Tokens, ids and names no member has go on unchanged: the
     hub answers for those as before."""
     if to in _TOKENS or to.startswith(_TOKEN_PREFIXES):
         return to
     who, hash_, instance = to.partition("#")
-    member = resolve_member(members if members is not None else _members(session), who, False)
+    members = members if members is not None else _members(session)
+    member = resolve_member(members, who, False)
+    if chat_hint and member == who and not any(m["id"] == who for m in members):
+        if any(_conversation_id(c) == to for c in _conversations(session)):
+            shown = shlex.quote(onboarding.inline(to))
+            raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
 
 

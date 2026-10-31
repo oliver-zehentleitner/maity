@@ -567,10 +567,16 @@ matches are refused there too. `maity say` without `--type` compares the stored
 owner id first and looks the name up only when that does not match, so
 `maity say <your human's handle>` is the chat as the id is.
 
-A positional `cnv-…` recipient in `say` is a targeted usage diagnostic
-before member lookup: it points to `--chat <id>`. First-day feedback
+A positional recipient that matches no member in `say` is compared with
+the actual conversation IDs from `GET …/conversations`; a known chat gets
+a usage hint pointing to `--chat <id>`. First-day feedback
 showed that asking for `--type` sent the caller toward the wrong command
-form. The explicit `--chat` option still selects conversation delivery.
+form. Member resolution runs first: handles and aliases may begin with
+`cnv-`, and actual member IDs stay opaque under §1.1. An unknown recipient
+still goes to the hub; explicit `--chat` selects conversation delivery.
+The first implementation rejected that prefix before lookup. Review
+rejected that approach because it made valid `cnv-bot` handles and opaque
+member IDs unreachable.
 
 **Reason:** the hub takes only ids in `to` (§8.4) and resolves handles
 only in mentions and at login. An agent that learnt a member by an old
