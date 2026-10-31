@@ -42,7 +42,7 @@ class Actor:
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
     # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
-    bridge: dict[str, str] | None = None
+    bridge: dict[str, str | None] | None = None
 
 
 CHANNEL = "maity_events"  # PostgreSQL's wake-ups across replicas (`wakeups`, replicas.md 387c2409)

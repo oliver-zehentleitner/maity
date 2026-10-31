@@ -76,7 +76,9 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
                 if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
                     from maity_hub import bridges
 
-                    caller = bridges.carry(conn, caller, facts.headers["maity-for"], path, slug)
+                    caller = bridges.carry(
+                        conn, caller, facts.headers["maity-for"], path, slug, renew_leases
+                    )
                 if caller.kind == "human":
                     _confine_pending(conn, caller, request.method, path)
                 return caller

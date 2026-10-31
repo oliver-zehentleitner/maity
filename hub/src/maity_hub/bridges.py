@@ -660,7 +660,14 @@ def not_your_bridge() -> ApiError:
     )
 
 
-def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | None) -> Caller:
+def carry(
+    conn: Connection,
+    caller: Caller,
+    value: str,
+    path: str,
+    slug: str | None,
+    renew_leases: bool = True,
+) -> Caller:
     """A call with `Maity-For` (§2.3): made as the served agent, the bridge kept in
     `caller.bridge`. Only on the routes of the connection's project; the connection must be
     direct, so a bridge never chains; an isolated served agent is refused as its own
@@ -692,6 +699,8 @@ def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | N
         raise not_your_bridge()
     if found.isolated_since is not None:
         raise refusal(found)
+    if renew_leases:
+        _renew_carried(conn, found.id, caller.project_id)
     assert caller.membership_id is not None and caller.agent_id is not None
     # An instance id is per membership (§6.17): the served agent has none of its own here, so
     # what it holds through the bridge is held without one, and `via` names the bridge's.
@@ -704,7 +713,28 @@ def carry(conn: Connection, caller: Caller, value: str, path: str, slug: str | N
         bridge=Bridged(
             membership_id=caller.membership_id,
             agent_id=caller.agent_id,
-            instance=caller.instance or "",
+            instance=caller.instance,
             bridge_id=found.bridge_id,
         ),
+    )
+
+
+def _renew_carried(conn: Connection, served: int, project_id: str | None) -> None:
+    """A call through the bridge renews the leases of what the served agent holds through a
+    bridge, the claims without an instance (§6.5): the bridge's own call renewed only its
+    own. `claim_session_id` stays: a session belongs to the bridge's membership."""
+    from maity_hub.auth.caller import CLOSED_STATUSES
+    from maity_hub.availability import renewed_lease
+
+    lease = conn.execute(
+        select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
+    ).scalar_one()
+    conn.execute(
+        update(t.card)
+        .where(
+            t.card.c.claim_holder == served,
+            t.card.c.claim_instance.is_(None),
+            t.card.c.status.notin_(CLOSED_STATUSES),
+        )
+        .values(lease_until=renewed_lease(conn, served, clock.now(), lease))
     )

@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -276,3 +277,19 @@ def test_an_ended_connection_carries_nothing(
     assert ended.status_code == 200, ended.text
     refused = _say(Calls(make_client(), bridge), served.agent_id)
     assert (refused.status_code, _reason(refused)) == (403, "not_your_bridge")
+
+
+def test_a_call_through_the_bridge_renews_what_it_holds_for_the_served_agent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    served, bridge, _ = _pair(migrated, owner)
+    card = owner.post(f"{PROJECT}/tasks", {"title": "Carry the files"}).json()["id"]
+    calls = Calls(make_client(), bridge)
+    assert calls.post(f"{PROJECT}/tasks/{card}/claim", {}, served.agent_id).status_code == 200
+    past = clock.now() - timedelta(hours=1)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
+    assert calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id).status_code == 200
+    with migrated.connect() as conn:
+        renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert renewed is not None and renewed > clock.now()

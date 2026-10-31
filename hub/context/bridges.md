@@ -88,6 +88,13 @@ the event's `actor.instance` and a message's `from_instance` are null while `via
 bridge's instance (the coordinator's ruling on #933). A bridge writes no `chat` into the direct
 conversation, on either route (`bridge_observer`).
 
+Consequences, as intended: a call through the bridge renews the leases of the claims the served
+agent holds without an instance (`carry`), its own instances' calls renew only theirs, and
+`claim_session_id` stays, since a session belongs to the bridge's membership. Such a claim is
+worked on and released through the bridge, not by an instance of the served agent, and the
+per-instance claim counts (`instances._claim_counts`, the jour fixe's) leave it out, as they leave
+out every claim without an instance.
+
 `Membership.bridged` withholds the governance scopes and `line:lead`: `may` answers false, `require`
 refuses with `bridge_no_governance`, and `trust` reads `member` for a served agent with trust
 `owner` or `admin`, so the checks that read the admin team from the trust (`in_admin_team`) do not

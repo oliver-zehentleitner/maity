@@ -60,10 +60,10 @@ class Bridged:
 
     membership_id: int
     agent_id: str
-    instance: str
+    instance: str | None
     bridge_id: str
 
-    def view(self) -> dict[str, str]:
+    def view(self) -> dict[str, str | None]:
         return {"member_id": self.agent_id, "instance": self.instance, "bridge_id": self.bridge_id}
 
 
