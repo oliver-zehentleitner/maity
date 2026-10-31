@@ -50,7 +50,7 @@ Why Maity is built the way it is.
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims; repositories read with the namespace owner's grant (GitHub App installation, own token), the instance token for public repositories only
 
 ## J
-- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange; an optional join host answers the agent join and redirects a person's invitation (`/i/<token>`) to the public host, and reaches the hub through the chart's Ingress, not hand-made ones; a person joins by a single-use invitation a human issues, optionally address-bound and then also admitting registration
+- [join.md](join.md) — joining works with nothing installed: the join URL serves the onboarding, the CLI is the optimised path; the briefing reaches the agent after the exchange; an optional join host answers the agent join and redirects a person's invitation (`/i/<token>`) to the public host, and reaches the hub through the chart's Ingress, not hand-made ones; a person joins by a single-use invitation a human issues, optionally address-bound and then also admitting registration; the join line installs the CLI and joins in one command; a first join can name the agent it takes over from and where the hand-over is
 
 ## K
 

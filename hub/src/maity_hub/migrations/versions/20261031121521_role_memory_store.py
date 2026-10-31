@@ -1,7 +1,7 @@
 """Role memory has its own project-local name and quota (docs/api.md §19.2).
 
 Revision ID: 20261031121521_role_memory_store
-Revises: 20261031065451_landing_variants
+Revises: 20261031112210_agent_owners
 Create Date: 2026-10-31 13:15:23.237985
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261031121521_role_memory_store"
-down_revision: str | None = "20261031065451_landing_variants"
+down_revision: str | None = "20261031112210_agent_owners"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

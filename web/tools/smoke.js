@@ -1077,6 +1077,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Instance administration · Maity" && byId("admin-users") && !byId("admin-users").hidden
     && JSON.stringify(userNames()) === JSON.stringify(["Guest Reviewer", "Maintainer", "Ops on call"]),
     "users: every human, by handle, in the Users section of the instance administration");
+  // Each section's id is a fixed word, the same in every language (#891's review).
+  const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
+  expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
+    "admin-registration", "admin-landing-page", "admin-legal-pages", "admin-instance-information"]),
+    "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
     "users: the admin's own row, its counts");

@@ -640,7 +640,15 @@ form chosen by `Intl.PluralRules` is there to be translated. A key per value als
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
-checks as written, with commands and product names. A text the
+checks as written, with commands and product names. An element's id or
+a key that code matches never comes from a translated label (the admin
+area's sections are keyed by a fixed word, `admin-users` in every
+language), since it would change with the language. The board's column
+names are one set of keys (`cards.column.*`) for the board and the
+overview: the board keeps its columns as `[status, name]` pairs, the name
+a getter on index 1, because `board.js` reads them as pairs; the
+overview a getter per status. Rejected: a second set for the overview,
+the same words twice for a translator. A text the
 dashboard writes into the hub for the reader (the title of a chat the
 Lead button makes) is taken from the catalog in the writer's language
 and stays as written, as a title they typed would: the hub keeps no

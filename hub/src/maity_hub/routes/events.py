@@ -29,6 +29,7 @@ from maity_hub import (
     not_listening,
     project_roles,
     reviews,
+    wakeups,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -199,6 +200,9 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         loop=asyncio.get_running_loop(),
         membership_id=caller.membership_id,
     )
+    closed = await wakeups.opened(
+        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+    )
     longpoll.registry.enter(waiter)
     try:
         deadline = time.monotonic() + wait
@@ -224,6 +228,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             with contextlib.suppress(TimeoutError):  # the fallback re-read
                 await asyncio.wait_for(waiter.event.wait(), min(remaining, FALLBACK_SECONDS))
     finally:
+        closed()
         longpoll.registry.leave(waiter)
 
 
@@ -470,6 +475,12 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
 
 def remember_read(conn: Connection, reader: int, conversation_id: str, seq: int) -> None:
     """Move the reader's read mark in a conversation up to `seq`, never down."""
+    if conn.dialect.name == "postgresql":  # a human reader's held bells look again
+        human_id = conn.execute(
+            select(t.membership.c.human_id).where(t.membership.c.id == reader)
+        ).scalar()
+        if human_id is not None:
+            wakeups.ring(conn, "bell", human_id)
     updated = conn.execute(
         update(t.conversation_read)
         .where(

@@ -21,6 +21,7 @@ from maity_hub.events import Actor, emit, lock_project, on_commit
 from maity_hub.views import isolated, member_view
 
 REASON = "membership_isolated"
+BY_HUB = "hub"  # `isolated.by` of an isolation the hub made itself (§6.2)
 CLOSED = ("done", "cancelled")
 
 
@@ -80,7 +81,11 @@ def _tell_owner(
     handle = conn.execute(
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == target.agent_id)
     ).scalar_one()
-    who = conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar_one()
+    who = (
+        "the hub"
+        if human_id == BY_HUB
+        else conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar_one()
+    )
     summary = "\n".join(
         [f"Project: `{namespace.full_name(conn, project)}`.", *lines, f"By: `{who}`."]
     )

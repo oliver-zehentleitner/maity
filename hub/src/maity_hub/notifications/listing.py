@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
-from maity_hub import clock, conversation_list, namespace
+from maity_hub import clock, conversation_list, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.notifications import records
@@ -276,6 +276,7 @@ def mark(
             ignoring_duplicates(conn, t.notification_read),
             [{"human_id": where.human_id, "seq": seq, "at": now} for seq in seqs],
         )
+    wakeups.ring(conn, "bell", where.human_id)  # the human's other held bells look again
 
 
 def ignoring_duplicates(conn: Connection, table: Any) -> Any:

@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, case, select, update
 
+from maity_hub import policy as policy_module
 from maity_hub import tables as t
 from maity_hub.scopes import BASES, ROLES
 
@@ -98,8 +99,8 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
     """What still names the project role `name` (§2.3 `role_in_use`): a membership, an
     open join or invitation, an open request's `to`, a placement that has not made its
     membership yet, the onboarding's `check_in_with`, an entry in a `substitutes` list,
-    or live role memory. A card's `needs` is not in the hub yet; its pull request
-    adds it here."""
+    live role memory, or the outside-agent policy. A card's `needs` is not in the hub yet;
+    its pull request adds it here."""
     from maity_hub import clock
 
     found: list[str] = []
@@ -171,6 +172,8 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
         )
     ).first():
         found.append("memory")
+    if name in policy_module.outside_roles(project):  # what an outsider's agent may hold (§6.1)
+        found.append("outside_roles")
     return found
 
 
