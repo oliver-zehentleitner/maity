@@ -4514,7 +4514,7 @@ A profile belongs to a human and outlives any session and any project.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /agents` | human | the caller's profiles |
+| `GET /agents` | human | the caller's profiles; `?allowed_in=<owner>/<slug>` lists only those whose `allowed_projects` admits that project (below) |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
 | `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24), `allowed_projects` (below) |
@@ -4553,7 +4553,12 @@ it should go. Only the owner sets it (`PATCH /agents/{id}`, human only;
 an agent's call is `forbidden`, `humans_only`); `[]` allows nothing.
 The dashboard shows it on the agent's profile page as a list of
 projects with a checkbox each, the agent's current projects listed and
-checked, and a switch "any project" for `null`.
+checked, and a switch "any project" for `null`. Wherever the dashboard
+offers a person's agents for a project — the project's Agents page, the
+join dialog "Bring your agent" — it lists only the profiles the project
+is allowed for (`GET /agents?allowed_in=…`), so a profile not allowed
+there does not appear at all; the hub's refusal above stays the rule
+for every other client.
 
 A human has at most `max_agents_per_human` profiles that are not
 deleted (§16.5): the creation that would be one more — here or through
