@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import base64
 import re
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -14,11 +16,11 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth import mail_factor
-from maity_hub.config import Settings
+from maity_hub.auth import mail_factor, second_factor, sessions
+from maity_hub.config import ConfigError, Settings
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences
-from tests import factory
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 KEY = base64.b64encode(b"s" * 32).decode()
@@ -171,6 +173,8 @@ def test_a_resend_voids_the_earlier_link_and_code_and_is_limited_to_three(
     assert resend(client).status_code == 200
     third = resend(client)
     assert third.status_code == 429, third.text  # the first mail counted as the first of three
+    # the wait is what is left of the session, not a minute after which it is refused again
+    assert 60 < int(third.headers["retry-after"]) <= 900
     assert session(client)["mail"] == "rate_limited" or session(client)["mail"] == "sent"
     _, code, _ = last_mail(migrated)
     assert verify(client, email_code=code).status_code == 200
@@ -303,3 +307,122 @@ def test_a_step_up_by_mail_sends_a_code_only(make_client: ClientFactory, migrate
     valid = verify(client, email_code=step_code)
     assert valid.status_code == 200 and "valid_until" in valid.json()
     assert client.get("/api/v1/me/export").status_code == 200
+
+
+def test_the_step_up_is_not_held_by_the_three_of_a_second_factor_session(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    login(client)
+    _, code, _ = last_mail(migrated)
+    assert verify(client, email_code=code).status_code == 200
+    for _ in range(4):  # a long-lived session steps up more than three times
+        assert resend(client).status_code == 200
+    _, step_code, _ = last_mail(migrated)
+    assert verify(client, email_code=step_code).status_code == 200
+
+
+def test_email_is_not_settable_yet_by_the_admin_or_the_environment(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Until the confirming mail, the link switched off and the start check are in, `email` is
+    read but never taken, so no build is configurable into the bypass of rule 3 (§2.8.8)."""
+    admin = flow.human(make_client, migrated)
+    refused = admin.patch("/admin/settings/sign-in", {"second_factor": "email"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"second_factor": "invalid"}
+    assert admin.get("/admin/settings/sign-in").json()["second_factor"]["value"] != "email"
+    with pytest.raises(ConfigError):
+        Settings.from_env(
+            {"MAITY_DATABASE_URL": "sqlite://", "MAITY_SIGN_IN_SECOND_FACTOR": "email"}
+        )
+
+
+def test_only_totp_and_a_recovery_code_give_standing_the_mail_does_not() -> None:
+    """§2.8.2: the mail is the mailbox and gives no standing of its own."""
+
+    def standing(method: str, factor: str | None) -> bool:
+        row = SimpleNamespace(method=method, public_id="ses-x", second_factor=factor)
+        return sessions.good_standing(row)
+
+    assert standing("device_code", "email") is False
+    assert standing("device_code", "totp") is True
+    assert standing("device_code", "recovery_code") is True
+    assert standing("password", "email") is True  # by its own first factor
+
+
+def test_after_a_reset_a_human_with_a_verified_address_gets_the_mail_again(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.8.3, §2.8.8: the reset went through that mailbox, so the mail is the factor, not an
+    enrolment on the password alone."""
+    client, human = setup(make_client, migrated)
+    with migrated.begin() as conn:
+        conn.execute(
+            t.second_factor.insert().values(
+                human_id=human, secret=None, generation=2, reset_required=True
+            )
+        )
+    answer = login(client)
+    assert answer.json() == {"second_factor": "required", "via": "email", "expires_in": 900}
+    assert len(mails(migrated)) == 1
+
+
+def test_after_a_reset_without_a_verified_address_the_operator_sends_it_into_enrolment(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, human = setup(make_client, migrated)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == human)
+            .values(address_status="disabled")
+        )
+        conn.execute(
+            t.second_factor.insert().values(
+                human_id=human, secret=None, generation=2, reset_required=True
+            )
+        )
+    assert login(client).json() == {"second_factor": "enrolment_required"}
+
+
+def test_an_open_enrolment_session_does_not_become_full_when_the_mail_now_asks(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The policy came to `email` while a session waited at enrolment: it ends, it is not
+    promoted without any second factor (the human has a verified address)."""
+    _, human = setup(make_client, migrated)
+    hub = replace(
+        Settings.from_env({"MAITY_DATABASE_URL": "sqlite://"}), sign_in_second_factor="email"
+    )
+    with migrated.begin() as conn:
+        _, _, public_id = sessions.create(
+            conn,
+            human,
+            method="password",
+            address="203.0.113.5",
+            user_agent=None,
+            state="enrolment",
+        )
+    with migrated.begin() as conn:
+        row = conn.execute(
+            select(t.human_session).where(t.human_session.c.public_id == public_id)
+        ).one()
+        assert second_factor.state(conn, hub, row) == "ended"
+
+
+def test_a_step_up_code_lives_fifteen_minutes_in_a_session_that_lives_for_days(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    login(client)
+    _, code, _ = last_mail(migrated)
+    assert verify(client, email_code=code).status_code == 200
+    clock.set_source(lambda: START + timedelta(hours=2))
+    assert resend(client).status_code == 200
+    _, stale, _ = last_mail(migrated)
+    clock.set_source(lambda: START + timedelta(hours=2, minutes=16))
+    assert verify(client, email_code=stale).status_code == 403  # the code's own 15 minutes
+    assert resend(client).status_code == 200
+    _, fresh, _ = last_mail(migrated)
+    assert verify(client, email_code=fresh).status_code == 200

@@ -10,7 +10,7 @@ from sqlalchemy import Connection
 
 from maity_hub import instance_settings as store
 from maity_hub.auth import device_codes, email_links
-from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
+from maity_hub.config import KNOWN_SECOND_FACTORS, SECOND_FACTOR_POLICIES, Settings
 from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
 
@@ -25,12 +25,12 @@ store.register(
     ),
     store.Setting(
         "sign_in.second_factor",
-        lambda v: v if v in SECOND_FACTOR_POLICIES else None,
+        lambda v: v if v in KNOWN_SECOND_FACTORS else None,
         "optional",
     ),
     # `off` once the hub has told the switch to it, so it is told once, whether the
     # admin made it or the environment did (§2.8.5); no row otherwise.
-    store.Setting(SEEN, lambda v: v if v in SECOND_FACTOR_POLICIES else None, None),
+    store.Setting(SEEN, lambda v: v if v in KNOWN_SECOND_FACTORS else None, None),
 )
 
 

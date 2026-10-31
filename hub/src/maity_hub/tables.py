@@ -395,6 +395,7 @@ human_session = Table(
     Column("mail_token_mac", String(HEX_SHA256)),
     Column("mail_code_mac", String(HEX_SHA256)),
     Column("mail_sent", Integer, nullable=False, server_default="0"),
+    Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
     **MYSQL_TABLE,
 )

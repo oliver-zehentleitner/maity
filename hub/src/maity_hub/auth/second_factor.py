@@ -31,6 +31,9 @@ from maity_hub.notifications import records
 from maity_hub.ratelimit import Limiter
 
 SECOND_STEP = timedelta(minutes=5)  # a second-factor session's life
+# The longest of them, a mail session's: what the wrong codes of one session are counted over, so
+# that none of its 15 minutes leaves the window (§2.8.8).
+SESSION_LIFE = mail_factor.LIFETIME
 FRESH = timedelta(minutes=10)  # the password's proof and the step-up's window
 TRUSTED_AGE = timedelta(hours=24)  # the proof for an account without a password
 ENROLMENT = timedelta(minutes=10)  # an unconfirmed enrolment
@@ -110,14 +113,18 @@ def must_enrol(conn: Connection, hub: Settings, human_id: str) -> bool:
     factor = factor_of(conn, human_id)
     if enrolled(factor):
         return False
-    if factor is not None and factor.reset_required:
-        return True
+    reset = factor is not None and factor.reset_required
     if current == "email":
-        # No TOTP and an address that never was: enrol, as `required_admins` asks (§2.8.8).
-        # One that was and is lost is not here: it fails closed at the second step.
-        return mail_factor.address_of(conn, human_id) is None and not mail_factor.ever_had_address(
-            conn, human_id
-        )
+        # With a verified address the mail is the factor, after a reset too: the reset itself
+        # went through that mailbox (§2.8.3, §2.8.8), and an enrolment on the first factor
+        # alone would let whoever holds the password install their own app. Without one:
+        # enrol when there never was one or the operator reset it; an address that was and is
+        # lost fails closed at the second step.
+        if mail_factor.address_of(conn, human_id) is not None:
+            return False
+        return reset or not mail_factor.ever_had_address(conn, human_id)
+    if reset:
+        return True
     return current == "required_admins" and (
         admin.is_instance_admin(conn, human_id) or owns_a_project(conn, human_id)
     )
@@ -174,9 +181,10 @@ def state(conn: Connection, hub: Settings, row: Any) -> str:
     if not row.sign_in_complete:  # an enrolment session (§2.8.5)
         if off:
             return "ended"
-        if enrolled(factor_of(conn, row.human_id)):
-            # The human enrolled elsewhere meanwhile: this sign-in never gave a code,
-            # so it ends rather than becoming a full session without one.
+        if asks(conn, hub, row.human_id):
+            # The human enrolled elsewhere meanwhile, or the policy came to ask for a factor
+            # they have (the mail): this sign-in never gave a code, so it ends rather than
+            # becoming a full session without one.
             return "ended"
         if must_enrol(conn, hub, row.human_id):
             return "enrolment"
@@ -446,11 +454,11 @@ def _count_wrong(id_hash: str) -> int:
     PostgreSQL (replicas.md 2bd65fec), counted over the current and the previous window of
     the session's five minutes, which counts at least every wrong code of the session."""
     if shared_counts.active():
-        window = shared_counts.add(WRONG_IN_SESSION, id_hash, SECOND_STEP.total_seconds())
+        window = shared_counts.add(WRONG_IN_SESSION, id_hash, SESSION_LIFE.total_seconds())
         return window.current + window.previous
     now = time.monotonic()
     if len(_wrong_in_session) > 1024:
-        horizon = now - SECOND_STEP.total_seconds()
+        horizon = now - SESSION_LIFE.total_seconds()
         for key in [k for k, (_, first) in _wrong_in_session.items() if first < horizon]:
             del _wrong_in_session[key]
     count, first = _wrong_in_session.get(id_hash, (0, now))

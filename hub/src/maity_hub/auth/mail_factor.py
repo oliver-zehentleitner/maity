@@ -21,7 +21,7 @@ from sqlalchemy import Connection, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, rate_limited
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
@@ -153,16 +153,24 @@ def send(
     with_link: bool = True,
 ) -> str:
     """Mail a new link and code to the session `row` (a second-factor session, or a full one for
-    a step-up, which gets a code only). Returns `sent` or `rate_limited`; `mail_not_configured`
-    and `address_unverified` are refused (§2.8.8). A new mail voids the earlier link and code."""
+    a step-up, which gets a code only). Returns `sent`; `rate_limited`, `mail_not_configured`
+    and `address_unverified` are refused (§2.8.8). The session's three count for a
+    second-factor session only: a full session that steps up often is held by the hour's ten
+    alone. A new mail voids the earlier link and code."""
     key = _key(hub)
     if key is None or not mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
     address = address_of(conn, row.human_id)
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
-    if row.mail_sent >= PER_SESSION or BY_HUMAN.hit(row.human_id):
-        return "rate_limited"
+    now = clock.now()
+    if row.state == "second_factor" and row.mail_sent >= PER_SESSION:
+        # the session's three: it will not send again, so the wait is the session's life left
+        left = row.created_at + LIFETIME - now
+        raise rate_limited(max(int(left.total_seconds()), 1))
+    wait = BY_HUMAN.hit(row.human_id)  # the human's ten an hour; a step-up counts here only
+    if wait:
+        raise rate_limited(wait)
     token = secrets.token_urlsafe(32)
     code = f"{secrets.randbelow(1_000_000):06d}"
     conn.execute(
@@ -172,6 +180,7 @@ def send(
             mail_token_mac=_token_mac(key, row.id_hash, token) if with_link else None,
             mail_code_mac=_code_mac(key, row.id_hash, code),
             mail_sent=t.human_session.c.mail_sent + 1,
+            mail_sent_at=now,
         )
     )
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
@@ -210,6 +219,9 @@ def check(
     key = _key(hub)
     if key is None:
         return False
+    # A mail lives 15 minutes, in a session that lives for days too (a step-up's code, §2.8.8).
+    if row.mail_sent_at is None or clock.now() - row.mail_sent_at >= LIFETIME:
+        return False
     column = t.human_session.c
     if code is not None:
         text = normalise_code(code)
@@ -235,6 +247,9 @@ def state_of(row: Any) -> dict[str, Any]:
     if row.mail_code_mac is not None:
         return {"mail": "sent"}
     wait = BY_HUMAN.blocked(row.human_id)
-    if row.mail_sent >= PER_SESSION or wait:
+    if row.mail_sent >= PER_SESSION:
+        left = row.created_at + LIFETIME - clock.now()
+        return {"mail": "rate_limited", "retry_after": max(int(left.total_seconds()), 1)}
+    if wait:
         return {"mail": "rate_limited", "retry_after": max(int(wait), 1)}
     return {"mail": "unavailable"}

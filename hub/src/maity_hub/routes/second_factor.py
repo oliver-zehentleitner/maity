@@ -15,7 +15,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import mail_factor, second_factor, sessions
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, rate_limited, unauthenticated
+from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.routes.auth import member_of, set_session_cookies
 
 router = APIRouter(prefix="/auth")
@@ -154,7 +154,7 @@ def send_mail_factor(request: Request, caller: HumanCaller) -> JSONResponse:
             raise second_factor.refused("method_disabled", "the mail is not the second factor")
         step = row.state == "second_factor"
         try:
-            outcome = mail_factor.send(conn, hub, row, with_link=step)
+            mail_factor.send(conn, hub, row, with_link=step)
         except ApiError as refused:
             if refused.code != "address_unverified":
                 raise
@@ -165,6 +165,4 @@ def send_mail_factor(request: Request, caller: HumanCaller) -> JSONResponse:
                 )
     if unavailable is not None:
         raise unavailable  # after the commit: the account record stays
-    if outcome == "rate_limited":
-        raise rate_limited(max(int(mail_factor.BY_HUMAN.blocked(row.human_id)), 60))
     return JSONResponse({"mail": "sent"})
