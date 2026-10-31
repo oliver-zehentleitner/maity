@@ -323,3 +323,36 @@ def test_a_column_without_links_is_left_out(owner: flow.Human, make_client: Clie
     html = make_client().get("/").text
     columns = re.findall(r'<nav class="foot-col" aria-label="([^"]*)">', html)
     assert columns == ["Platform"]  # no open-source links, no legal pages, no social links
+
+
+def test_a_variants_page_follows_its_own_stats_sections(owner: flow.Human) -> None:
+    """The rule is per rendered page: a variant that alone names `people_online` shows it, and
+    the main page that does not name it does not (§16.7, §16.7.2)."""
+    from maity_hub import render
+
+    def page_of(*items: str) -> dict[str, Any]:
+        stats = {"type": "stats", "enabled": True, "items": list(items)}
+        return {"title": "Maity", "description": "", "sections": [hero(), stats]}
+
+    setting = {
+        "default_language": "en",
+        "pages": {"en": page_of("people")},
+        "variants": {"for-teams": {"pages": {"en": page_of("people", "people_online")}}},
+        "footer": {"operator": None, "social": []},
+    }
+    counters = {"people": 9, "people_online": 7, "agents_online": 6, "online_floor": 5}
+    legal: dict[str, Any] = {"pages": {}}
+
+    def draw(variant: str | None) -> str:
+        return render.landing_document(
+            setting,
+            "en",
+            public_url="https://hub.example",
+            legal=legal,
+            stats=counters,
+            variant=variant,
+        )
+
+    assert 'class="online"' not in draw(None)
+    named = draw("for-teams")
+    assert "People online" in named and "Agents online" not in named
