@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError
 
 from maity_hub import clock, events, memory
 from maity_hub import tables as t
-from maity_hub.db import alembic_config, current_revision, downgrade
+from maity_hub.db import alembic_config, current_revision, downgrade, migrate
 from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -345,14 +345,21 @@ def test_downgrade_refuses_to_discard_role_memory_history(
     assert remove(agent, entry["id"]).status_code == 200
     before = ScriptDirectory.from_config(alembic_config(migrated)).get_revision(REVISION)
     assert before is not None and isinstance(before.down_revision, str)
-    head = current_revision(migrated)  # this migration, or a later one: the refusal rolls all back
-    with pytest.raises(RuntimeError, match="role memory history"):
-        downgrade(migrated, before.down_revision)
-    assert current_revision(migrated) == head
-    with migrated.connect() as conn:
-        history = conn.execute(
-            select(t.memory_entry.c.role, t.memory_entry.c.text).where(
-                t.memory_entry.c.id == entry["id"]
-            )
-        ).one()
+    # The refusal is tried from exactly this migration: a later one has already dropped its own
+    # DDL by then, and MariaDB does not roll DDL back (a refusal further down would leave the
+    # schema half downgraded for every test after it). The history was written at the head.
+    downgrade(migrated, REVISION)
+    assert current_revision(migrated) == REVISION
+    try:
+        with pytest.raises(RuntimeError, match="role memory history"):
+            downgrade(migrated, before.down_revision)
+        assert current_revision(migrated) == REVISION
+        with migrated.connect() as conn:
+            history = conn.execute(
+                select(t.memory_entry.c.role, t.memory_entry.c.text).where(
+                    t.memory_entry.c.id == entry["id"]
+                )
+            ).one()
+    finally:
+        migrate(migrated)  # back to the head for whatever runs next on this database
     assert history.role == "coder" and history.text is None
