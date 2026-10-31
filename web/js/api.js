@@ -710,6 +710,19 @@ window.Maity = window.Maity || {};
     }
     return e;
   }
+  // As hub/person_links.website_problem: https, a DNS name (a dot, labels of [a-z0-9-], a last
+  // label not all digits) as the whole authority (no user part, no port), no space or control
+  // character, at most `max` characters, checked first.
+  function websiteProblem(value, max) {
+    if (value.length > max) return "too_long";
+    if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
+    const m = /^https:\/\/([^/?#]*)/.exec(value);
+    if (!m) return "format";
+    const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
+    const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+    if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
+    return null;
+  }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
     if (ft.operator === "") errors["footer.operator"] = "invalid";
@@ -2249,6 +2262,29 @@ window.Maity = window.Maity || {};
         }) });
       }
 
+      // §6.11 the project's own links, merged by key, each checked as the hub's
+      // person_links.website_problem does (500 characters): too_long first, then the form.
+      if ("links" in body) {
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const merged = {};
+        if (body.links !== null) {
+          if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
+          Object.entries(p.links || {}).forEach(([k, v]) => { if (KEYS.includes(k) && v) merged[k] = v; });
+          const fields = {};
+          Object.entries(body.links).forEach(([k, v]) => {
+            if (!KEYS.includes(k)) fields["links." + k] = "unknown";
+            else if (v === null || v === "") delete merged[k];
+            else if (typeof v !== "string") fields["links." + k] = "format";
+            else {
+              const problem = websiteProblem(v, 500);
+              if (problem) fields["links." + k] = problem; else merged[k] = v;
+            }
+          });
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        }
+        p.links = Object.fromEntries(KEYS.map((k) => [k, merged[k] || null]));
+      }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
