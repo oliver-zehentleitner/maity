@@ -316,6 +316,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"
     )
+    session.data["board_empty"] = board_empty  # the board check `--full` cannot repeat
     session.save()
     # What `--full` renders again without a second resume, which would open another session.
     state.save_state(session.dir, packet, name=LAST_PACKET)
@@ -482,8 +483,12 @@ def cmd_resume(args: argparse.Namespace) -> int:
         return _resume(session, args)
     if args.json:
         _print_json(stored)
-    else:
-        print(onboarding.render(stored, full=True), end="")
+        return EXIT_OK
+    # The packet may be hours old, and its `Next:` with it: say so before anything else.
+    when = stored.get("server_time")
+    print(f"Stored packet of {onboarding.inline(when) if when else 'the last resume'}\n")
+    board_empty = session.data.get("board_empty") is True
+    print(onboarding.render(stored, board_empty=board_empty, full=True), end="")
     return EXIT_OK
 
 

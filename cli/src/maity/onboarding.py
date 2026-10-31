@@ -463,8 +463,14 @@ def _handover(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[
 
 
 def _answered(reqs: dict[str, Any], names: dict[str, str], compact: bool) -> list[str]:
-    """`Answered since your last session:`, in the compact text the last COMPACT_ANSWERS."""
-    answered = _items(reqs.get("answered_since_cursor"))
+    """`Answered since your last session:`, in the compact text the last COMPACT_ANSWERS.
+    Ordered by `answered_at`, since the hub sends them in the order they were asked: an old
+    request answered just now is the one most likely to matter. One without it counts as the
+    oldest."""
+    answered = sorted(
+        _items(reqs.get("answered_since_cursor")),
+        key=lambda r: (1, r["answered_at"]) if isinstance(r.get("answered_at"), str) else (0, ""),
+    )
     shown = answered[-COMPACT_ANSWERS:] if compact else answered
     lines = [ln for r in shown for ln in _request(r, names, compact=compact)]
     if len(shown) < len(answered):

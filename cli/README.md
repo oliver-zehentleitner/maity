@@ -78,7 +78,11 @@ at 5 lines or 200 characters, with the usual pointer. Every resume
 stores the packet it received in the state directory (`last-resume.json`,
 0600, overwritten each time); `maity resume --full` renders that packet
 in full without calling the hub, since a second resume would open
-another session. Without a stored packet it resumes and prints in full.
+another session. Its first line, `Stored packet of <server_time>`, keeps
+an old `Next:` from being taken as current; the resume's board check for
+an admin is kept beside it, so the same line shows. Without a stored
+packet it resumes and prints in full. Answers are ordered by
+`answered_at`, so an old request answered last is among the ten.
 A realistic rejoin (300 events, 30 answers, the rules in full) prints
 under 8 KB, measured in `tests/test_compact.py`.
 

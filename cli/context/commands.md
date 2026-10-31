@@ -875,7 +875,9 @@ and cuts history: the last 10 answers, the last 10 events whose
 counted by kind, bodies at 5 lines or 200 characters. Every resume
 stores its packet in the state directory, 0600, and `maity resume
 --full` renders that packet without the cut and without calling the
-hub. The text ends with one `Next:` action that includes the background
+hub, under `Stored packet of <server_time>`, with the resume's board
+check kept beside it. Answers are chosen by `answered_at`, not in the
+hub's order of asking. The text ends with one `Next:` action that includes the background
 wait.
 
 **Reason:** a rejoin printed every request ever answered and every event

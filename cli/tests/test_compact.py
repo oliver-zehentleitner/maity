@@ -119,6 +119,17 @@ def test_only_the_last_answers_are_shown() -> None:
     assert "req-0000" in onboarding.render(packet(requests=reqs), full=True)
 
 
+def test_an_old_request_answered_last_is_among_the_shown_answers() -> None:
+    """The hub sends them in the order they were asked; the text orders them as answered."""
+    answered = [{**_answered(n), "answered_at": f"2026-10-30T10:{n:02d}:00Z"} for n in range(30)]
+    answered[0]["answered_at"] = "2026-10-31T09:00:00Z"  # asked first, answered last
+    answered[1].pop("answered_at")  # without it: the oldest
+    text = onboarding.render(packet(requests={"answered_since_cursor": answered}))
+    shown = text.split("Answered since your last session:\n", 1)[1]
+    assert "req-0000" in shown and "req-0001" not in shown and "req-0021" in shown
+    assert shown.index("req-0029") < shown.index("req-0000")  # the newest answer last
+
+
 def test_bodies_are_cut_shorter_in_the_compact_text() -> None:
     long = _message(9, to_me=True, lines=30)
     text = onboarding.render(packet(events={"items": [long], "cursor": 9}))
@@ -184,7 +195,8 @@ def test_resume_stores_the_packet_privately_and_full_renders_it_without_the_hub(
     assert cli.main(["resume", "--full"]) == cli.EXIT_OK
     assert len(fake.seen) == calls  # no second session
     full = capsys.readouterr().out
-    assert full == onboarding.render(data, full=True)
+    head = "Stored packet of the last resume\n\n"  # the fixture has no server_time
+    assert full == head + onboarding.render(data, full=True)
     assert len(full) > len(compact) and "Not shown" not in full
 
     assert cli.main(["resume", "--full", "--json"]) == cli.EXIT_OK
@@ -210,3 +222,35 @@ def test_join_prints_the_compact_text(
     assert cli.main(["join", url, "--code", fakehub.CODE, "--no-pointer"]) == cli.EXIT_OK
     out = capsys.readouterr().out
     assert "Not shown: " in out and len(out.encode()) < 8 * 1024
+
+
+def test_full_says_when_the_stored_packet_is_from(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data = {**packet(), "server_time": "2026-10-31T07:00:00Z"}
+    state.save_state(joined, data, name=cli.LAST_PACKET)
+    assert cli.main(["resume", "--full"]) == cli.EXIT_OK
+    first = capsys.readouterr().out.split("\n", 1)[0]
+    assert first == "Stored packet of 2026-10-31T07:00:00Z"
+    assert not fake.seen
+
+
+def test_full_keeps_the_board_check_of_the_resume(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An admin's empty board is a hub read `--full` does not repeat; the resume's answer is
+    kept beside the packet."""
+    base = packet()
+    ms = {**base["membership"], "trust": "admin", "briefing": None}
+    data = {**base, "membership": ms, "project": {**base["project"], "full_name": "oliver/maity"}}
+    fake.routes[("POST", RESUME)] = lambda seen: (200, data)
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/tasks")] = lambda seen: (
+        200,
+        {"items": []},
+    )
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    assert "The board is empty" in capsys.readouterr().out
+    calls = len(fake.seen)
+    assert cli.main(["resume", "--full"]) == cli.EXIT_OK
+    assert "The board is empty" in capsys.readouterr().out
+    assert len(fake.seen) == calls
