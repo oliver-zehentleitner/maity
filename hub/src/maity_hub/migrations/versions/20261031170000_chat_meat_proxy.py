@@ -40,8 +40,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["human_id"], ["human.id"], name=op.f("fk_conversation_meat_proxy_human_id_human")
         ),
+        sa.ForeignKeyConstraint(
+            ["project_id"],
+            ["project.id"],
+            name=op.f("fk_conversation_meat_proxy_project_id_project"),
+        ),
         sa.PrimaryKeyConstraint(
-            "human_id", "conversation_id", name=op.f("pk_conversation_meat_proxy")
+            "human_id", "project_id", "conversation_id", name=op.f("pk_conversation_meat_proxy")
         ),
         **MYSQL,
     )

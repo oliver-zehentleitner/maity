@@ -178,3 +178,34 @@ def test_the_export_names_the_choices_and_the_deletion_takes_them(
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     assert exported == [{"project_id": project_id, "conversation_id": agent.id, "meat_proxy": True}]
+
+
+def test_one_agents_direct_chats_in_two_projects_keep_their_own_choice(
+    owner: flow.Human, agent: flow.Agent, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The same agent has the same direct-chat id in every project it is in (§9.1): the choice is
+    stored per project, through the route, in the migrated schema."""
+    flow.project(owner, "beta")
+    created = flow.join(owner, "beta", agent={"id": agent.id})
+    assert flow.exchange(make_client(), created).status_code == 201
+    here, there = "/projects/maintainer/maity", "/projects/maintainer/beta"
+
+    def set_in(base: str, value: bool) -> Any:
+        return owner.client.put(
+            f"/api/v1{base}/conversations/{agent.id}/meat-proxy",
+            json={"meat_proxy": value},
+            headers={"X-CSRF-Token": owner.csrf},
+        )
+
+    assert set_in(here, True).status_code == 204
+    assert set_in(there, False).status_code == 204
+    chat_here = owner.get(f"{here}/conversations/{agent.id}").json()
+    chat_there = owner.get(f"{there}/conversations/{agent.id}").json()
+    assert entry(chat_here, owner.id)["meat_proxy_chat"] is True
+    assert entry(chat_there, owner.id)["meat_proxy_chat"] is False
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.conversation_meat_proxy)).all()
+    assert sorted((r.project_id != "", bool(r.meat_proxy)) for r in rows) == [
+        (True, False),
+        (True, True),
+    ]
