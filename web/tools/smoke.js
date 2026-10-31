@@ -3898,7 +3898,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(byId("forge-token-error")) === "This is a classic token; only a fine-grained token is taken." && byId("forge-token").getAttribute("aria-invalid") === "true",
       "forge: a classic token is refused at its field, in words");
     byId("forge-token").value = "github_pat_fixture"; fgBox().querySelector("form.forge-token-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-    expect(text(fgBox()).includes("The token is stored.") && text(fgBox()).includes("A token is stored @maintainer") && !text(fgBox()).includes("github_pat_fixture")
+    expect(text(fgBox()).includes("The token is stored.") && text(fgBox()).includes("A token for @maintainer is stored.") && !text(fgBox()).includes("github_pat_fixture")
       && btn(fgBox(), "Replace the token"), "forge: a fine-grained token stored, its login shown, never the token");
     btn(fgBox(), "Remove the token").click(); for (let k = 0; k < 6; k++) await tick();
     expect(text(fgBox()).includes("The token is removed.") && text(fgBox()).includes("No token is stored."), "forge: the token removed");
@@ -3915,6 +3915,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(fgConfirms) === JSON.stringify([{ url: "https://github.com/oliver-zehentleitner/maity" }])
       && text(fgRepo()).includes("Confirmed for the grants of @maintainer") && text(fgRepo()).includes("GitHub App installation") && !btn(fgRepo(), "Confirm this repository for my grants"),
       "forge: confirmed with the URL the owner saw; then read with the owner's installation");
+    // Another owner of the project, not its namespace owner, is offered no confirmation: the hub would refuse it.
+    const fgGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/sample"
+      ? fgGet(p).then((x) => Object.assign({}, x, { owner: { id: "hum-someone", handle: "someone" }, repository: Object.assign({}, x.repository, { owner_confirmed: false, confirmed_by: null }) }))
+      : fgGet(p));
+    await go("#/maintainer/sample/settings"); for (let k = 0; k < 6; k++) await tick();
+    expect(fgRepo() && text(fgRepo()).includes("Not confirmed by the namespace owner") && !btn(fgRepo(), "Confirm this repository for my grants"),
+      "forge: a project owner who is not the namespace owner gets no Confirm button");
+    win.Maity.api.get = fgGet;
     await go("#/settings/forge"); for (let k = 0; k < 6; k++) await tick();
     btn(fgBox(), "Unlink").click(); for (let k = 0; k < 6; k++) await tick();
     expect(text(fgBox()).includes("The installation is unlinked.") && text(fgBox()).includes("No installation is linked."), "forge: unlinked");

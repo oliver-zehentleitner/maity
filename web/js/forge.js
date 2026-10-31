@@ -117,7 +117,8 @@ window.Maity = window.Maity || {};
         }
       });
       const tokenId = "forge-token";
-      const token = h("input", { id: tokenId, type: "password", autocomplete: "off", spellcheck: "false", "aria-describedby": tokenId + "-hint " + tokenId + "-error" });
+      // new-password: a browser's password manager would otherwise offer to keep the token as this site's password.
+      const token = h("input", { id: tokenId, type: "password", autocomplete: "new-password", spellcheck: "false", "aria-describedby": tokenId + "-hint " + tokenId + "-error" });
       const tokenError = h("p", { class: "field-error", id: tokenId + "-error", role: "alert" });
       const tokenForm = h("form", {
         class: "inline-form forge-token-form",
@@ -160,7 +161,7 @@ window.Maity = window.Maity || {};
           : h("p", { class: "muted" }, M.t("forge.app.missing")),
         h("h4", null, M.t("forge.token.title")),
         own.configured
-          ? h("p", { class: "forge-token-state" }, M.t("forge.token.set", { login: own.login ? "@" + own.login : "" }), " · ", statusOf(own.status),
+          ? h("p", { class: "forge-token-state" }, own.login ? M.t("forge.token.set_for", { login: "@" + own.login }) : M.t("forge.token.set"), " · ", statusOf(own.status),
             own.checked_at ? " · " + M.t("forge.checked", { at: formatTime(own.checked_at) }) : "", " ",
             h("button", { type: "button", onclick: () => act(M.t("forge.token.remove.busy"), M.t("forge.token.remove.done"),
               () => M.api.del("/me/forge/github/token")) }, M.t("forge.token.remove")))
@@ -191,7 +192,10 @@ window.Maity = window.Maity || {};
     const self = (ctx.members || []).find((m) => m.id === ctx.me.id);
     const ofOrg = !!(ctx.project.owner && /^org-/.test(ctx.project.owner.id));
     const namespaceOwner = !!ctx.project.owner && (ofOrg ? !!(self && self.org_owner) : ctx.project.owner.id === ctx.me.id);
-    const confirm = repo.owner_confirmed || !namespaceOwner || ctx.me.kind !== "human" ? null : h("button", {
+    // Confirmed already: by me, or for a human's project, nothing to offer; another
+    // owner of the organisation may confirm with their own grants instead (§11.4).
+    const settled = repo.owner_confirmed && (!ofOrg || (by && by.id === ctx.me.id));
+    const confirm = settled || !namespaceOwner || ctx.me.kind !== "human" ? null : h("button", {
       type: "button",
       onclick: async (e) => {
         e.target.disabled = true;

@@ -3178,7 +3178,9 @@ same account page opened at that section. Its `?error=<reason>` is said
 in words and dropped from the address. A project's settings say which
 grant reads its repository (`probe_via` in words) and whether the
 namespace owner confirmed it, with **Confirm this repository for my
-grants** for an owner and a link to Forge access.
+grants** for the namespace owner (for an organisation's project any of
+its owners, who may replace another owner's confirmation with their
+own grants) and a link to Forge access.
 
 **Reason:** the grants are the human's own and serve every project they
 own, so they belong on the account, not on one project. The project's
