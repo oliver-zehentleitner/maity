@@ -1062,6 +1062,7 @@
   "reg.pending.approving": "Approving…",
   "reg.pending.asked": "Asked {time}",
   "reg.pending.decided": "decided meanwhile ({from})",
+  "reg.pending.decided_unknown": "decided meanwhile",
   "reg.pending.expires": "expires {time}",
   "reg.pending.from": "from {ip}",
   "reg.pending.none": "Nobody waits for approval.",
