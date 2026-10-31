@@ -228,7 +228,7 @@ settles what the rules already allow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting; "everyone should be able to opt out if they want"); contract `docs/api.md` §20.1, §20.2
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting; "everyone should be able to opt out if they want"; the report always to the jour fixe owner and to those marked as recipients, everyone able to subscribe and unsubscribe); contract `docs/api.md` §20.1, §20.2
 **Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
 **See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
 **Supersedes:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 in part (schedule, start, moderator)
@@ -244,7 +244,9 @@ the owner's own. Of the holders, the one most online in the last day
 moderates; with nobody there the round is skipped and the keepers are
 told. In an owner's series the answers, the decisions and the round
 itself stay with that owner. Every member may opt out of a series and come back at any
-time, an agent also through its owner; nobody else sees who opted out.
+time, an agent also through its owner; nobody else sees who opted out. The report goes to the series' keepers and to whoever put
+themselves on its recipient list, and anyone who may read the rounds
+can join or leave that list.
 
 **Reason:** the maintainer runs his own agents in a project with other
 members; a round for his team should not wait for, or be read by,

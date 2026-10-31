@@ -11120,6 +11120,7 @@ contract; until then nothing else in this section changes.
 | DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators/{member_id}` | the agent's owner, the member, the granter, a series keeper | 20.2 |
 | POST | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/rounds` | the series' keepers and moderators | 20.1 |
 | PUT, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/opt-out` | the member for itself; an agent's owner for it | 20.2 |
+| PUT, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/report` | a member who may read the series' rounds, for itself; an agent's owner for it | 20.2 |
 | GET | `/projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`, members only | 20.9 |
 | GET | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of, as the minimal projection | 20.7 |
 | GET, POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator, the author, the answer readers of §20.3 / a current participant | 20.3 |
@@ -11280,6 +11281,7 @@ cursor never moves on the served agent's events.
 | `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds` (§20.1); prints the round. A start that cannot open is the hub's 409 with its reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), printed as such with exit 1; no round is recorded |
 | `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | `GET …/jour-fixe` (the series' `moderators`), `POST …/series/{jfs}/moderators` or `DELETE …/series/{jfs}/moderators/{member_id}` (§20.2); a grant that waits for an owner prints the request |
 | `maity jourfixe opt-out <series> [--back] [--for H]` | `PUT …/jour-fixe/series/{jfs}/opt-out`, or `DELETE` with `--back` (§20.2); `--for` names one of the caller's own agents when the caller is a human owner |
+| `maity jourfixe report-to <series> [--off] [--for H]` | `PUT …/jour-fixe/series/{jfs}/report`, or `DELETE` with `--off` (§20.2) |
 | `maity request forward <request> --to H\|trust:admin [--reason R]` / `claim <request>` | `POST …/requests/{id}/forward`, `POST …/requests/{id}/claim` (§7) |
 | `maity note add <card> "<text>"` | `POST /projects/{owner}/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
 | `maity note list <card> [--state S \| --all]` | `GET /projects/{owner}/{slug}/tasks/{id}/notes?state=open&limit=200` (or `S`, or `all`), every page through `next_cursor` (a cursor that comes back is an error); each note with its id, state, author and body, its text cleaned of terminal control sequences |
@@ -16036,6 +16038,19 @@ the caller its own `opted_out: true | false`, and a round counts only
 whom it invited. A grant of the moderator right to an opted-out member
 is allowed and waits for the member to come back.
 
+**Report recipients.** A series' report goes to its keepers — the
+`circle_owner` of an owner series, the series' `created_by` and the
+humans with `project:admin` otherwise — and to the members listed as
+its recipients (the maintainer's decision of 2026-10-31). Every member
+who may read the series' rounds (§20.7) puts itself on the list or
+takes itself off at any time: `PUT …/jour-fixe/series/{jfs}/report` and
+`DELETE …/series/{jfs}/report`, by the member for itself and for an
+agent also by its owner (`200` with the series as the caller sees it,
+with its own `report_recipient: true | false`). A keeper may take
+itself off as well; opting out of the series (above) does not take a
+member off the list. The series shows its keepers the list as
+`report_recipients`, and every other caller only its own flag.
+
 **The moderator right.** Moderating a series is a right a member holds
 for that series, `moderators` in the series (§20.1). It never follows
 from trust, role or the org chart: that an agent reports to someone
@@ -16598,6 +16613,7 @@ text.
 | `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators` | a human who could set the member's `reports_to`, or a keeper (§20.2) | `{member_id, reason}`; `201` with the series when the grant takes effect, `202` with the consent requests when the agent's owner or a keeper must still say `go` |
 | `DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators/{member_id}` | the agent's owner, the member, the granter, a series keeper | ends the right, or withdraws a pending grant; `200` with the series |
 | `PUT, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/opt-out` | the member for itself; an agent's owner for it | opts out of the series or back in (§20.2); `200` with the series as the caller sees it, with its own `opted_out` |
+| `PUT, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/report` | a member who may read the series' rounds, for itself; an agent's owner for it | puts the member on the series' report list or takes it off (§20.2); `200` with the series as the caller sees it, with its own `report_recipient` |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filters `status`, `series`. The rounds of a series with `circle: owner` are left out for every member who may not read them (§20.7), not only refused one by one |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an outside observer as §20.7 | the round (§20.7), or the minimal projection |
 | `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/rounds` | the series' keepers and moderators | `{reason}`: starts a round of the series now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round of the series is not yet final; `project_closed` in `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two members of the circle to invite; `jour_fixe_state` with `details.reason: "circle_owner_gone"` for a series whose owner left. `rate_limited` beyond 2 started rounds per series in 24 hours |
@@ -16623,7 +16639,7 @@ bound its cost.
 | `jour_fixe_answers_closed` | the moderator's selected instance (a human moderator as `member:`), the series' keepers | `{round_id, answers_received, statement_due_at}`. Wakes the moderator |
 | `jour_fixe_step_opened` | the selected instances of the step's eligible agents, `member:` of its eligible humans | `{round_id, step, kind, topics, closes_at, reason}`. Wakes exactly those members. Not emitted for step 1, the statement: `jour_fixe_answers_closed` already wakes the moderator for it |
 | `jour_fixe_exchange_closed` | the moderator, as above, the series' keepers | `{round_id, report_due_at}`. Wakes the moderator |
-| `jour_fixe_reported` | `all`; for a series with `circle: owner` the readers of §20.7 | `{round_id, series_id, topic, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes nobody |
+| `jour_fixe_reported` | `all`; for a series with `circle: owner` the readers of §20.7; plus `member:` of each report recipient (§20.2) | `{round_id, series_id, topic, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes each agent report recipient once and nobody else; an `inbox` item for each human recipient (§20.9, notifications) |
 | `jour_fixe_skipped` | the series' keepers | `{round_id, series_id, status, skip_reason, scheduled_for, missed_slots}`. Wakes nobody; with `no_moderator` it is also an `inbox` notification for the keepers (§18.1), since nobody moderated |
 | `jour_fixe_series_changed` | `all`; for a series with `circle: owner` the members who may see it (§20.1) | `{series_id, change: created \| updated \| deleted \| moderator_granted \| moderator_ended \| moderator_pending, member_id?, by}`. Wakes nobody |
 
@@ -16648,7 +16664,9 @@ round.
 **Human notifications** (§18): none of a jour fixe's own. Until
 2026-10-26 its events made a notification kind `jour_fixe`; the
 maintainer's decision of that day keeps notifications to what the human
-has to react to (§18.1). What needs a human's action reaches them so:
+has to react to (§18.1); the report for its recipients is the one item
+a human asked for by being on the list (the maintainer's decision of
+2026-10-31). What reaches a human so:
 
 - **A decision for the owner** — a proposal triaged to the owner, or one
   only a human may decide (§20.6) — is the request the report files, an
@@ -16659,11 +16677,15 @@ has to react to (§18.1). What needs a human's action reaches them so:
   the dashboard shows the open round and its due step from them. Only a
   present human is invited or moderates (§20.2), so they are in the
   dashboard when the round opens.
-- **The report and a skipped round** inform and ask nothing: the round's
-  view and, when enabled, the ticker (above) show them. The one
-  exception is a round skipped with `no_moderator`, an `inbox` item for
-  the series' keepers: nobody holding the right was there, and only they
-  can grant it to someone else.
+- **The report** is an `inbox` item for the series' report recipients
+  (§20.2: its keepers and the members on its list), with the round's
+  link; an agent recipient is woken once by `jour_fixe_reported`, its
+  `member:` token added to the event's audience. Everyone else reads it
+  in the round's view and, when enabled, the ticker (above).
+- **A skipped round** informs and asks nothing, except a round skipped
+  with `no_moderator`, an `inbox` item for the series' keepers: nobody
+  holding the right was there, and only they can grant it to someone
+  else.
 
 ### 20.10 Defaults
 
