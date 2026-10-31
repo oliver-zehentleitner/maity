@@ -136,16 +136,7 @@ def test_another_owners_instance_rests_only_with_its_owner_s_go(
 ) -> None:
     friend = flow.human(make_client, migrated, "friend")
     lent = factory.agent(migrated, _project(migrated), friend.id)
-    with migrated.connect() as conn:
-        credential = (
-            conn.execute(
-                select(t.credential).where(t.credential.c.membership_id == lent.membership_id)
-            ).first()
-            if hasattr(lent, "membership_id")
-            else None
-        )
-    if credential is None:
-        pytest.skip("the factory agent has no instance to rest")
+    credential = _lent_credential(migrated, lent)
     asked = owner.patch(
         f"{MEMBERS}/{lent.agent_id}", {"dormant": True, "instance": credential.instance}
     )
@@ -155,6 +146,15 @@ def test_another_owners_instance_rests_only_with_its_owner_s_go(
     done = friend.post(f"/requests/{asked.json()['id']}/answer", {"reply_id": "go"})
     assert done.status_code == 200, done.text
     assert _credential_by_id(migrated, credential.id).dormant_since is not None
+
+
+def _lent_credential(engine: Engine, lent: Any) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(
+            select(t.credential)
+            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+            .where(t.membership.c.agent_id == lent.agent_id)
+        ).one()
 
 
 def _credential_by_id(engine: Engine, credential_id: str) -> Any:
@@ -394,3 +394,52 @@ class _SetRow:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._row, name)
+
+
+# --- another owner's agent: what is asked at once, and the jour fixe ------------------------------
+
+
+def test_a_further_request_supersedes_and_what_changes_nothing_or_is_refused_asks_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    friend = flow.human(make_client, migrated, "friend")
+    lent = factory.agent(migrated, _project(migrated), friend.id)
+    credential = _lent_credential(migrated, lent)
+    path = f"{MEMBERS}/{lent.agent_id}"
+    first = owner.patch(path, {"dormant": True, "instance": credential.instance}).json()["id"]
+    again = owner.patch(path, {"dormant": True, "instance": credential.instance})
+    assert again.status_code == 202, again.text
+    with migrated.connect() as conn:
+        rows = {r.id: r for r in conn.execute(select(t.request)) if r.proposal}
+    assert rows[first].status == "withdrawn" and rows[first].withdraw_reason == "superseded"
+    assert rows[again.json()["id"]].status == "open"
+    # Awake and asked to wake: nothing changes, nobody is asked, no request is filed.
+    quiet = owner.patch(path, {"dormant": False, "instance": credential.instance})
+    assert quiet.status_code == 200, quiet.text
+    # The lead is refused now, not at the owner's go.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == lent.agent_id)
+            .values(lead_instance=credential.instance)
+        )
+    lead = owner.patch(path, {"dormant": True, "instance": credential.instance})
+    assert lead.status_code == 400, lead.text
+    assert lead.json()["error"]["details"]["fields"] == {"dormant": "lead"}
+
+
+def test_the_jour_fixe_never_picks_a_dormant_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, listens: list[str]
+) -> None:
+    from maity_hub.jourfixe import rounds
+
+    first, second = _pair(make_client, owner)
+    _listen(listens, first)
+    _listen(listens, second)
+    assert rest(second).status_code == 200
+    with migrated.connect() as conn:
+        member = _membership_row(conn, first)
+        shown = rounds._instances(conn, [member.id])[member.id]
+    assert [i["instance"] for i in shown] == [first.instance]

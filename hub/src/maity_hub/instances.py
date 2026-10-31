@@ -830,7 +830,14 @@ def patch_dormant(
     held = require_active(conn, target, instance, "instance")
     actor = _human_actor(conn, caller, target.project_id)
     if reader is not None and not owns_agent(conn, caller, target):
-        # Another owner's agent: the change waits for that owner (§6.2).
+        # Another owner's agent: the change waits for that owner (§6.2). What the change
+        # itself refuses is refused now, not at the owner's `go`; one that changes nothing
+        # asks nobody.
+        if value and target.lead_instance == held.instance:
+            raise invalid({"dormant": "lead"}, "a team's lead is moved before it rests")
+        if (held.dormant_since is not None) == value:
+            return target, reader, None
+        foreign_agent.withdraw_open(conn, target.id, actor, "superseded")
         asked = foreign_agent.file(
             conn,
             project,

@@ -58,6 +58,7 @@ def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[di
         .where(
             t.credential.c.membership_id.in_(membership_ids),
             t.credential.c.revoked_at.is_(None),
+            t.credential.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
             t.agent_session.c.live.is_(True),
         )
     ).all()
