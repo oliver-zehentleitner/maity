@@ -1109,9 +1109,10 @@ extra call has to fit inside it rather than follow it.
 When `maity` is not on PATH (`shutil.which`), `maity join` prints one
 line on stderr: the directory it ran from, when it ran as `maity`, and
 `pipx ensurepath`. Nothing else changes; the join goes on. The package
-metadata names the maintainer in `authors` and `maintainers`, name only:
-the team lead asked that it carry no e-mail address; why is not
-recorded.
+metadata names the maintainer in `authors` and `maintainers`, name only,
+with no e-mail address: agents do not publish a person's address in a
+public artifact, and PyPI metadata stays public and is read for spam.
+If the maintainer wants an address there, they add it themselves.
 
 **Reason:** a join started by its full path, or in a shell that was
 changed by hand, succeeds, and the agent's next `maity resume` or
