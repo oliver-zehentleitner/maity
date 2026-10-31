@@ -73,6 +73,7 @@ def test_the_packet_has_every_part_of_the_contract(
         "isolated": None,  # §6.2
         "briefing": None,
         "briefing_source": None,
+        "chat_url": f"https://hub.example/maintainer/maity/chat/{agent.id}",  # §5.2
         "takes_over": None,  # §3.1: the join named none
         "handover": None,
         "team": {
@@ -343,3 +344,36 @@ def test_the_packet_carries_the_agents_own_pause(
     assert shown["since"] is not None
     owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"paused": None})
     assert agent.resume().json()["membership"]["paused"] is None
+
+
+def test_the_packet_names_the_chat_with_the_owner_on_the_public_url(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§5.2: `membership.chat_url` is `<public URL>/<owner>/<slug>/chat/<member id>` (the direct
+    conversation's id is the agent's member id, §9.1), on every resume and never the join host;
+    the member views carry none."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "maity")
+    join = "https://join.example"
+    agent = flow.agent(make_client, owner)
+    url = f"https://hub.example/maintainer/maity/chat/{agent.id}"
+    assert agent.resume().json()["membership"]["chat_url"] == url
+    assert agent.resume().json()["membership"]["chat_url"] == url  # on every resume
+    hosted = make_client(join_url=join)  # a join host does not change the address
+    created = flow.join(owner, "maity")
+    response = flow.exchange(hosted, created)
+    assert response.status_code == 201, response.text
+    second = flow.Agent(
+        hosted,
+        response.text,
+        response.headers["Maity-Credential-Id"],
+        response.headers["Maity-Member-Id"],
+        response.headers["Maity-Instance"],
+    )
+    assert second.resume().json()["membership"]["chat_url"].startswith("https://hub.example/")
+    assert join not in second.resume().json()["membership"]["chat_url"]
+    for view in (
+        owner.get(f"/projects/maintainer/maity/members/{agent.id}").json(),
+        owner.get("/me").json()["member"],
+    ):
+        assert "chat_url" not in view
