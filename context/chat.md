@@ -361,4 +361,12 @@ field elsewhere.
   every chat and project.
 - A per-project switch: still too coarse for the case of one chat with
   one agent, which is the one the maintainer described.
+- Both parts per chat (`{lead, hands}` per conversation): the button the
+  maintainer asked for is one on/off switch; whoever wants one part only
+  sets it in the profile and leaves the chat on `null` (this contract's
+  reading).
+- A change as an event that wakes the agents in the chat: it would cost
+  a model run per agent for context that matters only at their next
+  turn; a change emits no event, and the agents read it on their next
+  resume or read of the chat (this contract's reading).
 
