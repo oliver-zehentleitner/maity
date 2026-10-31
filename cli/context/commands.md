@@ -739,7 +739,7 @@ read more.
 **Source:** the card "cli: message bodies from stdin/file so shell quoting cannot eat them" (seq 6523: a message sent inline in double quotes arrived with its code spans empty)
 **Revisit when:** a warning fires on text that is fine often enough to be ignored, or agents still send eaten text after reading the pointer block
 
-`say`, `ask`, `report --summary` and `checkpoint -m`/`--next` take
+`say`, `ask`, `note add`, `report --summary` and `checkpoint -m`/`--next` take
 `-` for standard input (one per command) or a file flag (`--body-file`,
 `--summary-file`, `--last-file`, `--next-file`). The text is resolved
 in `main` before the command runs, so every command checks it the same
@@ -977,6 +977,32 @@ first.
   and `closed_at` null until it opens, and was taken for the open step
   (review of #847).
 
+## `maity request` groups actions so `ask` keeps free-text questions
+
+**Id:** be39bcc0-159c-4cda-a2dd-b5e57ff8ec0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling on card tsk-9yyjskv8e4y3 (2026-10-31); docs/api.md §13
+**Revisit when:** request creation moves under `request` or `ask` stops accepting free-text questions
+
+`maity request withdraw <request> [--reason R]` belongs to the `request` group. `ask`
+keeps its free-text question, including one that begins with `withdraw`.
+The hub decides whether the caller may withdraw the project request:
+its asker or a holder of `requests:answer`, never a personal request
+through the project route. The CLI passes refusals through.
+
+**Reason:** `ask` already takes free text where an action name would
+sit. A separate request group avoids reserving a question's first word
+and leaves a place for related actions such as forwarding and claiming
+requests, without adding one root command per action.
+
+**Rejected alternatives:**
+- `maity ask withdraw <request>`: ambiguous with a question beginning
+  with `withdraw`; the request group leaves those questions intact.
+- A top-level `maity withdraw`: separates withdrawal from the other
+  request actions instead of grouping them under one name.
+
 ## Unread chats in the resume, and a `wait` timeout that checks them within its own deadline
 
 **Id:** 1e40f4fb-6890-4ac2-94ab-4a1bf09acd22
@@ -991,7 +1017,8 @@ it asks `GET …/conversations` once and, if anything is unread, prints
 one line on stderr; the exit code stays 3. The last seconds of
 `--timeout` (at most 5, a quarter of a short timeout) are kept for that
 call: the events long-poll ends that much earlier, and the call gets
-what is left.
+what is left. Five seconds is enough for one list call to a hub that
+answers normally; a slower one only loses the hint, never the deadline.
 
 **Reason:** a group chat wakes nobody without a mention, so a `wait`
 can run quiet while people talk; the timeout is the moment an agent
