@@ -24,14 +24,14 @@ window.Maity = window.Maity || {};
     const errors = [];
     String(text || "").split("\n").map((l) => l.trim()).filter(Boolean).forEach((line, i) => {
       const m = /^(\*|\d+(?:\.\d+)*)\s*:\s*(.*)$/.exec(line);
-      if (!m) { errors.push("line " + (i + 1) + ": write it as '<section>: <token> <token>', e.g. '8: area:hub/'"); return; }
+      if (!m) { errors.push(M.t("tickerset.err.shape", { line: i + 1 })); return; }
       const tokens = m[2].split(/\s+/).filter(Boolean);
       const bad = tokens.filter((t) => !TOKEN.test(t));
-      if (bad.length) errors.push("line " + (i + 1) + ": " + bad.join(", ") + " is no token (area:<path>, member:<id>, role:<role>, trust:<trust>)");
-      if (tokens.length > TOKENS_MAX) errors.push("line " + (i + 1) + ": at most " + TOKENS_MAX + " tokens");
+      if (bad.length) errors.push(M.t("tickerset.err.token", { line: i + 1, tokens: bad.join(", "), count: bad.length }));
+      if (tokens.length > TOKENS_MAX) errors.push(M.t("tickerset.err.tokens_max", { line: i + 1, count: TOKENS_MAX }));
       map[m[1]] = tokens;
     });
-    if (Object.keys(map).length > KEYS_MAX) errors.push("at most " + KEYS_MAX + " sections");
+    if (Object.keys(map).length > KEYS_MAX) errors.push(M.t("tickerset.err.keys_max", { count: KEYS_MAX }));
     return { map, errors };
   }
 
@@ -70,7 +70,7 @@ window.Maity = window.Maity || {};
       const { map } = parseImplementers(impl.value);
       const lost = [...new Set([].concat(...Object.values(map)).filter((tok) => TOKEN.test(tok) && unresolved(ctx, tok)))];
       unresolvedBox.hidden = !lost.length;
-      unresolvedBox.textContent = lost.length ? "Names nobody now: " + lost.join(", ") + "." : "";
+      unresolvedBox.textContent = lost.length ? M.t("tickerset.unresolved", { tokens: lost.join(", ") }) : "";
     };
     impl.addEventListener("input", showUnresolved);
     showUnresolved();
@@ -82,22 +82,20 @@ window.Maity = window.Maity || {};
         if (!mayEdit) return;
         const paths = files.value.split("\n").map((l) => l.trim()).filter(Boolean);
         const { map, errors } = parseImplementers(impl.value);
-        if (paths.length > FILES_MAX) errors.push("at most " + FILES_MAX + " contract files");
-        if (errors.length) { status.fail("Not saved: ", { message: errors.join("; ") }); return; }
+        if (paths.length > FILES_MAX) errors.push(M.t("tickerset.err.files_max", { count: FILES_MAX }));
+        if (errors.length) { status.fail(M.t("tickerset.not_saved"), { message: errors.join("; ") }); return; }
         // Sent whole (§6.1): what the form leaves out is gone.
-        save({ settings: { ticker: { enabled: enabled.checked, contract_files: paths, contract_implementers: map } } }, "Ticker");
+        save({ settings: { ticker: { enabled: enabled.checked, contract_files: paths, contract_implementers: map } } }, M.t("tickerset.saved_label"));
       },
     },
-    h("h2", { class: "panel-title" }, "Change ticker"),
-    h("label", { class: "check", for: "ticker-enabled" }, enabled, " Announce merges, decisions, releases and deploys"),
-    h("p", { class: "hint" }, "Off, only posts by hand reach the ticker. Your own follows and mutes: ",
-      h("a", { href: ctx.link("ticker") }, "the Ticker"), "."),
-    h("label", { for: "ticker-files" }, "Contract files (one path per line)"), files,
-    h("label", { for: "ticker-implementers" }, "Who implements which section"), impl,
-    h("p", { class: "hint", id: "ticker-implementers-hint" }, "One section per line: its number, a colon, then who: area:<path>, member:<id>, role:<role>, trust:<trust>. "
-      + "* stands for every section no line names. Admins hear of every contract change anyway."),
+    h("h2", { class: "panel-title" }, M.t("tickerset.title")),
+    h("label", { class: "check", for: "ticker-enabled" }, enabled, " ", M.t("tickerset.enabled")),
+    h("p", { class: "hint" }, M.tn("tickerset.enabled.hint", { ticker: h("a", { href: ctx.link("ticker") }, M.t("tickerset.enabled.hint.link")) })),
+    h("label", { for: "ticker-files" }, M.t("tickerset.files")), files,
+    h("label", { for: "ticker-implementers" }, M.t("tickerset.implementers")), impl,
+    h("p", { class: "hint", id: "ticker-implementers-hint" }, M.t("tickerset.implementers.hint")),
     unresolvedBox,
-    mayEdit ? h("button", { type: "submit" }, "Save the ticker") : h("p", { class: "muted" }, "An owner or admin changes these."),
+    mayEdit ? h("button", { type: "submit" }, M.t("tickerset.save")) : h("p", { class: "muted" }, M.t("tickerset.read_only")),
     status.el);
     return form;
   }
@@ -108,8 +106,8 @@ window.Maity = window.Maity || {};
     const box = h("section", { class: "panel webhook", "aria-labelledby": "webhook-title" });
     const body = h("div");
     const status = M.statusLine();
-    append(box, h("h2", { class: "panel-title", id: "webhook-title" }, "Forge webhook"),
-      h("p", { class: "hint" }, "With a webhook the forge tells the hub of merges at once; without one the hub finds them on its next probe."),
+    append(box, h("h2", { class: "panel-title", id: "webhook-title" }, M.t("webhook.title")),
+      h("p", { class: "hint" }, M.t("webhook.hint")),
       body, status.el);
     const path = ctx.base + "/forge/webhook";
     let busy = false;
@@ -122,51 +120,53 @@ window.Maity = window.Maity || {};
     // after it does, since it is shown only now and a rotation already
     // ended the old one. Kept in the page only, never stored.
     function secretBlock(shown) {
-      const copy = h("button", { type: "button", class: "small" }, "Copy the secret");
+      const copy = h("button", { type: "button", class: "small" }, M.t("webhook.copy"));
       copy.addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(shown.secret); copy.textContent = "Copied"; } catch (err) { copy.textContent = "Copy failed: select it"; }
+        try { await navigator.clipboard.writeText(shown.secret); copy.textContent = M.t("webhook.copied"); } catch (err) { copy.textContent = M.t("webhook.copy_failed"); }
       });
       return h("div", { class: "webhook-secret", role: "status" },
-        h("p", { class: "flag" }, "Shown only now. Enter it at the forge: payload URL as below, content type application/json, this secret."),
-        h("p", null, "Payload URL: ", h("code", null, shown.url)),
-        h("p", null, "Secret: ", h("code", { class: "webhook-secret-value" }, shown.secret), " ", copy));
+        h("p", { class: "flag" }, M.t("webhook.shown_once")),
+        h("p", null, M.tn("webhook.payload_url", { url: h("code", null, shown.url) })),
+        h("p", null, M.tn("webhook.secret_line", { secret: h("code", { class: "webhook-secret-value" }, shown.secret) }), " ", copy));
     }
     async function draw(shown) {
       let w;
       try {
         w = await M.api.get(path);
       } catch (err) {
-        const again = h("button", { type: "button", class: "small" }, "Read it again");
+        const again = h("button", { type: "button", class: "small" }, M.t("webhook.read_again"));
         again.addEventListener("click", () => draw(shown));
-        append(clear(body), h("p", { class: "send-status failed" }, "The webhook could not be read: " + err.message, " ", again),
+        append(clear(body), h("p", { class: "send-status failed" }, M.t("webhook.read_failed", { reason: err.message }), " ", again),
           shown ? secretBlock(shown) : null);
         return;
       }
       clear(body);
       append(body, h("dl", { class: "facts" },
-        h("dt", null, "Secret"), h("dd", null, w.configured ? "set" + (w.rotated_at ? ", rotated " + formatTime(w.rotated_at) : w.created_at ? " " + formatTime(w.created_at) : "") : "none"),
-        h("dt", null, "Last delivery"), h("dd", null, w.last_delivery_at ? formatTime(w.last_delivery_at) + (w.last_result ? " · " + w.last_result : "") : "none yet")));
+        h("dt", null, M.t("webhook.secret")), h("dd", null, !w.configured ? M.t("webhook.secret.none")
+          : w.rotated_at ? M.t("webhook.secret.rotated", { when: formatTime(w.rotated_at) })
+            : w.created_at ? M.t("webhook.secret.set_at", { when: formatTime(w.created_at) }) : M.t("webhook.secret.set")),
+        h("dt", null, M.t("webhook.last")), h("dd", null, w.last_delivery_at ? [formatTime(w.last_delivery_at), w.last_result ? " · " + w.last_result : null] : M.t("webhook.last.none"))));
       if (shown) append(body, secretBlock(shown));
-      const make = h("button", { type: "button", class: "primary" }, w.configured ? "Rotate the secret" : "Create a secret");
+      const make = h("button", { type: "button", class: "primary" }, w.configured ? M.t("webhook.rotate") : M.t("webhook.create"));
       make.addEventListener("click", () => act(async () => {
-        if (w.configured && !window.confirm("Rotate the secret? The current one stops working at once; deliveries fail until the forge has the new one.")) return;
-        status.busy("Making the secret…");
+        if (w.configured && !window.confirm(M.t("webhook.rotate.confirm"))) return;
+        status.busy(M.t("webhook.making"));
         try {
           const made = await M.api.post(path + "/secret", {});
           status.done();
           await draw(made);
-        } catch (err) { status.fail("Not made: ", err); }
+        } catch (err) { status.fail(M.t("webhook.not_made"), err); }
       }));
-      const remove = w.configured ? h("button", { type: "button" }, "Remove the secret") : null;
+      const remove = w.configured ? h("button", { type: "button" }, M.t("webhook.remove")) : null;
       if (remove) {
         remove.addEventListener("click", () => act(async () => {
-          if (!window.confirm("Remove the secret? Deliveries are refused from then on; the hub finds merges on its probe.")) return;
-          status.busy("Removing…");
+          if (!window.confirm(M.t("webhook.remove.confirm"))) return;
+          status.busy(M.t("webhook.removing"));
           try {
             await M.api.del(path + "/secret");
             status.done();
             await draw(null);
-          } catch (err) { status.fail("Not removed: ", err); }
+          } catch (err) { status.fail(M.t("webhook.not_removed"), err); }
         }));
       }
       append(body, h("div", { class: "actions" }, remove, make));
