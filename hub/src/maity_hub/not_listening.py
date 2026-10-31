@@ -59,11 +59,14 @@ class _Unnarrowed:
 
 def waits_for(row: Any, member: Any, principal: str, credential: Any) -> bool:
     """Whether the event waits for this instance (§5.3)."""
-    if events.wakes(row, member, principal, credential.instance, credential.id):
+    dormant = credential.dormant_since is not None  # only its own token counts (§6.17)
+    if events.wakes(row, member, principal, credential.instance, credential.id, dormant=dormant):
         return True
     chosen = (row.wakes or {}).get(principal)
-    if chosen != [] or not events.wakes(
-        _Unnarrowed(row), member, principal, credential.instance, credential.id
+    if (
+        dormant
+        or chosen != []
+        or not events.wakes(_Unnarrowed(row), member, principal, credential.instance, credential.id)
     ):
         return False
     return member.lead_instance is None or credential.instance == member.lead_instance

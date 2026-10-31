@@ -58,6 +58,7 @@ def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[di
         .where(
             t.credential.c.membership_id.in_(membership_ids),
             t.credential.c.revoked_at.is_(None),
+            t.credential.c.dormant_since.is_(None),  # never chosen, as if not listening (§6.17)
             t.agent_session.c.live.is_(True),
         )
     ).all()
@@ -106,11 +107,17 @@ def presence(conn: Connection, project: Any, members: list[Any]) -> dict[int, di
     now = clock.now()
     presences = availability.presences_of(conn, members)
     humans = availability.humans_of(conn, members)
+    dormant = availability.dormants_of(conn, members)
     instances = _instances(conn, [m.id for m in members if m.agent_id is not None])
     found: dict[int, dict[str, Any]] = {}
     for member in members:
         state = availability.computed(
-            member, presences[member.id], humans.get(member.human_id), project, now
+            member,
+            presences[member.id],
+            humans.get(member.human_id),
+            project,
+            now,
+            dormant=member.id in dormant,
         )["state"]
         if state != "available":
             found[member.id] = {"present": False, "absent_reason": "not_available"}

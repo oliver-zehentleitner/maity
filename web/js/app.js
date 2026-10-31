@@ -981,7 +981,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
+      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -1027,9 +1027,34 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
   }
 
+  // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
+  // requests across projects and every chat across them, each with what
+  // the hub counts for it (§18.2).
+  const ALL_PAGES = [
+    { scope: "all", href: "/all", label: () => M.t("all.page.inbox"),
+      count: (c) => c.inbox || 0, said: (count) => M.t("all.page.inbox.count", { count }) },
+    { scope: "chats", href: "/chats", label: () => M.t("all.page.chats"),
+      count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
+  ];
+  function allCount(page) {
+    const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
+    return n ? h("span", { class: "count", "aria-label": page.said(n) }, String(n)) : null;
+  }
+
   function renderTabCounts(ctx) {
     const nav = document.getElementById("header").querySelector("nav.views");
     if (!nav) return;
+    if (ctx.scope !== "project") {
+      nav.querySelectorAll("a").forEach((a) => {
+        const page = ALL_PAGES.find((x) => a.getAttribute("href") === x.href);
+        if (!page) return;
+        const old = a.querySelector(".count");
+        if (old) old.remove();
+        const fresh = allCount(page);
+        if (fresh) a.appendChild(fresh);
+      });
+      return;
+    }
     nav.querySelectorAll("a").forEach((a) => {
       const route = NAV.find((n) => a.getAttribute("href") === projectLink(ctx.slug, n.route));
       if (!route) return;
@@ -1131,7 +1156,7 @@ window.Maity = window.Maity || {};
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
           : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"),
-            "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), chats: M.t("header.chats"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
+            "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
@@ -1159,7 +1184,10 @@ window.Maity = window.Maity || {};
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label, tabCount(ctx, item.route))))
-        : null);
+        : ctx.scope === "all" || ctx.scope === "chats"
+          ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
+            ALL_PAGES.map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+          : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
     header.chatCtx = ctx;
