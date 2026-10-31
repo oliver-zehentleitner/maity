@@ -413,6 +413,9 @@ nobody can see it.
   so a second way would only add a code path.
 - Leaving it to the agent to tell its lead in a message: the hub would
   still show the old model, and every lead would have to read it.
+- A line in the agent's own `maity resume` naming its switch: the agent
+  made the switch and passed `--model` itself, and the event reaches
+  whoever re-routes; the contract asks for no such line.
 
 ## The site's sitemap and robots.txt are made at deploy from the pages, not kept in the repository
 

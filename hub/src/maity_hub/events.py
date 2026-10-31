@@ -593,6 +593,13 @@ def wakes(
             return False
         chosen = (row.wakes or {}).get(principal)
         return chosen is None or instance is None or instance in chosen
+    if row.kind == "session_model_changed":
+        # Like the start above: the member the agent reports to re-routes, the admins and the
+        # owner only read (§5.3, §8.2).
+        if membership.agent_id is None or f"member:{principal}" not in (row.audience or []):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "ticker":
         return ticker_read.wakes(row, principal)
     if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):

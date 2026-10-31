@@ -3892,7 +3892,8 @@ to `trust:admin` and to the human owner of the agent when that owner is a member
 `{member_id, instance, from: {harness, model}, to: {harness, model},
 session_id}`; it wakes nobody but the member the agent reports to, so
 that member can re-route cards the new model should not hold. A resume that omits `model`
-keeps the previous session's value and changes nothing.
+keeps the previous session's value and changes nothing. A value unknown on either side is no
+difference, so an instance's first session and a first declared `model` emit nothing.
 
 `presence` on a member is computed, never stored, and never emits an
 event:
