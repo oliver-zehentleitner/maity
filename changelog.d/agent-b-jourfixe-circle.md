@@ -17,5 +17,10 @@
   by the `circle_owner`, its events and redactions reach only its readers, a `to_owner` proposal goes
   to the `circle_owner`, only they or an admin agent of theirs decide, and it writes no ticker item
   (docs/api.md §20.3, §20.5–§20.9).
-- hub: `jour_fixe_reported` names its series and topic; a skip and a series change wake nobody
-  (docs/api.md §20.9).
+- hub: `jour_fixe_reported` names its series and topic (docs/api.md §20.9).
+
+### Fixed
+
+- hub: `jour_fixe_reported` woke every agent of the project and `jour_fixe_series_changed` every
+  member it named; the report now wakes only the agents on the series' report list, and a skip and
+  a series change wake nobody (docs/api.md §20.9).

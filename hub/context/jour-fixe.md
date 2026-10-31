@@ -273,7 +273,7 @@ reaches every way a membership ends, as for `circle_owner_gone` (de0c97c0).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 3 of 3); contract `docs/api.md` §20.2, §20.5–§20.7, §20.9
+**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 3 of 3); `to: member` confirmed by the team lead; contract `docs/api.md` §20.2, §20.5–§20.7, §20.9
 **See:** jour-fixe.md#the-moderator-rights-two-consents-ride-on-consent-requests-and-the-sweep-ends-rights-and-files-what-the-upgrade-owes — 8dcb08a3-672d-48a2-816a-453bf27996c5 — as of 2026-10-31
 **Revisit when:** a series' deletion stops leaving its rounds behind, or the request table allows a non-personal request to one human
 
@@ -297,7 +297,9 @@ change wake nobody.
 series row left, so only the round can still name its owner. The request
 table holds a request to one named human only as a personal one, while §20.6
 asks for a personal request only once the owner left, and a member is
-reachable as `to: member`. Reading the list rather than pruning it covers
+reachable as `to: member` (the check `ck_request_personal_shape` allows
+`to_kind: human` only together with `personal`; the team lead confirmed
+`to: member` for a member, 2026-10-31). Reading the list rather than pruning it covers
 every way a member stops reading the rounds — leaving, a moderator right
 that ends — without a hook in each.
 
