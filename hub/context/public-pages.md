@@ -412,6 +412,11 @@ answer of public is stored in `repository_public`, so the page need not wait for
 changes the repository to one the hub does not see public turns an `on` page `off` and writes `project_updated`; the
 same pass as any other way the page stops being served (`agent_owners.reconcile`, here also archiving) follows.
 
+A hub without its own forge token sees no repository public, so there every project with a repository starts `off` until
+its namespace owner turns the page on. The look is made for every caller that does not send `off`, a member of an
+organisation who is no owner included, whose project starts `off` anyway: the role is only known inside the transaction,
+and reading it beforehand would read the same rows twice for one request, so one uncached forge request is spent instead.
+
 **Reason:** a project is public by default so a new project is findable and its outside agents are allowed (the
 maintainer's decision, 2026-10-31), but creating one must never publish what the creator could not see the hub see: a
 private repository's name and a page that links it. Looking before the transaction keeps a slow forge from holding a

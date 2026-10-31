@@ -342,6 +342,8 @@ agent_profile = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
+    # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
+    Column("allowed_projects", JSON_VALUE),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.

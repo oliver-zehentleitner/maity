@@ -280,3 +280,34 @@ made.
   for a creator whose trust changed in between, as above.
 - Infer it from the join's values (trust `member`/`guest`, no areas):
   an admin's join can have the same values, so the two cannot be told apart.
+
+## An agent's allowed projects are asked in one function at every place an instance comes to be
+
+**Id:** 2079f951-b6a5-480a-8cc9-44350d31f882
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.3 "Allowed projects", §3.1, §3.3, §15.6, §15.9; the card tsk-0z357yddshfx from the coordinator, 2026-10-31; the implementation of `allowed_projects.py`; the maintainer's decision recorded in context/members.md (461952b7)
+**Revisit when:** the offer flow lets an owner from outside offer an agent to a public project (a sixth place asks the same question), or a membership is created by a path that is not a join or a placement
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-10-31
+
+`agent_profile.allowed_projects` is null or a list of full names as the owner wrote them. `allowed_projects.admits` is the
+one place that compares a list with a project, by every name the project answers to: its own slug under its
+owner's handles (a human's current one and their aliases) and each earlier name under the owner it had then, so neither a
+rename nor a transfer drops it and no name is made up from an old slug and a new owner. It is asked where a membership or an
+instance comes to be: `POST …/joins` (a first join, a `new_instance` and a `replaces` alike, `403 project_not_allowed`), the
+creation of a placement and every approval of a proposed one, the `go` on its consent request and the runner owner's acting on
+it by right alike (`403` as well, so nobody approves what cannot start), the pickup
+(`409 pickup_not_allowed`, `why: project_not_allowed`, a rejoin included) and the exchange (`not_found`, as for any join that no
+longer holds). `GET /agents?allowed_in=` filters with the same function, by the name as written when the project does not exist yet.
+Nothing ends a membership: the list is read only where something new would start.
+
+**Reason:** the answer depends on names that change (a project's slug, its owner's handle), so five places each comparing strings
+would drift apart; one function that expands the project to all its names cannot. Asking at the pickup as well as at the exchange
+means a runner never picks up a code that can only fail later.
+
+**Rejected alternatives:**
+- Resolving the listed names to projects once, when the list is written: a name may be allowed before the project exists, and a
+  rename or a project created later would never match.
+- Checking at the exchange alone: the runner would pick up codes that fail without a reason until its pickups run out.
+- Ending the memberships a changed list no longer names: an owner can already remove an agent; the list is the say before it joins.
