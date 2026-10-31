@@ -393,20 +393,23 @@ def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
         return [
             f"jour fixe {round_id}: answers closed, {inline(payload.get('answers_received'))} "
             f"received; you moderate: read them with `maity jourfixe answers {round_id}`, the "
-            f"statement is due by {inline(payload.get('statement_due_at'))}"
+            f"statement is due by {inline(payload.get('statement_due_at'))} "
+            f"(`maity jourfixe statement {round_id} --file …`)"
         ]
     if kind == "jour_fixe_step_opened":
-        step = inline(payload.get("step"))
+        step, step_kind = inline(payload.get("step")), inline(payload.get("kind"))
         topics = payload.get("topics")
         named = ", ".join(inline(x) for x in topics) if isinstance(topics, list) else ""
         return [
-            f"jour fixe {round_id}: step {step} ({inline(payload.get('kind'))}) is open for you "
-            f"until {inline(payload.get('closes_at'))}" + (f", topics {named}" if named else "")
+            f"jour fixe {round_id}: step {step} ({step_kind}) is open for you "
+            f"until {inline(payload.get('closes_at'))}"
+            + (f", topics {named}" if named else "")
+            + f': `maity jourfixe post {round_id} --step {step_kind} --topic <topic> "…"`'
         ]
     if kind == "jour_fixe_exchange_closed":
         return [
             f"jour fixe {round_id}: the exchange closed; you moderate: the report is due by "
-            f"{inline(payload.get('report_due_at'))}"
+            f"{inline(payload.get('report_due_at'))} (`maity jourfixe report {round_id} --file …`)"
         ]
     return []
 

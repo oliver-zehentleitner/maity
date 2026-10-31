@@ -4570,10 +4570,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
     "create: the five setup cards on the new project's board, open, marked Setup");
   await projectSettings();
-  const memPanel = main.querySelector("section.memory-panel");
+  const memPanel = main.querySelector(".memory-panel");
   expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 5 && text(memPanel).includes("The dashboard is published under keep-the-why-dashboard.")
-    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href"))) && !memPanel.querySelector("select, input"),
-    "settings: the memory provider read only, with links to its setup cards and the dashboard's path");
+    && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href")))
+    && byId("memory-provider") && byId("memory-provider").value === "keep-the-why" && text(memPanel).includes("It makes no setup card and cancels none"),
+    "settings: the memory provider with links to its setup cards and the dashboard's path, changeable by the owner (tsk-41hpr02cvej8)");
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
@@ -4588,7 +4589,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(onSettings() && main.querySelector("form.badge-form") && byId("badge-select").value === "agents_online",
     "settings: after the save the page stays on Settings and shows the new badge (the maintainer's report)");
   win.Maity.api.patch = bgPatch;
-  if (main.querySelector("section.memory-panel")) await projectSettings();
+  if (main.querySelector(".memory-panel")) await projectSettings();
   // None: only the Maity badge is offered; without a repository the cards wait for one.
   await go("#/new");
   byId("project-name").value = "Plain"; byId("project-name").dispatch("input");
@@ -4603,10 +4604,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: None sends the Keep the Why options false, no path, and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("None: the project works without a memory provider.")
-    && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+  expect(text(main.querySelector(".memory-panel")).includes("None: the project works without a memory provider.")
+    && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
     && text(main.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
     "settings: None, nothing chosen, the badge off");
+  // The provider changes in Project settings (tsk-41hpr02cvej8, §6.1): a reason first, then a PATCH of
+  // memory; under Keep the Why the commitment can be required, back under None it is optional and locked.
+  const memPatches = [];
+  const locked = (el) => el.disabled === true || (el.attrs && el.attrs.disabled !== undefined && el.attrs.disabled !== null);
+  const memPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { memPatches.push([p, b]); return memPatch(p, b); };
+  expect(locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "optional" && byId("memory-provider").value === "none",
+    "settings: under None the commitment is optional and locked");
+  byId("memory-provider").value = "keep-the-why";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(memPatches.length === 0, "settings: a provider change asks for its reason first");
+  byId("memory-reason").value = "We keep our reasons in the repository";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(memPatches.length === 1 && JSON.stringify(memPatches[0][1]) === JSON.stringify({ memory: { provider: "keep-the-why" }, reason: "We keep our reasons in the repository" })
+    && onSettings() && text(main).includes("Project memory saved.") && byId("memory-provider").value === "keep-the-why"
+    && text(main.querySelector(".memory-panel")).includes("Keep the Why: joining agents load the Keep the Why skill")
+    && !locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "required"
+    && byId("ktw-policy-select").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "required,optional",
+    "settings: switched to Keep the Why, the commitment is offered and reads required " + JSON.stringify(memPatches));
+  byId("memory-provider").value = "none";
+  byId("memory-reason").value = "Back to none";
+  main.querySelector("form.memory-panel").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(memPatches.length === 2 && JSON.stringify(memPatches[1][1]) === JSON.stringify({ memory: { provider: "none" }, reason: "Back to none" })
+    && locked(byId("ktw-policy-select")) && byId("ktw-policy-select").value === "optional",
+    "settings: back under None the commitment is optional and locked again");
+  win.Maity.api.patch = memPatch;
   await projectSettings();
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
   await go("#/new");
@@ -4619,8 +4646,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: with the dashboard unticked, dashboard_path is not sent at all " + JSON.stringify(ltSent.setup));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
-    && text(main.querySelector("section.memory-panel")).includes("The cards are made when the project gets a repository."),
+  expect(text(main.querySelector(".memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
+    && text(main.querySelector(".memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
   await projectSettings();
   // The boolean keep_the_why alias of memory.provider is gone from the hub (#606): the mock refuses it too.
@@ -4634,7 +4661,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
   await go("#/maintainer/sample/inbox"); await projectSettings();
-  expect(text(main.querySelector("section.memory-panel")).includes("None") && text(main.querySelector("section.memory-panel")).includes("No setup option was chosen.")
+  expect(text(main.querySelector(".memory-panel")).includes("None") && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.")
     && byId("badge-select").value === "members" && !main.querySelector("img.badge-preview")
     && text(main.querySelector("form.badge-form .paste-line")).includes("/badge/maintainer/sample.svg"),
     "settings: a project with None and its badge on; no preview without a hub to serve it");

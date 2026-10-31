@@ -550,7 +550,7 @@ hub, would then refuse each other until both shipped together.
 **Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
-`say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
+`say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
 placement commands read `GET …/members` once and send a member id. The
 id itself, the current handle, any of the member's `aliases`, and a
 global name `owner/handle` (either part current or former) all name the
@@ -1002,6 +1002,35 @@ requests, without adding one root command per action.
   with `withdraw`; the request group leaves those questions intact.
 - A top-level `maity withdraw`: separates withdrawal from the other
   request actions instead of grouping them under one name.
+
+## The moderator's statement and report go to the hub as read, from a JSON file
+
+**Id:** d9f23535-8d42-4b4e-951a-d427af9970a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe statement`/`report` (`--file FILE|-`, "with the body of §20.6"), §20.5, §20.6; the absent client-side checks are this package's choice
+
+`maity jourfixe statement` and `report` read one JSON object from the
+file or stdin and send it unchanged: no keys added, dropped or checked
+beyond being an object. What is wrong in it (an unknown answerer, too
+many proposals, a decision without its basis) comes back as the hub's
+`invalid` or `forbidden`. The output lists what the hub made of it: the
+ids of topics and proposals, each proposal's triage with its request
+or card, and any proposal left without a card.
+
+**Reason:** both bodies are nested lists (topics with items and
+proposals; proposals with decisions and their basis) that flags cannot
+express, and the hub checks them in full against the round, which the
+CLI cannot know. Checking them twice would keep two copies of §20.5 and
+§20.6 that drift; sending as read is how `maity api` and
+`say --review-file` treat a body already.
+
+**Rejected alternatives:**
+- One flag per field, repeated per topic or proposal: the nesting gets
+  lost in the order of flags.
+- Validating the keys before sending, as `jourfixe answer` does: its
+  three keys are flat and fixed, these bodies are not.
 
 ## Unread chats in the resume, and a `wait` timeout that checks them within its own deadline
 

@@ -961,7 +961,7 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
-## Project memory is chosen on /new and only shown afterwards
+## Project memory is chosen on /new with its setup options
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
 **Type:** decision
@@ -979,18 +979,16 @@ checked as the hub checks it (§6.21: one to five segments, and `..`
 nowhere in the value, `a..b` included, as the coordinator settled it on
 2026-10-30), its refusal said at the field;
 `dashboard_path` is sent only while that option is ticked, and left out
-of the request otherwise, never sent as `null`. Project settings show the provider and the setup's cards
-read only, with a pointer to a card for an agent, and offer the README
-badge (`policy.badge`) with its snippet. Until 2026-10-30 the form asked
+of the request otherwise, never sent as `null`. Project settings show the setup's cards
+read only and offer the README badge (`policy.badge`) with its snippet;
+the provider itself is changed there since 2026-10-31
+(de95eb84-842b-4476-95c6-dcbaf3a98064), until then it was shown read
+only with a pointer to a card for an agent. Until 2026-10-30 the form asked
 the hub's `/openapi.json` whether `POST /projects` names `memory` and
 `setup`, and without them offered neither; since then it always offers
 and sends them (e1699490, the alpha rule).
 
-**Reason:** the hub would accept a provider change by `PATCH`, but it
-creates and cancels no setup card on it, so a switch in the panel would
-change what agents are told while the repository stays as it was; the
-change is work in the repository, which is what a card is for. The
-path is left out with the dashboard unticked because the hub would only
+**Reason:** the path is left out with the dashboard unticked because the hub would only
 drop it, `null` is `invalid` (§6.21), and a malformed value in a hidden
 field would refuse a creation for something the human did not choose. The
 form's check is the hub's, not a stricter or looser one of its own: a
@@ -3295,3 +3293,35 @@ was: the reader found the chats only through the Chat button, not
 where the requests across projects are. A tab inside the inbox view:
 the inbox and the chat list are views of their own, and a page address
 for each keeps the back button and links working.
+
+## The memory provider is changed in Project settings, with a reason
+
+**Id:** de95eb84-842b-4476-95c6-dcbaf3a98064
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-41hpr02cvej8 (the maintainer, 2026-10-31: a project under `none` cannot make Keep the Why required, and the dashboard offered no way to change the provider); docs/api.md §6.1 (a change by `PATCH`, `project:admin`, bumps `rules_version`, makes and cancels no setup card), §6.23
+**Revisit when:** a second provider arrives, or the hub sets something up or cancels setup cards on a provider change
+
+In Project settings, a human with `project:admin` changes **Project
+memory** (Keep the Why, None) with a reason; the form sends
+`{memory: {provider}, reason}` and says that the change reaches the agents
+at their next resume, makes no setup card and cancels none, and that
+setting Keep the Why up in the repository, or removing it, stays work for
+an agent on a card. Others see the provider and its explanation read
+only. After a switch to Keep the Why the commitment below offers
+`required` and reads it unless someone set it; under None it is
+`optional` and locked. The reason is asked although the hub takes the
+change without one: it lands in the `rules_changed` event, as a policy
+change's reason does.
+
+**Reason:** without the change a project created under None could never
+have Keep the Why required (§6.23 refuses `required` there), and the
+maintainer could not set it for this project. The panel says plainly
+what the change does not do, which was the reason it was read only.
+
+**Rejected alternative:** keeping the provider read only with a pointer
+to a card (a8e479be's earlier rule): an agent cannot change the
+provider either, only a human with `project:admin` can, so the pointer
+led nowhere. Making the setup cards on a switch: the hub does not
+(§6.21), and the dashboard does not invent cards the contract leaves out.
