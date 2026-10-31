@@ -71,7 +71,8 @@ def test_past_the_first_page_the_counts_are_a_floor(
     fake.routes[("GET", CHATS)] = lambda seen: (200, page)
     assert cli.main(["wait", "--timeout", "4"]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
-    assert "maity: unread chats: at least 2 in at least 1 chats (0 mentions): maity chats\n" in err
+    line = "maity: unread chats: at least 2 in at least 1 chats (at least 0 mentions): maity chats"
+    assert line + "\n" in err
 
 
 def test_wait_says_nothing_without_unread_chats(

@@ -547,8 +547,8 @@ def _unread_note(session: Session, budget: float) -> None:
         # One page only, within the budget: past it the counts are a floor.
         more = "at least " if _field(page, "next_cursor") else ""
         _err(
-            f"unread chats: {more}{total} in {more}{len(unread)} chats ({mentions} mentions): "
-            "maity chats"
+            f"unread chats: {more}{total} in {more}{len(unread)} chats "
+            f"({more}{mentions} mentions): maity chats"
         )
 
 
@@ -571,6 +571,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     path = session.project_path("events")
     backoff = 2.0
     warned = False
+    skewed = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -598,6 +599,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     warned = True
                 time.sleep(min(backoff, max(0.0, deadline - time.monotonic())))
                 backoff = min(backoff * 2, 30.0)
+                continue
+            if exc.code == "timestamp_skew" and not skewed:
+                # The client corrected its clock but had no time left to retry within this
+                # read; the loop retries once, or ends as a timeout if the deadline is gone.
+                skewed = True
                 continue
             raise
         backoff = 2.0
