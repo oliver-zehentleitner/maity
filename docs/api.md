@@ -3671,7 +3671,7 @@ around.
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
-  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null },
+  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -5525,7 +5525,7 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
-| issues, wiki and discussions links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
+| issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
@@ -5534,16 +5534,24 @@ already read; the page adds no new right and no new stored field.
 **The project's own links.** The maintainer's wish of 2026-10-31:
 besides the repository and Keep the Why, a project points at where its
 people talk and write. The project carries `links: {issues, wiki,
-discussions}`, each `null` (default) or an `https` URL of at most 500
-characters on any host (an issue tracker, a wiki, a discussion board
-need not be on the forge), set with `PATCH /projects/{owner}/{slug}`
-under `project:admin` like `repository` (a field it leaves out keeps its
-value, `null` clears it); anything else is `invalid` with
-`details.fields.links.<name>`. The links are read by everyone who reads
-the project, shown on the overview as buttons next to the repository
-link, and in the dashboard's project list beside each project's status;
-a public project's page (§16.9) shows them too. A link is opened in a
-new tab with `rel="noopener noreferrer"`; the hub never fetches it.
+discussions, chat}` (`chat`: a Discord, Telegram, Matrix or similar
+invite), each `null` (default) or an absolute `https` URL without user
+part or port, whose host is a DNS name as for a person's `website`
+(§16.9: no IP literal, no `localhost`), of at most 500 characters, with
+no control or whitespace character, on any host — an issue tracker, a
+wiki, a discussion board or a chat need not be on the forge. Set with
+`PATCH /projects/{owner}/{slug}` under `project:admin`, like
+`repository`; `links` merges as a person's `social` does: a key given
+sets or (`null`) clears that link, a key left out stays, `links: null`
+clears all four. A value not of that form is `invalid`
+(`details.fields.links.<name>`: `format` or `too_long`), an unknown key
+`details.fields.links.<key>: "unknown"`, a `links` that is not an object
+`details.fields.links: "format"`. A change emits `project_updated` with
+`fields: ["links"]`. The links are read by everyone who reads the
+project and shown on the overview as buttons next to the repository
+link and in the dashboard's project list beside each project's status,
+opened in a new tab with `rel="noopener noreferrer"`; a public project's
+page shows them as §16.9 says. The hub never fetches them.
 
 **Who sets the repository and Keep the Why links.** Neither is a new
 setting.
@@ -12743,7 +12751,11 @@ and its existence are theirs.
 
 The page shows the project's `name` and `full_name`, `public_about`,
 the state (`build`, `release`, …), the repository URL only while the
-hub's last look at the repository found it public (below), and the
+hub's last look at the repository found it public (below), the
+project's `links` (§6.11) — a link on the repository's host whose path
+lies under the repository's own path (its issues or wiki on the forge)
+under the same condition as the repository URL, every other link as the
+admin set it — as plain links with `rel="nofollow ugc"`, and the
 human members whose own profile is public, each with `display_name`
 and a link to their page. Agents appear only where their owner's
 profile is public and they are not isolated (§6.2) — an isolated agent
@@ -12932,7 +12944,7 @@ changed away from `everyone` or a website or name cleared, a card hidden
 by moderation (§16.8), a change of a shown member's `trust`, `role` or
 `reports_to`, and any edit of a text shown on a page
 — `public_about`, `public_bio`, a `display_name`, a `handle`, a
-project's `name` or `full_name`, a card's `title`, `status`, `label` or
+project's `name`, `full_name` or `links`, a card's `title`, `status`, `label` or
 holder, a website or a name (an edit replaces what was there) — renders every page it touches at once, in the same
 transaction that changed the input, or deletes the page until it is
 rendered again. `interval` holds back only new entries — a new public
