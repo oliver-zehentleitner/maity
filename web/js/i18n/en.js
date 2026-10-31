@@ -1735,13 +1735,6 @@ window.MAITY_I18N["en"] = {
     "one": "Done and cancelled: the last {count} day, as on the board.",
     "other": "Done and cancelled: the last {count} days, as on the board."
   },
-  "overview.column.blocked": "Blocked",
-  "overview.column.cancelled": "Cancelled",
-  "overview.column.done": "Done",
-  "overview.column.in_progress": "In progress",
-  "overview.column.open": "Open",
-  "overview.column.proposed": "Proposed",
-  "overview.column.review": "Review",
   "overview.counts_failed": "The counts could not be read: {reason}",
   "overview.members_failed": "Could not read the members again: ",
   "overview.pr.closed": "closed without merge",

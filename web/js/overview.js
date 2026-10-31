@@ -16,13 +16,13 @@ window.Maity = window.Maity || {};
   const COLUMNS = ["proposed", "open", "in_progress", "blocked", "review", "done", "cancelled"];
   // Getters: a label is the catalog's when shown.
   const COLUMN_LABELS = {
-    get proposed() { return M.t("overview.column.proposed"); },
-    get open() { return M.t("overview.column.open"); },
-    get in_progress() { return M.t("overview.column.in_progress"); },
-    get blocked() { return M.t("overview.column.blocked"); },
-    get review() { return M.t("overview.column.review"); },
-    get done() { return M.t("overview.column.done"); },
-    get cancelled() { return M.t("overview.column.cancelled"); },
+    get proposed() { return M.t("cards.column.proposed"); },
+    get open() { return M.t("cards.column.open"); },
+    get in_progress() { return M.t("cards.column.in_progress"); },
+    get blocked() { return M.t("cards.column.blocked"); },
+    get review() { return M.t("cards.column.review"); },
+    get done() { return M.t("cards.column.done"); },
+    get cancelled() { return M.t("cards.column.cancelled"); },
   };
   // A column's count as a screen reader hears it in the bar's name.
   const COLUMN_COUNTS = {
