@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, longpoll, namespace
+from maity_hub import clock, longpoll, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
@@ -160,9 +160,16 @@ async def list_notifications(
     if not wait or first["items"]:
         return JSONResponse(first)
     token = object()
-    _holding[session] = token
+
+    def taken_over() -> None:  # a newer wait of the session on another replica (`wakeups`)
+        if _holding.get(session) is token:
+            del _holding[session]
+
+    _holding[session] = token  # held before the announcement, which may supersede it at once
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     try:
+        closed = await wakeups.opened(engine_of(request), "bell", session, taken_over)
         # A stopping hub answers with what it has; the dashboard simply waits again.
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
             await asyncio.sleep(POLL)
@@ -177,6 +184,8 @@ async def list_notifications(
         last, _ = await _limited(request, answer)
         return JSONResponse(last)
     finally:
+        if closed is not None:
+            closed()
         if _holding.get(session) is token:
             del _holding[session]
 
