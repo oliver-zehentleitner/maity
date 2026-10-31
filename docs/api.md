@@ -806,23 +806,40 @@ carries only what the bridge posts.
   `member_updated` (`changed: ["bridges"]`) on both members.
 - **Across owners.** When the bridge belongs to another owner — an agent
   of one owner using another owner's agent for access to a service, say
-  — only the served agent's owner asks, and the bridge's owner decides:
-  the hub files a `consent` request to that human (as for a cross-owner
+  — only the served agent's owner asks, and two humans decide: the
+  bridge's owner, and the project, through a human with `members:admin`
+  (the asker's own action counts when it holds that scope itself, as
+  own consent does in §6.2), since the project's data is what the bridge
+  will read and act on. Two limits hold whatever the answers: a served
+  agent of a security team (`red-team`, `blue-team`, `purple-team`)
+  gets no bridge of another owner, since its findings stay within the
+  security teams (§2.3); and when the bridge's owner is not an active
+  member of the project, the served agent's role must be one
+  `policy.outside_roles` allows (§6.1), so that an outsider cannot act
+  with a reviewer's or tester's scopes through a bridge it could not
+  hold itself (`invalid`, `details.fields.member: "outside_role"`). The
+  hub files a `consent` request to the bridge's owner (as for a cross-owner
   `reports_to`, §6.2: answered only by its addressee, never by an agent,
   a proxy or the asker, and found in the same inbox when they are not a
   member), whose `summary` carries the purpose as the frame of the
   agreement and says what `go` grants: the bridge reads what the served
   agent reads in this project — its cards, its messages, the group chats
   it takes part in and its direct conversation with its owner — and acts
-  there as it, within the purpose stated. `go` creates the connection;
-  `no` or a withdrawal creates nothing. At `go` the hub checks again
+  there as it, within the purpose stated; and one to the project's
+  humans with `members:admin` with the same summary. The connection
+  exists once both said `go`; a `no` to either, or a withdrawal,
+  withdraws both and creates nothing. At `go` the hub checks again
   that both are active agent members, neither isolated nor a `proxy`,
-  and the limit of 5; failing that the `go` is `invalid` as the `POST`
+  the two limits above and the limit of 5; failing that the `go` is `invalid` as the `POST`
   would be, nothing changes, and the request stays open for a `no` or a
   withdrawal. A further `POST` for the same pair or a `PATCH` of the
   connection while a request is open withdraws it (`reason:
   "superseded"`), and `DELETE …/bridges/{brg}` withdraws an open `PATCH`
-  request with the connection.
+  request with the connection. An open request counts as the pair's
+  connection for `already` and the limit of 5. Withdrawal is open to the
+  asker, the two owners and every human with `members:admin` in the
+  project; an agent other than the asker gets `forbidden` with
+  `details.reason: pending_consent`, as in §6.2.
 - **Seen in the chat.** A group chat's `observers` (§9.2) also lists
   the member id of every agent that serves a participant across owners,
   and the dashboard shows it in the chat's header as it shows the other
@@ -833,9 +850,10 @@ carries only what the bridge posts.
   scope the hub enforces: the hub enforces what the served agent's own
   scopes and the rules below allow, and either owner ends the connection
   at any time.
-- **Ending on its own.** Removing either membership, isolating either
-  agent (§6.2), moving either into the role `proxy`, or either owner
-  leaving ends every connection of that agent, with `member_updated` (`changed: ["bridges"]`) on the other.
+- **Ending on its own.** Removing either membership, moving either into
+  the role `proxy` or, across owners, the served agent into a role the
+  limits above exclude, or either owner leaving ends every connection of
+  that agent, with `member_updated` (`changed: ["bridges"]`) on the other.
 - The bridge acts for a served agent by adding the signed header
   `Maity-For: <member id>` (§2.2) to a call. The hub then makes the call
   as that agent — its trust and role, without the governance scopes —
@@ -853,7 +871,8 @@ carries only what the bridge posts.
   `forbidden` with `details.reason: bridge_no_governance`; while the
   served agent is isolated every call for it is `forbidden` with
   `details.reason: isolated` (§6.2, "Isolation"), and the served agent's
-  `isolation_windows` hold for what the bridge reads for it. One header
+  `isolation_windows` hold for what the bridge reads for it; isolation
+  can be lifted, so it blocks a connection and does not end it. One header
   names one served agent and the connection must be direct, so a bridge
   never chains. Without the header the bridge acts as itself, with its
   own role's scopes.
@@ -9610,7 +9629,8 @@ a `cnv-…` id for a group chat. The hub keeps the two apart; clients read
 A direct conversation between a human and an agent profile they own,
 inside a project. Its id is the agent's member id. Messages are events
 of kind `message`, type `chat`, with that `conversation_id` and the two
-parties as the audience — nobody else, admins included.
+parties as the audience — nobody else, admins included, except the
+bridges the agent's owner connected to it (§2.3, "The bridge").
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -10772,7 +10792,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
-| POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; between two agents of one owner also a human with `members:admin`; across owners `202` with the bridge owner's consent | 2.3 |
+| POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |

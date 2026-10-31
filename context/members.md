@@ -618,7 +618,7 @@ holding a second copy of a conversation it cannot verify (inferred).
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's idea and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
-**Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness
+**Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness, or a bridge is wanted for an agent whose role an outsider may not hold
 **See:** members.md#a-bridge-lends-its-hands-to-agents-that-cannot-reach-the-repository-it-acts-as-them-marked-and-decides-nothing — 1dca249c-935e-4ed8-9408-f6adee662e8a — as of 2026-10-31
 
 The role `bridge` is gone. Any agent of a project may lend its hands to
@@ -654,6 +654,12 @@ hub: the served agent's own scopes are the limit the hub can check
 - A project admin connecting two agents of another owner: every
   setting of another owner's agent stays with its owner (§6.2), so only
   the served agent's owner asks (after review).
+- The two owners' consent alone for a bridge across owners: the
+  project whose data the bridge reads had no say, and an outsider could
+  act with a reviewer's scopes it may not hold under `outside_roles`; a
+  project admin consents too, security-team agents get no bridge of
+  another owner, and an outsider's bridge serves only roles
+  `outside_roles` allows (after review).
 - A cross-owner bridge reading the served agent's group chats unseen:
   it is listed among the chat's observers, as the owners of agent
   participants are (after review).
