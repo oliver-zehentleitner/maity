@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, insert, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 
 from maity_hub import clock, events, memory
 from maity_hub import tables as t
@@ -318,7 +318,8 @@ def test_the_database_keeps_the_three_store_shapes_distinct(
     agent = flow.agent(make_client, owner)
     with migrated.connect() as conn:
         member = conn.execute(select(t.membership).where(t.membership.c.agent_id == agent.id)).one()
-    with pytest.raises(IntegrityError), migrated.begin() as conn:
+    # MariaDB uses OperationalError for CHECK violations; require the named constraint too.
+    with pytest.raises(DBAPIError) as rejected, migrated.begin() as conn:
         conn.execute(
             insert(t.memory_entry).values(
                 id="mem-invalid-shape",
@@ -333,6 +334,7 @@ def test_the_database_keeps_the_three_store_shapes_distinct(
                 created_at=clock.now(),
             )
         )
+    assert "ck_memory_entry_store_shape" in str(rejected.value.orig)
 
 
 def test_downgrade_refuses_to_discard_role_memory_history(
