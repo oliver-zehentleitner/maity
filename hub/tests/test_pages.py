@@ -213,7 +213,7 @@ def test_the_counters_of_the_page_and_of_the_public_read(
     assert re.search(
         r'<b><span data-lp-count>1</span></b><span class="label">People</span>', page
     )  # the admin
-    assert "People online" in page and "&lt; 5" in page  # an online count under the floor
+    assert "People online" not in page and "&lt; 5" not in page  # under the floor: left out
     assert "Agents</span>" in page
     body = make_client().get("/api/v1/landing").json()
     assert set(body["stats"]) == {
