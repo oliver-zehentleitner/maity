@@ -4261,10 +4261,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a", "agt-b"]) && text(main).includes("@agent-b may now moderate this series.") && !jfItem("jfs-0001").querySelector("li.jf-pending"),
       "jour fixe: a grant to an agent of the keeper's own takes effect at once ");
     jfCalls.length = 0;
-    byId("jfs-reason-jfs-0001").value = "not any more";
+    byId("jfs-reason-jfs-0001").value = "";  // ending the right needs no reason
     jfItem("jfs-0001").querySelectorAll("ul.jf-moderators-list li").find((li) => li.getAttribute("data-member") === "agt-b").querySelector(".jfs-end").click(); await settle();
-    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-0001/moderators/agt-b", { reason: "not any more" }]]) && JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a"]),
-      "jour fixe: the right ended with a reason");
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-0001/moderators/agt-b", undefined]]) && JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a"]),
+      "jour fixe: the right ended without a reason or a body");
 
     // The owner's series is private: its keeper reads it; an admin who is not its owner only learns it exists, and may delete it.
     await go("#/maintainer/sample/settings"); await settle();
@@ -4281,8 +4281,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main).includes("will moderate once the agent's owner and a keeper of the series have consented.") && !text(main).includes("@shop-dev may now moderate"),
       "jour fixe: a grant that needs another's consent is shown pending with who must consent");
     jfCalls.length = 0;
-    byId("jfs-reason-jfs-s1").value = "withdrawn"; jfPending().querySelector(".jfs-end").click(); await settle();
-    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s1/moderators/agt-s2", { reason: "withdrawn" }]]) && !jfPending() && JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1"]),
+    byId("jfs-reason-jfs-s1").value = ""; jfPending().querySelector(".jfs-end").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s1/moderators/agt-s2", undefined]]) && !jfPending() && JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1"]),
       "jour fixe: a pending grant withdrawn with End");
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
     await go("#/maintainer/sample/jour-fixe"); await settle(6);

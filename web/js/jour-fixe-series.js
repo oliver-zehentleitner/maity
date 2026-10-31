@@ -255,8 +255,9 @@ window.Maity = window.Maity || {};
     const reason = h("input", { id: "jfs-reason-" + s.id, placeholder: M.t("jf.reason.placeholder"), "aria-label": M.t("jf.reason") });
     const status = M.statusLine();
     // A write of this series with the row's reason, then the list again.
-    const act = (busy, run, ok) => async () => {
-      if (!reason.value.trim()) { reason.focus(); return; }
+    // Ending a moderator's right takes no reason and no body (§20.2): `reasoned` false.
+    const act = (busy, run, ok, reasoned = true) => async () => {
+      if (reasoned && !reason.value.trim()) { reason.focus(); return; }
       status.busy(busy);
       try {
         await run(reason.value.trim());
@@ -285,7 +286,7 @@ window.Maity = window.Maity || {};
     const mods = s.moderators || [], pending = s.pending_moderators || [];
     const box = h("div", { class: "jfs-moderators" }, h("h4", null, M.t("jfs.moderators")));
     const end = (x, label) => keeps(ctx, s) ? h("button", { type: "button", class: "small jfs-end", "aria-label": M.t("jfs.end_of", { who: handle(ctx, x.member_id) }),
-      onclick: () => act(M.t("jfs.ending"), (why) => M.api.del(base + "/moderators/" + encodeURIComponent(x.member_id), { reason: why }), M.t("jfs.ended"))() }, label) : null;
+      onclick: () => act(M.t("jfs.ending"), () => M.api.del(base + "/moderators/" + encodeURIComponent(x.member_id)), M.t("jfs.ended"), false)() }, label) : null;
     append(box, h("ul", { class: "jf-moderators-list" },
       mods.map((x) => h("li", { "data-member": x.member_id }, M.dom.memberRef(ctx, x.member_id), " ", end(x, M.t("jfs.end")))),
       pending.map((x) => h("li", { class: "jf-pending", "data-member": x.member_id }, M.dom.memberRef(ctx, x.member_id), " · ",
