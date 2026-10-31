@@ -882,6 +882,10 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # Put to rest, answering only when asked by its own address (§6.17): since when and by
+    # whom (a member id); null while awake. Never moves with a `replaces` join.
+    Column("dormant_since", UtcDateTime),
+    Column("dormant_by", String(ID)),
     # What the resume packet's `handover` needs (§5.2): the project's newest event when the
     # exchange created this instance, and `events.after` and `events.cursor` of its first
     # packet (set by its first resume).

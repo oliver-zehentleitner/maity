@@ -331,3 +331,16 @@ def test_a_member_of_one_of_its_projects_reads_the_organisations_picture(
     assert "members" not in body
     assert body["projects"] == [{"full_name": "oz-team/shop", "name": "Shop", "shared": True}]
     assert _reads(migrated, stranger, org["id"])  # a member of one of its projects (§6.10)
+
+
+def test_a_project_page_the_owner_turns_on_and_off_is_what_the_view_lists(
+    owner: flow.Human, stranger: flow.Human
+) -> None:
+    flow.project(owner, "open-one")
+    assert owner.patch("/projects/maintainer/open-one", {"public_page": "on"}).status_code == 200
+    body = stranger.get(f"{P}/maintainer").json()
+    assert body["projects"] == [
+        {"full_name": "maintainer/open-one", "name": "Open-One", "shared": False}
+    ]
+    assert owner.patch("/projects/maintainer/open-one", {"public_page": "off"}).status_code == 200
+    _not_found(stranger.get(f"{P}/maintainer"))  # nothing left to show a stranger
