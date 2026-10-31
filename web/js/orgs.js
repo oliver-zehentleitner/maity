@@ -19,7 +19,7 @@ window.Maity = window.Maity || {};
     get member() { return M.t("orgs.role.member"); },
   };
   // Names in a sentence: "a, b, c" in English, in the catalog's language (KTW adaebd69).
-  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
+  const names = (list) => M.fmt.list(list);
   const orgPath = (org) => "/orgs/" + encodeURIComponent(org);
   const orgLink = (org) => "/account/orgs/" + encodeURIComponent(org);
 

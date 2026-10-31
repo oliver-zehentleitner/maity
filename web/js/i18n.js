@@ -85,6 +85,9 @@ window.Maity = window.Maity || {};
   M.tn = tn;
   M.fmt = {
     number,
+    // A list of names or facts as the catalog's language joins them, without
+    // "and" or "or" ("a, b, c" in English): one place for every view.
+    list: (items) => new Intl.ListFormat(i18n.language, { type: "unit" }).format(items),
     dateTime: (value) => when(value, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
     date: (value) => when(value, { year: "numeric", month: "short", day: "numeric" }),
     time: (value) => when(value, { hour: "2-digit", minute: "2-digit" }),

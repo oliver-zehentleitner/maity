@@ -24,7 +24,7 @@ window.Maity = window.Maity || {};
     return Object.values(bySlug).sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
-  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list.map((a) => a.display_name));
+  const names = (list) => M.fmt.list(list.map((a) => a.display_name));
   const link = (full, id) => "/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
 
   // On everything waiting: where one also reads along, if anywhere.

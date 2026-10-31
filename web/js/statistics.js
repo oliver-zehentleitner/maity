@@ -76,12 +76,13 @@ window.Maity = window.Maity || {};
   // days are unknown, since when or over how many days it counts.
   function figureText(f, how, since, knownDays) {
     if (!f) return "–";
-    const value = String(f.value);
+    // A number in a placeholder is formatted for the locale by M.t.
+    const value = f.value;
     if (how === "peak") {
       if (!f.partial) return M.t("stats.figure.peak", { value });
       return since ? M.t("stats.figure.peak.since", { value, since }) : M.t("stats.figure.peak.days", { value, count: knownDays });
     }
-    if (!f.partial) return value;
+    if (!f.partial) return M.fmt.number(value);
     return since ? M.t("stats.figure.sum.since", { value, since }) : M.t("stats.figure.sum.days", { value, count: knownDays });
   }
 
@@ -105,7 +106,7 @@ window.Maity = window.Maity || {};
       append(clear(body),
         h("p", { class: "muted" }, M.t("stats.counted", { when: formatTime(s.as_of) }), " · ", M.t("stats.window.note", { count: s.window_days })),
         h("ul", { class: "stat-tiles" }, TILES.map(([key, label, note]) => h("li", { class: "stat-tile" },
-          h("span", { class: "stat-value" }, String(t[key] == null ? "–" : t[key])),
+          h("span", { class: "stat-value" }, t[key] == null ? "–" : M.fmt.number(t[key])),
           h("span", { class: "stat-label" }, label()),
           note && note(t) ? h("span", { class: "stat-note muted" }, note(t)) : null))),
         h("table", { class: "stat-series" },
@@ -117,20 +118,20 @@ window.Maity = window.Maity || {};
             return h("tr", { "data-series": key },
               h("th", { scope: "row" }, label()),
               h("td", { class: "stat-number" }, text),
-              h("td", { class: "stat-number" }, newest[key] == null ? "–" : String(newest[key])),
+              h("td", { class: "stat-number" }, newest[key] == null ? "–" : M.fmt.number(newest[key])),
               h("td", { class: "stat-trend" }, sparkline(list.map((d) => (d[key] == null ? null : d[key])))));
           }))),
         since && (s.days || []).some((d) => d.reviews == null)
           ? h("p", { class: "muted" }, M.t("stats.reviews_since", { since })) : null,
         h("h3", null, M.t("stats.returning")),
-        h("p", null, M.t("stats.returning.7", { value: s.returning ? String(s.returning.after_7_days) : "–" }), " · ",
-          M.t("stats.returning.30", { value: s.returning ? String(s.returning.after_30_days) : "–" })),
+        h("p", null, M.t("stats.returning.7", { value: s.returning ? s.returning.after_7_days : "–" }), " · ",
+          M.t("stats.returning.30", { value: s.returning ? s.returning.after_30_days : "–" })),
         h("p", { class: "hint" }, M.t("stats.returning.hint")),
         h("details", { class: "stat-days" }, h("summary", null, M.t("stats.days")),
           h("div", { class: "table-scroll" }, h("table", null,
             h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("stats.col.date")), SERIES.map(([, label]) => h("th", { scope: "col" }, label())))),
             h("tbody", null, (s.days || []).map((d) => h("tr", null, h("th", { scope: "row" }, d.date),
-              SERIES.map(([key]) => h("td", null, d[key] == null ? "–" : String(d[key]))))))))));
+              SERIES.map(([key]) => h("td", null, d[key] == null ? "–" : M.fmt.number(d[key]))))))))));
     }
 
     let seq = 0;

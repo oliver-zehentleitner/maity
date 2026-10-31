@@ -173,7 +173,7 @@ window.Maity = window.Maity || {};
         x.for_me ? h("p", { class: "ticker-why" }, x.muted ? M.t("ticker.for_you.muted", { why: reasons(x.why) }) : M.t("ticker.for_you", { why: reasons(x.why) })) : null);
     }
     // The reasons as a list, in the catalog's language: "a, b, c" in English.
-    const reasons = (why) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(why.map(whyWords));
+    const reasons = (why) => M.fmt.list(why.map(whyWords));
     // Items of one answer not shown yet, each once, also within the answer.
     const fresh = (items) => items.filter((x, i) => !shown.has(x.seq) && items.findIndex((y) => y.seq === x.seq) === i);
     const mark = (x) => { shown.add(x.seq); if (x.seq > top) top = x.seq; };
