@@ -39,6 +39,7 @@ from maity_hub import (
     join_line,
     limits,
     line,
+    mentions,
     moderation,
     namespace,
     project_roles,
@@ -1059,18 +1060,23 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
 
 
 def _takes_over_of(conn: Connection, row: Any) -> dict[str, Any] | None:
-    """The member a first join continues, `{member_id, handle, name}` as they are at the
-    exchange and kept after that member is removed (§5.2); null for a join that named none."""
+    """The member a first join continues, `{member_id, handle, name}` with the global name
+    (§6.3) as they are at the exchange and kept after that member is removed (§5.2); null for
+    a join that named none."""
     if row.takes_over is None:
         return None
     profile = conn.execute(
-        select(t.agent_profile.c.handle, t.agent_profile.c.display_name).where(
-            t.agent_profile.c.id == row.takes_over
-        )
+        select(t.agent_profile.c.handle, t.human.c.handle.label("owner_handle"))
+        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
+        .where(t.agent_profile.c.id == row.takes_over)
     ).first()
     if profile is None:  # the profile went since the join was made: nothing to continue
         return None
-    return {"member_id": row.takes_over, "handle": profile.handle, "name": profile.display_name}
+    return {
+        "member_id": row.takes_over,
+        "handle": profile.handle,
+        "name": mentions.global_name(profile.owner_handle, profile.handle),  # §6.3
+    }
 
 
 def _told_of_takeover(conn: Connection, project: Any, new: Any) -> list[str]:

@@ -54,7 +54,7 @@ def test_a_join_names_the_agent_it_continues_and_the_hand_over(
     [listed] = [j for j in owner.get(JOINS).json()["items"] if j["id"] == created.json()["id"]]
     assert (listed["takes_over"], listed["handover"]) == (old.id, {"kind": "task", "id": left})
     new = _exchanged(make_client, created.json())
-    expected = {"member_id": old.id, "handle": "old-one", "name": "Old One"}
+    expected = {"member_id": old.id, "handle": "old-one", "name": "maintainer/old-one"}
     view = owner.get(f"{PROJECT}/members/{new.id}").json()
     assert (view["takes_over"], view["handover"]) == (expected, {"kind": "task", "id": left})
     other = owner.get(f"{PROJECT}/members/{old.id}").json()
@@ -109,7 +109,7 @@ def test_the_name_stays_as_it_was_after_the_other_member_is_removed(
     new = _exchanged(make_client, new_join(owner, takes_over=old.id).json())
     assert owner.delete(f"{PROJECT}/members/{old.id}").status_code == 200
     taken = new.resume().json()["membership"]["takes_over"]
-    assert taken == {"member_id": old.id, "handle": "old-one", "name": "Old One"}
+    assert taken == {"member_id": old.id, "handle": "old-one", "name": "maintainer/old-one"}
 
 
 def test_member_joined_is_also_told_to_the_lead_of_the_member_it_continues(
