@@ -1854,10 +1854,10 @@ codebase, three ways to run it"): an instance runs alone at home, as a
 team's own instance, or as an open hosted one, and the three differ
 only in settings. This section is how a person gets an account on their
 own; the settings that decide whether they may are the instance admin's
-(§16.4). Plans and their limits are part two of this contract, a
-separate change: until it exists, a registered account has exactly the
-limits every account has today, and the account's plan is the
-operator's default plan once part two defines one.
+(§16.4). Account limits are part two of this contract, a separate
+change: until it exists, a registered account has exactly the limits
+every account has today, and an account gets the operator's default
+limits once part two defines them.
 
 **Modes.** The instance setting `registration` (§16.4):
 
@@ -13398,7 +13398,7 @@ names:
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (tabs `activity`, `cards`, `briefing`, `sessions`; `sessions/<instance>` opens that instance's sessions), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and

@@ -2307,13 +2307,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const cpForm = () => main.querySelector("form.compose");
     const cpToggle = () => cpForm().querySelector(".compose-toggle");
     const cpSize = (n) => cpForm().querySelectorAll(".compose-size button").find((b) => b.attrs["data-size"] === String(n));
-    expect(cpForm().querySelector(".compose-head label") && cpToggle() && text(cpToggle()) === "Hide the composer" && cpToggle().getAttribute("aria-expanded") === "true"
-      && cpToggle().getAttribute("aria-controls") === "chat-text" && byId("chat-text").getAttribute("rows") === "3"
+    expect(cpForm().querySelector(".compose-head label") && cpToggle() && text(cpToggle()) === "Hide the composer" && !cpToggle().getAttribute("aria-expanded")
+      && cpForm().id && cpToggle().getAttribute("aria-controls") === cpForm().id && byId("chat-text").getAttribute("rows") === "3"
       && cpSize(1).getAttribute("aria-pressed") === "true" && text(cpSize(3)) === "3×" && cpForm().querySelector(".compose-size").getAttribute("aria-label") === "Height of the message field",
-      "composer: a head with its label, Hide the composer (expanded, controlling the field) and the heights 1× 2× 3×, 1× pressed");
+      "composer: a head with its label, Hide the composer (controlling the form, its label saying what it does) and the heights 1× 2× 3×, 1× pressed");
     cpToggle().click(); await tick();
-    expect(cpForm().classList.contains("compose-hidden") && text(cpToggle()) === "Write a message" && cpToggle().getAttribute("aria-expanded") === "false"
+    expect(cpForm().classList.contains("compose-hidden") && text(cpToggle()) === "Write a message" && !cpToggle().getAttribute("aria-expanded")
       && JSON.parse(cpStore["maity.compose"]).hidden === true, "composer: hidden for reading, the button says how to bring it back, kept in this browser");
+    // Quote opens a folded composer, so the quote it puts in is seen (#824's review).
+    const cpQuote = main.querySelector("button.msg-quote");
+    const cpBefore = byId("chat-text").value;
+    if (cpQuote) { cpQuote.click(); await tick(); }
+    expect(cpQuote && !cpForm().classList.contains("compose-hidden") && byId("chat-text").value.startsWith("> ") && text(cpToggle()) === "Hide the composer",
+      "composer: Quote opens a folded composer with the quote in it");
+    byId("chat-text").value = cpBefore; byId("chat-text").dispatch("input");
+    cpToggle().click(); await tick();
     cpSize(3).click(); await tick();
     expect(byId("chat-text").getAttribute("rows") === "9" && cpSize(3).getAttribute("aria-pressed") === "true" && cpSize(1).getAttribute("aria-pressed") === "false"
       && JSON.parse(cpStore["maity.compose"]).size === 3, "composer: 3× makes the field three times its rows, pressed and kept");
