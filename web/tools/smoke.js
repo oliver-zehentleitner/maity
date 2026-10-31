@@ -6429,6 +6429,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector("section.view-invitations") && text(main).includes("Invite a person") && byId("invitations-project") && byId("invitations-project").value === "maintainer/maity"
     && text(ivBox()).includes("Invite a person to Maity") && ivOthers.length === 1 && !ivOthers[0].querySelector("form"),
     "invite: /invite has the chosen project with its form, the other project's invitations without one");
+  // The other project's list keeps its own status line, so a revoke there says what happened (review of #931).
+  expect(ivOthers[0].querySelector(".send-status"), "invite: a list without a form still has its status line");
+  // A project chosen while the page still reads: one draw wins, no panel twice.
+  const ivPick = byId("invitations-project");
+  ivPick.value = "maintainer/sample"; ivPick.dispatch("change");
+  ivPick.value = "maintainer/maity"; ivPick.dispatch("change");
+  for (let k = 0; k < 10; k++) await tick();
+  expect(main.querySelectorAll("section.invitations").length === 2 && main.querySelectorAll(".invitations-others section.invitations").length === 1
+    && text(ivBox()).includes("Invite a person to Maity"), "invite: choosing again while reading draws each project once");
   const ivItems = () => ivBox().querySelectorAll("li.invite-item").map((li) => li.getAttribute("data-invitation") + ":" + text(li.querySelector(".invite-state")));
   expect(ivBox() && JSON.stringify(byId("invite-trust").querySelectorAll("option").map((o) => o.getAttribute("value"))) === JSON.stringify(["owner", "admin", "member", "guest"])
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])

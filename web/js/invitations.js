@@ -21,23 +21,29 @@ window.Maity = window.Maity || {};
     pick.value = chosen;
     const formSlot = h("div");
     const others = h("div", { class: "invitations-others" });
-    // The chosen project with its form; the others' lists below it.
+    // The chosen project with its form; the others' lists below it. A choice
+    // made while a draw still reads starts a new one; the older one stops.
+    let drawSeq = 0;
     async function draw() {
+      const seq = ++drawSeq;
       append(clear(formSlot), h("p", { class: "muted" }, M.t("invitations.reading")));
       clear(others);
       for (const p of mine) {
+        if (seq !== drawSeq) return;
         let pctx;
         try {
           pctx = await M.projectContext(ctx, p.full_name, (slug, id) => "/chats/" + M.api.projectPath(slug) + (id ? "/" + encodeURIComponent(id) : ""));
         } catch (err) {
+          if (seq !== drawSeq) return;
           append(p.full_name === chosen ? clear(formSlot) : others, h("p", { class: "send-status failed" }, M.t("invitations.project_failed", { project: p.name || p.full_name, reason: err.message })));
           continue;
         }
-        if (p.full_name === chosen) {
-          append(clear(formSlot), await M.invite.membersPanel(pctx, { heading: M.t("invitations.for_project", { project: p.name || p.full_name }) }));
-        } else {
-          append(others, await M.invite.membersPanel(pctx, { heading: p.name || p.full_name, listOnly: true }));
-        }
+        const panel = p.full_name === chosen
+          ? await M.invite.membersPanel(pctx, { heading: M.t("invitations.for_project", { project: p.name || p.full_name }) })
+          : await M.invite.membersPanel(pctx, { heading: p.name || p.full_name, listOnly: true });
+        if (seq !== drawSeq) return;
+        if (p.full_name === chosen) append(clear(formSlot), panel);
+        else append(others, panel);
       }
     }
     pick.addEventListener("change", () => { chosen = pick.value; draw(); });

@@ -267,7 +267,8 @@ window.Maity = window.Maity || {};
     const headingId = "invitations-heading" + (o.heading ? "-" + ctx.slug.replace(/[^a-z0-9]+/gi, "-") : "");
     box.setAttribute("aria-labelledby", headingId);
     append(box, h("h3", { id: headingId }, o.heading || M.t("invite.title")),
-      o.listOnly ? null : [h("p", { class: "muted" }, M.t("invite.hint")), form, issued],
+      // Without the form its status line stands here: a revoke in the list says what happened.
+      o.listOnly ? status.el : [h("p", { class: "muted" }, M.t("invite.hint")), form, issued],
       h("h4", null, M.t("invite.list")), listBox);
     await list();
     return box;

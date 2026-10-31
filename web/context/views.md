@@ -1194,7 +1194,7 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
-**Revisit when:** the agents page gets its join at the top (the same card's next part), or a project gets more ways to bring someone in
+**Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
 
 The signed-in header reads Chat, Lead, "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
@@ -1204,7 +1204,10 @@ links it) shows the invitation form and its list. The other projects
 show their lists without a form. Members has two blue buttons at the top,
 Invite user and Join agent; its own invitation form is gone. The project
 view `runners` keeps its route and its Settings tab mark, but has no tab:
-the project's Settings links it.
+the project's Settings links it. `/invite` reads the projects one after
+the other and draws again when another project is chosen. A counter
+drops an older pass still reading, as `renderSeq` does in the router;
+without it, two passes append their lists twice.
 
 **Reason:** the layout is the maintainer's (confirmed); why is read
 from the card, not stated by him: bringing someone in is one act whether
@@ -1214,6 +1217,8 @@ the Runners tab goes was not given (unknown).
 
 **Rejected alternative:** the header first and `/invite` in a later
 pull request, which would have shipped a User item leading to no page.
+Reading all projects at once with `Promise.all` and no counter: a choice
+made mid-read would still append twice.
 
 ## The header's Chat badge counts unread chat messages from the notifications, not chats
 
