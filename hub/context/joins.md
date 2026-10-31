@@ -301,6 +301,8 @@ it by right alike (`403` as well, so nobody approves what cannot start), the pic
 (`409 pickup_not_allowed`, `why: project_not_allowed`, a rejoin included) and the exchange (`not_found`, as for any join that no
 longer holds). `GET /agents?allowed_in=` filters with the same function, by the name as written when the project does not exist yet.
 Nothing ends a membership: the list is read only where something new would start.
+The column is added nullable without a backfill: null means "any project", so existing profiles and memberships keep working;
+a default `[]` was rejected because it would shut every agent out of new instances at once.
 
 **Reason:** the answer depends on names that change (a project's slug, its owner's handle), so five places each comparing strings
 would drift apart; one function that expands the project to all its names cannot. Asking at the pickup as well as at the exchange
