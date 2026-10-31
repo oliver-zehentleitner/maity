@@ -575,6 +575,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 note = _pause_note(event, session.data.get("member_id"))
                 if note:
                     _err(note)
+                for line in onboarding.jour_fixe_lines(event):  # §20.9: what it asks of you
+                    _err(line)
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
             _print_json(taken[0] if args.one else taken)
@@ -2811,6 +2813,254 @@ def cmd_ticker_subscription(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+# --- jour fixe (§20) -----------------------------------------------------------------------------
+
+JOUR_FIXE_FIELDS = ("went_well", "went_badly", "would_help")
+# §20.4 "What anonymity does not cover", printed before an anonymous answer goes out.
+ANONYMITY_LIMITS = (
+    "An anonymous answer reaches the moderator without your name. It does not cover:",
+    "- wording: style, details only you know and what you said elsewhere can identify you;",
+    "- timing while the window is open: every call updates your presence, and until the round's"
+    " key is destroyed whoever runs the hub and reads its database can link the answer to you;",
+    "- copies of the database (backups, write-ahead log, replicas) taken during the window;",
+    "- the transport: a proxy or TLS terminator sees which credential called, and when;",
+    "- small rounds: with two participants, an anonymous answer is the other one's.",
+)
+
+
+def _jour_fixe(session: Session) -> dict[str, Any]:
+    return _obj(session.client.call("GET", session.project_path("jour-fixe")))
+
+
+def _open_step(round_: dict[str, Any]) -> dict[str, Any]:
+    """The step whose window is open: the last one that opened, while it has no `closed_at`;
+    {} when none is. A further step waits at the end with `opened_at` null (§20.5)."""
+    opened = [s for s in round_.get("steps") or [] if isinstance(s, dict) and s.get("opened_at")]
+    return opened[-1] if opened and not opened[-1].get("closed_at") else {}
+
+
+def _phase(round_: dict[str, Any]) -> str:
+    """The round's status with the deadline that belongs to it (§20.7)."""
+    status = round_.get("status")
+    line = onboarding.inline(status or "?")
+    step = _open_step(round_)
+    if status == "answering" and round_.get("answers_close_at"):
+        line += f", answers close at {onboarding.inline(round_['answers_close_at'])}"
+    elif status in ("statement", "exchange") and step:
+        line += f", step {onboarding.inline(step.get('n'))} ({onboarding.inline(step.get('kind'))})"
+        if step.get("closes_at"):
+            line += f", closes at {onboarding.inline(step['closes_at'])}"
+    elif status == "reporting" and round_.get("report_due_at"):
+        line += f", report due at {onboarding.inline(round_['report_due_at'])}"
+    return line
+
+
+def _member_ids(entries: Any) -> list[Any]:
+    return [e.get("member_id") for e in entries or [] if isinstance(e, dict)]
+
+
+def _my_answer(session: Session, round_id: str) -> dict[str, Any] | None:
+    """The caller's own answer while the hub shows it (§20.3, §20.4), or None."""
+    try:
+        page = session.client.call(
+            "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"),
+            query=[("mine", "true")],
+        )  # fmt: skip
+    except hub.HubError as exc:
+        if exc.code == "not_found":
+            return None
+        raise
+    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    return items[0] if items else None
+
+
+def _my_part(session: Session, round_: dict[str, Any]) -> str:
+    """Invited or not, answered or not while the window is open, eligible in the open step."""
+    me = session.data.get("member_id")
+    if me not in _member_ids(round_.get("invited")):
+        return "you were not invited (not present when it opened)"
+    parts = ["you were invited"]
+    if round_.get("status") == "answering" and isinstance(round_.get("id"), str):
+        answer = _my_answer(session, round_["id"])
+        if answer is None:
+            parts.append(
+                "not answered, or withdrawn, which still counts (`maity jourfixe answer`, "
+                "or not at all)"
+            )
+        else:
+            parts.append("answered" + (" anonymously" if answer.get("anonymous") else ""))
+    step = _open_step(round_)
+    if me in (step.get("eligible") or []):
+        parts.append(f"eligible in step {onboarding.inline(step.get('n'))}")
+    return ", ".join(parts)
+
+
+def _report_lines(round_: dict[str, Any]) -> list[str]:
+    report = _obj(round_.get("report"))
+    when = onboarding.inline(round_.get("reported_at") or "?")
+    lines = [f"Last report: {onboarding.inline(round_.get('id'))}, {when}"]
+    if report.get("summary"):
+        lines += ["  " + q for q in onboarding.quote(report["summary"])]
+    proposals = [x for x in report.get("proposals") or [] if isinstance(x, dict)]
+    for proposal in proposals:
+        filed = proposal.get("request_id") or proposal.get("task_id")
+        title, triage = (onboarding.inline(proposal.get(k)) for k in ("title", "triage"))
+        line = f"  - {title} [{triage}]"
+        lines.append(line + (f" -> {onboarding.inline(filed)}" if filed else ""))
+    return lines
+
+
+def cmd_jourfixe(args: argparse.Namespace) -> int:
+    """`GET …/jour-fixe` (§20.9); `--all` lists every round, every page."""
+    session = Session()
+    if args.all:
+        rounds: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        cursor: str | None = None
+        while True:
+            query = [("limit", "50")] + ([("cursor", cursor)] if cursor else [])
+            page = session.client.call(
+                "GET", session.project_path("jour-fixe", "rounds"), query=query
+            )
+            rounds.extend(r for r in (_field(page, "items") or []) if isinstance(r, dict))
+            cursor = _next_cursor(page, seen)
+            if cursor is None:
+                break
+        if args.json:
+            _print_json(rounds)
+            return EXIT_OK
+        if not rounds:
+            print("no jour fixe rounds yet")
+        for r in rounds:
+            when = onboarding.inline(r.get("scheduled_for") or r.get("opened_at") or "?")
+            print(f"{onboarding.inline(r.get('id'))} {when}: {_phase(r)}")
+        return EXIT_OK
+    overview = _jour_fixe(session)
+    if args.json:
+        _print_json(overview)
+        return EXIT_OK
+    next_at = overview.get("next_at")
+    print(f"Next jour fixe: {onboarding.inline(next_at) if next_at else 'none scheduled'}")
+    moderators = [onboarding.inline(m) for m in overview.get("moderators") or []]
+    print(f"Moderator order: {', '.join(moderators) if moderators else 'nobody'}")
+    current = _obj(overview.get("current_round"))
+    if current:
+        print(f"Current round {onboarding.inline(current.get('id'))}: {_phase(current)}")
+        print(f"  {_my_part(session, current)}")
+    else:
+        print("No round open")
+    last = _obj(overview.get("last_round"))
+    if last:
+        print("\n".join(_report_lines(last)))
+    return EXIT_OK
+
+
+def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
+    """The three texts from --file, a JSON object with any of those keys as strings, and from
+    the flags, which replace the file's field (§13)."""
+    given: dict[str, Any] = {}
+    if args.file is not None:
+        raw = sys.stdin.read() if args.file == "-" else _read_text_file(args.file, "--file")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise UsageError(f"--file is not JSON: {exc.msg}") from None
+        if not isinstance(data, dict) or set(data) - set(JOUR_FIXE_FIELDS):
+            keys = ", ".join(JOUR_FIXE_FIELDS)
+            raise UsageError(f"--file holds one JSON object with any of the keys {keys}")
+        if not all(isinstance(v, str) for v in data.values()):
+            raise UsageError("--file: every answer is a string")
+        given = dict(data)
+    given.update({f: getattr(args, f) for f in JOUR_FIXE_FIELDS if getattr(args, f) is not None})
+    if not any(v.strip() for v in given.values()):
+        raise UsageError("the answer is empty: give --went-well, --went-badly or --would-help")
+    return {**given, "anonymous": bool(args.anonymous)}
+
+
+def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/answers` for the caller's current round (§20.3). Refused with exit 2,
+    nothing sent, without a round the caller may answer; `--anonymous` prints §20.4's limits
+    first."""
+    body = _answer_body(args)  # a usage error before any call
+    session = Session()
+    current = _obj(_jour_fixe(session).get("current_round"))
+    me = session.data.get("member_id")
+    if current.get("status") != "answering" or not isinstance(current.get("id"), str):
+        raise UsageError("no jour fixe round is open for answers; nothing sent")
+    if me not in _member_ids(current.get("participants")):
+        raise UsageError(
+            f"you are not a participant of {onboarding.inline(current['id'])}; nothing sent"
+        )
+    if body["anonymous"]:
+        for line in ANONYMITY_LIMITS:
+            _err(line)
+    path = session.project_path("jour-fixe", "rounds", current["id"], "answers")
+    try:
+        answer = session.client.call("POST", path, body=body)
+    except hub.HubError as exc:
+        if exc.code == "jour_fixe_answered":
+            raise CommandError(
+                f"you have answered {onboarding.inline(current['id'])} already; one answer per "
+                "round, and a withdrawn answer still counts"
+            ) from None
+        raise
+    named = _field(answer, "id")
+    return _done(args, answer, f"answered {onboarding.inline(named)}" if named else "answered")
+
+
+def _round_for(session: Session, given: str | None) -> str:
+    """The round named, else the current one, else the last reported one."""
+    if given:
+        return given
+    overview = _jour_fixe(session)
+    for key in ("current_round", "last_round"):
+        found = _field(overview, key, "id")
+        if isinstance(found, str):
+            return found
+    raise UsageError("there is no jour fixe round yet")
+
+
+def cmd_jourfixe_answers(args: argparse.Namespace) -> int:
+    """`GET …/rounds/{id}/answers` in the hub's shuffled order; `--mine` for the author."""
+    session = Session()
+    round_id = _round_for(session, args.round)
+    query = [("mine", "true")] if args.mine else []
+    page = session.client.call(
+        "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"), query=query
+    )
+    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    if args.json:
+        _print_ascii_json(items)  # other members' text
+        return EXIT_OK
+    if not items:
+        print(f"no answers to show for {onboarding.inline(round_id)}")
+    titles = {"went_well": "Went well", "went_badly": "Went badly", "would_help": "Would help"}
+    for answer in items:
+        who = "anonymous" if answer.get("anonymous") else onboarding.inline(answer.get("author"))
+        state = " (withdrawn)" if answer.get("withdrawn") else ""
+        state += " (redacted)" if answer.get("redaction") else ""
+        print(f"{onboarding.inline(answer.get('id'))}, {who}{state}:")
+        for key, title in titles.items():
+            if answer.get(key):
+                print(f"  {title}:")
+                print("\n".join("    " + q for q in onboarding.quote(answer[key])))
+    return EXIT_OK
+
+
+def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
+    """`DELETE …/rounds/{id}/answers/mine` while the window is open (§20.3, §20.4)."""
+    session = Session()
+    round_id = _round_for(session, args.round)
+    mine = _my_answer(session, round_id)  # read first: a withdrawn anonymous one is gone
+    answer = session.client.call(
+        "DELETE", session.project_path("jour-fixe", "rounds", round_id, "answers", "mine")
+    )
+    line = "withdrawn"
+    if mine is not None and mine.get("anonymous"):
+        line += "; the moderator may already have read it"
+    return _done(args, answer, line)
+
+
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
     return _done(args, card, "\n".join(_release_summary(card)))
@@ -3527,6 +3777,61 @@ def build_parser() -> argparse.ArgumentParser:
         r.set_defaults(handler=cmd_ticker_subscription)
 
     p = add(
+        "jourfixe",
+        "the project's jour fixe: the round, your answer, the answers",
+        "The jour fixe (§20): a round asks the present members three questions; the moderator "
+        "reads the answers, opens the exchange and reports. Without an action it shows the next "
+        "slot, the moderator order, the current round with its phase and deadline and your part "
+        "in it, and the last report. Answering is optional, and nobody is reminded.",
+    )
+    p.add_argument("--all", action="store_true", help="list every round instead, newest first")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_jourfixe)
+    jsub = p.add_subparsers(dest="jourfixe_command", metavar="<action>")
+    r = jsub.add_parser(
+        "answer",
+        help="answer your current round: what went well, badly, what would help",
+        description="`POST …/rounds/{id}/answers` for the round open for answers (§20.3). At "
+        "least one text; each at most 4 KiB. The answer goes to the moderator only. "
+        "--anonymous first prints what anonymity does not cover (§20.4). Without a round you "
+        "may answer it exits 2 and sends nothing.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--went-well", dest="went_well", metavar="T", help="what went well")
+    r.add_argument("--went-badly", dest="went_badly", metavar="T", help="what went badly")
+    r.add_argument("--would-help", dest="would_help", metavar="T", help="what would help")
+    r.add_argument("--anonymous", action="store_true", help="answer without your name")
+    r.add_argument(
+        "--file",
+        metavar="FILE",
+        help='the answer as JSON, {"went_well": …, "went_badly": …, "would_help": …}; - for stdin',
+    )
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_answer)
+    r = jsub.add_parser(
+        "answers",
+        help="read a round's answers (moderator, admin humans, or your own with --mine)",
+        description="`GET …/rounds/{id}/answers` in the hub's shuffled order (§20.3); an "
+        "anonymous answer carries no author. The round defaults to the current one, else the "
+        "last reported one.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", nargs="?", type=_id, help="the round id")
+    r.add_argument("--mine", action="store_true", help="only your own answer")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_answers)
+    r = jsub.add_parser(
+        "withdraw",
+        help="withdraw your answer while the answer window is open",
+        description="`DELETE …/rounds/{id}/answers/mine` (§20.3, §20.4). An anonymous answer is "
+        "deleted outright; the moderator may already have read it.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", nargs="?", type=_id, help="the round id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_withdraw)
+
+    p = add(
         "limit",
         "declare a provider limit before the session stops",
         "Tell the hub you are out until a time: `POST /me/limit` (§6.12). Run it before the "
@@ -3609,7 +3914,8 @@ def build_parser() -> argparse.ArgumentParser:
     nsub = p.add_subparsers(dest="note_command", metavar="<action>", required=True)
     r = nsub.add_parser("add", help="post a note on a card", formatter_class=fmt)
     r.add_argument("card", type=_id, help="the card id")
-    r.add_argument("body", help="the note, Markdown, at most 4 KiB")
+    r.add_argument("body", nargs="?", help="the note, Markdown, at most 4 KiB; - reads stdin")
+    r.add_argument("--body-file", metavar="FILE", help="read the note from this UTF-8 file")
     _json_flag(r)
     r.set_defaults(handler=cmd_note_add)
     r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
@@ -3827,6 +4133,7 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
 # errors, required). A value of `-` reads standard input, once per command.
 TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
+    cmd_note_add: (("body", "body_file", "the note", True),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),

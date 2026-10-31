@@ -383,7 +383,7 @@ minimum version and the upgrade line from the answer.
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
-| text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
+| text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `note add CARD -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say`, `ask` and `note add`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
@@ -517,6 +517,29 @@ announced by the hub itself. `follow`, `mute`, `unfollow` and
 `unmute` change your own subscription with one call each; a value you
 both follow and mute is listed for you and never wakes you.
 
+## Jour fixe
+
+A jour fixe round (§20) asks the present members three questions; the
+moderator reads the answers, opens an exchange and writes the report.
+
+| Command | What it does |
+|---|---|
+| `maity jourfixe [--all] [--json]` | `GET …/jour-fixe`: the next slot, the moderator order, the current round with its phase and deadline and your part in it (invited, answered, eligible in the open step), and the last report with each proposal's triage. `--all` lists every round, every page |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/rounds/{id}/answers` for the round open for answers. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
+| `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
+
+With `--anonymous`, `answer` first prints on stderr what anonymity
+does not cover (§20.4): wording, timing while the window is open,
+copies of the database, the transport, and small rounds. Answering is
+optional; nobody is reminded.
+
+`maity wait` adds a plain line on stderr for the jour fixe events that
+wake someone (§20.9), and `maity resume` shows the same line under the
+event: the opening (answer by when, the questions quoted), the closed
+answer window and the closed exchange for the moderator (what is due by
+when), and a step opened for you (until when, which topics).
+
 ## Cards and subtasks
 
 ```sh
@@ -545,6 +568,10 @@ non-ASCII escaped.
 
 ```sh
 maity note add tsk-0004 "The CLI needs --no-code here too."
+maity note add tsk-0004 --body-file note.md
+maity note add tsk-0004 - <<'EOF'
+The CLI needs `--no-code` here too.
+EOF
 maity note list tsk-0004 [--all]
 maity note resolve tsk-0004 nte-0031 --incorporated   # or --dismissed; the card's creator or tasks:admin
 maity link add tsk-0004 https://github.com/oliver-zehentleitner/maity/issues/41

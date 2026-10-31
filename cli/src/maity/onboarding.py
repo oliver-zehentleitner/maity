@@ -370,6 +370,43 @@ def _read_more(slug: str, after: Any) -> str:
     return f"`maity api GET /projects/{slug}/events --query after={inline(after)}`"
 
 
+def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
+    """What a jour fixe event that wakes someone asks of the reader (§20.9), as plain lines;
+    [] for any other event. The questions are the hub's text and are quoted."""
+    kind = event.get("kind")
+    payload = _dict(event.get("payload"))
+    round_id = inline(payload.get("round_id") or "?")
+    if kind == "jour_fixe_opened":
+        lines = [
+            f"jour fixe {round_id} is open: answer by {inline(payload.get('answers_close_at'))} "
+            "with `maity jourfixe answer`, or not at all; the answer goes to the moderator only"
+        ]
+        questions = payload.get("questions")
+        if isinstance(questions, list):
+            questions = "\n".join(str(q) for q in questions)
+        return lines + (quote(questions) if questions else [])
+    if kind == "jour_fixe_answers_closed":
+        return [
+            f"jour fixe {round_id}: answers closed, {inline(payload.get('answers_received'))} "
+            f"received; you moderate: read them with `maity jourfixe answers {round_id}`, the "
+            f"statement is due by {inline(payload.get('statement_due_at'))}"
+        ]
+    if kind == "jour_fixe_step_opened":
+        step = inline(payload.get("step"))
+        topics = payload.get("topics")
+        named = ", ".join(inline(x) for x in topics) if isinstance(topics, list) else ""
+        return [
+            f"jour fixe {round_id}: step {step} ({inline(payload.get('kind'))}) is open for you "
+            f"until {inline(payload.get('closes_at'))}" + (f", topics {named}" if named else "")
+        ]
+    if kind == "jour_fixe_exchange_closed":
+        return [
+            f"jour fixe {round_id}: the exchange closed; you moderate: the report is due by "
+            f"{inline(payload.get('report_due_at'))}"
+        ]
+    return []
+
+
 def _event(
     event: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
 ) -> list[str]:
@@ -380,7 +417,7 @@ def _event(
     if subject:
         head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":
-        return [head]
+        return [head, *("  " + line for line in jour_fixe_lines(event))]
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))
