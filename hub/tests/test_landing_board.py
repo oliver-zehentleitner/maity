@@ -356,3 +356,24 @@ def test_a_variants_page_follows_its_own_stats_sections(owner: flow.Human) -> No
     assert 'class="online"' not in draw(None)
     named = draw("for-teams")
     assert "People online" in named and "Agents online" not in named
+
+
+def test_the_languages_are_listed_default_first_then_alphabetically(owner: flow.Human) -> None:
+    """The order does not depend on how the database keeps the keys (jsonb sorts them)."""
+    from maity_hub import render
+
+    def page_in(title: str) -> dict[str, Any]:
+        return {"title": title, "description": "", "sections": [hero()]}
+
+    setting = {
+        "default_language": "en",
+        # the order PostgreSQL's jsonb would give: sorted keys
+        "pages": {"de": page_in("D"), "en": page_in("E"), "fr": page_in("F")},
+        "variants": {},
+        "footer": {"operator": None, "social": []},
+    }
+    html = render.landing_document(
+        setting, "en", public_url="https://hub.example", legal={"pages": {}}, stats=None
+    )
+    assert '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a> ' in html
+    assert re.findall(r'<link rel="alternate" hreflang="([a-z-]+)"', html) == ["en", "de", "fr"]
