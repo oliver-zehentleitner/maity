@@ -371,6 +371,42 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     return "offline"
 
 
+def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
+    """Per served agent without a session of its own, the best presence of its bridges
+    (§2.3): it is present through them."""
+    if not served_ids:
+        return {}
+    from maity_hub import listening  # the in-process registry of open long-polls
+
+    b = t.bridge.c
+    pairs = conn.execute(
+        select(b.served, b.bridge).where(b.served.in_(served_ids), b.live.is_(True))
+    ).all()
+    if not pairs:
+        return {}
+    carriers = {row[1] for row in pairs}
+    rows = {
+        r.id: r for r in conn.execute(select(t.membership).where(t.membership.c.id.in_(carriers)))
+    }
+    live, _ = _sessions(conn, carriers)
+    shown: dict[int, str] = {}
+    for membership_id, row in rows.items():
+        session = live.get(membership_id)
+        if row.isolated_since is not None or row.paused_since is not None:
+            continue  # an isolated or paused bridge carries nobody's presence
+        shown[membership_id] = presence(
+            row, session, session is not None and listening.is_listening(session.id)
+        )
+    best: dict[int, str] = {}
+    for served, carrier in pairs:
+        if carrier not in shown:
+            continue
+        current = best.get(served)
+        if current is None or PRESENCE_ORDER.index(shown[carrier]) < PRESENCE_ORDER.index(current):
+            best[served] = shown[carrier]
+    return best
+
+
 def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
     """Per agent membership its active placement, as the Agents list needs it (§15.11)."""
     if not membership_ids:
@@ -533,6 +569,9 @@ def member_views(
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    carried = _carried_presence(
+        conn, {r.id for r in rows if r.agent_id is not None and r.id not in live}
+    )
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
@@ -678,6 +717,9 @@ def member_views(
                 view["presence"] = min(
                     (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
                 )
+        if row.id in carried and stopped is None and row.isolated_since is None:
+            # No session of its own: present through its bridges (§2.3).
+            view["presence"] = min(view["presence"], carried[row.id], key=PRESENCE_ORDER.index)
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         elif row.agent_id is None:

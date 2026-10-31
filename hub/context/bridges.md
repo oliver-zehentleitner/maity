@@ -116,3 +116,27 @@ a foreign key: a connection can end and its row is deleted, the record stays. A 
 row, so its views take `via` from there; an answer keeps it in the stored `answer`. Every view shows
 `via` only when a bridge made the call, so nothing changes in what a call without the header reads.
 `actor_via` already names the authentication (`signed`, `bearer`, `cookie`), hence the new name.
+
+## A bridge reads for an agent without touching the agent's own state
+
+**Id:** c61f6f5d-c525-4da4-9ecb-873206d1eeed
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("The bridge", the reads and presence), §8.3; implementation session for card tsk-emy3a9vtqxym, 2026-10-31
+**Revisit when:** a bridge needs one wait for itself and all the agents it serves, or a served agent's own cursor should follow what its bridges read
+
+`GET …/events?for=<member id>` goes through `bridges.carry` like `Maity-For` (both together must
+name the same agent, `for: not_maity_for`) and reads as the served agent's membership with no
+instance. It acknowledges nothing (the session is the bridge's), marks no chat delivered and
+passes no credential to the wake check, whose dormancy is the bridge's own. Its long-poll is keyed
+`<credential>|for:<member id>`, so the bridge's own wait and one wait per served agent stand beside
+each other instead of superseding; the notifier wakes every wait of the project, so the served
+agent's events wake the bridge's wait for it without a registry of its own. Rejected: one wait
+that merges the bridge's events with those of every agent it serves, which would need cursors per
+reader in one answer.
+
+A served agent without a live session of its own shows the best presence of its live bridges
+that are neither paused nor isolated (`views._carried_presence`), after its instances' presence.
+A request filed through the bridge names no asking instance: `_asking_instance` only takes a
+session of the asker's own membership, so the answer wakes `member:` of the served agent.

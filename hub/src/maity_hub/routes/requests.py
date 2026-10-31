@@ -540,13 +540,17 @@ def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list
 
 def _asking_instance(conn: Connection, row: Any) -> str | None:
     """The instance of the credential whose session filed the request; `None` for a
-    human, and for a request the hub filed, which has no session (§7)."""
+    human, for a request the hub filed, which has no session (§7), and for one a bridge
+    filed for the asker, whose session is the bridge's own membership's (§2.3)."""
     if row.asked_session_id is None:
         return None
     instance: str | None = conn.execute(
         select(t.credential.c.instance)
         .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-        .where(t.agent_session.c.id == row.asked_session_id)
+        .where(
+            t.agent_session.c.id == row.asked_session_id,
+            t.credential.c.membership_id == row.asked_by,
+        )
     ).scalar()
     return instance
 
