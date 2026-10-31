@@ -282,7 +282,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
             pass  # An unavailable board is unknown, not empty; resume still succeeds.
-    text = None if args.json else onboarding.render(packet, first=first, board_empty=board_empty)
+    full = bool(getattr(args, "full", False))
+    text = (
+        None
+        if args.json
+        else onboarding.render(packet, first=first, board_empty=board_empty, full=full)
+    )
     session_id = field(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
@@ -312,6 +317,8 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
         field(packet, "keep_the_why", "commitment") == "required"
     )
     session.save()
+    # What `--full` renders again without a second resume, which would open another session.
+    state.save_state(session.dir, packet, name=LAST_PACKET)
     if text is None:
         _print_json(packet)
     else:
@@ -463,8 +470,21 @@ def _identity_dir(url: str, target: str, outside: Exception) -> Path:
     return state.identity_dir(host, handle.group(1))
 
 
+LAST_PACKET = "last-resume.json"
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
-    return _resume(Session(args.hub), args)
+    """`--full` renders the packet the last resume stored, in full and without calling the hub;
+    without one it resumes as usual and prints in full."""
+    session = Session(args.hub)
+    stored = state.load_state(session.dir, name=LAST_PACKET) if args.full else {}
+    if not stored:
+        return _resume(session, args)
+    if args.json:
+        _print_json(stored)
+    else:
+        print(onboarding.render(stored, full=True), end="")
+    return EXIT_OK
 
 
 BATCH_MAX = 50
@@ -2912,8 +2932,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Open a session and print what it says: the briefing, identity and role, the project's "
         "state and rules (in full when they changed), the cards you hold with their checkpoints, "
         "answered and open requests, the events since your last session, and the next step. "
-        "--json prints the resume packet itself. Run it at the start of every session and after "
-        "a context compaction.",
+        "The text is compact: the last 10 answers and the last 10 events addressed to you, the "
+        "rest counted; --full prints the packet of the last resume in full, without opening "
+        "another session. --json prints the resume packet itself. Run it at the start of every "
+        "session and after a context compaction.",
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
         "--hub", help="the hub URL, once, when the credential came from the page-driven join"
