@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, update
 
 from maity_hub import paging
 from maity_hub import tables as t
@@ -205,3 +205,32 @@ def test_who_leaves_or_loses_access_keeps_no_pin(
     assert owner.delete(f"/projects/maintainer/maity/members/{guest.id}").status_code == 200
     assert owner.delete(f"/projects/maintainer/maity/members/{agent.id}").status_code == 200
     assert pin_rows(migrated) == 0  # the guest's room and the owner's direct chat
+
+
+def test_a_pin_lost_without_a_stay_or_membership_ending_is_dropped_at_the_next_pin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_human(make_client, migrated, "other-owner", role="admin")
+    their_agent = flow.agent(make_client, other)
+    chat = create(owner, their_agent.id).json()
+    assert put(other, chat["id"]).status_code == 204  # read along through its agent
+    # The agent passes to another owner: no stay and no membership ends, so nothing prunes.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == their_agent.id)
+            .values(owner_id=owner.id)
+        )
+    assert pin_rows(migrated) == 1
+    assert chat["id"] not in {i["id"] for i in listed(other, observed=True)}  # unseen
+    room = create(owner, other.id, title="theirs to pin").json()
+    assert put(other, room["id"]).status_code == 204
+    with migrated.connect() as conn:  # the stale pin went before the new one was counted
+        held = set(
+            conn.execute(
+                select(t.conversation_pin.c.conversation_id).where(
+                    t.conversation_pin.c.human_id == other.id
+                )
+            ).scalars()
+        )
+    assert held == {room["id"]}
