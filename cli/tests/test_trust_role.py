@@ -266,7 +266,7 @@ def _packet(**overrides: Any) -> dict[str, Any]:
 
 def test_resume_shows_trust_and_role() -> None:
     text = onboarding.render(_packet())
-    assert "Trust: member, role: reviewer, reporting to agent-a" in text
+    assert "Trust: member, role: reviewer\n" in text and "Your lead: @agent-a\n" in text
     assert "agent-a [agt-a] (admin coder, online)" in text
     assert "maint [hum-1] (owner coder, away)" in text
 
