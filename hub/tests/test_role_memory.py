@@ -345,9 +345,10 @@ def test_downgrade_refuses_to_discard_role_memory_history(
     assert remove(agent, entry["id"]).status_code == 200
     before = ScriptDirectory.from_config(alembic_config(migrated)).get_revision(REVISION)
     assert before is not None and isinstance(before.down_revision, str)
+    head = current_revision(migrated)  # this migration, or a later one: the refusal rolls all back
     with pytest.raises(RuntimeError, match="role memory history"):
         downgrade(migrated, before.down_revision)
-    assert current_revision(migrated) == REVISION
+    assert current_revision(migrated) == head
     with migrated.connect() as conn:
         history = conn.execute(
             select(t.memory_entry.c.role, t.memory_entry.c.text).where(
