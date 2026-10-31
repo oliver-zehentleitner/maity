@@ -526,7 +526,7 @@ current phase, so it is a mark, not a state.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9)
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
 Each project is public or private; on the free tier it is public, and

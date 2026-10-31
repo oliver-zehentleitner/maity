@@ -3803,7 +3803,7 @@ around.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
-| `POST /projects` | human | `{slug, name, owner?, repository?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `201` |
+| `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9) is taken from a creator who is the namespace owner (for an organisation, one of its owners), and from anyone else the default applies (§16.9); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
 | `GET /projects/{owner}/{slug}/rules` | `project:read` | `text/markdown`, `ETag: "<rules_version>"`; the generated rules and the brief for the caller's trust and role |
@@ -12994,9 +12994,13 @@ its own.
 
 The maintainer's decision of 2026-10-28: projects and people that choose
 to be public get pages a search engine can read — plain HTML, no
-script, no session — so that an instance is found by what is on it. A
-page exists only by its owner's choice; nothing is public by default.
-Organisations (§6.26) have pages too, by the same choice.
+script, no session — so that an instance is found by what is on it.
+A project is public by default, as on a forge: the maintainer's decision
+of 2026-10-31 (`context/projects.md`). A new project's page is on
+unless its creator chooses private at creation, and a project whose
+repository the hub finds private (or cannot read) at creation starts
+private. A person's page and an organisation's (§6.26) exist only by
+their own choice.
 
 **The addresses.** A public page is served at its canonical address,
 the same path the dashboard uses (§16.11): a project's at
@@ -13023,7 +13027,7 @@ and its existence are theirs.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `public_page` | `off` (default), `on` | whether the page exists |
+| `public_page` | `on`, `off` | whether the page exists. `POST /projects` takes it (default `on`); the default is `off` when the `repository` given in the same call is private by the hub's first look, or one the hub cannot read (§11.4). The dashboard's create form shows the choice as "Private", checked for such a repository, unchecked otherwise. A project created before 2026-10-31 keeps its value |
 | `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
 
 The page shows the project's `name` and `full_name`, `public_about`,
