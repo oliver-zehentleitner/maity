@@ -414,14 +414,16 @@ too.
    restores the board while keeping the column, member and area filters.
 3. **Agents** (`/<owner>/<slug>/agents`, a tab before Why,
    for humans; the maintainer, 2026-10-29): one's own agents in the
-   project, each as its card on **Your agents** (`/agents`, one component,
+   project as a list like **Your agents** limited to this project (2026-10-31): a row
+   per agent (trust and role here, presence, active instances here) with **Manage**,
+   which opens under it its card (`/agents`, one component,
    `js/agents-page.js`): picture, name and handle, its memberships, and
    its name, handle, picture and deletion folded. Under the card, what
    belongs to this membership: trust, role and presence, **Give my
    preferences to this agent** (where the member view has
    `owner_preferences`, §19.4), the **Team rulebook** and its credentials
    (below), and with members:admin its pause and **Remove from the
-   project**. `/<owner>/<slug>/agents/<id>` marks one card;
+   project**. `/<owner>/<slug>/agents/<id>` opens and marks one card;
    `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
    focuses its limit. **+ Add an agent** (or **+ Add my agent**) at the
    head opens the join panel (item 7); the open joins stand under the
