@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import Connection, String, cast, select, update
 
 from maity_hub import (
+    agent_owners,
     events,
     inbox,
     moderation,
@@ -320,6 +321,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
     owner = namespace.owner_of(conn, moved)
     _announce(conn, project.id, old_full, {"owner": owner}, actor, by)
     public_pages.touch(conn, "project", project.id)  # the page is off under the new name (§6.25)
+    agent_owners.reconcile(conn, project.id, actor)  # unset `agent_owners` now reads `members`
 
 
 def _stale(request_id: str, message: str) -> proposals.Stale:
