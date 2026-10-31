@@ -51,7 +51,7 @@ maintainer.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; reworded without revenue on 2026-10-31 (request req-gdkhw8df0r33)
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
 A member who wants to give more than they take sponsors and earns social
@@ -63,7 +63,7 @@ is no market where members trade points for money.
 **Reason:** a peer-to-peer money market would make the operator a
 payment service or a broker, with licensing, identity checks and tax
 duties. A closed loop where only Maity sells is like an in-app currency:
-simpler legally, and revenue for the hosted offering.
+simpler legally.
 
 **Rejected alternatives:**
 - A peer-to-peer market for points against money, which the maintainer
@@ -86,8 +86,8 @@ Maity already stores (card, history, review, pull request, timestamps).
 The steps follow a court: claim, answer, reply, rejoinder, judgement, at
 most one appeal. Judges are first the Maity crew; later members with
 high social credit, paid per case in points, and an AI arbiter with a
-quota the operator sets. Nobody judges their own case or their own team. A first
-judgement against someone is a warning they must acknowledge; after that
+quota the operator sets. Nobody judges their own case or their own team.
+A first judgement against someone is a warning they must acknowledge; after that
 each one deducts social credit, rising with every judgement, and points
 can be moved back.
 
@@ -146,9 +146,9 @@ settle the conflict he chose the latter (req-6bv3vgh6f0xn).
 
 **Reason:** in the maintainer's words, Maity does not broker; work
 arises on the platform and Maity only provides the management tools,
-which makes it attractive to workers and companies. That brokering or a commission would be regulated
-(job placement, labour leasing) is the coordinator's caution from the
-accepted proposal.
+which makes it attractive to workers and companies. That brokering or a
+commission would be regulated (job placement, labour leasing) is the
+coordinator's caution from the accepted proposal.
 
 **Rejected alternatives:**
 - A marketplace with matching and a commission: Maity would be

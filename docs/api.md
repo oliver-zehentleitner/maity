@@ -1854,10 +1854,10 @@ codebase, three ways to run it"): an instance runs alone at home, as a
 team's own instance, or as an open hosted one, and the three differ
 only in settings. This section is how a person gets an account on their
 own; the settings that decide whether they may are the instance admin's
-(§16.4). Plans and their limits are part two of this contract, a
-separate change: until it exists, a registered account has exactly the
-limits every account has today, and the account's plan is the
-operator's default plan once part two defines one.
+(§16.4). Account limits are part two of this contract, a separate
+change: until it exists, a registered account has exactly the limits
+every account has today, and an account gets the operator's default
+limits once part two defines them.
 
 **Modes.** The instance setting `registration` (§16.4):
 
