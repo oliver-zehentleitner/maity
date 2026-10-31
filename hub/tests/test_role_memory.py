@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import clock, events, memory
 from maity_hub import tables as t
 from maity_hub.db import alembic_config, current_revision, downgrade
+from maity_hub.errors import ApiError
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -177,6 +178,30 @@ def test_live_role_entries_keep_a_project_role_in_use_but_tombstones_do_not(
     assert custom(owner, []).status_code == 200
     historical = items(owner, role="legal", deleted=True)
     assert historical[0]["role"] == "legal" and historical[0]["text"] is None
+
+
+def test_a_role_removed_after_validation_cannot_receive_an_orphan_entry(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    assert custom(owner, [{"name": "legal", "base": "coder"}]).status_code == 200
+    with migrated.connect() as conn:
+        writer = conn.execute(select(t.membership).where(t.membership.c.human_id == owner.id)).one()
+    # A request validated "legal", but another request removed it before the write lock.
+    assert custom(owner, []).status_code == 200
+    with pytest.raises(ApiError) as failed, events.transaction(migrated) as conn:
+        memory.add_entry(
+            conn,
+            writer.project_id,
+            memory.Writer(writer, "human", None),
+            None,
+            "role",
+            "Must not outlive its role definition.",
+            [],
+            role="legal",
+        )
+    assert failed.value.code == "invalid"
+    assert failed.value.details["fields"] == {"role": "unknown"}
+    assert owner.get(M).json()["items"] == []
 
 
 def test_role_memory_is_scoped_to_the_project(

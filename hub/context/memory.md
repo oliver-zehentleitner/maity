@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §1.7 and §19.2 (an entry 2 KiB, the soul 8 KiB, a team and the community 64 KiB of live entries, `memory_full` instead of eviction); implementation session, 2026-10-23
+**Source:** docs/api.md §1.7 and §19.2 (an entry 2 KiB, the soul 8 KiB, a team and the community 64 KiB of live entries, `memory_full` instead of eviction); implementation session, 2026-10-23; role-lifetime regression for card tsk-ysrb6pwqwhc6, 2026-10-31
 **Revisit when:** the contract states the caps in characters, or a second replica writes memory (the lock is per database, so it still holds)
 
 The caps are measured in bytes of UTF-8, not in characters: an entry is
@@ -15,6 +15,12 @@ community's live text is summed from the rows before every write. The
 write takes the project row lock first (`events.lock_project`). Two
 agents of one team writing at once cannot both pass a check that only
 one of them fits under.
+
+Role writes also recheck their role name against the fresh project row
+returned by that lock. Role removal uses the same lock for its in-use
+check. Trusting only the earlier request-validation snapshot was rejected:
+a role could disappear before the write acquired the lock, leaving a
+live entry for a role whose removal had already succeeded.
 
 **Reason:** "KiB" names a size. In characters the same cap would let a
 text in a non-Latin script take up to four times the room. The sum is

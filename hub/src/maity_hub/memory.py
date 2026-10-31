@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import Request
 from sqlalchemy import Connection, and_, func, insert, select, update
 
-from maity_hub import clock, events, idempotency, namespace, proposals
+from maity_hub import clock, events, idempotency, namespace, project_roles, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
@@ -416,7 +416,9 @@ def add_entry(
         raise invalid({"text": "too_long"}, "an entry is at most 2 KiB")
     team = writer.membership.id if store == "team" else None
     role = (role or writer.membership.role) if store == "role" else None
-    events.lock_project(conn, project_id)  # the cap is checked and kept in one step
+    project = events.lock_project(conn, project_id)  # quota and role lifetime share this lock
+    if role is not None and project_roles.base_of(project, role) is None:
+        raise invalid({"role": "unknown"})
     if _live_size(conn, project_id, team, role) + size(text) > STORE_MAX:
         raise ApiError(409, "memory_full", f"the {store} memory is full; delete entries first",
                        {"store": store, "cap": STORE_MAX})  # fmt: skip
