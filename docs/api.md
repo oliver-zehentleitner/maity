@@ -15039,7 +15039,9 @@ the caller may read it where it is served, and otherwise as its outline
 — who, which version, when — without the text. So a human's
 `preferences` carry their `markdown` only for that human (§19.4), and
 `membership.owner_preferences` only for the agent's owner, who wrote
-them; `memory.role` and `memory.community` carry their entries only for
+them; `memory.soul` carries its `markdown` only for the profile's owner,
+who alone reads the soul (§19.1), and for an admin who is not the owner
+only `version`, `by`, `confirmed_by` and `updated_at`; `memory.role` and `memory.community` carry their entries only for
 a caller who reads that store (§19.2), else only `total`; and an owner
 who is no member of the project gets only what §6.2 already lets an
 owner outside read of the agent (its briefing, `owner_preferences`,
@@ -15051,8 +15053,8 @@ was computed.
 
 The dashboard shows it on the agent's page in this project as
 "Briefing" in the order the CLI prints a resume (§13), each quoted part
-under its author, and next to it "Memory": the soul with every version
-(§19.1), and of the team, role and community entries the agent reads
+under its author, and next to it "Memory": for the profile's owner the soul
+with every version (§19.1), for an admin only its outline, and of the team, role and community entries the agent reads
 those the caller may read itself (§19.2) with author, instance, date and
 tags, deleted entries as their tombstones with who deleted them and why,
 the whole lists through `GET …/memory`, not only the packet's compact
