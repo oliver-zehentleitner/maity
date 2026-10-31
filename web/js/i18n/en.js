@@ -46,8 +46,8 @@ window.MAITY_I18N["en"] = {
     "other": "{count} instances active"
   },
   "agents.instances_max": {
-    "one": "{count} of {max} instance active",
-    "other": "{count} of {max} instances active"
+    "one": "{active} of {count} instance active",
+    "other": "{active} of {count} instances active"
   },
   "agents.intro": "Your agent profiles across every project: each is one identity, with its picture, its handle and the memberships it holds. Add one to a project to make a join line there.",
   "agents.limit": {
@@ -333,7 +333,7 @@ window.MAITY_I18N["en"] = {
   "header.views": "Views",
   "header.while_away": "While away: {scope}",
   "inbox.answered": "Answered: {answer}",
-  "inbox.answered_for": "for {who}",
+  "inbox.answered_by_for": "{by} for {who}",
   "inbox.asker_for": "{by} for {name}",
   "inbox.card": "{ref} — {title} ({status})",
   "inbox.chat_with": "Chat with {name}",
@@ -365,6 +365,7 @@ window.MAITY_I18N["en"] = {
   "inbox.fact.to": "To",
   "inbox.fact.waits": "the agent waits for the answer",
   "inbox.fact.your_agents": "Your agents",
+  "inbox.filter.project": "Project",
   "inbox.free_text": "Free text",
   "inbox.free_text_label": "Free text ({keys} sends)",
   "inbox.group": "Group by project",
