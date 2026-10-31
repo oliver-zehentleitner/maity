@@ -3609,7 +3609,8 @@ def build_parser() -> argparse.ArgumentParser:
     nsub = p.add_subparsers(dest="note_command", metavar="<action>", required=True)
     r = nsub.add_parser("add", help="post a note on a card", formatter_class=fmt)
     r.add_argument("card", type=_id, help="the card id")
-    r.add_argument("body", help="the note, Markdown, at most 4 KiB")
+    r.add_argument("body", nargs="?", help="the note, Markdown, at most 4 KiB; - reads stdin")
+    r.add_argument("--body-file", metavar="FILE", help="read the note from this UTF-8 file")
     _json_flag(r)
     r.set_defaults(handler=cmd_note_add)
     r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
@@ -3827,6 +3828,7 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
 # errors, required). A value of `-` reads standard input, once per command.
 TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
+    cmd_note_add: (("body", "body_file", "the note", True),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
