@@ -909,17 +909,22 @@ waiting for their human in the terminal.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe answer` (`--file FILE|-`, exit 2 without a round), §20.3, §20.4; the file format and the reads before the call are this package's choice
-**Revisit when:** §13 names a format for `--file`, or the hub answers whether the caller has answered in the round view
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe answer` (`--file FILE|-`, exit 2 without a round; the `--file` format as the team lead set it for §13 in #850), §20.3, §20.4, §20.5 (a further step listed with `opened_at` null until it opens); the hub's `current_step`; the reads before the call are this package's choice
+**Revisit when:** the hub answers whether the caller has answered in the round view
 
-`--file` holds the whole answer as one JSON object with the keys
-`went_well`, `went_badly` and `would_help`; any other key is a usage
-error. Before it sends, `answer` reads `GET …/jour-fixe` and refuses
+`--file` holds the answer as one JSON object with any of the keys
+`went_well`, `went_badly` and `would_help`, each a string; any other
+key, or a value that is no string (`null` included), is a usage error,
+and a flag given as well replaces that field. Before it sends, `answer` reads `GET …/jour-fixe` and refuses
 with exit 2, nothing sent, unless the current round is `answering` and
 the caller is among its `participants`. `maity jourfixe` reads the
 caller's own answer (`?mine=true`) to say whether it answered, and
 `withdraw` reads it before the delete to say whether an anonymous
 answer is gone that the moderator may have read.
+
+The open step is the last one with `opened_at`, as the hub's
+`current_step` takes it, and it counts as open only while it has no
+`closed_at`.
 
 **Reason:** an answer has three optional texts, each Markdown that may
 span lines, so a file has to keep them apart; JSON does that without a
@@ -936,3 +941,7 @@ first.
 - Sending the answer and leaving the refusal to the hub: §13 wants exit
   2 with nothing sent, and the hub's `not_participant` is an error, not
   a usage refusal.
+- The last step without `closed_at` as the open one: a further step the
+  moderator asked for waits at the end of `steps` with `n`, `opened_at`
+  and `closed_at` null until it opens, and was taken for the open step
+  (review of #847).

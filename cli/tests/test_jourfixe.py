@@ -70,7 +70,10 @@ def test_the_overview_shows_slot_order_round_part_and_report(
     assert "Next jour fixe: 2026-11-05T09:00:00Z\n" in out
     assert "Moderator order: agt-a, agt-c\n" in out
     assert "Current round jfx-0013: answering, answers close at 2026-10-31T11:00:01Z\n" in out
-    assert "  you were invited, not answered (`maity jourfixe answer`, or not at all)\n" in out
+    assert (
+        "  you were invited, not answered, or withdrawn, which still counts "
+        "(`maity jourfixe answer`, or not at all)\n"
+    ) in out
     assert "Last report: jfx-0012, 2026-10-29T15:02:00Z\n  > Reviews took too long.\n" in out
     assert "  - Two reviewers per PR [to_owner] -> req-0091\n" in out
 
@@ -81,10 +84,30 @@ def test_the_overview_shows_slot_order_round_part_and_report(
         (_round(), [{"id": None, "anonymous": True}], "you were invited, answered anonymously"),
         (_round(invited=[]), [], "you were not invited (not present when it opened)"),
         (
-            _round("exchange", steps=[{"n": 2, "kind": "response", "closed_at": None,
-                                       "eligible": [ME]}]),  # fmt: skip
+            _round("exchange", steps=[{"n": 2, "kind": "response", "opened_at": "T",
+                                       "closed_at": None, "eligible": [ME]}]),  # fmt: skip
             [],
             "you were invited, eligible in step 2",
+        ),
+        (  # a further step waits at the end until step 2 closes (§20.5)
+            _round("exchange", steps=[
+                {"n": 2, "kind": "response", "opened_at": "T", "closed_at": None,
+                 "eligible": [ME]},
+                {"n": None, "kind": "further", "opened_at": None, "closed_at": None,
+                 "eligible": ["agt-c"]},
+            ]),  # fmt: skip
+            [],
+            "you were invited, eligible in step 2",
+        ),
+        (
+            _round("exchange", steps=[
+                {"n": 2, "kind": "response", "opened_at": "T", "closed_at": None,
+                 "eligible": ["agt-c"]},
+                {"n": None, "kind": "further", "opened_at": None, "closed_at": None,
+                 "eligible": [ME]},
+            ]),  # fmt: skip
+            [],
+            "you were invited",
         ),
     ],
 )
@@ -100,6 +123,19 @@ def test_the_callers_part(
     _mine(fake, mine)
     assert cli.main(["jourfixe"]) == cli.EXIT_OK
     assert f"  {part}\n" in capsys.readouterr().out
+
+
+def test_the_phase_names_the_open_step_and_when_it_closes(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    steps = [
+        {"n": 2, "kind": "response", "opened_at": "T0", "closes_at": "T2", "closed_at": None},
+        {"n": None, "kind": "further", "opened_at": None, "closes_at": None, "closed_at": None},
+    ]
+    _overview(fake, _round("exchange", steps=steps))
+    assert cli.main(["jourfixe"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "Current round jfx-0013: exchange, step 2 (response), closes at T2\n" in out
 
 
 def test_no_round_and_no_slot(
@@ -171,9 +207,10 @@ def test_the_answer_from_a_json_file(
     _overview(fake, _round())
     fake.routes[("POST", f"{ROUND}/answers")] = lambda seen: (201, {"anonymous": False, "id": "a"})
     path = tmp_path / "answer.json"
-    path.write_text(json.dumps({"went_well": "a\n\nb", "went_badly": None}))
-    assert cli.main(["jourfixe", "answer", "--file", str(path)]) == cli.EXIT_OK
-    assert _posted(fake) == [{"went_well": "a\n\nb", "anonymous": False}]
+    path.write_text(json.dumps({"went_well": "a\n\nb", "went_badly": "c"}))
+    assert cli.main(["jourfixe", "answer", "--file", str(path), "--went-badly", "d"]) == 0
+    # a flag given as well replaces that field (§13)
+    assert _posted(fake) == [{"went_well": "a\n\nb", "went_badly": "d", "anonymous": False}]
 
 
 @pytest.mark.parametrize(
@@ -202,7 +239,6 @@ def test_without_a_round_to_answer_it_exits_2_and_sends_nothing(
     [
         ["jourfixe", "answer"],  # nothing to say
         ["jourfixe", "answer", "--went-well", "  "],
-        ["jourfixe", "answer", "--went-well", "x", "--file", "-"],  # both
     ],
 )
 def test_an_empty_or_doubled_answer_is_a_usage_error_before_any_call(
@@ -212,13 +248,24 @@ def test_an_empty_or_doubled_answer_is_a_usage_error_before_any_call(
     assert not fake.signed()
 
 
-def test_a_file_with_other_keys_is_refused(
-    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+@pytest.mark.parametrize(
+    ("data", "said"),
+    [
+        ({"went_well": "x", "author": "me"}, "went_well, went_badly, would_help"),
+        ({"went_well": "x", "anonymous": True}, "went_well, went_badly, would_help"),
+        ({"went_well": "x", "went_badly": None}, "every answer is a string"),
+        ({"went_well": 3}, "every answer is a string"),
+    ],
+)
+def test_a_file_with_other_keys_or_values_is_refused(
+    data: dict[str, Any], said: str, joined: Path, fake: fakehub.FakeHub, tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
     path = tmp_path / "answer.json"
-    path.write_text(json.dumps({"went_well": "x", "author": "me"}))
+    path.write_text(json.dumps(data))
     assert cli.main(["jourfixe", "answer", "--file", str(path)]) == cli.EXIT_USAGE
-    assert "went_well, went_badly, would_help" in capsys.readouterr().err
+    assert said in capsys.readouterr().err
+    assert not fake.signed()
 
 
 def test_a_second_answer_says_so(
@@ -230,7 +277,8 @@ def test_a_second_answer_says_so(
         {"error": {"code": "jour_fixe_answered", "message": "answered"}},
     )
     assert cli.main(["jourfixe", "answer", "--went-well", "x"]) == cli.EXIT_ERROR
-    assert "you have answered jfx-0013 already" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "you have answered jfx-0013 already" in err and "a withdrawn answer still counts" in err
 
 
 # --- maity jourfixe answers / withdraw -----------------------------------------------------------
@@ -291,14 +339,12 @@ OPENED = {
     [
         ("jour_fixe_answers_closed", {"answers_received": 3, "statement_due_at": "T1"},
          "answers closed, 3 received; you moderate: read them with `maity jourfixe answers "
-         "jfx-0013`, the statement is due by T1 (`maity jourfixe statement jfx-0013 --file …`)"),
+         "jfx-0013`, the statement is due by T1"),
         ("jour_fixe_step_opened", {"step": 2, "kind": "response", "closes_at": "T2",
                                    "topics": ["t1", "t2"]},
-         "step 2 (response) is open for you until T2, topics t1, t2: `maity jourfixe post "
-         'jfx-0013 --step 2 --topic <topic> "…"`'),
+         "step 2 (response) is open for you until T2, topics t1, t2"),
         ("jour_fixe_exchange_closed", {"report_due_at": "T3"},
-         "the exchange closed; you moderate: the report is due by T3 "
-         "(`maity jourfixe report jfx-0013 --file …`)"),
+         "the exchange closed; you moderate: the report is due by T3"),
     ],
 )  # fmt: skip
 def test_each_waking_event_says_what_it_asks(

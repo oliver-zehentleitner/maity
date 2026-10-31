@@ -2808,9 +2808,10 @@ def _jour_fixe(session: Session) -> dict[str, Any]:
 
 
 def _open_step(round_: dict[str, Any]) -> dict[str, Any]:
-    """The step whose window is open: the last one without `closed_at`; {} when none is."""
-    steps = [s for s in round_.get("steps") or [] if isinstance(s, dict)]
-    return steps[-1] if steps and not steps[-1].get("closed_at") else {}
+    """The step whose window is open: the last one that opened, while it has no `closed_at`;
+    {} when none is. A further step waits at the end with `opened_at` null (§20.5)."""
+    opened = [s for s in round_.get("steps") or [] if isinstance(s, dict) and s.get("opened_at")]
+    return opened[-1] if opened and not opened[-1].get("closed_at") else {}
 
 
 def _phase(round_: dict[str, Any]) -> str:
@@ -2822,6 +2823,8 @@ def _phase(round_: dict[str, Any]) -> str:
         line += f", answers close at {onboarding.inline(round_['answers_close_at'])}"
     elif status in ("statement", "exchange") and step:
         line += f", step {onboarding.inline(step.get('n'))} ({onboarding.inline(step.get('kind'))})"
+        if step.get("closes_at"):
+            line += f", closes at {onboarding.inline(step['closes_at'])}"
     elif status == "reporting" and round_.get("report_due_at"):
         line += f", report due at {onboarding.inline(round_['report_due_at'])}"
     return line
@@ -2855,7 +2858,10 @@ def _my_part(session: Session, round_: dict[str, Any]) -> str:
     if round_.get("status") == "answering" and isinstance(round_.get("id"), str):
         answer = _my_answer(session, round_["id"])
         if answer is None:
-            parts.append("not answered (`maity jourfixe answer`, or not at all)")
+            parts.append(
+                "not answered, or withdrawn, which still counts (`maity jourfixe answer`, "
+                "or not at all)"
+            )
         else:
             parts.append("answered" + (" anonymously" if answer.get("anonymous") else ""))
     step = _open_step(round_)
@@ -2925,11 +2931,10 @@ def cmd_jourfixe(args: argparse.Namespace) -> int:
 
 
 def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
-    """The three texts from the flags, or from --file as a JSON object with those keys."""
-    given = {f: getattr(args, f) for f in JOUR_FIXE_FIELDS if getattr(args, f) is not None}
+    """The three texts from --file, a JSON object with any of those keys as strings, and from
+    the flags, which replace the file's field (§13)."""
+    given: dict[str, Any] = {}
     if args.file is not None:
-        if given:
-            raise UsageError("give the answer as flags or in --file, not both")
         raw = sys.stdin.read() if args.file == "-" else _read_text_file(args.file, "--file")
         try:
             data = json.loads(raw)
@@ -2937,10 +2942,11 @@ def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
             raise UsageError(f"--file is not JSON: {exc.msg}") from None
         if not isinstance(data, dict) or set(data) - set(JOUR_FIXE_FIELDS):
             keys = ", ".join(JOUR_FIXE_FIELDS)
-            raise UsageError(f"--file holds one JSON object with the keys {keys}")
-        given = {k: v for k, v in data.items() if v is not None}
-        if not all(isinstance(v, str) for v in given.values()):
+            raise UsageError(f"--file holds one JSON object with any of the keys {keys}")
+        if not all(isinstance(v, str) for v in data.values()):
             raise UsageError("--file: every answer is a string")
+        given = dict(data)
+    given.update({f: getattr(args, f) for f in JOUR_FIXE_FIELDS if getattr(args, f) is not None})
     if not any(v.strip() for v in given.values()):
         raise UsageError("the answer is empty: give --went-well, --went-badly or --would-help")
     return {**given, "anonymous": bool(args.anonymous)}
@@ -2970,7 +2976,7 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
         if exc.code == "jour_fixe_answered":
             raise CommandError(
                 f"you have answered {onboarding.inline(current['id'])} already; one answer per "
-                "round (`maity jourfixe withdraw` while the window is open)"
+                "round, and a withdrawn answer still counts"
             ) from None
         raise
     named = _field(answer, "id")
