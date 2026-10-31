@@ -499,7 +499,10 @@ class Client:
         handle: Callable[[Any], Any],
     ) -> Any:
         """Sign and send one request, once more after a clock correction (§2.2); `handle`
-        reads the successful response."""
+        reads the successful response. The second attempt gets only what is left of the
+        timeout, so a caller's deadline holds across both."""
+        limit = timeout or self.timeout
+        end = time.monotonic() + limit
         for attempt in (1, 2):
             stamp = int(time.time() + self.clock_offset)
             on_request = self.on_request if method != "GET" else None
@@ -510,14 +513,16 @@ class Client:
             for name, value in {**headers, **signed}.items():
                 request.add_header(name, value)
             try:
-                with self._opener.open(request, timeout=timeout or self.timeout) as response:
+                with self._opener.open(request, timeout=limit) as response:
                     return handle(response)
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
                 server = _parse_server_time(err.details.get("server_time"))
                 if err.code == "timestamp_skew" and attempt == 1 and server is not None:
                     self.clock_offset = server - time.time()
-                    continue
+                    limit = end - time.monotonic()
+                    if limit > 0:
+                        continue
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc

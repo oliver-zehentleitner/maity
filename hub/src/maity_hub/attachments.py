@@ -36,8 +36,8 @@ NAME_CODE_POINTS, NAME_BYTES = 200, 255
 RATE_WINDOW = 600  # 30 uploads and 100 MiB per membership in 10 minutes
 RATE_UPLOADS = 30
 RATE_UNIT = 64 * 1024  # the byte limiter counts in units of 64 KiB: 100 MiB is 1600
-UPLOADS = Limiter(RATE_UPLOADS, RATE_WINDOW)
-VOLUME = Limiter(1600, RATE_WINDOW)
+UPLOADS = Limiter(RATE_UPLOADS, RATE_WINDOW, name="attachments.UPLOADS")
+VOLUME = Limiter(1600, RATE_WINDOW, name="attachments.VOLUME")
 
 IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 _TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$")

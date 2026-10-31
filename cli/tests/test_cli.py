@@ -340,6 +340,24 @@ def test_a_clock_skew_is_corrected_once(joined: Path, fake: fakehub.FakeHub) -> 
     assert int(second.headers["maity-timestamp"]) > int(first.headers["maity-timestamp"]) + 10**9
 
 
+def test_a_clock_skew_is_not_retried_past_the_callers_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second attempt gets only what is left of the timeout (`wait` relies on it)."""
+    fake.skew_once = True
+    session = cli.Session()
+    real = time.monotonic
+
+    def clock() -> float:  # once the first attempt reached the hub, its 5 seconds are gone
+        return real() + (6.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    with pytest.raises(hub.HubError) as raised:
+        session.client.call("GET", session.project_path("events"), timeout=5)
+    assert raised.value.code == "timestamp_skew"
+    assert len(fake.signed()) == 1
+
+
 # --- report, ask, api ---------------------------------------------------------------------
 
 

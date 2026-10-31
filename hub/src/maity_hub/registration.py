@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import clock
+from maity_hub import clock, shared_counts
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.errors import invalid
@@ -340,12 +340,17 @@ class Dropped:
         self._lock = threading.Lock()
 
     def add(self) -> None:
+        if shared_counts.active():  # every replica's drops, summed (replicas.md 2bd65fec)
+            shared_counts.add("registration.dropped", "instance", 3600)
+            return
         now = time.monotonic()
         with self._lock:
             self._drop_before(now - 3600)  # here too: nobody may read the count for days
             self._at.append(now)
 
     def last_hour(self) -> int:
+        if shared_counts.active():
+            return round(shared_counts.read("registration.dropped", "instance", 3600).estimate())
         with self._lock:
             self._drop_before(time.monotonic() - 3600)
             return len(self._at)
@@ -365,7 +370,14 @@ class Breaker:
         self._lock = threading.Lock()
 
     def hit(self, limit: int) -> int:
-        """Seconds to wait when tripped, else 0."""
+        """Seconds to wait when tripped, else 0. Across replicas on PostgreSQL: the requests
+        of every replica count, and a trip shuts all of them (replicas.md 2bd65fec)."""
+        if shared_counts.active():
+            moment = time.time()
+            if shared_counts.add("registration.breaker", "instance", 60).estimate() > limit:
+                shared_counts.set_until("registration.breaker.open", "instance", moment + 60)
+            shut = shared_counts.until("registration.breaker.open", "instance")
+            return int(shut - moment) + 1 if moment < shut else 0
         now = time.monotonic()
         with self._lock:
             self._at = [at for at in self._at if at > now - 60] + [now]

@@ -234,7 +234,7 @@ def test_a_membership_holds_a_bounded_number_of_pending_uploads(
 def test_uploads_are_rate_limited_per_membership_and_a_refusal_counts_nothing(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(attachments, "UPLOADS", Limiter(2, 600))
+    monkeypatch.setattr(attachments, "UPLOADS", Limiter(2, 600, name="attachments.UPLOADS"))
     assert put(owner, None, b"x").status_code == 400  # refused before counting
     assert put(owner, "a.txt", b"a").status_code == 201
     assert put(owner, "b.txt", b"b").status_code == 201
@@ -455,8 +455,8 @@ def test_a_refused_reencoded_image_gives_back_what_it_was_charged(
     refused = put(owner, "big.png", big, "image/png")
     assert refused.status_code == 409 and refused.json()["error"]["details"]["scope"] == "pending"
     key = _membership_key(migrated, owner.id)
-    assert len(attachments.UPLOADS._hits.get(key, ())) == 0
-    assert len(attachments.VOLUME._hits.get(key, ())) == 0  # not the re-encoded size's share
+    assert _counted(attachments.UPLOADS, key) == 0
+    assert _counted(attachments.VOLUME, key) == 0  # not the re-encoded size's share
 
 
 def test_a_project_closed_during_the_decode_refuses_the_upload(
@@ -476,3 +476,13 @@ def test_a_project_closed_during_the_decode_refuses_the_upload(
     with migrated.connect() as conn:
         assert conn.execute(select(t.attachment)).all() == []
     assert not list(blobs.glob("*/*"))
+
+
+def _counted(limiter: Any, key: str) -> int:
+    """What a limit holds for `key`: in the process, or in the shared counts on PostgreSQL."""
+    from maity_hub import shared_counts
+
+    if shared_counts.active():
+        window = shared_counts.read(limiter.name, key, limiter.window)
+        return window.current + window.previous
+    return len(limiter._hits.get(key, ()))

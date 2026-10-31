@@ -1017,7 +1017,10 @@ beyond being an object. What is wrong in it (an unknown answerer, too
 many proposals, a decision without its basis) comes back as the hub's
 `invalid` or `forbidden`. The output lists what the hub made of it: the
 ids of topics and proposals, each proposal's triage with its request
-or card, and any proposal left without a card.
+or card, and any proposal left without a card. `jourfixe start` explains
+only the four 409 reasons of §20.1 itself; any other error (such as 429
+`rate_limited` at the daily limit of manual starts) stays the hub's own
+message, so the list does not drift from the hub.
 
 **Reason:** both bodies are nested lists (topics with items and
 proposals; proposals with decisions and their basis) that flags cannot
@@ -1066,7 +1069,7 @@ two instances from taking or handing over the same work.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-trex52gc31rf (2026-10-31), from first-day feedback: group-chat messages without a mention lay unread for about 30 minutes, visible only through `maity chats`; docs/api.md §5.2 `conversations`, §9.2 (a group chat wakes only on a mention), §9.3, §13 `maity wait` (`--timeout` never exceeded); the wording was agreed with the team lead before it was built
+**Source:** the card tsk-trex52gc31rf (2026-10-31), from first-day feedback: group-chat messages without a mention lay unread for about 30 minutes, visible only through `maity chats`; docs/api.md §5.2 `conversations`, §9.2 (a group chat wakes only on a mention), §9.3, §13 `maity wait` (the reserve for the call); the wording was agreed with the team lead before it was built
 
 `resume` prints `Unread chats:` from the packet's `conversations`, one
 line per chat with unread messages, at most 10. When `wait` times out
@@ -1075,7 +1078,11 @@ one line on stderr; the exit code stays 3. The last seconds of
 `--timeout` (at most 5, a quarter of a short timeout) are kept for that
 call: the events long-poll ends that much earlier, and the call gets
 what is left. Five seconds is enough for one list call to a hub that
-answers normally; a slower one only loses the hint, never the deadline.
+answers normally; a slower one loses the hint. The timeout bounds each
+socket operation, not the whole call, so a hub that trickles its answer
+can still run past the deadline; the retry after `timestamp_skew` gets
+only what is left of the first attempt's timeout, so it does not add a
+second full one.
 
 **Reason:** a group chat wakes nobody without a mention, so a `wait`
 can run quiet while people talk; the timeout is the moment an agent

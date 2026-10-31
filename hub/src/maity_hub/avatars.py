@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 SOURCES = ("uploaded", "forge")  # the first with an image wins
 HEADERS = {**images.HEADERS, "Cache-Control": "private, no-cache"}
 # At most 10 changes an hour for one avatar, whichever credential (or owner) makes them.
-CHANGES = Limiter(10, 3600)
+CHANGES = Limiter(10, 3600, name="avatars.CHANGES")
 
 _slots_lock = threading.Lock()
 _slots: dict[int, threading.BoundedSemaphore] = {}

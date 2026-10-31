@@ -184,19 +184,49 @@ is the cheapest shared check there is.
 
 **Id:** 2bd65fec-3b02-4b68-bf2c-c0ae63b4679e
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
-**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30)
+**Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31
 **Revisit when:** the counter writes show in the load test, or a limit needs exact sliding-window semantics across pods
 
-`ratelimit.Limiter` keeps its interface (`hit`, `give_back`) and gets a shared backend on
-PostgreSQL: an `UNLOGGED` table `rate_count(bucket, key, window_start, count)`, incremented with
-`INSERT … ON CONFLICT DO UPDATE SET count = count + 1 RETURNING count`, read as a sliding window
-approximated by the current and the previous fixed window (weighted by the overlap). `give_back`
-decrements. The breakers and `_wrong_in_session` become buckets of the same table, and so does
-`registration.DROPPED`: the count of refused registrations an admin reads as
-`requests_dropped_last_hour` is the sum over every pod, not the answering pod's. A sweep deletes
-windows older than their limit's span. On SQLite and MariaDB the in-process backend stays.
+`ratelimit.Limiter` keeps its interface (`hit`, `take`, `place`/`release`, `give_back`,
+`blocked`, `reset`) and gets a shared backend on PostgreSQL (`shared_counts`): an `UNLOGGED`
+table `rate_count(bucket, subject, window_start, count)` (`subject` is the limit's key; `key` is
+a keyword on MariaDB), incremented with `INSERT … ON CONFLICT DO UPDATE SET count = count + n`,
+read as a sliding window approximated by the current and the previous fixed window (weighted by
+the overlap). A take over the limit is subtracted again, so a refusal records nothing, as in the
+process; two takes at once may both be refused where one would have fitted, the strict side.
+A small limit (`EXACT_UP_TO`, 20 or fewer attempts) keeps a row per attempt instead, keyed by its
+moment, and counts exactly as the process does: the take reads the attempts inside the window
+under a per-key advisory lock (`pg_advisory_xact_lock`), writes its row only when it fits, and
+the wait is the moment the oldest attempts that must go leave the window. The estimate assumes
+attempts spread evenly, which a handful do not: with a limit of one, the attempt still weighs on
+the next fixed window until its end, so one export in ten minutes waited up to twenty (`Retry-After`
+1006 in #822's CI). A row per attempt costs no more than the limit's few rows there. Rejected:
+capping the estimate's wait at the window, which names a moment the retry is refused again; an
+exact row per attempt for every limit, which for the per-address limits of 60 a minute keeps
+every request's row until the sweep.
+For the larger limits the wait a refusal names (`Retry-After`) follows the estimate: when the current window alone
+is over the limit it runs into the next window, where this window's attempts count as the
+previous ones and fall by weight. The estimate assumes the attempts spread evenly over the
+window, so the wait can differ from the exact answer in the process either way: longer when the
+attempts came early in the window (621 s instead of 600 s for the mentions test), shorter when
+they came late (29 pings at 594 s of 600, then 2 more: 27 s instead of 600 s). It is no
+conservative bound; what each backend names is the moment its own take fits again.
+`give_back` and `release` subtract from the window they counted in. Every `Limiter` now has a
+`name`, its bucket (`<module>.<variable>`). The breakers keep their "shut until" as a row of the
+same table (`set_until`, `until`), `_wrong_in_session` counts the current and the previous window
+of the session's five minutes (at least every wrong code, never fewer), and
+`registration.DROPPED` is a bucket too: the count of refused registrations an admin reads as
+`requests_dropped_last_hour` is the sum over every pod, not the answering pod's. A key that is
+long or holds a NUL (an address paired with a source) is stored as its SHA-256. Each count is
+its own short transaction, apart from the request's, as the counts in the process were never
+rolled back either. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
+changes nothing of an account, and taking the human's shared `account_lock` there would wait for
+the request's own transaction, which may have just made that row (a hang `create_invitation`
+showed in the tests). Rejected: a second engine for the counts without the guard's hook, which
+would bring a second pool per replica for the same database. Every thousandth add of a process deletes windows older than two days. On
+SQLite and MariaDB, and until `create_app` configures it, the in-process backend stays.
 
 Two things stay per pod on purpose: the concurrency caps that protect the pod itself (`avatars._slots`,
 `passwords._SLOTS`, the bell's `AT_ONCE`), and the statistics line (`request_stats`), which reports

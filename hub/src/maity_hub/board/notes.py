@@ -23,7 +23,7 @@ OPEN_MAX = 50
 TOTAL_MAX = 200
 AGENTS_MAX = 150
 # 20 notes per membership in 10 minutes; in process, like the other limits of one replica.
-POSTED = Limiter(20, 600)
+POSTED = Limiter(20, 600, name="board.notes.POSTED")
 
 
 def over_cap(*, open_count: int, total: int, by_agents: int, author_is_agent: bool) -> bool:
