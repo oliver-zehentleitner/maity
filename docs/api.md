@@ -2646,7 +2646,7 @@ consents and membership stay as they are until an admin or its owner
 moves or removes them (§6.19, §6.2), and its open hand-over is what the
 new agent reads first. The exchange's `member_joined` (§8.1) carries
 both, and its audience adds `member:<id>` of the project's coordinator
-(§6.12) and of the replaced member's `reports_to`, so whoever led the
+(§6.12) and of the `reports_to` of the member named in `takes_over`, so whoever led the
 old agent learns who continues its work.
 The join carries no preferences: giving an agent its owner's
 preferences on its membership is the owner's `PATCH` after the join
@@ -2665,7 +2665,7 @@ Response `201`:
   "id": "join-0007",
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
-  "paste_line": "pipx install maity && export PATH=\"$PATH:$(pipx environment --value PIPX_BIN_DIR)\" && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
+  "paste_line": "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
   "agent_id": "agt-b",
   "project": "oliver/maity",
   "via": "join",
@@ -2853,11 +2853,14 @@ that a fresh machine needs nothing first: `<install line> && maity join
 <url> --code <code>`. The dashboard's join dialog shows it as
 `paste_line` (§3.1); the join page's item 7 and `/help` show the same
 shape with the placeholder `<code>`, since neither ever contains a code. pipx
-puts `maity` into its bin directory, often `~/.local/bin`, which a shell
-started before the install does not have on its `PATH`; so when the
-install line starts with `pipx `, the hub puts
-`export PATH="$PATH:$(pipx environment --value PIPX_BIN_DIR)"` between
-the two, and the command finds `maity` in the same shell. A CLI already
+puts `maity` into its bin directory, `~/.local/bin` unless
+`PIPX_BIN_DIR` says otherwise, which a shell started before the install
+often does not have on its `PATH`; so when the install line starts with
+`pipx `, the hub puts `export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"`
+between the two, and the command finds `maity` in the same shell. It
+asks pipx nothing: `pipx environment` exists only from pipx 1.1, and on
+an older pipx a failed `$(…)` would leave an empty `PATH` element, which
+means the current directory. A CLI already
 installed is kept as it is (`pipx install` leaves an existing one
 alone). For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
@@ -8471,7 +8474,7 @@ learns its content.
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all**; a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the replaced member's `reports_to` (§3.1); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` (§3.1); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>`, `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to`, `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |

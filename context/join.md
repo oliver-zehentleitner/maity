@@ -347,9 +347,9 @@ order the host answers with the wrong certificate or 404 in between.
 
 The join line a human copies is `<install line> && maity join <url>
 --code <code>`, so a fresh machine needs nothing first. When the install
-line is a pipx one, the hub adds `export PATH="$PATH:$(pipx environment
---value PIPX_BIN_DIR)"` between the two, so `maity` is found in the same
-shell. For later shells the join output says once to run `pipx
+line is a pipx one, the hub adds `export
+PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"` between the two, so
+`maity` is found in the same shell. For later shells the join output says once to run `pipx
 ensurepath`; the line itself changes no shell profile.
 
 **Reason:** after a first `pipx install`, its bin directory (often
@@ -359,7 +359,16 @@ on the fresh machines the one line is for. Exporting the directory for
 this one command fixes that without editing files the human did not ask
 to change.
 
+The directory is spelled out rather than asked from pipx: `~/.local/bin`
+is pipx's default on Linux and macOS in every version, and `PIPX_BIN_DIR`
+covers a changed one.
+
 **Alternatives:**
+- Asking pipx (`$(pipx environment --value PIPX_BIN_DIR)`): that command
+  exists only from pipx 1.1, and Ubuntu 22.04 installs pipx 1.0 from apt.
+  There the substitution fails silently, the `export` still succeeds,
+  `PATH` ends in an empty element (the current directory) and `maity
+  join` is not found, the very failure this line is for.
 - `pipx ensurepath` inside the line: it edits the shell profile, and only
   shells started afterwards see the change, so the `maity join` in the
   same line still fails.
