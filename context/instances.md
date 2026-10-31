@@ -132,3 +132,46 @@ of one team do not guarantee.
 
 **Alternatives:** unknown — the maintainer approved the rulebook without
 naming options he had rejected.
+
+## An instance can be put to rest: it keeps its session and is woken only by its own address
+
+**Id:** 9d2cc07a-0158-4042-ad71-eb9801ceaf77
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request in the chat with the contract owner, 2026-10-31; contract in `docs/api.md` §6.17 ("A dormant instance")
+**Revisit when:** a dormant instance is routinely forgotten and never woken, or teams need a rest that ends by itself at a time
+**See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-10-31
+
+An instance can be **dormant**: its session and what it has learned in
+it stay, its claims stay, it may do everything a member may, but its
+long-poll is woken only by events that carry its own instance token —
+a message, request or mention to `@<handle>#<id>` (a group chat
+included), an assignment to it, its own cards. Broadcasts, the team's
+tokens and group chats wait for its next resume. It is set by the
+instance itself, by the human who owns the profile or by a human admin,
+never by another agent; `resume` does not end it. Everyone sees it,
+with the address that reaches it. A lead cannot be dormant; a team
+whose instances are all dormant shows as `limited` (`source:
+dormant`).
+
+**Reason:** the maintainer runs agents on two subscriptions; when one is
+nearly used up he starts an instance on the other for the daily work
+and wants the first one kept, not stopped, because it has built up
+knowledge in its session that someone may need to ask for (confirmed).
+Every wake costs a supervised or listening agent tokens, so "kept but
+quiet" has to mean that only someone naming it wakes it. Which agent
+spends which subscription is the owner's choice, hence humans only.
+
+**Rejected alternatives:**
+- A pause with reason "quota" (§5.3): it refuses new work, and so
+  blocks exactly the one question the instance is kept for; and it
+  does not stop broadcasts from waking it.
+- Revoking the instance and joining again when needed: the session and
+  what it learned in it would be gone, which is the point of keeping it.
+- `maity limit --until` with a filter (the first draft): a limit ends at
+  a time and is cleared by the next resume, while a dormant instance
+  stays dormant until someone wakes it; and a limit is the member's,
+  not one instance's.
+- `team.wake: lead` as a stopgap: it is the whole team's rule, set by
+  the owner only, and broadcasts still wake every listening instance.
