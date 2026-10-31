@@ -196,6 +196,10 @@ a keyword on MariaDB), incremented with `INSERT … ON CONFLICT DO UPDATE SET co
 read as a sliding window approximated by the current and the previous fixed window (weighted by
 the overlap). A take over the limit is subtracted again, so a refusal records nothing, as in the
 process; two takes at once may both be refused where one would have fitted, the strict side.
+The wait a refusal names (`Retry-After`) follows the same estimate: when the current window alone
+is over the limit it runs into the next window, where this window's attempts count as the
+previous ones and fall by weight, so it can be somewhat longer than the exact answer in the
+process (621 s instead of 600 s for the mentions test), never shorter.
 `give_back` and `release` subtract from the window they counted in. Every `Limiter` now has a
 `name`, its bucket (`<module>.<variable>`). The breakers keep their "shut until" as a row of the
 same table (`set_until`, `until`), `_wrong_in_session` counts the current and the previous window

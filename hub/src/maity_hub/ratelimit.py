@@ -43,18 +43,24 @@ class Limiter:
         if window.estimate() <= self.limit:
             return 0, window.start
         shared_counts.subtract(self.name, key, window.start, count)  # none is recorded
-        return self._wait(window), window.start
+        return self._wait(window, count), window.start
 
-    def _wait(self, window: shared_counts.Window) -> int:
-        """Seconds until the estimate, with what was asked for, is back at the limit: when the
-        current window alone is over it, its end; else when the previous window's weight has
-        dropped enough."""
+    def _wait(self, window: shared_counts.Window, count: int) -> int:
+        """Seconds until the estimate with `count` more fits the limit again. `window.current`
+        holds those `count` already. Within this window the previous one's weight falls; when
+        even an empty previous window would not make room, the wait runs into the next window,
+        where this window's attempts are the previous ones and fall in turn."""
+        limit, current, previous = self.limit, window.current, window.previous
         remaining = (1 - window.elapsed) * self.window
-        room = self.limit - window.current
-        if room < 0 or window.previous == 0:
-            return max(1, math.ceil(remaining))
-        needed = 1 - room / window.previous  # the elapsed fraction at which it fits
-        return max(1, math.ceil((needed - window.elapsed) * self.window))
+        if current <= limit and previous > 0:
+            fits_at = 1 - (limit - current) / previous  # the fraction of this window
+            if fits_at < 1:
+                return max(1, math.ceil((fits_at - window.elapsed) * self.window))
+        before = current - count  # what this window already held, the next window's previous
+        if before <= 0 or count > limit:
+            return max(1, math.ceil(remaining + (self.window if count > limit else 0)))
+        fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
+        return max(1, math.ceil(remaining + fits_at * self.window))
 
     def _take_at(self, key: str, count: int, now: float) -> int:
         """`take` at a moment the caller read from the clock."""
@@ -116,7 +122,12 @@ class Limiter:
         """Like `hit`, without recording an attempt."""
         if shared_counts.active():
             window = shared_counts.read(self.name, key, self.window)
-            return self._wait(window) if window.estimate() >= self.limit else 0
+            if window.estimate() < self.limit:
+                return 0
+            one_more = shared_counts.Window(  # as if one more attempt were taken now
+                window.current + 1, window.previous, window.elapsed, window.start
+            )
+            return self._wait(one_more, 1)
         now = time.monotonic()
         with self._lock:
             hits = self._hits.get(key)
