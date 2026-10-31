@@ -377,6 +377,8 @@ folder has a `NOTICE` (origin, terms, how to ask for removal) that `LICENSE` and
 in the package. The band recolors the files with a CSS mask, so the files stay unedited and one color serves both themes; it
 needs no script. The files from skills.sh are white marks on an opaque black tile, so the mask reads them by luminance (by alpha
 they are solid squares) at 200 % to drop the tile's margin; `pi`, a shape on transparency, is read by alpha (`landing.ALPHA_MARKS`).
+The copy of the list that makes the loop seamless is `aria-hidden` and `inert`, without names or `tabindex`, so a keyboard or
+screen reader meets each agent once; the name is the text of `.agent-name`, with no `title` beside it, which would name it twice.
 
 **Reason:** `img-src 'self'` and the rule that the page's JSON never becomes markup or a request leave no place for a logo
 address in the page; a fixed list also keeps the marks' terms in one reviewable place.
