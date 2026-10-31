@@ -523,6 +523,7 @@ def wakes(
     instance: str | None = None,
     credential_id: str | None = None,
     supervised: bool = False,
+    dormant: bool = False,
 ) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
@@ -538,6 +539,14 @@ def wakes(
     sender's own) is still `all`."""
     if row.kind in NON_WAKING or _isolated(membership):
         return False
+    if dormant:
+        # A dormant instance (§6.17) is woken by its own token alone: not by `all`, the team's
+        # tokens, a group chat's messages, nor under a runner by the supervised set. The
+        # actor rule is the ordinary one: what it caused itself never wakes it.
+        own = instance is not None and f"instance:{principal}#{instance}" in (row.audience or [])
+        if row.actor_membership == membership.id:
+            return own and row.actor_credential_id != credential_id
+        return own
     if row.kind == "task_merged":
         return _merge_wakes(row, membership, principal, instance)
     if row.kind == "member_not_listening":
@@ -656,13 +665,19 @@ def read_waking(
     supervised: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
+    dormant = credential_id is not None and (
+        conn.execute(
+            select(t.credential.c.dormant_since).where(t.credential.c.id == credential_id)
+        ).scalar()
+        is not None
+    )
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
     # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
     notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal, instance, credential_id, supervised)
+        if wakes(r, membership, principal, instance, credential_id, supervised, dormant)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

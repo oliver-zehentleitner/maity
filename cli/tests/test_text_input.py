@@ -78,6 +78,29 @@ def test_report_summary_from_stdin(
     assert fake.signed()[-1].json()["summary"] == "Adds `--body-file`."
 
 
+@pytest.mark.parametrize("source", ["stdin", "file"])
+def test_note_add_reads_the_body_from_stdin_or_a_file(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    fake.routes[("POST", f"{P}/tasks/tsk-4/notes")] = lambda s: (201, {"id": "nte-1"})
+    argv = ["note", "add", "tsk-4"]
+    if source == "stdin":
+        _stdin(monkeypatch, MARKDOWN)
+        argv += ["-"]
+        expected = MARKDOWN.rstrip("\n")
+    else:
+        path = tmp_path / "note.md"
+        path.write_text(MARKDOWN, encoding="utf-8")
+        argv += ["--body-file", str(path)]
+        expected = MARKDOWN
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"body": expected}
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -88,6 +111,9 @@ def test_report_summary_from_stdin(
         ["checkpoint", "tsk-4", "-m", "-", "--next", "-", "--no-code"],
         ["checkpoint", "tsk-4", "--next", "x", "--no-code"],
         ["say", "agt-a", "--type", "notice", "--body-file", "missing.md"],
+        ["note", "add", "tsk-4", "text", "--body-file", "m.md"],
+        ["note", "add", "tsk-4"],
+        ["note", "add", "tsk-4", "--body-file", "missing.md"],
     ],
 )
 def test_text_arguments_are_checked_before_sending(

@@ -648,6 +648,9 @@ def member_views(
                     humans.get(row.human_id),
                     projects[row.project_id],
                     project_name=names[row.project_id],
+                    # Every active instance dormant: only an instance address reaches it (§6.17).
+                    dormant=bool(team_of.get(row.id))
+                    and all(i["dormant"] for i in team_of[row.id]),
                 ),
                 "availability_policy": availability.policy_of(row),
                 "covered_by": covered_by.get(row.id),

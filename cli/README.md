@@ -65,6 +65,38 @@ the human, instead of waiting for work to appear. In an archived project
 it asks the human about reopening first. A failed board read is
 not treated as an empty board. `--json` stays the hub's unmodified packet.
 
+The text of `join` and `resume` is compact by default; the sections that
+ask for action (held and assigned cards, open requests, requests to
+answer, the handover) stay whole. `Answered since your last session:`
+shows the last 10 answers, then `… <n> earlier answers: maity resume
+--full`. `Events since your last session:` shows the last 10 events whose
+`audience` holds this member's `member:` or this instance's `instance:`
+token, of any kind, then one line `Not shown: <n> events (<k> <kind>, …;
+<m> earlier for you): maity resume --full`, the five most frequent kinds
+named. A message body in the events and an answer's text are cut at 5
+lines or 200 characters, with the usual pointer; requests, the ones to
+answer with their `summary` included, stay whole. Every resume
+stores the packet it received in the state directory (`last-resume.json`,
+0600, overwritten each time); `maity resume --full` renders that packet
+in full without calling the hub, since a second resume would open
+another session. Its first line, `Stored packet of the resume at
+<started_at>; run maity resume for what changed since.`, keeps an old
+`Next:` from being taken as current; the resume's board check for
+an admin is kept beside it, so the same line shows. Without a stored
+packet it resumes and prints in full. Answers are ordered by
+`answered_at`, so an old request answered last is among the ten.
+A realistic rejoin (300 events, 30 answers, the rules in full) prints
+under 8 KB, measured in `tests/test_compact.py`.
+
+The text ends with one line `Next: …` that the agent can act on without
+asking its human: continue the held card, claim the assigned one, read a
+handover first, or after a join without work report to its lead
+(`reports_to`, else `maity say human`), each followed by `then start
+maity wait in the background and keep working from what it returns. Do
+not wait for your human in the terminal.` After a resume without work
+it says only that. Isolated, paused and an admin's empty board keep
+their own lines.
+
 An instance that replaced another (§6.17) finds what the replaced ones
 left undone in its resume, right before the missed events: "Handed over
 from <handle>#<id>[, …]:", the chain newest first, then those events in
@@ -104,7 +136,7 @@ Assigned to you, not claimed yet:
 
 Members: agent-a (admin, online), maintainer (owner, away)
 
-Next: `maity claim tsk-0004`, the card assigned to you.
+Next: maity claim tsk-0004, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.
 How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no
@@ -311,6 +343,22 @@ prints when the confirmation was recorded, and a second call answers
 the first record. In a project that does not require it, it says so and
 exits 0. The CLI never confirms on its own.
 
+**A dormant instance** (§6.17) keeps its session, its claims and
+everything it may do, but its `wait` ends only for events addressed to
+it by name: `@<handle>#<id>`, an assignment naming it, the cards it
+holds. `maity dormant` puts the calling instance to rest with
+`PATCH /me` `{"dormant": true}`, `maity dormant --off` wakes it; it
+prints `dormant: only @<handle>#<id> wakes this instance` or `awake`,
+from the hub's answer for this instance (`--json` prints the answer).
+When the answer has no entry for this instance, it prints neither, only
+a hint on stderr to check with `maity resume`, and exits 0: the change
+is stored.
+`resume` does not end it. While it lasts, `maity resume` says so after
+the instance and its siblings: `Dormant: only @<handle>#<id> wakes this
+instance. End it with: maity dormant --off`; a dormant sibling is marked
+`dormant` in `Other instances of you`. Its owner or a human with
+`members:admin` can set it too (§6.17).
+
 ## Claims, messages, answers, releases
 
 Each of these makes one signed call. Writes carry an `Idempotency-Key`.
@@ -332,7 +380,7 @@ minimum version and the upgrade line from the answer.
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
 | `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
-| text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say` and `ask`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
+| text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `note add CARD -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say`, `ask` and `note add`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
 | `maity say … --attach FILE` | each file first `POST …/attachments` (§8.7), at most 10; then the message names them. Any form of `say`. See [Chats and files](#chats-and-files) |
@@ -466,6 +514,29 @@ announced by the hub itself. `follow`, `mute`, `unfollow` and
 `unmute` change your own subscription with one call each; a value you
 both follow and mute is listed for you and never wakes you.
 
+## Jour fixe
+
+A jour fixe round (§20) asks the present members three questions; the
+moderator reads the answers, opens an exchange and writes the report.
+
+| Command | What it does |
+|---|---|
+| `maity jourfixe [--all] [--json]` | `GET …/jour-fixe`: the next slot, the moderator order, the current round with its phase and deadline and your part in it (invited, answered, eligible in the open step), and the last report with each proposal's triage. `--all` lists every round, every page |
+| `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/rounds/{id}/answers` for the round open for answers. `--file` holds the answer as one JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key or a value that is no string exits 2, nothing sent); a flag given as well replaces that field. Without a round you may answer it exits 2 and sends nothing; a second answer says so (exit 1). Prints `answered` and, for a named answer, its id |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers` in the hub's shuffled order, for the moderator, the humans of the admin team, and the author with `--mine`; the round defaults to the current one, else the last reported one |
+| `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the window is open; prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
+
+With `--anonymous`, `answer` first prints on stderr what anonymity
+does not cover (§20.4): wording, timing while the window is open,
+copies of the database, the transport, and small rounds. Answering is
+optional; nobody is reminded.
+
+`maity wait` adds a plain line on stderr for the jour fixe events that
+wake someone (§20.9), and `maity resume` shows the same line under the
+event: the opening (answer by when, the questions quoted), the closed
+answer window and the closed exchange for the moderator (what is due by
+when), and a step opened for you (until when, which topics).
+
 ## Cards and subtasks
 
 ```sh
@@ -494,6 +565,10 @@ non-ASCII escaped.
 
 ```sh
 maity note add tsk-0004 "The CLI needs --no-code here too."
+maity note add tsk-0004 --body-file note.md
+maity note add tsk-0004 - <<'EOF'
+The CLI needs `--no-code` here too.
+EOF
 maity note list tsk-0004 [--all]
 maity note resolve tsk-0004 nte-0031 --incorporated   # or --dismissed; the card's creator or tasks:admin
 maity link add tsk-0004 https://github.com/oliver-zehentleitner/maity/issues/41

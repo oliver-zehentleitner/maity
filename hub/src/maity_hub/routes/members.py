@@ -86,6 +86,8 @@ class MemberPatch(Strict):
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
     paused: MemberPausedIn | None = None
+    # One instance's rest or wake: `{"dormant": true|false, "instance": "<id>"}` (§6.17).
+    dormant: bool | None = None
     # Lifting one instance's pause: `{"paused": null, "instance": "<id>"}` (§5.3).
     instance: str | None = Field(default=None, max_length=5)
     briefing: str | None = markdown(default=None)
@@ -472,6 +474,8 @@ def patch_member(
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
+        if "dormant" in given:
+            return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
         if lifted is not None:
             return lifted
@@ -603,6 +607,27 @@ def patch_member(
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _dormant(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """`{"dormant", "instance"}` alone (§6.17): the agent's owner, member or not, or a human
+    with `members:admin`; for another owner's agent the change waits for its owner. An
+    agent never sets it through here (its own instance rests through `PATCH /me`)."""
+    if caller.kind != "human":
+        raise humans_only("an instance rests through PATCH /me, and only the owner sets another")
+    if given - {"dormant", "instance"}:
+        raise invalid({"dormant": "alone"}, "set dormant and instance on their own")
+    target, reader, asked = instances.patch_dormant(
+        conn, caller, slug, member_id, body.dormant, body.instance
+    )
+    if asked is not None:
+        return idempotency.Outcome(202, "request", asked, _request(conn, asked))
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
+    view = member_view(conn, target, briefing=reader.may("members:admin"))
+    return idempotency.Outcome(200, "member_team", str(target.id), view)
 
 
 def _owner_lifts_line_pause(

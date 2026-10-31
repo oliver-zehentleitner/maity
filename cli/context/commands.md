@@ -859,3 +859,120 @@ repeats some at worst.
   it hides that they were another instance's and loses the hub's order.
 - Paging on from the last `seq` shown, as the events section does: it
   would skip the items with a lower `seq` that came later in the list.
+
+## `join` and `resume` print a compact text; `--full` renders the stored packet again
+
+**Id:** 9b8bc3dd-e1e2-4515-b152-56cb9f8dca17
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31); the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
+**See:** commands.md — 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3 — as of 2026-10-31
+**Revisit when:** the hub sends a packet trimmed to what the text shows, or agents often need `--full` right after every resume
+
+The default text of `join` and `resume` keeps whole what asks for action
+and cuts history: the last 10 answers, the last 10 events whose
+`audience` holds this member's or this instance's token, the rest
+counted by kind, message and answer texts at 5 lines or 200
+characters (requests stay whole). Every resume
+stores its packet in the state directory, 0600, and `maity resume
+--full` renders that packet without the cut and without calling the
+hub, under a line saying when that resume was, with the resume's board
+check kept beside it. Answers are chosen by `answered_at`, not in the
+hub's order of asking. The text ends with one `Next:` action that includes the background
+wait.
+
+**Reason:** a rejoin printed every request ever answered and every event
+since #1, about 56 KB of an agent's context, and it grew every day; an
+agent needs what is open and what was meant for it, not the history.
+Events are chosen by `audience`, of any kind, because an assignment or a
+request for this member matters more than a broadcast message. The caps
+come from the 8 KB budget measured in `tests/test_compact.py`: the
+rules, identity, members and the join notes take about 3 KB, which leaves
+about 240 bytes per answer or event. The `Next:` line names the
+background wait because new agents often sat idle after joining,
+waiting for their human in the terminal.
+
+**Rejected alternatives:**
+- `--full` as a second resume from the cursor the last packet started
+  at: the hub accepts it, but a second resume opens a new session,
+  closes the one just opened, sets presence and can emit events.
+- Showing the last messages (`kind: message`) instead of events by
+  `audience`: broadcasts would push out the assignment or request that
+  names this member.
+- Body caps at 10 lines or 1000 characters: the realistic rejoin then
+  printed about 10 KB.
+
+## `maity dormant` prints only what the hub stored for this instance
+
+**Id:** 6bd39e05-8c82-4a13-b387-cdd472fad896
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-64q0jr4c58zv (2026-10-31), a review finding on PR #821, and the coordinator's decision there on exit 0 with a hint; docs/api.md §6.17, §13 `maity dormant`
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** `PATCH /me` stops answering with the member view, or answers with the calling instance's entry alone
+
+`maity dormant` reads the state for its line from the hub's answer: the
+`instances[]` entry whose `id` is the instance stored at the last
+resume, its `label` (`<handle>#<id>`) and `dormant`. When that entry is
+missing, because the answer has no `instances` or no instance id is
+stored, it prints no state and no address, only a hint on stderr to run
+`maity resume`, and exits 0; `--json` still prints the answer.
+
+**Reason:** the line tells an agent which address will wake it. The
+member address does not wake a dormant instance (§6.17), so an address
+without `#<id>`, or a state taken from the request, could tell it to
+wait for a message that never wakes it. The call itself succeeded and
+the hub stored the change, so a non-zero exit would make scripts and
+agents treat a stored change as a failure.
+
+**Rejected alternatives:**
+- Falling back to the request and the member's `handle`: it prints a
+  state the hub did not confirm, and without a stored instance id an
+  address that does not wake the instance.
+- Exit 1 without the entry: the change is stored; an error exit would
+  invite a retry or a wrong report of failure.
+
+## `maity jourfixe answer` takes its answer from flags or a JSON file, and checks the round first
+
+**Id:** f8b262d4-ce8c-44af-aa41-65b31df99e87
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe answer` (`--file FILE|-`, exit 2 without a round; the `--file` format as the team lead set it for §13 in #850), §20.3, §20.4, §20.5 (a further step listed with `opened_at` null until it opens); the hub's `current_step`; the reads before the call are this package's choice
+**Revisit when:** the hub answers whether the caller has answered in the round view
+
+`--file` holds the answer as one JSON object with any of the keys
+`went_well`, `went_badly` and `would_help`, each a string; any other
+key, or a value that is no string (`null` included), is a usage error,
+and a flag given as well replaces that field. Before it sends, `answer` reads `GET …/jour-fixe` and refuses
+with exit 2, nothing sent, unless the current round is `answering` and
+the caller is among its `participants`. `maity jourfixe` reads the
+caller's own answer (`?mine=true`) to say whether it answered, and
+`withdraw` reads it before the delete to say whether an anonymous
+answer is gone that the moderator may have read.
+
+The open step is the last one with `opened_at`, as the hub's
+`current_step` takes it, and it counts as open only while it has no
+`closed_at`.
+
+**Reason:** an answer has three optional texts, each Markdown that may
+span lines, so a file has to keep them apart; JSON does that without a
+heading convention a text could break. The round check keeps an answer
+from going out for a round the caller cannot answer, which §13 asks for
+with exit 2. The round view says how many answered, never who, so only
+the caller's own answer can tell it whether it answered; after a
+withdrawal an anonymous answer cannot be found any more, so it is read
+first.
+
+**Rejected alternatives:**
+- A Markdown file with one heading per question: a heading inside an
+  answer would split it.
+- Sending the answer and leaving the refusal to the hub: §13 wants exit
+  2 with nothing sent, and the hub's `not_participant` is an error, not
+  a usage refusal.
+- The last step without `closed_at` as the open one: a further step the
+  moderator asked for waits at the end of `steps` with `n`, `opened_at`
+  and `closed_at` null until it opens, and was taken for the open step
+  (review of #847).
