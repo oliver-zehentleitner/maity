@@ -294,6 +294,10 @@ def test_the_scales_have_rings_beside_them_and_stay_complete_without_script(
     assert art is not None
     assert [m for m in re.findall(r'data-ring="(\d)"', art.group(1))] == ["3", "2", "1"]
     assert 'class="is-active"' in art.group(1) and 'aria-hidden="true"' in art.group(1)
+    # The active look comes from .is-active alone: no ring's own style is the accent, or a ring
+    # the script leaves would stay marked (review of #911).
+    rings = re.findall(r'<circle data-ring="\d"[^>]*>', art.group(1))
+    assert len(rings) == 3 and not any("var(--accent)" in r for r in rings), rings
 
 
 def test_the_footer_has_the_designers_columns_the_operator_line_and_the_language(

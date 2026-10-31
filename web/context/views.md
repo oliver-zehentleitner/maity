@@ -961,6 +961,39 @@ a guessed choice: replacing revokes a credential, which the human picks.
 Keeping role and areas in the form and sending the membership's values:
 the human would see fields that do nothing.
 
+## A first join may name whom it takes over from and the hand-over; a message's hand-over links to Messages
+
+**Id:** 3d623647-4575-492b-9252-e215afa0e87e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §3.1, §5.2, §6.2 (contract #896); the card tsk-tj523m1r2z7y; the hub's part (#900); the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub gives a message a page of its own, or offers a search for cards and messages a field could use
+**See:** views.md#a-join-for-an-agent-that-is-already-a-member-asks-which-instance-it-makes-replace-preselected — 48b11115-3f26-4f0b-b3c6-7e50cb6d9b90 — as of 2026-10-31
+
+The join panel has two more fields for a first join, hidden like the
+membership's fields when the chosen agent is already a member:
+**Takes over from**, a choice of the project's agent members other than
+the chosen agent (for a member bringing their own agent, only their own
+agents, as the hub allows), hidden when there is none to choose; and
+**Hand-over**, a text field for a card id or a message's number, sent as
+a number when it is all digits. The hub's refusals (`first_join_only`,
+`not_an_agent_member`, `not_found`, `not_readable`, a member's limit on
+`takes_over`) are said in words at the field. A join and a member that
+named them say "Takes over from @handle; the hand-over is in …", the
+handle linking to the member and a card to its page. A message has no
+page of its own, so "message #seq" links to the project's Messages view.
+
+**Reason:** the contract lets the hub check both values, and its answer
+is the final word. A text field takes either kind of hand-over without
+the panel first reading every card and message. A link to Messages
+still leads the reader to where the message is listed.
+
+**Rejected alternative:** a picker of cards and recent messages: it
+would read the whole board and the event window for one optional field,
+and a message to all from before that window could not be named. An
+unlinked "message #seq": it leaves the reader nowhere to look.
+
 ## Project memory is chosen on /new with its setup options
 
 **Id:** a8e479be-cb07-49cc-b7bd-b48500903ee1
@@ -3421,3 +3454,39 @@ to a card (a8e479be's earlier rule): an agent cannot change the
 provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
+
+## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
+
+**Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+
+The header's row beside the state shows the repository, then the
+project's own links that are set (issues, wiki, discussions, chat, each
+with its mark), then the Keep the Why dashboard. Each is plain https
+only and opens in a tab of its own with `rel="noopener noreferrer"`. The
+repository's button reads "Repository" for every forge. Its mark and
+its name for a screen reader ("Repository on GitHub") still say which
+forge. The overview's Project tab shows the same links as buttons
+beside the repository. They are not in the header's list of projects:
+each entry there is itself a link, which cannot hold four more, and `/me`
+does not carry a project's links; §6.11 was changed to name the header
+beside the project's state instead (review of #884). Project settings have four fields that send only
+the links that changed; an empty field clears its link, and each refusal
+of the hub is said at its field.
+
+**Reason:** with up to six buttons in the row, the forge's name as the
+label took room the four new ones need, and the mark already shows the
+forge. The hub merges links by key (§6.11), so a form that sent all four
+would overwrite another admin's change to a link it did not touch.
+
+**Rejected alternatives:**
+- The forge's name as the label, as before (the old header): wider, and
+  it said twice what the mark says.
+- Sending all four links on every save (#846): it loses another admin's
+  change made meanwhile.
+

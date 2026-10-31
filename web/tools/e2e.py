@@ -502,8 +502,11 @@ def join_line(
     handle: str | None,
     display: str = "E2E Agent",
     role: str = "coder",
+    takes_over: str | None = None,
+    handover: str | None = None,
 ) -> tuple[str, str]:
-    """Create a join line in the join panel on Agents; a new profile when handle is given."""
+    """Create a join line in the join panel on Agents; a new profile when handle is given.
+    takes_over: the label of the agent member whose work the new one continues (§3.1)."""
     view_tab(page, "Agents").click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     # A project without an agent of one's own opens the panel itself;
@@ -526,6 +529,10 @@ def join_line(
         expect(page.locator("#join-agent")).not_to_have_value("")
     page.locator("#join-role").select_option(role)
     page.locator("#join-areas").fill("web/")
+    if takes_over:
+        page.locator("#join-takes-over").select_option(label=takes_over)
+    if handover:
+        page.locator("#join-handover").fill(handover)
     page.get_by_role("button", name="Create join line", exact=True).click()
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
@@ -537,10 +544,9 @@ def join_line(
         page.locator(".join-result").get_by_role("button", name="Join another", exact=True).click()
         expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
         panel.get_by_role("button", name="Close", exact=True).click()
-    # The line installs the CLI first (§3.2): the join is its last five words.
-    words = words[-5:]
-    assert words[:2] == ["maity", "join"] and words[3] == "--code", words
-    return words[2], words[4]
+    # The install line and the join in one command (§3.2): `<install> && maity join <url> --code <code>`.
+    assert words[-6:-3] == ["&&", "maity", "join"] and words[-2] == "--code", words
+    return words[-3], words[-1]
 
 
 # The number of line boxes of each matching element's text.
@@ -965,6 +971,7 @@ def scenario(run: Run, page: Page) -> None:
     landing_json_step(run, page)
     legal_json_step(run, page)
     jour_fixe_step(run, page)
+    project_links_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1921,10 +1928,26 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
 def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
     run.step("release: a reviewer joins and opens a release; the hub has no forge probe here")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    url, code = join_line(run, page, "e2e-alpha", "e2e-reviewer", "E2E Reviewer", "reviewer")
+    # It takes over from the first agent, the hand-over on its card (§3.1).
+    url, code = join_line(
+        run,
+        page,
+        "e2e-alpha",
+        "e2e-reviewer",
+        "E2E Reviewer",
+        "reviewer",
+        takes_over="E2E Agent (@e2e-agent)",
+        handover=card_id,
+    )
     rev = run.clone("clone-reviewer")
     run.maity(
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
+    )
+    view_tab(page, "Members").click()
+    over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
+    expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
+    expect(over.get_by_role("link", name=card_id)).to_have_attribute(
+        "href", re.compile(rf"/owner/e2e-alpha/tasks/{card_id}$")
     )
     partner = run.api(
         rev,
@@ -2180,6 +2203,32 @@ def registration_admin_step(run: Run, page: Page) -> None:
     run.shot(page, "registration-admin")
     run.a11y(page, "registration admin")
     no_problems(run, "registration admin")
+
+
+def project_links_step(run: Run, page: Page) -> None:
+    """The project's own links (docs/api.md §6.11): set in Project settings against the real
+    hub, shown beside the state in the header, refused at the field where the hub refuses them."""
+    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.links-form")
+    expect(form).to_be_visible()
+    page.locator("#link-wiki").fill("https://wiki.example.org:8443/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("#link-wiki-error")).to_have_text("Not an https address on a DNS name without a port or user name.")
+    refused = "PATCH /api/v1/projects/owner/e2e-alpha answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#link-wiki").fill("")
+    page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Links saved.")
+    issues = page.locator("header .project-state a.header-link", has_text="Issues")
+    expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
+    expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    run.shot(page, "project-links")
+    run.a11y(page, "project links")
+    no_problems(run, "project links")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def jour_fixe_step(run: Run, page: Page) -> None:

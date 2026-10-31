@@ -237,7 +237,11 @@ the three engines would hand back different kinds of values.
 
 `db.postgres_options` starts every connection's `options` with
 `-c TimeZone=UTC`, for the server, `migrate` and the CLI commands
-alike. A time that goes into an SQL expression rather than straight into
+alike. An `options` the `DATABASE_URL` carries (`?options=-c
+search_path=…`) is kept and goes first (`db.with_url_options`): the
+driver takes the hub's value in place of the URL's, and of two `-c` for
+the same setting the later one wins, so the URL keeps its own settings
+but cannot undo the hub's. A time that goes into an SQL expression rather than straight into
 a column (`case(..., else_=)`, `func.coalesce`) is bound with
 `literal(value, <column>.type)`. The PostgreSQL test databases default
 to `Europe/Vienna` (`tests/conftest.py`), so a run in CI is not on UTC
@@ -255,6 +259,15 @@ where a session's zone is not the hub's to set.
 **Rejected alternatives:**
 - Only typing the two binds: the next untyped time in an expression
   would bring the shift back, unseen by a CI database on UTC.
+- `timestamptz` columns: rejected for the timestamps as a whole (see
+  "Timestamps: aware UTC in Python, naive UTC with microseconds in the
+  database"), since MySQL has no zone-aware type and SQLite stores text.
+- `ALTER ROLE … SET timezone = 'UTC'` instead of a setting per
+  connection: the role belongs to the operator, not to the hub, as with
+  the session timeouts, which are set per connection for the same
+  reason.
+- The hub's `options` replacing the URL's: a `search_path` for a schema
+  of its own would be dropped, and `migrate` would write into `public`.
 
 ## On MySQL and MariaDB every table is utf8mb4 with the binary collation
 

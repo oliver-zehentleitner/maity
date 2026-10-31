@@ -1,7 +1,10 @@
 {
   "id": "prj-maity0000001",
   "slug": "maity",
-  "owner": { "id": "hum-maintainer", "handle": "maintainer" },
+  "owner": {
+    "id": "hum-maintainer",
+    "handle": "maintainer"
+  },
   "full_name": "maintainer/maity",
   "aliases": [],
   "name": "Maity",
@@ -17,6 +20,12 @@
     "probe_via": "instance",
     "owner_confirmed": false,
     "confirmed_by": null
+  },
+  "links": {
+    "issues": "https://github.com/oliver-zehentleitner/maity/issues",
+    "wiki": null,
+    "discussions": null,
+    "chat": "https://discord.gg/maity"
   },
   "memory": {
     "provider": "keep-the-why"

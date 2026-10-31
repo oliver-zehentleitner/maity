@@ -742,6 +742,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = realGetAll;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelector(".error") && main.querySelectorAll(".members-agents tr.member").length === 5, "agents in Members: five agent rows");
+  // Whose work an agent continues and where its hand-over is (§6.2): links to the member and to the messages.
+  const takeOverP = agRow("agt-d").querySelector(".member-takes-over");
+  expect(takeOverP && text(takeOverP) === "Takes over from @agent-c; the hand-over is in message #6001."
+    && takeOverP.querySelectorAll("a").map((a) => a.getAttribute("href")).join(" ") === "#/maintainer/maity/members/agt-c #/maintainer/maity/messages"
+    && !agRow("agt-a").querySelector(".member-takes-over"), "members: an agent that took over says from whom and where the hand-over is " + (takeOverP && text(takeOverP)));
   const agCRow = await agOpen("agt-c");
   expect(text(agCRow).includes("never resumed") && text(agCRow).includes("revoked") && text(agCRow).includes("replaced by a new clone"), "never resumed and revoked credentials");
   expect(text(agCRow).includes("Areas") && text(agCRow).includes("Capabilities"), "areas and capabilities");
@@ -1863,23 +1868,59 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hlLinks = () => header.querySelectorAll(".project-state a.header-link");
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
-    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|GitHub,"
+    === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|Repository,"
+    + "https://github.com/oliver-zehentleitner/maity/issues|Issues (opens in a new tab)|Issues,"
+    + "https://discord.gg/maity|Chat (opens in a new tab)|Chat,"
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
-    "header: the repository on its forge and the Keep the Why dashboard, beside the state, in tabs of their own");
+    "header: the repository (\"Repository\", its forge in the mark and the name), the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "GitHub", "header: a project without a Keep the Why dashboard shows the repository alone");
+  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Repository", "header: a project without a Keep the Why dashboard or links shows the repository alone");
   const hlGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
-    { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }),
+    { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }), links: Object.assign({}, x.links, { wiki: "http://plain.example/wiki" }),
       keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Gitea" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
-    "header: another forge by its name; a dashboard that is not plain https gets no link");
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null })) : hlGet(p));
+  expect(hlLinks().length === 3 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+    "header: another forge in the name for a screen reader; a dashboard or a link that is not plain https gets no link");
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null, links: { issues: null, wiki: null, discussions: null, chat: null } })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(!hlLinks().length, "header: neither where the project has neither");
   win.Maity.api.get = hlGet;
+  // The project's own links (§6.11, tsk-ayaav7naskbe): buttons beside the repository on the overview; four fields in
+  // Project settings that send only what changed, each refusal at its field.
+  {
+    await go("#/maintainer/maity/overview/project"); for (let k = 0; k < 4; k++) await tick();
+    const olinks = () => main.querySelectorAll("a.project-own-link").map((a) => a.getAttribute("data-link") + "|" + a.getAttribute("href") + "|" + a.getAttribute("rel"));
+    expect(JSON.stringify(olinks()) === JSON.stringify(["issues|https://github.com/oliver-zehentleitner/maity/issues|noopener noreferrer", "chat|https://discord.gg/maity|noopener noreferrer"]),
+      "links: the overview's Project tab shows the set links as buttons beside the repository " + JSON.stringify(olinks()));
+    const lkPatches = [];
+    const lkPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { if (b && "links" in b) lkPatches.push(JSON.parse(JSON.stringify(b))); return lkPatch(p, b); };
+    await projectSettings(); await tick();
+    const lkForm = () => main.querySelector("form.links-form");
+    expect(lkForm() && byId("link-issues").value === "https://github.com/oliver-zehentleitner/maity/issues" && byId("link-wiki").value === "",
+      "links: Project settings show the four fields with what is set");
+    lkForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(!lkPatches.length && text(lkForm()).includes("Nothing changed."), "links: nothing changed, nothing sent");
+    byId("link-wiki").value = "https://wiki.example.org:8443/maity"; byId("link-chat").value = "";
+    lkForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(lkPatches[0]) === JSON.stringify({ links: { wiki: "https://wiki.example.org:8443/maity", chat: null } })
+      && text(byId("link-wiki-error")) === "Not an https address on a DNS name without a port or user name." && byId("link-wiki").getAttribute("aria-invalid") === "true",
+      "links: only the changed keys are sent; a port is refused at its field, as the hub refuses it " + JSON.stringify(lkPatches));
+    byId("link-wiki").value = "https://wiki.example.org/maity";
+    lkForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(lkPatches[1]) === JSON.stringify({ links: { wiki: "https://wiki.example.org/maity", chat: null } }) && text(main).includes("Links saved."),
+      "links: saved; the chat link cleared, the issues link left as it was");
+    const after = await win.Maity.api.get("/projects/maintainer/maity");
+    expect(JSON.stringify(after.links) === JSON.stringify({ issues: "https://github.com/oliver-zehentleitner/maity/issues", wiki: "https://wiki.example.org/maity", discussions: null, chat: null }),
+      "links: the fixture hub merged by key, as the hub does");
+    const tooLong = await win.Maity.api.patch("/projects/maintainer/maity", { links: { issues: "https://x.example/" + "a".repeat(500) } }).catch((e) => e);
+    const unknown = await win.Maity.api.patch("/projects/maintainer/maity", { links: { forum: "https://x.example/" } }).catch((e) => e);
+    expect(tooLong.details.fields["links.issues"] === "too_long" && unknown.details.fields["links.forum"] === "unknown", "links: too long and an unknown key refused as the hub does");
+    win.Maity.api.patch = lkPatch;
+    await win.Maity.api.patch("/projects/maintainer/maity", { links: { wiki: null, chat: "https://discord.gg/maity" } });
+  }
   await go("#/maintainer/sample/board"); for (let k = 0; k < 4; k++) await tick();
   // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
   const relMark = () => header.querySelector(".project-state .released");
@@ -3390,6 +3431,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".agents-count")).includes("1 open join"), "joins: the title's count line says how many joins are open");
   expect(text(joinRow("join-0009")).startsWith("expired join-0009") && text(joinRow("join-0009")).includes("· expired ")
     && joinRow("join-0009").classList.contains("join-expired"), "joins: an expired join says expired, not open");
+  const j9Over = joinRow("join-0009").querySelector(".join-takes-over");
+  expect(j9Over && text(j9Over) === "Takes over from @agent-a; the hand-over is in tsk-0001."
+    && j9Over.querySelectorAll("a").map((a) => a.getAttribute("href")).join(" ") === "#/maintainer/maity/members/agt-a #/maintainer/maity/tasks/tsk-0001",
+    "joins: a join that named takes_over and handover says both, as links");
   expect(text(joinRow("join-0008")).startsWith("burned") && text(joinRow("join-0008")).includes("refused after three wrong codes"), "joins: a burned join");
   expect(text(joinRow("join-0007")).startsWith("revoked") && text(joinRow("join-0007")).includes("· revoked "), "joins: a revoked join");
   expect(text(joinRow("join-0006")).startsWith("used") && text(joinRow("join-0006")).includes("· used "), "joins: a used join");
@@ -3406,13 +3451,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.i18n.locale = joinLocale;
   expect(!joinPosts.length && text(main).includes("the briefing is longer than 16,384 characters"), "a join briefing over 16 KiB is refused before sending");
   byId("join-briefing").value = "  You review hub/.  ";
+  // A first join may name whom it takes over from (the project's agent members) and the hand-over (§3.1).
+  const overOptions = byId("join-takes-over").querySelectorAll("option").map((o) => o.getAttribute("value"));
+  expect(!byId("join-takes-over").parentNode.hidden && overOptions[0] === "" && overOptions.includes("agt-a") && !overOptions.includes("agt-x")
+    && !overOptions.includes("hum-maintainer"), "join: Takes over from offers the project's agent members " + JSON.stringify(overOptions));
+  byId("join-takes-over").value = "agt-a";
+  for (const [typed, says] of [["tsk-nope", "neither a card of this project nor one of its messages"], ["6003", "not addressed to everyone"]]) {
+    byId("join-handover").value = typed;
+    main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
+    expect(text(main).includes(says) && main.querySelector("form.join-form"), "join: a hand-over the hub refuses is said in words (" + typed + ")");
+  }
+  joinPosts.length = 0;
+  byId("join-handover").value = " 6001 ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
+  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("follows the join page"), "the paste line says where it goes");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("installs the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
-  expect(ctx.copied && ctx.copied.includes("maity join "), "copy puts the line on the clipboard");
+  expect(ctx.copied && ctx.copied.startsWith("pipx install maity && ") && / && maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied),
+    "copy puts the line as the hub gave it on the clipboard: install and join in one");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
   expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
@@ -7946,7 +8005,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
       "landing JSON: Save saves the imported draft, as one typed by hand");
-    // A body without a footer (as landing-v3-complete.json, #808's review): the editor's footer stays, as a PATCH keeps the stored one.
+    // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);
     await jsLoad();
@@ -7977,18 +8036,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
     await leSave();
     // The prepared landing V3 itself (tsk-k7pwrzs8vb8k, tools/landing-v3-complete.json): loaded, checked without a refusal,
-    // every section of both languages in the editor, the footer kept; saved as it is.
+    // every section of both languages in the editor, its own footer taken; saved as it is.
     const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/landing-v3-complete.json"), "utf8"));
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
     const v3Patches = lePatches.length;
     expect(text(main).includes("Loaded into the editor and checked by the hub") && leSections().length === v3.pages[v3.default_language].sections.length
-      && byId("lp-footer-operator").value === "Maintainer, Austria" && lePatches.length === v3Patches,
+      && byId("lp-footer-operator").value === v3.footer.operator && lePatches.length === v3Patches,
       "landing JSON: the prepared V3 file loads, the hub's check refuses nothing, its sections are in the editor, nothing saved yet");
     await leSave();
     const v3Saved = lePatches[lePatches.length - 1][1];
     expect(text(main).includes("Saved. Visitors see it within a minute.") && Object.keys(v3Saved.pages).sort().join() === Object.keys(v3.pages).sort().join()
-      && v3Saved.footer.operator === "Maintainer, Austria", "landing JSON: the V3 file saved with both languages and the footer kept");
+      && JSON.stringify(v3Saved.footer) === JSON.stringify(v3.footer), "landing JSON: the V3 file saved with both languages and its footer");
     // A type that is a key every object inherits is no section type (#808): the hub refuses it, the editor draws it as one it keeps.
     const ctorPatches = lePatches.length;
     byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Ctor", description: "x", sections: [{ type: "constructor", enabled: true }] } } });
