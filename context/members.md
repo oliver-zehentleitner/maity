@@ -643,6 +643,11 @@ the bridge's owner must agree, and the request is the place where that
 agreement is written down. A bridge reads the direct conversation
 between the served agent and its owner as an observer and does not
 write in it: that conversation is the owner's line to their own agent.
+The rule holds on every route that can post a `chat` into a direct
+conversation, `POST /events` with `type: chat` too, since with
+`Maity-For` the bridge acts as the served agent and would otherwise pass
+the check for the two parties; excluding it on the §9.1 route alone was
+rejected in review.
 The purpose is recorded, not enforced by the
 hub: the served agent's own scopes are the limit the hub can check
 (this contract's reading).
