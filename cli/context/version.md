@@ -8,6 +8,7 @@
 **Evidence:** inferred
 **Source:** card tsk-rk1s9fchwstm (2026-10-31); [direct-URL metadata specification](https://packaging.python.org/en/latest/specifications/direct-url/); [setuptools build-command extensions](https://setuptools.pypa.io/en/latest/userguide/extension.html)
 **See:** https://github.com/oliver-zehentleitner/maity — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-10-31
+**See:** runner.md — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-10-31
 **Revisit when:** the CLI changes build backend or installer metadata identifies local Git builds reliably
 
 `--version` keeps the release version and adds a source revision, with
@@ -25,6 +26,16 @@ A packaged stamp identifies installed code without Git or the original
 repository. A checkout needs its live identity because its code can
 change after installation. Build discovery never uses the caller's
 working directory, which may belong to an unrelated repository.
+Even an adjacent Git root must track the project's manifest and Maity
+package before it can supply a live revision. An sdist unpacked inside another
+repository retains its frozen identity instead of adopting that
+repository's HEAD; an unstamped archive stays unknown.
+
+Live Git discovery uses the existing guarded `proc.GIT`/`proc.run`
+path and preserves inherited Git locations. Pins matching the source
+clone are honored; redirects to another tree or alternate object/index
+locations make the source identity `unknown`. Dropping the runner's
+pins merely to get a revision would remove a confinement boundary.
 
 The stamp contains only revision and dirty state, without machine
 paths or build time, so repeated builds from the same source retain
@@ -41,3 +52,7 @@ commit into a new release.
   a different repository and fails when Git is unavailable.
 - A new runtime versioning dependency: the existing setuptools build
   hooks and standard-library reader are enough.
+- A separate direct Git subprocess: skips the central fsmonitor,
+  hook and submodule protections. The Git-call-site CI guard caught
+  this in the first implementation; it was replaced with the shared
+  guarded path rather than adding an exception to that guard.

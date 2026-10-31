@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from conftest import git
 
-from maity import __version__, cli, versioninfo
+from maity import __version__, cli, proc, versioninfo
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def source_project(tmp_path: Path) -> Path:
     package = root / "cli" / "src" / "maity"
     package.mkdir(parents=True)
     (package / "__init__.py").write_text("# source\n")
+    (root / "cli" / "pyproject.toml").write_text('[project]\nname = "maity"\n')
     versioninfo.write_stamp(package / versioninfo.STAMP_FILE, None)
     git(root, "init", "--quiet")
     git(root, "add", ".")
@@ -44,10 +45,9 @@ def test_tracked_and_untracked_source_changes_are_dirty(source_project: Path, na
     assert stamp is not None and stamp.dirty
 
 
-def test_inherited_git_locations_cannot_select_another_repository(
+def test_inherited_git_locations_are_preserved_and_cannot_select_another_repository(
     source_project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    head = git(source_project, "rev-parse", "HEAD")
     foreign = tmp_path / "foreign"
     foreign.mkdir()
     git(foreign, "init", "--quiet")
@@ -58,7 +58,33 @@ def test_inherited_git_locations_cannot_select_another_repository(
         "GIT_INDEX_FILE": foreign / ".git" / "index",
     }.items():
         monkeypatch.setenv(key, str(value))
+    assert versioninfo.stamp_for(source_project) is None
+    assert os.environ["GIT_COMMON_DIR"] == str(foreign / ".git")
+
+
+def test_compatible_runner_pins_are_honored(
+    source_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = source_project.parent
+    head = git(root, "rev-parse", "HEAD")
+    for key, path in {
+        "GIT_COMMON_DIR": root / ".git",
+        "GIT_DIR": root / ".git",
+        "GIT_WORK_TREE": root,
+    }.items():
+        monkeypatch.setenv(key, str(path))
     assert versioninfo.stamp_for(source_project) == versioninfo.Stamp(head, False)
+
+
+def test_version_lookup_cannot_run_a_repository_fsmonitor(source_project: Path) -> None:
+    marker = source_project.parent / "fsmonitor-ran"
+    hook = source_project.parent / "fsmonitor"
+    hook.write_text(f"#!/bin/sh\ntouch '{marker}'\n")
+    hook.chmod(0o755)
+    git(source_project, "config", "core.fsmonitor", str(hook))
+    stamp = versioninfo.stamp_for(source_project)
+    assert stamp is not None
+    assert not marker.exists()
 
 
 def test_a_source_archive_keeps_its_stamp_without_searching_distant_git_parents(
@@ -68,6 +94,25 @@ def test_a_source_archive_keeps_its_stamp_without_searching_distant_git_parents(
     stamp = versioninfo.Stamp("b" * 40, True)
     versioninfo.write_stamp(archive / "src" / "maity" / versioninfo.STAMP_FILE, stamp)
     assert versioninfo.stamp_for(archive) == stamp
+
+
+@pytest.mark.parametrize("location", [".", "cli", "maity-0.1.0a3"])
+@pytest.mark.parametrize("frozen", [None, versioninfo.Stamp("b" * 40, False)])
+def test_an_archive_inside_a_foreign_repo_never_uses_its_head(
+    tmp_path: Path, location: str, frozen: versioninfo.Stamp | None
+) -> None:
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "README.md").write_text("unrelated repository\n")
+    (foreign / "pyproject.toml").write_text('[project]\nname = "foreign"\n')
+    git(foreign, "init", "--quiet")
+    git(foreign, "add", ".")
+    git(foreign, "commit", "--quiet", "-m", "unrelated")
+    archive = foreign / location
+    archive.mkdir(exist_ok=True)
+    (archive / "pyproject.toml").write_text('[project]\nname = "maity"\n')
+    versioninfo.write_stamp(archive / "src" / "maity" / versioninfo.STAMP_FILE, frozen)
+    assert versioninfo.stamp_for(archive) == frozen
 
 
 @pytest.mark.parametrize(
@@ -116,7 +161,7 @@ def test_an_unstamped_install_says_unknown(tmp_path: Path, monkeypatch: pytest.M
     assert versioninfo.version_text("1.0") == "maity 1.0 (build unknown)"
 
 
-@pytest.mark.parametrize("error", [FileNotFoundError(), subprocess.TimeoutExpired("git", 2)])
+@pytest.mark.parametrize("error", [FileNotFoundError(), proc.ToolError("Git timed out")])
 def test_unavailable_source_git_does_not_claim_a_stale_build(
     source_project: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
@@ -159,7 +204,10 @@ def test_version_discovery_runs_only_when_version_is_requested(
     assert capsys.readouterr().out == "maity test (build test)\n"
 
 
-def test_sdist_to_wheel_preserves_the_build_and_runs_without_git(tmp_path: Path) -> None:
+@pytest.mark.parametrize("location", [".", "cli", "maity-0.1.0a3"])
+def test_sdist_to_wheel_preserves_the_build_and_runs_without_git(
+    tmp_path: Path, location: str
+) -> None:
     original = Path(versioninfo.__file__).resolve().parents[2]
     project = tmp_path / "repo" / "cli"
     project.mkdir(parents=True)
@@ -177,7 +225,7 @@ def test_sdist_to_wheel_preserves_the_build_and_runs_without_git(tmp_path: Path)
     placeholder = (project / "src" / "maity" / versioninfo.STAMP_FILE).read_bytes()
     output = tmp_path / "dist"
     built = subprocess.run(
-        [sys.executable, "-m", "build", "--no-isolation", "--outdir", str(output)],
+        [sys.executable, "-m", "build", "--sdist", "--no-isolation", "--outdir", str(output)],
         cwd=project,
         capture_output=True,
         text=True,
@@ -193,6 +241,25 @@ def test_sdist_to_wheel_preserves_the_build_and_runs_without_git(tmp_path: Path)
         )
         stream = archive.extractfile(member)
         assert stream is not None and json.load(stream) == expected
+        extracted = tmp_path / "extracted"
+        archive.extractall(extracted, filter="data")
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "README.md").write_text("unrelated repository\n")
+    (foreign / "pyproject.toml").write_text('[project]\nname = "foreign"\n')
+    git(foreign, "init", "--quiet")
+    git(foreign, "add", ".")
+    git(foreign, "commit", "--quiet", "-m", "unrelated")
+    unpacked = foreign / location
+    shutil.copytree(next(extracted.iterdir()), unpacked, dirs_exist_ok=True)
+    wheel_build = subprocess.run(
+        [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(output)],
+        cwd=unpacked,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert wheel_build.returncode == 0, wheel_build.stdout + wheel_build.stderr
     installed = tmp_path / "installed"
     wheel_path = next(output.glob("*.whl"))
     with zipfile.ZipFile(wheel_path) as wheel:

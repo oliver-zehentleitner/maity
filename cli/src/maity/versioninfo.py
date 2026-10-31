@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from maity import proc
 
 STAMP_FILE = "_build.json"
 REVISION = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
@@ -49,17 +50,26 @@ def write_stamp(path: Path, stamp: Stamp | None) -> None:
 
 
 def _git(root: Path, *args: str) -> str:
-    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATIONS}
-    result = subprocess.run(
-        ["git", "-C", str(root), *args],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=2,
-    )
+    result = proc.run([*proc.GIT, *args], root, timeout=2)
+    if result.returncode:
+        raise proc.ToolError("Git build identity is unavailable")
     return result.stdout.strip()
+
+
+def _git_locations_match(root: Path) -> bool:
+    expected = {"GIT_DIR": root / ".git", "GIT_COMMON_DIR": root / ".git", "GIT_WORK_TREE": root}
+    for key in _GIT_LOCATIONS:
+        value = os.environ.get(key)
+        if not value:
+            continue
+        path = Path(value)
+        if (
+            key not in expected
+            or not path.is_absolute()
+            or path.resolve() != expected[key].resolve()
+        ):
+            return False
+    return True
 
 
 def stamp_for(project: Path) -> Stamp | None:
@@ -70,13 +80,23 @@ def stamp_for(project: Path) -> Stamp | None:
     if root is None:
         return read_stamp(project / "src" / "maity" / STAMP_FILE)
     try:
+        if not _git_locations_match(root):
+            return None
         if Path(_git(root, "rev-parse", "--show-toplevel")).resolve() != root:
             return None
+        # A neighboring .git can belong to the repository hosting an unpacked
+        # sdist. Its manifest and Maity package must both belong to that tree.
+        members = {
+            (project / path).relative_to(root).as_posix()
+            for path in ("pyproject.toml", "src/maity/__init__.py")
+        }
+        if set(_git(root, "ls-files", "--", *sorted(members)).splitlines()) != members:
+            return read_stamp(project / "src" / "maity" / STAMP_FILE)
         revision = _git(root, "rev-parse", "HEAD")
         dirty = bool(
             _git(root, "status", "--porcelain", "--untracked-files=normal", "--", str(project))
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, proc.ToolError):
         return None
     return Stamp(revision, dirty) if REVISION.fullmatch(revision) else None
 
