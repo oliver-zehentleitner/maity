@@ -239,3 +239,76 @@ def test_a_failed_announcement_holds_nothing(
     with pytest.raises(Exception, match="channel"):
         wakeups._announce(postgres, wakeups._digest("events", "x"), object(), lambda: None)
     assert wakeups._held == {}
+
+
+# --- the bell and the device codes (point 5) -----------------------------------------------
+
+
+def test_a_ring_on_another_replica_wakes_a_held_bell(
+    postgres: Engine, listener: wakeups.Listener
+) -> None:
+    async def hold_and_wait() -> float:
+        hold = wakeups.held(postgres, "bell", wait_key="s-1", ring_key="hum-1", poll=0.5)
+        try:
+            began = time.monotonic()
+
+            def other_replica() -> None:
+                with postgres.begin() as conn:
+                    wakeups.ring(conn, "bell", "hum-1")
+
+            threading.Timer(0.1, other_replica).start()
+            await hold.pause(5)
+            return time.monotonic() - began
+        finally:
+            hold.close()
+
+    assert asyncio.run(hold_and_wait()) < wakeups.FALLBACK_SECONDS  # the ring, not the fallback
+
+
+def test_an_event_in_its_projects_wakes_a_held_bell(
+    postgres: Engine, listener: wakeups.Listener
+) -> None:
+    async def hold_and_wait() -> float:
+        hold = wakeups.held(
+            postgres,
+            "bell",
+            wait_key="s-2",
+            ring_key="hum-2",
+            poll=0.5,
+            project_ids=frozenset({"prj-bell"}),
+        )
+        try:
+            began = time.monotonic()
+            threading.Timer(0.1, _notify, args=(postgres, "prj-bell:9")).start()
+            await hold.pause(5)
+            return time.monotonic() - began
+        finally:
+            hold.close()
+
+    assert asyncio.run(hold_and_wait()) < wakeups.FALLBACK_SECONDS
+
+
+def test_a_ring_names_only_a_hash_and_comes_at_commit(postgres: Engine) -> None:
+    with psycopg.connect(_url(postgres).replace("+psycopg", ""), autocommit=True) as watch:
+        watch.execute(f"LISTEN {wakeups.RINGS['device']}")
+        with pytest.raises(RuntimeError, match="abort"), postgres.begin() as conn:
+            wakeups.ring(conn, "device", "code:rolled-back")
+            raise RuntimeError("abort")
+        with postgres.begin() as conn:
+            wakeups.ring(conn, "device", "code:abc")
+        payloads = [n.payload for n in watch.notifies(timeout=2, stop_after=2)]
+    assert payloads == [wakeups._digest("device", "code:abc")]
+
+
+def test_without_postgresql_a_held_wait_polls(migrated: Engine) -> None:
+    if migrated.dialect.name == "postgresql":
+        pytest.skip("PostgreSQL rings")
+
+    async def hold_and_wait() -> float:
+        hold = wakeups.held(migrated, "bell", wait_key="s-3", ring_key="hum-3", poll=0.05)
+        began = time.monotonic()
+        await hold.pause(5)
+        hold.close()
+        return time.monotonic() - began
+
+    assert asyncio.run(hold_and_wait()) < 0.5

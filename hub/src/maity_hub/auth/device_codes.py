@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, ids
+from maity_hub import avatars, clock, ids, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.config import Settings
@@ -148,7 +148,17 @@ def redeem(
             next=next_route,
         )
     )
+    _ring(conn, row, digest(pending))
     return conn.execute(select(t.device_code).where(t.device_code.c.id == row.id)).one(), pending
+
+
+def _ring(conn: Connection, row: Any, pending_hash: str | None = None) -> None:
+    """Wake the waits on this code, its creator's and the redeeming browser's, at commit on
+    every replica (hub/context/replicas.md 387c2409, point 5)."""
+    wakeups.ring(conn, "device", f"code:{row.session_hash}")
+    pending = pending_hash or row.pending_hash
+    if pending:
+        wakeups.ring(conn, "device", f"pending:{pending}")
 
 
 def of_creator(conn: Connection, code_id: str, session_hash: str, *, lock: bool = False) -> Any:
@@ -180,11 +190,13 @@ def approve(conn: Connection, row: Any, number: int) -> bool:
             expires_at=now + COMPLETE_WITHIN if right else row.expires_at,
         )
     )
+    _ring(conn, row)
     return right
 
 
 def deny(conn: Connection, row: Any) -> None:
     conn.execute(update(t.device_code).where(t.device_code.c.id == row.id).values(status="denied"))
+    _ring(conn, row)
 
 
 def pending_view(conn: Connection, row: Any, now: datetime) -> dict[str, Any]:
@@ -231,6 +243,7 @@ def complete(
         .where(t.device_code.c.id == row.id)
         .values(status="used", pending_hash=None, session_public_id=created[2])
     )
+    _ring(conn, row)
     return created
 
 

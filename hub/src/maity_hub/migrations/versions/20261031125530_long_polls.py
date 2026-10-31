@@ -4,11 +4,11 @@
 asked with (`listening_key`: the agent session's id, or the runner's listening key) and the pod
 holding it; `hub_pod` is each pod's heartbeat. A wait whose pod has not been seen for 45 s does
 not count (hub/context/replicas.md 387c2409, point 4, `listening`). On PostgreSQL both are
-UNLOGGED: a crash or a failover empties them, and every open wait has ended with its connection
-then anyway. SQLite and MariaDB create ordinary tables and keep the registry in the process.
+UNLOGGED: a crash or a failover empties them, and each process's heartbeat writes its open waits
+again within 15 s. SQLite and MariaDB create ordinary tables and keep the registry in the process.
 
 Revision ID: 20261031125530_long_polls
-Revises: 20261031065451_landing_variants
+Revises: 20261031112210_agent_owners
 Create Date: 2026-10-31
 """
 
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031125530_long_polls"
-down_revision: str | None = "20261031065451_landing_variants"
+down_revision: str | None = "20261031112210_agent_owners"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

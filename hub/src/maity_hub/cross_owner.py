@@ -25,7 +25,8 @@ from maity_hub.events import Actor, lock_project
 from maity_hub.views import principal_id
 
 KIND = "cross_owner_reports_to"
-HUB_REASONS = ("superseded", "member_removed")  # what the hub itself withdraws a pair for
+# What the hub itself withdraws a pair for.
+HUB_REASONS = ("superseded", "member_removed", "owner_not_member")
 
 
 def owner_of(conn: Connection, row: Any) -> str | None:
@@ -90,8 +91,11 @@ def open_pair(conn: Connection, target_id: int, *, besides: str | None = None) -
     ]
 
 
-def withdraw_for_member(conn: Connection, member_id: int, actor: Actor | None) -> None:
-    """The removal of either member of an edge withdraws its requests (`member_removed`)."""
+def withdraw_for_member(
+    conn: Connection, member_id: int, actor: Actor | None, reason: str = "member_removed"
+) -> None:
+    """The removal of either member of an edge withdraws its requests (`member_removed`); so
+    does an owner that is no member any more (`owner_not_member`, §6.2)."""
     from maity_hub.routes.requests import close_request
 
     rows = conn.execute(
@@ -106,7 +110,7 @@ def withdraw_for_member(conn: Connection, member_id: int, actor: Actor | None) -
     for row in rows:
         proposal = row.proposal or {}
         if proposal.get("kind") == KIND and member_id in (proposal["target"], proposal["boss"]):
-            close_request(conn, row.id, "withdrawn", actor, reason="member_removed")
+            close_request(conn, row.id, "withdrawn", actor, reason=reason)
 
 
 def join_waits(conn: Connection, row: Any) -> bool:

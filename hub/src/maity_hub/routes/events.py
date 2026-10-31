@@ -475,6 +475,12 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
 
 def remember_read(conn: Connection, reader: int, conversation_id: str, seq: int) -> None:
     """Move the reader's read mark in a conversation up to `seq`, never down."""
+    if conn.dialect.name == "postgresql":  # a human reader's held bells look again
+        human_id = conn.execute(
+            select(t.membership.c.human_id).where(t.membership.c.id == reader)
+        ).scalar()
+        if human_id is not None:
+            wakeups.ring(conn, "bell", human_id)
     updated = conn.execute(
         update(t.conversation_read)
         .where(

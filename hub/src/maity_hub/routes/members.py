@@ -15,6 +15,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import (
     admin_agents,
+    agent_owners,
     attachments,
     availability,
     briefings,
@@ -524,6 +525,7 @@ def patch_member(
             values["briefing"] = body.briefing or None
         if new_policy is not None and new_policy != availability.policy_of(target):
             values["availability_policy"] = new_policy
+        agent_owners.check_assignment(conn, mine.project, target, values)  # outsiders (§6.2)
         _require_owner_for_change(mine, target, values)
         demotes = values.get("trust", "owner") != "owner" and target.trust == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
@@ -951,6 +953,8 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
+    if removed.human_id is not None:  # its joins and placements go, and its agents may (§6.2)
+        agent_owners.human_left(conn, change.project, removed.human_id, change.actor, change.by)
 
 
 @router.delete("/projects/{owner}/{slug}/members/{member_id}")
@@ -1037,6 +1041,7 @@ def lift_isolation(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         target = _isolation_target(conn, mine, caller, member_id)
+        agent_owners.refuse_lift(conn, mine.project, target)  # an owner who is no member (§6.2)
         isolation.lift(
             conn,
             mine.project,
