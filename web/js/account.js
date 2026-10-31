@@ -36,7 +36,7 @@ window.Maity = window.Maity || {};
   }
 
   // Names in a sentence: "a, b, c" in English, in the catalog's language.
-  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
+  const names = (list) => M.fmt.list(list);
 
   // One picture and its controls: what shows now, where it comes from, an
   // upload and, for an upload, Remove. who: { id, display_name,

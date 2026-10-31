@@ -281,6 +281,30 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, words.effect));
     }
 
+    // Lifting (§6.2): the events of the isolation stay readable unless the
+    // box is ticked; then they stay hidden from the agent for good. Unticked
+    // by default (the maintainer, tsk-zwxtdfmdscf7).
+    function liftForm(m, isoPath) {
+      const hideId = "member-lift-hide-" + m.id;
+      const hide = keyed("lift-hide:" + m.id, h("input", { type: "checkbox", id: hideId }));
+      // The choice survives a redraw (another action, the presence refresh) as the isolation's reason does.
+      hide.checked = !!(edits.get(m.id) || {}).liftHide;
+      hide.addEventListener("change", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { liftHide: hide.checked })); });
+      return h("form", {
+        class: "inline-form member-lift",
+        onsubmit: (e) => {
+          e.preventDefault();
+          const done = hide.checked ? M.t("members.isolate.lifted_hidden", { name: m.display_name }) : M.t("members.isolate.lifted", { name: m.display_name });
+          act(M.t("members.isolate.lifting"), done,
+            () => (hide.checked ? M.api.del(isoPath, { hide_isolation_events: true }) : M.api.del(isoPath)), "isolate-reason:" + m.id,
+            () => { const d = edits.get(m.id); if (d) delete d.liftHide; });
+        },
+      },
+      h("label", { class: "check", for: hideId }, hide, " ", M.t("members.isolate.hide")),
+      h("p", { class: "hint" }, M.t("members.isolate.hide.hint")),
+      keyed("lift:" + m.id, h("button", { type: "submit" }, M.t("members.isolate.lift"))));
+    }
+
     // Isolation (§6.2): a human with members:admin stops any agent member at
     // once, whoever owns it, with a reason; lifted again by Lift isolation.
     function isolatePart(m, memberPath) {
@@ -290,11 +314,7 @@ window.Maity = window.Maity || {};
         return h("div", { class: "member-isolate" },
           h("p", null, h("span", { class: "badge member-isolated" }, M.t("members.isolated.badge")), " ",
             M.tn("members.isolated.since", { by: M.dom.memberRef(ctx, m.isolated.by), ago: formatAgo(m.isolated.since), reason: m.isolated.reason })),
-          keyed("lift:" + m.id, h("button", {
-            type: "button",
-            onclick: () => act(M.t("members.isolate.lifting"), M.t("members.isolate.lifted", { name: m.display_name }),
-              () => M.api.del(isoPath), "isolate-reason:" + m.id),
-          }, M.t("members.isolate.lift"))));
+          liftForm(m, isoPath));
       }
       const reasonId = "member-isolate-" + m.id;
       const reason = keyed("isolate-reason:" + m.id, h("input", { id: reasonId, maxlength: "500", autocomplete: "off" }));
@@ -603,6 +623,13 @@ window.Maity = window.Maity || {};
           ? h("p", { class: "muted member-language" }, "Language: " + (m.language === "de" ? "Deutsch" : "English")) : null,
         m.kind === "agent" && m.isolated
           ? h("span", { class: "badge member-isolated", title: M.t("members.isolated.title", { reason: m.isolated.reason }) }, M.t("members.isolated.badge")) : null,
+        // What a lifted isolation hid from it (§6.2 isolation_windows), read by whoever reads isolated.
+        m.kind === "agent" && (m.isolation_windows || []).length
+          ? h("p", { class: "muted member-hidden-windows" }, M.t("members.isolation_windows", {
+            count: m.isolation_windows.length,
+            // A seq is an id, not a quantity: written as the hub gives it, not formatted.
+            ranges: m.isolation_windows.map((w) => M.t("members.isolation_window", { from: String(w.from_seq), to: String(w.to_seq) })).join(", "),
+          })) : null,
         m.kind === "agent" && m.briefing != null
           ? h("span", { class: "badge briefing-override", title: "This member uses its own briefing instead of the project default." }, "Own briefing") : null);
     }

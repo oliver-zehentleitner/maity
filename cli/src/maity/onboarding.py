@@ -37,6 +37,7 @@ COMPACT_ANSWERS = 10
 COMPACT_EVENTS = 10
 COMPACT_LINES = 5
 COMPACT_CHARS = 200
+UNREAD_CHATS = 10  # chats with unread messages listed in the resume; the rest are counted
 COMPACT_KINDS = 5
 FULL = "maity resume --full"
 WAIT_ON = (
@@ -322,6 +323,25 @@ def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
             line += f", covered by @{_name(by, names)}"
         lines.append(line)
     return ["Availability", *lines, ""] if lines else []
+
+
+def _unread_chats(packet: dict[str, Any]) -> list[str]:
+    """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
+    a group chat's messages wake nobody unless they mention you, so the resume says so."""
+    unread = [
+        c for c in _items(packet.get("conversations"))
+        if isinstance(c.get("unread"), int) and not isinstance(c.get("unread"), bool)
+        and c["unread"] > 0
+    ]  # fmt: skip
+    lines = []
+    for c in unread[:UNREAD_CHATS]:
+        chat = inline(c.get("id") or "?")
+        name = inline(c.get("title")) if c.get("title") else inline(c.get("kind") or "chat")
+        counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
+        lines.append(f"  {name} {chat} ({counts}): maity chat {chat}")
+    if len(unread) > UNREAD_CHATS:
+        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: maity chats")
+    return lines
 
 
 def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
@@ -835,6 +855,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
                 for ln in _request(r, names, answering=True, compact=compact)
             ],
         ),
+        ("Unread chats:", _unread_chats(packet)),
         *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
     ]
     for title, lines in sections:
