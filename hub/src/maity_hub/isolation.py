@@ -149,8 +149,17 @@ def lift(
         return
     windows = list(target.isolation_windows or [])
     to_seq = _head(conn, project.id)  # before the lift's own events: the agent reads those
-    if hide and target.isolated_from_seq is not None and target.isolated_from_seq <= to_seq:
-        windows.append({"from_seq": target.isolated_from_seq, "to_seq": to_seq})
+    from_seq = target.isolated_from_seq
+    if hide and from_seq is None:
+        # An isolation made before the column existed: its first event is the first one at or
+        # after the moment it began.
+        from_seq = conn.execute(
+            select(func.min(t.event.c.seq)).where(
+                t.event.c.project_id == project.id, t.event.c.at >= target.isolated_since
+            )
+        ).scalar()
+    if hide and from_seq is not None and from_seq <= to_seq:
+        windows.append({"from_seq": from_seq, "to_seq": to_seq})
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)

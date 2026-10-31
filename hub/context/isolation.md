@@ -102,6 +102,13 @@ list of ranges on the row is what the member view has to show anyway.
 - Ending the window at the lift's own event: the agent has to learn that it was lifted; those events lie
   after `to_seq`.
 
-**Not covered:** the cross-project conversation list a human reads (`conversation_list`) is not filtered, since
-only an agent membership has windows; an agent's own list reads through the conversation routes above.
+An isolation made before `isolated_from_seq` existed has none: a hiding lift then starts the window at the
+first event at or after the moment the isolation began (`isolated_since`), so the choice is honoured and not
+silently dropped.
 
+**Not covered:** the cross-project conversation list a human reads (`conversation_list` called with human
+memberships) has no windows to apply, since only an agent membership has them. An agent's own list and the
+resume packet's `conversations` do: `conversation_list._after` leaves out the messages in the windows of the
+caller's membership, so `unread`, `mentions_unread`, `last_message_at` and the preview count only what the
+agent may read (the first review of the window read this path as covered by the conversation routes, which it
+was not).

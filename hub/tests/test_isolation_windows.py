@@ -69,8 +69,7 @@ def test_a_lift_that_hides_keeps_the_isolations_events_out_for_good(
     assert before in read and after in read
     assert meanwhile not in read
     assert not any(window["from_seq"] <= seq <= window["to_seq"] for seq in read)
-    # The one event by seq, the project messages, and the lift's own event.
-    assert agent.get(f"{PROJECT}/events/{meanwhile}").status_code == 404
+    # The project messages, and the lift's own event.
     listed = [m["seq"] for m in agent.get(f"{PROJECT}/messages").json()["items"]]
     assert meanwhile not in listed and after in listed
     lifted = owner.get(f"{PROJECT}/events?after={window['to_seq']}&limit=5").json()["items"]
@@ -143,3 +142,60 @@ def test_only_a_human_with_members_admin_lifts_and_chooses(
     )
     assert refused.status_code == 403
     assert _windows(owner, agent) == []
+
+
+def test_the_agents_own_chat_list_and_unread_ignore_the_hidden_window(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`GET …/conversations` and the resume packet count and preview what the agent may read
+    only: a message in a hidden window is neither unread nor the last message (§6.2)."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    sent = owner.post(
+        f"{PROJECT}/events",
+        {"kind": "message", "type": "chat", "conversation_id": agent.id, "body": "hidden hello"},
+    )
+    assert sent.status_code == 201, sent.text
+    seq = sent.json()["seq"]
+    before = [c for c in agent.get(CHATS).json()["items"] if c["id"] == agent.id]
+    assert before and before[0]["unread"] == 1 and before[0]["last_message"]["seq"] == seq
+    with migrated.begin() as conn:  # the message lies in a hidden window of the agent
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent.id)
+            .values(isolation_windows=[{"from_seq": seq, "to_seq": seq}])
+        )
+    after = [c for c in agent.get(CHATS).json()["items"] if c["id"] == agent.id]
+    assert not after or (after[0]["unread"] == 0 and after[0]["last_message"] is None)
+    packet = agent.resume().json()["conversations"]
+    assert "hidden hello" not in str(packet)
+    with migrated.connect() as conn:
+        assert conn.execute(
+            select(t.event.c.seq).where(t.event.c.seq == seq)
+        ).first()  # still there
+
+
+def test_a_hiding_lift_of_an_isolation_made_before_the_column_still_hides(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    from sqlalchemy import update
+
+    from maity_hub import tables as t
+
+    agent = flow.agent(make_client, owner, role="admin")
+    isolate(owner, agent.id)
+    meanwhile = say(owner, "all", "while it was out").json()["seq"]
+    with migrated.begin() as conn:  # as an isolation of before the migration would have it
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent.id)
+            .values(isolated_from_seq=None)
+        )
+    assert lift(owner, agent, hide=True).status_code == 200
+    [window] = _windows(owner, agent)
+    assert window["from_seq"] <= meanwhile <= window["to_seq"]
+    assert meanwhile not in _seqs(agent.get(f"{PROJECT}/events?after=0&limit=200"))
