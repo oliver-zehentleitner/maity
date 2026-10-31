@@ -2803,6 +2803,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
     && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
     "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
+  const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
+    { id: "tsk-0001", title: "Links", links: [
+      { kind: "pr", repository: "acme/widget", number: 7, forge_url: "https://github.com/acme/widget/pull/7", observed: { title: "Add the API", state: "merged" } },
+      { kind: "issue", repository: "acme/widget", number: 8, forge_url: "https://github.com/acme/widget/issues/8" },
+      { kind: "url", url: "https://example.com/spec", label: "The spec" }] }, win.Maity.dom.h("article"), () => {})
+    .el.querySelectorAll(".card-links li").map((li) => text(li));
+  expect(JSON.stringify(cpLinks) === JSON.stringify(["Pull request acme/widget#7: Add the API (merged)", "Issue acme/widget#8", "The spec"]),
+    "card panel: the links in words, a pull request with its observed title and state " + JSON.stringify(cpLinks));
   byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
   expect(!cpPosts.length, "card panel: an empty note is not sent");
   byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
