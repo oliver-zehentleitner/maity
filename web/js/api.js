@@ -929,6 +929,18 @@ window.Maity = window.Maity || {};
   }
   // §9.3 for one project (m[1]: its fixture key), shared by the project's
   // route and the list across projects.
+  // §9.3 pins: the caller's own, "<slug>/<id>", at most 20 across projects.
+  function pinsOf() {
+    const all = fixtures();
+    if (!all["pins.json"]) all["pins.json"] = { items: [] };
+    return all["pins.json"].items;
+  }
+  // Four bands, each by activity: pinned with unread, unpinned with unread,
+  // quiet pinned, the rest (an observer's null unread is none).
+  function banded(items, at) {
+    const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
+    return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
+  }
   function conversationList(m, path, query) {
     const all = file(m[1], "conversations.json", path);
     const members = file(m[1], "members.json", path).items;
@@ -971,7 +983,9 @@ window.Maity = window.Maity || {};
         });
       });
     const at = (c) => c.last_message_at || c.created_at || "";
-    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    const human = me().member.kind === "human";
+    const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
+    return { items: banded(items, at), next_cursor: null };
   }
 
   // The view as the caller may see it, or null when it may not.
@@ -3546,10 +3560,26 @@ window.Maity = window.Maity || {};
       const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
       const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
-      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
-        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      banded(items, at);
       return { items, next_cursor: null,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.3 pins: human only, idempotent, at most 20 across projects.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      if (!pinsOf().includes(key)) {
+        if (pinsOf().length >= 20) fail(400, "invalid", "at most 20 pins", path, { fields: { pin: "too_many" } });
+        pinsOf().push(key);
+      }
+      return null;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      const at = pinsOf().indexOf(key);
+      if (at >= 0) pinsOf().splice(at, 1);
+      return null;
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {

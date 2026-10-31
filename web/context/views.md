@@ -1199,8 +1199,10 @@ same as the panel, on a desktop it hides the board the card belongs to.
 Where the theme menu was, the signed-in header has Chat, then the bell,
 then the gear and the profile. Chat leads to `/chats` and carries
 `counts.chat` from `/me/notifications`, which the header already reads,
-worded "N unread chat messages". `/chats` reads each project's
-conversation list (§9.3) once when it opens, unread first. On a hub
+worded "N unread chat messages". `/chats` reads the conversations
+across projects (§9.3, `GET /me/conversations`) and shows them in the
+hub's order: pinned with unread, unpinned with unread, quiet pinned, the
+rest. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
 
