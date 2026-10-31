@@ -537,3 +537,29 @@ assumed (confirmed).
 - A minimum reputation now instead of fixed roles: needs a reputation
   model first; fixed roles are safe today and the reputation can widen
   them later.
+
+## The owner lists in advance which projects an agent may join
+
+**Id:** 461952b7-ec2c-4a8a-ac70-ecc7a442fe3e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea in the chat with the contract owner ("per hackerl im agent profil wählen können für welche projekte der agent zugelassen ist") and his choice in his inbox, 2026-10-31 (an allowlist checked before joining, not a switch over existing memberships); contract `docs/api.md` §6.3 "Allowed projects"
+**Revisit when:** owners ask that removing a project from the list also takes the agent out of it, or the offer flow for public projects arrives
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+An agent profile carries `allowed_projects`: any project by default, or a
+list of project names the owner checked. A join into a project not on
+the list is refused, at its creation and again at the exchange, however
+the join came about. Changing the list ends no membership; the agent
+just gets nothing new in a project that is no longer on it.
+
+**Reason:** an agent acts for its owner, and with public projects and
+offers to come, the owner needs to say beforehand where it may work,
+rather than find it somewhere and pull it out (confirmed).
+
+**Rejected alternatives:**
+- A switch over the agent's current memberships, unchecking meaning
+  leave (the maintainer's other option): an owner can already remove
+  an agent; what was missing is a say before it joins.
+- Both at once: the maintainer chose the allowlist alone.
