@@ -4060,7 +4060,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
       "jour fixe answer: sent anonymously with only what was written; read back while the window is open");
     btn(main.querySelector("section.jfa-answer"), "Withdraw my answer").click(); for (let k = 0; k < 10; k++) await tick();
-    expect(raDels.length === 1 && raDels[0].endsWith("/answers/mine") && raForm(), "jour fixe answer: withdrawn, the form back");
+    expect(raDels.length === 1 && raDels[0].endsWith("/answers/mine") && !raForm() && text(main).includes("no new answer is possible in this round"),
+      "jour fixe answer: an anonymous answer withdrawn, and said that no second answer is possible (the hub keeps its tag)");
     // A human moderator in step 1: the answers (an anonymous one names nobody, text never markup), one removed; the statement.
     await go("#/maintainer/sample/jour-fixe/jfx-s3"); for (let k = 0; k < 8; k++) await tick();
     const raAnswers = () => main.querySelector("section.jfa-answers");
@@ -4089,6 +4090,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
     expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
       && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");
+    // After the window, a participant who is neither moderator nor of the admin team reads their named answer and removes it
+    // (§20.3, §20.8); an anonymous one is no longer theirs to find (§20.4).
+    {
+      const asMember = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/me"
+        ? asMember(p).then((x) => Object.assign({}, x, { projects: x.projects.map((pr) => (pr.full_name === "maintainer/sample" ? Object.assign({}, pr, { trust: "member" }) : pr)) }))
+        : asMember(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const own = () => main.querySelector("section.jfa-answer");
+      expect(own() && text(own()).includes("The window has closed; you may still remove it.") && text(own()).includes("Short reviews.")
+        && !main.querySelector("section.jfa-answers"), "jour fixe answer: after the window a member reads their own named answer, not the others'");
+      btn(own(), "Remove").click(); await tick();
+      byId("jfa-redact-answer-jfa-s9").value = "too personal"; btn(own(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/redact", { target: "answer:jfa-s9", reason: "too personal" }]) && text(own()).includes("Removed."),
+        "jour fixe answer: the author removes their named answer after the window");
+      win.Maity.api.get = asMember;
+      const anonAfter = await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s1/answers?mine=true");
+      expect(anonAfter.items.length === 0, "jour fixe answer: an anonymous answer is not found as one's own after the window, in the fixture hub as in the hub");
+    }
+    // A reply step offers only the topics where a response addressed me, and names the responses answered (§20.5).
+    {
+      const rsGet = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p === "/projects/maintainer/sample/jour-fixe/rounds/jfx-s2"
+        ? rsGet(p).then((x) => Object.assign({}, x, {
+          steps: x.steps.map((st) => (st.kind === "response" ? Object.assign({}, st, { closed_at: "2026-10-28T12:30:00Z" }) : st))
+            .concat([{ n: 3, kind: "reply", opened_at: "2026-10-28T12:30:00Z", closed_at: null, closes_at: "2026-10-28T14:30:00Z", reason: null, eligible: ["hum-maintainer"] }]),
+          statement: Object.assign({}, x.statement, { topics: x.statement.topics.concat([{ id: "t2", title: "Nights", summary: null, items: [], proposals: [], redaction: null }]) }),
+          posts: [{ id: "p-r1", step: "response", topic_id: "t1", by: "agt-s1", to: ["hum-maintainer"], in_reply_to: [], body: "You?", message_seq: null, redaction: null }] }))
+        : rsGet(p));
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 10; k++) await tick();
+      const forms = main.querySelectorAll("form.jfa-post-form").map((f) => f.getAttribute("data-topic"));
+      expect(JSON.stringify(forms) === JSON.stringify(["t1"]), "jour fixe reply: only the topic where a response addressed me is offered " + JSON.stringify(forms));
+      byId("jfa-post-t1").value = "Me, tomorrow."; main.querySelector("form.jfa-post-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+      expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "reply", topic_id: "t1", body: "Me, tomorrow.", in_reply_to: ["p-r1"] }]),
+        "jour fixe reply: sent naming the response it answers");
+      win.Maity.api.get = rsGet;
+    }
     // A human moderator of the admin team writes the report: one proposal decided with a reason, one to the owner.
     await go("#/maintainer/sample/jour-fixe/jfx-s1"); for (let k = 0; k < 8; k++) await tick();
     const raRep = () => main.querySelector("section.jfa-report-form");

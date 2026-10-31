@@ -5618,7 +5618,19 @@ window.MAITY_FIXTURES = {
       },
       {
         "absent": [],
-        "answers": [],
+        "answers": [
+          {
+            "anonymous": false,
+            "author": "hum-maintainer",
+            "id": "jfa-s9",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Short reviews.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
         "answers_close_at": "2026-10-28T10:00:01Z",
         "answers_received": 1,
         "config": {},
@@ -5705,7 +5717,19 @@ window.MAITY_FIXTURES = {
       },
       {
         "absent": [],
-        "answers": [],
+        "answers": [
+          {
+            "anonymous": true,
+            "author": null,
+            "id": "jfa-s8",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Kept quiet.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
         "answers_close_at": "2026-10-25T10:00:01Z",
         "answers_received": 1,
         "config": {},

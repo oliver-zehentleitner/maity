@@ -26,15 +26,24 @@ window.Maity = window.Maity || {};
     humans_only: () => M.t("jfa.refused.humans_only"), empty: () => M.t("jfa.refused.empty"), too_long: () => M.t("jfa.refused.too_long"),
     not_an_answerer: () => M.t("jfa.refused.not_an_answerer"), too_many_proposals: () => M.t("jfa.refused.too_many_proposals"),
     redacted_statement_proposal: () => M.t("jfa.refused.redacted_statement_proposal"),
+    not_owner_preferences: () => M.t("jfa.refused.not_owner_preferences"), unknown_version: () => M.t("jfa.refused.unknown_version"),
+    not_addressed: () => M.t("jfa.refused.not_addressed"), not_a_participant: () => M.t("jfa.refused.not_a_participant"),
+    unknown_topic: () => M.t("jfa.refused.unknown_topic"),
   };
   // The hub's refusal in words: its code, its reason, or the reason of a field.
   function said(err) {
     const d = err.details || {};
     const field = d.fields && Object.values(d.fields)[0];
     const key = [d.reason, field, err.code].find((k) => k && Object.hasOwn(REFUSALS, k));
-    return key ? { message: REFUSALS[key]() } : err;
+    if (key) return { message: REFUSALS[key]() };
+    // A scope the caller lacks (a redaction needs events:admin, §20.8), said by its name.
+    if (err.code === "forbidden" && d.scope) return { message: M.t("jfa.refused.scope", { scope: d.scope }) };
+    return err;
   }
 
+  // Rounds whose anonymous answer was withdrawn in this tab: the hub keeps its tag, so no second
+  // answer is possible there (§20.4), and the form is not offered again.
+  const withdrawnHere = new Set();
   const adminTeam = (ctx) => ctx.me.kind === "human" && ["owner", "admin"].includes(ctx.trust) && ctx.role !== "proxy";
   const ids = (list) => (list || []).map((x) => x.member_id);
 
@@ -67,13 +76,31 @@ window.Maity = window.Maity || {};
     let mine = [];
     try { mine = (await M.api.get(path + "?mine=true")).items || []; } catch (err) { /* none yet, or not readable: the form */ }
     const own = mine.find((a) => !a.withdrawn);
+    // After the window (§20.3, §20.8): the author reads a named answer at any time, and a human
+    // author removes it; an anonymous one is no longer theirs to find, and nothing is shown.
+    if (r.status !== "answering") {
+      if (!own || own.anonymous) return null;
+      append(box, h("p", { class: "muted" }, M.t("jfa.answer.yours_after")),
+        own.redaction ? h("p", { class: "muted" }, M.t("jfa.redacted"))
+          : [FIELDS.map(([k, label]) => own[k] ? [h("h4", null, label()), h("div", { class: "md" }, M.markdown(own[k]))] : null),
+            ctx.me.kind === "human" ? redactButton(ctx, r, "answer:" + own.id, reload) : null]);
+      return box;
+    }
     if (own || mine.length) {
       append(box, h("p", { class: "muted" }, own ? (own.anonymous ? M.t("jfa.answer.yours_anonymous") : M.t("jfa.answer.yours")) : M.t("jfa.answer.withdrawn")),
         own ? FIELDS.map(([k, label]) => own[k] ? [h("h4", null, label()), h("div", { class: "md" }, M.markdown(own[k]))] : null) : null,
         own ? h("button", { type: "button", onclick: async () => {
           status.busy(M.t("jfa.answer.withdrawing"));
-          try { await M.api.del(path + "/mine"); reload(); } catch (err) { status.fail(M.t("jfa.failed"), said(err)); }
+          try {
+            await M.api.del(path + "/mine");
+            if (own.anonymous) withdrawnHere.add(r.id);
+            reload();
+          } catch (err) { status.fail(M.t("jfa.failed"), said(err)); }
         } }, M.t("jfa.answer.withdraw")) : null, status.el);
+      return box;
+    }
+    if (withdrawnHere.has(r.id)) {
+      append(box, h("p", { class: "muted" }, M.t("jfa.answer.no_second")));
       return box;
     }
     const inputs = FIELDS.map(([k, label]) => {
@@ -174,9 +201,15 @@ window.Maity = window.Maity || {};
     const mineHere = (t) => (r.posts || []).some((p) => p.by === ctx.me.id && p.topic_id === t.id && p.step === step.kind);
     const others = (r.participants || []).filter((p) => p.member_id !== ctx.me.id);
     const repliable = (t) => (r.posts || []).filter((p) => p.topic_id === t.id && p.step === "response" && (p.to || []).includes(ctx.me.id));
+    // A step's topics (a further step may name some); a reply only where a response addressed me,
+    // a rejoinder only where my response received a reply (§20.5).
+    const mine = (t) => (r.posts || []).filter((p) => p.topic_id === t.id && p.step === "response" && p.by === ctx.me.id).map((p) => p.id);
+    const replied = (t) => (r.posts || []).some((p) => p.topic_id === t.id && p.step === "reply" && (p.in_reply_to || []).some((id) => mine(t).includes(id)));
+    const postable = (t) => (!Array.isArray(step.topics) || step.topics.includes(t.id))
+      && (step.kind !== "reply" || repliable(t).length > 0) && (step.kind !== "rejoinder" || replied(t));
     return h("section", { class: "jfa-posts", "aria-labelledby": "jfa-posts-title" },
       h("h3", { id: "jfa-posts-title" }, M.t("jfa.posts.title")), h("p", { class: "hint" }, M.t("jfa.posts.hint")),
-      topics.filter((t) => !t.redaction).map((t) => {
+      topics.filter((t) => !t.redaction && postable(t)).map((t) => {
         if (mineHere(t)) return h("p", { class: "muted" }, M.t("jfa.posts.done", { topic: t.title }));
         const id = "jfa-post-" + t.id.replace(/\W/g, "-");
         const body = h("textarea", { id, rows: "3" });
@@ -219,7 +252,8 @@ window.Maity = window.Maity || {};
   function reportPart(ctx, r, reload) {
     const topics = (r.statement && r.statement.topics) || [];
     const fromStatement = topics.flatMap((t) => (t.proposals || []).filter((p) => !p.redaction).map((p) => ({ topic: t, p })));
-    const decides = adminTeam(ctx);
+    // A decision rests on a rules version the project names (§20.6); without one, nothing is decided here.
+    const decides = adminTeam(ctx) && Number.isInteger(ctx.project.rules_version) && ctx.project.rules_version >= 1;
     const summary = h("textarea", { id: "jfa-report-summary", rows: "4" });
     const findings = h("textarea", { id: "jfa-report-findings", rows: "4", "aria-describedby": "jfa-report-findings-hint" });
     const rows = fromStatement.map(({ topic, p }) => {
@@ -241,7 +275,7 @@ window.Maity = window.Maity || {};
         let basis = null;
         if (rows.some((x) => ["adopt", "reject"].includes(x.triage.value))) {
           const prefs = await M.api.get("/me/preferences").catch(() => null);
-          basis = { rules_version: ctx.project.rules_version || 1, human_id: ctx.me.id, preferences_version: (prefs && prefs.version) || 0 };
+          basis = { rules_version: ctx.project.rules_version, human_id: ctx.me.id, preferences_version: (prefs && prefs.version) || 0 };
         }
         for (const x of rows) {
           if (x.triage.value === "drop") continue;
@@ -280,7 +314,9 @@ window.Maity = window.Maity || {};
     const moderator = r.moderator && r.moderator.member_id === me;
     const participant = ids(r.participants).includes(me);
     const out = [];
-    if (r.status === "answering" && participant) out.push(await answerPart(ctx, r, reload));
+    // One's own answer: given while the window is open, read (and, named, removed) afterwards.
+    const readers0 = moderator || adminTeam(ctx);
+    if (participant && (r.status === "answering" || !readers0)) out.push(await answerPart(ctx, r, reload));
     const readers = moderator || adminTeam(ctx);
     const read = readers ? await answersPart(ctx, r, reload) : { box: null, items: [] };
     if (read.box) out.push(read.box);

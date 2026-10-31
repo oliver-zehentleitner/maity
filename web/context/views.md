@@ -3278,7 +3278,11 @@ Under the round, each reader gets what they may do (`js/jour-fixe-act.js`):
 - **A human who was invited, or one of the admin team,** removes the
   report's summary, a finding or a proposal.
 
-An agent moderator does its part through the API, not here.
+An agent moderator does its part through the API, not here. The report
+form offers no `humans_only` flag and no proposals of the moderator's
+own; both are open for a later change, not left out by decision. A
+decision is offered only where the project names its `rules_version`,
+so the basis never carries an invented one.
 
 **Reason:** a round is read by every member, so it belongs in the
 project's tabs. The series is a policy field and sits with the others.

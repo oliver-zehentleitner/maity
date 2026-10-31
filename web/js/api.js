@@ -2335,7 +2335,11 @@ window.Maity = window.Maity || {};
     ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path, query) => {
       const r = jfRound(m[1], m[2], path);
       const all = r.answers || [];
-      if (query.get("mine") === "true") return { items: all.filter((a) => a.mine) };
+      // The author's own: a named one at any time, an anonymous one only while the window is open (§20.4).
+      if (query.get("mine") === "true") {
+        return { items: all.filter((a) => a.mine && (!a.anonymous || r.status === "answering"))
+          .map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+      }
       const reader = (r.moderator || {}).member_id === me().member.id || (me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])));
       if (!reader) fail(404, "not_found", "Not found", path);
       return { items: all.map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
