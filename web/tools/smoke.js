@@ -3188,6 +3188,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
     "chat: a day separator, then 'New messages' before the agent's unread reply " + JSON.stringify(histItems));
   expect(main.querySelector("li.msg.in .msg-avatar svg") && !main.querySelector("li.msg.out .msg-avatar"), "chat: the agent's messages carry its picture, one's own none");
+  // The meat-proxy switch of this chat (§9.3): between Attach and Send, from one's own entry; on and off here, then back to the profile.
+  {
+    const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
+    const mpFollow = () => main.querySelector("form.compose .compose-actions button.meat-chat-follow");
+    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy);
+    const mpPuts = [], mpPut = win.Maity.api.put;
+    win.Maity.api.put = (p, b) => { if (/\/meat-proxy$/.test(p)) mpPuts.push([p, JSON.stringify(b)]); return mpPut(p, b); };
+    const mpRow = main.querySelector("form.compose .compose-actions");
+    const mpOrder = mpRow ? mpRow.childNodes.map((n) => n.className || n.tagName) : [];
+    expect(mpBtn() && mpFollow().hidden && /as in your profile/.test(mpBtn().getAttribute("title")) && mpBtn().getAttribute("aria-label") === "Meat proxy in this chat"
+      && mpOrder.indexOf("meat-chat") >= 0 && mpOrder.indexOf("meat-chat") < mpOrder.length - 1,
+      "meat proxy: the chat's switch beside Send, following the profile at first " + JSON.stringify(mpOrder));
+    const mpWas = mpBtn().getAttribute("aria-pressed");
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(mpPuts.length === 1 && mpPuts[0][0] === "/projects/maintainer/maity/conversations/agt-a/meat-proxy" && mpPuts[0][1] === JSON.stringify({ meat_proxy: mpWas !== "true" })
+      && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && /in this chat$/.test(mpBtn().getAttribute("title")) && !mpFollow().hidden,
+      "meat proxy: a click switches it for this chat only, and offers the way back " + JSON.stringify(mpPuts));
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(mpPuts.length === 2 && mpPuts[1][1] === JSON.stringify({ meat_proxy: null }) && mpFollow().hidden && /as in your profile/.test(mpBtn().getAttribute("title")),
+      "meat proxy: Follow my profile sends null and hides itself " + JSON.stringify(mpPuts));
+    // The hub's answer is kept: the chat's own value comes back from the list.
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+    expect(mpBtn() && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && !mpFollow().hidden, "meat proxy: the chat's value read again after leaving it");
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.put = mpPut;
+    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's value (" + mpProfile + ", " + mpWas + ")");
+  }
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
   // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
@@ -5216,6 +5244,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/chat/cnv-0007");
   win.Maity.chatParts.follower = gfReal;
   expect(gfOpened.length === 1 && gfOpened[0] && gfOpened[0].className === "new-line", "group chat: it opens at the first unread message");
+  expect(main.querySelector(".group-chat form.compose .compose-actions button.meat-chat-toggle"), "meat proxy: a group chat's participant has the switch too");
   // Newest puts the focus in the composer, not on the page.
   const gfProto = Object.getPrototypeOf(main);
   const gfFocus = gfProto.focus;

@@ -3158,6 +3158,45 @@ same words the note puts together. Reading the fields at the top of the
 answer with the clicked value as fallback (the earlier code): against the
 hub it never read the answer at all, and the fixture's flat answer hid it.
 
+## A chat's meat-proxy switch sits between Attach and Send; it draws from its own answer, and Follow my profile gives the choice back
+
+**Id:** 393898d2-62e1-4e5d-a1b7-8eacb859ea01
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §9.3 "Meat proxy per chat" after the contract #922 and the hub's #956 (`PUT …/conversations/{id}/meat-proxy` with `true`, `false` or `null`; the participants' entries carry `meat_proxy` and, for oneself, `meat_proxy_chat`; no event); the coordinator's card tsk-n872zkxmwbec (a switch beside Attach and Send in direct and group chats for human participants, a way back to `null`, the designer's two icons, on in the accent on `--out-bg`), 2026-10-31; the coordinator's word to use the designer's final3 icons, 2026-11-01; the button's shape and the Follow my profile link are the implementer's, 2026-11-01
+**See:** views.md#the-meat-proxy-switch-has-its-two-parts-under-it-each-sent-alone-the-hub-decides-the-switch-and-the-note — e9c14296-f8da-4f83-871b-056a0d3ab6ed — as of 2026-11-01
+**Revisit when:** the designer sends the icons with the Maity logo, the hub emits an event for the per-chat value, or a chat offers parts of its own
+
+In a direct or group chat a human participant finds the meat-proxy
+switch in the composer's row, between **Attach files** and **Send**
+(`js/meat-proxy.js`, one part for both composers through
+`M.chatParts.actionRow`). It is drawn from one's own entry in the chat's
+participants: pressed while `meat_proxy` holds in this chat, its tooltip
+saying whether that is the profile's value or this chat's own. A click
+sends the opposite as this chat's value; **Follow my profile**, shown
+only while the chat has a value of its own, sends `null`. An agent, an
+observer (no entry of its own) and a hub whose entries carry no
+`meat_proxy` get no switch. Since the hub emits no event for the change,
+the switch takes the hub's `204` as the new state and works out what
+holds itself (`null` follows the profile's value from `/me`); the chat's
+value is read again from the participants the next time the chat opens.
+The icons are the designer's two SVGs in `web/brand/`, drawn as a CSS
+mask so that they take the button's colour (muted off, the accent on).
+
+**Reason:** the switch belongs where the human writes in that chat, next
+to the other per-message choices, and the same part in both composers
+keeps them alike. A plain toggle covers on and off; the way back to the
+profile is rarer and gets its own small link rather than a third state
+on the button.
+
+**Rejected alternative:** a three-way control (on, off, follow the
+profile) on the button itself, which a click cannot step through
+without passing a state the human did not want. Re-reading the chat
+after each click to learn the state: the hub's `204` says the value was
+taken, and the rule for what holds is the contract's. The icons as
+`<img>`: an image does not take the button's colour.
+
 ## The Overview has three tabs, Summary, Swarm and Project; the organisation is a tab of the Team page
 
 **Id:** 58c58a28-d6b1-453f-99dc-7f21179b3ee2

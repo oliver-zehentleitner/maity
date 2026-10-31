@@ -1224,6 +1224,23 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.shot(page, "chat-composer-3x")
     compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
     assert abs(field.bounding_box()["height"] - one) < 2
+    # The meat-proxy switch of this chat (§9.3, tsk-n872zkxmwbec): switched here, kept by the hub, given back to the profile.
+    meat = compose.locator("button.meat-chat-toggle")
+    follow = compose.get_by_role("button", name="Follow my profile", exact=True)
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    meat.click()
+    expect(meat).to_have_attribute("aria-pressed", "true")
+    expect(follow).to_be_visible()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    follow.click()
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy_chat"] is None, entry
     no_problems(run, "chat")
 
     run.step("global chat: /chats has every project's chats and opens one in place")

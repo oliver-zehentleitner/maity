@@ -955,6 +955,29 @@ window.Maity = window.Maity || {};
     if (!all["pins.json"]) all["pins.json"] = { items: [] };
     return all["pins.json"].items;
   }
+  // §9.3 meat proxy per chat: the caller's own choice per "<slug>/<id>", true or false; absent is null.
+  function meatChats() {
+    const all = fixtures();
+    if (!all["meat-chats.json"]) all["meat-chats.json"] = {};
+    return all["meat-chats.json"];
+  }
+  const meatNote = (lead, hands) => ["This person says: I am a meat proxy."]
+    .concat(lead ? ["Lead me step by step rather than expecting me to explain."] : [])
+    .concat(hands ? ["When you need a human's hands, come to me first."] : []).join(" ");
+  // A human entry in one chat (§9.3): the value that holds there, one's own
+  // choice for oneself only (null for others), and the note while it holds.
+  function withMeat(slug, convId, x, path) {
+    if (x.kind !== "human") return x;
+    const mine = x.member_id === me().member.id;
+    const key = slug + "/" + convId;
+    const chosen = mine && Object.hasOwn(meatChats(), key) ? meatChats()[key] : null;
+    const profile = mine ? me().member : (file(slug, "members.json", path).items.find((y) => y.id === x.member_id) || {});
+    const holds = chosen === null ? !!profile.meat_proxy : chosen;
+    // On in the chat while the profile is off: both parts (§9.3); else the profile's.
+    const note = !holds ? null : chosen === true && !profile.meat_proxy ? meatNote(true, true)
+      : profile.meat_proxy_note || meatNote(profile.meat_proxy_lead !== false, profile.meat_proxy_hands !== false);
+    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_chat: chosen }, note ? { meat_proxy_note: note } : {});
+  }
   // Four bands, each by activity: pinned with unread, unpinned with unread,
   // quiet pinned, the rest (an observer's null unread is none).
   function banded(items, at) {
@@ -978,7 +1001,7 @@ window.Maity = window.Maity || {};
       const agent = members.find((x) => x.id === agentId);
       return {
         id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
-        participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+        participants: [withMeat(m[1], agentId, { member_id: me().member.id, kind: "human", handle: me().member.handle }, path),
           { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
         last_message_at: last ? last.sent_at : null,
         unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
@@ -996,7 +1019,7 @@ window.Maity = window.Maity || {};
         const readTo = c.read[me().member.id] || 0;
         const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
         return Object.assign({}, g, {
-          participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+          participants: g.participants.map((x) => withMeat(m[1], g.id, { member_id: x.member_id, kind: x.kind, handle: x.handle }, path)),
           last_message_at: last ? last.sent_at : null, last_message: preview(last),
           unread: g.access === "observer" ? null : theirs.length,
           mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
@@ -1016,7 +1039,7 @@ window.Maity = window.Maity || {};
     const observers = [...new Set(v.participants.filter((x) => x.kind === "agent" && x.owner_id && !v.participants.some((y) => y.member_id === x.owner_id)).map((x) => x.owner_id))];
     if (!participant && !observers.includes(meId)) return null;
     return { id: v.id, kind: "group", title: v.title, created_by: v.created_by, created_at: v.created_at,
-      participants: v.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at })),
+      participants: v.participants.map((x) => withMeat(slug, v.id, { member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at }, path)),
       observers, closed_at: v.closed_at, closed_reason: v.closed_reason, access: participant ? "participant" : "observer" };
   }
   // The creator while a participant, or a human participant with members:admin; else refused.
@@ -3644,6 +3667,19 @@ window.Maity = window.Maity || {};
       const key = m[1] + "/" + decodeURIComponent(m[2]);
       const at = pinsOf().indexOf(key);
       if (at >= 0) pinsOf().splice(at, 1);
+      return null;
+    }],
+    // §9.3 meat proxy per chat: a human participant, for itself; an observer is refused.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/meat-proxy$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (![true, false, null].includes(body.meat_proxy)) fail(400, "invalid", "meat_proxy is true, false or null", path, { fields: { meat_proxy: "invalid" } });
+      const id = decodeURIComponent(m[2]);
+      const direct = Object.hasOwn(file(m[1], "conversations.json", path), id) && me().projects.some((p) => p.slug === m[1]);
+      const group = direct ? null : groupChats(m[1])[id];
+      const item = group ? groupItem(m[1], group, path) : null;
+      if (!direct && !item) fail(404, "not_found", "Not found", path);
+      if (item && item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
+      if (body.meat_proxy === null) delete meatChats()[m[1] + "/" + id]; else meatChats()[m[1] + "/" + id] = body.meat_proxy;
       return null;
     }],
     // §9.2 group chats.
