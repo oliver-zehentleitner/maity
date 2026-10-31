@@ -972,6 +972,7 @@ def scenario(run: Run, page: Page) -> None:
     forge_access_step(run, page)
     landing_json_step(run, page)
     legal_json_step(run, page)
+    site_json_step(run, page)
     jour_fixe_step(run, page)
     project_links_step(run, page)
     join_expiry_step(run, page)
@@ -2311,7 +2312,8 @@ def landing_json_step(run: Run, page: Page) -> None:
     io.get_by_role("button", name="Export the draft", exact=True).click()
     assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
     # The prepared landing V3 itself (tsk-k7pwrzs8vb8k): the real hub's check refuses nothing.
-    v3 = (WEB / "tools" / "landing-v3-complete.json").read_text(encoding="utf-8")
+    # Its landing part, from the one site file (tsk-xw8a2hd84x3a).
+    v3 = json.dumps(json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))["landing"])
     page.locator("#lp-json").fill(v3)
     page.once("dialog", lambda d: d.accept())
     io.get_by_role("button", name="Load into the editor", exact=True).click()
@@ -2319,6 +2321,52 @@ def landing_json_step(run: Run, page: Page) -> None:
     expect(page.locator("li.lp-section")).to_have_count(len(json.loads(v3)["pages"][json.loads(v3)["default_language"]]["sections"]))
     run.shot(page, "landing-json")
     no_problems(run, "landing JSON")
+
+
+def site_json_step(run: Run, page: Page) -> None:
+    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the template with en and de
+    is checked, saved in one go, and exported again unchanged."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("whole site: the template with en and de imported in one go, then exported unchanged")
+    template = json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))
+    # Off for this run: a landing page that is on would greet the signed-out steps after this one.
+    template["landing"]["enabled"] = False
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Import or export everything", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Import or export everything']")
+    io = section.locator("details.json-io")
+    io.locator("summary").click()
+
+    # Export reads the settings again first, so the field is filled once the hub has answered.
+    def export() -> dict:
+        page.locator("#site-json").fill("")
+        io.get_by_role("button", name="Export", exact=True).click()
+        expect(page.locator("#site-json")).not_to_have_value("")
+        return json.loads(page.locator("#site-json").input_value())
+
+    # The template carries no registration: what the instance has stays.
+    before = export()
+    page.locator("#site-json").fill(json.dumps(template))
+    io.get_by_role("button", name="Check the file", exact=True).click()
+    expect(section.locator("li.site-part")).to_have_count(3)
+    expect(section.locator("li.site-refused")).to_have_count(0)
+    section.get_by_role("button", name="Save all changes", exact=True).click()
+    expect(section.locator(".send-status").last).to_contain_text("Saved:")
+    run.a11y(page, "whole site, saved")
+    out = export()
+    assert out["format"] == "maity-site/1", out.get("format")
+    assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
+    for key, value in template["legal"].items():
+        assert out["legal"][key]["languages"] == value["languages"], f"legal {key} differs after the round trip"
+    assert "registration" not in template, "the template carries a registration part"
+    # Registration as it was; only `terms` may leave the export: with the terms page saved and no
+    # value of its own, the hub takes it from the legal pages, which the export never carries.
+    reg_before, reg_after = before.get("registration", {}), out.get("registration", {})
+    assert all(reg_before.get(k) == v for k, v in reg_after.items()), f"registration changed: {reg_before} -> {reg_after}"
+    assert set(reg_before) - set(reg_after) <= {"terms"}, f"registration lost fields: {reg_before} -> {reg_after}"
+    no_problems(run, "whole site JSON")
 
 
 def legal_json_step(run: Run, page: Page) -> None:

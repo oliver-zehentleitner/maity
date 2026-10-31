@@ -1689,3 +1689,40 @@ edits the imprint, the privacy notice and the terms per language; each
 save is one page and a new version, the earlier ones linked, and each
 draft can be previewed the same way; **Take the page down** sends it as
 `null`.
+
+**Import or export everything** (`js/site-io.js`, tsk-xw8a2hd84x3a) takes
+the three sections as one JSON, extended language by language and
+imported again:
+
+```json
+{
+  "format": "maity-site/1",
+  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…} },
+  "legal": { "imprint": { "languages": { "en": { "title": "…", "markdown": "…" } } }, "privacy": {…}, "terms": {…} },
+  "registration": { "mode": "closed", "domains": [], "addresses": [], "approval": "operator", "terms": null, "max_new_accounts_per_hour": 20 }
+}
+```
+
+Each part has the shape its own section imports; a part the file leaves
+out stays as it is. An unknown `format` refuses the file, and so does an
+unknown key anywhere in it, named by its path (`landing.enabeld`,
+`legal.privacy.foo`). The landing page's `variants` and `campaigns` are
+not in `maity-site/1` while the landing editor's import does not take
+them, so they are refused as well. **Export** reads the three settings
+again first (copy, or **Download as a file**), so an edit saved in
+another section since the page opened is in the file; registration is
+left out when the environment sets every field. The section has its own
+address, `/admin/site`.
+**Check the file** checks each part with the call its section uses (the
+landing page's and each legal page's preview, registration's own check)
+and lists it as changes, the same as saved, not in the file, or refused.
+**Save all changes** then saves the parts in turn (each changed legal
+page, registration, the landing page), the second factor asked for once
+(§2.8.4: it holds for 10 minutes). A save that stops says what is saved
+and what is not, and goes no further; nothing is rolled back. The
+sections' own imports stay. `web/tools/maity-site.json` is the template:
+the landing page as it runs, the privacy notice and the terms in en and
+de, the imprint with placeholders only, and no registration, which is
+the instance's own (a part the file leaves out stays as it is);
+placeholders are in square brackets (`[Operator]`), which the hub's
+Markdown rules take as text.
