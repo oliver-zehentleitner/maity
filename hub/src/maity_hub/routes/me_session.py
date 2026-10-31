@@ -658,7 +658,12 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
             )
         ).scalars()
     )
-    answered = [r for r in rows if r.id in answered_ids and inbox.is_asker(r, mine)]
+    # In the order they were answered, an answer without its moment last: a cut keeps the
+    # newest, which a long-standing member's rejoin would otherwise lose to old ones.
+    answered = sorted(
+        (r for r in rows if r.id in answered_ids and inbox.is_asker(r, mine)),
+        key=lambda r: (r.answered_at is None, r.answered_at or r.created_at, r.id),
+    )
     to_answer = [
         r
         for r in rows
@@ -670,7 +675,7 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     # Bounded like the rest of the packet (§5.2): an admin may answer everything open.
     return {
         "mine_open": [request_view(conn, r) for r in mine_open[:PACKET_REQUESTS]],
-        "answered_since_cursor": [request_view(conn, r) for r in answered[:PACKET_REQUESTS]],
+        "answered_since_cursor": [request_view(conn, r) for r in answered[-PACKET_REQUESTS:]],
         "to_answer": [request_view(conn, r) for r in to_answer[:PACKET_REQUESTS]],
         "truncated": any(len(x) > PACKET_REQUESTS for x in (mine_open, answered, to_answer)),
     }
