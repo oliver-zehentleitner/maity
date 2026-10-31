@@ -214,9 +214,9 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `address_unverified` | a second-factor reset for a human without a verified address, whom the reset mail cannot reach (§2.8.3) |
 | 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2); `details.closed_reason` |
 | 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows; `details.max` |
-| 409 | `jour_fixe_open` | a jour fixe round started by hand while an earlier round is not yet final, its report included (§20.1, §20.6); `details.round` |
+| 409 | `jour_fixe_open` | a jour fixe round started by hand while an earlier round of the same series is not yet final, its report included (§20.1, §20.6); `details.round` |
 | 409 | `no_moderator` | a jour fixe round started by hand while nobody who may moderate it is present (§20.1, §20.2); no round is recorded |
-| 409 | `too_few` | a jour fixe round started by hand while fewer than two members are present, the moderator included (§20.1); no round is recorded |
+| 409 | `too_few` | a jour fixe round started by hand while fewer than two members are present, the moderator included, of whom at least one belongs to the series' circle (§20.1); no round is recorded |
 | 409 | `jour_fixe_answered` | a second answer of the same member in a jour fixe round, named or anonymous (§20.3, §20.4); `details` is `{}` |
 | 409 | `jour_fixe_state` | a jour fixe call the round's phase does not allow: an answer after the window, a statement or post outside its step, a second post on a topic in a step, a further step requested before step 2 opened or after the last step's window ended (the exchange never reopens), while another further step is still pending, or after 3, a report before the exchange closed or after it was reported (§20.3, §20.5, §20.6); `details.status`, `details.step` |
 | 409 | `request_claimed` | a claim on a request that is no longer open to `trust:admin`, because another admin claimed it first (§7); `details.holder` |
@@ -348,7 +348,7 @@ the hub records it on the session.
 | Jour fixe answer | `went_well`, `went_badly`, `would_help` 4 KiB each, 12 KiB together, so that the message rendered from it for the moderator stays within the 16 KiB message cap (§20.3) |
 | Jour fixe statement and posts | the statement 20 topics, each a `title` (200 characters), a `summary` of 2 KiB, 20 items of 1 KiB and up to 5 proposals, at most 20 proposals across all topics (the report's cap), rendered within the 16 KiB message cap; a post 4 KiB; at most 3 further steps per round (§20.5) |
 | Jour fixe report | `summary` 8 KiB; 50 findings of 1 KiB each — a report the hub builds cuts a longer text at a character boundary and ends it with a visible marker naming the topic it came from, never silently; 20 proposals, each a `title` (200 characters) and a `reason` of 2 KiB (§20.6) |
-| Jour fixe rounds started by hand | 2 per project in 24 hours (§20.1) |
+| Jour fixe rounds started by hand | 2 per series in 24 hours (§20.1) |
 | Preferences | 8 KiB per human (§19.4) |
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
 | Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
@@ -654,7 +654,6 @@ The scopes:
 | `tasks:admin` — assign, release expired claims, edit any card, cancel, resolve notes, remove any link | trust `owner`, `admin` |
 | `requests:answer` — answer requests of every class, consent included | trust `owner`, `admin` (a proxy only as relay, below) |
 | `events:admin` — redact events, notes and card history entries (human memberships only) | trust `owner`; `admin` ʰ |
-| `jour_fixe:start` — start a jour fixe round now (§20.1); the schedule itself is `project:admin` | trust `owner`, `admin` |
 | `credentials:admin` — list and revoke any agent's credentials (human memberships only) | trust `owner`; `admin` ʰ |
 | `line:lead` — for the members of the caller's reach only (below): assign and release their cards, set their `areas` and `paused`, and for its own owner's members (part (a)) `reports_to` within the reach | role `manager`; not `guest` |
 
@@ -965,7 +964,7 @@ owner decides, and it decides nothing itself:
   apply to it as to any agent with trust `admin`, and it never records
   an answer to a request marked `humans_only` (§7).
 - It is not in the admin team: it holds no seat (`contract_arbiter`,
-  `coordinator`, `coordinator_substitute`, `jour_fixe_moderators`),
+  `coordinator`, `coordinator_substitute`),
   claims no request opened to `trust:admin`, and decides no escalated
   takeover (§6.19).
 
@@ -1234,11 +1233,9 @@ Additional rules that are not scopes:
   participant reads a group chat's messages that agent can read (§9.2).
   Only humans create group chats; the one other creator is the hub, for
   a jour fixe round's thread (§20.5).
-- Two jour fixe exceptions to ʰ and to §8.5, granted by the maintainer
-  (§20): every admin agent writes the moderator order
-  `policy.jour_fixe_moderators` (§20.2), and the round's moderator, agent
-  or not, redacts the answers of its round (§20.8). Neither reaches any
-  other policy field or any other redaction.
+- One jour fixe exception to §8.5, granted by the maintainer (§20): the
+  round's moderator, agent or not, redacts the answers of its round
+  (§20.8). It reaches no other redaction.
 - An escalated takeover (§6.19) is decided only by the admin team
   (above) and never by a party
   to it, whatever scopes either holds; for a takeover between two
@@ -4399,8 +4396,6 @@ stay; `state_changed` is not emitted for the mapping.
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
-| `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
-| `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
 | `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team` and project roles on those bases (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
@@ -8786,7 +8781,7 @@ learns its content.
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
-| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, `trust:owner`; the report `all`; a skip `trust:owner`, `trust:admin` | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report and a skip wake nobody, and no absent member is ever woken |
+| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report, a skip and a series change wake nobody, and no absent member is woken |
 | `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its team's rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 
 **Trust and role tokens.** `role:<role>` names every active member
@@ -11107,10 +11102,14 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
 | GET | `/projects/{owner}/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
-| PUT | `/projects/{owner}/{slug}/jour-fixe/moderators` | a human with `project:admin`; an admin agent | 20.2 |
-| GET, POST | `/projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`, members only / `jour_fixe:start` | 20.9 |
+| GET, POST | `/projects/{owner}/{slug}/jour-fixe/series` | `project:read`, members only / a series keeper | 20.1 |
+| PATCH, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | 20.1 |
+| POST | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators` | a human who could set the member's `reports_to`, or a keeper; the agent's owner and a keeper consent | 20.2 |
+| DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators/{member_id}` | the agent's owner, the member, the granter, a series keeper | 20.2 |
+| POST | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}/rounds` | the series' keepers and moderators | 20.1 |
+| GET | `/projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`, members only | 20.9 |
 | GET | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an agent's owner outside the project, for a round its agent is a current participant of, as the minimal projection | 20.7 |
-| GET, POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator, the author, the humans of the admin team / a current participant | 20.3 |
+| GET, POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator, the author, the answer readers of §20.3 / a current participant | 20.3 |
 | DELETE | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers/mine` | the author, while the answer window is open | 20.4 |
 | POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/statement`, `…/steps`, `…/report` | the round's moderator | 20.5, 20.6 |
 | POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant | 20.5 |
@@ -11256,14 +11255,14 @@ cursor never moves on the served agent's events.
 | `maity ticker [--mine] [--type T]… [--area A] [--since TIME] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/ticker`, one page (§17.9): `for=me` under `--mine`; `--type` is repeatable, one value each, sent as one comma list; `--since` is RFC 3339 with an offset (sent in UTC; without an offset refused locally, exit 2) or a duration back from now, one or more `<n><unit>` groups with `unit` `s`, `m`, `h`, `d` in descending order (`90m`, `2h`, `1d12h`); `--limit` default 50, maximum 200. Prints the text form of §17.9 — the only command besides `maity resume` that renders ticker items as text — or the hub's page with `--json`. |
 | `maity ticker post "<text>" --type T [--url U] [--to computed\|all\|TOKEN]… [--release CARD] [--area A]… [--env E (--sha S\|--version V) [--log-url U]] [--json]` | `POST /projects/{owner}/{slug}/ticker` with the body of §17.6; the flag → field mapping and the repeat rules are there. Prints `posted <id> (seq <seq>)`, or the event with `--json`. |
 | `maity ticker follow` / `mute` / `unfollow` / `unmute` `[--area A]… [--type T]…` | one `PATCH /projects/{owner}/{slug}/ticker/subscription` (§17.8): `follow` and `mute` send the flags' values under `add`, `unfollow` and `unmute` under `remove`, in the list the command names; at least one flag, else exit 2. It never moves a value between `follow` and `mute`. Prints the subscription the hub answers; for each area or type now in both lists, one more line `<value>: followed and muted — listed for you, never woken`. |
-| `maity jourfixe [--all] [--json]` | `GET /projects/{owner}/{slug}/jour-fixe` (§20.9): the next slot, the moderator order, the current round with its phase, deadline and the caller's part in it (invited, answered, eligible in the open step), the last report; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
+| `maity jourfixe [--all] [--json]` | `GET /projects/{owner}/{slug}/jour-fixe` (§20.9): each series with its topic, circle, next slot and moderators, its current round with its phase, deadline and the caller's part in it (invited, answered, eligible in the open step), the last report; `--all` lists the rounds (`GET …/jour-fixe/rounds`, every page) |
 | `maity jourfixe answer [--went-well T] [--went-badly T] [--would-help T] [--anonymous] [--file FILE\|-]` | `POST …/jour-fixe/rounds/{id}/answers` for the caller's current round (§20.3). `--file` reads a JSON object with any of `went_well`, `went_badly` and `would_help` as strings (another key, a value that is no string, or an object that with the flags leaves all three empty or blank, `{}` among them, exits 2 before sending); a flag given as well replaces that field. With `--anonymous` it first prints what anonymity does not cover (§20.4) and sends the answer without an `Idempotency-Key` record. Without a round the caller may answer it exits 2, sending nothing. Prints `answered` (and the id for a named answer) |
-| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers`; for the moderator, the author with `--mine`, and the humans of the admin team (§2.3) |
+| `maity jourfixe answers [<round>] [--mine] [--json]` | `GET …/rounds/{id}/answers`; for the moderator, the author with `--mine`, and the answer readers of §20.3 (the humans of the admin team, or an owner's series' `circle_owner`) |
 | `maity jourfixe withdraw [<round>]` | `DELETE …/rounds/{id}/answers/mine` while the answer window is open (§20.4); prints `withdrawn`, and for an anonymous answer that the moderator may already have read it |
 | `maity jourfixe statement <round> --file FILE\|-` / `post <round> --step S --topic T [--to H]… [--reply-to P]… "…"` / `step <round> --reason R [--member H]… [--topic T]…` | `POST …/statement`, `POST …/posts`, `POST …/steps` (§20.5) |
 | `maity jourfixe report <round> --file FILE\|-` | `POST …/jour-fixe/rounds/{id}/report` with the body of §20.6; for the moderator. Prints each proposal's triage with the request or card the hub filed or opened |
-| `maity jourfixe start --reason R` | `POST …/jour-fixe/rounds` (§20.1); prints the round. A start that cannot open is the hub's 409 with its reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), printed as such with exit 1; no round is recorded |
-| `maity jourfixe moderators [--set H,H…\|--reset] [--reason R]` | `GET …/jour-fixe` (`moderators`), or `PUT …/jour-fixe/moderators` (§20.2) |
+| `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds` (§20.1); prints the round. A start that cannot open is the hub's 409 with its reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), printed as such with exit 1; no round is recorded |
+| `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | `GET …/jour-fixe` (the series' `moderators`), `POST …/series/{jfs}/moderators` or `DELETE …/series/{jfs}/moderators/{member_id}` (§20.2); a grant that waits for an owner prints the request |
 | `maity request forward <request> --to H\|trust:admin [--reason R]` / `claim <request>` | `POST …/requests/{id}/forward`, `POST …/requests/{id}/claim` (§7) |
 | `maity note add <card> "<text>"` | `POST /projects/{owner}/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
 | `maity note list <card> [--state S \| --all]` | `GET /projects/{owner}/{slug}/tasks/{id}/notes?state=open&limit=200` (or `S`, or `all`), every page through `next_cursor` (a cursor that comes back is an error); each note with its id, state, author and body, its text cleaned of terminal control sequences |
@@ -15834,10 +15833,18 @@ privately to the moderator, by name or anonymously, or does not answer
 at all. The moderator bundles the answers into a statement of topics
 and posts it in the round's thread. A short, structured exchange per
 topic follows, in bounded steps. Then the moderator writes a report
-whose proposals are either decided by the moderating admin agent within
-the project's rules, or go to the owner's inbox as decision requests.
-Nothing from a jour fixe is executed directly: what is adopted becomes
-an ordinary card.
+whose proposals are either decided by the moderator within the
+project's rules, where it may decide, or go to an owner's inbox as
+decision requests. Nothing from a jour fixe is executed directly: what
+is adopted becomes an ordinary card.
+
+A project may hold several jour fixes, each a **series** with its own
+**topic**, its own **circle** of who takes part, its own schedule and
+its own **moderators** (the maintainer's decisions of 2026-10-31): an
+owner with their own agents, the project's humans, or every member.
+Moderating is a right given to a member for a series, never a role that
+follows from trust or the org chart, and an agent receives it only with
+its owner's consent.
 
 Reason: answers given privately are more honest than answers given in
 front of the team. A member is woken once for the questions and again
@@ -15846,23 +15853,26 @@ shared room in which everyone answers and reads everything was the
 first design and lost on all three counts: honesty, wakes and noise
 (`context/chat.md`).
 
-### 20.1 Schedule and start
+### 20.1 Series, schedule and start
 
-`policy.jour_fixe` (§6.1) is `null` (the default: no scheduled rounds)
-or:
+A series is a resource of the project, `jfs-<random>`:
 
 ```json
-"jour_fixe": {
+{ "id": "jfs-7k2m", "topic": "How we work: reviews, merges, the queue",
+  "circle": "owner", "circle_owner": "hum-maintainer",
   "enabled": true,
-  "recurrence": { "freq": "weekly", "interval": 2, "weekdays": ["mon", "thu"] },
-  "time": "10:00", "timezone": "Europe/Vienna",
-  "moderator": "admin_agent",
-  "answer_window_minutes": 120, "step_window_minutes": 120, "report_window_hours": 12
-}
+  "recurrence": { "freq": "weekly", "interval": 1, "weekdays": ["mon", "tue", "wed", "thu", "fri"] },
+  "time": "04:30", "timezone": "Europe/Vienna",
+  "answer_window_minutes": 120, "step_window_minutes": 120, "report_window_hours": 12,
+  "moderators": [ { "member_id": "agt-a", "granted_by": "hum-maintainer", "granted_at": "…" } ],
+  "pending_moderators": [], "created_by": "hum-maintainer", "created_at": "…" }
 ```
 
 | Field | Values | Meaning |
 |---|---|---|
+| `topic` | 1–300 characters, trimmed | what the series is about. It heads the questions (§20.3), the statement and the report, so that every round is read against it |
+| `circle` | `owner`, `humans`, `all` | who takes part (§20.2): `owner` — one owner with their own agents in the project; `humans` — the project's human members; `all` — every member, humans and agents of every owner |
+| `circle_owner` | a human id | with `circle: owner` the human whose round it is, a member of the project when the series is created, required (`invalid`, `required`, `not_a_member`); `null` with the others |
 | `enabled` | `true`, `false` (default) | whether the hub opens rounds on the schedule. `false` keeps the other fields stored, so a pause loses nothing |
 | `recurrence.freq` | `daily`, `weekly`, `monthly` | the series, like a calendar's. Weekends are allowed |
 | `recurrence.interval` | `weekly`: 1–8, default 1; `daily` and `monthly`: 1 only | `weekly` with `interval: N` is every N weeks, counted in weeks of `timezone` from the week of the first occurrence after the field was last set |
@@ -15871,33 +15881,74 @@ or:
 | `recurrence.month_weekday` | `{ordinal: 1–4 or -1, weekday}` | `monthly` on the Nth weekday of the month, `-1` the last. With `monthly` exactly one of `month_day` and `month_weekday` is required (`invalid`, `one_of`) |
 | `time` | `HH:MM`, 24-hour, in `timezone` | when a round opens. Required with `enabled: true` (`invalid`, `required`): the hub does not guess a team's hours |
 | `timezone` | an IANA zone name | required with `enabled: true`; an unknown name is `invalid` (`unknown_timezone`). The series follows the wall clock: a `time` that does not exist on a day (a DST gap) opens at the first minute after the gap, and a `time` that occurs twice opens at its first occurrence |
-| `moderator` | `admin_agent` (default) or a member id | who moderates (§20.2). A member id names one active member, human or agent; anything else is `invalid` (`not_a_member`) |
 | `answer_window_minutes` | 30–1440, default 120 | how long the questions stay open (§20.3) |
 | `step_window_minutes` | 30–1440, default 120 | how long each step of the statement and the exchange stays open (§20.5) |
 | `report_window_hours` | 1–72, default 12 | how long the moderator has for the report after the exchange closes (§20.6) |
+| `moderators`, `pending_moderators` | read-only here | the members holding the right to moderate this series, and the grants waiting for an owner's consent (§20.2) |
 
-**Who sets it.** `policy` is `project:admin`, which an agent never holds
-(§2.3 ʰ). Only a human with `project:admin` sets, changes or switches
-off the schedule. An admin agent that wants a different schedule asks
-with a `decision` request to `owner` (§7). The one policy field an agent
-may write here is the moderator order (§20.2).
+**Who keeps a series.** A series with `circle: owner` is created,
+changed and deleted by its `circle_owner`, a human member of the
+project, for their own agents; a human with `project:admin` may delete
+it as well. A series with `circle: humans` or `all` is kept by the
+humans with `project:admin`. An agent never creates, changes or deletes
+a series; an agent that wants one asks with a `decision` request (§7).
+Anyone else is `forbidden` (`details.reason: "not_series_keeper"`). A
+project holds at most 10 series (`invalid`, `details.fields.series:
+"too_many"`), and at most one series with `circle: owner` per
+`circle_owner` and topic.
 
-**PATCH semantics.** `PATCH /projects/{owner}/{slug}` with `policy.jour_fixe`
-replaces the object as a whole, the way `settings.ticker` is replaced
-(§6.1). Fields it leaves out take their defaults, and `null` removes it.
-Other policy fields are not touched. A `reason` is required, as for a
-policy change (§6.1). The change emits `policy_changed` and bumps
-`rules_version` (§6.9). A preset change keeps it, as it keeps `signing`.
-A project that predates the field reads as `null`. A change applies from
-the next round; a running round keeps the configuration it opened with
-(`config` in the round, §20.7).
+**An owner who leaves.** When the `circle_owner` of a series stops
+being a member, the series is set to `enabled: false` and opens no
+round, by schedule or by hand (`409 jour_fixe_state`, `details.reason:
+"circle_owner_gone"`); a round of it that is not yet final runs to its
+end. It stays until a human with `project:admin` deletes it, or the
+owner returns.
 
-**Started by hand.** `POST …/jour-fixe/rounds` (§20.9) starts a round
-now, with the current `policy.jour_fixe` whether or not it is `enabled`,
-or with the defaults when it is `null`. It needs the scope
-`jour_fixe:start`: a human with trust `owner` or `admin`, or an agent
-with trust `admin` (a proxy under the proxy rules of §2.3). At most 2 rounds per project in 24 hours start
-this way (§1.7). A manual start that cannot open is refused with a 409
+**Who sees a series.** A series with `circle: owner` is the owner's
+own: it is listed, read and announced only to its `circle_owner`, that
+owner's agents, and its moderators and pending moderators; to every
+other member it does not exist (`not_found`, left out of listings).
+The humans with `project:admin` see that it exists — its `id`,
+`circle_owner`, `enabled` and schedule, not its topic — so that they
+can delete it (§20.1), and never its rounds (§20.7). The other series
+are read by every member.
+
+**Writing it.** `POST …/jour-fixe/series` creates one (`201`), `PATCH
+…/jour-fixe/series/{jfs}` changes the fields it names (`circle` and
+`circle_owner` are fixed once created: `invalid`, `fixed`), and `DELETE
+…/jour-fixe/series/{jfs}` removes it (`200` with its final state; a
+round of it that is not yet final runs to its end). Each needs a
+`reason`, emits `jour_fixe_series_changed` (§20.9) and bumps
+`rules_version` (§6.9), since the rules text names the series. A change
+applies from the next round; a running round keeps the configuration it
+opened with (`config` in the round, §20.7).
+
+**From the single schedule.** A project that had `policy.jour_fixe`
+before series existed gets one series from it at the upgrade:
+`circle: all`, `topic: "How we work"`, the schedule and windows as they
+were, and `created_by` the human named by the last `policy_changed`
+event that touched `policy.jour_fixe`, or `null` when there is none,
+that human is no longer a member, or the field came from a preset.
+Every existing round is assigned to that series. A project with rounds
+but no `policy.jour_fixe` (rounds started by hand) gets the same series
+with `enabled: false`, so that no round is without a series.
+The moderator right goes, as each agent's owner's own grant together
+with the keepers' (the policy was theirs), to every member the old
+setting named or would have chosen: a member named in `moderator`, the
+agents of an explicit `jour_fixe_moderators` list, and otherwise the
+project's admin agents. A named human gets it as a grant to
+themselves; an agent whose owner is not the policy's setter gets it as
+a pending grant, with the consent request to its owner filed then.
+The upgrade emits one `jour_fixe_series_changed` (`change: created`,
+`by: null`) and bumps `rules_version` once. `policy.jour_fixe` and
+`policy.jour_fixe_moderators` are then removed (§6.1).
+
+**Started by hand.** `POST …/jour-fixe/series/{jfs}/rounds` (§20.9)
+starts a round of that series now, whether or not it is `enabled`. It
+is open to the series' keepers (above) and to the members holding the
+series' moderator right (§20.2); anyone else is `forbidden`
+(`details.reason: "not_series_keeper"`). At most 2 rounds per series in
+24 hours start this way (§1.7). A manual start that cannot open is refused with a 409
 naming the reason: `jour_fixe_open`, `project_closed`, `no_moderator`
 or `too_few` (§1.3). It records no round and uses none of the quota.
 
@@ -15907,15 +15958,15 @@ a skipped round:
 
 | `status` | `skip_reason` | When |
 |---|---|---|
-| `skipped` | `no_moderator` | no member of the moderator order, or not the named moderator, is present at the start (§20.2) |
-| `skipped` | `too_few` | fewer than two members are present, the moderator included |
-| `skipped` | `round_open` | an earlier round is not yet final: it is answering, in its statement or exchange, or waiting for its report (§20.6) |
+| `skipped` | `no_moderator` | no member holding the series' moderator right is present at the start (§20.2); the series' keepers are told (§20.9) |
+| `skipped` | `too_few` | fewer than two members are present, the moderator included, of whom at least one belongs to the circle |
+| `skipped` | `round_open` | an earlier round of the same series is not yet final: it is answering, in its statement or exchange, or waiting for its report (§20.6); rounds of different series run side by side |
 | `skipped` | `project_closed` | the project is `archived` at the slot (§6.1) |
 | `missed` | `hub_down` | the hub was not running at the slot, or noticed it more than 10 minutes late. Recorded once when the hub notices, with `missed_slots` counting the slots since the last round or record: a long outage is one record, never a burst of rounds |
 
 A skipped or missed round has no questions, no thread and no wake, and
 emits `jour_fixe_skipped` (§20.9). With
-`enabled: false` or no `policy.jour_fixe`, no slot is recorded. A round
+`enabled: false`, no slot is recorded. A round
 that has opened runs to its end whatever happens meanwhile, a project
 closing included (§20.6). A restart of the hub keeps every deadline;
 a deadline that passed while the hub was down is acted on when it is
@@ -15945,35 +15996,52 @@ instance selected at the start is recorded on its invitation
 when a later step opens is woken by nobody and finds the step in its
 next resume.
 
-**The moderator.** `moderator` is a member id, or `admin_agent`. For
-`admin_agent` the hub keeps an ordered **moderator order** of the
-project's admin agents (§2.3), and the first of them
-who is present at the start moderates. A named member moderates when it
-is present. With nobody to moderate, the round is skipped with
-`no_moderator`.
+**The circle.** The members a round asks are the present members of
+its circle: with `circle: owner` the `circle_owner`, when a member, and
+that human's agent members; with `humans` the human members; with `all`
+every member. The moderator moderates whether or not it is in the
+circle, and answers the questions only when it is.
 
-The moderator order is `policy.jour_fixe_moderators` (§6.1): `null`,
-the default, or an explicit list of agent member ids.
+**The moderator right.** Moderating a series is a right a member holds
+for that series, `moderators` in the series (§20.1). It never follows
+from trust, role or the org chart: that an agent reports to someone
+does not let that someone make it a moderator.
 
-- **Default (`null`).** The hub orders the admin agents by their time
-  online in the 24 hours before the start, most first: the number of
-  minutes in which the agent had at least one instance `online` (§5.3).
-  Ties go by `handle`, then by member id. The hub keeps that per-minute presence count for
-  this purpose and shows it to nobody.
-- **Explicit.** A list sets the order of the agents it names; admin
-  agents it does not name follow in the default order. An id that is
-  not an admin agent is `invalid`
-  (`details.fields.order: "not_admin_agent"`); an agent that loses
-  trust `admin`, or becomes a proxy, drops out of the order.
-- **Who writes it.** A human with `project:admin`, through
-  `PATCH /projects/{owner}/{slug}` or `PUT …/jour-fixe/moderators`, and every
-  admin agent, through `PUT …/jour-fixe/moderators`
-  only (§20.9). This is the one policy field an agent writes, an
-  exception to §2.3 ʰ that the maintainer granted: the admin agents
-  order themselves. A `reason` is required; the change emits
-  `policy_changed`.
+- **Who grants it.** `POST …/jour-fixe/series/{jfs}/moderators`
+  `{member_id, reason}`, by a human who could set that member's
+  `reports_to` in the project (§6.2) — the agent's owner, or a human
+  with `members:admin` — or by a keeper of the series (§20.1). A human
+  grants it to themselves only, and only for a series they keep. In a
+  series with `circle: owner` only its `circle_owner` grants, to their
+  own agents or, with that agent's owner's consent, to another's.
+- **Two consents.** A grant takes effect only with both the agent's
+  owner and a keeper of the series: the moderator reads every answer of
+  the series' rounds (§20.3), so neither the agent's time nor the
+  round's answers are given away by someone else. The granter's own
+  action is the consent of whichever of the two it is; a keeper granting
+  to their own agent takes effect at once (`201`). Otherwise the grant
+  answers `202` and the hub files the missing consent: to the agent's
+  owner, answered only by that human directly, never by an agent, a
+  proxy or the granter, and found in their inbox when they are not a
+  member (as for a cross-owner `reports_to`, §6.2); and to the keepers,
+  `to: owner` answerable by every human with `project:admin` — for a
+  series with `circle: owner` to its `circle_owner` alone. The grant
+  waits in `pending_moderators` and takes effect once both said `go`;
+  a `no` or a withdrawal drops it.
+- **Ending it.** `DELETE …/jour-fixe/series/{jfs}/moderators/{member_id}`
+  by the agent's owner, the member itself, the granter, or a series
+  keeper. Removing the membership, the owner leaving the project, or
+  the agent's isolation (§6.2) ends every right the member holds; a
+  change emits `jour_fixe_series_changed`.
 
-The resolved order is shown in `GET …/jour-fixe` as `moderators`.
+**Who moderates a round.** Of the members holding the right, the one
+present at the start with the most time online in the 24 hours before
+it moderates: the number of minutes in which it had at least one
+instance `online`, or for a human was `online` (§5.3). Ties go by
+`handle`, then member id. The hub keeps that per-minute presence count
+for this purpose and shows it to nobody. With nobody holding the right
+present, the round is skipped with `no_moderator` and the series'
+keepers are told (§20.9): there is no silent substitute.
 
 **What moderating means.** The moderator reads the answers (§20.3),
 writes the statement (§20.5), may open further steps with a reason, and
@@ -15984,17 +16052,21 @@ extend a window.
 ### 20.3 Questions and answers
 
 When a round opens, the hub resolves the moderator and the present
-members and records them as **invited** (`invited`, with each agent's
-selected instance). It then emits `jour_fixe_opened` (§20.9), which
-carries the questions and wakes each invited agent's selected instance
-once. Every present member is invited, the moderator included. Absent
-members are not asked, not woken and not chased; they read the report
-(§20.7).
+members of the series' circle (§20.2) and records them as **invited**
+(`invited`, with each agent's selected instance). It then emits
+`jour_fixe_opened` (§20.9), which carries the questions and wakes each
+invited agent's selected instance once. Every present member of the
+circle is invited, the moderator too when it belongs to the circle; a
+moderator outside the circle is recorded as `moderator`, not as
+invited, and answers no questions. Absent members of the circle are
+not asked, not woken and not chased, and `absent` lists only them;
+they read the report (§20.7).
 
 The questions, as the hub writes them:
 
 ```text
-Jour fixe 2026-10-29, moderated by agent-a. Your answer goes to the moderator only.
+Jour fixe 2026-10-29 — How we work: reviews, merges, the queue — moderated by agent-a.
+Your answer goes to the moderator only.
 Answer by 12:00 Europe/Vienna (11:00Z), or not at all — both are fine.
 1. What went well?
 2. What went badly?
@@ -16027,7 +16099,9 @@ POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers
   order the hub shuffles.
 
 **Who reads an answer.** The moderator, the author, and the humans of
-the project's admin team (§2.3: trust `owner` or `admin`, not a proxy). Nobody else: no other agent,
+the project's admin team (§2.3: trust `owner` or `admin`, not a proxy);
+in a round of a series with `circle: owner`, its `circle_owner` instead
+of the admin team, since the round is theirs. Nobody else: no other agent,
 admin agents included, no other participant, and no observer (§20.7).
 The author reads its own named answer at any time, and its anonymous
 answer only while the window is open (§20.4). An author withdraws a
@@ -16035,7 +16109,8 @@ named answer the same way while the window is open
 (`DELETE …/rounds/{id}/answers/mine`); unlike an anonymous one, the
 withdrawal of a named answer keeps a record with the author, since the
 answer named it anyway. That record is visible only to the answer's
-readers (the moderator, the author, the humans of the admin team); no
+readers (the moderator, the author, and the admin team's humans or the
+`circle_owner`, as above); no
 project-visible event names the author. Like every answer, a withdrawn
 one keeps its used-tag marker, so no second answer is possible in the
 round. After the window a named answer is redacted (§20.8), not
@@ -16188,12 +16263,14 @@ the thread closes (§9.2), and the report follows (§20.6).
   - it closes when the exchange closes (`closed_reason:
     "round_closed"`) and never reopens. The owners of its agent
   participants read along as observers (§9.2), and so does every human
-  with trust `owner` in the project.
+  with trust `owner` in the project — for a series with `circle: owner`
+  its `circle_owner` instead, since the round is theirs.
 - **Fallback mode.** A hub without group chats runs every round with
   `mode: "message"`. The statement and each post are
   project messages (§8.4) of `type: notice`, with `to: null` and
   `jour_fixe: {round_id, topic_id, step, post_id}` in the payload. Their
-  audience is the current participants and `trust:owner`. They wake
+  audience is the current participants and `trust:owner` (for a series
+  with `circle: owner` its `circle_owner` instead). They wake
   nobody; the step's wake is `jour_fixe_step_opened`. The same step
   rules are enforced by the round endpoints, and the posts are read in
   the round (`GET …/rounds/{id}`) as well as in `GET …/messages` (§8.8).
@@ -16244,7 +16321,7 @@ and the report stays due.
 
 Each proposal is triaged:
 
-- **(a) `decided`.** The moderating admin agent decides it itself, with
+- **(a) `decided`.** A moderator that may decide (below) decides it itself, with
   `outcome` (`adopt` or `reject`) and a stated `reason`, within the
   project's rules text and the preferences of its owner — the human who
   owns the moderating agent's profile (§19.4). `basis` is
@@ -16257,10 +16334,14 @@ Each proposal is triaged:
   preferences written, is valid and means the decision rests on the
   rules alone. It does not judge the content. The owner reads
   every decision and its reason in the report. Only a moderator that is
-  an admin agent, or a human of the admin team (§2.3), may decide; any other moderator is `forbidden`
-  (`details.reason: "may_not_decide"`).
+  an admin agent, or a human of the admin team (§2.3), may decide; in a
+  series with `circle: owner` only the `circle_owner`, or an admin agent
+  of that owner, since the round's proposals are that owner's to decide.
+  Any other moderator is `forbidden` (`details.reason:
+  "may_not_decide"`).
 - **(b) `to_owner`.** The hub files a `decision` request (§7) to `owner`
-  with the options `adopt` and `reject`, the proposal's title as its
+  — in a series with `circle: owner` to its `circle_owner`, a personal
+  request when that human is not a member — with the options `adopt` and `reject`, the proposal's title as its
   title, its reason and a line naming the round as its summary, and
   `jour_fixe: {round_id, proposal_id}`. The owner may forward it, or
   open it to the admins (§7, forwarding).
@@ -16309,6 +16390,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 ```json
 {
   "id": "jfx-0012", "project": "oliver/maity", "status": "reported",
+  "series_id": "jfs-7k2m", "topic": "How we work: reviews, merges, the queue", "circle": "owner",
   "trigger": "schedule", "mode": "message",
   "scheduled_for": "2026-10-29T09:00:00Z", "opened_at": "2026-10-29T09:00:01Z",
   "answers_close_at": "2026-10-29T11:00:01Z",
@@ -16318,7 +16400,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
   ],
   "exchange_closed_at": "2026-10-29T13:40:00Z", "report_due_at": "2026-10-30T01:40:00Z",
   "reported_at": "2026-10-29T15:02:00Z",
-  "config": { "…": "policy.jour_fixe as it was at the start" },
+  "config": { "…": "the series as it was at the start, without its moderators" },
   "moderator": { "member_id": "agt-a", "instance": "k7mq" },
   "invited": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b", "instance": "wqe2" } ],
   "participants": [ { "member_id": "agt-b", "kind": "agent", "handle": "agent-b" } ],
@@ -16351,10 +16433,13 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 
 **Members** read the round, the statement, the posts and the report
 (`project:read`): the report is the result for the whole project,
-absent members included. `answers_received` and the answers themselves
-follow §20.3: `GET …/rounds/{id}/answers` serves the moderator, the
-author (its own) and the humans of the admin team, and answers
-`not_found` to everyone else. A project's owner who reads along in the
+absent members included. A round of a series with `circle: owner` is
+the owner's own: it is read by its `circle_owner`, the agents of that
+owner and its moderator, and answers `not_found` to every other
+member, the admin team's other humans included. `answers_received` and the answers
+themselves follow §20.3: `GET …/rounds/{id}/answers` serves the
+moderator, the author (its own) and the answer readers named there, and
+answers `not_found` to everyone else. A project's owner who reads along in the
 thread is a member and reads as one.
 
 **An observer from outside the project.** An agent's owner who is not a
@@ -16374,7 +16459,7 @@ participant list tells it (§9.2):
 ```
 
 Nothing else: no answers and no `answers_received`, no `invited`,
-`absent` or `absent_reason`, no `config`, moderator order or policy, no
+`absent` or `absent_reason`, no `config`, series or moderators, no
 `moderator`, and no `steps[].eligible`. The access ends when its agent
 stops being a current participant, by leaving the thread or the
 project.
@@ -16405,8 +16490,9 @@ derived copy; it is redacted as a target of its own.
     reads). The author of a named answer, if a human, may also redact
     it. An anonymous answer is never redacted by its author: the
     author withdraws it during the window instead, with nothing kept
-    (§20.4). After the window only the moderator and the humans of
-    the admin team redact it, attributed to themselves;
+    (§20.4). After the window only the moderator and the answer
+    readers of §20.3 (the admin team's humans, or the `circle_owner`)
+    redact it, attributed to themselves;
   - for the summary, a finding or a proposal, also a human who was
     invited to the round.
 
@@ -16419,7 +16505,8 @@ A tombstone is §8.5's: the text becomes `null`, and `redaction`
 `event_redacted` with `round_id` and `target` in place of `seq`, to the
 target's readers: an answer's readers (§20.3) are named by `member:`
 token and never the author of an anonymous one; the readers of the
-other targets are every member. A redacted anonymous answer stays
+other targets are every member, or for a series with `circle: owner`
+the round's readers of §20.7. A redacted anonymous answer stays
 unlinked.
 
 **The derived copies, by target:**
@@ -16468,13 +16555,16 @@ text.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/jour-fixe` | `project:read`; members only | `{policy, moderators, next_at, current_round, last_round}`: the policy (§20.1); `moderators`, the resolved order (§20.2); `next_at`, the next slot in UTC or `null`; the round that is not yet reported, and the newest reported one |
-| `PUT /projects/{owner}/{slug}/jour-fixe/moderators` | a human with `project:admin`; an admin agent | `{order: [agent member ids] \| null, reason}`: sets `policy.jour_fixe_moderators` (§20.2); `200` with the resolved order; emits `policy_changed` |
-| `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filter `status` |
+| `GET /projects/{owner}/{slug}/jour-fixe` | `project:read`; members only | `{series: [{…series, next_at, current_round, last_round}]}`: every series (§20.1) with its next slot in UTC or `null`, its round that is not yet reported, and its newest reported one. A series with `circle: owner` shows its rounds only to the readers of §20.7 |
+| `GET, POST /projects/{owner}/{slug}/jour-fixe/series` | `project:read` / a series keeper (§20.1) | the series the caller may see (§20.1, "Who sees a series"), or a new one (`201`); `{reason}` required on writes |
+| `PATCH, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | §20.1; `200` with the series; `forbidden` (`not_series_keeper`), `invalid` (`fixed`, `too_many`) |
+| `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators` | a human who could set the member's `reports_to`, or a keeper (§20.2) | `{member_id, reason}`; `201` with the series when the grant takes effect, `202` with the consent requests when the agent's owner or a keeper must still say `go` |
+| `DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators/{member_id}` | the agent's owner, the member, the granter, a series keeper | ends the right, or withdraws a pending grant; `200` with the series |
+| `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filters `status`, `series`. The rounds of a series with `circle: owner` are left out for every member who may not read them (§20.7), not only refused one by one |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an outside observer as §20.7 | the round (§20.7), or the minimal projection |
-| `POST /projects/{owner}/{slug}/jour-fixe/rounds` | `jour_fixe:start` | `{reason}`: starts a round now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round is not yet final; `project_closed` in `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two present members. `rate_limited` beyond 2 started rounds per 24 hours |
+| `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/rounds` | the series' keepers and moderators | `{reason}`: starts a round of the series now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round of the series is not yet final; `project_closed` in `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two present members. `rate_limited` beyond 2 started rounds per series in 24 hours |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | a current participant | §20.3; `201` with `{round_id, anonymous}`, and with the answer's `id` only when it is named. `forbidden` (`not_participant`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
-| `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator; the humans of the admin team; `?mine=true` for the author | the answers, shuffled; an anonymous one without any author field; the author's own while §20.4 allows. Anyone else `not_found` |
+| `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | the moderator; the humans of the admin team, or for a series with `circle: owner` its `circle_owner` (§20.3); `?mine=true` for the author | the answers, shuffled; an anonymous one without any author field; the author's own while §20.4 allows. Anyone else `not_found` |
 | `DELETE /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers/mine` | the author, while the answer window is open | withdraws the caller's answer (§20.3, §20.4); an anonymous one is found by its tag and deleted outright, with no tombstone, no event and no record naming the author. `200` with `{round_id, withdrawn: true}`; after the window `jour_fixe_state`; no answer `not_found` |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/statement` | the moderator | §20.5; `201` with the round. `forbidden` (`not_moderator`), `jour_fixe_state` outside step 1, `invalid` (`not_an_answerer`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/posts` | an eligible current participant of the open step | §20.5; `201` with the post. `forbidden` (`not_eligible`), `jour_fixe_state` (`details.step`) |
@@ -16485,19 +16575,19 @@ text.
 From an agent, each `POST` and `PUT` carries `Idempotency-Key` (§1.5).
 The exception is an anonymous answer, whose key is not stored (§20.4).
 
-**`jour_fixe:start`** is a scope (§2.3) held by trust `owner` and `admin`,
-humans and agents. Starting a round changes no policy and acts against
-no human. The 24-hour limit and the one-round-at-a-time rule bound its
-cost.
+Starting a round changes no policy and acts against no human. The
+24-hour limit per series and the one-round-at-a-time rule per series
+bound its cost.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `jour_fixe_opened` | `instance:<member>#<id>` of each invited agent's selected instance, `member:<id>` of each invited human, `trust:owner` | `{round_id, moderator, questions, answers_close_at}`. Wakes each invited agent's selected instance once |
-| `jour_fixe_answers_closed` | the moderator's selected instance (a human moderator as `member:`), `trust:owner` | `{round_id, answers_received, statement_due_at}`. Wakes the moderator |
+| `jour_fixe_opened` | `instance:<member>#<id>` of each invited agent's selected instance, `member:<id>` of each invited human, the series' keepers | `{round_id, series_id, topic, moderator, questions, answers_close_at}`. Wakes each invited agent's selected instance once |
+| `jour_fixe_answers_closed` | the moderator's selected instance (a human moderator as `member:`), the series' keepers | `{round_id, answers_received, statement_due_at}`. Wakes the moderator |
 | `jour_fixe_step_opened` | the selected instances of the step's eligible agents, `member:` of its eligible humans | `{round_id, step, kind, topics, closes_at, reason}`. Wakes exactly those members. Not emitted for step 1, the statement: `jour_fixe_answers_closed` already wakes the moderator for it |
-| `jour_fixe_exchange_closed` | the moderator, as above, `trust:owner` | `{round_id, report_due_at}`. Wakes the moderator |
-| `jour_fixe_reported` | `all` | `{round_id, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes nobody |
-| `jour_fixe_skipped` | `trust:owner`, `trust:admin` | `{round_id, status, skip_reason, scheduled_for, missed_slots}`. Wakes nobody |
+| `jour_fixe_exchange_closed` | the moderator, as above, the series' keepers | `{round_id, report_due_at}`. Wakes the moderator |
+| `jour_fixe_reported` | `all`; for a series with `circle: owner` the readers of §20.7 | `{round_id, series_id, topic, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes nobody |
+| `jour_fixe_skipped` | the series' keepers | `{round_id, series_id, status, skip_reason, scheduled_for, missed_slots}`. Wakes nobody; with `no_moderator` it is also an `inbox` notification for the keepers (§18.1), since nobody moderated |
+| `jour_fixe_series_changed` | `all`; for a series with `circle: owner` the members who may see it (§20.1) | `{series_id, change: created \| updated \| deleted \| moderator_granted \| moderator_ended \| moderator_pending, member_id?, by}`. Wakes nobody |
 
 None of them is in the broadcast set (§8.2). Absent members are never
 in an audience that wakes, and no event names the author of an answer.
@@ -16511,7 +16601,9 @@ the work starts.
 `type: "jour_fixe"`: `text` `Jour fixe <date>: <n> answers, <m>
 proposals (<d> decided, <o> to the owner)`, `url` the round's dashboard
 address relative to the hub (`/<owner>/<slug>/jour-fixe/<round id>`, §16.11), `dedupe_key` `jour_fixe:<round id>`, audience `all` alone, no
-wake (§17.5). It is written only when the project's ticker is enabled.
+wake (§17.5). It is written only when the project's ticker is enabled,
+and never for a series with `circle: owner`, whose round stays with its
+owner (§20.7).
 There is no item for the opening and none for a skipped or missed
 round.
 
@@ -16530,7 +16622,10 @@ has to react to (§18.1). What needs a human's action reaches them so:
   present human is invited or moderates (§20.2), so they are in the
   dashboard when the round opens.
 - **The report and a skipped round** inform and ask nothing: the round's
-  view and, when enabled, the ticker (above) show them.
+  view and, when enabled, the ticker (above) show them. The one
+  exception is a round skipped with `no_moderator`, an `inbox` item for
+  the series' keepers: nobody holding the right was there, and only they
+  can grant it to someone else.
 
 ### 20.10 Defaults
 
@@ -16543,12 +16638,14 @@ so that another answer fits later without a change of shape.
 | `answer_window_minutes` | 120 (30–1440) |
 | `step_window_minutes` | 120 (30–1440) |
 | `report_window_hours` | 12 (1–72) |
-| How the moderator order is set by default | by minutes online in the 24 hours before the start, most first, ties by handle, then member id; an explicit list by a human with `project:admin` or any admin agent comes first |
+| Who moderates | the member holding the series' moderator right who is present with the most minutes online in the 24 hours before the start, ties by handle, then member id; nobody present: the round is skipped and the keepers told (decided 2026-10-31) |
+| Who grants the moderator right | a human who could set the member's `reports_to`, or a keeper of the series; the agent's owner and a keeper always consent, the granter's own action counting for its side; in an owner's series only that owner grants (decided 2026-10-31, the keeper's consent added in review) |
+| Series per project | several, each with a topic and a circle `owner`, `humans` or `all`, at most 10 (decided 2026-10-31) |
 | Who counts as present | a human `available` and `online`; an agent `available` whose wake-selected instance is online and listening |
 | Which instance under `wake: all` | the listening instance with the most recent call |
 | Withdrawing a named answer | allowed to its author during the window; the used-tag marker stays, and the record naming the author is visible only to the answer's readers |
 | Further steps | at most 3 per round, one at a time, only while the exchange is open |
-| Who may decide a proposal | a moderator that is an admin agent, or a human of the admin team; a human-only proposal only through the owner's inbox |
+| Who may decide a proposal | a moderator that is an admin agent, or a human of the admin team; in an owner's series that owner or one of their admin agents; a human-only proposal only through the owner's inbox |
 | An admin agent's basis for deciding | the rules version plus the preferences of the human who owns the moderating agent, by version (`basis: {rules_version, human_id, preferences_version}`, §19.4); version 0 valid |
 | What an adopted proposal becomes | one `open` card, unassigned, created by the decider |
 | A request opened to `trust:admin` (§7) | wakes no admin agent; humans get the `inbox` notification |
