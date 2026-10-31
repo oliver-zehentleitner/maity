@@ -273,3 +273,20 @@ def test_the_no_moderator_item_goes_with_its_series(
         headers={"X-CSRF-Token": owner.csrf},
     )
     assert items() == []  # §18.1: dropped once the series cannot be read
+
+
+def test_a_replayed_grant_names_the_same_consent_requests(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """dzse at #947: a replay of the `202` names that grant's requests, not another's."""
+    friend = _human(make_client, migrated, "friend", "member")
+    first, second = flow.agent(make_client, friend), flow.agent(make_client, friend)
+    sid = ensure_series(owner)
+    assert grant(owner, sid, first.id).status_code == 202  # another pending grant beside it
+    headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "jf-grant-replay-1"}
+    path = f"/api/v1{BASE}/jour-fixe/series/{sid}/moderators"
+    body = {"member_id": second.id, "reason": "t"}
+    original = owner.client.post(path, json=body, headers=headers)
+    replayed = owner.client.post(path, json=body, headers=headers)
+    assert original.status_code == replayed.status_code == 202, replayed.text
+    assert replayed.json()["requests"] == original.json()["requests"]

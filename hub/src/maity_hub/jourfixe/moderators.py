@@ -388,6 +388,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     row = _row(conn, proposal["series_id"], proposal["membership_id"])
     if row is None or row.state != "pending":
         return
+    if getattr(row, f"{proposal['side']}_request_id") != s.request.id:
+        return  # a request of an earlier grant of the same member counts for no later one
     series = conn.execute(
         select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == proposal["series_id"])
     ).first()

@@ -218,14 +218,24 @@ idempotency.LOADERS["jour_fixe_series"] = _replay_series
 
 
 def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
-    """A replayed `202`: the series as it stands now, and the grant's consent requests."""
+    """A replayed `202`: the series as it stands now, and that grant's open consent requests
+    (dzse at #947), for the member the original body named."""
+    import json
+
     row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
-    ids = [
-        r.owner_request_id or r.keeper_request_id
-        for r in series.grants(conn, series_id)
-        if r.state == "pending"
-    ]
-    return {"series": series.view(conn, row), "requests": [i for i in ids if i]}
+    body = json.loads(request.scope.get("state", {}).get("body") or b"{}")
+    member_id = body.get("member_id")
+    ids: list[str] = []
+    for grant_row in series.grants(conn, series_id):
+        if member_id not in (grant_row.agent_id, grant_row.human_id):
+            continue
+        for request_id in (grant_row.owner_request_id, grant_row.keeper_request_id):
+            status = conn.execute(
+                select(t.request.c.status).where(t.request.c.id == request_id)
+            ).scalar()
+            if status == "open":
+                ids.append(request_id)
+    return {"series": series.view(conn, row), "requests": ids}
 
 
 idempotency.LOADERS["jour_fixe_grant"] = _replay_grant
