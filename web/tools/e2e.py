@@ -2361,7 +2361,11 @@ def site_json_step(run: Run, page: Page) -> None:
     for key, value in template["legal"].items():
         assert out["legal"][key]["languages"] == value["languages"], f"legal {key} differs after the round trip"
     assert "registration" not in template, "the template carries a registration part"
-    assert out.get("registration") == before.get("registration"), "registration changed although the file has none"
+    # Registration as it was; only `terms` may leave the export: with the terms page saved and no
+    # value of its own, the hub takes it from the legal pages, which the export never carries.
+    reg_before, reg_after = before.get("registration", {}), out.get("registration", {})
+    assert all(reg_before.get(k) == v for k, v in reg_after.items()), f"registration changed: {reg_before} -> {reg_after}"
+    assert set(reg_before) - set(reg_after) <= {"terms"}, f"registration lost fields: {reg_before} -> {reg_after}"
     no_problems(run, "whole site JSON")
 
 
