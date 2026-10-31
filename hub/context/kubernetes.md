@@ -334,3 +334,27 @@ listing it before the volume is emptied.
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
 
+
+## Production nodes take security patches at once; a short interruption is the price
+
+**Id:** 95a51990-ac94-4fbf-96ea-a7edbbf5aba7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-31, on the cluster's update policy for the production environment
+**Revisit when:** the hub runs as several pods with a disruption budget, so that a node can be drained without anyone noticing
+
+The cluster's update policy for production is the strictest one offered: patch versions of Kubernetes and the nodes are applied as soon as
+they are released, and a node may be unavailable for a few minutes while it is replaced. The other offered policy tries to avoid
+interruptions and only reports it when it cannot; "do not update" was never an option.
+
+**Reason:** exploits for a published vulnerability circulate within hours, and with automated tooling the time between a disclosure and an
+attack is short; being patched quickly is the best defence a node has against a flaw that lets someone take over the machine. The hub is one
+pod today (`Recreate`), so every update of its node interrupts it for a minute or two under either policy: the policy that avoids interruptions
+cannot deliver that here, and it does not say what it does with a node it cannot update without one. Waiting for a quiet moment is therefore
+not available, and an unpatched node is the worse state.
+
+**Rejected alternatives:**
+- The policy that avoids interruptions and reports when it cannot: it would help once several hub pods and a disruption budget exist, and
+  it is the choice to revisit then; today it leaves open whether the node waits unpatched.
+- Not updating: no security patches for a service on the internet.
