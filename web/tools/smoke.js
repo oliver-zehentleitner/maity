@@ -7909,7 +7909,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
       "landing JSON: Save saves the imported draft, as one typed by hand");
-    // A body without a footer (as landing-v3-complete.json, #808's review): the editor's footer stays, as a PATCH keeps the stored one.
+    // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);
     await jsLoad();
@@ -7940,18 +7940,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
     await leSave();
     // The prepared landing V3 itself (tsk-k7pwrzs8vb8k, tools/landing-v3-complete.json): loaded, checked without a refusal,
-    // every section of both languages in the editor, the footer kept; saved as it is.
+    // every section of both languages in the editor, its own footer taken; saved as it is.
     const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/landing-v3-complete.json"), "utf8"));
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
     const v3Patches = lePatches.length;
     expect(text(main).includes("Loaded into the editor and checked by the hub") && leSections().length === v3.pages[v3.default_language].sections.length
-      && byId("lp-footer-operator").value === "Maintainer, Austria" && lePatches.length === v3Patches,
+      && byId("lp-footer-operator").value === v3.footer.operator && lePatches.length === v3Patches,
       "landing JSON: the prepared V3 file loads, the hub's check refuses nothing, its sections are in the editor, nothing saved yet");
     await leSave();
     const v3Saved = lePatches[lePatches.length - 1][1];
     expect(text(main).includes("Saved. Visitors see it within a minute.") && Object.keys(v3Saved.pages).sort().join() === Object.keys(v3.pages).sort().join()
-      && v3Saved.footer.operator === "Maintainer, Austria", "landing JSON: the V3 file saved with both languages and the footer kept");
+      && JSON.stringify(v3Saved.footer) === JSON.stringify(v3.footer), "landing JSON: the V3 file saved with both languages and its footer");
     // A type that is a key every object inherits is no section type (#808): the hub refuses it, the editor draws it as one it keeps.
     const ctorPatches = lePatches.length;
     byId("lp-json").value = JSON.stringify({ default_language: "en", pages: { en: { title: "Ctor", description: "x", sections: [{ type: "constructor", enabled: true }] } } });
