@@ -13027,7 +13027,7 @@ and its existence are theirs.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `public_page` | `on`, `off` | whether the page exists. `POST /projects` takes it (default `on`); the default is `off` when the `repository` given in the same call is private by the hub's first look, or one the hub cannot read (§11.4). The dashboard's create form shows the choice as "Private", checked for such a repository, unchecked otherwise. A project created before 2026-10-31 keeps its value |
+| `public_page` | `on`, `off` | whether the page exists. `POST /projects` takes it (default `on`), and the hub decides once the project exists: when the `repository` given in the same call is private by the hub's first look, or one the hub cannot read (§11.4), the project is created with `off` whatever the call sent, so no creation publishes what the creator could not see the hub see. The `201` carries the value set; turning it on afterwards is a `PATCH` by the namespace owner. The dashboard's create form shows "Private" (unchecked) and, under the repository field, that a private repository keeps the project private; it sends `public_page: "off"` only when "Private" is checked and otherwise leaves the field out. A project created before 2026-10-31 keeps its value |
 | `public_about` | `null` or Markdown, at most 4 KiB | the page's text, under the landing page's Markdown rules (§16.7) |
 
 The page shows the project's `name` and `full_name`, `public_about`,
