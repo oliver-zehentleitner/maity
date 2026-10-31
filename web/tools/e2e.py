@@ -2338,6 +2338,9 @@ def site_json_step(run: Run, page: Page) -> None:
     section = page.locator("section.admin-section[aria-label='Import or export everything']")
     io = section.locator("details.json-io")
     io.locator("summary").click()
+    # The template carries no registration: what the instance has stays.
+    io.get_by_role("button", name="Export", exact=True).click()
+    before = json.loads(page.locator("#site-json").input_value())
     page.locator("#site-json").fill(json.dumps(template))
     io.get_by_role("button", name="Check the file", exact=True).click()
     expect(section.locator("li.site-part")).to_have_count(3)
@@ -2351,8 +2354,8 @@ def site_json_step(run: Run, page: Page) -> None:
     assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
     for key, value in template["legal"].items():
         assert out["legal"][key]["languages"] == value["languages"], f"legal {key} differs after the round trip"
-    for key, value in out["registration"].items():
-        assert value == template["registration"][key], f"registration {key}: {value!r} != {template['registration'][key]!r}"
+    assert "registration" not in template, "the template carries a registration part"
+    assert out.get("registration") == before.get("registration"), "registration changed although the file has none"
     no_problems(run, "whole site JSON")
 
 

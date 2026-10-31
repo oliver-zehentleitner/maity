@@ -8331,6 +8331,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8"));
     let siNow = await SI.readNow();
     const siT = await SI.check(template, siNow);
+    expect(!("registration" in template) && siT.parts && siT.parts.registration.state === "missing",
+      "site: the template carries no registration, so importing it leaves the instance's own as it is");
     expect(!siT.refused && Object.values(siT.parts).every((x) => x.state !== "refused"),
       "site: the template in the repository checks without a refusal " + JSON.stringify(siT.refused || Object.fromEntries(Object.entries(siT.parts).map(([k, x]) => [k, x.state + (x.words ? ": " + x.words : "")]))));
     const siSame = await SI.check(JSON.parse(JSON.stringify(SI.bundleOf(siNow))), siNow);
@@ -8360,7 +8362,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siConfirm = win.confirm; win.confirm = () => true;
     btn(siBox().querySelector("details.json-io"), "Check the file").click(); for (let k = 0; k < 10; k++) await tick();
     const siParts = () => siBox().querySelectorAll("li.site-part").map((li) => li.getAttribute("data-part") + ":" + li.className.split(" ").find((c) => c.startsWith("site-") && c !== "site-part"));
-    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-changes", "legal:site-changes", "registration:site-changes"]) || siParts().every((x) => !x.endsWith("site-refused")),
+    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-changes", "legal:site-changes", "registration:site-missing"]) || siParts().every((x) => !x.endsWith("site-refused")),
       "site: Check shows each part's state " + JSON.stringify(siParts()));
     const siPatches = [], siPatchReal = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { siPatches.push(p); return siPatches.length === 2

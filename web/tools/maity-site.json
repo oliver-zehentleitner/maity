@@ -592,13 +592,5 @@
         }
       }
     }
-  },
-  "registration": {
-    "mode": "closed",
-    "domains": [],
-    "addresses": [],
-    "approval": "operator",
-    "terms": null,
-    "max_new_accounts_per_hour": 20
   }
 }

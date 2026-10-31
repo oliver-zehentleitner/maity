@@ -1722,6 +1722,7 @@ page, registration, the landing page), the second factor asked for once
 and what is not, and goes no further; nothing is rolled back. The
 sections' own imports stay. `web/tools/maity-site.json` is the template:
 the landing page as it runs, the privacy notice and the terms in en and
-de, the imprint with placeholders only, registration with its defaults;
+de, the imprint with placeholders only, and no registration, which is
+the instance's own (a part the file leaves out stays as it is);
 placeholders are in square brackets (`[Operator]`), which the hub's
 Markdown rules take as text.

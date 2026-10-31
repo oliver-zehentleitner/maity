@@ -3409,6 +3409,9 @@ holds for 10 minutes; each call still goes through the step-up helper, so
 an expired window asks again rather than fails. A save that stops says
 what is saved and what is not and goes no further, with no rollback. The
 template `web/tools/maity-site.json` replaces `landing-v3-complete.json`.
+It carries no registration: registration is the instance's own, and a
+template imported whole would otherwise close an open registration
+without a word.
 Its placeholders are in square brackets: the hub's Markdown rules read
 `<Operator>` as an HTML tag and refuse the text.
 
