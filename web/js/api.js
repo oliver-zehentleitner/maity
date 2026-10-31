@@ -1051,6 +1051,14 @@ window.Maity = window.Maity || {};
     });
   }
 
+  // §11.4 the signed-in human's forge access: one linked installation of the
+  // instance's GitHub App, no token of their own; never a token in an answer.
+  const forgeAccess = {
+    app_configured: true,
+    links: [{ id: "fgl-0001", forge: "github", installation_id: 51234, account: { login: "maintainer", type: "User" }, repository_selection: "selected",
+      repositories_shown: ["maintainer/maity", "maintainer/sample"], status: "active", linked_at: "2026-10-30T09:00:00Z", checked_at: "2026-10-31T06:00:00Z" }],
+    token: { configured: false, login: null, status: null, checked_at: null },
+  };
   // §16.5: the limits per human as the fixture hub holds them.
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
@@ -1531,6 +1539,35 @@ window.Maity = window.Maity || {};
       const item = orgsData().invitations[org.id].find((x) => x.id === m[2]);
       if (item && item.role === "owner" && orgRole(org) !== "owner") fail(403, "forbidden", "not for your role", path, { reason: "org_role" });
       orgsData().invitations[org.id] = orgsData().invitations[org.id].filter((x) => x.id !== m[2]);
+      return null;
+    }],
+    // §11.4 forge access, the human's own: links and token, never the token itself.
+    // The fixture hub needs no proof: the step-up is the smoke test's to answer.
+    ["GET", /^\/me\/forge$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      return JSON.parse(JSON.stringify(forgeAccess));
+    }],
+    ["POST", /^\/me\/forge\/github\/link$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      if (!forgeAccess.app_configured) fail(409, "forge_app_missing", "no GitHub App on this instance", path);
+      return { url: "https://github.com/apps/maity-fixture/installations/new?state=fixture-state" };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/links\/([^/]+)$/, (m, body, path) => {
+      if (!forgeAccess.links.some((l) => l.id === m[1])) fail(404, "not_found", "no such link", path);
+      forgeAccess.links = forgeAccess.links.filter((l) => l.id !== m[1]);
+      return null;
+    }],
+    ["PUT", /^\/me\/forge\/github\/token$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      if (!token) fail(400, "invalid", "the request does not validate", path, { fields: { token: "required" } });
+      // A classic token reads a private repository only with the repo scope, which writes (§11.4).
+      if (/^gh[pousr]_/.test(token) && !token.startsWith("github_pat_")) fail(400, "invalid", "the request does not validate", path, { fields: { token: "classic_token" } });
+      forgeAccess.token = { configured: true, login: me().member.handle, status: "active", checked_at: nowIso() };
+      return { configured: true, login: me().member.handle };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/token$/, () => {
+      forgeAccess.token = { configured: false, login: null, status: null, checked_at: null };
       return null;
     }],
     // §2.9 Your data: the export, and a deletion request withdrawn or asked again.
@@ -2024,6 +2061,7 @@ window.Maity = window.Maity || {};
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
+          probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
@@ -2145,8 +2183,10 @@ window.Maity = window.Maity || {};
         // export follows the repository, and a new one has not been read yet.
         if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
         const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
-        p.repository = back ? back.repository
-          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        p.repository = back ? Object.assign({}, back.repository, { owner_confirmed: false, confirmed_by: null })
+          // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
+          : url ? (same ? Object.assign({}, p.repository)
+            : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
@@ -2918,6 +2958,20 @@ window.Maity = window.Maity || {};
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
       return target;
+    }],
+    // §11.4: the namespace owner confirms the repository for their grants, only
+    // the URL the project carries now; a changed one is a conflict.
+    ["POST", /^\/projects\/([^/]+)\/repository\/confirm$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (me().member.kind !== "human") fail(403, "forbidden", "the namespace owner, acting directly", path, { reason: "humans_only" });
+      const from = p.owner && orgsData().items.find((o) => o.id === p.owner.id);
+      if (!p.owner || (from ? orgRole(from) !== "owner" : p.owner.id !== me().member.id)) fail(403, "forbidden", "only the namespace owner confirms", path);
+      if (!p.repository) fail(404, "not_found", "the project has no repository", path);
+      if (body.url !== p.repository.url) fail(409, "conflict", "the repository changed", path, { reason: "repository_changed", url: p.repository.url });
+      // The owner's grants now serve it: the fixture's linked installation covers it.
+      Object.assign(p.repository, { owner_confirmed: true, confirmed_by: { id: me().member.id, handle: me().member.handle },
+        probe_via: forgeAccess.links.length ? "app" : forgeAccess.token.configured ? "owner_token" : p.repository.probe_via });
+      return p.repository;
     }],
     // §6.25: the namespace owner hands the project to another human owner, a
     // consent request to them; the fixture hub files it and answers 202.
