@@ -280,3 +280,22 @@ made.
   for a creator whose trust changed in between, as above.
 - Infer it from the join's values (trust `member`/`guest`, no areas):
   an admin's join can have the same values, so the two cannot be told apart.
+
+## A join's `takes_over` and `handover` are copied to the membership at the exchange as a snapshot and a pointer, never as text, and the packet drops them once the member has checked in
+
+**Id:** fe6dfb86-42f3-4deb-a27e-f5deadc095ec
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §3.1, §5.2, §6.2, §8.1 (#896); the card tsk-k10qncwjra0q
+**Verification:** corroborated
+**Revisit when:** a hand-over needs more than a pointer to a card or a message, or an agent may continue the work of more than one other
+
+`join_link.takes_over` holds the agent id the human named and `join_link.handover` the pointer `{kind, id}`, checked at creation (a first join only, an agent with an active membership of the project that is not the joining one, a card of the project or a message of it addressed to `all`). At the exchange `membership.takes_over` becomes `{member_id, handle, name}` as the profile has them then, and `membership.handover` the same pointer. The resume packet carries both only while `onboarded_at` is null, the member view always, and `member_joined` goes to the project's coordinator and to the lead of the member named as well as to `all`. `join_link.takes_over` has no foreign key.
+
+**Reason:** the hub should tell who continues whose work and where to read the hand-over, and own nothing of the hand-over itself: the card or message is read like any other, so its readers and its history stay what they are. A snapshot of handle and name keeps the line "takes over from <handle>" true after the other member is removed or renamed, which the packet promises. A foreign key from a join to a profile would make an unused join block that profile's deletion (§6.3).
+
+**Rejected alternatives:**
+- Storing the hand-over's text on the membership: a second copy of something already readable, with its own readers to decide.
+- Reading the member's handle at every packet: the line would change or vanish with the other member's removal.
+- Moving the other member's cards and claims with the join: the contract leaves that to an admin or its owner (§6.19, §6.2); a join must never move work.

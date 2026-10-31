@@ -660,6 +660,9 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # Whose work this agent continues and where the hand-over is, never a text (§3.1).
+            view["takes_over"] = row.takes_over
+            view["handover"] = row.handover
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
@@ -927,6 +930,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,
         "instance": row.instance,
+        "takes_over": row.takes_over,
+        "handover": row.handover,
     }
 
 
