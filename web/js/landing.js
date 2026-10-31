@@ -307,6 +307,15 @@ window.Maity = window.Maity || {};
   // POST with the CSRF token, then opened by its url in a tab of its own, a
   // top-level page under the page's own policy. The tab is opened at the
   // click, before the hub answers, so no pop-up blocker stops it.
+  // A preview while the JSON field holds text not loaded would show the
+  // editor's draft, not that text: said instead, and the field shown.
+  function unloaded(pending, status, focus) {
+    if (!pending()) return false;
+    status.fail(M.t("jsonio.pending_prefix"), { message: M.t("jsonio.pending") });
+    focus();
+    return true;
+  }
+
   const PREVIEW = /^(\/api\/v1)?\/admin\/settings\/(landing|legal)\/preview\/[A-Za-z0-9_-]+$/;
   async function preview(path, body, lang, status, errors) {
     const tab = window.open("about:blank", "_blank");
@@ -338,6 +347,9 @@ window.Maity = window.Maity || {};
     // No operator line is none, never an empty one, which the hub refuses (§16.7).
     draft.footer = draft.footer || { social: [] };
     let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
+    // What the JSON field holds and was not loaded (jsonPart sets these).
+    let jsonPending = () => false;
+    let jsonFocus = () => {};
     // The fields drawn last, by the hub's path: an import's check marks them.
     let errors = {};
     // Where the step-up asks for the second factor, kept across redraws.
@@ -408,8 +420,10 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
       stepSlot,
       h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
-        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
-          "Preview the draft"),
+        h("button", { type: "button", onclick: () => {
+          if (unloaded(jsonPending, status, jsonFocus)) return;
+          preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors);
+        } }, "Preview the draft"),
         // The saved page as a visitor sees it (§16.7, ?as=public), only while it is on.
         saved.enabled ? h("a", { href: "/?as=public" + (lang ? "&lang=" + encodeURIComponent(lang) : ""), target: "_blank", rel: "noopener" }, "View as a visitor") : null),
       saved.updated_at ? h("p", { class: "muted" }, "Last saved " + formatTime(saved.updated_at) + ".") : null);
@@ -425,6 +439,10 @@ window.Maity = window.Maity || {};
     function jsonPart() {
       const io = M.statusLine();
       const area = h("textarea", { id: "lp-json", rows: "10", spellcheck: "false", "aria-describedby": "lp-json-hint" });
+      // The text last exported or loaded: anything else in the field is not in the editor.
+      let settled = "";
+      jsonPending = () => area.value.trim() !== "" && area.value !== settled;
+      jsonFocus = () => { area.parentNode.open = true; area.focus(); };
       const file = h("input", { type: "file", id: "lp-json-file", accept: ".json,application/json" });
       file.addEventListener("change", async () => {
         const chosen = file.files && file.files[0];
@@ -433,7 +451,7 @@ window.Maity = window.Maity || {};
       });
       const bodyOf = () => ({ enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer });
       const exportIt = () => {
-        area.value = JSON.stringify(bodyOf(), null, 2);
+        area.value = settled = JSON.stringify(bodyOf(), null, 2);
         io.done();
         append(io.el, h("span", { class: "ok" }, M.t("landing.json.exported")));
         area.focus();
@@ -481,6 +499,7 @@ window.Maity = window.Maity || {};
         }
         draft = next;
         lang = whole ? next.default_language : target;
+        settled = area.value;
         draw();
         if (refused) { showErrors(errors, refused, status, M.t("landing.json.refused")); return; }
         status.done();
@@ -549,10 +568,42 @@ window.Maity = window.Maity || {};
         control(f("markdown", "Text (Markdown)", "md", 65536), draft[lang], key + "." + lang + ".markdown", errors, draw),
         small("Remove this language", () => { delete draft[lang]; }, false, draw)] : h("p", { class: "muted" }, "No language yet: add one to write the page."),
       h("div", { class: "actions" }, save,
-        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors) }, "Preview the draft") : null,
+        lang ? h("button", { type: "button", onclick: () => {
+          if (unloaded(json.pending, status, json.focus)) return;
+          preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors);
+        } }, "Preview the draft") : null,
         unset), status.el);
       append(clear(body), form);
     };
+    // Import and export of this page's languages (§16.7.1: a PATCH changes one page).
+    const json = M.jsonIo.part({
+      id: "lg-" + key + "-json",
+      hint: M.t("jsonio.legal.hint", { page: key }),
+      body: () => draft,
+      load: async (data, io) => {
+        const langs = M.jsonIo.isObject(data) && Object.hasOwn(data, key) ? data[key] : data;
+        const tags = M.jsonIo.isObject(langs) ? Object.keys(langs) : [];
+        if (!tags.length || tags.length > 8 || !tags.every((t) => LANG.test(t) && M.jsonIo.isObject(langs[t])
+          && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
+          io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.legal.shape") });
+          return false;
+        }
+        if (!window.confirm(M.t("jsonio.legal.confirm", { page: label }))) return false;
+        io.busy(M.t("jsonio.checking"));
+        // The hub checks it by its preview call, which stores nothing (§16.7.1).
+        let refused = null;
+        try { await M.api.post(LEGAL + "/preview?page=" + key, langs); } catch (err) { refused = err; }
+        Object.keys(draft).forEach((t) => { delete draft[t]; });
+        tags.forEach((t) => { draft[t] = { title: langs[t].title, markdown: langs[t].markdown }; });
+        lang = draft[defaultLanguage] ? defaultLanguage : tags[0];
+        draw();
+        io.done();
+        if (refused) { showErrors(errors, refused, status, M.t("jsonio.refused")); return true; }
+        status.done();
+        append(status.el, h("span", { class: "ok" }, M.t("jsonio.loaded")));
+        return true;
+      },
+    });
     draw();
     const versions = (current && current.versions) || [];
     return h("section", { class: "lg-page", "aria-label": label },
@@ -561,7 +612,7 @@ window.Maity = window.Maity || {};
         ? h("p", { class: "muted" }, "Served at ", h("a", { href: served, target: "_blank", rel: "noopener" }, served), ", as of " + formatTime(current.version) + ".",
           versions.length ? [" Earlier: ", versions.map((v, i) => [i ? ", " : null, h("a", { href: served + "/" + v, target: "_blank", rel: "noopener" }, formatTime(v))])] : null)
         : h("p", { class: "muted" }, "Not set: " + served + " answers not found, and nothing links to it."),
-      body);
+      body, json.el);
   }
 
   async function legalSection(ctx, root) {

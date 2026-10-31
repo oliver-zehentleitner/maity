@@ -3272,6 +3272,39 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## The legal pages and registration import and export JSON too; text not loaded stops a preview
+
+**Id:** 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-knb9me77f32t (the maintainer, 2026-10-31, after importing Landing V3: the same importer for the legal pages and registration); the coordinator's note that a preview of an imported but not loaded draft should say so instead of flickering (2026-10-31); docs/api.md §16.4, §16.7.1; the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub offers a dry check for the registration setting, or a PATCH of the legal pages may change several pages at once
+**See:** views.md#the-landing-page-is-imported-and-exported-as-json-in-its-editor-an-import-is-checked-by-the-preview-call-and-saved-only-by-save — c174a492-2691-4887-9507-e1ba2e805a1f — as of 2026-10-31
+
+Each legal page has its own Import or export JSON, for its languages (or
+the same under the page's key). A load is checked by the page's preview
+call and replaces the page's draft after a confirmation. Registration has
+one for the body of its PATCH: a load fills the form after a
+confirmation, keeps the fields the environment or the legal pages set,
+and names a field the setting does not have. The hub checks the values
+when the admin saves. Both editors share one part (`js/json-io.js`). In
+every editor, the landing page's included, a preview while the JSON
+field holds text that was neither loaded nor exported says so and opens
+no tab.
+
+**Reason:** a PATCH of the legal pages changes one page per call, so one
+import per page matches what a save can carry. Registration has no
+preview call, and a PATCH would save, so the form is the place to look
+the values over. A preview of the editor's draft beside unloaded text
+looked like a broken preview: the tab opened and closed at once.
+
+**Rejected alternative:** one import for all three legal pages, which
+would need three saves the admin does not see. Checking registration by
+the real PATCH, which saves on success. Moving the landing editor onto
+the shared part in the same change: its import also takes one page of
+several and redraws the section list, so it keeps its own for now.
+
 ## The jour fixe is a tab of its own; its series and moderator order are in Project settings
 
 **Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
