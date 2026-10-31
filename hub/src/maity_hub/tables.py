@@ -1762,6 +1762,21 @@ conversation_pin = Table(
     **MYSQL_TABLE,
 )
 
+# A human's own choice of the meat-proxy mode for one conversation, direct or group (docs/api.md
+# §9.3, "Meat proxy per chat"); no row follows the profile. The id of a direct conversation is
+# the agent's, the same in every project the agent is in, so the project is part of the key and
+# this is no participant row. Deleted with the account, in its export.
+conversation_meat_proxy = Table(
+    "conversation_meat_proxy",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("meat_proxy", Boolean, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
 # How far a member has read a conversation: `unread` counts the others' messages
 # after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(

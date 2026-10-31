@@ -377,3 +377,22 @@ instead of one problem per attempt.
 - Stopping at the first problem: a reviewer would fix and resend up to five times for one review.
 - Keeping `review` optional for a while: nothing posts a review result without it that is not about
   to be changed, and alpha keeps no layers for the old shape.
+
+## The meat-proxy choice per chat is a row of its own, keyed by human, project and conversation, and one function adds it to every participants list
+
+**Id:** ab4caa81-c57d-418f-a664-7ff498f1e6e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §9.3 "Meat proxy per chat", §5.2 (contract #922); the card tsk-2yqm0gebktrk
+**Verification:** corroborated
+**Revisit when:** a chat may carry more than the human's own on/off choice, or the participants lists are built in one place
+
+`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
+
+**Reason:** a direct chat has no participant row (its id is the agent's), and the choice must work there as much as in a group chat, so a column on `conversation_participant` would cover only half. The same agent's direct chat exists once per project under one id, which is why the project is part of the key: a choice in one project must not switch the mode on in another. One function over the lists keeps the fields from drifting between the four places participants are built. The migration's primary key and foreign keys must be the same as in `tables.py` (human, project, conversation; foreign keys on human and project): the tests build the schema from the migrations, so a key only in `tables.py` is never checked. A first version had `(human_id, conversation_id)` in the migration, and a second project's direct chat then failed with a unique violation.
+
+**Rejected alternatives:**
+- A column on `conversation_participant`: no row for a direct chat, and a stay per join in a group chat that would lose the choice when the human leaves and comes back.
+- Keying by conversation id alone: the same agent in two projects would share one choice.
+- Emitting an event on a change: the contract has the agents read it on their next resume and wakes nobody; an event would reach every reader of the chat for what is context about a person.

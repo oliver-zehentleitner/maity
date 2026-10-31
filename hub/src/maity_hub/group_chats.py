@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import clock
+from maity_hub import chat_meat_proxy, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -189,8 +189,11 @@ def _round_of(conn: Connection, conversation_id: str) -> str | None:
     return found
 
 
-def view(conn: Connection, conversation: Any, access_of: str | None = None) -> dict[str, Any]:
-    """The conversation view (§9.2); `access` only when it is a caller's answer."""
+def view(
+    conn: Connection, conversation: Any, access_of: str | None = None, viewer: str | None = None
+) -> dict[str, Any]:
+    """The conversation view (§9.2); `access` only when it is a caller's answer; `viewer` the
+    human reading, who alone sees its own `meat_proxy_chat` (§9.3)."""
     current = stays(conn, conversation.id)
     found = people(conn, [s.membership_id for s in current])
     creator = people(conn, [conversation.created_by]) if conversation.created_by else {}
@@ -205,6 +208,9 @@ def view(conn: Connection, conversation: Any, access_of: str | None = None) -> d
         "closed_at": ts(conversation.closed_at),
         "closed_reason": conversation.closed_reason,
     }
+    chat_meat_proxy.shown(
+        conn, [(conversation.project_id, conversation.id, result["participants"])], viewer
+    )
     if conversation.hub_thread:
         result["jour_fixe"] = {"round_id": _round_of(conn, conversation.id)}
     if access_of is not None:
