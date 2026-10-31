@@ -66,8 +66,9 @@ def test_wait_outage_stops_at_deadline(
     state.save_state(joined, {**state.load_state(joined), "cursor": 17})
     fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (503, "unavailable")
     assert cli.main(["wait", "--timeout", "75"]) == cli.EXIT_TIMEOUT
-    assert clock.sleeps == [2, 4, 8, 16, 30, 15]
-    assert clock.now == 75
+    # the last 5 seconds stay for the unread-chats note (`NOTE_RESERVE`)
+    assert clock.sleeps == [2, 4, 8, 16, 30, 10]
+    assert clock.now == 70
     assert state.load_state(joined)["cursor"] == 17
     captured = capsys.readouterr()
     assert captured.out == ""

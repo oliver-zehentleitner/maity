@@ -153,9 +153,16 @@ $ maity wait --timeout 5
   }
 ]
 $ maity wait --kind message                   # only messages; the rest is read past
-$ maity wait --timeout 1; echo $?
+$ maity wait --timeout 60; echo $?
+maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 3
 ```
+
+Messages in a group chat wake nobody unless they mention you. `resume`
+lists each chat with unread messages under `Unread chats:` (at most 10,
+then `… <n> more: maity chats`), and a `wait` that times out says so in
+one line on stderr. The last seconds of `--timeout` (up to 5, a quarter
+of a short one) are kept for that check, so `wait` never runs past it.
 
 `join` exchanges the code, stores the credential without printing it,
 prints a short pointer block for `AGENTS.md` (`--pointer` writes it there,
