@@ -151,10 +151,22 @@ def test_every_poll_leaves_the_hub_time_to_answer(
 
     calls = _events_calls(monkeypatch, answer)
     assert cli.main(["wait", "--timeout", "120"]) == cli.EXIT_TIMEOUT
-    # 115 s until the note's reserve: 10 s of slack while the window allows, half near the end
-    assert [wait for wait, _ in calls] == [55, 50, 5, 2, 1, 1, 1]
-    assert [timeout for _, timeout in calls[:2]] == [70, 60]
-    assert calls[2][1] == 10  # the read never outlasts the deadline
+    # 115 s until the note's reserve, 10 s of slack each: the last 10 s are rested out
+    # rather than spent on short polls the hub could not answer in time
+    assert calls == [(55, 70), (50, 60)]
+    assert clock.sleeps == [10]
+
+
+def test_a_short_window_still_polls_once(
+    joined: Path, clock: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def answer(wait: int) -> dict[str, Any]:
+        clock.now += wait
+        return {"items": [], "cursor": 0}
+
+    calls = _events_calls(monkeypatch, answer)
+    assert cli.main(["wait", "--timeout", "1"]) == cli.EXIT_TIMEOUT
+    assert calls == [(1, 0.75)]
 
 
 def test_the_last_read_running_out_is_a_quiet_timeout(
@@ -164,11 +176,8 @@ def test_the_last_read_running_out_is_a_quiet_timeout(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     def answer(wait: int) -> dict[str, Any]:
-        clock.now += wait
-        if clock.now >= 50:  # the hub is slow: the window's last read times out
-            clock.now = 55
-            raise hub.HubError("timed out", status=None)
-        return {"items": [], "cursor": 0}
+        clock.now = 55  # the hub is slow: the read runs out at the deadline
+        raise hub.HubError("timed out", status=None)
 
     _events_calls(monkeypatch, answer)
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT

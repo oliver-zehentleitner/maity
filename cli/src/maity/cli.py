@@ -596,6 +596,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
     end = time.monotonic() + timeout
     # The last seconds are kept for the unread-chats note, so it never runs past --timeout.
     deadline = end - min(NOTE_RESERVE, timeout / 4)
+    # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
+    slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
+    asked = False
     cursor = session.data.get("cursor") or 0
     path = session.project_path("events")
     backoff = 2.0
@@ -606,13 +609,17 @@ def cmd_wait(args: argparse.Namespace) -> int:
         if remaining <= 0:
             _unread_note(session, end - time.monotonic())
             return EXIT_TIMEOUT
-        # The hub holds for `poll` and keeps POLL_SLACK to answer (half of what is left near
-        # the end); the read never outlasts the deadline, so a hub that stops answering
-        # cannot keep `wait` running past --timeout.
-        slack = min(POLL_SLACK, remaining / 2)
+        if asked and remaining - slack < 1:
+            # Too little left for a poll and its answer: rest out the window instead of a
+            # chain of short polls that would mostly be cut off.
+            time.sleep(remaining)
+            continue
+        # The hub holds for `poll` and keeps `slack` to answer; the read never outlasts the
+        # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.
         poll = max(1, min(LONG_POLL, int(remaining - slack)))
         read_timeout = max(0.5, min(poll + 15, remaining))
         started = time.monotonic()
+        asked = True
         try:
             page = session.client.call(
                 "GET",

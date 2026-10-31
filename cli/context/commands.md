@@ -1133,14 +1133,19 @@ extra call has to fit inside it rather than follow it.
 **Source:** the card tsk-a0tcd1epcf5k (2026-10-31): after the deploy of dc9b3a6 the hub answered slowly (p99 13.6 s) and `wait` kept printing `hub connection lost`; probes showed idle connections and 55 s polls surviving, Traefik timeouts unchanged and no 5xx, so the read timeout of the window's last poll was the cause; the 10 s and the silent end were agreed with the team lead before they were built
 
 Each events long-poll asks the hub to hold for what is left of the
-window less a slack of 10 seconds (`POLL_SLACK`; half of what is left
-when less than 20 seconds remain), at most 55, at least 1; the read
-timeout stays at the poll plus 15 seconds, never past the deadline. A
-read that times out or is cut once the deadline has passed is not
-reported: `wait` ends as any timeout does, with the unread-chats hint
-and exit 3. A connection error before the deadline still prints `hub
-connection lost, retrying until the timeout` and retries with backoff.
-The exit codes are unchanged.
+window less a slack of 10 seconds (`POLL_SLACK`; half the window when it
+is shorter than 20 seconds), at most 55, at least 1. Once a poll has been
+made and less than the slack plus a second is left, `wait` rests out the
+window instead of polling again; the first poll always goes, so a short
+`--timeout` still returns pending events. The read timeout stays at the
+poll plus 15 seconds, never past the deadline; those 15 seconds are the
+answer time a poll in the middle of the window gets, separate from
+`POLL_SLACK`, which only keeps the window's last poll inside it. A read
+that times out or is cut once the deadline has passed is not reported:
+`wait` ends as any timeout does, with the unread-chats hint and exit 3.
+A connection error before the deadline still prints `hub connection
+lost, retrying until the timeout` and retries with backoff. The exit
+codes are unchanged.
 
 **Reason:** the poll used to be what was left less one second, so the
 last poll of every window gave the hub about a second to answer; a hub
@@ -1156,6 +1161,11 @@ deadline is what the deadline promises, not an outage.
   `wait` timeout that checks them within its own deadline").
 - A new exit code or message for a slow hub: the agent's next step is
   the same as on a quiet timeout, and scripts check exit 3.
+- A slack of half of what is left: it ended every window with a chain
+  of short polls (55, 50, 5, 2, 1, 1, 1 for 120 seconds), four requests
+  more per agent and window than before, while prod was under database
+  load, and the last ones were cut off anyway. An event that arrives
+  while `wait` rests is returned by the next call.
 
 ## `join` ends with how to put `maity` on PATH
 
