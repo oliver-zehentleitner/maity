@@ -2338,9 +2338,16 @@ def site_json_step(run: Run, page: Page) -> None:
     section = page.locator("section.admin-section[aria-label='Import or export everything']")
     io = section.locator("details.json-io")
     io.locator("summary").click()
+
+    # Export reads the settings again first, so the field is filled once the hub has answered.
+    def export() -> dict:
+        page.locator("#site-json").fill("")
+        io.get_by_role("button", name="Export", exact=True).click()
+        expect(page.locator("#site-json")).not_to_have_value("")
+        return json.loads(page.locator("#site-json").input_value())
+
     # The template carries no registration: what the instance has stays.
-    io.get_by_role("button", name="Export", exact=True).click()
-    before = json.loads(page.locator("#site-json").input_value())
+    before = export()
     page.locator("#site-json").fill(json.dumps(template))
     io.get_by_role("button", name="Check the file", exact=True).click()
     expect(section.locator("li.site-part")).to_have_count(3)
@@ -2348,8 +2355,7 @@ def site_json_step(run: Run, page: Page) -> None:
     section.get_by_role("button", name="Save all changes", exact=True).click()
     expect(section.locator(".send-status").last).to_contain_text("Saved:")
     run.a11y(page, "whole site, saved")
-    io.get_by_role("button", name="Export", exact=True).click()
-    out = json.loads(page.locator("#site-json").input_value())
+    out = export()
     assert out["format"] == "maity-site/1", out.get("format")
     assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
     for key, value in template["legal"].items():
