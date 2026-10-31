@@ -5079,6 +5079,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href")))
     && byId("memory-provider") && byId("memory-provider").value === "keep-the-why" && text(memPanel).includes("It makes no setup card and cancels none"),
     "settings: the memory provider with links to its setup cards and the dashboard's path, changeable by the owner (tsk-41hpr02cvej8)");
+  // The Keep the Why commitment stands above the README badge (the maintainer, 2026-11-01).
+  const setForms = main.querySelectorAll("form");
+  const ktwAt = setForms.findIndex((f) => f.className.split(" ").includes("ktw-policy-form"));
+  const badgeAt = setForms.findIndex((f) => f.className.split(" ").includes("badge-form"));
+  expect(ktwAt >= 0 && badgeAt >= 0 && ktwAt < badgeAt, "settings: the Keep the Why commitment above the README badge (" + ktwAt + ", " + badgeAt + ")");
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");

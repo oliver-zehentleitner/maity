@@ -649,8 +649,8 @@ window.Maity = window.Maity || {};
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
-    // Humans only, as every policy field (§2.3 ʰ).
-    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and moderator order (§20.1, §20.2), humans only as every policy field.
     if (humanAdmin && M.jourFixe) {
       const order = h("div", { class: "jf-moderators-slot" });
