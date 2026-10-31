@@ -94,7 +94,10 @@ window.Maity = window.Maity || {};
     const exp = p.keep_the_why_export;
     const rows = [h("dt", null, M.t("overview.project.repository")),
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : M.t("overview.project.no_repository"),
-        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null)];
+        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null,
+        // The project's own links (§6.11) as buttons beside the repository, each in a tab of its own.
+        (ctx.ownLinks ? ctx.ownLinks(p) : []).map((x) => [" ", h("a", { class: "button-link small project-own-link", href: x.url, target: "_blank", rel: ["noopener", "noreferrer"].join(" "),
+          "data-link": x.key, title: x.url }, x.label)]))];
     rows.push(h("dt", null, M.t("overview.project.state")), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, M.t("overview.project.policy")), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's

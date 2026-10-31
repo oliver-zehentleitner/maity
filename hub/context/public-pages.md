@@ -392,3 +392,37 @@ and the people of the overview.
 - Medians of the per-project medians: the figure would not be a median of anything, and a project with three samples would weigh as much as one with three hundred.
 - Rendering the agent pages only from the worker's run: the contract takes a page off at once, and a renamed handle would leave the old address standing.
 - One page per agent and project: the contract has one page under the owner's page.
+
+## A project's links share the website rule as one function, and change the project like any setting
+
+**Id:** 66b41773-d5d3-447c-b130-b98e5477e37a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review (the rule copied from `person_links`, `project_updated` with a list); the coordinator's go for the object form, 2026-10-31; docs/api.md §6.11, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a person's website and a project's link need different rules beyond their length
+
+`project_links` checks each link with `person_links.website_problem`,
+which takes the length as a parameter (200 for a website, 500 for a
+link). A PATCH merges by key as a person's `social` does. A change puts
+`"links": true` into the PATCH's one `project_updated`, beside the other
+settings it changed; the links are read from the project, not the
+event. The public page asks `project_links.public` which links to show:
+a link on the repository's host whose path starts with the repository's
+path, compared segment by segment and without case, only while the
+repository is public; every other link as set. The page's digest holds
+the shown links, so a change renders it again.
+
+**Reason:** §6.11 says "as for a person's `website`", and two copies of
+that rule would drift apart. Every other settings change in
+`project_updated` is a key in the `fields` object, so a second event, or
+a list just for links, would make readers handle two shapes.
+
+**Rejected alternatives:**
+- A rule of its own in `project_links` (#846): the same checks twice.
+- `fields: ["links"]` in an event of its own (#846, the contract's
+  first wording): the only `project_updated` with a list.
+- Comparing the path as a string prefix: `acme/maity-other` would count
+  as inside `acme/maity`.
+

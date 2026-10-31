@@ -962,6 +962,7 @@ def scenario(run: Run, page: Page) -> None:
     forge_access_step(run, page)
     landing_json_step(run, page)
     jour_fixe_step(run, page)
+    project_links_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -2160,6 +2161,32 @@ def registration_admin_step(run: Run, page: Page) -> None:
     run.shot(page, "registration-admin")
     run.a11y(page, "registration admin")
     no_problems(run, "registration admin")
+
+
+def project_links_step(run: Run, page: Page) -> None:
+    """The project's own links (docs/api.md §6.11): set in Project settings against the real
+    hub, shown beside the state in the header, refused at the field where the hub refuses them."""
+    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.links-form")
+    expect(form).to_be_visible()
+    page.locator("#link-wiki").fill("https://wiki.example.org:8443/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("#link-wiki-error")).to_have_text("Not an https address on a DNS name without a port or user name.")
+    refused = "PATCH /api/v1/projects/owner/e2e-alpha answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#link-wiki").fill("")
+    page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Links saved.")
+    issues = page.locator("header .project-state a.header-link", has_text="Issues")
+    expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
+    expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    run.shot(page, "project-links")
+    run.a11y(page, "project links")
+    no_problems(run, "project links")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def jour_fixe_step(run: Run, page: Page) -> None:

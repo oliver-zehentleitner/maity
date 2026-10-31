@@ -29,6 +29,7 @@ from maity_hub import (
     orgs,
     placements,
     policy,
+    project_links,
     project_names,
     public_pages,
     public_projects,
@@ -175,6 +176,8 @@ class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
     name: str | None = title(default=None)
     repository: RepositoryIn | None = None
+    # The project's own links (§6.11), merged by key; checked by project_links.
+    links: Any = None
     memory: MemoryIn | None = None
     setup: Any = None
     state: str | None = None
@@ -671,6 +674,11 @@ def patch_project(
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
                 values["repository_public"] = None  # the forge has not said anything of this one
+        if "links" in given:
+            links = project_links.checked(body.links, project.links)
+            if links != project_links.checked({}, project.links):
+                values["links"] = links or None
+                settings_changed["links"] = True  # where they point is read from the project
         if "settings" in given and body.settings is not None:
             # §6.1: merged by top-level key. A key named replaces its whole value (nested
             # objects are not merged), `null` removes it so it reads as its default, and a
@@ -902,7 +910,10 @@ def patch_project(
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
             commitment.reconcile(conn, _load(conn, project.id))
-        if given & {"public_page", "public_about", "name", "slug", "state", "repository"}:
+        if (
+            given & {"public_page", "public_about", "name", "slug", "state", "repository"}
+            or "links" in values
+        ):
             # What the page shows, or whether it exists, changed: at once (§16.9).
             public_pages.touch(conn, public_projects.KIND, project.id)
         return idempotency.Outcome(

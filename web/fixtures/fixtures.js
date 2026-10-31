@@ -2976,6 +2976,12 @@ window.MAITY_FIXTURES = {
         }
       }
     },
+    "links": {
+      "chat": "https://discord.gg/maity",
+      "discussions": null,
+      "issues": "https://github.com/oliver-zehentleitner/maity/issues",
+      "wiki": null
+    },
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",

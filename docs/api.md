@@ -5667,7 +5667,8 @@ clears all four. A value not of that form is `invalid`
 (`details.fields.links.<name>`: `format` or `too_long`), an unknown key
 `details.fields.links.<key>: "unknown"`, a `links` that is not an object
 `details.fields.links: "format"`. A change emits `project_updated` with
-`fields: ["links"]`. The links are read by everyone who reads the
+`"links": true` in its `fields` object, as every settings change does
+(§6.1). The links are read by everyone who reads the
 project and shown on the overview as buttons next to the repository
 link and in the dashboard's project list beside each project's status,
 opened in a new tab with `rel="noopener noreferrer"`; a public project's

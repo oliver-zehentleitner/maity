@@ -50,6 +50,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "public_page",
         "public_about",
         "repository",
+        "links",  # the project's own links, all four keys (§6.11)
         "logo",
         "banner",
         "memory",
