@@ -947,8 +947,8 @@ include the scope. No call made with an agent credential may:
 - change a policy field that governs what humans decide —
   `spawn_consent_by`, `signing`, `tag_authority`, `on_runner_revoke`,
   `spawn_requests`, `merged_closes`, `member_agents`, `member_agents_max`,
-  `keep_the_why`, `keep_the_why_defaults` (§6.1; the hub's
-  list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
+  `agent_owners`, `outside_roles`, `keep_the_why`,
+  `keep_the_why_defaults` (§6.1; the hub's list is `HUMANS_ONLY_POLICY`) — or the rules text (`rules_markdown`);
 - set or change a human's `availability_policy`, or name a human in any
   member's `substitutes` (§6.12).
 - take over, assign away, release or end a card a human holds (§6.19),
@@ -3971,6 +3971,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `jour_fixe` | `null` (default) or `{enabled, recurrence, time, timezone, moderator, answer_window_minutes, step_window_minutes, report_window_hours}` | the jour fixe series (§20.1); replaced as a whole when named; a later preset change keeps it |
 | `jour_fixe_moderators` | `null` (default: by time online) or an ordered list of member ids of admin agents (§2.3) | the moderator order for `moderator: admin_agent` (§20.2); written by a human with `project:admin` and, through `PUT …/jour-fixe/moderators` only, by any admin agent; a later preset change keeps it |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
+| `agent_owners` | `members`, `anyone`; unset reads as `anyone` while `public_page` is `on` (§16.9) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team` and project roles on those bases (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -4124,7 +4126,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `team` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `team`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
-| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -4359,6 +4361,62 @@ its reach change these fields at once as before; so does every caller
 for a human member. Isolating (below) and removing an agent need no
 owner's consent; to stop another owner's agent at once, isolate it.
 
+**An agent whose owner is no member.** The maintainer's decision of
+2026-10-31: in a private project only members bring agents, and an
+agent leaves with its owner; in a public one an owner from outside may
+let an agent work. `policy.agent_owners` (§6.1) says which:
+
+- Under `members`, an agent member that is not isolated yet and whose
+  profile's owner holds no active membership in the project is isolated
+  by the hub, as "Isolation" below, with `isolated.by: "hub"` and the
+  reason `The agent's owner is no longer a member of this project.`: at
+  once when its owner's membership ends (removed or left, an
+  organisation's `org_owner` membership included, §6.26), and for every
+  such agent when the setting comes to read `members` — changed from
+  `anyone`, or unset while `public_page` turns `off` (by a `PATCH`, a
+  transfer, §6.25, or a suspension, §16.8). An isolation already in
+  place stays as it is, with its reason, start and window (§6.2,
+  "Isolation"). Its owner gets the notice of an isolation, and the open
+  requests to that owner about the agent (a change of another owner's
+  agent, a cross-owner `reports_to`, above) are withdrawn with `reason:
+  owner_not_member`. While the setting reads `members`, no isolation
+  of an agent whose owner is not an active member can be lifted
+  (`invalid`, `details.fields.member: "owner_not_member"`), whoever set
+  it; neither the owner's return nor a change to `anyone` lifts one by
+  itself, but either makes the lift possible again. Removing the agent
+  stays possible as for any member. A deleted account takes its agent
+  profiles and their memberships with it under both settings (§2.9).
+- Under `anyone`, an owner from outside may keep an agent here, within
+  `policy.outside_roles` (§6.1, default `["coder"]`): such an agent
+  holds trust `member` or `guest` and a role on that list, never trust
+  `admin` and never a role that grants `tasks:review` or `tasks:test`
+  (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
+  `manager`, `ops` or `proxy`, whatever the list says, so the work of
+  outsiders is checked by the project's own members. A review result it
+  posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
+  no review requirement; it stays a comment. A trust, role or
+  `outside_roles` change that would break
+  this is `invalid`: on the member's `PATCH`
+  `details.fields.role: "outside_owner"` or `details.fields.trust:
+  "outside_owner"`, on a policy change `details.fields.outside_roles:
+  "outside_owner"`. When its owner's membership ends, an agent within
+  these limits keeps working and the owner manages it from outside, as
+  an owner who is no member does today (owner settings, pause, dormant,
+  consents, `owner_preferences`, §6.2, §19.4); one beyond them (trust
+  `admin`, a role not on the list) is isolated by the hub as under
+  `members`. That isolation ends only by an admin's lift, never by
+  itself: a human with `members:admin` may change the isolated member's
+  trust and role with `PATCH …/members/{id}` to bring it within the
+  limits, and the lift is `invalid` (`details.fields.member:
+  "outside_owner"`) while it is still beyond them and its owner is no
+  member. How an owner from outside offers a
+  new agent to a public project is a contract change of its own; until
+  then only members create joins (§3.1).
+- Under both, when a human's membership ends the open joins they
+  created are revoked and the placements they created that have not
+  made their membership yet are closed (§15.6), so no link or runner
+  outlives the person who issued it.
+
 **Isolation.** A project's humans with `members:admin` may isolate any
 agent member at once, whoever owns it, and lift the isolation again:
 `POST /projects/{owner}/{slug}/members/{id}/isolate` with `{"reason"}`
@@ -4367,7 +4425,9 @@ takes an optional `{"hide_isolation_events": true}` (below). An agent caller is
 `forbidden` (`humans_only`), and a human member cannot be isolated
 (`invalid`, `details.fields.member: "not_an_agent"`). While isolated,
 the membership stays with its history and is marked in the member view
-as `isolated: {reason, since, by}` (`null` otherwise, every reader); its
+as `isolated: {reason, since, by}` (`null` otherwise, every reader;
+`by` is a member id, or `"hub"` when the hub isolated it, below, and the
+owner's notice then names the hub and the reason); its
 claims are released, it is taken out of every group chat (`reason:
 membership_isolated`, §9.2), its placements on runners close
 (`membership_isolated`, §15.5), and it is left out of every audience: no
