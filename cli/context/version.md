@@ -37,6 +37,14 @@ clone are honored; redirects to another tree or alternate object/index
 locations make the source identity `unknown`. Dropping the runner's
 pins merely to get a revision would remove a confinement boundary.
 
+The repository tracks a JSON placeholder with `revision: null`, so
+setuptools has a concrete package-data input to carry into an sdist
+without claiming a build revision. Checkouts resolve live identity;
+build hooks replace the distribution's copy. Before writing, the hook
+unlinks that copy: setuptools can hard-link source files into its sdist
+release tree, so writing in place would overwrite the checkout's stamp
+through the hard link. Breaking the link preserves the source placeholder.
+
 The stamp contains only revision and dirty state, without machine
 paths or build time, so repeated builds from the same source retain
 the same identity. The existing release-version and tag policy remains
