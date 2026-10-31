@@ -1,12 +1,12 @@
 # Self-hosted runner for the database jobs
 
-The three hub jobs that run the whole suite against a database (`hub-sqlite`,
-`hub-postgresql`, `hub-mariadb` in `.github/workflows/ci.yml`) may run on a machine
+The hub jobs that run the whole suite against a database (`hub-sqlite` and
+`hub-postgresql` in `.github/workflows/ci.yml`, `hub-mariadb` in `.github/workflows/hub-mariadb.yml`) may run on a machine
 of the maintainer's instead of a GitHub-hosted runner. Everything else stays hosted.
 
 ## Which runner a job gets
 
-`ci.yml` reads the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
+`ci.yml` (and `hub-mariadb.yml`) read the repository variable `HUB_RUNNER_LABEL` (Settings → Secrets and variables →
 Actions → Variables): a label prefix, for example `maity-hub`. Each database job then asks for one
 runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub-postgresql` for
 `maity-hub-pg`, `hub-mariadb` for `maity-hub-maria`.
@@ -22,7 +22,7 @@ runner of its own type: `hub-sqlite` for `[self-hosted, maity-hub-sqlite]`, `hub
 - Variable unset or empty: GitHub-hosted (`ubuntu-latest`). **Deleting the variable is the whole
   fallback**, no commit needed. Runs already queued for a self-hosted label keep it, so cancel and
   rerun them after deleting the variable.
-- Set: **only a push (to `main`) uses the runners; every pull request runs on a hosted runner.** One
+- Set: **only what runs on `main` uses the runners (a push, the hourly `hub-mariadb` run, and a hand start of it for a commit of `main`); every pull request runs on a hosted runner.** One
   runner per job type does one job at a time (about 12 minutes for the MariaDB job); with pull requests
   on it the queue grew to eleven jobs and the oldest waited an hour and a half, which held up `main`
   as well. On the hosted side pull requests run in parallel. This is about the queue, not about trust
