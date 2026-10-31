@@ -872,10 +872,11 @@ repeats some at worst.
 The default text of `join` and `resume` keeps whole what asks for action
 and cuts history: the last 10 answers, the last 10 events whose
 `audience` holds this member's or this instance's token, the rest
-counted by kind, bodies at 5 lines or 200 characters. Every resume
+counted by kind, message and answer texts at 5 lines or 200
+characters (requests stay whole). Every resume
 stores its packet in the state directory, 0600, and `maity resume
 --full` renders that packet without the cut and without calling the
-hub, under `Stored packet of <server_time>`, with the resume's board
+hub, under a line saying when that resume was, with the resume's board
 check kept beside it. Answers are chosen by `answered_at`, not in the
 hub's order of asking. The text ends with one `Next:` action that includes the background
 wait.

@@ -40,7 +40,7 @@ COMPACT_CHARS = 200
 COMPACT_KINDS = 5
 FULL = "maity resume --full"
 WAIT_ON = (
-    ", then start `maity wait` in the background and keep working from what it returns. "
+    ", then start maity wait in the background and keep working from what it returns. "
     "Do not wait for your human in the terminal."
 )
 
@@ -319,8 +319,8 @@ def _request(
     ]
     if answering:
         if req.get("summary"):
-            summary = _capped(req["summary"], FULL, compact) if compact else quote(req["summary"])
-            lines += ["  " + q for q in summary]
+            # A request asks for action: its summary stays whole, compact or not (§13).
+            lines += ["  " + q for q in quote(req["summary"])]
         replies = _items(req.get("replies"))
         if replies:
             listed = ", ".join(f"{inline(r.get('id'))} = {inline(r.get('label'))}" for r in replies)
@@ -526,7 +526,7 @@ def _next_step(
         card = inline(claims[0].get("id"))
         return f"{read_first}continue {card} from its checkpoint{WAIT_ON}"
     if assigned:
-        return f"{read_first}`maity claim {inline(assigned[0].get('id'))}`{WAIT_ON}"
+        return f"{read_first}maity claim {inline(assigned[0].get('id'))}{WAIT_ON}"
     if board_empty and is_admin(packet):
         state = get(packet, "project", "state")
         if state == "archived":
@@ -543,13 +543,11 @@ def _next_step(
         names = _names(packet)
         if isinstance(lead, str) and lead:
             who = _name(lead, names)
-            to = f'report to @{who} with `maity say {who} "…" --type notice`'
+            to = f'report to @{who} with maity say {who} "…" --type notice'
         else:
-            to = 'report to your human with `maity say human "…"`'
+            to = 'report to your human with maity say human "…"'
         return f"{read_first}{to}{WAIT_ON}"
-    return f"{read_first}start `maity wait` in the background and keep working from what it " + (
-        "returns. Do not wait for your human in the terminal."
-    )
+    return f"{read_first}{WAIT_ON.removeprefix(', then ')}"
 
 
 def _author(by: Any) -> str:
@@ -799,7 +797,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         out += ["", "Next: You are isolated: stop, and do not re-arm `maity wait`."]
     else:
         step = _next_step(packet, isinstance(paused, dict), board_empty, first)
-        out += ["", "Next: " + step[0].upper() + step[1:]]
+        out += ["", "Next: " + step]  # worded as §13 writes it, lower case included
     if first:
         out.append(pointer.HUMAN_CHANNEL)
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")

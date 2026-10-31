@@ -140,16 +140,17 @@ def test_bodies_are_cut_shorter_in_the_compact_text() -> None:
     assert full.count("  > The lease") == 30
 
 
-def test_a_long_summary_to_answer_is_cut_too() -> None:
+def test_a_request_to_answer_keeps_its_whole_summary() -> None:
+    """A request asks for action, so it stays whole like the other such sections."""
     req = {"id": "req-1", "class": "decision", "title": "T", "summary": LOREM * 30}
     text = onboarding.render(packet(requests={"to_answer": [req]}))
-    assert "more lines: maity resume --full)" in text
+    assert text.count("  > The lease") == 30 and "(cut," not in text
 
 
 # --- the next step ---------------------------------------------------------------------------
 
 WAIT_ON = (
-    ", then start `maity wait` in the background and keep working from what it returns. "
+    ", then start maity wait in the background and keep working from what it returns. "
     "Do not wait for your human in the terminal."
 )
 
@@ -160,20 +161,24 @@ def _next(text: str) -> str:
 
 def test_after_a_join_without_work_the_agent_reports_to_its_lead() -> None:
     text = onboarding.render(packet(), first=True)
-    assert _next(text) == 'Report to @agent-a with `maity say agent-a "…" --type notice`' + WAIT_ON
+    assert _next(text) == 'report to @agent-a with maity say agent-a "…" --type notice' + WAIT_ON
 
 
 def test_without_a_lead_it_reports_to_its_human() -> None:
     base = packet()
     ms = {k: v for k, v in base["membership"].items() if k != "reports_to"}
     text = onboarding.render({**base, "membership": ms}, first=True)
-    assert _next(text) == 'Report to your human with `maity say human "…"`' + WAIT_ON
+    assert _next(text) == 'report to your human with maity say human "…"' + WAIT_ON
+
+
+def test_a_resume_without_work_names_only_the_wait() -> None:
+    assert _next(onboarding.render(packet())) == WAIT_ON.removeprefix(", then ")
 
 
 def test_a_handover_is_read_first() -> None:
     handover = {"from": ["k7mq"], "items": [_message(3, to_me=True)], "after": 2}
     data = packet(claims=[{"id": "tsk-4", "status": "in_progress"}], handover=handover)
-    expected = "Read what was handed over to you above, then continue tsk-4 from its checkpoint"
+    expected = "read what was handed over to you above, then continue tsk-4 from its checkpoint"
     assert _next(onboarding.render(data)) == expected + WAIT_ON
 
 
@@ -195,7 +200,7 @@ def test_resume_stores_the_packet_privately_and_full_renders_it_without_the_hub(
     assert cli.main(["resume", "--full"]) == cli.EXIT_OK
     assert len(fake.seen) == calls  # no second session
     full = capsys.readouterr().out
-    head = "Stored packet of the last resume\n\n"  # the fixture has no server_time
+    head = "Stored packet of the last resume; run maity resume for what changed since.\n\n"
     assert full == head + onboarding.render(data, full=True)
     assert len(full) > len(compact) and "Not shown" not in full
 
@@ -227,11 +232,14 @@ def test_join_prints_the_compact_text(
 def test_full_says_when_the_stored_packet_is_from(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    data = {**packet(), "server_time": "2026-10-31T07:00:00Z"}
+    data = {**packet(), "session": {"id": "ses-b-0004", "started_at": "2026-10-31T07:00:00Z"}}
     state.save_state(joined, data, name=cli.LAST_PACKET)
     assert cli.main(["resume", "--full"]) == cli.EXIT_OK
     first = capsys.readouterr().out.split("\n", 1)[0]
-    assert first == "Stored packet of 2026-10-31T07:00:00Z"
+    assert first == (
+        "Stored packet of the resume at 2026-10-31T07:00:00Z; run maity resume for what "
+        "changed since."
+    )
     assert not fake.seen
 
 

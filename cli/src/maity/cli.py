@@ -485,8 +485,9 @@ def cmd_resume(args: argparse.Namespace) -> int:
         _print_json(stored)
         return EXIT_OK
     # The packet may be hours old, and its `Next:` with it: say so before anything else.
-    when = stored.get("server_time")
-    print(f"Stored packet of {onboarding.inline(when) if when else 'the last resume'}\n")
+    started = onboarding.get(stored, "session", "started_at")
+    when = f"the resume at {onboarding.inline(started)}" if started else "the last resume"
+    print(f"Stored packet of {when}; run maity resume for what changed since.\n")
     board_empty = session.data.get("board_empty") is True
     print(onboarding.render(stored, board_empty=board_empty, full=True), end="")
     return EXIT_OK

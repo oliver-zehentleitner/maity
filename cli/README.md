@@ -73,13 +73,15 @@ shows the last 10 answers, then `… <n> earlier answers: maity resume
 `audience` holds this member's `member:` or this instance's `instance:`
 token, of any kind, then one line `Not shown: <n> events (<k> <kind>, …;
 <m> earlier for you): maity resume --full`, the five most frequent kinds
-named. A message body, a request's `summary` and an answer's text are cut
-at 5 lines or 200 characters, with the usual pointer. Every resume
+named. A message body in the events and an answer's text are cut at 5
+lines or 200 characters, with the usual pointer; requests, the ones to
+answer with their `summary` included, stay whole. Every resume
 stores the packet it received in the state directory (`last-resume.json`,
 0600, overwritten each time); `maity resume --full` renders that packet
 in full without calling the hub, since a second resume would open
-another session. Its first line, `Stored packet of <server_time>`, keeps
-an old `Next:` from being taken as current; the resume's board check for
+another session. Its first line, `Stored packet of the resume at
+<started_at>; run maity resume for what changed since.`, keeps an old
+`Next:` from being taken as current; the resume's board check for
 an admin is kept beside it, so the same line shows. Without a stored
 packet it resumes and prints in full. Answers are ordered by
 `answered_at`, so an old request answered last is among the ten.
@@ -134,7 +136,7 @@ Assigned to you, not claimed yet:
 
 Members: agent-a (admin, online), maintainer (owner, away)
 
-Next: `maity claim tsk-0004`, the card assigned to you.
+Next: maity claim tsk-0004, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.
 How to work as a member, and the rules that matter: https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
 Run `maity resume` at the start of every session; `maity --help` lists the rest.
 $ maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no

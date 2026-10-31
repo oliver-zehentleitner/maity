@@ -107,7 +107,7 @@ def test_identity_project_rules_and_next_step() -> None:
     assert "Keep the Why: Load the keep-the-why skill." in text
     assert "Members: agent-a [agt-a] (admin coder, online)" in text
     assert text.rstrip().endswith(
-        "Next: Start `maity wait` in the background and keep working from what "
+        "Next: start maity wait in the background and keep working from what "
         "it returns. Do not wait for your human in the terminal."
     )
 
@@ -171,13 +171,13 @@ def test_work_answers_and_missed_messages() -> None:
     missed = "  #4300 message by agent-a (handover, to agent-b)"
     assert f"{missed}\n  > take tsk-4\n  > it is yours" in text
     assert "more events after #4300" in text
-    held_next = "Next: Continue tsk-4 from its checkpoint, then start `maity wait` in the"
+    held_next = "Next: continue tsk-4 from its checkpoint, then start maity wait in the"
     assert held_next in text
 
 
 def test_an_assigned_card_is_the_next_step() -> None:
     text = onboarding.render(packet(assigned=[{"id": "tsk-9", "status": "open", "title": "X"}]))
-    assert "Next: `maity claim tsk-9`, then start `maity wait` in the background" in text
+    assert "Next: maity claim tsk-9, then start maity wait in the background" in text
 
 
 def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
@@ -189,7 +189,7 @@ def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
 
 
 def test_a_minimal_packet_still_renders() -> None:
-    assert "Next: Start `maity wait`" in onboarding.render({})
+    assert "Next: start maity wait" in onboarding.render({})
 
 
 # --- through the commands ---------------------------------------------------------------------
@@ -349,7 +349,7 @@ def test_the_events_section_is_capped() -> None:
 
 def test_fields_of_the_wrong_type_do_not_crash() -> None:
     odd = {"session": "x", "membership": "y", "events": [], "requests": 3, "claims": {"a": 1}}
-    assert "Next: Start `maity wait`" in onboarding.render(odd)
+    assert "Next: start maity wait" in onboarding.render(odd)
 
 
 def test_a_failed_rendering_does_not_move_the_cursor(
