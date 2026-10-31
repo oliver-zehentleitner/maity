@@ -299,7 +299,7 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     value = stats[key]
     label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
-        return None  # below the floor, or public pages off: the counter is left out (§16.7)
+        return None  # not computed: the counter is left out
     dot = (
         '<span class="dot pulse" aria-hidden="true"></span>'
         if key in ("people_online", "agents_online")
@@ -476,8 +476,8 @@ def _works_with(index: int, section: dict[str, Any]) -> str:
 
 
 def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
-    """The hero's line of who is online, from the shared stats; a counter below the floor, or one
-    no enabled `stats` section names, is left out, and the line with it when none is left."""
+    """The hero's line of who is online, from the shared stats; a counter that
+    no enabled `stats` section names is left out, and the line with it when none is left."""
     cells = []
     for key in ("people_online", "agents_online"):
         value = (stats or {}).get(key)

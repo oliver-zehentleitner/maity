@@ -8,11 +8,11 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, landing_stats, render
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 ADMIN = "/admin/settings/landing"
@@ -213,17 +213,16 @@ def test_the_counters_of_the_page_and_of_the_public_read(
     assert re.search(
         r'<b><span data-lp-count>1</span></b><span class="label">People</span>', page
     )  # the admin
-    assert "People online" not in page and "&lt; 5" not in page  # under the floor: left out
+    assert "&lt; 5" not in page  # no "< 5" stands in place of a number
     assert "Agents</span>" in page
     body = make_client().get("/api/v1/landing").json()
     assert set(body["stats"]) == {
         "people",
         "agents",
         "people_online",
-        "online_floor",
         "computed_at",
-    }
-    assert body["stats"]["people_online"] is None and body["stats"]["online_floor"] == 5
+    }  # no `online_floor`: the numbers are the real ones (§16.7)
+    assert body["stats"]["people_online"] == 1
     owner.patch(ADMIN, {"pages": {"en": {"title": "T", "sections": [hero()]}}})
     assert make_client().get("/api/v1/landing").json()["stats"] is None  # nothing names one
 
@@ -242,17 +241,57 @@ def test_the_counters_are_recomputed_every_five_minutes_only(
     assert make_client().get("/api/v1/landing").json()["stats"]["people"] == first + 1
 
 
-def test_online_counts_show_from_the_floor_up(
+def test_online_counts_are_the_real_numbers_from_the_first_person(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     publish(owner)
-    for n in range(5):
+    for n in range(2):
         flow.human(make_client, migrated, f"person{n}")
     with migrated.begin() as conn:
         conn.execute(update(t.human).values(last_seen_at=clock.now()))
     landing_stats.reset()
     stats = make_client().get("/api/v1/landing").json()["stats"]
-    assert stats["people_online"] == 6 and stats["people"] == 6
+    assert stats["people_online"] == 3 and stats["people"] == 3  # three, no floor
+    assert "online_floor" not in stats
+
+
+def test_the_counters_cover_every_project_and_show_zero(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`public_projects` is a number, `0` included; `cards_done_week` counts the cards that went
+    to `done` in the last 7 days in every project, public or not (§16.7)."""
+    stats = {"type": "stats", "enabled": True, "items": ["public_projects", "cards_done_week"]}
+    publish(owner, [hero(), stats])
+    project = flow.project(owner, "private")  # not public
+    with migrated.connect() as conn:
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.project_id == project["id"])
+        ).scalar_one()
+    factory.card(
+        migrated, project["id"], member, status="done", claim_holder=member, closed_at=clock.now()
+    )
+    factory.card(  # done long ago: not this week
+        migrated,
+        project["id"],
+        member,
+        status="done",
+        claim_holder=member,
+        closed_at=clock.now() - timedelta(days=8),
+    )
+    factory.card(migrated, project["id"], member, status="open")
+
+    def read() -> dict[str, Any]:
+        landing_stats.reset()
+        return dict(make_client().get("/api/v1/landing").json()["stats"])
+
+    first = read()
+    assert (first["public_projects"], first["cards_done_week"]) == (0, 1)
+    page = make_client().get("/").text
+    assert re.search(
+        r'<b><span data-lp-count>0</span></b><span class="label">Public projects</span>', page
+    )
+    assert owner.patch("/projects/maintainer/private", {"public_page": "on"}).status_code == 200
+    assert read()["public_projects"] == 1
 
 
 # --- the legal pages ----------

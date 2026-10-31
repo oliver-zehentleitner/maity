@@ -186,18 +186,18 @@ def test_the_hero_shows_the_online_numbers_beside_a_one_line_note(
     )
 
 
-def test_the_online_numbers_are_left_out_under_the_floor(
+def test_a_small_online_number_is_shown_as_it_is(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
-    under = page(owner, make_client, ONLINE)  # one person, below the floor of five
-    assert 'class="online"' not in under and "People online" not in under
-    assert '<div class="hero-meta"><div class="note">' in under  # the note stays
+    small = page(owner, make_client, ONLINE)  # one person, no agent: there is no floor (§16.7)
+    assert re.search(r'<span class="online-item"><b><span data-lp-count>1</span></b> People', small)
+    assert re.search(r'<span class="online-item"><b><span data-lp-count>0</span></b> Agents', small)
 
 
 def test_only_a_counter_an_enabled_stats_section_names_is_in_the_hero(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    many_online(make_client, migrated)  # six people online: above the floor
+    many_online(make_client, migrated)  # six people online
     unnamed = page(owner, make_client, {**STATS, "items": ["people"]})
     assert 'class="online"' not in unnamed and "People online" not in unnamed
     one = page(owner, make_client, {**STATS, "items": ["people_online"]})
@@ -205,16 +205,13 @@ def test_only_a_counter_an_enabled_stats_section_names_is_in_the_hero(
     disabled = page(owner, make_client, {**ONLINE, "enabled": False})
     assert 'class="online"' not in disabled  # a section that is off names nothing
     both = page(owner, make_client, ONLINE)
-    assert "People online" in both  # named and above the floor
-    assert "Agents online" not in both  # named, but no agent is online: below the floor
+    assert "People online" in both and "Agents online" in both  # named: shown, 0 included
 
 
-def test_a_counter_below_the_floor_leaves_its_cell_out(
-    owner: flow.Human, make_client: ClientFactory
-) -> None:
+def test_every_named_counter_has_its_cell(owner: flow.Human, make_client: ClientFactory) -> None:
     html = page(owner, make_client, STATS)
     cells = re.findall(r'<span class="label">([^<]*)</span>', html)
-    assert cells == ["People", "Agents"]  # people online has no cell: no "< 5"
+    assert cells == ["People", "Agents", "People online"]  # a small number is no reason to drop it
 
 
 def test_the_counters_say_agents_in_german_too(
@@ -346,7 +343,7 @@ def test_a_variants_page_follows_its_own_stats_sections(owner: flow.Human) -> No
         "variants": {"for-teams": {"pages": {"en": page_of("people", "people_online")}}},
         "footer": {"operator": None, "social": []},
     }
-    counters = {"people": 9, "people_online": 7, "agents_online": 6, "online_floor": 5}
+    counters = {"people": 9, "people_online": 7, "agents_online": 6}
     legal: dict[str, Any] = {"pages": {}}
 
     def draw(variant: str | None) -> str:
