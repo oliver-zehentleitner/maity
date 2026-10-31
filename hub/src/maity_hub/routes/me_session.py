@@ -554,6 +554,9 @@ def _packet(
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
+            # Until the membership has checked in; the member view keeps them (§5.2).
+            "takes_over": None if mine.row.onboarded_at else mine.row.takes_over,
+            "handover": None if mine.row.onboarded_at else mine.row.handover,
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
