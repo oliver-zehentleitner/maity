@@ -177,7 +177,7 @@ maintainer.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, and the maintainer's redesign of 2026-10-23; contract in `docs/api.md` §20, forwarding in §7
+**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, the maintainer's redesign of 2026-10-23, and the maintainer's confirmation of the remaining defaults (windows, moderator order, presence, deciding) on 2026-10-31; contract in `docs/api.md` §20, forwarding in §7
 **Revisit when:** the cost of a round (wakes, steps) turns out higher than its proposals are worth, rounds keep being skipped for want of a moderator or members, or members stop answering
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
 **See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
