@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, case, select, update
 
+from maity_hub import policy as policy_module
 from maity_hub import tables as t
 from maity_hub.scopes import BASES, ROLES
 
@@ -162,6 +163,8 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
     ).scalars()
     if any(f"role:{name}" in (policy or {}).get("substitutes", []) for policy in policies):
         found.append("substitutes")
+    if name in policy_module.outside_roles(project):  # what an outsider's agent may hold (§6.1)
+        found.append("outside_roles")
     return found
 
 
