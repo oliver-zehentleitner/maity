@@ -3258,7 +3258,9 @@ statement, the posts and the report with each proposal's triage. The
 series (`policy.jour_fixe`) is a form in Project settings, sent whole
 with a reason as the contract replaces it. Beside it is the moderator
 order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
-human with `project:admin`, as every policy field is.
+human with `project:admin`, as every policy field is. The order shown
+unchanged is never sent: saving the resolved order would freeze the
+default (by time online) as an explicit list.
 
 Under the round, each reader gets what they may do (`js/jour-fixe-act.js`):
 - **A participant** answers while the window is open: three texts, by name

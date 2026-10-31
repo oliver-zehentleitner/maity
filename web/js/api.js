@@ -2279,8 +2279,12 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         if ("jour_fixe" in body.policy && body.policy.jour_fixe !== null) {
-          const errors = jourFixeErrors(body.policy.jour_fixe, file(m[1], "members.json", path).items);
+          // Checked and stored with the defaults filled in, as the hub does (schedule.filled, §20.1).
+          const filled = Object.assign({ enabled: false, moderator: "admin_agent", answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 },
+            body.policy.jour_fixe);
+          const errors = jourFixeErrors(filled, file(m[1], "members.json", path).items);
           if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+          body.policy = Object.assign({}, body.policy, { jour_fixe: filled });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);

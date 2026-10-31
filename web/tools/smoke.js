@@ -4017,6 +4017,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(text(byId("jf-timezone-error")) === "not a time zone the hub knows" && text(main).includes("see the fields marked below"),
       "jour fixe: the hub's refusal of the time zone said at its field");
+    // A refusal of a path with no field of its own is named in the status line, beside the fields marked.
+    const jfPatchNow = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => (b && b.policy && "jour_fixe" in b.policy
+      ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "policy.jour_fixe.time": "format", "policy.jour_fixe.recurrence": "not_an_object" } }))
+      : jfPatchNow(p, b));
+    byId("jf-timezone").value = "Europe/Vienna"; jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("jf-time-error")) === "a time as HH:MM, 24-hour" && text(main).includes("see the fields marked below; recurrence: not_an_object"),
+      "jour fixe: a refusal with no field of its own is named in the status line, the others at their fields");
+    win.Maity.api.patch = jfPatchNow;
     // Started by hand: a reason, then the new round; a second start while it is open is refused in words.
     await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
     expect(text(main).includes("Next round:"), "jour fixe: with the series on, the next slot is said");
