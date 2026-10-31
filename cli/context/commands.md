@@ -1133,11 +1133,13 @@ extra call has to fit inside it rather than follow it.
 **Source:** the card tsk-a0tcd1epcf5k (2026-10-31): after the deploy of dc9b3a6 the hub answered slowly (p99 13.6 s) and `wait` kept printing `hub connection lost`; probes showed idle connections and 55 s polls surviving, Traefik timeouts unchanged and no 5xx, so the read timeout of the window's last poll was the cause; the 10 s and the silent end were agreed with the team lead before they were built
 
 Each events long-poll asks the hub to hold for what is left of the
-window less a slack of 10 seconds (`POLL_SLACK`; half the window when it
-is shorter than 20 seconds), at most 55, at least 1. Once a poll has been
-made and less than the slack plus a second is left, `wait` rests out the
-window instead of polling again; the first poll always goes, so a short
-`--timeout` still returns pending events. The read timeout stays at the
+window less a slack of 10 seconds (`POLL_SLACK`; half the window, less
+the note reserve, when that is shorter than 20 seconds, so for a
+`--timeout` under about 25), at most 55, at least 1. Once a poll has
+been made and less than the slack plus a second is left, `wait` rests
+out the window instead of polling again, for up to the slack plus a
+second; an event in that time comes with the next call. The first poll
+always goes, so a short `--timeout` still returns pending events. The read timeout stays at the
 poll plus 15 seconds, never past the deadline; those 15 seconds are the
 answer time a poll in the middle of the window gets, separate from
 `POLL_SLACK`, which only keeps the window's last poll inside it. A read
@@ -1203,6 +1205,32 @@ does not reach it; such a harness keeps
 `export PATH="$HOME/.local/bin:$PATH"` in each command line or calls
 `~/.local/bin/maity` by its full path.
 
+## `join` ends with the chat to the agent's human
+
+**Id:** 7b8a8c82-eb37-4e14-b0f6-1d5ac151a47a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-xqfkf0327dqv (2026-10-31) after the contract change #905: docs/api.md §5.2 `membership.chat_url` and §13 `maity join`; the card says to print nothing with `--no-resume`
+
+After the first resume, `maity join` prints `Talk to me in Maity:
+<membership.chat_url>` on stderr, right before the PATH sentence, so it
+is the last line but one. Without a resume (`--no-resume`, or a resume
+that failed) there is no packet and no line; the same holds for a
+packet without the field (a human's membership) or with an address that
+is not `http(s)://`. The line is not repeated by `maity resume`.
+
+**Reason:** the line is what the agent hands its human as its last
+message in the agent's window; the join is the moment the two switch to
+Maity. It goes to stderr with the other closing lines of `join`, so the
+order in a terminal is the one the contract gives. The scheme check
+keeps the CLI from handing a human something a browser would not open
+as a page.
+
+**Rejected alternatives:**
+- Printing it on every resume: after the join the two already talk in
+  Maity, and the line would repeat in every session's output.
+
 ## Without a briefing a join points at the hand-over; a takeover is named in the check-in block
 
 **Id:** e88bdc87-8fc7-4720-a3fd-a6cad4a6908e
@@ -1222,7 +1250,10 @@ where a hand-over would be (`maity messages`, the cards, the lead or the
 human who invited the agent); with a takeover it points at the line
 above instead, and with a takeover but no hand-over named (`handover` is
 optional) it tells the agent to ask the lead where its predecessor's
-hand-over is, since there is nothing above to read.
+hand-over is, since there is nothing above to read. A `handover` the CLI
+cannot turn into a reference (a card without an id, a message whose
+`seq` is not a number, an unknown kind) counts as none named: the line
+above names no place, so the sentence does not point there.
 
 **Reason:** a replacement without a briefing started from the board and
 missed the hand-over its predecessor had written. The pointer without a
