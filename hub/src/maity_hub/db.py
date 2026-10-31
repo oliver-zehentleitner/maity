@@ -50,6 +50,7 @@ POOL_RECYCLE_SECONDS = 1800
 APPLICATION_SERVING = "maity-hub"
 APPLICATION_HEALTH = "maity-hub-health"
 APPLICATION_COMMAND = "maity-hub-cli"
+APPLICATION_LISTENER = "maity-hub-listener"
 # What the readiness probe may spend on the database: the connect timeout above and this long
 # for its one statement (PostgreSQL's `statement_timeout`, the driver's `read_timeout` on
 # MariaDB). It runs on a connection of its own, so a slow database answers 503 within about
@@ -128,6 +129,26 @@ def make_engine(
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _sqlite_pragmas)
         event.listen(engine, "begin", _sqlite_begin_immediate)
+    return engine
+
+
+def make_listener_engine(url: str) -> Engine:
+    """An engine for the wake-up listener alone (`wakeups`): PostgreSQL, no pool, no statement
+    timeout, as its one connection waits in `LISTEN` for as long as it lives."""
+    engine = create_engine(
+        url,
+        poolclass=NullPool,
+        hide_parameters=True,
+        connect_args={
+            "connect_timeout": CONNECT_TIMEOUT_SECONDS,
+            "application_name": APPLICATION_LISTENER,
+        },
+    )
+
+    @event.listens_for(engine, "do_connect")
+    def _connect(dialect: Any, _record: Any, cargs: Any, cparams: Any) -> Any:
+        return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams)
+
     return engine
 
 

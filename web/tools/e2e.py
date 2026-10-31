@@ -1785,6 +1785,23 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         event = run.wait_event(wait)
         assert event.get("kind") == "message" and event["payload"].get("to") == "role:reviewer", event
     run.shot(page, "message-the-project")
+    # An agent's instance (tsk-bczgjkfpw1wg): after "#" the @ picker offers its instances; Enter puts
+    # the address in, and the address's #id leads to the member page's Sessions with that instance marked.
+    body = page.locator("#message-body")
+    body.fill("")
+    body.press_sequentially("Hi @e2e-agent#")
+    option = page.locator(".mention-list li").first
+    expect(option.locator(".mention-handle")).to_have_text(re.compile(r"^@e2e-agent#[2-9a-hjkmnp-z]{4,5}$"))
+    address = option.locator(".mention-handle").inner_text()
+    body.press("Enter")
+    expect(body).to_have_value(f"Hi {address} ")
+    instance = address.split("#", 1)[1]
+    body.fill("")
+    page.goto(f"{run.base}/owner/e2e-alpha/members/{agent_id}/sessions/{instance}")
+    chosen = page.locator(f"#member-instance-{instance}")
+    expect(chosen).to_have_attribute("aria-current", "true")
+    expect(chosen).to_be_focused()
+    run.a11y(page, "member page, an instance chosen")
     # In a private chat an @name tells nobody: the hub resolves nothing there.
     wait = run.wait_start(alpha)
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
@@ -2186,6 +2203,10 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
     if opened.search(page.url):
         expect(page.locator("main")).to_contain_text("answering")
+        # The owner is a participant: an answer by name, read back from the real hub.
+        page.locator("#jfa-went_well").fill("e2e: the board is clear")
+        page.locator("form.jfa-answer-form").get_by_role("button", name="Send my answer", exact=True).click()
+        expect(page.locator("section.jfa-answer")).to_contain_text("Your answer, by name.")
     else:
         # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
         refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"
@@ -2426,9 +2447,16 @@ def isolate_step(run: Run, page: Page) -> None:
     expect(manage.locator(".member-isolate")).to_contain_text("e2e: isolated on purpose")
     run.a11y(page, "members, an isolated agent")
     run.shot(page, "member-isolated")
+    # Lifting with the box ticked (tsk-zwxtdfmdscf7): the isolation's events stay hidden from the agent.
+    hide = manage.locator("input[id^=member-lift-hide-]")
+    expect(hide).not_to_be_checked()
+    hide.check()
     manage.get_by_role("button", name="Lift isolation", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("The isolation of E2E Agent is lifted.")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text(
+        "The isolation of E2E Agent is lifted; what happened meanwhile stays hidden from it."
+    )
     expect(row.locator(".badge.member-isolated")).to_have_count(0)
+    expect(row.locator(".member-hidden-windows")).to_contain_text("Hidden from it after an isolation: events ")
     expect(manage.locator("input[id^=member-isolate-]")).to_be_visible()
     row.get_by_role("button", name="Done managing E2E Agent").click()
     # The owner is told of both in their inbox (§6.2, a hub notice with one reply, Seen):

@@ -91,6 +91,14 @@ def _forget(conn: Any) -> None:
     conn.info.pop(_HELD, None)
 
 
+def exempt(conn: Connection) -> None:
+    """Let this transaction write without the check: one that changes nothing of an account,
+    opened beside the caller's own transaction (`shared_counts`). Taking the shared lock there
+    would wait for the caller's transaction, which may have just made the `account_lock` row and
+    not committed it yet: a request waiting on itself."""
+    conn.info[_HELD] = True
+
+
 def ensure_row(conn: Connection, human_id: str) -> None:
     """The human's `account_lock` row, made when missing (a human made after 0076)."""
     found = conn.execute(

@@ -598,3 +598,25 @@ def test_after_the_nonces_are_lost_what_was_signed_before_is_refused(
     clock.set_source(lambda: later)
     fresh = signed(agent, "GET", "/api/v1/me", timestamp=int(later.timestamp()))
     assert client.get("/api/v1/me", headers=fresh).status_code == 200
+
+
+def test_the_epoch_after_a_loss_takes_the_databases_clock(
+    make_client: ClientFactory, agent: factory.Agent, migrated: Engine
+) -> None:
+    """A replica whose clock runs ahead or behind sets no boundary of its own: the epoch is the
+    database's `now()` (replicas.md 1c65bb74)."""
+    from sqlalchemy import delete, func
+
+    _shared_only(migrated)
+    with migrated.begin() as conn:  # what a crash of the database leaves
+        conn.execute(delete(t.request_nonce))
+        conn.execute(delete(t.nonce_epoch))
+    ahead = clock.now() + timedelta(hours=1)  # this replica's clock, an hour ahead
+    clock.set_source(lambda: ahead)
+    fresh = signed(agent, "GET", "/api/v1/me", timestamp=int(ahead.timestamp()))
+    assert make_client().get("/api/v1/me", headers=fresh).status_code == 200
+    with migrated.connect() as conn:
+        since = conn.execute(select(t.nonce_epoch.c.since)).scalar_one()
+        database_now = conn.execute(select(func.timezone("UTC", func.now()))).scalar_one()
+    assert abs((since.replace(tzinfo=None) - database_now).total_seconds()) < 60
+    assert ahead - since > timedelta(minutes=50)  # not the replica's clock

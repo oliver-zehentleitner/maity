@@ -43,7 +43,9 @@ from maity_hub import (
     reports,
     request_stats,
     rules,
+    shared_counts,
     takeovers,
+    wakeups,
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
@@ -154,6 +156,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
+    shared_counts.configure(engine)  # the limits count across replicas on PostgreSQL
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -239,7 +242,16 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         stats_reporter.start()
         pages_worker = public_pages.Worker(engine, settings)
         pages_worker.start()
+        # A long-poll wakes when another replica writes (hub/context/replicas.md 387c2409).
+        listener = None
+        if engine.dialect.name == "postgresql":
+            listener = wakeups.Listener(
+                settings.direct_database_url or engine.url.render_as_string(hide_password=False)
+            )
+            listener.start()
         yield
+        if listener is not None:
+            listener.stop()
         pages_worker.stop()
         stats_reporter.stop()
         notify_worker.stop()

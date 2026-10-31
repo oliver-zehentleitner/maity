@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import stat
+import sys
 import threading
 import time
 from pathlib import Path
@@ -340,6 +341,39 @@ def test_a_clock_skew_is_corrected_once(joined: Path, fake: fakehub.FakeHub) -> 
     assert int(second.headers["maity-timestamp"]) > int(first.headers["maity-timestamp"]) + 10**9
 
 
+def test_a_clock_skew_is_not_retried_past_the_callers_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second attempt gets only what is left of the timeout (`wait` relies on it)."""
+    fake.skew_once = True
+    session = cli.Session()
+    real = time.monotonic
+
+    def clock() -> float:  # once the first attempt reached the hub, its 5 seconds are gone
+        return real() + (6.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    with pytest.raises(hub.HubError) as raised:
+        session.client.call("GET", session.project_path("events"), timeout=5)
+    assert raised.value.code == "timestamp_skew"
+    assert len(fake.signed()) == 1
+
+
+def test_a_clock_skew_after_the_deadline_ends_wait_as_a_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No time is left for the client's own retry: exit 3 as for any timeout, not exit 1."""
+    fake.skew_once = True
+    real = time.monotonic
+
+    def clock() -> float:  # the first request used up the whole --timeout
+        return real() + (100.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    assert cli.main(["wait", "--timeout", "8"]) == cli.EXIT_TIMEOUT
+    assert len(fake.signed()) == 1
+
+
 # --- report, ask, api ---------------------------------------------------------------------
 
 
@@ -598,6 +632,33 @@ def test_join_takes_the_line_from_one_place_only(
 
     monkeypatch.setattr("sys.stdin", io.StringIO("https://h/j/x\nC\n"))
     assert cli.main(argv) == cli.EXIT_USAGE
+
+
+def test_a_join_started_off_path_says_how_to_put_maity_on_path(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pipx install` leaves `~/.local/bin` off PATH on many machines."""
+    monkeypatch.setattr(sys, "argv", ["/home/a/.local/bin/maity"])
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert (
+        "maity: `maity` is not on PATH (this run is /home/a/.local/bin), so later commands "
+        "will not find it: run `pipx ensurepath` and open a new shell"
+    ) in err
+
+
+def test_a_join_with_maity_on_path_says_nothing_about_path(
+    clone: Path, bin_dir: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (bin_dir / "maity").write_text("#!/bin/sh\n")
+    (bin_dir / "maity").chmod(0o755)
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    assert "not on PATH" not in capsys.readouterr().err
 
 
 def test_a_join_file_with_the_wrong_shape_is_refused(

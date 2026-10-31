@@ -39,8 +39,8 @@ from maity_hub.views import human_member
 
 router = APIRouter(prefix="/auth")
 
-LOGIN_BY_ADDRESS = Limiter(10, 60)
-LOGIN_BY_HANDLE = Limiter(10, 60)
+LOGIN_BY_ADDRESS = Limiter(10, 60, name="routes.auth.LOGIN_BY_ADDRESS")
+LOGIN_BY_HANDLE = Limiter(10, 60, name="routes.auth.LOGIN_BY_HANDLE")
 
 
 class Strict(BaseModel):

@@ -64,6 +64,17 @@ def test_wait_names_unread_chats_on_a_timeout(
     assert "maity: unread chats: 6 in 2 chats (1 mentions): maity chats\n" in err
 
 
+def test_past_the_first_page_the_counts_are_a_floor(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    page = {"items": [_chat("cnv-1", 2)], "next_cursor": "c2"}
+    fake.routes[("GET", CHATS)] = lambda seen: (200, page)
+    assert cli.main(["wait", "--timeout", "4"]) == cli.EXIT_TIMEOUT
+    err = capsys.readouterr().err
+    line = "maity: unread chats: at least 2 in at least 1 chats (at least 0 mentions): maity chats"
+    assert line + "\n" in err
+
+
 def test_wait_says_nothing_without_unread_chats(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

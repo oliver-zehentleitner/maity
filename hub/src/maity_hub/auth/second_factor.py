@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import admin, clock, secretbox
+from maity_hub import admin, clock, secretbox, shared_counts
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions, totp
 from maity_hub.auth.caller import Caller, session_expires_at
@@ -38,11 +38,12 @@ RECOVERY_CODES = 10
 WRONG_PER_SESSION = 5
 
 # 10 wrong codes per human in 15 minutes, every kind of check alike (§2.8.6).
-WRONG_BY_HUMAN = Limiter(10, 15 * 60)
-ENROLMENTS_BY_HUMAN = Limiter(5, 60 * 60)
+WRONG_BY_HUMAN = Limiter(10, 15 * 60, name="auth.second_factor.WRONG_BY_HUMAN")
+ENROLMENTS_BY_HUMAN = Limiter(5, 60 * 60, name="auth.second_factor.ENROLMENTS_BY_HUMAN")
 # Wrong codes per second-factor session: (count, first seen), pruned once a session's
 # five minutes are over.
 _wrong_in_session: dict[str, tuple[int, float]] = {}
+WRONG_IN_SESSION = "auth.second_factor.wrong_in_session"  # its bucket across replicas
 
 SECRET_FIELD = "second_factor.secret"
 _CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
@@ -374,6 +375,12 @@ def refused(reason: str, message: str) -> ApiError:
 
 
 def _count_wrong(id_hash: str) -> int:
+    """The wrong codes of a second-factor session, this one included: across replicas on
+    PostgreSQL (replicas.md 2bd65fec), counted over the current and the previous window of
+    the session's five minutes, which counts at least every wrong code of the session."""
+    if shared_counts.active():
+        window = shared_counts.add(WRONG_IN_SESSION, id_hash, SECOND_STEP.total_seconds())
+        return window.current + window.previous
     now = time.monotonic()
     if len(_wrong_in_session) > 1024:
         horizon = now - SECOND_STEP.total_seconds()
@@ -382,6 +389,12 @@ def _count_wrong(id_hash: str) -> int:
     count, first = _wrong_in_session.get(id_hash, (0, now))
     _wrong_in_session[id_hash] = (count + 1, first)
     return count + 1
+
+
+def _forget_wrong(id_hash: str) -> None:
+    _wrong_in_session.pop(id_hash, None)
+    if shared_counts.active():
+        shared_counts.clear(WRONG_IN_SESSION, id_hash)
 
 
 def code_invalid() -> ApiError:
@@ -414,7 +427,7 @@ def verify(
         if second_step:
             wrong = _count_wrong(row.id_hash)
             if wrong >= WRONG_PER_SESSION:
-                _wrong_in_session.pop(row.id_hash, None)
+                _forget_wrong(row.id_hash)
                 failed(conn, human_id, row.method, row.ip, row.browser, row.os)
                 sessions.end(conn, [row], "second_factor_failed")
         elif WRONG_BY_HUMAN.blocked(human_id):
@@ -422,7 +435,7 @@ def verify(
             failed(conn, human_id, "step_up", row.ip, row.browser, row.os)
         return None  # the caller commits what a wrong code caused, then refuses
     if second_step:
-        _wrong_in_session.pop(row.id_hash, None)
+        _forget_wrong(row.id_hash)
         try:
             return sessions.complete_sign_in(conn, row, used)
         except LookupError:

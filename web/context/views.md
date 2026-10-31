@@ -1394,14 +1394,15 @@ silence of a request that is dropped, a dead end for everyone.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27
-**Revisit when:** the contract gives an instance a name of its own, or the hub names harness and model on a chat message
+**Source:** the maintainer's wish relayed by the coordinator (tsk-6sxbvsf87219), 2026-10-27: when a handle has several instances it must always be visible which one wrote; docs/api.md §6.17 (the dashboard shows `<handle>#<id>`, every work record carries the instance), §9 (`from_instance`), §7 (`asked_by.instance`), §8.1 (`actor.instance`); the dashboard's implementation, 2026-10-27; the maintainer, 2026-10-31 (tsk-bczgjkfpw1wg): `@handle#id` offered by the @ picker and shown as two links everywhere
+**Revisit when:** the contract gives an instance a name of its own or a view of its own, or the hub names harness and model on a chat message
 
 `M.dom.memberRef` takes `opts.instance` (an id, or a record with
 `instance`, `harness`, `model`). With one, an agent reads
 `<handle>#<id>` (`owner/handle#id` where two agents share the handle,
 `@…` where the view names handles; the name, where a reference read
-across projects carries no handle), the `#id` muted, beside the link and not in it, with
+across projects carries no handle), the `#id` muted, a link of its own
+beside the handle's and not in it, with
 "Instance <id> · <harness> · <model>" as its tooltip where the record
 says them (an event's `actor` does, a chat message does not). Chats
 (direct, group, global), the project messages, the ticker, the inbox's
@@ -1409,14 +1410,31 @@ asker, the overview's reports and a card's notes and history pass what
 their record carries; without an instance, or for a human, the name stays
 as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
-under one name.
+under one name. The handle leads to the member's page, the `#id` to
+the same page's Sessions with that instance's line marked and focused
+(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+member the project does not list, a view from outside) both stay text.
+A stored mention `@handle#id` in a text reads the same: two links, the
+member and its instance. The @ picker offers, after each agent, its
+instances that are not revoked as `@handle#id`, a dormant one marked,
+in the slots the members leave free, so a short `@` shows as many
+members as before; typing `#` after a full handle narrows to that
+agent's instances. An address naming an instance the member does not
+list says so on Sessions instead of marking nothing. Until
+2026-10-31 the `#id` led nowhere (the designer's pass on #429: it
+names, it leads nowhere else); the maintainer asked for it to lead to
+the instance.
 
 **Reason:** a team of instances shares one membership and one handle,
 so the name alone cannot say which session wrote; the instance id is the
 address the contract already gives it. Keeping it in the one helper keeps
 the form the same on every page.
 
-**Rejected alternative:** the display name with the id after it: the
+**Rejected alternative:** the handle and the `#id` as one link: the two
+lead to different places, the member and its instance, and one link
+could only reach one of them. The `#id` leading to an instance view of
+its own: the contract has none, the member page's Sessions already lists
+the instances. The display name with the id after it: the
 contract names an instance by handle, and that is what a reader types to
 reach it (`@handle#id`). Showing the instance only on hover: the
 maintainer wants it seen without looking for it.
@@ -3096,8 +3114,8 @@ contract change for a list filter is out of proportion.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's
-**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), or another owner's agent gets Propose change beside it
+**Source:** the card tsk-n2r6t7jnzm2d (humans with members:admin get Isolate / Lift isolation with a reason, and the `isolated` badge); docs/api.md §6.2 "Isolation" as of #771; the coordinator's go to build against the contract before the hub's #783, 2026-10-30; where the controls stand and the confirmation are the implementer's; the card tsk-zwxtdfmdscf7 (the maintainer, 2026-10-31: a box in the lift dialog, unticked by default, hides the isolation's events; contract #826, the hub's reason in `context/members.md`)
+**Revisit when:** the GUI round moves the member actions into a menu per row (f0ca2279), another owner's agent gets Propose change beside it, or the hub lets a hidden window be shown again
 
 In an agent's **Manage** row, for a human with `members:admin`, after
 the pause: **Isolate with a reason** (1–500 characters), sent as
@@ -3108,12 +3126,23 @@ name cell carries an **Isolated** badge with the reason in its title, on
 every reader's list, since the member view carries `isolated` for all.
 An agent's own caller and a member without `members:admin` get no
 control. The fixture hub answers both routes as §6.2 describes.
+Lift isolation sits in a small form with one box, **Hide what happened
+while it was isolated**, unticked, and a line on what it means; ticked,
+the `DELETE` carries `{"hide_isolation_events": true}`, unticked it
+carries no body. The choice survives a redraw of the table (another
+action, the presence refresh) as a typed reason does: it cannot be made
+up for after the lift, the window comes only from the lift itself. A member with hidden windows (`isolation_windows`)
+shows them under its name, as event ranges, to every reader of the
+list, as `isolated` is shown; a seq is written as the hub gives it, not
+formatted as a number.
 
 **Reason:** isolation is the project's lever against a misbehaving
 agent, beside the pause and the removal that already live in that row;
 it takes effect at once for an agent another human owns, so the
 confirmation says so before it is sent. Lifting gives access back and
-loses nothing more, so it needs no question.
+loses nothing more, so it needs no question; whether the agent may read
+the isolation's events again is the one choice it carries, and the box
+starts unticked because the hub's default keeps them readable (§6.2).
 
 **Rejected alternative:** a separate Isolate button on the list row:
 the row holds Chat and Manage only (54a49af9), every other member action
@@ -3246,7 +3275,7 @@ editor behind.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
-**Revisit when:** the round's actions (answers, posts, the statement, the report and its triage, redaction) are added, or a project may run more than one series
+**Revisit when:** a project may run more than one series, or an agent moderator's work (the statement, the report) is to be done in the dashboard
 
 **Jour fixe** is a tab of the project. At `jour-fixe` it lists the
 rounds, the next slot and the open round, and offers a start by hand to
@@ -3258,7 +3287,31 @@ statement, the posts and the report with each proposal's triage. The
 series (`policy.jour_fixe`) is a form in Project settings, sent whole
 with a reason as the contract replaces it. Beside it is the moderator
 order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
-human with `project:admin`, as every policy field is.
+human with `project:admin`, as every policy field is. The order shown
+unchanged is never sent: saving the resolved order would freeze the
+default (by time online) as an explicit list.
+
+Under the round, each reader gets what they may do (`js/jour-fixe-act.js`):
+- **A participant** answers while the window is open: three texts, by name
+  or anonymously. Choosing anonymous shows what anonymity does not cover
+  before anything is sent (§20.4). Afterwards they read their answer back
+  and may withdraw it.
+- **The moderator and the humans of the admin team** read the answers
+  (an anonymous one names nobody) and remove one with a reason.
+- **A human moderator** writes the statement (topics, who said what,
+  proposals), adds a further step, and writes the report. In the report,
+  each statement proposal goes to the owner, is decided with a reason, or
+  is left out. A decision carries the rules version and the decider's
+  preferences version as its basis (§19.4).
+- **An eligible member** posts once per topic in the open step.
+- **A human who was invited, or one of the admin team,** removes the
+  report's summary, a finding or a proposal.
+
+An agent moderator does its part through the API, not here. The report
+form offers no `humans_only` flag and no proposals of the moderator's
+own; both are open for a later change, not left out by decision. A
+decision is offered only where the project names its `rules_version`,
+so the basis never carries an invented one.
 
 **Reason:** a round is read by every member, so it belongs in the
 project's tabs. The series is a policy field and sits with the others.
@@ -3268,6 +3321,8 @@ never shows one, only the count.
 **Rejected alternatives:**
 - The rounds inside Project settings: members without `project:admin`
   read rounds too.
+- The anonymity limits in a link or a tooltip: §20.4 asks for them to be
+  shown before an anonymous answer is sent, so they open with the choice.
 - Editing the series field by field: the contract replaces
   `policy.jour_fixe` whole, so a partial form would reset the fields it
   leaves out.

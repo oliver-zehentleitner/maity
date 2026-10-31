@@ -35,7 +35,9 @@ from maity_hub.ratelimit import Limiter
 PURPOSE = "second_factor_reset"
 LINK_FOR = timedelta(hours=24)
 REASON_MAX = 1024
-BY_HUMAN = Limiter(3, 3600)  # requests for one human: an admin cannot fill a mailbox
+BY_HUMAN = Limiter(
+    3, 3600, name="auth.second_factor_reset.BY_HUMAN"
+)  # requests for one human: an admin cannot fill a mailbox
 
 _WORDS = {
     "en": {

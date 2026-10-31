@@ -30,12 +30,11 @@
   "preferences.js": 2,
   "project-message.js": 30,
   "project-names.js": 46,
-  "project-runners.js": 32,
   "qr.js": 2,
   "register.js": 34,
   "runners.js": 12,
   "sessions.js": 61,
-  "ticker-settings.js": 40,
+  "ticker-settings.js": 1,
   "ticker.js": 2,
   "why.js": 42
 }

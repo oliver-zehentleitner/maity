@@ -65,6 +65,9 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "forge_links": _forge_links(conn, human_id),
         "organisations": _organisations(conn, human_id),
         "abuse_reports": _abuse_reports(conn, human_id),
+        # While the hub still keeps it, null otherwise: it ends with the first agent exchange or
+        # after 30 days (§16.7.2).
+        "campaign_origin": _campaign_origin(conn, human_id),
         "organisation_invitations": _org_invitations(conn, human_id),
         "runners": _runners(conn, human_id),
         "agent_profiles": _agent_views(conn, agents, agent_memberships, names, member_ids),
@@ -285,6 +288,19 @@ def _organisations(conn: Connection, human_id: str) -> list[dict[str, Any]]:
         .order_by(t.org_member.c.joined_at, t.org.c.id)
     ).all()
     return [{"handle": r.handle, "role": r.role, "joined": ts(r.joined_at)} for r in rows]
+
+
+def _campaign_origin(conn: Connection, human_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        select(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id)
+    ).first()
+    if row is None:
+        return None
+    return {
+        "variant": row.variant,
+        "campaign": row.campaign,
+        "registered_on": row.registered_at.date().isoformat(),
+    }
 
 
 def _abuse_reports(conn: Connection, human_id: str) -> list[dict[str, Any]]:
