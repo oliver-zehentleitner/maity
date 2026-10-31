@@ -352,6 +352,8 @@ window.Maity = window.Maity || {};
         h("h3", { id: "jf-statement-title" }, M.t("jf.statement")),
         h("ol", { class: "jf-topics" }, (r.statement.topics || []).map((t) => topicBox(ctx, t, r.posts || [])))) : null,
       r.report ? reportBox(ctx, r.report) : null);
+    // What this reader may do here (js/jour-fixe-act.js); a change draws the round again.
+    if (M.jourFixeAct) append(root, await M.jourFixeAct.parts(ctx, r, () => { clear(root); roundView(ctx, root, id); }));
   }
 
   M.jourFixe = { settingsForm, moderatorsPart };

@@ -4029,6 +4029,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(main).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round while one is open is refused in words");
     win.Maity.api.patch = jfPatch; win.Maity.api.put = jfPut; win.Maity.api.post = jfPost;
   }
+  // The round's actions (§20.3–§20.8, tsk-6h70epze0906 part 2): an answer, by name or anonymously with the
+  // limits said first, read back and withdrawn; the answers for their readers; the statement; a post; the report.
+  {
+    const raPosts = [], raDels = [];
+    const raPost = win.Maity.api.post, raDel = win.Maity.api.del;
+    win.Maity.api.post = (p, b) => { if (/\/jour-fixe\/rounds\/[^/]+\//.test(p)) raPosts.push([p.replace(/^.*\/rounds\//, ""), JSON.parse(JSON.stringify(b))]); return raPost(p, b); };
+    win.Maity.api.del = (p, b) => { if (p.includes("/jour-fixe/")) raDels.push(p); return raDel(p, b); };
+    const raLast = () => raPosts[raPosts.length - 1];
+    const opened = (await win.Maity.api.get("/projects/maintainer/maity/jour-fixe/rounds?status=answering")).items[0];
+    await go("#/maintainer/maity/jour-fixe/" + opened.id); for (let k = 0; k < 8; k++) await tick();
+    const raForm = () => main.querySelector("form.jfa-answer-form");
+    expect(raForm() && byId("jfa-limits").hidden && text(main).includes("What went well?"), "jour fixe answer: the three questions, the limits of anonymity not shown yet");
+    raForm().dispatch("submit"); await tick();
+    expect(!raPosts.length && text(raForm()).includes("write at least one of the three"), "jour fixe answer: an empty answer is said before anything is sent");
+    byId("jfa-anonymous").checked = true; byId("jfa-anonymous").dispatch("change");
+    expect(!byId("jfa-limits").hidden && text(byId("jfa-limits")).includes("Small rounds"), "jour fixe answer: answering anonymously shows what anonymity does not cover, first");
+    byId("jfa-went_well").value = "The board is clear.";
+    raForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify([opened.id + "/answers", { anonymous: true, went_well: "The board is clear." }])
+      && text(main).includes("Your anonymous answer") && text(main).includes("The board is clear.") && !raForm(),
+      "jour fixe answer: sent anonymously with only what was written; read back while the window is open");
+    btn(main.querySelector("section.jfa-answer"), "Withdraw my answer").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(raDels.length === 1 && raDels[0].endsWith("/answers/mine") && raForm(), "jour fixe answer: withdrawn, the form back");
+    // A human moderator in step 1: the answers (an anonymous one names nobody, text never markup), one removed; the statement.
+    await go("#/maintainer/sample/jour-fixe/jfx-s3"); for (let k = 0; k < 8; k++) await tick();
+    const raAnswers = () => main.querySelector("section.jfa-answers");
+    expect(raAnswers() && raAnswers().querySelectorAll("li").filter((li) => li.getAttribute("data-answer")).length === 2 && text(raAnswers()).includes("anonymous") && !raAnswers().querySelector("b")
+      && text(raAnswers()).includes("<b>board</b>"), "jour fixe answers: read by the moderator, an anonymous one names nobody, no markup taken from them");
+    const raAnon = () => raAnswers().querySelectorAll("li").find((li) => li.getAttribute("data-answer") === "jfa-s2");
+    btn(raAnon(), "Remove").click(); await tick();
+    byId("jfa-redact-answer-jfa-s2").value = "names a person"; btn(raAnon(), "Remove it").click(); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/redact", { target: "answer:jfa-s2", reason: "names a person" }]) && text(raAnon()).includes("Removed."),
+      "jour fixe answers: one removed with its reason");
+    byId("jfa-t0-title").value = "Reviews wait"; byId("jfa-t0-title").dispatch("input");
+    btn(main.querySelector("section.jfa-statement"), "Add what was said").click(); await tick();
+    byId("jfa-t0-i0").value = "A second reviewer."; byId("jfa-t0-i0").dispatch("input");
+    const raFrom = main.querySelector("section.jfa-statement").querySelectorAll("select")[0];
+    raFrom.value = "agt-s1"; raFrom.dispatch("change");
+    btn(main.querySelector("section.jfa-statement"), "Add a proposal").click(); await tick();
+    byId("jfa-t0-s0").value = "A second reviewer agent"; byId("jfa-t0-s0").dispatch("input");
+    main.querySelector("section.jfa-statement form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s3/statement", { topics: [{ title: "Reviews wait", items: [{ text: "A second reviewer.", from: "agt-s1" }],
+      proposals: [{ title: "A second reviewer agent" }] }] }]) && main.querySelector("section.jf-statement"),
+      "jour fixe statement: the topics with who said what and the proposals, posted; the round shows it " + JSON.stringify(raLast()));
+    // An eligible member in the response step: once per topic, addressed to a participant.
+    await go("#/maintainer/sample/jour-fixe/jfx-s2"); for (let k = 0; k < 8; k++) await tick();
+    const raPostForm = () => main.querySelector("form.jfa-post-form");
+    byId("jfa-post-t1").value = "A second reviewer would help."; byId("jfa-post-t1-to-agt-s1").checked = true;
+    raPostForm().dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+    expect(JSON.stringify(raLast()) === JSON.stringify(["jfx-s2/posts", { step: "response", topic_id: "t1", body: "A second reviewer would help.", to: ["agt-s1"] }])
+      && !raPostForm() && text(main).includes("You posted on “Reviews wait” in this step."), "jour fixe post: once per topic in the open step, addressed; then said as done");
+    // A human moderator of the admin team writes the report: one proposal decided with a reason, one to the owner.
+    await go("#/maintainer/sample/jour-fixe/jfx-s1"); for (let k = 0; k < 8; k++) await tick();
+    const raRep = () => main.querySelector("section.jfa-report-form");
+    byId("jfa-report-summary").value = "Reviews are the bottleneck."; byId("jfa-report-findings").value = "Reviews wait.\n\nOne reviewer only.";
+    byId("jfa-triage-t1-s1").value = "adopt"; byId("jfa-triage-t1-s2").value = "to_owner";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(raLast()[0] !== "jfx-s1/report", "jour fixe report: a decision without its reason is not sent");
+    byId("jfa-triage-t1-s1-reason").value = "Within the rules.";
+    raRep().querySelector("form").dispatch("submit"); for (let k = 0; k < 12; k++) await tick();
+    const raSent = raLast()[1];
+    expect(raLast()[0] === "jfx-s1/report" && raSent.summary === "Reviews are the bottleneck." && raSent.findings.length === 2
+      && raSent.proposals[0].triage === "decided" && raSent.proposals[0].decision.outcome === "adopt" && raSent.proposals[0].decision.basis.human_id === "hum-maintainer"
+      && raSent.proposals[0].statement_proposal_id === "t1.s1" && raSent.proposals[1].triage === "to_owner" && text(main).includes("reported"),
+      "jour fixe report: findings, a decision with its reason and basis, one to the owner; the round reported " + JSON.stringify(raSent));
+    const raRedact = () => main.querySelector("details.jfa-report-redact");
+    expect(raRedact() && raRedact().querySelectorAll("li").length === 5, "jour fixe report: its summary, findings and proposals may be removed by an invited human");
+    win.Maity.api.post = raPost; win.Maity.api.del = raDel;
+  }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
   await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();

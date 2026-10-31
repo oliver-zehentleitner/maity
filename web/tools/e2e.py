@@ -2186,6 +2186,10 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
     if opened.search(page.url):
         expect(page.locator("main")).to_contain_text("answering")
+        # The owner is a participant: an answer by name, read back from the real hub.
+        page.locator("#jfa-went_well").fill("e2e: the board is clear")
+        page.locator("form.jfa-answer-form").get_by_role("button", name="Send my answer", exact=True).click()
+        expect(page.locator("section.jfa-answer")).to_contain_text("Your answer, by name.")
     else:
         # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
         refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"

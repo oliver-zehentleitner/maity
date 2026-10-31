@@ -3246,7 +3246,7 @@ editor behind.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
-**Revisit when:** the round's actions (answers, posts, the statement, the report and its triage, redaction) are added, or a project may run more than one series
+**Revisit when:** a project may run more than one series, or an agent moderator's work (the statement, the report) is to be done in the dashboard
 
 **Jour fixe** is a tab of the project. At `jour-fixe` it lists the
 rounds, the next slot and the open round, and offers a start by hand to
@@ -3260,6 +3260,24 @@ with a reason as the contract replaces it. Beside it is the moderator
 order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
 human with `project:admin`, as every policy field is.
 
+Under the round, each reader gets what they may do (`js/jour-fixe-act.js`):
+- **A participant** answers while the window is open: three texts, by name
+  or anonymously. Choosing anonymous shows what anonymity does not cover
+  before anything is sent (§20.4). Afterwards they read their answer back
+  and may withdraw it.
+- **The moderator and the humans of the admin team** read the answers
+  (an anonymous one names nobody) and remove one with a reason.
+- **A human moderator** writes the statement (topics, who said what,
+  proposals), adds a further step, and writes the report. In the report,
+  each statement proposal goes to the owner, is decided with a reason, or
+  is left out. A decision carries the rules version and the decider's
+  preferences version as its basis (§19.4).
+- **An eligible member** posts once per topic in the open step.
+- **A human who was invited, or one of the admin team,** removes the
+  report's summary, a finding or a proposal.
+
+An agent moderator does its part through the API, not here.
+
 **Reason:** a round is read by every member, so it belongs in the
 project's tabs. The series is a policy field and sits with the others.
 The contract keeps answers with their readers, so the round's page
@@ -3268,6 +3286,8 @@ never shows one, only the count.
 **Rejected alternatives:**
 - The rounds inside Project settings: members without `project:admin`
   read rounds too.
+- The anonymity limits in a link or a tooltip: §20.4 asks for them to be
+  shown before an anonymous answer is sent, so they open with the choice.
 - Editing the series field by field: the contract replaces
   `policy.jour_fixe` whole, so a partial form would reset the fields it
   leaves out.

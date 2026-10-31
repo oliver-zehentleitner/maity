@@ -1,0 +1,49 @@
+{
+  "moderators": [ { "member_id": "hum-maintainer", "handle": "maintainer" } ],
+  "next_at": null,
+  "rounds": [
+    {
+      "id": "jfx-s3", "project": "maintainer/sample", "status": "statement", "trigger": "manual", "mode": "message",
+      "scheduled_for": "2026-10-31T08:00:00Z", "opened_at": "2026-10-31T08:00:01Z", "answers_close_at": "2026-10-31T10:00:01Z",
+      "steps": [ { "n": 1, "kind": "statement", "opened_at": "2026-10-31T10:00:01Z", "closed_at": null, "closes_at": "2026-10-31T12:00:01Z", "reason": null, "eligible": ["hum-maintainer"] } ],
+      "exchange_closed_at": null, "report_due_at": null, "reported_at": null, "config": {},
+      "moderator": { "member_id": "hum-maintainer", "instance": null },
+      "invited": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }, { "member_id": "agt-s1", "kind": "agent", "handle": "sample-agent-1", "instance": "s1aa" } ],
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }, { "member_id": "agt-s1", "kind": "agent", "handle": "sample-agent-1" } ],
+      "absent": [], "answers_received": 2, "conversation_id": null, "statement": null, "posts": [], "report": null,
+      "answers": [
+        { "id": "jfa-s1", "anonymous": false, "author": "agt-s1", "withdrawn": false, "went_well": "The <b>board</b> is clear.", "went_badly": null, "would_help": "A second reviewer.", "redaction": null },
+        { "id": "jfa-s2", "anonymous": true, "author": null, "withdrawn": false, "went_well": null, "went_badly": "Reviews wait overnight.", "would_help": null, "redaction": null }
+      ]
+    },
+    {
+      "id": "jfx-s2", "project": "maintainer/sample", "status": "exchange", "trigger": "manual", "mode": "message",
+      "scheduled_for": "2026-10-28T08:00:00Z", "opened_at": "2026-10-28T08:00:01Z", "answers_close_at": "2026-10-28T10:00:01Z",
+      "steps": [
+        { "n": 1, "kind": "statement", "opened_at": "2026-10-28T10:00:01Z", "closed_at": "2026-10-28T10:30:00Z", "reason": null, "eligible": ["agt-s1"] },
+        { "n": 2, "kind": "response", "opened_at": "2026-10-28T10:30:00Z", "closed_at": null, "closes_at": "2026-10-28T12:30:00Z", "reason": null, "eligible": ["agt-s1", "hum-maintainer"] }
+      ],
+      "exchange_closed_at": null, "report_due_at": null, "reported_at": null, "config": {},
+      "moderator": { "member_id": "agt-s1", "instance": "s1aa" },
+      "invited": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }, { "member_id": "agt-s1", "kind": "agent", "handle": "sample-agent-1", "instance": "s1aa" } ],
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" }, { "member_id": "agt-s1", "kind": "agent", "handle": "sample-agent-1" } ],
+      "absent": [], "answers_received": 1, "conversation_id": null,
+      "statement": { "by": "agt-s1", "message_seq": null, "topics": [ { "id": "t1", "title": "Reviews wait", "summary": null, "items": [], "proposals": [], "redaction": null } ] },
+      "posts": [], "report": null, "answers": []
+    },
+    {
+      "id": "jfx-s1", "project": "maintainer/sample", "status": "reporting", "trigger": "manual", "mode": "message",
+      "scheduled_for": "2026-10-25T08:00:00Z", "opened_at": "2026-10-25T08:00:01Z", "answers_close_at": "2026-10-25T10:00:01Z",
+      "steps": [ { "n": 1, "kind": "statement", "opened_at": "2026-10-25T10:00:01Z", "closed_at": "2026-10-25T10:30:00Z", "reason": null, "eligible": ["hum-maintainer"] } ],
+      "exchange_closed_at": "2026-10-25T12:30:00Z", "report_due_at": "2026-10-26T00:30:00Z", "reported_at": null, "config": {},
+      "moderator": { "member_id": "hum-maintainer", "instance": null },
+      "invited": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" } ],
+      "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" } ],
+      "absent": [], "answers_received": 1, "conversation_id": null,
+      "statement": { "by": "hum-maintainer", "message_seq": null, "topics": [
+        { "id": "t1", "title": "Reviews wait", "summary": null, "items": [],
+          "proposals": [ { "id": "t1.s1", "title": "A second reviewer", "reason": "Halves the wait." }, { "id": "t1.s2", "title": "Night shift", "reason": null } ], "redaction": null } ] },
+      "posts": [], "report": null, "answers": []
+    }
+  ]
+}
