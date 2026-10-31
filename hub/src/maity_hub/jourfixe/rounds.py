@@ -106,11 +106,17 @@ def presence(conn: Connection, project: Any, members: list[Any]) -> dict[int, di
     now = clock.now()
     presences = availability.presences_of(conn, members)
     humans = availability.humans_of(conn, members)
+    dormant = availability.dormants_of(conn, members)
     instances = _instances(conn, [m.id for m in members if m.agent_id is not None])
     found: dict[int, dict[str, Any]] = {}
     for member in members:
         state = availability.computed(
-            member, presences[member.id], humans.get(member.human_id), project, now
+            member,
+            presences[member.id],
+            humans.get(member.human_id),
+            project,
+            now,
+            dormant=member.id in dormant,
         )["state"]
         if state != "available":
             found[member.id] = {"present": False, "absent_reason": "not_available"}

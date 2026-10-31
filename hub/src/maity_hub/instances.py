@@ -21,7 +21,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found
-from maity_hub.events import Actor, emit
+from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
 from maity_hub.scopes import tokens_of
@@ -82,6 +82,28 @@ def paused_view(row: Any) -> dict[str, Any] | None:
         "since": clock.rfc3339(row.paused_since),
         "by": row.paused_by,
     }
+
+
+def dormant_view(row: Any) -> dict[str, Any] | None:
+    """`dormant: {since, by}` of an instance put to rest (§6.17), else `None`."""
+    if row.dormant_since is None:
+        return None
+    return {"since": clock.rfc3339(row.dormant_since), "by": row.dormant_by}
+
+
+def dormant_members(conn: Connection, membership_ids: Iterable[int]) -> set[int]:
+    """The agent memberships whose every active instance is dormant: nothing addressed to the
+    team alone reaches them, so their availability is `limited`, `source: dormant` (§6.12)."""
+    ids = list(membership_ids)
+    if not ids:
+        return set()
+    rows = conn.execute(
+        select(t.credential.c.membership_id, t.credential.c.dormant_since).where(
+            t.credential.c.membership_id.in_(ids), t.credential.c.revoked_at.is_(None)
+        )
+    ).all()
+    awake = {r.membership_id for r in rows if r.dormant_since is None}
+    return {r.membership_id for r in rows} - awake
 
 
 def split_address(text: str) -> tuple[str, str | None]:
@@ -202,7 +224,14 @@ def require_replaceable(
     return row
 
 
-def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> str | None:
+def resolve(
+    conn: Connection,
+    member: Any,
+    instance: str | None,
+    field: str,
+    *,
+    past_dormant: bool = False,
+) -> str | None:
     """The one instance a member id or an address comes down to (§6.5, §6.19): the
     named one; else the team's only active instance, or its lead under `distribution:
     lead`. A human member has none (`None`). A member id that leaves the choice open,
@@ -218,6 +247,10 @@ def resolve(conn: Connection, member: Any, instance: str | None, field: str) -> 
     instances = active(conn, member.id)
     if not instances:
         raise invalid({field: "instance_required"}, "the team has no active instance")
+    if past_dormant:  # a takeover's `to` resolves past the dormant ones (§6.17)
+        instances = [c for c in instances if c.dormant_since is None]
+        if not instances:
+            raise invalid({field: "instance_required"}, "every instance of the team is dormant")
     if len(instances) == 1:
         only: str = instances[0].instance
         return only
@@ -317,6 +350,7 @@ def views(
                 ),
                 "last_seen_at": clock.rfc3339(c.last_used_at) if c.last_used_at else None,
                 "paused": paused_view(c),
+                "dormant": dormant_view(c),
                 "lead": member.lead_instance == c.instance,
                 "claims": claims.get((member.id, c.instance), 0),
                 "replaces": c.replaces,
@@ -431,7 +465,9 @@ def round_robin(conn: Connection, member: Any) -> str | None:
 
     if member.paused_since is not None:
         return None
-    candidates = [c for c in active(conn, member.id) if c.paused_since is None]
+    candidates = [
+        c for c in active(conn, member.id) if c.paused_since is None and c.dormant_since is None
+    ]
     if not candidates:
         return None
     last = (
@@ -509,7 +545,11 @@ def team_wakes(
     ).all()
     sessions = _live_sessions(conn, [c.id for c in credentials])
     listening_now = [
-        c for c in credentials if c.id in sessions and listening.is_listening(sessions[c.id].id)
+        c
+        for c in credentials
+        if c.id in sessions
+        and listening.is_listening(sessions[c.id].id)
+        and c.dormant_since is None  # a dormant instance is never chosen (§6.17)
     ]
     claims = _claim_counts(conn, [m.id for m in teams]) if listening_now else {}
     chosen: dict[str, list[str]] = {}
@@ -640,7 +680,9 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
         if team.lead_instance is not None:
             if not INSTANCE_PATTERN.fullmatch(team.lead_instance):
                 raise invalid({"team.lead_instance": "not_an_instance"})
-            require_active(conn, target, team.lead_instance, "team.lead_instance")
+            held = require_active(conn, target, team.lead_instance, "team.lead_instance")
+            if held.dormant_since is not None:  # a team's lead is moved first (§6.17)
+                raise invalid({"team.lead_instance": "dormant"}, "the instance is dormant")
         values["lead_instance"] = team.lead_instance
     lead = values.get("lead_instance", target.lead_instance)
     needs_lead = "lead" in (
@@ -675,6 +717,112 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
         actor=_human_actor(conn, caller, row.project_id),
         subject=("member", row.agent_id),
     )
+
+
+def set_dormant(
+    conn: Connection,
+    target: Any,
+    credential: Any,
+    value: bool,
+    by: str,
+    actor: Actor | None,
+    *,
+    own: bool,
+) -> bool:
+    """Put one instance to rest or wake it (§6.17); False when it already is as asked. The lead
+    cannot rest (`dormant: lead`). `member_updated` with `changed: ["dormant"]` and the
+    instance; when anyone but the instance itself made the change the event also carries
+    the instance's own token, which wakes it, resting or waking alike."""
+    from maity_hub import availability, views
+
+    if (credential.dormant_since is not None) == value:
+        return False
+    if value and target.lead_instance == credential.instance:
+        raise invalid({"dormant": "lead"}, "a team's lead is moved before it rests")
+    lock_project(conn, target.project_id)
+    conn.execute(
+        update(t.credential)
+        .where(t.credential.c.id == credential.id)
+        .values(
+            dormant_since=clock.now() if value else None,
+            dormant_by=by if value else None,
+        )
+    )
+    availability.reconcile_ids(conn, [target.id], actor)
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    audience = ["all"] if own else ["all", token(row.agent_id, credential.instance)]
+    emit(
+        conn,
+        row.project_id,
+        "member_updated",
+        audience,
+        {**views.member_view(conn, row), "changed": ["dormant"], "instance": credential.instance},
+        actor=actor,
+        subject=("member", row.agent_id),
+    )
+    return True
+
+
+def patch_dormant(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    member_id: str,
+    value: bool | None,
+    instance: str | None,
+) -> tuple[Any, Membership | None, str | None]:
+    """`PATCH …/members/{id}` with `{"dormant", "instance"}` (§6.17) by a human: the agent's
+    owner, member of the project or not, or a human with `members:admin`. Returns the
+    membership row with the caller's own membership (`None` for an owner outside the
+    project) and, when the change waits for the agent owner's consent (a `members:admin`
+    human of another owner, §6.2), the id of that request."""
+    from maity_hub import foreign_agent
+
+    if caller.kind != "human":
+        raise humans_only()
+    if value is None:
+        raise invalid({"dormant": "required"})
+    if instance is None:
+        raise invalid({"instance": "required"})
+    project = namespace.resolve(conn, slug)
+    if project is None:
+        raise not_found()
+    try:
+        target = member_row(conn, project.id, member_id)
+    except ApiError:
+        target = None
+    reader: Membership | None
+    if target is not None and owns_agent(conn, caller, target):
+        try:
+            reader = membership(conn, caller, slug)
+        except ApiError:
+            reader = None
+    else:
+        reader = membership(conn, caller, slug)  # not_found for a stranger
+        if target is None:
+            raise not_found()
+        reader.require("members:admin")
+    assert target is not None
+    if target.agent_id is None:
+        raise invalid({"dormant": "agents_only"}, "dormant is for agent instances")
+    held = require_active(conn, target, instance, "instance")
+    actor = _human_actor(conn, caller, target.project_id)
+    if reader is not None and not owns_agent(conn, caller, target):
+        # Another owner's agent: the change waits for that owner (§6.2).
+        asked = foreign_agent.file(
+            conn,
+            project,
+            reader,
+            caller,
+            target,
+            {"dormant": value},
+            (False, None),
+            instance,
+        )
+        return target, reader, asked
+    set_dormant(conn, target, held, value, caller.principal_id, actor, own=False)
+    row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    return row, reader, None
 
 
 def _human_actor(conn: Connection, caller: Caller, project_id: str) -> Actor:
