@@ -4617,6 +4617,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { if (p === "/auth/register") rgPosts.push(b); return rgPost(p, b); };
   await go("#/register?next=%2Finvite%2Fbound-xxxxxxxxxxxxxxx3"); for (let k = 0; k < 6; k++) await tick();
   const rgForm = () => main.querySelector("form.register-form");
+  // Laid out as sign-in is (tsk-egx8xpcrz5z2: on prod the labels ran inline with their fields): one column, label above field.
+  const rgCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+  expect(/\.sign-in-form, \.register-form \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\);/.test(rgCss)
+    && rgForm() && rgForm().querySelectorAll("label").length >= 3,
+    "register: the form is one column like sign-in, each label on its own line above its field");
   expect(rgForm() && text(rgForm()).includes("Use the address the invitation was sent to"), "register: from an invitation that admits, the form, bound to its address");
   byId("register-address").value = "anna@example.org"; byId("register-password").value = "short"; byId("register-repeat").value = "short";
   rgForm().dispatch("submit"); await tick();
