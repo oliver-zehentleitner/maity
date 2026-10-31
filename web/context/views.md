@@ -2255,6 +2255,10 @@ under a row what the card held, and per membership the instances with
 their credentials and revocation, the part Members' Manage uses, read in
 that project's context when the row opens. A row stays open across a
 redraw; a profile just made, or the one in `/agents/<id>`, opens its row.
+A project's Agents is the same list limited to that project: one's own
+agents there as rows (trust and role here, presence, active instances
+here), Manage opening the card with what belongs to the membership here,
+the agent in `agents/<id>` (or its rulebook) open from the start.
 
 **Reason:** an agent is the owner's across projects, so its settings
 need one place that is not a project; and the join panel already knows
