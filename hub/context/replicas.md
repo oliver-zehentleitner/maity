@@ -196,7 +196,17 @@ a keyword on MariaDB), incremented with `INSERT … ON CONFLICT DO UPDATE SET co
 read as a sliding window approximated by the current and the previous fixed window (weighted by
 the overlap). A take over the limit is subtracted again, so a refusal records nothing, as in the
 process; two takes at once may both be refused where one would have fitted, the strict side.
-The wait a refusal names (`Retry-After`) follows the same estimate: when the current window alone
+A small limit (`EXACT_UP_TO`, 20 or fewer attempts) keeps a row per attempt instead, keyed by its
+moment, and counts exactly as the process does: the take reads the attempts inside the window
+under a per-key advisory lock (`pg_advisory_xact_lock`), writes its row only when it fits, and
+the wait is the moment the oldest attempts that must go leave the window. The estimate assumes
+attempts spread evenly, which a handful do not: with a limit of one, the attempt still weighs on
+the next fixed window until its end, so one export in ten minutes waited up to twenty (`Retry-After`
+1006 in #822's CI). A row per attempt costs no more than the limit's few rows there. Rejected:
+capping the estimate's wait at the window, which names a moment the retry is refused again; an
+exact row per attempt for every limit, which for the per-address limits of 60 a minute keeps
+every request's row until the sweep.
+For the larger limits the wait a refusal names (`Retry-After`) follows the estimate: when the current window alone
 is over the limit it runs into the next window, where this window's attempts count as the
 previous ones and fall by weight. The estimate assumes the attempts spread evenly over the
 window, so the wait can differ from the exact answer in the process either way: longer when the

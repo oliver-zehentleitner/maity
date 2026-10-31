@@ -106,33 +106,113 @@ def _window(conn: Connection, bucket: str, key: str, seconds: float, now: dateti
     )
 
 
+def _upsert(
+    conn: Connection, bucket: str, key: str, at: datetime, count: int, now: datetime
+) -> None:
+    """Add `count` to the row at `at`, and every thousandth time sweep the old rows."""
+    statement = postgresql.insert(t.rate_count).values(
+        bucket=bucket, subject=key, window_start=at, count=count
+    )
+    conn.execute(
+        statement.on_conflict_do_update(
+            index_elements=["bucket", "subject", "window_start"],
+            set_={"count": t.rate_count.c.count + count},
+        )
+    )
+    with _lock:
+        _adds[0] += 1
+        sweep = _adds[0] % SWEEP_EVERY == 0
+    if sweep:
+        conn.execute(
+            delete(t.rate_count).where(
+                t.rate_count.c.window_start < now - KEPT,
+                t.rate_count.c.window_start != UNTIL_WINDOW,
+            )
+        )
+
+
 def add(bucket: str, key: str, seconds: float, count: int = 1) -> Window:
     """Count `count` in the current window and read both windows, in one transaction."""
     key, now = _key(key), _now()
-    start = _start(now, seconds)
     with _db().begin() as conn:
         write_guard.exempt(conn)  # a count is no write of an account
-        statement = postgresql.insert(t.rate_count).values(
-            bucket=bucket, subject=key, window_start=start, count=count
+        _upsert(conn, bucket, key, _start(now, seconds), count, now)
+        return _window(conn, bucket, key, seconds, now)
+
+
+# --- exact: a row per attempt, for the small limits ------------------------------------
+
+
+@dataclass(frozen=True)
+class Log:
+    """An exact limit's attempts inside the window, oldest first, and the moment read."""
+
+    entries: list[tuple[datetime, int]]
+    now: datetime
+
+    @property
+    def total(self) -> int:
+        return sum(count for _, count in self.entries)
+
+
+def _log(conn: Connection, bucket: str, key: str, seconds: float, now: datetime) -> Log:
+    c = t.rate_count.c
+    rows = conn.execute(
+        select(c.window_start, c.count)
+        .where(
+            c.bucket == bucket,
+            c.subject == key,
+            c.window_start > now - timedelta(seconds=seconds),
+            c.count > 0,
         )
-        conn.execute(
-            statement.on_conflict_do_update(
-                index_elements=["bucket", "subject", "window_start"],
-                set_={"count": t.rate_count.c.count + count},
-            )
-        )
-        found = _window(conn, bucket, key, seconds, now)
-        with _lock:
-            _adds[0] += 1
-            sweep = _adds[0] % SWEEP_EVERY == 0
-        if sweep:
+        .order_by(c.window_start)
+    ).all()
+    return Log(entries=[(at, int(held)) for at, held in rows], now=now)
+
+
+def _hold(conn: Connection, bucket: str, key: str) -> None:
+    """One key's exact attempts one at a time across replicas, until the transaction ends."""
+    conn.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"{bucket}:{key}", 0))))
+
+
+def log_take(
+    bucket: str, key: str, seconds: float, count: int, limit: int
+) -> tuple[Log, datetime | None]:
+    """Record `count` attempts at this moment when they fit `limit` within `seconds`; the log
+    as read, and the moment recorded (None when refused: nothing is written then)."""
+    key, now = _key(key), _now()
+    with _db().begin() as conn:
+        write_guard.exempt(conn)  # a count is no write of an account
+        _hold(conn, bucket, key)
+        found = _log(conn, bucket, key, seconds, now)
+        if found.total + count > limit:
+            return found, None
+        _upsert(conn, bucket, key, now, count, now)
+    return found, now
+
+
+def log_read(bucket: str, key: str, seconds: float) -> Log:
+    with _db().connect() as conn:
+        return _log(conn, bucket, _key(key), seconds, _now())
+
+
+def log_drop_newest(bucket: str, key: str, seconds: float, count: int) -> None:
+    """Forget the `count` newest attempts inside the window."""
+    key, now = _key(key), _now()
+    c = t.rate_count.c
+    with _db().begin() as conn:
+        write_guard.exempt(conn)  # a count is no write of an account
+        _hold(conn, bucket, key)
+        for at, held in reversed(_log(conn, bucket, key, seconds, now).entries):
+            if count <= 0:
+                break
+            taken = min(held, count)
             conn.execute(
-                delete(t.rate_count).where(
-                    t.rate_count.c.window_start < now - KEPT,
-                    t.rate_count.c.window_start != UNTIL_WINDOW,
-                )
+                update(t.rate_count)
+                .where(c.bucket == bucket, c.subject == key, c.window_start == at)
+                .values(count=c.count - taken)
             )
-    return found
+            count -= taken
 
 
 def read(bucket: str, key: str, seconds: float) -> Window:

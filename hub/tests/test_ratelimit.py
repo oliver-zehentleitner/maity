@@ -6,6 +6,7 @@ import hashlib
 import threading
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -166,3 +167,33 @@ def test_a_breaker_tripped_on_one_replica_shuts_every_replica(shared: None) -> N
     dropped[0].add()
     dropped[1].add()
     assert dropped[0].last_hour() == dropped[1].last_hour() == 2  # the instance's sum
+
+
+def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#822's CI: once in ten minutes waited up to twenty with the two-window estimate. A
+    small limit keeps a row per attempt and answers as the process does."""
+    from maity_hub import shared_counts
+
+    now = [datetime(2026, 10, 31, 0, 9, 50, tzinfo=UTC)]  # late in a fixed window
+    monkeypatch.setattr(shared_counts, "_now", lambda: now[0])
+    first, second = Limiter(1, 600, name="test.once"), Limiter(1, 600, name="test.once")
+    assert first.exact and first.hit("ada") == 0
+    assert second.hit("ada") == 600  # the other replica, at once: a whole window
+    now[0] += timedelta(seconds=250)  # past the fixed window's end: nothing changes
+    assert first.blocked("ada") == 350 and second.hit("ada") == 350
+    assert shared_counts.log_read("test.once", "ada", 600).total == 1  # refusals write nothing
+    now[0] += timedelta(seconds=350)
+    assert second.hit("ada") == 0  # exactly ten minutes after the first
+
+
+def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
+    limiter = Limiter(3, 60, name="test.exact.back")
+    wait, mark = limiter.place("ada")
+    assert wait == 0 and limiter.take("ada", 2) == 0
+    assert limiter.hit("ada") > 0
+    limiter.release("ada", mark)  # the place's own row
+    limiter.give_back("ada", 1)  # the newest of the two taken together
+    assert limiter.take("ada", 2) == 0
+    assert limiter.hit("ada") > 0
