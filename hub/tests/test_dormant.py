@@ -297,3 +297,100 @@ def test_resume_does_not_end_it_and_the_packet_says_so(
     assert (
         second.post(f"{PROJECT}/tasks/{card['id']}/claim", {}).status_code == 200
     )  # refuses nothing
+
+
+# --- mentions, group chats and runners ------------------------------------------------------
+
+
+def _handle(owner: flow.Human, agent: flow.Agent) -> str:
+    handle: str = owner.get(f"{MEMBERS}/{agent.id}").json()["handle"]
+    return handle
+
+
+def test_a_mention_in_a_message_to_all_still_wakes_a_dormant_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = _pair(make_client, owner)
+    handle = _handle(owner, first)
+    token = f"instance:{first.id}#{second.instance}"
+    # Awake: `all` reaches the mention already, no token of its own is added.
+    owner.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "notice",
+            "to": "all",
+            "body": f"@{handle}#{second.instance} awake?",
+        },
+    )
+    assert token not in _last(migrated, "message").audience
+    assert rest(second).status_code == 200
+    # Dormant: `all` does not reach it, so the mention puts its token in and wakes it.
+    sent = owner.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "notice",
+            "to": "all",
+            "body": f"@{handle}#{second.instance} asleep?",
+        },
+    )
+    assert sent.status_code == 201, sent.text
+    event = _last(migrated, "message")
+    assert token in event.audience
+    reader = _Reader(_membership(migrated, first))
+    assert events.wakes(event, reader, first.id, second.instance, dormant=True)
+    assert not events.wakes(event, reader, first.id, first.instance, dormant=True)
+
+
+def test_in_a_group_chat_only_an_instance_mention_wakes_a_dormant_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = _pair(make_client, owner)
+    other = flow.agent(make_client, owner)
+    assert rest(second).status_code == 200
+    chat = owner.post(
+        f"{PROJECT}/conversations", {"title": "room", "participants": [first.id, other.id]}
+    ).json()
+    url = f"{PROJECT}/conversations/{chat['id']}/messages"
+    reader = _Reader(_membership(migrated, first))
+    plain = owner.post(url, {"body": "hello room"})
+    assert plain.status_code == 201, plain.text
+    plain_event = _last(migrated, "message")
+    assert not events.wakes(plain_event, reader, first.id, second.instance, dormant=True)
+    handle = _handle(owner, first)
+    mention = owner.post(url, {"body": f"@{handle}#{second.instance} you?"})
+    assert mention.status_code == 201, mention.text
+    named = _last(migrated, "message")
+    assert f"instance:{first.id}#{second.instance}" in named.audience
+    assert events.wakes(named, reader, first.id, second.instance, dormant=True)
+
+
+def test_under_a_runner_dormant_wins_over_the_supervised_set(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = _pair(make_client, owner)
+    assert rest(second).status_code == 200
+    reader = _Reader(_membership(migrated, first))
+    owner.post(
+        f"{PROJECT}/events", {"kind": "message", "type": "notice", "to": "all", "body": "Everyone."}
+    )
+    broadcast = _last(migrated, "message")
+    # A supervised awake session is woken by `all` for the supervised set; a dormant one never.
+    for kind in sorted(events.SUPERVISED_ALL_WAKES):
+        row = _SetRow(broadcast, kind)
+        assert events.wakes(row, reader, first.id, first.instance, "cred", supervised=True)
+        assert not events.wakes(
+            row, reader, first.id, second.instance, "cred", supervised=True, dormant=True
+        )
+
+
+class _SetRow:
+    """An event row with another kind, for the wake rule alone."""
+
+    def __init__(self, row: Any, kind: str) -> None:
+        self._row = row
+        self.kind = kind
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._row, name)

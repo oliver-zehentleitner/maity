@@ -91,6 +91,28 @@ def dormant_view(row: Any) -> dict[str, Any] | None:
     return {"since": clock.rfc3339(row.dormant_since), "by": row.dormant_by}
 
 
+def token_is_dormant(conn: Connection, project_id: str, instance_token: str) -> bool:
+    """Whether an `instance:<member id>#<id>` token names an active dormant instance of the
+    project (§6.17): then only that token reaches it."""
+    member, _, instance = instance_token.removeprefix("instance:").partition("#")
+    if not instance:
+        return False
+    return (
+        conn.execute(
+            select(t.credential.c.id)
+            .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+            .where(
+                t.membership.c.project_id == project_id,
+                t.membership.c.agent_id == member,
+                t.credential.c.instance == instance,
+                t.credential.c.revoked_at.is_(None),
+                t.credential.c.dormant_since.is_not(None),
+            )
+        ).first()
+        is not None
+    )
+
+
 def dormant_members(conn: Connection, membership_ids: Iterable[int]) -> set[int]:
     """The agent memberships whose every active instance is dormant: nothing addressed to the
     team alone reaches them, so their availability is `limited`, `source: dormant` (§6.12)."""

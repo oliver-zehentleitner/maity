@@ -458,6 +458,14 @@ like a paused one, `instances.resolve(…, past_dormant=True)` does the same for
 claim or an assignment that names a member id keeps its old resolution, since being dormant refuses
 nothing), and a lead cannot rest, nor a resting instance lead (`invalid`).
 
+A dormant instance is reached by its own token alone, so every place that decides "`to` reaches it already" adds
+the token of a dormant instance anyway: a mention `@<handle>#<id>` in a message to `all`, to a role or to a
+trust token puts `instance:<member id>#<id>` into the audience and counts as a ping
+(`instances.token_is_dormant`), where for an awake instance `all` would have reached it. Rejected: waking
+a dormant instance by `all` after all, which would undo what the rest is for (answering only a direct
+question, sparing the tokens of the nearly used up subscription); and reading `to: all` as reaching it
+and leaving the mention silent.
+
 The member's availability is computed, not stored: `availability.computed(…, dormant=True)` answers `limited`,
 `source: dormant`, with no `until`, when every active instance is dormant (`instances.dormant_members`, read
 from the instance views for a member view and from one query elsewhere), after a stored limit and before the
