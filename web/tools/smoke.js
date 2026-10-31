@@ -125,6 +125,12 @@ vm.runInContext(fs.readFileSync(path.join(WEB, "fixtures/fixtures.js"), "utf8"),
 function expect0(cond, what) { if (!cond) { console.log("FAIL " + what); process.exitCode = 1; } else console.log("ok   " + what); }
 const tick = () => new Promise((r) => setTimeout(r, 20));
 const text = (el) => el.textContent.replace(/\s+/g, " ");
+// One paragraph drawn by the one renderer (js/markdown.js) with a text's stored mentions, as a list of
+// strings (its text) and nodes (its links), the shape the mention cases read.
+const mentionsDrawn = (t, ms, f, hrefOf, at, ctx) => {
+  const first = win.Maity.markdown(t, at, { mentions: ms, field: f, hrefOf, ctx })[0];
+  return first ? first.childNodes.map((c) => (c instanceof Text_ ? c.t : c)) : [];
+};
 let failures = 0;
 const throws = (fn) => { try { fn(); return false; } catch (e) { return true; } };
 function expect(cond, what) { console.log((cond ? "ok   " : "FAIL ") + what); if (!cond) failures++; }
@@ -246,6 +252,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hashEntry = main.querySelector(".current");
   const triedLink = hashEntry.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-b");
   expect(triedLink && triedLink.getAttribute("href") === "#/maintainer/maity/members/agt-b", "mentions: a request's tried links its stored mention");
+  // One renderer (tsk-8n1p6h3zypwp): a request's texts as a chat's, inline code copied with a click, a mention linked in place.
+  const hashSummary = hashEntry.querySelector(".md.summary");
+  expect(hashSummary && hashSummary.querySelector("code.md-inline-copy") && text(hashSummary.querySelector("code.md-inline-copy")) === "maity join"
+    && hashEntry.querySelector(".md a.mention"), "inbox: a request's summary and tried drawn by the chat's renderer, code with its copy, the mention as a link");
+  {
+    // A fenced block in a summary gets the chat's Copy button; a mention inside code stays code.
+    const fenced = win.Maity.markdown("Run this:\n```sh\nmaity join @agent-b\n```\nthen ask @agent-b.", null,
+      { mentions: [{ member_id: "agt-b", handle: "agent-b", field: "summary", offset: 27, length: 8 }, { member_id: "agt-b", handle: "agent-b", field: "summary", offset: 49, length: 8 }],
+        field: "summary", hrefOf: (id) => "/m/" + id });
+    const box = document.createElement("div"); fenced.forEach((n) => box.appendChild(n));
+    expect(box.querySelector("button.md-copy") && text(box.querySelector("pre")) === "maity join @agent-b" && box.querySelectorAll("a.mention").length === 1
+      && text(box.querySelector("a.mention")) === "@agent-b", "markdown: a fenced block keeps its Copy; a mention inside code is code, one outside a link");
+  }
   const freeText = hashEntry.querySelector(".free-text textarea");
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
@@ -320,7 +339,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gnRefused && gnRefused.message === "@agent-b is 2 agents here: write @anna/agent-b or @oliver/agent-b."
     && win.Maity.dom.ambiguousMention(new win.Maity.api.ApiError("x", 400, "/x", "invalid", { fields: { body: "too_many_mentions" } })) === null,
     "global names: the hub's ambiguous_mention in words with the long forms");
-  const gnStored = idBoxGn(win.Maity.dom.withMentions("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
+  const gnStored = idBoxGn(mentionsDrawn("Ask @anna/shop-dev now", [{ member_id: "agt-s2", handle: "shop-dev", name: "anna/shop-dev", field: "summary", offset: 4, length: 14 }],
     "summary", (id) => "/m/" + id));
   expect(gnStored.querySelector("a.mention") && text(gnStored.querySelector("a.mention")) === "@anna/shop-dev" && gnStored.querySelector("a.mention").getAttribute("href") === "#/m/agt-s2",
     "global names: a stored long mention is a link to its member");
@@ -362,7 +381,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gnPosts.length === 2 && text(main).includes("mentioned and notified: Anna's Shop Dev"), "global names: the long form is sent and resolves to that agent");
   win.Maity.api.post = gnPost;
   await go("#/maintainer/sample/messages"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelectorAll(".pmsg-mentions a").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
+  expect(main.querySelectorAll(".pmsg a.mention").some((a) => text(a) === "@anna/shop-dev"), "global names: the message's stored mention by the long name where the short one is shared");
   await go("#/maintainer/maity/inbox");
 
   slowText.value = "@agent"; slowText.dispatch("input"); await tick(); await tick();
@@ -527,7 +546,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Mentions (docs/api.md §8.6): stored ones become member links, nothing typed does.
   const reportMention = main.querySelectorAll("a.mention").find((a) => a.textContent === "@agent-d");
   expect(reportMention && reportMention.getAttribute("href") === "#/maintainer/maity/members/agt-d", "mentions: a report's stored mention links to the member");
-  const wm = (t, ms, f) => win.Maity.dom.withMentions(t, ms, f || "body", (id) => "/m/" + id);
+  const wm = (t, ms, f) => mentionsDrawn(t, ms, f || "body", (id) => "/m/" + id);
   const linkOf = (nodes) => nodes.filter((n) => typeof n !== "string");
   const emoji = wm("\u{1F642} hi @agent-b!", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 5, length: 8 }]);
   expect(linkOf(emoji).length === 1 && linkOf(emoji)[0].textContent === "@agent-b" && emoji[emoji.length - 1] === "!",
@@ -2635,7 +2654,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(IDS.forgeBase("https://github.com/o/r/tree/main") === "https://github.com/o/r" && IDS.forgeBase("https://GitHub.com/o/r") === "https://github.com/o/r"
     && IDS.forgeBase("https://github.com/o/r.git") === "https://github.com/o/r" && IDS.forgeBase("https://gitlab.com/o/r") === null && IDS.forgeBase("https://github.com/o") === null,
     "ids: the repository read as the hub reads it — any case of github.com, owner and name the first two segments");
-  const wmIds = idBox(win.Maity.dom.withMentions("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
+  const wmIds = idBox(mentionsDrawn("@agent-b see tsk-0123456789ab", [{ field: "body", offset: 0, length: 8, handle: "agent-b", member_id: "agt-b" }],
     "body", (id) => "/m/" + id, idAt));
   expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab",
     "ids: between mentions the text's ids are links, the mention stays the hub's");
@@ -3700,18 +3719,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".handle-form .error")).includes("Three renames in 24 hours"), "handles: the fourth rename within a day is rate limited");
   win.Maity.api.patch = realPatch6;
   const aliasCtx = { memberById: { "agt-b": { handle: "b-new", aliases: ["agent-b"] } } };
-  const aliasMention = (t, len, ctx) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
+  const aliasMention = (t, len, ctx) => mentionsDrawn(t, [{ member_id: "agt-b", handle: "b-new", name: "maintainer/b-new", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ctx);
   expect(aliasMention("@agent-b hi", 8, aliasCtx)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: a mention typed as an alias of the member is a link");
   expect(typeof aliasMention("@agent-b hi", 8, null)[0] === "string" && typeof aliasMention("@other hi", 6, aliasCtx)[0] === "string", "mentions: without the alias, or with another name, it stays text");
   // The owner renamed, the agent has no alias: the old owner name still leads to it (§6.24).
   const ownerCtx = { memberById: {
     "agt-b": { handle: "agent-b", aliases: [], name: "neo/agent-b", owner_id: "hum-o" },
     "hum-o": { handle: "neo", aliases: ["old"] } } };
-  const ownerMention = (t, len) => win.Maity.dom.withMentions(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
+  const ownerMention = (t, len) => mentionsDrawn(t, [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: len }], "body", (id) => "/m/" + id, null, ownerCtx);
   expect(ownerMention("@old/agent-b hi", 12)[0].getAttribute("href").endsWith("/m/agt-b"), "mentions: the owner's old handle before an agent without aliases is a link");
   expect(typeof ownerMention("@stranger/agent-b hi", 17)[0] === "string", "mentions: an owner part that is none of the owner's names stays text");
   const noOwner = { memberById: { "agt-b": { handle: "agent-b", aliases: [], owner_id: "hum-o" } } };  // no name to take the owner from
-  expect(typeof win.Maity.dom.withMentions("@/agent-b hi", [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: 9 }], "body", (id) => "/m/" + id, null, noOwner)[0] === "string", "mentions: an empty owner part is no link");
+  expect(typeof mentionsDrawn("@/agent-b hi", [{ member_id: "agt-b", handle: "agent-b", name: "neo/agent-b", field: "body", offset: 0, length: 9 }], "body", (id) => "/m/" + id, null, noOwner)[0] === "string", "mentions: an empty owner part is no link");
   const pwPosts = [];
   const realPost5 = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { pwPosts.push([p, b]); return realPost5(p, b); };
@@ -5214,7 +5233,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
-  expect(pmSeq(6001).querySelector(".pmsg-mentions a").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
+  expect(pmSeq(6001).querySelector("a.mention").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
   byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change");
   expect(pmItems().length === 1 && text(pmItems()[0]).includes("waits for the PyPI token"), "messages: filtered by type");
   byId("messages-type").value = ""; byId("messages-type").dispatch("change");

@@ -88,7 +88,7 @@ window.Maity = window.Maity || {};
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
-          h("div", { class: "md" }, M.markdown(n.body, where)))))
+          h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
         : h("p", { class: "muted" }, "No open notes."));
       const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;

@@ -1596,7 +1596,7 @@ window.MAITY_FIXTURES = {
               "handle": "maintainer",
               "length": 11,
               "member_id": "hum-maintainer",
-              "offset": 30
+              "offset": 25
             }
           ],
           "task_id": null,
