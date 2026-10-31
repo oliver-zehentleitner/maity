@@ -526,7 +526,7 @@ current phase, so it is a mark, not a state.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9)
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; confirmed for the contract on 2026-10-31 (request req-sddrhxm25jgs): a new project is public by default, one whose repository is private at creation starts private (`docs/api.md` §16.9); the pricing sentence removed from this entry on 2026-10-31 at the maintainer's decision (request req-7dq9c1xw5ka2) that plans are not stated in the repository
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
 Each project is public or private; a new project is public by default,
@@ -575,7 +575,7 @@ existence is the namespace owner's).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26
+**Source:** the maintainer's decision of 2026-10-28 (request req-nj9xa739bacm); the details are the contract owner's; contract in docs/api.md §6.26; the pricing remark on private organisations removed on 2026-10-31 (request req-7dq9c1xw5ka2)
 **Revisit when:** private organisations are taken up, or an installation on a forge organisation is to serve a Maity organisation (docs/api.md §11.4, "Follow-up")
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 
