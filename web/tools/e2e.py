@@ -2206,6 +2206,9 @@ def forge_access_step(run: Run, page: Page) -> None:
     run.shot(page, "forge-access")
     run.a11y(page, "forge access")
     no_problems(run, "forge access")
+    # Leave the account page: a later step opens it from the menu and must not find this one.
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:
