@@ -281,11 +281,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
   freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
-  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-c", "@agent-d"])
+  // An agent's instances follow it (tsk-bczgjkfpw1wg): @agent-b#wle2, @agent-c#k3pa in the fixture.
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-a", "@agent-b", "@agent-b#wle2", "@agent-c", "@agent-c#k3pa", "@agent-d"])
     && freeText.getAttribute("aria-expanded") === undefined && freeText.getAttribute("aria-activedescendant") === pickList.attrs.id + "-0",
     "mentions: @ offers the project's members by handle " + JSON.stringify(options()));
   freeText.dispatch("keydown", { key: "ArrowDown" }); freeText.dispatch("keydown", { key: "Enter" }); await tick();
   expect(freeText.value === "Ask @agent-b " && pickList.hidden && !freeText.getAttribute("aria-activedescendant"), "mentions: arrow and Enter put the handle in");
+  freeText.value = "Ask @agent-b#"; freeText.dispatch("input"); await tick(); await tick();
+  expect(!pickList.hidden && JSON.stringify(options()) === JSON.stringify(["@agent-b#wle2"])
+    && text(pickList.querySelector("li")).includes("Agent B · instance"),
+    "mentions: after # only the instances of the agent named, as instances " + JSON.stringify(options()));
+  freeText.dispatch("keydown", { key: "Enter" }); await tick();
+  expect(freeText.value === "Ask @agent-b#wle2 " && pickList.hidden, "mentions: Enter puts the instance's address in");
+  // A revoked instance is not offered, a dormant one is marked.
+  const inText = document.createElement("textarea");
+  const inList = win.Maity.mentionPicker(inText, () => Promise.resolve([
+    { id: "agt-1", kind: "agent", handle: "bee", display_name: "Bee", instances: [{ id: "k7mq" }, { id: "wqe2", dormant: { since: "2026-10-31T09:00:00Z", by: "hum-1" } }, { id: "p4zz", revoked_at: "2026-10-30T09:00:00Z" }] },
+  ]), "me");
+  inText.value = "@be"; inText.dispatch("input"); await tick(); await tick();
+  const inOptions = inList.querySelectorAll("li").map((li) => text(li));
+  expect(JSON.stringify(inOptions) === JSON.stringify(["@bee Bee · agent", "@bee#k7mq Bee · instance", "@bee#wqe2 Bee · instance, dormant"]),
+    "mentions: revoked instances left out, a dormant one marked " + JSON.stringify(inOptions));
+  // Members come first (#871's review): with nine members and instances, an @ still shows eight members.
+  const manyText = document.createElement("textarea");
+  const manyList = win.Maity.mentionPicker(manyText, () => Promise.resolve(
+    Array.from({ length: 9 }, (_, i) => ({ id: "agt-" + i, kind: "agent", handle: "o" + i, display_name: "O" + i, instances: [{ id: "k7m" + "abcdefghj"[i] }] }))), "me");
+  manyText.value = "@o"; manyText.dispatch("input"); await tick(); await tick();
+  const manyShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(manyShown.length === 8 && manyShown.every((x) => !x.includes("#")), "mentions: members fill the list first, instances only the room left " + JSON.stringify(manyShown));
+  manyText.value = "@o1"; manyText.dispatch("input"); await tick(); await tick();
+  const oneShown = manyList.querySelectorAll("li .mention-handle").map((x) => text(x));
+  expect(JSON.stringify(oneShown) === JSON.stringify(["@o1", "@o1#k7mb"]), "mentions: with room, an agent's instance follows it " + JSON.stringify(oneShown));
   freeText.value = "mail me@age"; freeText.dispatch("input"); await tick();
   expect(pickList.hidden, "mentions: an @ inside a word offers nothing");
   const CR = (t) => JSON.stringify(win.Maity.mentionCode(t));
@@ -566,11 +592,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!linkOf(wm("hi @agent-c", [{ member_id: "agt-b", handle: "agent-b", field: "body", offset: 3, length: 8 }])).length,
     "mentions: a stored mention whose text does not match stays text");
   // An instance mention (§8.6, §6.17): @handle#id or @owner/handle#id links to the member, the instance in the title.
-  const instShort = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
-  const instLong = linkOf(wm("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
-  expect(instShort.length === 1 && instShort[0].textContent === "@agent-b#wqe2" && instShort[0].getAttribute("href") === "#/m/agt-b" && instShort[0].getAttribute("title") === "instance wqe2"
-    && instLong.length === 1 && instLong[0].textContent === "@maintainer/agent-b#wqe2",
-    "mentions: a stored instance mention, short or long, links to its member with the instance in the title");
+  // Since tsk-bczgjkfpw1wg the handle and the #id are two links: the member, and its Sessions with that instance.
+  const instCtx = { link: (...parts) => "/p/" + parts.join("/") };
+  const wmi = (t, ms) => mentionsDrawn(t, ms, "body", (id) => "/m/" + id, undefined, instCtx);
+  const instShort = linkOf(wmi("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  const instLong = linkOf(wmi("ping @maintainer/agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", name: "maintainer/agent-b", instance: "wqe2", field: "body", offset: 5, length: 24 }]));
+  expect(instShort.length === 2 && instShort[0].textContent === "@agent-b" && instShort[0].getAttribute("href") === "#/m/agt-b"
+    && instShort[1].textContent === "#wqe2" && instShort[1].getAttribute("href") === "#/p/members/agt-b/sessions/wqe2" && instShort[1].getAttribute("title") === "Instance wqe2"
+    && instLong.length === 2 && instLong[0].textContent === "@maintainer/agent-b" && instLong[1].textContent === "#wqe2",
+    "mentions: a stored instance mention, short or long, is two links: the member and its instance");
+  const instNoCtx = linkOf(wm("ping @agent-b#wqe2 now", [{ member_id: "agt-b", handle: "agent-b", instance: "wqe2", field: "body", offset: 5, length: 13 }]));
+  expect(instNoCtx.length === 1 && instNoCtx[0].textContent === "@agent-b#wqe2" && instNoCtx[0].getAttribute("title") === "Instance wqe2",
+    "mentions: without a project to link into, the instance mention stays one link to the member");
   const teamSuffix = wm("ping @agent-b#wqe2", [{ member_id: "agt-b", handle: "agent-b", instance: null, field: "body", offset: 5, length: 8 }]);
   expect(linkOf(teamSuffix).length === 1 && linkOf(teamSuffix)[0].textContent === "@agent-b" && !linkOf(teamSuffix)[0].getAttribute("title")
     && teamSuffix[teamSuffix.length - 1] === "#wqe2", "mentions: a team mention followed by a #-looking suffix links the handle, the suffix stays text");
@@ -6509,6 +6542,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && header.querySelectorAll("a.chat-button").length === 1, "header: a refresh to new chat messages brings Chat's badge back, one button");
   win.Maity.api.get = rcGet;
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  // A project's tab follows a refresh of the counts in place, in the fixture's #/ links too (#861's review).
+  const tcGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
+    ? tcGet(p).then((r) => ({ ...r, by_project: { ...(r.by_project || {}), "maintainer/maity": { ...((r.by_project || {})["maintainer/maity"] || {}), chat: 5 } } })) : tcGet(p));
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(tabCountOf("Chat") === "5", "notifications: a refresh of the counts updates the project's Chat tab in place " + tabCountOf("Chat"));
+  win.Maity.api.get = tcGet;
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   const chLinks = main.querySelectorAll(".chat-list a.conv");
   expect(plainTitle() === "Chats · Maity" && main.querySelector(".chat-layout") && !main.querySelector(".chat-layout.open")
@@ -7155,6 +7196,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector(".member-section")).includes("Instances") && mpsSess && text(mpsSess).includes("ses-b-0009") && text(mpsSess).includes("since ")
     && text(mpsSess).includes("not listening since") && !btn(main.querySelector(".member-section"), "Revoke"),
     "member page: Sessions & credentials lists the instances with their session, without Revoke (that is in Manage)");
+  // An instance's address (tsk-bczgjkfpw1wg): members/<id>/sessions/<instance> marks that instance's line and focuses it.
+  await go("#/maintainer/maity/members/agt-b/sessions/wle2"); for (let k = 0; k < 8; k++) await tick();
+  const mpsChosen = byId("member-instance-wle2");
+  expect(mpsChosen && mpsChosen.classList.contains("chosen") && mpsChosen.getAttribute("aria-current") === "true" && mpsChosen.getAttribute("tabindex") === "-1"
+    && main.querySelectorAll(".member-instances li.chosen").length === 1,
+    "member page: an instance's address marks its line on Sessions as the current one");
+  await go("#/maintainer/maity/members/agt-b/sessions/zzzz"); for (let k = 0; k < 8; k++) await tick();
+  expect(!main.querySelector(".member-instances li.chosen") && text(main.querySelector(".member-instance-missing")) === "Instance zzzz is not listed for this member.",
+    "member page: an address naming an instance the member does not list says so (#871's review)");
   win.Maity.api.getAll = mpsAll; win.Maity.api.get = mpsGet;
   await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
   expect(mpBox() && !mpBox().querySelector("a.member-chat") && !mpBox().querySelector(".member-actions-menu")
@@ -7207,14 +7257,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An agent's instance (§6.17): <handle>#<id>, the #id muted with harness and model as tooltip;
   // a human keeps the name, and an id that is no instance id is not shown.
   const inCtx = { memberById: { "agt-b": { id: "agt-b", kind: "agent", handle: "agent-b", display_name: "Agent B" },
-    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, id) => "/maintainer/maity/" + k + "/" + id, nameOf: (id) => id };
+    "hum-m": { id: "hum-m", kind: "human", handle: "maintainer", display_name: "Maintainer" } }, link: (k, ...rest) => "/maintainer/maity/" + [k].concat(rest).join("/"), nameOf: (id) => id };
   const inRef = win.Maity.dom.memberRef(inCtx, "agt-b", { instance: { instance: "wqe2", harness: "Claude Code", model: "claude-opus-5-5" } });
   const inSuffix = inRef.querySelector(".member-instance");
   const inLink = inRef.querySelector("a.member-ref");
   expect(text(inRef) === "agent-b#wqe2" && inLink && text(inLink) === "agent-b" && inLink.getAttribute("title") === "Agent B"
     && inSuffix && inSuffix.parentNode === inRef && inSuffix.classList.contains("muted")
-    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5",
-    "instances: an agent is named <handle>#<id>, the id muted beside the link, harness and model as its tooltip");
+    && inSuffix.getAttribute("title") === "Instance wqe2 · Claude Code · claude-opus-5-5"
+    && inSuffix.tagName === "A" && inSuffix.getAttribute("href") === "#/maintainer/maity/members/agt-b/sessions/wqe2",
+    "instances: an agent is named <handle>#<id>, the #id a link of its own beside the handle's to the instance, harness and model as its tooltip");
   expect(text(win.Maity.dom.memberRef(inCtx, "agt-b", { text: "handle", instance: "k7mq" })) === "@agent-b#k7mq"
     && text(win.Maity.dom.memberRef(inCtx, "hum-m", { instance: "wqe2" })) === "Maintainer"
     && text(win.Maity.dom.memberRef(inCtx, "agt-b", { instance: "<b>x" })) === "Agent B"

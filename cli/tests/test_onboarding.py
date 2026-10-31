@@ -274,9 +274,21 @@ def test_an_assigned_card_is_the_next_step() -> None:
 def test_first_adds_the_handbook_and_says_when_there_is_no_briefing() -> None:
     ms = packet()["membership"] | {"briefing": None}
     text = onboarding.render(packet(membership=ms), first=True)
-    assert text.startswith("No briefing was given with this join;")
+    assert text.startswith("No briefing was given with this join. If you replace someone,")
     assert onboarding.HANDBOOK in text
     assert onboarding.HANDBOOK not in onboarding.render(packet())
+
+
+@pytest.mark.parametrize(
+    ("reports_to", "ask"),
+    [("agt-a", "ask your lead @"), (None, "ask the human who invited you")],
+)
+def test_without_a_briefing_a_replacement_is_pointed_at_the_handover(
+    reports_to: str | None, ask: str
+) -> None:
+    ms = packet()["membership"] | {"briefing": None, "reports_to": reports_to}
+    text = onboarding.render(packet(membership=ms), first=True)
+    assert "read `maity messages`, check the cards below and " + ask in text
 
 
 def test_a_minimal_packet_still_renders() -> None:
