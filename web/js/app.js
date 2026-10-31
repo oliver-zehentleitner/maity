@@ -36,6 +36,8 @@ window.Maity = window.Maity || {};
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
+    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>.
+    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
     // One's own agents in the project (js/agents-page.js), the component of
@@ -570,6 +572,12 @@ window.Maity = window.Maity || {};
     if (M.projectSetup) append(panel, memoryPanel(ctx));
     // Humans only, as every policy field (§2.3 ʰ).
     if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    // The jour fixe's series and moderator order (§20.1, §20.2), humans only as every policy field.
+    if (humanAdmin && M.jourFixe) {
+      const order = h("div", { class: "jf-moderators-slot" });
+      append(panel, M.jourFixe.settingsForm(ctx, save), order);
+      M.jourFixe.moderatorsPart(ctx).then((box) => append(order, box));
+    }
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {

@@ -3930,6 +3930,59 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.post = fgPost;
     delete win.location.assign;
   }
+  // The jour fixe (§20, tsk-6h70epze0906): the series in Project settings, the moderator order, the rounds,
+  // one round as a member reads it, and a round started by hand.
+  {
+    const jfPatches = [], jfPuts = [], jfPosts = [];
+    const jfPatch = win.Maity.api.patch, jfPut = win.Maity.api.put, jfPost = win.Maity.api.post;
+    win.Maity.api.patch = (p, b) => { if (b && b.policy && "jour_fixe" in b.policy) jfPatches.push(b); return jfPatch(p, b); };
+    win.Maity.api.put = (p, b) => { if (p.endsWith("/jour-fixe/moderators")) jfPuts.push(b); return jfPut(p, b); };
+    win.Maity.api.post = (p, b) => { if (p.endsWith("/jour-fixe/rounds")) jfPosts.push(b); return jfPost(p, b); };
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    const jfRounds = () => main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
+    expect(JSON.stringify(jfRounds()) === JSON.stringify(["jfx-0002", "jfx-0001"]) && text(main).includes("fewer than two members were present")
+      && text(main).includes("No scheduled rounds"),
+      "jour fixe: a tab of its own; the rounds newest first, a skipped one with its reason; no schedule said so");
+    await go("#/maintainer/maity/jour-fixe/jfx-0001"); for (let k = 0; k < 6; k++) await tick();
+    const jfTopic = () => main.querySelector("li.jf-topic");
+    expect(text(main).includes("reported") && text(main).includes("3 answers received") && text(main).includes("no instance listening")
+      && jfTopic() && text(jfTopic()).includes("Reviews wait overnight") && text(jfTopic()).includes("anonymous") && !jfTopic().querySelector("b")
+      && text(jfTopic()).includes("Agreed, a second reviewer helps.") && text(jfTopic()).includes("Reason: posted a token") && !text(jfTopic()).includes("token</")
+      && text(main.querySelector("section.jf-report")).includes("to the owner") && text(main.querySelector("section.jf-report")).includes("adopted: Within the rules.")
+      && main.querySelector("section.jf-report").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/inbox/req-0091"),
+      "jour fixe: a round shows its phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
+    // Project settings: the series, sent whole with a reason; the moderator order set and reset.
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+    const jfForm = () => main.querySelector("form.jf-settings");
+    expect(jfForm() && byId("jf-freq").value === "weekly" && !byId("jf-enabled").checked, "jour fixe: the series in Project settings, off by default");
+    byId("jf-enabled").checked = true; byId("jf-time").value = ""; byId("jf-reason").value = "every second Monday";
+    jfForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(!jfPatches.length && text(byId("jf-error")).includes("A time and a time zone"), "jour fixe: switched on, a time is needed before anything is sent");
+    byId("jf-time").value = "10:00"; byId("jf-timezone").value = "Europe/Vienna"; byId("jf-interval").value = "2";
+    byId("jf-day-mon").checked = true; byId("jf-day-thu").checked = true;
+    jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    const jfSent = jfPatches[0] && jfPatches[0].policy.jour_fixe;
+    expect(jfSent && jfSent.enabled === true && JSON.stringify(jfSent.recurrence) === JSON.stringify({ freq: "weekly", interval: 2, weekdays: ["mon", "thu"] })
+      && jfSent.time === "10:00" && jfSent.timezone === "Europe/Vienna" && jfSent.moderator === "admin_agent" && jfPatches[0].reason === "every second Monday",
+      "jour fixe: the series sent whole with its reason " + JSON.stringify(jfPatches[0]));
+    const jfOrder = () => main.querySelector("ol.jf-order");
+    expect(jfOrder() && text(jfOrder()).includes("Agent A"), "jour fixe: the moderator order, the admin agents in their resolved order");
+    byId("jf-order-reason").value = "agent-a knows the team";
+    btn(main.querySelector("section.jf-moderators"), "Back to the default order").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(jfPuts[0]) === JSON.stringify({ order: null, reason: "agent-a knows the team" }) && text(main).includes("The order is saved."),
+      "jour fixe: the order reset to the default with a reason");
+    // Started by hand: a reason, then the new round; a second start while it is open is refused in words.
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("Next round:"), "jour fixe: with the series on, the next slot is said");
+    byId("jf-start-reason").value = "before the launch"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    win.onhashchange(); for (let k = 0; k < 6; k++) await tick(); // the shim's hash change, as a browser's
+    expect(JSON.stringify(jfPosts[0]) === JSON.stringify({ reason: "before the launch" }) && /^#\/maintainer\/maity\/jour-fixe\/jfx-/.test(win.location.hash)
+      && text(main).includes("answering"), "jour fixe: started by hand with a reason, the new round opened " + win.location.hash);
+    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
+    byId("jf-start-reason").value = "again"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(main).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round while one is open is refused in words");
+    win.Maity.api.patch = jfPatch; win.Maity.api.put = jfPut; win.Maity.api.post = jfPost;
+  }
   // Organisations (docs/api.md §6.26) under the account: the list and a new one, then one organisation's
   // members, invitations, settings and deletion, each refusal of the hub in words.
   await go("#/account/orgs"); for (let k = 0; k < 4; k++) await tick();
