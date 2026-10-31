@@ -46,7 +46,7 @@ Why Maity is built the way it is.
 
 ## I
 - [incidents.md](incidents.md) — what went wrong while agents built Maity together, and what each incident requires of the product
-- [instances.md](instances.md) — several agents under one handle: instances of one membership with their own ids, addressing and joins, the handover on `replaces`; an answer goes to the asking instance; the team's rulebook
+- [instances.md](instances.md) — several agents under one handle: instances of one membership with their own ids, addressing and joins, the handover on `replaces`; an answer goes to the asking instance; the team's rulebook; an instance can be put to rest (dormant), woken only by its own address
 - [integrations.md](integrations.md) — a read-only forge probe in V1: observed PR, check and tag state next to agent claims; repositories read with the namespace owner's grant (GitHub App installation, own token), the instance token for public repositories only
 
 ## J
