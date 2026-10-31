@@ -31,22 +31,24 @@ window.Maity = window.Maity || {};
     { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
     { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
+    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
-    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>.
-    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
-    // One's own agents in the project (js/agents-page.js), the component of
-    // /agents; before Runners and Why (the maintainer, 2026-10-29).
-    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
-    // The account-level view is views.runners; this one is the project's.
-    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
+    // The account-level view is views.runners; this one is the project's,
+    // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
+    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
+    // between Why and Settings (the maintainer, 2026-10-31).
+    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     // One view with two tabs (§16.11): the project's for its admins, one's
@@ -106,6 +108,8 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
+    // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
+    if (parts[0] === "invite") return { scope: "invitations" };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
@@ -123,8 +127,9 @@ window.Maity = window.Maity || {};
     if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
-    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened.
-    if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3])) {
+    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
+    // and Import or export everything, at /admin/site (tsk-xw8a2hd84x3a).
+    if (parts[0] === "admin" && ((parts[1] === "registration" || parts[1] === "site") && !parts[2] || parts[1] === "reports" && !parts[3])) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -223,6 +228,17 @@ window.Maity = window.Maity || {};
     other: "M9.5 3.25a2.25 2.25 0 113 2.12V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.13a2.25 2.25 0 11-1.5 0V5.37a2.25 2.25 0 111.5 0v1.84A2.49 2.49 0 016 7h4a1 1 0 001-1v-.63A2.25 2.25 0 019.5 3.25z",
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
+  // The project's own links (§6.11), in this order, each with its word and a 16 × 16 mark
+  // (Octicons, MIT): an issue, a book, a speech bubble, a chat bubble.
+  const OWN_LINKS = [
+    ["issues", () => M.t("project.link.issues"), "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"],
+    ["wiki", () => M.t("project.link.wiki"), BOOK],
+    ["discussions", () => M.t("project.link.discussions"), "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z"],
+    ["chat", () => M.t("project.link.chat"), "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z"],
+  ];
+  // The links that are set, as plain https only: what the header and the overview show.
+  const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
+    .filter((x) => x.url);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -239,11 +255,16 @@ window.Maity = window.Maity || {};
     const exp = project.keep_the_why_export;
     const root = exp && (exp.members || []).find((m) => m.path === "");
     const why = root && M.dom.safeUrl(root.dashboard_url);
-    const name = FORGES[forge] || "Repository";
+    // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
+    // and the project's own links stand beside it.
+    const name = M.t("project.link.repository");
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": (FORGES[forge] ? "Repository on " + name : "Repository") + " (opens in a new tab)", title: repo },
+        "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
+      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
+      mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
       mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
@@ -420,6 +441,59 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  // The project's own links (§6.11), for project:admin: four fields, only
+  // the changed ones sent (the hub merges by key, so another admin's change
+  // to another link meanwhile stays), each refusal said at its field.
+  function linksForm(ctx) {
+    const current = ctx.project.links || {};
+    const status = statusLine();
+    const WORDS = { format: () => M.t("settings.links.format"), too_long: () => M.t("settings.links.too_long"), unknown: () => M.t("settings.links.unknown") };
+    const fields = OWN_LINKS.map(([key, label]) => {
+      const id = "link-" + key;
+      const input = h("input", { id, type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", maxlength: "500",
+        "aria-describedby": ["links-hint", id + "-error"].join(" ") });
+      input.value = current[key] || "";
+      const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+      return { key, input, error, nodes: [h("label", { for: id }, label()), input, error] };
+    });
+    return h("form", {
+      class: "inline-form links-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        fields.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
+        const links = {};
+        fields.forEach((f) => {
+          const value = f.input.value.trim();
+          if (value !== (current[f.key] || "")) links[f.key] = value || null;
+        });
+        if (!Object.keys(links).length) { status.done(); append(status.el, h("span", null, M.t("settings.links.unchanged"))); return; }
+        status.busy(M.t("settings.links.saving"));
+        try {
+          await M.api.patch(ctx.base, { links });
+          settingsSaved = M.t("settings.links.saved");
+          render();
+        } catch (err) {
+          const refused = err.code === "invalid" && err.details && err.details.fields;
+          const hits = refused ? fields.filter((f) => refused["links." + f.key]) : [];
+          if (!hits.length) { status.fail(M.t("settings.links.not_saved"), err); return; }
+          status.done();
+          hits.forEach((f) => {
+            const why = refused["links." + f.key];
+            f.error.textContent = Object.hasOwn(WORDS, why) ? WORDS[why]() : why;
+            f.input.setAttribute("aria-invalid", "true");
+          });
+          hits[0].input.focus();
+        }
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.links.title")),
+    h("p", { class: "hint", id: "links-hint" }, M.t("settings.links.hint")),
+    fields.map((f) => f.nodes),
+    h("button", { type: "submit" }, M.t("settings.links.save")),
+    status.el);
+  }
+
   // §8.5's blind removal: an owner or admin removes a reported message of a
   // closed group chat by its number, without reading it; the hub answers
   // {seq, redacted} only, never the message.
@@ -570,13 +644,13 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null);
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null, linksForm(ctx));
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
-    // Humans only, as every policy field (§2.3 ʰ).
-    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and moderator order (§20.1, §20.2), humans only as every policy field.
     if (humanAdmin && M.jourFixe) {
       const order = h("div", { class: "jf-moderators-slot" });
@@ -1099,7 +1173,12 @@ window.Maity = window.Maity || {};
     const fresh = M.notify.bell(ctx, () => ctx.refreshCounts());
     if (old && fresh) { old.parentNode.insertBefore(fresh, old); old.remove(); }
     else if (old) old.remove();
-    else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
+    // A bell that was not there goes where it stands: before the profile.
+    else if (fresh) {
+      const me = header.querySelector(".me");
+      const profileBox = me ? Array.from(me.children).find((c) => c.querySelector && c.querySelector(".profile-menu")) : null;
+      if (me) me.insertBefore(fresh, profileBox || null);
+    }
   }
 
   // The Chat button follows the counts too, keeping the focus if it had it.
@@ -1158,6 +1237,17 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
+    // "+": bring someone in, an agent or a person (the maintainer, 2026-10-31):
+    // the agents page with its join, the invitations page. Humans only.
+    const add = ctx.me.kind === "human" ? M.menuButton({
+      label: M.t("menu.add.label"),
+      class: "add-menu",
+      face: h("span", { class: "add-face", "aria-hidden": "true" }, "+"),
+      items: () => [
+        { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
+        { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+      ],
+    }) : null;
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: M.t("menu.profile.label", { name: ctx.me.display_name }),
@@ -1181,13 +1271,14 @@ window.Maity = window.Maity || {};
         brandTitle(true),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"),
+          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
             "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
-        // Chat, Notifications, the gear, the profile: in one row on a phone too.
-        h("span", { class: "me" }, M.notify.chatButton(ctx), M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        // Chat, (Lead,) "+", the gear, Notifications, the profile: in one row on a phone too.
+        // The Lead button goes in right after Chat once known (renderLead), so "+" stays to its right.
+        h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -1246,6 +1337,8 @@ window.Maity = window.Maity || {};
     if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
+      // The project's runners, no tab of their own any more.
+      h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
       projectPanel(ctx));
     settingsSaved = null;
@@ -1295,6 +1388,7 @@ window.Maity = window.Maity || {};
       stateLabel: (state) => STATE_LABELS[state] || state,
       stateBadge,
       releasedMark,
+      ownLinks,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
@@ -1581,8 +1675,9 @@ window.Maity = window.Maity || {};
     const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = (item && item.current) || where.route;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    // `section`: a view whose tab stands for another (`current`) keeps its own name here.
+    else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
@@ -1618,6 +1713,8 @@ window.Maity = window.Maity || {};
         await M.views.instanceAdmin(ctx, root, where);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
+      } else if (where.scope === "invitations") {
+        await M.views.invitations(ctx, root);
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
       } else if (where.scope === "person") {
@@ -1644,6 +1741,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = "Your agents";
     else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = "Instance administration";

@@ -30,6 +30,7 @@ from maity_hub import (
     line,
     namespace,
     person_links,
+    pins,
     placements,
     project_roles,
     rules,
@@ -956,6 +957,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    pins.prune(conn, change.project.id)  # its direct chats go with it (§9.1, §9.3)
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team

@@ -109,7 +109,12 @@ def show_landing_preview(
             raise not_found()
         pages = draft["variants"][variant]["pages"] if variant else draft["pages"]
         # No `Accept-Language`: without `lang` the draft's own default language (§16.7).
-        chosen = render.choose_language(list(pages), draft["default_language"], lang, None)
+        chosen = render.choose_language(
+            render.ordered_languages(pages, draft["default_language"]),
+            draft["default_language"],
+            lang,
+            None,
+        )
         setting = {**landing.stored(conn), **draft}
         body = render.landing_document(
             setting,

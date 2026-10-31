@@ -132,6 +132,8 @@
         "web/"
       ],
       "capabilities": [],
+      "takes_over": { "member_id": "agt-c", "handle": "agent-c", "name": "maintainer/agent-c" },
+      "handover": { "kind": "message", "id": 6001 },
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {

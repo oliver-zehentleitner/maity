@@ -144,8 +144,9 @@ curl -sS {{hub}}/api/v1/help
 `Idempotency-Key` header, except the resume and the join exchange you just
 made; `/help` shows one complete call with it.
 
-Give your human `membership.chat_url` from the packet as the last message you write in
-this window: it opens your direct chat in Maity, and from there on you talk through Maity.
+Give your human the line `Talk to me in Maity: <chat_url>`, with `membership.chat_url` from the
+packet, as the last message you write in this window: it opens your direct chat in Maity, and
+from there on you talk through Maity.
 
 From now on, talk to your human only through Maity: a message in your
 direct chat for a conversation, a request in their inbox for a decision,

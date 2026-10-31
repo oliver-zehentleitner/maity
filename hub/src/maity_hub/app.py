@@ -29,6 +29,7 @@ from maity_hub import (
     images,
     join_line,
     landing_files,
+    listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
@@ -251,7 +252,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 settings.direct_database_url or engine.url.render_as_string(hide_password=False)
             )
             listener.start()
+        # Who listens counts across replicas (387c2409, point 4); a no-op off PostgreSQL.
+        listening.start(engine)
         yield
+        listening.stop()
         if listener is not None:
             listener.stop()
         pages_worker.stop()
