@@ -67,9 +67,13 @@ window.Maity = window.Maity || {};
 
   // A part's state: missing, same, changes or refused, with the words and the saves it needs.
   async function checkLanding(d, now) {
-    if (!isObject(d) || !isObject(d.pages)) return { state: "refused", words: M.t("site.refused.landing_shape") };
-    const next = { enabled: "enabled" in d ? !!d.enabled : now.landing.enabled, default_language: d.default_language || now.landing.default_language,
-      pages: d.pages, footer: isObject(d.footer) ? d.footer : now.landing.footer };
+    // A value of the wrong kind refuses the part rather than falling back to the saved one without a word.
+    if (!isObject(d) || !isObject(d.pages) || ("enabled" in d && typeof d.enabled !== "boolean")
+      || ("default_language" in d && typeof d.default_language !== "string") || ("footer" in d && !isObject(d.footer))) {
+      return { state: "refused", words: M.t("site.refused.landing_shape") };
+    }
+    const next = { enabled: "enabled" in d ? d.enabled : now.landing.enabled, default_language: d.default_language || now.landing.default_language,
+      pages: d.pages, footer: "footer" in d ? d.footer : now.landing.footer };
     if (same(next, now.landing)) return { state: "same" };
     try { await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer }); }
     catch (err) { return { state: "refused", words: refusalWords(err) }; }

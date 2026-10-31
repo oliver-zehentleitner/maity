@@ -31,23 +31,24 @@ window.Maity = window.Maity || {};
     { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
     { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
+    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
-    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>.
-    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
-    // One's own agents in the project (js/agents-page.js), the component of
-    // /agents; before Runners and Why (the maintainer, 2026-10-29).
-    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     // The account-level view is views.runners; this one is the project's,
     // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
+    // between Why and Settings (the maintainer, 2026-10-31).
+    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     // One view with two tabs (§16.11): the project's for its admins, one's
