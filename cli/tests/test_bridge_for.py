@@ -95,3 +95,45 @@ def test_the_resume_names_each_agent_it_carries_for() -> None:
         {},
     )  # fmt: skip
     assert "You carry for @designer: git for the designer's files" in lines
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--for", "designer", "dormant"],  # a handle: not even resolved
+        ["--for", "agt-s", "resume", "--full"],  # a stored packet is not printed either
+        ["--for", "agt-s", "profile", "avatar", "missing.png"],  # before the file is read
+    ],
+)
+def test_for_on_a_command_of_the_bridges_own_sends_nothing(
+    argv: list[str], joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    state.save_state(joined, {"me": {"member_id": "agt-b"}}, name=cli.LAST_PACKET)
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "--for applies to project commands" in capsys.readouterr().err
+    assert fake.seen == []
+
+
+def test_say_human_for_an_agent_writes_in_its_conversation(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _members(fake)
+    path = "/api/v1/projects/oliver/maity/conversations/agt-s/messages"
+    fake.routes[("POST", path)] = lambda _seen: (201, {"seq": 9, "id": "evt-9"})
+    assert cli.main(["--for", "designer", "say", "human", "on it"]) == 0
+    posted = [s for s in fake.seen if s.method == "POST"]
+    assert [s.path for s in posted] == [path] and posted[0].headers["maity-for"] == "agt-s"
+    assert len([s for s in fake.seen if s.path.endswith("/members")]) == 1  # resolved once
+
+
+def test_the_served_agent_answers_for_its_card_through_the_bridge(joined: Path) -> None:
+    cli.Session.for_target = "agt-s"
+    try:
+        session = cli.Session()
+        held = {"from": {"member_id": "agt-s", "instance": None}}
+        cli._check_holder(session, "tko-1", held)  # its claim through the bridge
+        assert session.me == "agt-s" and session.my_instance is None
+        with pytest.raises(cli.LocalRefusal):
+            cli._check_holder(session, "tko-1", {"from": {"member_id": "agt-other"}})
+    finally:
+        cli.Session.for_target = None

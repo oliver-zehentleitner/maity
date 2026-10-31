@@ -1288,12 +1288,17 @@ and the CLI keeps no rule of its own about it.
 **Source:** docs/api.md §13 ("Acting for a served agent") and §2.3; implementation session for card tsk-emy3a9vtqxym, 2026-10-31
 **Revisit when:** a project command starts calling `/me` mid-way, which `--for` would then refuse after earlier calls went out
 
-`maity --for <handle | member id>` is a global option: `Session` resolves a handle through the
-member list as the bridge itself, then the client signs `Maity-For` (the `for:` line after a
-`Maity-On-Request` line) on every call of the command. The client refuses a path under `/me`
-before anything is sent (`hub.ForRefused`, exit 2), which covers `resume`, `dormant`, `ack`,
-`limit`, the avatar and the soul forms as a rule, as §13 asks, including commands added later;
-`join` is refused in `main`, since its first calls go through no `Session`. The project lookup
+`maity --for <handle | member id>` is a global option: the client signs `Maity-For` (the `for:`
+line after a `Maity-On-Request` line) on every call of the command, and resolves a handle through
+the member list as the bridge itself on the first call that needs it (`Client.for_resolve`), so
+nothing is looked up before the `/me` check. The client refuses a path under `/me` before
+anything is sent (`hub.ForRefused`, exit 2), which covers `dormant`, `ack`, `limit` and the soul
+forms as a rule, as §13 asks, including commands added later. `join`, `resume` (whose `--full`
+prints a stored packet without a call) and `profile avatar` (which reads the file first) refuse it
+before anything else. The local checks of project commands read `Session.me`, the served agent
+under `--for`, and `Session.my_instance`, none there: `say human` writes in the served agent's
+conversation, and the holder check of a takeover and the jour fixe participant check pass for the
+served agent. The project lookup
 after a `not_found` (`_moved`, `GET /me`) is skipped under `--for`. `wait --for` reads
 `events?for=<member id>` from `for_cursors.<member id>` in `state.json`, so the bridge's own
 `cursor` never moves on the served agent's events. Rejected: a list of commands that refuse
