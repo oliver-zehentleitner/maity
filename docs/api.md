@@ -1829,7 +1829,7 @@ login page shows "Create an account" only with `registration: true`.
 #### 2.7.1 The flow: the address is verified before an account exists
 
 ```
-POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/"}
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/", "origin"?: {"variant": "maintainers", "campaign": "x-h1-w1"}}
 ```
 
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
@@ -1866,7 +1866,7 @@ transport, `Sec-Fetch-Site` and `next`.
      in anything, no handle. A blocked address gets no mail.
    - Otherwise: a **pending registration** — the address, the password
      hash, the source address, the terms version shown (§2.7.2), the
-     stored `next`, created and expiry time (24 hours) — and one mail
+     stored `next`, the `origin` of a campaign link (§16.7.2), created and expiry time (24 hours) — and one mail
      with a signed link.
    Both mails count against the registration budget (§16.2); over it,
    nothing is sent, as for sign-in mails. Only the mail differs.
@@ -2429,7 +2429,8 @@ code), the forge links (forge, login, kind, status, created — never a token), 
 runners they own (§15.3, never a credential), the agent profiles they
 own with their souls (§19.1) and memberships, the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
-filed (§16.8), and the memberships (project full name, trust, role,
+filed (§16.8), the campaign origin while the hub still keeps it
+(§16.7.2: variant, campaign, day), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
@@ -10359,6 +10360,8 @@ contract; until then nothing else in this section changes.
 | POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
 | GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
 | GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
+| GET | `/admin/statistics/campaigns` | `instance:admin`, human only | 16.7.2 |
+| GET | `/for/<slug>` (HTML) | — | 16.7.2 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
 | GET | `/legal` | — | 16.7.1 |
@@ -11992,6 +11995,8 @@ The admin area's section "Statistics": counts the operator reads to
 see whether the instance is used, computed from the tables the hub has
 anyway. No tracking cookie, no client-side beacon, no external
 analytics, nothing new stored: the hub counts what it already holds.
+The one exception is the daily sums per landing variant and campaign
+(§16.7.2), which the operator turns on by configuring either.
 
 ```
 GET /admin/statistics?days=30
@@ -12079,6 +12084,8 @@ is no environment form: the page is content, not deployment.
 | `enabled` | `false` | whether the root shows the landing page to visitors without a session |
 | `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
 | `pages` | `{}` | per language (`en`, `de`, any language tag of §6.2's list), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
+| `variants` | `{}` | at most 5 further pages served at `/for/<slug>`, each `{pages}` (§16.7.2) |
+| `campaigns` | `[]` | the campaign codes the hub counts, at most 200 × `{code, label}` (§16.7.2) |
 
 `title` is 1–120 characters, the page's `<title>`; `description` at
 most 300 characters, its meta description. `sections` is an ordered
@@ -12359,6 +12366,133 @@ read-only.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
   pages: {imprint|privacy|terms: {version, languages}}}` without the
   text, for the dashboard's links.
+
+### 16.7.2 Landing variants and campaigns
+
+An operator compares two or three ways of saying what the instance is
+by linking them: each variant has an address of its own, each campaign
+link carries a code the instance admin created beforehand, and the
+hub counts, per UTC day, how many visitors each combination brought,
+how many of them registered and how many of those brought an agent.
+The link decides what a visitor sees, never a lottery per visitor: no
+cookie, no script, no request from the page, nothing that tells one
+visitor from another. This is the one exception to §16.6's "nothing new
+stored", and it stores sums, not visits (`context/scope.md`).
+
+```
+GET, PATCH /admin/settings/landing          (variants and campaigns are fields of the setting)
+GET /admin/statistics/campaigns?days=30[&format=csv]
+```
+
+Scope `instance:admin`, human only (§16.1), for both.
+
+**Variants.** The landing setting (§16.7) gains `variants`: at most
+**5**, an object keyed by the variant's slug, each `{pages}` with
+`pages` exactly as the main page's (per language `{title, description,
+sections}`, every rule of §16.7: section types, limits, Markdown,
+control characters, `invalid` paths such as
+`variants.maintainers.pages.en.sections.0.title`). A slug follows
+`[a-z0-9-]{1,40}`, does not start or end with `-`, and is not `default`
+(the main page's name in the counts, below). A variant's page in
+`default_language` is required while the landing page is enabled; a
+language a variant lacks falls back to that variant's
+`default_language` page, never to the main page's. Header, footer,
+logo, theme and stats are the main page's, shared by every variant.
+Variants count towards the setting's 256 KiB cap (§16.7).
+
+- **Served** at `/for/<slug>` on the public host, for every visitor,
+  with or without a session, while the landing page is enabled and the
+  variant exists; otherwise the app shell, as an unknown path would be
+  (§16.11) — never another status, so an address does not tell whether
+  a variant existed. Headers, language rule, progressive enhancement and
+  Content-Security-Policy are §16.7's; the `<link rel="canonical">` of
+  a variant points at the instance's root, and the page carries `<meta
+  name="robots" content="noindex">`, so search engines index the main
+  page only. `/robots.txt` and `/sitemap.xml` list no variant.
+- **Seen before saving** like the main page: `POST
+  /admin/settings/landing/preview` takes `variants` too, and `GET
+  /admin/settings/landing/preview/{id}?variant=<slug>&lang=<tag>` shows
+  that variant's draft (without `variant`, the main page). A signed-in
+  admin sees a saved variant as a visitor at `/for/<slug>` (it never
+  turns into the app shell for a session, unlike `/`).
+
+**Campaigns.** The landing setting gains `campaigns`: at most **200**
+entries `{code, label}`, `code` matching `[a-z0-9-]{1,40}` and unique,
+`label` 1–120 characters of plain text for the admin's own reading
+(`"X, hook 1, week 1"`). A campaign is removed by leaving it out; its
+counted days stay (below), shown under its code.
+
+- **Carried by the link.** A visitor arrives at `/` or `/for/<slug>`
+  with `?c=<code>`. A code that is not in `campaigns` at that moment, or
+  is malformed, is treated as none: it is not counted, not stored, not
+  echoed, and the page is the same as without it. The hub renders the
+  page with every link to `/register` on this host carrying the
+  visitor's origin, `?v=<variant>&c=<code>` (`v` is `default` on the
+  main page; `c` only with a known code), so the registration knows
+  where the visitor came from. Nothing else on the page changes, and
+  nothing is set in the browser.
+- **To the registration.** The registration page (§2.7, app shell)
+  reads `v` and `c` from its address and sends them with `POST
+  /auth/register` as `origin: {variant, campaign}`; the hub keeps them
+  only when they still name an existing variant (or `default`) and a
+  known campaign, and drops either part silently otherwise. They are
+  stored on the **pending registration** (§2.7.1) and nowhere else
+  until the address is verified.
+
+**Counted.** One row per UTC day, variant (`default` for the main page)
+and campaign (`null` for none), with three sums; nothing else is kept
+about a visit:
+
+| Column | Counted when |
+|---|---|
+| `views` | the hub renders `/` (as the landing page) or `/for/<slug>` for a `GET` that a browser sends as a top-level navigation (`Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`), whose `User-Agent` matches none of the hub's list of crawlers and link-preview fetchers, and that is not `?as=public`, a preview or a `HEAD` |
+| `registrations` | a registration with that origin is completed (§2.7.1 step 6: the address verified and the account created), on the day of completion |
+| `activations` | an account registered with that origin sees the first agent instance of any of its profiles complete its first exchange (§3.3), within 30 days of the registration, on the day of that exchange; at most once per account |
+
+- **Views are approximate**, and the answer says so
+  (`views_approximate: true`): a browser that reloads within the
+  landing page's 60-second cache is not counted again, a shared cache
+  in front of the hub hides views, and a crawler that pretends to be a
+  browser is counted. The landing page and variants answer
+  `Cache-Control: private, max-age=60` instead of §16.7's `public` while
+  `campaigns` or `variants` is non-empty, so a shared cache does not
+  swallow them. The crawler list is the hub's own, part of its code.
+- **The origin on the account.** To count an activation the hub keeps
+  the origin (`variant`, `campaign`, the registration's day) with the
+  new account until the first activation or for **30 days**, whichever
+  is first, then deletes it. It is never shown — not to the person, not
+  to an admin, not in any export (§2.9 names it while it exists) — and
+  serves only this count. A deleted account takes it along (§2.9).
+- **Kept** for **400 days**, then deleted. Rows are sums; a row is never
+  linked to an account, a source address or a session.
+
+**Reading the counts.** `GET /admin/statistics/campaigns?days=30`,
+`days` 1–400, default 30:
+
+```json
+{ "as_of": "2026-11-02T10:00:00Z", "window_days": 30, "views_approximate": true,
+  "variants": ["default", "maintainers", "teams"],
+  "campaigns": [ { "code": "x-h1-w1", "label": "X, hook 1, week 1", "removed": false } ],
+  "rows": [
+    { "date": "2026-11-02", "variant": "maintainers", "campaign": "x-h1-w1",
+      "views": 212, "registrations": 9, "activations": 4 } ] }
+```
+
+`rows` holds only combinations with at least one non-zero sum, newest
+day first; `campaigns` lists every code that is configured or appears
+in `rows` (`removed: true` for one no longer configured). With
+`format=csv` the same rows as `text/csv` (`date,variant,campaign,views,
+registrations,activations`, a header line, `campaign` empty for none),
+`Content-Disposition: attachment`. The hub may compute the answer once
+an hour per `days` value, like §16.6. Deciding which variant won is the
+reader's: the hub states counts, not significance.
+
+**Privacy.** The operator's privacy notice (§16.7.1) is the operator's
+text; an instance with `variants` or `campaigns` should say there that
+the hub counts visits per campaign link as daily sums without cookies,
+and keeps a registration's campaign with the account for at most 30
+days to count whether an agent joined. The dashboard's admin section
+shows this hint next to the setting.
 
 ### 16.8 Abuse reports
 
@@ -12956,7 +13090,7 @@ registration (§2.7.4), `maity-hub owner create`, `POST /orgs` and every
 rename. The list:
 
 `account`, `admin`, `agents`, `all`, `api`, `assets`, `badge`, `chats`,
-`components`, `explore`, `health`, `impressum`, `imprint`, `inbox`,
+`components`, `explore`, `for`, `health`, `impressum`, `imprint`, `inbox`,
 `invite`, `join`, `login`, `mail`, `new`, `notifications`, `observe`,
 `privacy`, `register`, `requests`, `runners`, `settings`, `sign-in`,
 `terms`
