@@ -292,10 +292,12 @@ made.
 **See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-10-31
 
 `agent_profile.allowed_projects` is null or a list of full names as the owner wrote them. `allowed_projects.admits` is the
-one place that compares a list with a project, by every name the project answers to: its slug and its aliases' slugs under its
-owner's current handle and the handle aliases of a human owner, so neither rename drops it. It is asked where a membership or an
+one place that compares a list with a project, by every name the project answers to: its own slug under its
+owner's handles (a human's current one and their aliases) and each earlier name under the owner it had then, so neither a
+rename nor a transfer drops it and no name is made up from an old slug and a new owner. It is asked where a membership or an
 instance comes to be: `POST …/joins` (a first join, a `new_instance` and a `replaces` alike, `403 project_not_allowed`), the
-creation of a placement and the owner's `go` on a proposed one (`403` as well, so nobody approves what cannot start), the pickup
+creation of a placement and every approval of a proposed one, the `go` on its consent request and the runner owner's acting on
+it by right alike (`403` as well, so nobody approves what cannot start), the pickup
 (`409 pickup_not_allowed`, `why: project_not_allowed`, a rejoin included) and the exchange (`not_found`, as for any join that no
 longer holds). `GET /agents?allowed_in=` filters with the same function, by the name as written when the project does not exist yet.
 Nothing ends a membership: the list is read only where something new would start.
