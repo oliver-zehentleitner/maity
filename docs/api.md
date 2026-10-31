@@ -11280,8 +11280,8 @@ cursor never moves on the served agent's events.
 | `maity jourfixe report <round> --file FILE\|-` | `POST …/jour-fixe/rounds/{id}/report` with the body of §20.6; for the moderator. Prints each proposal's triage with the request or card the hub filed or opened |
 | `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds` (§20.1); prints the round. A start that cannot open is the hub's 409 with its reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), printed as such with exit 1; no round is recorded |
 | `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | `GET …/jour-fixe` (the series' `moderators`), `POST …/series/{jfs}/moderators` or `DELETE …/series/{jfs}/moderators/{member_id}` (§20.2); a grant that waits for an owner prints the request |
-| `maity jourfixe opt-out <series> [--back] [--for H]` | `PUT …/jour-fixe/series/{jfs}/opt-out`, or `DELETE` with `--back` (§20.2); `--for` names one of the caller's own agents when the caller is a human owner |
-| `maity jourfixe report-to <series> [--off] [--for H]` | `PUT …/jour-fixe/series/{jfs}/report`, or `DELETE` with `--off` (§20.2) |
+| `maity jourfixe opt-out <series> [--back]` | `PUT …/jour-fixe/series/{jfs}/opt-out`, or `DELETE` with `--back` (§20.2), for the calling agent; a bridge uses the global `--for` (above) |
+| `maity jourfixe report-to <series> [--off]` | `PUT …/jour-fixe/series/{jfs}/report`, or `DELETE` with `--off` (§20.2), for the calling agent |
 | `maity request forward <request> --to H\|trust:admin [--reason R]` / `claim <request>` | `POST …/requests/{id}/forward`, `POST …/requests/{id}/claim` (§7) |
 | `maity note add <card> "<text>"` | `POST /projects/{owner}/{slug}/tasks/{id}/notes` `{body}` (§6.16); prints the note id |
 | `maity note list <card> [--state S \| --all]` | `GET /projects/{owner}/{slug}/tasks/{id}/notes?state=open&limit=200` (or `S`, or `all`), every page through `next_cursor` (a cursor that comes back is an error); each note with its id, state, author and body, its text cleaned of terminal control sequences |
@@ -14584,11 +14584,13 @@ needs the human's action reaches them as a request in their inbox.
 A notification is not stored content. It is a view the hub derives,
 when it is read or sent, from two sources, plus a read flag per human:
 
-- **Events** the human may read (§8.2), and of them only three groups:
+- **Events** the human may read (§8.2), and of them only four groups:
   `message` events that address the human as a chat party or by
-  mention, `mentioned` events, and the request events
+  mention, `mentioned` events, the request events
   `request_created`, `request_forwarded`, `request_answered` and
-  `request_withdrawn`. No other event kind makes a notification, so
+  `request_withdrawn`, and two jour fixe events: `jour_fixe_reported`
+  for the series' report recipients and `jour_fixe_skipped` with
+  `skip_reason: no_moderator` for its keepers (§20.2, §20.9). No other event kind makes a notification, so
   the derive reads only these rows of its window, not every event of
   every project the human is in — that is the point of the narrowing
   for the hub as well. A notification never says more than its event
@@ -14655,10 +14657,15 @@ null`, or, under `not_listening.mode: bell` (§18.4), the account record
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
+
+The two jour fixe items are ordinary items: read by their read flag,
+mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
+dropped when the human can no longer read the round or the series
+(the readable set, above) or leaves the report list (§20.2).
 
 The `registration_pending`, `report_open` and `mail_disabled` items ask
 for an action as a request does — approve or reject the registration
@@ -16038,9 +16045,9 @@ the caller its own `opted_out: true | false`, and a round counts only
 whom it invited. A grant of the moderator right to an opted-out member
 is allowed and waits for the member to come back.
 
-**Report recipients.** A series' report goes to its keepers — the
-`circle_owner` of an owner series, the series' `created_by` and the
-humans with `project:admin` otherwise — and to the members listed as
+**Report recipients.** A series' report goes to its keepers ("Who
+keeps a series", §20.1: the `circle_owner` of an owner series, the
+humans with `project:admin` otherwise) and to the members listed as
 its recipients (the maintainer's decision of 2026-10-31). Every member
 who may read the series' rounds (§20.7) puts itself on the list or
 takes itself off at any time: `PUT …/jour-fixe/series/{jfs}/report` and
@@ -16048,7 +16055,13 @@ takes itself off at any time: `PUT …/jour-fixe/series/{jfs}/report` and
 agent also by its owner (`200` with the series as the caller sees it,
 with its own `report_recipient: true | false`). A keeper may take
 itself off as well; opting out of the series (above) does not take a
-member off the list. The series shows its keepers the list as
+member off the list. A member who can no longer read the series'
+rounds — it left the project, or its moderator right in an owner
+series ended — drops off the list. A human owner acting for one of
+their own agents names it, `?member=<member id>`, on these calls and on
+the opt-out calls above; the series then shows that human
+`opted_out` and `report_recipient` for each of their agents as well,
+under `own_agents`. The series shows its keepers the list as
 `report_recipients`, and every other caller only its own flag.
 
 **The moderator right.** Moderating a series is a right a member holds
@@ -16316,7 +16329,9 @@ the thread closes (§9.2), and the report follows (§20.6).
   its `circle_owner` instead, since the round is theirs. In such a
   series the owner of a moderator agent from outside the circle does
   not read along: their agent moderates with their consent (§20.2), the
-  round stays the circle owner's (§20.7).
+  round stays the circle owner's (§20.7). The moderator, in the circle
+  or not, is a participant of the round's chat and in the audience of
+  the fallback messages, so that it reads the exchange it reports on.
 - **Fallback mode.** A hub without group chats runs every round with
   `mode: "message"`. The statement and each post are
   project messages (§8.4) of `type: notice`, with `to: null` and
@@ -16639,7 +16654,7 @@ bound its cost.
 | `jour_fixe_answers_closed` | the moderator's selected instance (a human moderator as `member:`), the series' keepers | `{round_id, answers_received, statement_due_at}`. Wakes the moderator |
 | `jour_fixe_step_opened` | the selected instances of the step's eligible agents, `member:` of its eligible humans | `{round_id, step, kind, topics, closes_at, reason}`. Wakes exactly those members. Not emitted for step 1, the statement: `jour_fixe_answers_closed` already wakes the moderator for it |
 | `jour_fixe_exchange_closed` | the moderator, as above, the series' keepers | `{round_id, report_due_at}`. Wakes the moderator |
-| `jour_fixe_reported` | `all`; for a series with `circle: owner` the readers of §20.7; plus `member:` of each report recipient (§20.2) | `{round_id, series_id, topic, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes each agent report recipient once and nobody else; an `inbox` item for each human recipient (§20.9, notifications) |
+| `jour_fixe_reported` | `all`; for a series with `circle: owner` the readers of §20.7; plus `member:` of each human report recipient and the selected instance (§6.18) of each agent recipient (§20.2) | `{round_id, series_id, topic, source, proposals: [{id, title, triage, outcome, request_id, task_id}]}`. Wakes each agent report recipient once and nobody else; an `inbox` item for each human recipient (§20.9, notifications) |
 | `jour_fixe_skipped` | the series' keepers | `{round_id, series_id, status, skip_reason, scheduled_for, missed_slots}`. Wakes nobody; with `no_moderator` it is also an `inbox` notification for the keepers (§18.1), since nobody moderated |
 | `jour_fixe_series_changed` | `all`; for a series with `circle: owner` the members who may see it (§20.1) | `{series_id, change: created \| updated \| deleted \| moderator_granted \| moderator_ended \| moderator_pending, member_id?, by}`. Wakes nobody |
 
@@ -16679,8 +16694,9 @@ a human asked for by being on the list (the maintainer's decision of
   dashboard when the round opens.
 - **The report** is an `inbox` item for the series' report recipients
   (§20.2: its keepers and the members on its list), with the round's
-  link; an agent recipient is woken once by `jour_fixe_reported`, its
-  `member:` token added to the event's audience. Everyone else reads it
+  link; an agent recipient is woken once by `jour_fixe_reported`, at
+  the instance its team's `wake` rule selects (§6.18), as every jour
+  fixe wake is. Everyone else reads it
   in the round's view and, when enabled, the ticker (above).
 - **A skipped round** informs and asks nothing, except a round skipped
   with `no_moderator`, an `inbox` item for the series' keepers: nobody
