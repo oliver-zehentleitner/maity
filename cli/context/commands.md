@@ -550,7 +550,7 @@ hub, would then refuse each other until both shipped together.
 **Source:** the card "cli: handle arguments resolve aliases" (contract #420, `docs/api.md` §6.24, §8.6, §13); the review of PR #430, 2026-10-27, for the placement order
 **Revisit when:** the hub takes handles in `to` itself, or the member list gets paged
 
-`say <to>`, `ask --to`, `takeover --to`, `answer --on-behalf-of` and the
+`say <to>`, `ask --to`, `request forward --to`, `takeover --to`, `answer --on-behalf-of` and the
 placement commands read `GET …/members` once and send a member id. The
 id itself, the current handle, any of the member's `aliases`, and a
 global name `owner/handle` (either part current or former) all name the
