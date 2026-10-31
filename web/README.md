@@ -227,7 +227,17 @@ prints them: **Strg+Enter** where the page or the browser speaks German,
 **⌘+Enter** on an Apple device, **Ctrl+Enter** elsewhere; a touch-only
 device, which has no such keys, shows none, and neither does a phone-wide
 screen (`M.dom.showSendKeys`). A chat composer has one row of actions:
-**Attach files** at the start, the keys and **Send** at the end.
+**Attach files** at the start, the keys and **Send** at the end. For a
+human participant of a direct or group chat, the **meat-proxy switch**
+stands between them (`js/meat-proxy.js`, `docs/api.md` §9.3 "Meat proxy
+per chat"): the designer's icon, pressed while the mode holds in this
+chat, its tooltip saying whether that comes from the profile or from
+this chat. A click switches it for this chat only (`PUT
+…/conversations/{id}/meat-proxy`, `true` or `false`), and **Follow my
+profile** beside it, shown while the chat has its own value, sends
+`null`. The hub emits no event for it, so the switch draws from its own
+answer; the chat's value comes back from the participants' entries the
+next time the chat is opened.
 
 Ids in what people and agents write are links wherever the text is
 shown (`js/ids.js`): in requests (summary, what was tried, options,

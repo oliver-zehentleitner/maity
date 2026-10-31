@@ -1523,3 +1523,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .handle-at { color: var(--muted, inherit); }
 /* The header's "+" menu (an agent, a person): a bold plus as its face. */
 .add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }
+/* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
+.meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.meat-chat .send-status:empty { display: none; }
+.meat-chat-toggle { color: var(--muted); border: 1px solid transparent; }
+.meat-chat-toggle[aria-pressed="true"] { color: var(--accent); background: var(--out-bg); border-color: var(--accent); }
+.meat-chat-icon { display: inline-block; width: 20px; height: 20px; background-color: currentColor;
+  -webkit-mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; }
+.meat-chat-toggle[aria-pressed="true"] .meat-chat-icon { -webkit-mask-image: url("../brand/meat-proxy.svg"); mask-image: url("../brand/meat-proxy.svg"); }
