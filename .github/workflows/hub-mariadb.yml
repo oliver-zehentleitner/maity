@@ -33,15 +33,19 @@ defaults:
     working-directory: hub
 
 jobs:
-  # Decides whether there is anything to test: by hand always; on the clock when no earlier run
-  # was green, or when files under hub/ (or the join page doc, or this workflow) changed since the
-  # head of the last successful run. A skipped hour counts as green for that, which is right: it
-  # only skips when nothing relevant had changed since the last green one.
+  # Decides whether there is anything to test: by hand always (a commit of main); on the clock when
+  # the last finished scheduled run was not green, when a ci-red issue is open, when no earlier green
+  # run exists, or when files the suite reads (hub/, docs/join-page.md, docs/api.md, the Dockerfile,
+  # this workflow) changed since the head of the last green scheduled run. So a red state is never
+  # skipped over: a revert runs and closes the issue, and a failure for a reason outside the watched
+  # files runs again the next hour. A skipped hour counts as green for the comparison, which is right
+  # because it only skips after a green run with nothing relevant changed since.
   decide:
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
+      issues: read
     outputs:
       run: ${{ steps.d.outputs.run }}
       sha: ${{ steps.d.outputs.sha }}
@@ -75,10 +79,18 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "none"')"
+          open_issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq 'length')"
+          if [ "$last" != success ] && [ "$last" != none ]; then
+            echo "the last scheduled run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$open_issues" != 0 ]; then
+            echo "a ci-red issue is open: running to see whether main is green again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
             echo "no earlier green run to compare with: running"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          changed="$(git diff --name-only "$base" "$sha" -- hub docs/join-page.md .github/workflows/hub-mariadb.yml)"
+          changed="$(git diff --name-only "$base" "$sha" -- hub docs/join-page.md docs/api.md 'deploy/Dockerfile*' .github/workflows/hub-mariadb.yml)"
           if [ -n "$changed" ]; then
             printf 'changed since %s:\n%s\n' "$base" "$changed"; echo "run=true" >> "$GITHUB_OUTPUT"
           else
