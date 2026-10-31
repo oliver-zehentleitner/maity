@@ -509,3 +509,44 @@ def test_a_refused_answer_draws_the_page_again_with_its_legal_links(
         '<a href="/impressum">Imprint</a> · <a href="/privacy">Privacy notice</a>' in refused.text
     )
     assert humans(migrated) == []
+
+
+def test_the_page_wears_the_legal_pages_shell_and_loads_nothing_from_elsewhere(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The legal pages' head, colours and panel, one inline style and no script; every address
+    on the page is the hub's own, since the token is in this page's address (§2.7.1)."""
+    client, link = start(make_client, migrated, hub(**TERMS), language="de")
+    serve_legal(migrated)
+    for page in (client.get(link), client.get("/mail/register/not-a-token")):
+        assert page.text.startswith("<!doctype html><html lang=")
+        assert '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>' in (
+            page.text
+        )
+        assert '<div class="panel">' in page.text and "--accent:" in page.text
+        assert "prefers-color-scheme:dark" in page.text  # light and dark
+        assert 'name="viewport" content="width=device-width, initial-scale=1"' in page.text
+        assert "<script" not in page.text and "<link" not in page.text
+        for address in re.findall(r'(?:src|href|action)="([^"]*)"', page.text):
+            assert address.startswith("/") and not address.startswith("//"), address
+        policy = page.headers["content-security-policy"]
+        assert "default-src 'none'" in policy and "form-action 'self'" in policy
+        assert page.headers["cache-control"] == "no-store"
+    form = client.get(link)
+    assert '<html lang="de">' in form.text
+    assert '<footer><div class="wrap"><p><a href="/impressum">Impressum</a>' in form.text
+
+
+def test_a_fields_error_stands_under_it_and_is_tied_to_it(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub())
+    page = client.get(link)
+    refused = answer(client, link, page, handle="x")
+    assert refused.status_code == 400
+    assert (
+        '<input id="handle" name="handle" type="text" value="x" required autocomplete="username"'
+        ' autocapitalize="none" aria-invalid="true" aria-describedby="handle-error">'
+    ) in refused.text
+    assert '<p class="error" id="handle-error" role="alert">A handle has' in refused.text
+    assert 'aria-invalid="true" aria-describedby="password-error"' not in refused.text
