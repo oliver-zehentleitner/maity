@@ -7,7 +7,7 @@ before.
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261031161000_conversation_pins
-Revises: 20261031131500_allowed_projects
+Revises: 20261031125530_long_polls
 Create Date: 2026-10-31
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031161000_conversation_pins"
-down_revision: str | None = "20261031131500_allowed_projects"
+down_revision: str | None = "20261031125530_long_polls"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
