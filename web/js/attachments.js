@@ -23,7 +23,7 @@ window.Maity = window.Maity || {};
   // other refusal, a 404 too, is an error like elsewhere.
   let hubOff = false;
   // Said where files are managed, in these words.
-  const OFF_WORDS = "attachments are not set up on this instance";
+  const offWords = () => M.t("attach.off");
   function isOff(err) {
     if (err.status !== 409 || err.code !== "attachments_not_configured") return false;
     hubOff = true;
@@ -39,27 +39,27 @@ window.Maity = window.Maity || {};
 
   // The hub's refusals of an upload, in words.
   const REFUSED = {
-    unsupported_type: "the file's type does not match what it is",
-    dimensions: "the image is larger than 8192 pixels on a side or 40 megapixels",
-    undecodable: "the image could not be read",
-    required: "the file has no name",
+    unsupported_type: () => M.t("attach.refused.unsupported_type"),
+    dimensions: () => M.t("attach.refused.dimensions"),
+    undecodable: () => M.t("attach.refused.undecodable"),
+    required: () => M.t("attach.refused.required"),
   };
   // `size`: the file's, said beside a refusal for size, since the hub's limit
   // in force (its 10 MiB for files, or a smaller body cap where it has no
   // upload route yet) is the hub's to name, not this page's.
   function said(err, size) {
     const why = err.code === "invalid" && err.details && err.details.fields && (err.details.fields.body || err.details.fields.name);
-    if (why) return { message: REFUSED[why] || why };
+    if (why) return { message: Object.hasOwn(REFUSED, why) ? REFUSED[why]() : why };
     if (err.code === "payload_too_large") {
       // The hub's own words when it sent words; anything else is left out.
-      const words = typeof err.message === "string" && err.message ? ": " + err.message : "";
-      return { message: "the hub refused it as too large (the file is " + sizeOf(size) + ")" + words };
+      return { message: typeof err.message === "string" && err.message
+        ? M.t("attach.too_large.words", { size: sizeOf(size), words: err.message }) : M.t("attach.too_large", { size: sizeOf(size) }) };
     }
     if (err.code === "attachment_quota") return { message: err.details && err.details.scope === "pending"
-      ? "you have 20 files, or 100 MiB, waiting to be sent; send or remove some first" : "the project's storage for files is full" };
-    if (err.code === "rate_limited") return { message: "too many uploads in a short time; try again in a few minutes" };
-    if (err.code === "project_closed") return { message: "the project is closed: it takes no new files" };
-    if (err.code === "attachments_not_configured") return { message: OFF_WORDS };
+      ? M.t("attach.quota.pending") : M.t("attach.quota.project") };
+    if (err.code === "rate_limited") return { message: M.t("attach.rate_limited") };
+    if (err.code === "project_closed") return { message: M.t("attach.project_closed") };
+    if (err.code === "attachments_not_configured") return { message: offWords() };
     return err;
   }
 
@@ -85,10 +85,11 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const id = idBase + "-files";
     const input = h("input", { type: "file", id, multiple: true, class: "visually-hidden" });
-    const list = h("ul", { class: "attach-pending", "aria-label": "Files to send" });
-    const earlierList = h("ul", { class: "attach-earlier", "aria-label": "Your files waiting from before" });
+    const list = h("ul", { class: "attach-pending", "aria-label": M.t("attach.pending") });
+    const earlierList = h("ul", { class: "attach-earlier", "aria-label": M.t("attach.earlier") });
     const earlierBox = h("div", { class: "attach-earlier-box", hidden: true },
-      h("p", { class: "muted" }, "Your files waiting from before, not sent yet:"), earlierList);
+      h("p", { class: "muted" }, M.t("attach.earlier.hint")), earlierList);
+    const tooMany = () => status.fail(M.t("attach.not_attached"), { message: M.t("attach.per_message", { count: PER_MESSAGE }) });
     let earlier = [];
     const drawEarlier = () => {
       clear(earlierList);
@@ -97,21 +98,21 @@ window.Maity = window.Maity || {};
       shown.forEach((a) => append(earlierList, h("li", null,
         h("span", { class: "attach-name" }, a.name), " ", h("span", { class: "muted" }, sizeOf(a.size)), " ",
         h("button", {
-          type: "button", class: "small", "aria-label": "Attach " + a.name + " to this message",
+          type: "button", class: "small", "aria-label": M.t("attach.attach_earlier.label", { name: a.name }),
           onclick: () => {
-            if (pending.length >= PER_MESSAGE) { status.fail("Not attached: ", { message: "at most " + PER_MESSAGE + " files in one message" }); return; }
+            if (pending.length >= PER_MESSAGE) { tooMany(); return; }
             pending.push({ name: a.name, att: a });
             draw();
             input.focus();
           },
-        }, "Attach"), " ",
+        }, M.t("attach.attach")), " ",
         h("button", {
-          type: "button", class: "small", "aria-label": "Remove " + a.name + " from the hub",
+          type: "button", class: "small", "aria-label": M.t("attach.remove_earlier.label", { name: a.name }),
           onclick: async () => {
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
             } catch (err) {
-              status.fail("Not removed: ", said(err));
+              status.fail(M.t("attach.not_removed"), said(err));
               // Off on the hub: the chooser goes, the line above says why.
               if (isOff(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
@@ -120,7 +121,7 @@ window.Maity = window.Maity || {};
             drawEarlier();
             input.focus();
           },
-        }, "Remove"))));
+        }, M.t("attach.remove")))));
     };
     const loadEarlier = async () => {
       if (hubOff) return;
@@ -129,7 +130,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         earlier = [];
         // Off on the hub: nothing to offer; any other failure is said.
-        if (isOff(err)) offer(false); else status.fail("Could not read your files waiting from before: ", err);
+        if (isOff(err)) offer(false); else status.fail(M.t("attach.earlier.failed"), err);
       }
       drawEarlier();
     };
@@ -138,14 +139,14 @@ window.Maity = window.Maity || {};
       clear(list);
       pending.forEach((p) => append(list, h("li", null,
         h("span", { class: "attach-name" }, p.att ? p.att.name : p.name), " ",
-        h("span", { class: "muted" }, p.att ? sizeOf(p.att.size) : "uploading…"),
+        h("span", { class: "muted" }, p.att ? sizeOf(p.att.size) : M.t("attach.uploading_short")),
         p.att ? h("button", {
-          type: "button", class: "small", "aria-label": "Remove " + p.att.name,
+          type: "button", class: "small", "aria-label": M.t("attach.remove.label", { name: p.att.name }),
           onclick: async () => {
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(p.att.id));
             } catch (err) {
-              status.fail("Not removed: ", said(err));
+              status.fail(M.t("attach.not_removed"), said(err));
               // Off on the hub: the chooser goes, the line above says why.
               if (isOff(err)) { earlier = []; pending.length = 0; draw(); offer(false); el.hidden = false; }
               return;
@@ -156,24 +157,27 @@ window.Maity = window.Maity || {};
             draw();
             input.focus();
           },
-        }, "Remove") : null)));
+        }, M.t("attach.remove")) : null)));
     };
     input.addEventListener("change", async () => {
       const files = Array.from(input.files || []);
       input.value = "";
       for (const file of files) {
-        if (pending.length >= PER_MESSAGE) { status.fail("Not attached: ", { message: "at most " + PER_MESSAGE + " files in one message" }); break; }
-        if (file.size > FILE_MAX) { status.fail("Not attached: ", { message: (file.name || "a file") + " is larger than 10 MiB" }); continue; }
+        if (pending.length >= PER_MESSAGE) { tooMany(); break; }
+        if (file.size > FILE_MAX) {
+          status.fail(M.t("attach.not_attached"), { message: file.name ? M.t("attach.file_too_large", { name: file.name }) : M.t("attach.file_too_large.unnamed") });
+          continue;
+        }
         const p = { name: file.name || "file", att: null };
         pending.push(p);
         draw();
-        status.busy("Uploading " + p.name + "…");
+        status.busy(M.t("attach.uploading", { name: p.name }));
         try {
           p.att = await M.api.postRaw(ctx.base + "/attachments?name=" + encodeURIComponent(p.name), file, await typeOf(file));
           status.done();
         } catch (err) {
           pending.splice(pending.indexOf(p), 1);
-          status.fail("Not attached: " + p.name + ": ", said(err, file.size));
+          status.fail(M.t("attach.not_attached_named", { name: p.name }), said(err, file.size));
           // Off on the hub: the chooser goes, the line above says why.
           if (isOff(err)) { offer(false); el.hidden = false; draw(); break; }
           // Over the pending cap: show what waits, so it can be sent or removed.
@@ -186,7 +190,7 @@ window.Maity = window.Maity || {};
     // chooser whose every file would be refused is not offered, and no file
     // field is left in the page without its visible label. An upload's
     // failure says itself.
-    const chooser = h("label", { for: id, class: "button small attach-button" }, "Attach files");
+    const chooser = h("label", { for: id, class: "button small attach-button" }, M.t("attach.choose"));
     const el = h("div", { class: "attach", hidden: true }, chooser, input, list, earlierBox, status.el);
     function offer(yes) {
       el.hidden = !yes;
@@ -229,12 +233,12 @@ window.Maity = window.Maity || {};
       const gone = () => {
         a.removed = true;
         clear(li);
-        const note = h("span", { class: "muted", tabindex: "-1" }, a.name + ": removed.");
+        const note = h("span", { class: "muted", tabindex: "-1" }, M.t("attach.removed", { name: a.name }));
         append(li, note);
         note.focus();
       };
       if (a.removed) {
-        append(li, h("span", { class: "muted" }, a.name + ": removed."));
+        append(li, h("span", { class: "muted" }, M.t("attach.removed", { name: a.name })));
         append(box, li);
         return;
       }
@@ -247,7 +251,7 @@ window.Maity = window.Maity || {};
         // Not loaded (deleted, an access that ended, or a failure on the way):
         // said instead of a broken image; the link stays to try again.
         shown.addEventListener("error", () => {
-          const note = h("span", { class: "muted" }, a.name + ": could not be shown. ");
+          const note = h("span", { class: "muted" }, M.t("attach.not_shown", { name: a.name }), " ");
           if (shown.parentNode) { shown.parentNode.insertBefore(note, shown); shown.parentNode.removeChild(shown); }
         });
       }
@@ -258,9 +262,9 @@ window.Maity = window.Maity || {};
           h("span", { class: "muted" }, " · " + sizeOf(a.size) + (a.kind === "image" ? "" : " · " + a.type))),
         // Attachments off on the instance (409): no delete that would fail.
         canDelete && !hubOff && canDelete(a) ? h("button", {
-          type: "button", class: "small", "aria-label": "Delete the file " + a.name + " for everyone",
+          type: "button", class: "small", "aria-label": M.t("attach.delete.label", { name: a.name }),
           onclick: async () => {
-            if (!window.confirm("Delete " + a.name + " for everyone who can read this message? The message stays.")) return;
+            if (!window.confirm(M.t("attach.delete.confirm", { name: a.name }))) return;
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
               gone();
@@ -269,13 +273,13 @@ window.Maity = window.Maity || {};
               if (isOff(err)) {
                 const button = li.querySelector("button");
                 if (button) li.removeChild(button);
-                append(li, h("span", { class: "muted" }, " Not deleted: " + OFF_WORDS + "."));
+                append(li, h("span", { class: "muted" }, " ", M.t("attach.not_deleted_off")));
                 return;
               }
-              append(li, h("span", { class: "send-status failed" }, " Not deleted: " + (err.message || err.code)));
+              append(li, h("span", { class: "send-status failed" }, " ", M.t("attach.not_deleted_reason", { reason: err.message || err.code })));
             }
           },
-        }, "Delete") : null);
+        }, M.t("attach.delete")) : null);
       append(box, li);
     });
     return box;
@@ -285,9 +289,9 @@ window.Maity = window.Maity || {};
   function markDeleted(container, id) {
     const li = Array.from(container.querySelectorAll("li.attach-item")).find((x) => x.getAttribute("data-attachment") === id);
     if (!li) return;
-    const name = (li.querySelector(".attach-link") || li.querySelector(".attach-meta span") || { textContent: "A file" }).textContent;
+    const named = li.querySelector(".attach-link") || li.querySelector(".attach-meta span");
     clear(li);
-    append(li, h("span", { class: "muted" }, name + ": removed."));
+    append(li, h("span", { class: "muted" }, named ? M.t("attach.removed", { name: named.textContent }) : M.t("attach.removed.unnamed")));
   }
 
   // Project settings: the pending uploads of everyone, for an owner or admin.
@@ -296,40 +300,40 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     const list = h("ul", { class: "attach-admin" });
-    const box = h("div", { class: "attach-admin-box" }, h("h2", { class: "panel-title" }, "Files waiting to be sent"),
-      ctx.project.attachments ? h("p", { class: "muted" }, "Stored: " + sizeOf(ctx.project.attachments.used) + " of " + sizeOf(ctx.project.attachments.quota) + ".") : null,
+    const box = h("div", { class: "attach-admin-box" }, h("h2", { class: "panel-title" }, M.t("attach.admin.title")),
+      ctx.project.attachments ? h("p", { class: "muted" }, M.t("attach.admin.stored", { used: sizeOf(ctx.project.attachments.used), quota: sizeOf(ctx.project.attachments.quota) })) : null,
       list, status.el);
     async function load() {
-      const none = () => { clear(list); append(list, h("li", { class: "muted" }, "Attachments are not set up on this instance.")); };
+      const none = () => { clear(list); append(list, h("li", { class: "muted" }, M.t("attach.admin.off"))); };
       if (hubOff) { none(); return; }
       let items;
       try {
         items = (await M.api.getAll(ctx.base + "/attachments?status=pending")).items;
       } catch (err) {
         if (isOff(err)) { none(); return; }
-        status.fail("Could not read them: ", err);
+        status.fail(M.t("attach.admin.read_failed"), err);
         return;
       }
       clear(list);
-      if (!items.length) append(list, h("li", { class: "muted" }, "None."));
+      if (!items.length) append(list, h("li", { class: "muted" }, M.t("attach.admin.none")));
       items.forEach((a) => append(list, h("li", null,
         a.name ? a.name + " · " : "",
-        sizeOf(a.size) + " · ", M.dom.memberRef(ctx, a.uploaded_by), " · expires " + formatAgo(a.expires_at),
+        sizeOf(a.size) + " · ", M.dom.memberRef(ctx, a.uploaded_by), " · ", M.t("attach.admin.expires", { ago: formatAgo(a.expires_at) }),
         " ", h("button", {
-          type: "button", class: "small", "aria-label": "Delete the pending upload of " + sizeOf(a.size) + " by " + (ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by),
+          type: "button", class: "small", "aria-label": M.t("attach.admin.delete.label", { size: sizeOf(a.size), who: ctx.nameOf ? ctx.nameOf(a.uploaded_by) : a.uploaded_by }),
           onclick: async () => {
             try {
               await M.api.del(ctx.base + "/attachments/" + encodeURIComponent(a.id));
               status.done();
-              append(status.el, h("span", { class: "ok" }, "Deleted."));
+              append(status.el, h("span", { class: "ok" }, M.t("attach.admin.deleted")));
               status.el.focus();
               load();
             } catch (err) {
               if (isOff(err)) { none(); return; }
-              status.fail("Not deleted: ", err);
+              status.fail(M.t("attach.not_deleted"), err);
             }
           },
-        }, "Delete"))));
+        }, M.t("attach.delete")))));
     }
     load();
     return box;
