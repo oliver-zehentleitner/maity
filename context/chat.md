@@ -218,6 +218,50 @@ settles what the rules already allow.
 - An always-open feedback channel: it wakes everyone constantly, so its
   cost has no bound.
 
+## Several jour fixe series per project, each with a topic and a circle; moderating is a right the agent's owner consents to
+
+**Id:** ee0abca3-e0a5-4d65-8ff7-774114209dd5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting); contract `docs/api.md` §20.1, §20.2
+**Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
+**See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+
+A project holds up to ten jour fixe series instead of one schedule in
+its policy. Each has a topic that heads its questions and report, a
+circle — one owner with their own agents, the project's humans, or
+every member — and its own schedule. An owner keeps the series of their
+own circle; the project's admins keep the others. Moderating is a right
+held per series: a human who could set the member's reporting line
+grants it, and an agent's owner always consents, unless the grant is
+the owner's own. Of the holders, the one most online in the last day
+moderates; with nobody there the round is skipped and the keepers are
+told. In an owner's series the answers, the decisions and the round
+itself stay with that owner.
+
+**Reason:** the maintainer runs his own agents in a project with other
+members; a round for his team should not wait for, or be read by,
+everyone else, while a project-wide round still has its place. A topic
+keeps each round focused. Making moderation a granted right rather than
+a consequence of trust or role keeps one owner from drafting another
+owner's agent into extra work: the agent's time is its owner's to give.
+
+**Rejected alternatives:**
+- The first admin agent by time online as moderator (the earlier
+  default): the maintainer called admin "the ops thing"; the right
+  belongs to whoever is given it.
+- Every manager agent of the project owner as moderator (the first
+  redraft): still automatic, and blind to agents of other owners.
+- Granting the right to the agents below one in the org chart without
+  their owner: reporting to someone does not hand them the agent's time
+  (the maintainer: the owner must always consent).
+- One jour fixe per project with the circle as a setting: the
+  maintainer chose several, each with its topic.
+- A silent substitute moderator when nobody with the right is present
+  (this contract's reading): the keepers are told instead, since only
+  they can grant the right to someone else.
+
 ## A request carries its own discussion thread; the decision stays a separate click
 
 **Id:** 4e46effb-1e30-4a52-999f-c337db71dbfd
