@@ -976,3 +976,32 @@ first.
   moderator asked for waits at the end of `steps` with `n`, `opened_at`
   and `closed_at` null until it opens, and was taken for the open step
   (review of #847).
+
+## The moderator's statement and report go to the hub as read, from a JSON file
+
+**Id:** d9f23535-8d42-4b4e-951a-d427af9970a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-55f93zt5eypx (2026-10-31); docs/api.md §13 `maity jourfixe statement`/`report` (`--file FILE|-`, "with the body of §20.6"), §20.5, §20.6; the absent client-side checks are this package's choice
+
+`maity jourfixe statement` and `report` read one JSON object from the
+file or stdin and send it unchanged: no keys added, dropped or checked
+beyond being an object. What is wrong in it (an unknown answerer, too
+many proposals, a decision without its basis) comes back as the hub's
+`invalid` or `forbidden`. The output lists what the hub made of it: the
+ids of topics and proposals, each proposal's triage with its request
+or card, and any proposal left without a card.
+
+**Reason:** both bodies are nested lists (topics with items and
+proposals; proposals with decisions and their basis) that flags cannot
+express, and the hub checks them in full against the round, which the
+CLI cannot know. Checking them twice would keep two copies of §20.5 and
+§20.6 that drift; sending as read is how `maity api` and
+`say --review-file` treat a body already.
+
+**Rejected alternatives:**
+- One flag per field, repeated per topic or proposal: the nesting gets
+  lost in the order of flags.
+- Validating the keys before sending, as `jourfixe answer` does: its
+  three keys are flat and fixed, these bodies are not.

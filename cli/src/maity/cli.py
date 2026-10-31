@@ -3061,6 +3061,154 @@ def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
     return _done(args, answer, line)
 
 
+def _json_file(path: str, flag: str) -> dict[str, Any]:
+    """A request body from FILE, or stdin with `-`: one JSON object, sent as read."""
+    raw = sys.stdin.read() if path == "-" else _read_text_file(path, flag)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"{flag}: not JSON: {exc.msg}") from None
+    if not isinstance(data, dict):
+        raise UsageError(f"{flag}: the body is one JSON object")
+    return data
+
+
+def _round_path(session: Session, round_id: str, *rest: str) -> str:
+    return session.project_path("jour-fixe", "rounds", round_id, *rest)
+
+
+def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/statement` (§20.5): the moderator's topics, items and proposals,
+    from a JSON file as §20.5 writes it; prints the ids the hub gave them."""
+    body = _json_file(args.file, "--file")
+    session = Session()
+    round_ = session.client.call("POST", _round_path(session, args.round, "statement"), body=body)
+    topics = [x for x in _field(round_, "statement", "topics") or [] if isinstance(x, dict)]
+    lines = [f"statement posted to {onboarding.inline(args.round)}"]
+    for topic in topics:
+        ids = [onboarding.inline(s.get("id")) for s in topic.get("proposals") or []
+               if isinstance(s, dict)]  # fmt: skip
+        line = f"  {onboarding.inline(topic.get('id'))} {onboarding.inline(topic.get('title'))}"
+        lines.append(line + (f" (proposals {', '.join(ids)})" if ids else ""))
+    return _done(args, round_, "\n".join(lines), ascii_json=True)
+
+
+def cmd_jourfixe_post(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/posts` (§20.5): once per topic in a step the caller is eligible for;
+    `--to` names members by handle or id, `--reply-to` the responses a reply answers."""
+    session = Session()
+    body: dict[str, Any] = {"step": args.step, "topic_id": args.topic, "body": args.body}
+    if args.to:
+        members = _members(session)
+        body["to"] = [resolve_member(members, name) for name in args.to]
+    if args.reply_to:
+        body["in_reply_to"] = list(args.reply_to)
+    post = session.client.call("POST", _round_path(session, args.round, "posts"), body=body)
+    return _done(args, post, f"posted {onboarding.inline(_field(post, 'id'))}")
+
+
+def cmd_jourfixe_step(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/steps` (§20.5): a further step after the last one, by default for
+    every current participant on every topic."""
+    session = Session()
+    body: dict[str, Any] = {"reason": args.reason}
+    if args.member:
+        members = _members(session)
+        body["members"] = [resolve_member(members, name) for name in args.member]
+    if args.topic:
+        body["topics"] = list(args.topic)
+    round_ = session.client.call("POST", _round_path(session, args.round, "steps"), body=body)
+    steps = [s for s in _field(round_, "steps") or [] if isinstance(s, dict)]
+    added = steps[-1] if steps else {}
+    line = f"further step added to {onboarding.inline(args.round)}"
+    if not added.get("opened_at"):
+        line += "; it opens when the last step closes"
+    return _done(args, round_, line)
+
+
+def cmd_jourfixe_report(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/report` (§20.6) from a JSON file; prints each proposal's triage
+    with the request or card the hub filed or opened."""
+    body = _json_file(args.file, "--file")
+    session = Session()
+    answer = session.client.call("POST", _round_path(session, args.round, "report"), body=body)
+    round_ = _obj(_field(answer, "round"))
+    lines = [f"reported {onboarding.inline(args.round)}"]
+    report = _obj(round_.get("report"))
+    for proposal in [x for x in report.get("proposals") or [] if isinstance(x, dict)]:
+        title, triage = (onboarding.inline(proposal.get(k)) for k in ("title", "triage"))
+        decision = _obj(proposal.get("decision")).get("outcome")
+        line = f"  - {title} [{triage}" + (f": {onboarding.inline(decision)}" if decision else "")
+        filed = proposal.get("request_id") or proposal.get("task_id")
+        lines.append(line + "]" + (f" -> {onboarding.inline(filed)}" if filed else ""))
+    for left in [x for x in report.get("proposals_not_carded") or [] if isinstance(x, dict)]:
+        left_id, why = (onboarding.inline(left.get(k)) for k in ("proposal_id", "reason"))
+        lines.append(f"  not carded: {left_id} ({why})")
+    return _done(args, answer, "\n".join(lines), ascii_json=True)
+
+
+# Why a start did not open (§20.1), as the hub names it; no round is recorded.
+START_REFUSALS = {
+    "jour_fixe_open": "an earlier round is not final yet",
+    "project_closed": "the project is archived",
+    "no_moderator": "nobody who may moderate is present",
+    "too_few": "fewer than two members are present",
+}
+
+
+def cmd_jourfixe_start(args: argparse.Namespace) -> int:
+    """`POST …/jour-fixe/rounds` (§20.1): a round now. A start that cannot open is the hub's
+    409 with its reason, printed as such with exit 1."""
+    session = Session()
+    try:
+        round_ = session.client.call(
+            "POST", session.project_path("jour-fixe", "rounds"), body={"reason": args.reason}
+        )
+    except hub.HubError as exc:
+        if exc.code in START_REFUSALS:
+            open_round = exc.details.get("round")
+            why = START_REFUSALS[exc.code] + (
+                f" ({onboarding.inline(open_round)})" if open_round else ""
+            )
+            raise CommandError(f"no round started: {exc.code}, {why}; nothing recorded") from None
+        raise
+    line = f"started {onboarding.inline(_field(round_, 'id'))}: {_phase(_obj(round_))}"
+    return _done(args, round_, line)
+
+
+def cmd_jourfixe_moderators(args: argparse.Namespace) -> int:
+    """The resolved moderator order (`GET …/jour-fixe`), or `PUT …/jour-fixe/moderators`
+    with --set or --reset (§20.2), which needs --reason."""
+    session = Session()
+    if args.set is None and not args.reset:
+        if args.reason:
+            raise UsageError("--reason goes with --set or --reset")
+        order = _jour_fixe(session).get("moderators") or []
+        if args.json:
+            _print_json(order)
+            return EXIT_OK
+        print(", ".join(onboarding.inline(m) for m in order) or "nobody")
+        return EXIT_OK
+    if args.set is not None and args.reset:
+        raise UsageError("give --set or --reset, not both")
+    if not args.reason:
+        raise UsageError("--reason is required to change the moderator order")
+    order_ids: list[str] | None = None
+    if args.set is not None:
+        names = [n.strip() for n in args.set.split(",") if n.strip()]
+        if not names:
+            raise UsageError("--set names at least one agent")
+        members = _members(session)
+        order_ids = [resolve_member(members, name) for name in names]
+    answer = session.client.call(
+        "PUT", session.project_path("jour-fixe", "moderators"),
+        body={"order": order_ids, "reason": args.reason},
+    )  # fmt: skip
+    resolved = _field(answer, "moderators") or []
+    line = "moderator order: " + (", ".join(onboarding.inline(m) for m in resolved) or "nobody")
+    return _done(args, answer, line)
+
+
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
     return _done(args, card, "\n".join(_release_summary(card)))
@@ -3830,6 +3978,89 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("round", nargs="?", type=_id, help="the round id")
     _json_flag(r)
     r.set_defaults(handler=cmd_jourfixe_withdraw)
+    r = jsub.add_parser(
+        "statement",
+        help="the moderator's statement: topics, items, proposals (step 1)",
+        description="`POST …/rounds/{id}/statement` (§20.5) with the body as §20.5 writes it, "
+        '{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", '
+        '"reason"}]}]}, read from FILE or stdin (-) and sent as read. Each item\'s `from` is a '
+        'member id with a named answer in the round, or "anonymous".',
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--file", required=True, metavar="FILE", help="the body as JSON; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_statement)
+    r = jsub.add_parser(
+        "post",
+        help="post once per topic in a step you are eligible for",
+        description="`POST …/rounds/{id}/posts` (§20.5). STEP is response, reply, rejoinder or "
+        "further; --to (responses and further steps) names members by handle or id, --reply-to "
+        "the responses a reply answers. The text is Markdown; - reads it from stdin.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument(
+        "--step", required=True, choices=("response", "reply", "rejoinder", "further"),
+        help="the open step",
+    )  # fmt: skip
+    r.add_argument("--topic", required=True, metavar="T", help="the topic id, e.g. t1")
+    r.add_argument("--to", action="append", metavar="H", help="a member the post addresses")
+    r.add_argument("--reply-to", dest="reply_to", action="append", metavar="P",
+                   help="a response this reply answers")  # fmt: skip
+    r.add_argument("body", help="the post, Markdown; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_post)
+    r = jsub.add_parser(
+        "step",
+        help="the moderator adds a further step to the exchange",
+        description="`POST …/rounds/{id}/steps` (§20.5): after step 2 has opened and before the "
+        "last step's window ends, at most 3 per round; by default for every current "
+        "participant on every topic.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--reason", required=True, metavar="R", help="why the step is needed")
+    r.add_argument("--member", action="append", metavar="H", help="a member it opens to")
+    r.add_argument("--topic", action="append", metavar="T", help="a topic it opens on")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_step)
+    r = jsub.add_parser(
+        "report",
+        help="the moderator's report: findings and triaged proposals",
+        description="`POST …/rounds/{id}/report` (§20.6) with the body as §20.6 writes it, from "
+        "FILE or stdin (-), sent as read. Prints each proposal's triage with the request or "
+        "card the hub filed or opened.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--file", required=True, metavar="FILE", help="the body as JSON; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_report)
+    r = jsub.add_parser(
+        "start",
+        help="start a round now (jour_fixe:start)",
+        description="`POST …/jour-fixe/rounds` (§20.1). A start that cannot open is printed "
+        "with the hub's reason (jour_fixe_open, project_closed, no_moderator, too_few), exit 1; "
+        "no round is recorded.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--reason", required=True, metavar="R", help="why a round now")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_start)
+    r = jsub.add_parser(
+        "moderators",
+        help="the moderator order, or set it",
+        description="Without options, the resolved order (`GET …/jour-fixe`). --set H,H… "
+        "(agents, by handle or id) or --reset (back to the default order) with --reason: "
+        "`PUT …/jour-fixe/moderators` (§20.2).",
+        formatter_class=fmt,
+    )
+    r.add_argument("--set", metavar="H,H…", help="the order, comma-separated")
+    r.add_argument("--reset", action="store_true", help="back to the default order")
+    r.add_argument("--reason", metavar="R", help="why, required with --set or --reset")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_moderators)
 
     p = add(
         "limit",
@@ -4135,6 +4366,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
+    cmd_jourfixe_post: (("body", "body_file", "the post", True),),
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),
