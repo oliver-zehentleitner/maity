@@ -906,6 +906,22 @@ def cmd_request_withdraw(args: argparse.Namespace) -> int:
     return _done(args, request, f"withdrawn {onboarding.inline(args.request)}")
 
 
+def cmd_request_forward(args: argparse.Namespace) -> int:
+    body = {} if args.reason is None else {"reason": _text(args.reason, "--reason")}
+    session = Session()
+    body["to"] = _address(session, args.to)
+    path = session.project_path("requests", args.request, "forward")
+    request = session.client.call("POST", path, body=body)
+    return _done(args, request, f"forwarded {onboarding.inline(args.request)}", ascii_json=True)
+
+
+def cmd_request_claim(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("requests", args.request, "claim")
+    request = session.client.call("POST", path, body={})
+    return _done(args, request, f"claimed {onboarding.inline(args.request)}", ascii_json=True)
+
+
 def _done(args: argparse.Namespace, result: Any, line: str, ascii_json: bool = False) -> int:
     """Print the hub's answer with --json, otherwise one status line. `ascii_json` escapes
     every non-ASCII character, for answers that carry other members' text."""
@@ -3400,10 +3416,33 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(
         "request",
         "manage project requests",
-        "Manage project requests. Use withdraw to withdraw an open request; "
-        "ask creates a new request.",
+        "Forward, claim or withdraw project requests. Use ask to create a new request.",
     )
     rsub = p.add_subparsers(dest="request_command", metavar="<action>", required=True)
+    r = rsub.add_parser(
+        "forward",
+        help="forward a decision request you hold",
+        description="Forward an open decision request (POST …/requests/{id}/forward) to an "
+        "admin, its original addressee or trust:admin. The hub checks the holder and target.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    r.add_argument("--to", required=True, help="a member id or handle, or trust:admin")
+    r.add_argument("--reason", help="why the request is forwarded")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_forward)
+    r = rsub.add_parser(
+        "claim",
+        help="take a decision request from the admin pool",
+        description="Claim an open request held by trust:admin (POST …/requests/{id}/claim). "
+        "The first eligible admin wins; the hub checks rights and humans-only restrictions.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_claim)
     r = rsub.add_parser(
         "withdraw",
         help="withdraw an open project request",
