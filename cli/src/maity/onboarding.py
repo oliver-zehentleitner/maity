@@ -57,13 +57,15 @@ def _visible(ch: str) -> str:
 
 
 def dangerous(ch: str) -> bool:
-    """A control, C1 or bidi character, or a Unicode tag: tags spell ASCII no reader sees."""
+    """A control, C1 or bidi character, a Unicode tag or a lone surrogate: tags spell ASCII no
+    reader sees, and a surrogate can't be encoded for output, so printing it would crash."""
     code = ord(ch)
     return (
         (code < 0x20 and ch not in "\n\t")
         or code == 0x7F
         or 0x80 <= code <= 0x9F
         or code in _BIDI
+        or 0xD800 <= code <= 0xDFFF
         or 0xE0000 <= code <= 0xE007F
     )
 

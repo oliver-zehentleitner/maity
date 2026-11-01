@@ -283,6 +283,14 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 ## Develop
 
+Work in a virtual environment of your own, so the tests see the locked set
+and the `maity-hub` command; without that command the test of the entry point
+is skipped:
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate
+```
+
 ```sh
 make install    # the locked set from requirements/ with hashes, then the hub editable
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
@@ -312,6 +320,21 @@ test user), which must own the test database or be a superuser, also without
 `-n`. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
+
+`scripts/with_postgres.sh` does this on your machine without a database to set up:
+it runs a command with `MAITY_TEST_DATABASE_URL` set to a database of its own, on
+a server in `MAITY_PG_DIR` (default `~/.local/state/maity/test-postgres`), which it
+creates when missing. Runs can share the server. The last one to end stops it, and
+only if this script started it; a server that was already up keeps running. It needs
+`pg_ctl`, `initdb` and `psql`, on the path or in `MAITY_PG_BIN`. Without a system
+PostgreSQL, the PyPI package `pgserver` brings them, in a venv of its own (its
+wheels stop at Python 3.12):
+
+```sh
+python3.12 -m venv ~/.pg-venv && ~/.pg-venv/bin/pip install pgserver
+export MAITY_PG_BIN="$(~/.pg-venv/bin/python -c 'import pgserver, pathlib; print(pathlib.Path(pgserver.__file__).parent / "pginstall/bin")')"
+scripts/with_postgres.sh pytest -n 2 tests/test_board.py
+```
 
 `pytest -m load -n 0` runs the load tests (`tests/test_load.py`), which the ordinary
 run leaves out: they seed a bell with `MAITY_LOAD_UNIT` unread requests (default 1000, as in CI's

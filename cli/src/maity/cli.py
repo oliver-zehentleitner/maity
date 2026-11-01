@@ -901,7 +901,8 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
 
     Two things on the card name its pull request: a link of kind `pr`, and the pull request
     of its last report while that one is still open. A report from another PR's branch (a
-    follow-up branch checked out after the merge) is refused rather than filed on the card."""
+    follow-up branch checked out after the merge) is refused rather than filed on the card.
+    The hub's word that it is open may be old, so the forge decides before a refusal."""
     found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
     if facts.pr is not None:
         shown = f"PR #{facts.pr.number}"
@@ -932,10 +933,13 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
         key = _pr_key(before.get("url"), before.get("number"))
         other = found is not None and key is not None and key[0] != found[0]
         if state == "open" and key is not None and key != found and not other:
-            return (
-                f"the last report on {card_id} names pull request #{key[1]}, still open; this "
-                f"checkout has {shown}; {switch}"
-            )
+            now = gitfacts.pull_request_state(Path.cwd(), str(before.get("url")))
+            if now == "open" or now is None:
+                unchecked = "" if now else " (the hub's last observation; gh could not check it)"
+                return (
+                    f"the last report on {card_id} names pull request #{key[1]}, still open"
+                    f"{unchecked}; this checkout has {shown}; {switch}"
+                )
     return None
 
 
@@ -1136,21 +1140,20 @@ def cmd_request_forward(args: argparse.Namespace) -> int:
     body["to"] = _address(session, args.to)
     path = session.project_path("requests", args.request, "forward")
     request = session.client.call("POST", path, body=body)
-    return _done(args, request, f"forwarded {onboarding.inline(args.request)}", ascii_json=True)
+    return _done(args, request, f"forwarded {onboarding.inline(args.request)}")
 
 
 def cmd_request_claim(args: argparse.Namespace) -> int:
     session = Session()
     path = session.project_path("requests", args.request, "claim")
     request = session.client.call("POST", path, body={})
-    return _done(args, request, f"claimed {onboarding.inline(args.request)}", ascii_json=True)
+    return _done(args, request, f"claimed {onboarding.inline(args.request)}")
 
 
-def _done(args: argparse.Namespace, result: Any, line: str, ascii_json: bool = False) -> int:
-    """Print the hub's answer with --json, otherwise one status line. `ascii_json` escapes
-    every non-ASCII character, for answers that carry other members' text."""
+def _done(args: argparse.Namespace, result: Any, line: str) -> int:
+    """Print the hub's answer with --json, otherwise one status line."""
     if getattr(args, "json", False):
-        (_print_ascii_json if ascii_json else _print_json)(result)
+        _print_json(result)
     else:
         print(line)
     return EXIT_OK
@@ -1560,16 +1563,10 @@ def _handles(conversation: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _print_ascii_json(data: Any) -> None:
-    """--json of other members' text: C1 and bidi characters escaped like the rest, so the
-    output is safe for a terminal as well as for a parser."""
-    print(json.dumps(data, indent=2, ensure_ascii=True))
-
-
 def cmd_chats(args: argparse.Namespace) -> int:
     items = _conversations(Session())
     if args.json:
-        _print_ascii_json(items)
+        _print_json(items)
         return EXIT_OK
     if not items:
         print("no conversations")
@@ -1717,7 +1714,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
     else:
         items, notes = _unread_group(session, conversation, listed, limit)
     if args.json:
-        _print_ascii_json(items)
+        _print_json(items)
         return EXIT_OK
     for m in items:
         sender = m.get("from")
@@ -1905,7 +1902,7 @@ def cmd_messages(args: argparse.Namespace) -> int:
         query.append(("cursor", args.cursor))
     page = session.client.call("GET", session.project_path("messages"), query=query)
     if args.json:
-        _print_ascii_json(page)
+        _print_json(page)
         return EXIT_OK
     items = [m for m in (_field(page, "items") or []) if isinstance(m, dict)]
     handles = _handle_map(session) if items else {}
@@ -1990,7 +1987,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
     if args.list_soul:
         soul = session.client.call("GET", "/me/soul")
         if args.list_json:
-            _print_ascii_json(soul)
+            _print_json(soul)
         else:
             print(f"Memory. {onboarding.MEMORY_NOTICE}")
             print("\n".join(onboarding.soul_lines(soul)))
@@ -2003,7 +2000,7 @@ def cmd_memory(args: argparse.Namespace) -> int:
     )  # fmt: skip
     items = _memory_entries(session, [("store", store)] if store else [])
     if args.list_json:
-        _print_ascii_json(items)
+        _print_json(items)
     else:
         _print_memory(items, f"no {store or 'team, role or community'} memory")
     return EXIT_OK
@@ -2028,7 +2025,7 @@ def cmd_memory_search(args: argparse.Namespace) -> int:
         raise UsageError("the search text is 1 to 200 characters")
     items = _memory_entries(Session(), [("q", text)])
     if args.json:
-        _print_ascii_json(items)
+        _print_json(items)
     else:
         _print_memory(items, "nothing matches")
     return EXIT_OK
@@ -2056,7 +2053,7 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
         request = session.client.call("POST", "/me/soul/proposals", body=proposal)
         rid = onboarding.inline(_field(request, "id"))
         line = f"proposed your soul; request {rid} waits for your owner"
-        return _done(args, request, line, ascii_json=True)
+        return _done(args, request, line)
     if args.reason is not None:
         raise UsageError("--reason goes with --soul")
     text = _text(args.text or "", "the entry")
@@ -2075,12 +2072,12 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
     if store == "community":  # an agent proposes; a human with project:admin confirms (§19.2)
         rid = onboarding.inline(_field(answer, "id"))
         line = f"proposed for the community memory; request {rid}"
-        return _done(args, answer, line, ascii_json=True)
+        return _done(args, answer, line)
     added = onboarding.inline(_field(answer, "id"))
     if store == "role":  # written freely by the role's members (§19.2)
         role = onboarding.inline(_field(answer, "role") or "your role")
-        return _done(args, answer, f"added {added} to the memory of {role}", ascii_json=True)
-    return _done(args, answer, f"added {added} to your team's memory", ascii_json=True)
+        return _done(args, answer, f"added {added} to the memory of {role}")
+    return _done(args, answer, f"added {added} to your team's memory")
 
 
 # --- takeover (§6.19) ---------------------------------------------------------------------------
@@ -2173,7 +2170,7 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     path = session.project_path("tasks", card_id, "takeover")
     takeover = _takeover_call(session, "POST", path, body)
     if args.json:
-        _print_ascii_json(takeover)
+        _print_json(takeover)
     else:
         print("\n".join(_takeover_lines(_obj(takeover))))
     return EXIT_OK
@@ -2234,7 +2231,7 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
             if cursor is None:
                 break
         if args.json:
-            _print_ascii_json(items)
+            _print_json(items)
             return EXIT_OK
         if not items:
             print("no open takeovers" if args.status != "all" else "no takeovers")
@@ -2264,7 +2261,7 @@ def _takeover_action(session: Session, args: argparse.Namespace) -> int:
         body = {"reason": _text(args.reason, "--reason")} if args.reason else {}
         answer = _takeover_call(session, "POST", f"{path}/{action}", body)
     if args.json:
-        _print_ascii_json(answer)
+        _print_json(answer)
     else:
         print("\n".join(_takeover_lines(_obj(answer))))
     return EXIT_OK
@@ -2384,7 +2381,7 @@ def cmd_task_list(args: argparse.Namespace) -> int:
     query = [(k, v) for k, v in (("parent", args.parent), ("status", status)) if v]
     cards = [c for c in _cards(session, query) if isinstance(c.get("id"), str)]
     if args.json:
-        _print_ascii_json(cards)  # titles are other members' text
+        _print_json(cards)  # titles are other members' text
         return EXIT_OK
     if not cards:
         print("no cards")
@@ -2409,7 +2406,7 @@ def cmd_task_show(args: argparse.Namespace) -> int:
     session = Session()
     card = _obj(session.client.call("GET", session.project_path("tasks", args.card)))
     if args.json:
-        _print_ascii_json(card)
+        _print_json(card)
         return EXIT_OK
     kids = [k for k in _cards(session, [("parent", args.card), ("status", "all")])
             if isinstance(k.get("id"), str)]  # fmt: skip
@@ -2466,7 +2463,6 @@ def cmd_task_create(args: argparse.Namespace) -> int:
         args,
         card,
         f"created {onboarding.inline(card_id)}{under} ({onboarding.inline(status)})",
-        ascii_json=True,
     )
 
 
@@ -2490,7 +2486,7 @@ def cmd_task_edit(args: argparse.Namespace) -> int:
         card = session.client.call("PATCH", session.project_path("tasks", args.card), body=patch)
     except hub.HubError as exc:
         raise _subtask_hint(exc) from None
-    return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}", ascii_json=True)
+    return _done(args, card, f"updated {args.card}: {', '.join(sorted(patch))}")
 
 
 def _releases(session: Session) -> list[dict[str, Any]]:
@@ -3400,7 +3396,7 @@ def cmd_jourfixe_answers(args: argparse.Namespace) -> int:
     )
     items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
     if args.json:
-        _print_ascii_json(items)  # other members' text
+        _print_json(items)  # other members' text
         return EXIT_OK
     if not items:
         print(f"no answers to show for {onboarding.inline(round_id)}")
@@ -3460,7 +3456,7 @@ def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
                if isinstance(s, dict)]  # fmt: skip
         line = f"  {onboarding.inline(topic.get('id'))} {onboarding.inline(topic.get('title'))}"
         lines.append(line + (f" (proposals {', '.join(ids)})" if ids else ""))
-    return _done(args, round_, "\n".join(lines), ascii_json=True)
+    return _done(args, round_, "\n".join(lines))
 
 
 def cmd_jourfixe_post(args: argparse.Namespace) -> int:
@@ -3514,7 +3510,7 @@ def cmd_jourfixe_report(args: argparse.Namespace) -> int:
     for left in [x for x in report.get("proposals_not_carded") or [] if isinstance(x, dict)]:
         left_id, why = (onboarding.inline(left.get(k)) for k in ("proposal_id", "reason"))
         lines.append(f"  not carded: {left_id} ({why})")
-    return _done(args, answer, "\n".join(lines), ascii_json=True)
+    return _done(args, answer, "\n".join(lines))
 
 
 # Why a start did not open (§20.1), as the hub names it; no round is recorded.

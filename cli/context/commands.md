@@ -860,17 +860,19 @@ would fail every git call over one file.
 **Source:** the audit tsk-w51sz6sj5vnd, findings F2 and F6; the card tsk-p7mt2e4t5xdz
 **Revisit when:** an agent is seen joining a hub because of a message, or a reader needs other invisible characters escaped
 
-`_print_json` escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
-that set, as they spell ASCII no reader sees. A `wait` that returns a message says on stderr that a
+`_print_json`, the only JSON printer since #1063's follow-up, escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
+that set, as they spell ASCII no reader sees, and so do lone surrogates, which would crash the print. A `wait` that returns a message says on stderr that a
 body is data. Before the exchange, `join` prints one line when the state home holds an identity
-on another host. Identities in a clone or under `MAITY_STATE_DIR` aren't seen, and the join host
+on another host, also one directly under `maity/` as `join` recommends. Identities in a clone or in any other directory aren't seen, and the join host
 and public host of one hub count as two, so the line can be absent or needless: it is a prompt
 to check, and the rule in `docs/agents.md` carries the weight.
 
 **Rejected alternatives:**
 - `ensure_ascii=True` for `wait`, as the card proposed: projects now write in any language, and
   a Cyrillic or Chinese body would come out as `\uXXXX` throughout, unreadable and several times
-  as long. Escaping only the dangerous characters gives the same safety.
+  as long. Escaping only the dangerous characters gives the same safety. `chats`, `task`, `memory`
+  and others were all ASCII until they moved to this printer, so invisible characters that are not
+  dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
 ## Text from the forge and one-line fields name who wrote them
@@ -1492,3 +1494,18 @@ cost a call and could still be out of date.
 
 **Known limit:** `maity say --type update --task X human` sends the word
 `human` as the text.
+
+## `report` asks the forge before it refuses over a pull request the hub calls open
+
+**Id:** e44fcb30-5ba5-4e52-a801-c4763312826b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-rcn2xspk7e0h; PR #846 was closed on the forge on 2026-10-31 while its card's `report.observed.pr_state` stayed `open`, which stopped reports until the lead closed the card by hand
+**Revisit when:** the hub's observation is known to follow a closed pull request within seconds, or `report` must work without `gh`
+
+`report.observed` is the hub's last look, so it can be old. `_card_pr_mismatch` only refuses over it after `gh pr view` also says `open`. When `gh` can't answer, the refusal stays and says the state is unchecked. The call happens only on the way to a refusal, so an ordinary report costs no extra request. A link of kind `pr` on the card still refuses without asking: it is a statement about the card, not an observation.
+
+**Rejected alternatives:**
+- Letting the hub look again during the report: it needs a contract change and a forge read in the request, and the hub's observation is the part that was out of date. The hub's re-reading stays a question of its own on the card.
+- Reporting anyway when `gh` can't answer: the refusal protects the card from a report of the wrong pull request, and a failing `gh` proves nothing about the state.
