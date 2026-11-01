@@ -11,6 +11,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
+from maity_hub import events
 from maity_hub import tables as t
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
@@ -21,6 +22,7 @@ from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
 from maity_hub.routes.auth import LOGIN_BY_ADDRESS, LOGIN_BY_HANDLE
+from maity_hub.views import member_view
 
 router = APIRouter()
 
@@ -54,6 +56,25 @@ def get_settings(request: Request, caller: AnyCaller) -> JSONResponse:
         return JSONResponse(preferences.view(conn, caller.principal_id, _mail_ready(conn, request)))
 
 
+def _announce_language(conn: Connection, human_id: str) -> None:
+    """§6.2: every project's agents see it at their next wake-up; it wakes nobody (§8.2)."""
+    rows = conn.execute(
+        select(t.membership)
+        .where(t.membership.c.human_id == human_id, t.membership.c.active.is_(True))
+        .order_by(t.membership.c.id)
+    ).all()
+    for row in rows:
+        events.emit(
+            conn,
+            row.project_id,
+            "member_updated",
+            ["all"],
+            {**member_view(conn, row), "changed": ["language"]},
+            actor=events.Actor(None),
+            subject=("member", human_id),
+        )
+
+
 @router.patch("/me/notification-settings")
 def patch_settings(
     request: Request, caller: AnyCaller, body: Annotated[dict[str, Any], Body()]
@@ -63,7 +84,7 @@ def patch_settings(
     address = origin_of(request).address
 
     def run() -> tuple[dict[str, Any], int]:
-        with engine_of(request).begin() as conn:
+        with events.transaction(engine_of(request)) as conn:
             human, session = _context(conn, caller, session_hash)
 
             def wrong_password() -> None:
@@ -74,6 +95,7 @@ def patch_settings(
             def password_blocked() -> int:
                 return max(LOGIN_BY_ADDRESS.blocked(address), LOGIN_BY_HANDLE.blocked(human.handle))
 
+            before = preferences.preferences(conn, human.id)["email"]["language"]
             status = preferences.patch(
                 conn,
                 human=human,
@@ -87,6 +109,8 @@ def patch_settings(
                 step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
                 keeps_factor=lambda: second_factor.refuse_losing_the_address(conn, hub, human.id),
             )
+            if preferences.preferences(conn, human.id)["email"]["language"] != before:
+                _announce_language(conn, human.id)
             return preferences.view(conn, human.id, _mail_ready(conn, request)), status
 
     # Three first writes at once can end in a duplicate-key deadlock on MariaDB; the whole
