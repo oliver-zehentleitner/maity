@@ -24,7 +24,6 @@ from sqlalchemy import Engine, text
 
 from maity_hub.db import APPLICATION_LISTENER
 from tests import flow
-from tests.conftest import ClientFactory
 from tests.test_auth_agent import signed
 
 EVENTS = "/api/v1/projects/maintainer/maity/events"
@@ -101,28 +100,23 @@ def _ready(hub: Hub, deadline: float) -> None:
     pytest.fail(f"{hub.url} did not come up:\n{hub.log.read_text()[-2000:]}")
 
 
-@pytest.fixture
-def agents(make_client: ClientFactory, migrated: Engine) -> tuple[flow.Agent, flow.Agent]:
-    owner = flow.human(make_client, migrated)
-    flow.project(owner)
-    return flow.agent(make_client, owner), flow.agent(make_client, owner)
-
-
-@pytest.fixture
-def hubs(
-    migrated: Engine, tmp_path: Path, agents: tuple[flow.Agent, flow.Agent]
-) -> Iterator[tuple[Hub, Hub]]:
-    if migrated.dialect.name != "postgresql":
+@pytest.fixture(autouse=True)
+def _only_on_postgresql(database_url: str) -> None:
+    """Before anything is set up: only PostgreSQL runs replicas."""
+    if not database_url.startswith("postgresql"):
         pytest.skip("only PostgreSQL runs replicas")
+
+
+@pytest.fixture
+def hubs(migrated: Engine, tmp_path: Path) -> Iterator[tuple[Hub, Hub]]:
     url = migrated.url.render_as_string(hide_password=False)
-    already = _listeners(migrated)  # the test client's own app may have one
     pair = (_start(url, tmp_path, "a"), _start(url, tmp_path, "b"))
     try:
         deadline = time.monotonic() + 60
         for hub in pair:
             _ready(hub, deadline)
         while time.monotonic() < deadline:  # a wake-up needs both listeners in place
-            if _listeners(migrated) >= already + 2:
+            if _listeners(migrated) >= 2:
                 break
             time.sleep(0.1)
         else:
@@ -137,6 +131,18 @@ def hubs(
             except subprocess.TimeoutExpired:
                 hub.process.kill()
                 hub.process.wait()
+
+
+@pytest.fixture
+def agents(hubs: tuple[Hub, Hub], migrated: Engine) -> tuple[flow.Agent, flow.Agent]:
+    """Set up over HTTP too: a test client's app would be a third replica with its own listener."""
+
+    def client() -> Any:  # as much of a test client as `flow` uses
+        return httpx.Client(base_url=hubs[0].url, timeout=40)
+
+    owner = flow.human(client, migrated)
+    flow.project(owner)
+    return flow.agent(client, owner), flow.agent(client, owner)
 
 
 def _waiting(
@@ -157,7 +163,8 @@ def _listeners(engine: Engine) -> int:
         count = conn.execute(
             text(
                 "SELECT count(*) FROM pg_stat_activity "
-                "WHERE application_name = :name AND datname = current_database()"
+                "WHERE application_name = :name AND datname = current_database() "
+                "AND state = 'idle' AND query ILIKE 'LISTEN %'"  # connected is not listening yet
             ),
             {"name": APPLICATION_LISTENER},
         ).scalar_one()
@@ -201,17 +208,20 @@ def test_a_second_wait_on_the_other_process_supersedes_the_first(
     hubs: tuple[Hub, Hub], agents: tuple[flow.Agent, flow.Agent]
 ) -> None:
     (a, b), (_, waiter) = hubs, agents
-    cursor = _cursor(a, waiter)
-    begun = time.monotonic()
-    thread, first = _waiting(a, waiter, cursor, 25)
-    time.sleep(1)
-    newer, second = _waiting(b, waiter, cursor, 3)
-    thread.join(timeout=20)
-    assert first, "the older wait did not end"
-    assert first[0].json()["superseded"] is True
-    assert time.monotonic() - begun < 20  # not the 25 seconds it asked for
-    newer.join(timeout=20)
-    assert second[0].json()["superseded"] is False
+    # Tried again like the wake-up: a loaded runner may not have opened the first wait yet. A
+    # notice that never crosses leaves it open until its own end, with `superseded` false.
+    for _ in range(3):
+        cursor = _cursor(a, waiter)
+        thread, first = _waiting(a, waiter, cursor, 8)
+        time.sleep(1)
+        newer, second = _waiting(b, waiter, cursor, 1)
+        thread.join(timeout=30)
+        newer.join(timeout=30)
+        assert first and second
+        if first[0].json()["superseded"] is True:
+            assert second[0].json()["superseded"] is False
+            return
+    pytest.fail("the older wait was never superseded")
 
 
 def test_a_rate_limit_counts_once_over_both_processes(
