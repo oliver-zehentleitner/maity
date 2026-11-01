@@ -7390,15 +7390,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
   const apCounts = win.Maity.notify.state.counts;
   const apCount = (a) => (a.querySelector(".count") ? text(a.querySelector(".count")) : "");
-  expect(apPages().length === 2 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
+  expect(apPages().length === 4 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
     && apPages()[1].getAttribute("href") === "#/chats" && text(apPages()[1]).startsWith("Chats")
     && apPages()[1].getAttribute("aria-current") === "page" && !apPages()[0].getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page"
     && apCount(apPages()[1]) === (apCounts.chat ? String(apCounts.chat) : "") && apCount(apPages()[0]) === (apCounts.inbox ? String(apCounts.inbox) : "")
     && header.querySelector("nav.views").getAttribute("aria-label") === "Pages of all projects" && text(header.querySelector(".bar .project")) === "Everything waiting for you",
     "all projects: Chats is its second page, current, with the unread count; All projects stays current in the switcher " + JSON.stringify(apPages().map((a) => text(a))));
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(apPages().length === 2 && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
+  expect(apPages().length === 4 && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
     && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
+  // Jour fixe and Why across projects (js/all-pages.js): a section per project, each from that project's own endpoint.
+  const apSections = () => main.querySelectorAll("section.all-project");
+  const apOf = (slug) => apSections().find((s) => s.getAttribute("data-project").endsWith("/" + slug));
+  const apGo = async (route) => { await go(route); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); };
+  await apGo("#/all/jour-fixe");
+  expect(apPages()[2].getAttribute("href") === "#/all/jour-fixe" && apPages()[2].getAttribute("aria-current") === "page" && apAll().getAttribute("aria-current") === "page"
+    && apSections().length >= 2 && apOf("maity").querySelector(".all-jf-series li") && text(apOf("maity")).includes("How we work")
+    && apOf("maity").querySelector("a").getAttribute("href").endsWith("/maity/jour-fixe"),
+    "all projects: the Jour fixe page, a section per project with its series " + text(apSections()[0]).slice(0, 160));
+  await apGo("#/all/why");
+  expect(apPages()[3].getAttribute("aria-current") === "page" && apOf("maity").querySelector(".why-summary") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: the Why page, a project's summary, and a project without an export says so");
+  const apWhyGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.includes("/maity/keep-the-why") ? Promise.reject(Object.assign(new Error("nope"), { code: "internal" })) : apWhyGet(p));
+  await apGo("#/all/why");
+  expect(text(apOf("maity")).includes("Could not read this project: nope") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: a project that fails says so and hides no other");
+  win.Maity.api.get = apWhyGet;
+  await apGo("#/all");
   // A refresh of the counts updates the pages' badges in place, in the fixture's #/ links too (#844's review).
   const apGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
