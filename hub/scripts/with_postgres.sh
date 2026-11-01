@@ -65,9 +65,18 @@ trap finish EXIT
 
 sql "create database $database"
 export MAITY_TEST_DATABASE_URL="postgresql://postgres@/$database?host=$dir"
-# In a process group of its own, so that a signal reaches all of it (pytest -n has workers)
-# and the database is only dropped once the command has ended. In that group Ctrl-C reaches
-# only this script, which passes it on.
+status=0
+# At a terminal the command stays in the foreground, so that it can read (--pdb, breakpoint())
+# and Ctrl-C reaches it directly. A TERM or HUP sent to this script alone then waits for the
+# command to end, since bash runs a trap only between commands; it never cleans up under it.
+if [ -t 0 ]; then
+  trap : TERM HUP
+  "$@" 8>&- 9>&- || status=$?
+  exit "$status"
+fi
+
+# Otherwise in a process group of its own, so that a signal reaches all of it (pytest -n has
+# workers) and the database is only dropped once the command has ended.
 set -m
 "$@" 8>&- 9>&- &
 child=$!

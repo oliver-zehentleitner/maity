@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import pty
+import select
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -102,6 +105,43 @@ def test_a_signal_reaches_the_command_and_the_cleanup_waits_for_it(
     script.send_signal(sent)
     assert script.wait(timeout=30) == 7
     assert ended.exists() and len(calls(run, "stop")) == 1
+
+
+def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int, bytes]:
+    """Runs the script on a terminal of its own, types once the command is up; status, output."""
+    pid, terminal = pty.fork()
+    if pid == 0:
+        os.execve(str(SCRIPT), [str(SCRIPT), "sh", "-c", command], env)
+    seen = b""
+    deadline = time.monotonic() + 30
+    sent = False
+    while time.monotonic() < deadline:
+        if select.select([terminal], [], [], 0.1)[0]:
+            try:
+                chunk = os.read(terminal, 1024)
+            except OSError:  # the terminal's other end closed
+                break
+            if not chunk:
+                break
+            seen += chunk
+        if not sent and b"up" in seen:
+            os.write(terminal, typed)
+            sent = True
+    os.close(terminal)
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status), seen
+
+
+def test_at_a_terminal_the_command_can_read(run: dict[str, str]) -> None:
+    status, seen = at_a_terminal(run, 'echo up; read line; echo "got $line"', b"hello\n")
+    assert status == 0 and b"got hello" in seen
+    assert len(calls(run, "stop")) == 1
+
+
+def test_at_a_terminal_ctrl_c_ends_the_command_and_cleans_up(run: dict[str, str]) -> None:
+    status, _ = at_a_terminal(run, "echo up; while :; do sleep 0.05; done", b"\x03")
+    assert status != 0
+    assert len(calls(run, "stop")) == 1
 
 
 def test_the_commands_exit_status_is_kept(run: dict[str, str]) -> None:
