@@ -96,6 +96,23 @@ window.Maity = window.Maity || {};
       M.dom.NAME_RULES.slug.text + " Used in links and by the CLI; it cannot be changed later.");
     const repository = field("project-repository", "Repository (optional)",
       h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
+    // §16.9, §6.1: public by default for the namespace owner; anyone else's
+    // project starts private, and only an owner can make it public.
+    const privateBox = h("input", { id: "project-private", type: "checkbox", "aria-describedby": "project-private-hint project-private-repo" });
+    const privateHint = h("p", { class: "hint", id: "project-private-hint" });
+    const showPrivate = () => {
+      const org = orgs.find((o) => o.handle === owner.input.value);
+      const fixed = !!org && org.my_role !== "owner";
+      privateBox.checked = fixed || (privateBox.disabled ? false : privateBox.checked);
+      privateBox.disabled = fixed;
+      privateHint.textContent = fixed ? M.t("new_project.private.fixed") : M.t("new_project.private.hint");
+    };
+    owner.input.addEventListener("change", showPrivate);
+    showPrivate();
+    const privateField = h("div", { class: "project-private" },
+      h("label", { class: "check", for: "project-private" }, privateBox, " " + M.t("new_project.private.label")),
+      privateHint,
+      h("p", { class: "hint", id: "project-private-repo" }, M.t("new_project.private.repository")));
     const memory = field("project-memory", "Project memory",
       h("select", { id: "project-memory" }, PROVIDERS.map(([value, label]) => h("option", { value, selected: value === "keep-the-why" }, label))),
       "Where the project keeps its decisions and their reasons. Maity stores none of it: an agent sets it up in the repository, "
@@ -207,6 +224,8 @@ window.Maity = window.Maity || {};
         showErrors({});
         const url = repository.input.value.trim();
         if (url) body.repository = { url };
+        // Left out unless private: the hub's default and its look at the repository decide (§6.1).
+        if (privateBox.checked) body.public_page = "off";
         body.memory = { provider: memory.input.value };
         // §6.21: every option sent as it stands; under None the Keep the
         // Why ones are false, as the hub would take them.
@@ -219,6 +238,8 @@ window.Maity = window.Maity || {};
         try {
           const created = await M.api.post("/projects", body);
           status.done();
+          // What the hub made of it, said once on the page that follows.
+          M.projectCreated = { full_name: created.full_name, public_page: created.public_page };
           // A new project has nothing waiting yet; its next step is to
           // join an agent, which the Agents view offers when it is empty.
           M.route.go(ctx.projectLink(created.full_name, "agents"));
@@ -241,6 +262,7 @@ window.Maity = window.Maity || {};
     },
     orgs.length ? owner.nodes : null,
     name.nodes, slug.nodes, repository.nodes,
+    privateField,
     memory.nodes,
     setupBox,
     preset.nodes);

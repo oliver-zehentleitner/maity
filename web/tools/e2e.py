@@ -493,6 +493,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_role("button", name="Create project", exact=True).click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
+    expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
 def join_line(
