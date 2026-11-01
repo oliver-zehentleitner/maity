@@ -16,7 +16,7 @@ window.Maity = window.Maity || {};
 
   class ApiError extends Error {
     constructor(message, status, path, code, details) {
-      super(message);
+      super(M.errorWords(code, details, message));  // the reader's language, the hub's English else
       this.name = "ApiError";
       this.status = status;
       this.path = path;

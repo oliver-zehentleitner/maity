@@ -3123,6 +3123,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
     "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
   win.Maity.i18n.locale = i18nLocale;
+  // The hub's refusals (js/errors.js): the hub's English as it is, a translation by code and reason.
+  {
+    const said = win.Maity.errorWords;
+    expect(said("not_holder", {}, "only the holder of tsk-x may report") === "only the holder of tsk-x may report",
+      "errors: in English the hub's own message stands, it names the case");
+    const i18n = win.Maity.i18n;
+    win.MAITY_I18N.de = { "error.not_holder": "Nur wer die Karte hält.", "error.reason.humans_only": "Nur ein Mensch." };
+    const was = i18n.language;
+    i18n.language = "de";
+    expect(said("not_holder", {}, "hub") === "Nur wer die Karte hält.", "errors: a translated code");
+    expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
+    expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
+      "errors: without a translation, or for a code unknown here, the hub's English");
+    i18n.language = was;
+    delete win.MAITY_I18N.de;
+  }
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());

@@ -579,6 +579,27 @@ stop under reduced motion by the stylesheet itself. The file under
 `web/landing/`: a hub serving only the landing page, without the
 dashboard's files, would have no script.
 
+## A refusal is translated by code in `ApiError`; in English the hub's message stays
+
+**Id:** 8b52e0d4-1f7a-4c69-b3d8-60a7c9e1f24d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (the API stays in English, a client translates by `code` and `details`); about 795 places in the hub raise an error, with views showing `err.message` in about 50 lines
+**Revisit when:** a language's readers report refusals too vague to act on, or the hub's messages move to a catalog of their own
+
+`ApiError` asks `M.errorWords` once, so no view changes. The catalog has one sentence per code of §1.3
+and a few for `details.reason`: it says the kind of refusal. The hub's message says the case, naming a
+card or a limit, and a translation loses that. So English readers keep the hub's message, and only a
+translated language gets the kind.
+
+**Rejected alternatives:**
+- Translating the roughly 795 messages: a sentence per place in the hub, in ten languages, with values
+  inside them; the contract already says a client goes by `code`.
+- Using the catalog's sentence in English too: every English reader would lose the specifics for the
+  sake of one rule.
+- A map in every view: 50 places to keep in step.
+
 ## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
 
 **Id:** adaebd69-6541-4f4c-81ce-8c38f1fb70aa

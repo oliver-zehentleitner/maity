@@ -50,6 +50,14 @@ window.Maity = window.Maity || {};
     return said === undefined ? key : fill(said, values);
   }
 
+  // The text only where this language's own catalog has it, else undefined: for
+  // js/errors.js, where the hub's English says more than the catalog's.
+  function tOwn(key, values) {
+    const own = catalogs[i18n.language];
+    if (i18n.language === "en" || !own || !Object.hasOwn(own, key)) return undefined;
+    return t(key, values);
+  }
+
   // The same sentence as pieces for M.dom.h: a placeholder whose value is a
   // node (a link, a member) is that node, in the sentence where the
   // language puts it; strings and numbers fill in as with M.t.
@@ -82,6 +90,7 @@ window.Maity = window.Maity || {};
   }
 
   M.t = t;
+  M.tOwn = tOwn;
   M.tn = tn;
   M.fmt = {
     number,

@@ -1348,6 +1348,12 @@ grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
 baseline; nothing raises it but an edit to the file).
 
+The hub's refusals stay in English in the API. `js/errors.js` gives them the
+reader's words by `code` and `details.reason`, in one place (`ApiError`), so
+every view that shows `err.message` gets them. In English the hub's own message
+stands, since it names the case and the catalog only the kind; so does it for a
+key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 without words.
+
 ## Refresh
 
 - `GET /me` every 60 seconds and after every answer, none while the tab
