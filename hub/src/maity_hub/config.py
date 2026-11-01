@@ -390,6 +390,11 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
 
 
 SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
+# What the hub can read from its own storage and its settings object. `email` (§2.8.8) is read
+# but not yet settable: neither the environment nor `PATCH /admin/settings/sign-in` take it
+# until the rules that guard it (the confirming mail, the link switched off, the start check)
+# are in, so a build in between is never configurable into the bypass of rule 3.
+KNOWN_SECOND_FACTORS = (*SECOND_FACTOR_POLICIES, "email")
 
 
 def parse_second_factor(env: dict[str, str]) -> str | None:

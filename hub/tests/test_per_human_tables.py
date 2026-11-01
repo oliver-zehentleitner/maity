@@ -71,6 +71,10 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("notification_settings", "address_change"): True,
     ("notification_settings", "address_normalized"): True,
     ("notification_settings", "address_status"): False,  # `verified`, `pending`, …
+    (
+        "notification_settings",
+        "address_ever_verified",
+    ): False,  # a flag: an address was once verified
     ("org_invitation", "closed_by"): False,  # why: `accepted`, `revoked`, `expired`, …
     ("pending_registration", "address"): True,
     ("pending_registration", "address_normalized"): True,

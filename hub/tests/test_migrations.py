@@ -973,3 +973,45 @@ def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
             sa.select(project.c.jour_fixe).where(project.c.id == scheduled)
         ).scalar_one()
     assert restored["time"] == "10:00" and restored["moderator"] == "admin_agent"
+
+
+def test_an_account_with_a_verified_or_disabled_address_counts_as_having_had_one(
+    engine: Engine,
+) -> None:
+    """20261031191500 (§2.8.8): the flag "ever verified" is set for `verified` and `disabled`
+    addresses at the upgrade, so no such account falls under "never had one"."""
+    from sqlalchemy import select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "20261031191500_mail_factor"))
+    humans = {
+        status: factory.human(engine, f"h-{status}")
+        for status in ("none", "pending", "verified", "disabled")
+    }
+    with engine.begin() as conn:
+        for status, human_id in humans.items():
+            conn.execute(
+                t.notification_settings.insert().values(
+                    human_id=human_id,
+                    preferences={},
+                    address_status=status,
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=clock.now(),
+                )
+            )
+    migrate(engine)
+    with engine.connect() as conn:
+        flags = {
+            row.address_status: row.address_ever_verified
+            for row in conn.execute(
+                select(
+                    t.notification_settings.c.address_status,
+                    t.notification_settings.c.address_ever_verified,
+                )
+            )
+        }
+    assert flags == {"none": False, "pending": False, "verified": True, "disabled": True}

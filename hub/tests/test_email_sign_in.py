@@ -335,7 +335,7 @@ def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: 
         headers={"x-csrf-token": client.cookies.get("maity_csrf", "")},
     )
     assert result.status_code == 200, result.text
-    assert result.json() == {"second_factor": "required", "expires_in": 300}
+    assert result.json() == {"second_factor": "required", "via": "totp", "expires_in": 300}
     assert "member" not in client.get("/api/v1/auth/session").json()
 
 

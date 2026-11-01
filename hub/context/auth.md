@@ -384,3 +384,26 @@ without a claim.
   (`hold_cap` reads the human's and the project's limit and absence), so the reads would stay.
 - Caching the memberships of a session: the answer is a function of rows another request can
   change (a claim taken, a membership ended), and a stale set would skip a renewal.
+
+## The mail factor is a second-factor session like TOTP's, with its link and code bound to that session's row
+
+**Id:** 3c5c1c16-9ed6-4c48-8b08-6346159398a5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §2.8.8 (#925, #930); the card tsk-qawqnetfhn6m and the maintainer's five rules of 2026-10-31 (every new session, TOTP before mail, no sign-in link as first factor, step-up by mail, no silent fallback); the implementation of `auth/mail_factor.py`
+**See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-10-31
+**Revisit when:** a second mailed factor (a passkey recovery by mail, say) needs the same storage, or the mail must be sent from a worker instead of the sign-in's transaction
+
+Under `second_factor: email` the hub does not add a new kind of session: a human without TOTP gets the same `second_factor` session an enrolled human gets, with `via: email` read from the account (`second_factor.via`: TOTP before mail), and a life of 15 minutes instead of 5. The mail goes out in the transaction that makes the session (`second_factor.begin`), through the outbox, so it is sent only if the sign-in commits. The token and the code are stored as HMAC-SHA-256 under `MAITY_MAIL_SIGNING_KEY` on that session's own row (`mail_token_mac`, `mail_code_mac`), not in a table of their own: they are valid only while the session lives, single use by one conditional update that clears both, and a new mail overwrites them, so the earlier link and code die with no further step. `mail_sent` counts the mails of the session (three), the human's ten an hour are a limiter. A human who never had a verified address enrols (`must_enrol`); one whose address was verified and is lost (`address_ever_verified`) stops at the second step, where a send answers `409 address_unverified` and an account record `second_factor_failed` `email_unavailable` is written after the commit. Switching the policy away from `email` ends an open mail session at its next call, as switching to `off` does.
+
+**Reason:** a mail factor that lived beside the session would need its own expiry, its own single-use rule and its own cleanup, and every one of them is already the session's. Keeping the secret material on the session row means nothing outlives the sign-in it was for.
+
+**Rejected alternatives:**
+- A table of mail challenges: a second life to keep in step with the session's, and a place a code could outlive it.
+- Sending the mail after the response, as the sign-in link does: that mail answers an anonymous request and must not reveal whether an account exists; this one goes to a human who already proved the first factor, so it belongs in the transaction.
+- The sign-in link's own code and token tables: the same mailbox twice would be one factor, which is why §2.8.8 switches the link off under `email` (not yet built here, see below).
+
+The mail gives no standing of its own (§2.8.2): `sessions.good_standing` counts TOTP and a recovery code as the second factor that confers it, not `email`, which proved the mailbox only. Under `email` a reset does not send a human with a verified address to enrolment (`must_enrol` is false for them whatever the reset flag says): the reset went through that mailbox, and an enrolment on the password alone would let its holder install their own app; the operator's reset sends only an account without a verified address there. An enrolment session that the policy now asks a second factor of ends instead of becoming full (`state` asks `asks`, not only `enrolled`). A mailed code lives 15 minutes from `mail_sent_at`, in a full session that steps up as in a second-factor one, and the wrong codes of a session are counted over the longest session life, 15 minutes.
+
+**Not covered, known:** §2.8.8 comes in two changes. This one is the sign-in itself; `email` is therefore *read* (`KNOWN_SECOND_FACTORS`, and a stored or injected value works) but not *settable*: `PATCH /admin/settings/sign-in` answers `invalid` and `MAITY_SIGN_IN_SECOND_FACTOR=email` is a `ConfigError`, so no build in between can be configured into the bypass of rule 3 (a mailbox as first factor and as second). The next change makes it settable together with the confirming mail (`202`, `POST …/second-factor-email/confirm`, `mail_not_ready`, `no_verified_address`), the sign-in link switched off under it (`email_link: false`, `POST /auth/email-link` sends nothing), the start check for the environment value, `second_factor_required` when a human without TOTP removes their verified address, and the mail again after an admin reset. The session's three mails count for a second-factor session only; a full session that steps up is held by the hour's ten alone.

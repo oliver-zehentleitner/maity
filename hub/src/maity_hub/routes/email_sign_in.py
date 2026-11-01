@@ -216,7 +216,8 @@ def _complete(
         next_route=row.next_path,
     )
     if state != "full":
-        return auth.pending_answer(state), sid, csrf, None
+        via = second_factor.via(conn, settings_of(request), row.human_id)
+        return auth.pending_answer(state, via), sid, csrf, None
     return (
         {"member": auth.member_of(conn, row.human_id), "next": row.next_path},
         sid,

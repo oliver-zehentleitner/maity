@@ -22,7 +22,7 @@ from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import admin, clock, secretbox, shared_counts
 from maity_hub import tables as t
-from maity_hub.auth import passwords, sessions, totp
+from maity_hub.auth import mail_factor, passwords, sessions, totp
 from maity_hub.auth.caller import Caller, session_expires_at
 from maity_hub.auth.sign_in_settings import second_factor_policy
 from maity_hub.config import Settings
@@ -31,6 +31,9 @@ from maity_hub.notifications import records
 from maity_hub.ratelimit import Limiter
 
 SECOND_STEP = timedelta(minutes=5)  # a second-factor session's life
+# The longest of them, a mail session's: what the wrong codes of one session are counted over, so
+# that none of its 15 minutes leaves the window (§2.8.8).
+SESSION_LIFE = mail_factor.LIFETIME
 FRESH = timedelta(minutes=10)  # the password's proof and the step-up's window
 TRUSTED_AGE = timedelta(hours=24)  # the proof for an account without a password
 ENROLMENT = timedelta(minutes=10)  # an unconfirmed enrolment
@@ -54,6 +57,7 @@ _CROCKFORD_READ = str.maketrans({"i": "1", "l": "1", "o": "0"})
 SECOND_STEP_CALLS = {
     ("GET", "/auth/session"),
     ("POST", "/auth/second-factor/verify"),
+    ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
     ("POST", "/auth/logout"),
 }
 # A session that was full before it was held at enrolment keeps the decisions its
@@ -109,7 +113,17 @@ def must_enrol(conn: Connection, hub: Settings, human_id: str) -> bool:
     factor = factor_of(conn, human_id)
     if enrolled(factor):
         return False
-    if factor is not None and factor.reset_required:
+    reset = factor is not None and factor.reset_required
+    if current == "email":
+        # With a verified address the mail is the factor, after a reset too: the reset itself
+        # went through that mailbox (§2.8.3, §2.8.8), and an enrolment on the first factor
+        # alone would let whoever holds the password install their own app. Without one:
+        # enrol when there never was one or the operator reset it; an address that was and is
+        # lost fails closed at the second step.
+        if mail_factor.address_of(conn, human_id) is not None:
+            return False
+        return reset or not mail_factor.ever_had_address(conn, human_id)
+    if reset:
         return True
     return current == "required_admins" and (
         admin.is_instance_admin(conn, human_id) or owns_a_project(conn, human_id)
@@ -117,8 +131,26 @@ def must_enrol(conn: Connection, hub: Settings, human_id: str) -> bool:
 
 
 def asks(conn: Connection, hub: Settings, human_id: str) -> bool:
-    """Whether a sign-in of this human has a second step."""
-    return policy(conn, hub) != "off" and enrolled(factor_of(conn, human_id))
+    """Whether a sign-in of this human has a second step: TOTP when enrolled, and under
+    `email` the mail for everyone else who has, or once had, an address (§2.8.8)."""
+    current = policy(conn, hub)
+    if current == "off":
+        return False
+    if enrolled(factor_of(conn, human_id)):
+        return True
+    return current == "email" and not must_enrol(conn, hub, human_id)
+
+
+def via(conn: Connection, hub: Settings, human_id: str) -> str:
+    """`totp` for an enrolled human, else `email` (§2.8.8): TOTP before mail."""
+    return "totp" if enrolled(factor_of(conn, human_id)) else mail_factor.VIA
+
+
+def step_life(conn: Connection, hub: Settings, row: Any) -> timedelta:
+    """A second-factor session's life: 5 minutes, 15 under `via: email` (§2.8.2, §2.8.8)."""
+    if via(conn, hub, row.human_id) == mail_factor.VIA:
+        return mail_factor.LIFETIME
+    return SECOND_STEP
 
 
 # --- the session's state and the gate ------------------------------------------------
@@ -141,15 +173,18 @@ def state(conn: Connection, hub: Settings, row: Any) -> str:
     if row.state == "second_factor":
         if off:
             return "ended"  # §2.8.5: open second steps end when the policy turns off
-        if clock.now() - row.created_at >= SECOND_STEP:
+        if via(conn, hub, row.human_id) == mail_factor.VIA and policy(conn, hub) != "email":
+            return "ended"  # switched away from `email`: the first factor is done again (§2.8.8)
+        if clock.now() - row.created_at >= step_life(conn, hub, row):
             return "expired"
         return "second_factor"
     if not row.sign_in_complete:  # an enrolment session (§2.8.5)
         if off:
             return "ended"
-        if enrolled(factor_of(conn, row.human_id)):
-            # The human enrolled elsewhere meanwhile: this sign-in never gave a code,
-            # so it ends rather than becoming a full session without one.
+        if asks(conn, hub, row.human_id):
+            # The human enrolled elsewhere meanwhile, or the policy came to ask for a factor
+            # they have (the mail): this sign-in never gave a code, so it ends rather than
+            # becoming a full session without one.
             return "ended"
         if must_enrol(conn, hub, row.human_id):
             return "enrolment"
@@ -190,15 +225,20 @@ def session_view(conn: Connection, hub: Settings, row: Any) -> dict[str, Any] | 
     if current not in ("second_factor", "enrolment"):
         return None
     if current == "second_factor":
-        expires = row.created_at + SECOND_STEP
+        expires = row.created_at + step_life(conn, hub, row)
     else:
         expires = session_expires_at(row)
-    return {
+    shown: dict[str, Any] = {
         "second_factor": "required" if current == "second_factor" else "enrolment_required",
         "session_id": row.public_id,
         "csrf_token": row.csrf_token,
         "expires_at": clock.rfc3339(expires),
     }
+    if current == "second_factor":
+        shown["via"] = via(conn, hub, row.human_id)
+        if shown["via"] == mail_factor.VIA:
+            shown.update(mail_factor.state_of(row))
+    return shown
 
 
 # --- after the first factor ----------------------------------------------------------
@@ -234,7 +274,25 @@ def begin(
         state=chosen,
         next_route=next_route if chosen != "full" else None,
     )
+    if chosen == "second_factor" and via(conn, hub, human_id) == mail_factor.VIA:
+        _first_mail(conn, hub, public_id)
     return session_id, csrf, public_id, chosen
+
+
+def _first_mail(conn: Connection, hub: Settings, public_id: str) -> None:
+    """The mail of the first factor, sent the moment it succeeds (§2.8.8). No mail is no failure
+    of the sign-in: the session stands, `GET /auth/session` says `mail: unavailable` or
+    `rate_limited`, and an account that had an address and lost it gets its record."""
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.public_id == public_id)
+    ).one()
+    try:
+        mail_factor.send(conn, hub, row)
+    except ApiError as refused_mail:
+        if refused_mail.code == "address_unverified" and mail_factor.ever_had_address(
+            conn, row.human_id
+        ):
+            failed(conn, row.human_id, mail_factor.UNAVAILABLE, row.ip, row.browser, row.os)
 
 
 # --- codes -----------------------------------------------------------------------------
@@ -365,6 +423,23 @@ def check(
     return None
 
 
+def _check_mail(
+    conn: Connection, hub: Settings, row: Any, code: str | None, token: str | None
+) -> str | None:
+    """`email` when the mailed code or token is right, None when wrong, counted against the
+    human's limit like any wrong code (§2.8.6, §2.8.8). Only for a human without TOTP, under the
+    `email` policy."""
+    wait = WRONG_BY_HUMAN.blocked(row.human_id)
+    if wait:
+        raise rate_limited(wait)
+    if policy(conn, hub) != "email" or via(conn, hub, row.human_id) != mail_factor.VIA:
+        return None
+    if mail_factor.check(conn, hub, row, code=code, token=token):
+        return mail_factor.VIA
+    WRONG_BY_HUMAN.hit(row.human_id)
+    return None
+
+
 def _refuse_off(conn: Connection, hub: Settings) -> None:
     if policy(conn, hub) == "off":
         raise refused("method_disabled", "the second factor is switched off")
@@ -379,11 +454,11 @@ def _count_wrong(id_hash: str) -> int:
     PostgreSQL (replicas.md 2bd65fec), counted over the current and the previous window of
     the session's five minutes, which counts at least every wrong code of the session."""
     if shared_counts.active():
-        window = shared_counts.add(WRONG_IN_SESSION, id_hash, SECOND_STEP.total_seconds())
+        window = shared_counts.add(WRONG_IN_SESSION, id_hash, SESSION_LIFE.total_seconds())
         return window.current + window.previous
     now = time.monotonic()
     if len(_wrong_in_session) > 1024:
-        horizon = now - SECOND_STEP.total_seconds()
+        horizon = now - SESSION_LIFE.total_seconds()
         for key in [k for k, (_, first) in _wrong_in_session.items() if first < horizon]:
             del _wrong_in_session[key]
     count, first = _wrong_in_session.get(id_hash, (0, now))
@@ -411,6 +486,8 @@ def verify(
     *,
     code: str | None,
     recovery_code: str | None,
+    email_code: str | None = None,
+    email_token: str | None = None,
 ) -> tuple[str, str] | datetime | None:
     """`POST /auth/second-factor/verify`. From a second-factor session: the new cookie
     value and CSRF token of the completed sign-in. From a full session: a step-up, the
@@ -422,7 +499,17 @@ def verify(
     row = _session(conn, caller.human_session)
     human_id = row.human_id
     second_step = row.state == "second_factor"
-    used = check(conn, hub, human_id, code=code, recovery_code=recovery_code)
+    if email_code is not None or email_token is not None:
+        used = _check_mail(
+            conn,
+            hub,
+            row,
+            email_code,
+            # a step-up takes the code only, never the link's token (§2.8.8)
+            email_token if second_step else None,
+        )
+    else:
+        used = check(conn, hub, human_id, code=code, recovery_code=recovery_code)
     if used is None:
         if second_step:
             wrong = _count_wrong(row.id_hash)
