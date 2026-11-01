@@ -1174,8 +1174,7 @@ was last used, signed or as a bearer token.
 **Project memory** (`docs/api.md` §6.1, §6.21) is shown in the same
 panel, read only: the provider and what it means, and the setup chosen
 at creation — its cards as links once the hub made them, the options
-still waiting for a repository, or that none was chosen (a project that
-predates the field says so). A change is work in the repository, so the
+still waiting for a repository, or that none was chosen. A change is work in the repository, so the
 panel points to a card for an agent rather than offering a switch.
 
 **Keep the Why commitment** (`policy.keep_the_why`, `docs/api.md` §6.23),

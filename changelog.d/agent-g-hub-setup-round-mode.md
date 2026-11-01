@@ -8,3 +8,5 @@
 - hub: a jour fixe round has no `mode` any more, in the API, the contract and the database; every
   round runs in its group chat (§20.5). The dashboard no longer has a text for a project without
   `setup` (alpha, no compatibility layers).
+- docs: §15.5 no longer promises that a workspace recorded under the old slug is taken over; the
+  runner stopped doing that with the removal of `workspace.find`.

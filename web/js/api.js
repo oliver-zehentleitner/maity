@@ -2743,7 +2743,7 @@ window.Maity = window.Maity || {};
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
       const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
       const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
-        trigger: "manual", mode: "message", scheduled_for: now,
+        trigger: "manual", scheduled_for: now,
         opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
         moderator: { member_id: s.moderators[0].member_id, instance: null },

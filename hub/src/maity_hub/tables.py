@@ -607,7 +607,7 @@ project = Table(
     Column("keep_the_why_policy", String(16)),
     Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The setup options chosen at creation and the ids of the cards made for them
-    # (§6.21); NULL for a project that predates the field.
+    # (§6.21).
     Column("setup", JSON_VALUE, nullable=False),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
