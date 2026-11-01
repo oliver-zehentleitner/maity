@@ -1247,7 +1247,7 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
 
-The signed-in header reads Chat, Lead, "+", the gear, the bell, the
+The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
 User (`/invite`), for humans only. `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
@@ -2087,7 +2087,7 @@ to open: their credentials and the preferences switch were theirs on the
 Agents page. Loading every agent's credentials with the list: a call per
 agent on every visit, for rows mostly never opened.
 
-## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+## The lead is reached by a Lead button left of Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
 **Type:** decision
@@ -2097,7 +2097,7 @@ agent on every visit, for rows mostly never opened.
 **Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
 
 Chat in the header is a button like the bell and always opens every chat.
-The Lead button beside it reaches whom `M.leadChat.targets` names (the
+The Lead button left of it (first right of Chat; the maintainer swapped them on 2026-11-01, tsk-td5c6z21xg5s) reaches whom `M.leadChat.targets` names (the
 policy's lead now, one's own proxy; without a lead the admin agents and
 one's own proxy; until 2026-10-30 on an older hub only one's own admin
 and proxy agents, e1699490), across every project outside one: one is opened at once,
@@ -3580,13 +3580,51 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## Landing variants are edited one at a time in the landing editor; campaigns sit beside the privacy hint, their counts in Statistics
+
+**Id:** 43d9837f-64fd-44d8-9527-1e590092ad38
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-ets3x0c4ethg with the maintainer's request for A/B testing before the launch, 2026-10-31; docs/api.md §16.7.2 (contract #823)
+**See:** https://github.com/oliver-zehentleitner/maity — b9dc57f9-7581-47ef-acc8-00b679f7aa1e — as of 2026-10-31
+**Revisit when:** the hub serves more than five variants, or a variant gets a header or footer of its own
+
+The landing editor edits one page at a time: the main page or one
+variant, picked in a row of buttons above the languages, with the same
+page editor. Only the path prefix of the hub's refusals differs
+(`variants.<slug>.pages`). A variant starts with an empty page in the
+default language, the one the hub requires. A language it lacks shows
+its own default page, which the editor says. **Campaigns** are a list of
+code and label next to the privacy hint the contract asks the dashboard
+to show. Both travel with the setting in one `PATCH`, in the preview
+and in the JSON import and export. **Statistics** shows the campaign
+counts for the same window as the instance's figures and links the
+hub's CSV. The fixture hub serves no file, so there is no link there.
+The registration page sends `v` and `c` from its address as `origin`,
+dropping a malformed part; the hub decides the rest.
+
+**Reason:** a variant is a page like the main one, so the editor the
+admin already knows serves it. Two editors would drift. The counts
+belong with the other counts. The CSV is the hub's own, so the columns
+cannot differ from what the contract names.
+
+**Rejected alternatives:**
+- A separate Variants section in the admin area: the same page editor
+  twice, and header and footer, which variants share, would look
+  editable twice.
+- Building the CSV in the browser from the JSON: it works in fixtures
+  too, but copies the hub's columns and quoting by hand.
+- Sending `v` and `c` unchecked: the hub drops them silently anyway, but
+  a malformed value would then sit in the request for nothing.
+
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
 **Id:** 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
@@ -3612,9 +3650,11 @@ Its placeholders are in square brackets: the hub's Markdown rules read
 An unknown key anywhere in the file refuses the whole file, named by its
 path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
-field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
-landing editor's import does not know them, and are refused the same
-way. Export and Download read the three settings again first: the admin
+field names); a landing value of the wrong kind refuses its part. `variants` and
+`campaigns` are in the landing part, as in the landing editor's import
+(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+the format's name stays `maity-site/1`, since a file without them still
+means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
 first read would carry the state from before an edit in another section,
 and importing it again would revert that edit.
@@ -3749,6 +3789,8 @@ The **jour fixe tab** shows one block per series the reader may see: the topic a
 - A link for each of the two inbox items: §18.1 names no target type for them, so they fall back to the project inbox until the hub names one (`linkOf` in `notify.js` then needs a branch).
 
 **Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only. Likewise, §20.2 lets an agent's owner who is no keeper, and a human with `members:admin`, grant the moderator right, but the grant form is in Project settings (`project:admin`), so an agent's owner who is no admin cannot start a grant for their agent from the dashboard, and the fixture hub refuses it from anyone who is neither a keeper nor the agent's owner.
+
+The fixture hub's start of a round by hand refuses in the hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`): `circle_owner_gone`, `rate_limited`, `project_closed`, `jour_fixe_open`, `no_moderator`, `too_few`, so that a test sees the same first error as against the hub where two overlap. A moderator who opted out does not moderate, as `rounds.prepare` drops those members before it looks for one. `too_few` counts the circle without those who opted out, plus the moderator, also outside the circle; presence is not modelled, every member counts as present. Rejected: checking in the order the view needs them, which would let a test pass against the fixture and fail against the hub where two refusals overlap.
 
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
@@ -3895,6 +3937,30 @@ A session in `enrolment_required` gets the setup drawn by `render()` like the se
 
 **Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
 
+## The enrolment page is guarded only while it is on the page
+
+**Id:** 056d57c5-e0d5-4fc1-83d1-d4042c55dab8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.5; review of #1004; tsk-xtnxws153a7x
+
+A refusal `second_factor_enrolment_required` draws the setup through `render()`; a flag stops a late refusal from drawing it over itself, which would throw away the secret being typed. `render()` clears the flag and only `renderEnrolment` sets it for good, so it says "the setup is on the page". The first form, cleared only when the setup succeeded, left a tab that signed out, or whose hub let go of the requirement, deaf to the next refusal.
+
+**Rejected alternative:** tying the flag to the session epoch: a hub that releases the same session keeps the epoch, and the tab stays deaf.
+
+## The reset form stays open and names no enrolment state
+
+**Id:** a5c7675b-8785-4a40-b088-b0a0022818c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
+
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+
+**Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
+
 ## Availability and cover hang under the presence as one note
 
 **Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3
@@ -4008,4 +4074,32 @@ On a profile, the project and rulebook links stand only where the human is a mem
 **Rejected alternatives:** always linking, which ends on a 404 or in silence; reading the policy per project on `/agents`, too many reads for one link.
 
 **Known limit:** a click on Join link at the same address does nothing, as `M.route.go` ignores that.
+
+## Jour fixe and Why across projects: one read per project
+
+**Id:** c095fb26-7aa5-4529-a42a-08896de2d032
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's cards tsk-qnsmjbpdkm1t and tsk-jpe6vzyq39mg, which name reading per project as the way without a read across projects and forbid widening who sees what; the coordinator's agreement, 2026-11-01; docs/api.md §11.3, §20.9
+**Revisit when:** the hub gets a read across projects for either, a reader's projects make the reads slow, or the contract lists rounds for an agent's owner outside the project
+
+`/all/jour-fixe` and `/all/why` read `GET …/jour-fixe` and
+`GET …/keep-the-why` once for each project in the reader's list. Each
+section fills when its own answer comes, and a failure stays in its section.
+The Why page never sends `max_age=0`: it takes the hub's cache. Both paths
+are under `/all`, a word already reserved (§16.11).
+
+**Reason:** the hub filters each answer by that project's rules, so nothing
+becomes visible that the project page does not show. Two limits are known:
+N requests per view, and an owner outside a project whose agent takes part in
+a round (§20.7) sees that round nowhere here, since no listing is open to them.
+
+**Rejected alternatives:**
+- A new `GET /me/jour-fixe` or a read across projects for Why: a contract
+  change the current number of projects does not need.
+- First-level `/jour-fixe` and `/why`: each would reserve another word that
+  handles may no longer take.
+- Waiting for every project before drawing: the slowest export would hold up
+  the page.
 

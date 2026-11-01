@@ -145,6 +145,17 @@ window.Maity = window.Maity || {};
       membersTable(answer));
   }
 
+  // What a read of the root said: the last good answer if any, and the note saying so.
+  function unavailable(err) {
+    const last = err.details && err.details.last;
+    const why = err.details && err.details.reason;
+    const reason = reasonWord(ROOT_REASONS, why) || reasonWord(REASONS, why) || why || M.t("why.reason.unavailable");
+    const note = h("p", { class: "flag" }, last
+      ? M.t("why.root_unreadable_last", { reason, ago: formatAgo(last.observed_at) })
+      : M.t("why.root_unreadable", { reason }));
+    return { last, note };
+  }
+
   async function load(root, ctx, fresh) {
     try {
       const answer = await M.api.get(ctx.base + "/keep-the-why" + (fresh ? "?max_age=0" : ""));
@@ -158,12 +169,7 @@ window.Maity = window.Maity || {};
         return;
       }
       if (err.code === "ktw_unavailable") {
-        const last = err.details && err.details.last;
-        const why = err.details && err.details.reason;
-        const reason = reasonWord(ROOT_REASONS, why) || reasonWord(REASONS, why) || why || M.t("why.reason.unavailable");
-        const note = h("p", { class: "flag" }, last
-          ? M.t("why.root_unreadable_last", { reason, ago: formatAgo(last.observed_at) })
-          : M.t("why.root_unreadable", { reason }));
+        const { last, note } = unavailable(err);
         if (last) { render(root, last, ctx, note); return; }
         append(root, toolbar(root, ctx), note);
         return;
@@ -171,6 +177,8 @@ window.Maity = window.Maity || {};
       append(root, toolbar(root, ctx), M.errorBox(err));
     }
   }
+
+  M.why = { summaryBox, attentionList, unavailable };
 
   M.views.why = async function (ctx, root) {
     await load(root, ctx, false);
