@@ -1357,9 +1357,31 @@ def claim(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        status_moved(conn, card, mine.project.state, caller.actor(mine.id))  # to in_progress
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def status_moved(conn: Connection, card: Any, project_state: str, actor: Any) -> None:
+    """The `task_updated` of a status moved under an event of another kind (a claim, a release,
+    a report, a request that blocks or unblocks the card): the one a card's watchers are
+    reached by (§6.4, §8.2)."""
+    emit(
+        conn,
+        card.project_id,
+        "task_updated",
+        audience(conn, card),
+        {
+            "id": card.id,
+            "fields": ["status"],
+            "status": card.status,
+            "history": [],  # the event beside this one is the record of the change
+            "project_state": project_state,
+        },
+        actor=actor,
+        subject=("task", card.id),
+    )
 
 
 def _refuse_other_instance(mine: Membership, card: Any) -> None:
@@ -1505,6 +1527,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if card.status != before.status:
+            status_moved(conn, card, mine.project.state, caller.actor(mine.id))
         _after_move(conn, mine, caller, before, takes, (mine.id, mine.instance))
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
@@ -1950,6 +1974,8 @@ def report(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if card.status != status_before:
+            status_moved(conn, card, mine.project.state, caller.actor(mine.id))
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
         if card.parent is not None and was_closed != (card.status in cards.CLOSED):
             _touch_parents(conn, mine, caller, {card.parent}, fg)

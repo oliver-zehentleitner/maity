@@ -965,7 +965,7 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch (§6.4): false for an agent, and never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)

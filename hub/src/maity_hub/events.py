@@ -164,6 +164,8 @@ def lock_project(conn: Connection, project_id: str) -> Any:
 
 
 WATCHERS = "watchers:"
+# A notice about an event, and the payload field that names that event.
+_READ_AS_THEIR_EVENT = {"event_redacted": "seq", "attachment_deleted": "message_seq"}
 
 
 def _watched_card(
@@ -217,6 +219,17 @@ def emit(
 
         audience = [*audience, f"{WATCHERS}{watched_card}"]
         watchers = card_watches.at_write(conn, watched_card)
+    elif kind in _READ_AS_THEIR_EVENT and any(
+        isinstance(token, str) and token.startswith(WATCHERS) for token in audience
+    ):
+        # Readable as the event they are about (§8.5, §8.7): its list as written then.
+        watchers = list(
+            conn.execute(
+                select(t.event_watcher.c.membership_id).where(
+                    t.event_watcher.c.seq == payload[_READ_AS_THEIR_EVENT[kind]]
+                )
+            ).scalars()
+        )
     wakes = None
     if project.team_wake:  # only a project with a narrowing team pays the lookup
         from maity_hub.instances import team_wakes  # instances writes events itself

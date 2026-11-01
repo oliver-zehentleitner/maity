@@ -456,7 +456,7 @@ def post_message(
     attachments.attach(conn, named, seq)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
-    return load_event(conn, str(seq))
+    return load_event(conn, str(seq), mine)
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:

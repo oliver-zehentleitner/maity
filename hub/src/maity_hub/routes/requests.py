@@ -485,6 +485,14 @@ def create_request(
                     updated_at=now,
                 )
             )
+            from maity_hub.routes.tasks import status_moved  # tasks reads requests
+
+            status_moved(
+                conn,
+                conn.execute(select(t.card).where(t.card.c.id == card.id)).one(),
+                mine.project.state,
+                caller.actor(mine.id),
+            )
         view = request_view(conn, _row(conn, request_id))
         emit(
             conn,
@@ -921,6 +929,14 @@ def _unblock(conn: Connection, row: Any) -> None:
     conn.execute(
         update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
+    if "status" in values:
+        from maity_hub.routes.tasks import status_moved  # tasks reads requests
+
+        state = conn.execute(
+            select(t.project.c.state).where(t.project.c.id == card.project_id)
+        ).scalar_one()
+        moved = conn.execute(select(t.card).where(t.card.c.id == card.id)).one()
+        status_moved(conn, moved, state, None)
     if values.get("status") == "review":
         from maity_hub import merged
 

@@ -113,6 +113,94 @@ def test_an_update_message_needs_a_card_and_reaches_its_watchers(
     assert f"watchers:{card['id']}" not in notice.json()["audience"]
 
 
+def test_a_report_wakes_a_watcher_only_when_it_moves_the_status(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    holder, watcher = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = owner.post(TASKS, {"title": "Watched"}).json()
+    _watch(watcher, card)
+    assert holder.post(f"{TASKS}/{card['id']}/claim", {}).status_code == 200
+    report = {"summary": "done", "code": False, "pr_status": "none"}
+    assert holder.post(f"{TASKS}/{card['id']}/report", report).status_code == 200
+    reported = _last(migrated, "task_reported")
+    change = _last(migrated, "task_updated")
+    assert change.seq > reported.seq and change.payload["status"] == "review"
+    assert f"watchers:{card['id']}" not in reported.audience
+    assert change.seq in _woken(migrated, watcher)
+    assert reported.seq not in _woken(migrated, watcher)
+    # A refresh moves nothing, so it writes no status change.
+    assert holder.post(f"{TASKS}/{card['id']}/report", report).status_code == 200
+    assert _last(migrated, "task_reported").seq > reported.seq
+    assert _last(migrated, "task_updated").seq == change.seq
+
+
+def test_a_claim_and_a_release_wake_a_watcher(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    holder, watcher = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = owner.post(TASKS, {"title": "Watched"}).json()
+    _watch(watcher, card)
+    assert holder.post(f"{TASKS}/{card['id']}/claim", {}).status_code == 200
+    claimed = _last(migrated, "task_updated")
+    assert claimed.payload["status"] == "in_progress"
+    assert claimed.seq in _woken(migrated, watcher)
+    assert _last(migrated, "task_claimed").seq not in _woken(migrated, watcher)
+    assert holder.post(f"{TASKS}/{card['id']}/release", {}).status_code == 200
+    released = _last(migrated, "task_updated")
+    assert released.payload["status"] == "open" and released.seq > claimed.seq
+    assert released.seq in _woken(migrated, watcher)
+
+
+def test_a_waiting_request_wakes_a_watcher_both_ways(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    holder, watcher = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = owner.post(TASKS, {"title": "Watched"}).json()
+    _watch(watcher, card)
+    assert holder.post(f"{TASKS}/{card['id']}/claim", {}).status_code == 200
+    asked = holder.post(
+        "/projects/maintainer/maity/requests",
+        {"class": "decision", "title": "Which?", "task_id": card["id"], "while_open": "wait"},
+    )
+    assert asked.status_code == 201, asked.text
+    blocked = _last(migrated, "task_updated")
+    assert blocked.payload["status"] == "blocked" and blocked.seq in _woken(migrated, watcher)
+    answered = owner.post(
+        f"/projects/maintainer/maity/requests/{asked.json()['id']}/answer", {"text": "This one."}
+    )
+    assert answered.status_code == 200, answered.text
+    back = _last(migrated, "task_updated")
+    assert back.payload["status"] == "in_progress" and back.seq in _woken(migrated, watcher)
+
+
+def test_a_redaction_is_readable_as_the_event_it_is_about(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    holder, watcher = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner)
+    card = owner.post(TASKS, {"title": "Watched"}).json()
+    _watch(watcher, card)
+    sent = holder.post(
+        EVENTS, {"kind": "message", "type": "update", "body": "oops", "task_id": card["id"]}
+    ).json()
+    _unwatch(watcher, card)  # the list of the event stands, not today's watches
+    redacted = owner.post(f"{EVENTS}/{sent['seq']}/redact", {"reason": "x"})
+    assert redacted.status_code == 200, redacted.text
+    notice = _last(migrated, "event_redacted")
+    assert notice.seq in _seqs(watcher) and notice.seq not in _seqs(other)
+
+
+def test_the_resume_packet_says_which_held_cards_are_watched(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = owner.post(TASKS, {"title": "Mine"}).json()
+    assert agent.post(f"{TASKS}/{card['id']}/claim", {}).status_code == 200
+    _watch(agent, card)
+    [held] = agent.resume().json()["claims"]
+    assert held["watching"] is True
+
+
 def test_the_list_is_fixed_when_the_event_is_written(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:

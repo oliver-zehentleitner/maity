@@ -409,13 +409,21 @@ instead of one problem per attempt.
 **Evidence:** inferred
 **Source:** docs/api.md §6.4 "Audience" and §8.2 (contract #458), which fix the token, the private list and the per-reader `wakes`; the card tsk-9rbf4xt4ggzg; how the hub keeps that is this entry's reading
 **See:** https://github.com/oliver-zehentleitner/maity — 95001efe-eb05-4bd0-af03-ffa42b6dbe9e — as of 2026-11-01
-**Revisit when:** a card's status can change without a `task_updated`, or the events move into a store that cannot join a second table
+**Revisit when:** a new way to move a card's status appears, or the events move into a store that cannot join a second table
 
 `events.emit` adds `watchers:<card>` to a `task_updated` with `status` among its fields and to an
 `update` message, whether anyone watches or not, and writes the memberships watching then into
 `event_watcher`. A read turns the rows of its batch into `watching:<seq>` beside the batch's other
 hidden facts, and `wakes` takes the set as an argument. `_wakes` in `views.py` serves only the
-reader's own entries of such an event, and nothing to a view without a reader.
+reader's own entries of such an event, and nothing to a view without a reader. A claim, a release, a
+report and a request that blocks or unblocks the card write a `task_updated` when they move the
+status, beside their own event, which never carries the token; a refresh writes none. The contract
+names the report; the claim and the release are the coordinator's reading of §6.4's "a status
+change" (2026-11-01), and a blocking request is this entry's reading of the same words. A redaction
+and a deleted attachment take over the list of the event they are about, so they stay readable as
+that event is (§8.5, §8.7). `event_watcher` is neither deleted nor exported: it references memberships,
+whose rows stay, a member gone reads nothing more, and like a `member:` token in an audience it is
+the history of whom an event reached.
 
 **Reason:** the token must be there when nobody watches, or its presence would say that someone
 does, and one place in `emit` covers every site that writes `task_updated`. A reader's watches
