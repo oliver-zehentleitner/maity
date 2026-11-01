@@ -6828,8 +6828,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The scan reads the latest window and says so; a cursor that does not move fails loud.
   const pmGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
+  // The window is a number in the reader's locale: English here.
+  const pmLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(/Only messages within the hub's latest 5.?000 events \(all projects counted\) are shown/.test(text(main)) && text(main).includes("No project messages yet."),
+  win.Maity.i18n.locale = pmLocale;
+  expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
   win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
