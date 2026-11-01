@@ -3729,7 +3729,7 @@ Response `200`, bounded and deterministic:
 - `membership.bridges` and `membership.bridging_for` are the bridge
   connections of §2.3 ("The bridge"): the agents that lend their hands to
   this one, and the agents this one serves, each `{id, member_id,
-  handle, purpose, cross_owner}`. With `bridging_for` not empty,
+  handle, purpose, cross_owner, created_by}`. With `bridging_for` not empty,
   `membership.guide.role` ends with the bridge sentence of §2.3, and
   `maity resume` prints each served agent as `You carry for @<handle>,
   for this purpose as @<created_by> set it:` with the purpose quoted below,
@@ -14107,7 +14107,7 @@ version>"}`), the renamed member for a rename (`{type: "member", id:
 | `type` | When the hub writes it | `text` (cut at 280 with `…`) |
 |---|---|---|
 | `merge` | a pull request is observed merged into the project's `default_branch` (§17.4), once per pull request | `#<n> "<PR title>" by <forge login> — merged into <base>; touches <areas>[, <contract file> (§<sections>)]`, the title quoted with `"` and `\` escaped, `by …` left out when the forge names nobody |
-| `decision` | `request_answered` of a request of class `decision`, `consent` or `contract`, answered with `reply_id` or `text` (not `talk`; a withdrawal is no decision) | `Decided: <card id> <card title> (<request id>)`; `Decided: <request id>` for a request without a card |
+| `decision` | `request_answered` of a request of class `decision`, `consent` or `contract`, answered with `reply_id` or `text` (not `talk`; a withdrawal is no decision) | `Decided: <card id> <card title> (<request id>)`; `Decided: <request id>` for a request without a card; an imported card's title (§6.14) stands in quotes as in `merge`, followed by `(<forge login>'s issue)` |
 | `release` | a release card (§6.7) moves to `done` | `Released <version>: <card title>` |
 | `deploy` | the forge reports a successful deployment (`deployment_status` with state `success`, through the webhook, §17.4), or a manual post (§17.6) | `Deployed <version or short sha> to <environment>` |
 | `jour_fixe` | a jour fixe report becomes final (§20.9); never posted by hand (`invalid`, `not_for_type`, as a merge) | `Jour fixe <date>: <n> answers, <m> proposals (<d> decided, <o> to the owner)` |

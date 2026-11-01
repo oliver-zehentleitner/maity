@@ -369,12 +369,13 @@ def _unread_chats(packet: dict[str, Any]) -> list[str]:
 
 
 def imported_mark(card: dict[str, Any]) -> str:
-    """Whose text an imported card's title is (§6.14): the forge author's, often no member's."""
+    """Where an imported card comes from (§6.14): the forge author's, often no member's. A member
+    may have changed the title since, so this names the issue, not the title's writer."""
     origin = card.get("imported_from")
     if not isinstance(origin, dict):
         return ""
     author = origin.get("author_login")
-    return f" (imported, title by {inline(author)} on the forge)" if author else " (imported)"
+    return f" (imported from {inline(author)}'s issue)" if author else " (imported)"
 
 
 def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:

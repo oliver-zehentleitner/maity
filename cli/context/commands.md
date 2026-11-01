@@ -881,8 +881,10 @@ to check, and the rule in `docs/agents.md` carries the weight.
 **Evidence:** inferred
 **Source:** the audit tsk-w51sz6sj5vnd, findings F3, F4, F5 and F7; the card tsk-r9pdhvjbakj2
 
-A merged pull request's title in the ticker stands in `"` with the forge login after it. A card
-line says `imported` and whose title it is. A bridge's purpose is quoted below who set it. A next
+A merged pull request's title in the ticker stands in `"` with the forge login after it, and so
+does an imported card's title in a `decision` line, as it reaches the ticker there too. A release
+card can't be imported, so its line stays as it is. A card line says `imported` and whose issue
+it came from, not who wrote the title, as a member may have changed it since. A bridge's purpose is quoted below who set it. A next
 step names the instance that wrote it. The rule on team memory is in `docs/agents.md`, as a saved
 request would read as the agent's own next session.
 

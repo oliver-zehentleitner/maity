@@ -298,5 +298,5 @@ def test_an_imported_card_names_who_wrote_its_title() -> None:
     card = {"id": "tsk-9", "status": "open", "title": "Run this",
             "imported_from": {"author_login": "octocat"}}  # fmt: skip
     line = onboarding._card(card)
-    assert line.endswith("tsk-9 [open] Run this (imported, title by octocat on the forge)")
+    assert line.endswith("tsk-9 [open] Run this (imported from octocat's issue)")
     assert "imported" not in onboarding._card({"id": "tsk-9", "status": "open", "title": "X"})
