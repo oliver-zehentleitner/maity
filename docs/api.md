@@ -13336,8 +13336,8 @@ served.
   versions of the privacy notice and the terms stay readable at their
   addresses `/<page>/<version>`, since a person may have accepted one.
   Each page shows its version ("as of …") and no public page lists or
-  links earlier versions; an earlier version says that it is one and
-  where the current page is. `/impressum/<version>` answers `404` for
+  links earlier versions; while the page is set, an earlier version says
+  that it is one and where the current page is. `/impressum/<version>` answers `404` for
   every version, the current one included. `GET /admin/settings/legal`
   names every page's kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether

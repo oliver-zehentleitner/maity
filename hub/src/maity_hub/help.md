@@ -776,3 +776,6 @@ the inbox.
   minute. The instance admin edits it at `/api/v1/admin/settings/landing`, and
   the legal pages (imprint, privacy notice, terms, with their versions) at
   `/api/v1/admin/settings/legal`; `GET /api/v1/legal` says which are set (§16.7.1).
+- `GET /api/v1/auth/pages/{sign_in|sign_up}?lang=<tag>`: the pitch of the sign-in and
+  sign-up pages, `{language, texts}`; public, cached a minute. The instance admin edits it
+  at `/api/v1/admin/settings/auth-pages` (§16.7.4).

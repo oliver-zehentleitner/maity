@@ -48,9 +48,14 @@ LANDING_CAP = 512 * 1024
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
-_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
+_AUTH_PAGES = "/api/v1/admin/settings/auth-pages"  # §16.7.4
+_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal", _AUTH_PAGES)
 # The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
-_LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
+_LANDING_PREVIEWS = (
+    "/api/v1/admin/settings/landing/preview",
+    "/api/v1/admin/settings/legal/preview",
+    f"{_AUTH_PAGES}/check",
+)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
@@ -67,7 +72,7 @@ ROUTE_CACHE = frozenset(
 # The answers a visitor without a session may cache: the badge and the instance's landing
 # page (§16.7).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
