@@ -296,9 +296,12 @@ def hidden_redactions(
     - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
       one, whose request it may not read now: no item, no placeholder, no notice;
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
-      chat's event in the batch names: the owner reads along (§9.2)."""
+      chat's event in the batch names: the owner reads along (§9.2);
+    - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
+      it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
+    hidden |= _owners_circles(conn, rows)
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
         return frozenset(hidden)
@@ -310,6 +313,51 @@ def hidden_redactions(
             hidden.add(f"notice:{subject.seq}")
     hidden |= {f"ticker:{seq}" for seq in ticker_read.withheld(conn, subjects, membership)}
     return frozenset(hidden)
+
+
+def _jour_fixe_ref(row: Any) -> tuple[str | None, str | None]:
+    """The round and the series a jour fixe event concerns, from its payload or subject."""
+    payload = getattr(row, "payload", None) or {}
+    kind = getattr(row, "kind", "") or ""
+    if not (kind.startswith("jour_fixe_") or "round_id" in payload or "jour_fixe" in payload):
+        return None, None
+    found = payload.get("jour_fixe")
+    marker: dict[str, Any] = found if isinstance(found, dict) else {}
+    round_id = payload.get("round_id") or marker.get("round_id")
+    if round_id is None and getattr(row, "subject_type", None) == "jour_fixe":
+        round_id = row.subject_id
+    return round_id, payload.get("series_id")
+
+
+def _owners_circles(conn: Connection, rows: Sequence[Any]) -> set[str]:
+    """`circle:<seq>` for the jour fixe events of an owner's round or series (§20.7): a round
+    is judged by the `config` it opened with, so it stays private after its series goes."""
+    refs = {r.seq: _jour_fixe_ref(r) for r in rows if getattr(r, "seq", None) is not None}
+    round_ids = {rid for rid, _ in refs.values() if rid}
+    series_ids = {sid for rid, sid in refs.values() if sid and not rid}
+    owners: set[str] = set()
+    if round_ids:
+        for rid, config in conn.execute(
+            select(t.jour_fixe_round.c.id, t.jour_fixe_round.c.config).where(
+                t.jour_fixe_round.c.id.in_(round_ids)
+            )
+        ):
+            if (config or {}).get("circle") == "owner":
+                owners.add(rid)
+    if series_ids:
+        owners |= set(
+            conn.execute(
+                select(t.jour_fixe_series.c.id).where(
+                    t.jour_fixe_series.c.id.in_(series_ids),
+                    t.jour_fixe_series.c.circle == "owner",
+                )
+            ).scalars()
+        )
+    return {
+        f"circle:{seq}"
+        for seq, (rid, sid) in refs.items()
+        if (rid and rid in owners) or (not rid and sid in owners)
+    }
 
 
 def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
@@ -432,8 +480,8 @@ def readable_by(
                 and membership.trust == "owner"
             )
         )
-    if membership.trust in SEE_ALL_TRUSTS:
-        return True
+    if membership.trust in SEE_ALL_TRUSTS and f"circle:{row.seq}" not in hidden:
+        return True  # an owner's jour fixe reaches only its own audience (§20.7)
     return (
         "all" in audience
         or _names_team(audience, principal)

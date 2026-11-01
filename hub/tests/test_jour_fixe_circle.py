@@ -368,3 +368,18 @@ def test_a_series_change_wakes_nobody() -> None:
 
     row = _row("jour_fixe_series_changed", ["all", "member:agt-r"])
     assert not wakes(row, _agent(), "agt-r", "i1")
+
+
+def test_an_owners_round_escapes_the_admins_see_all(circle: Circle) -> None:
+    """§20.7: the project's owners read every event, but not an owner's round's: its events
+    reach only its readers."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+
+    def kinds(who: Any) -> set[str]:
+        found = who.get(f"{BASE}/events?after=0&limit=100").json()
+        items = found.get("events", found.get("items", []))
+        return {e["kind"] for e in items if (e.get("payload") or {}).get("round_id") == circle.id}
+
+    assert {"jour_fixe_opened", "jour_fixe_answers_closed"} <= kinds(circle.friend)
+    assert kinds(circle.owner) == set()

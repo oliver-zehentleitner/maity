@@ -14,7 +14,7 @@
 - hub: a round of an owner's series (`circle: owner`) is read only by its `circle_owner`, that owner's
   agents and its moderator: to every other member it answers `not_found` and is left out of the lists;
   its answers are read by the `circle_owner` instead of the admin team, its thread is read along only
-  by the `circle_owner`, its events and redactions reach only its readers, a `to_owner` proposal goes
+  by the `circle_owner`, its events and redactions reach only its readers (the owners' and admins' see-all included), a `to_owner` proposal goes
   to the `circle_owner`, only they or an admin agent of theirs decide, and it writes no ticker item
   (docs/api.md §20.3, §20.5–§20.9).
 - hub: `jour_fixe_reported` names its series and topic (docs/api.md §20.9).

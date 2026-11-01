@@ -282,7 +282,10 @@ thread and redactions reach, is decided from the round's `config` (its
 `circle` and `circle_owner` as the round opened), never from the series row
 (`jourfixe/circle.py`). The round's thread knows its `circle_owner` from the
 round too (`group_chats.round_keepers`), and is told it at creation, before
-the round points at its thread. A `to_owner` proposal goes to the
+the round points at its thread. Its events also escape the owners' and admins'
+see-all (§8.2): the batch's reading marks them `circle:<seq>` (from the
+round's `config`, or the series row for a series event), and only their
+audience reads them. A `to_owner` proposal goes to the
 `circle_owner` as `to: member` while they are a member, and as a personal
 request once they left. The rounds list leaves out what the caller may not
 read by reading on in batches until the page is full. The report list
