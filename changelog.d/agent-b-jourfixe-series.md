@@ -8,7 +8,9 @@
   right (`POST/DELETE …/series/{jfs}/moderators`; for now the grants that take effect at once) and
   is started by hand per series (`POST …/series/{jfs}/rounds`, two per series in 24 hours).
   `GET …/jour-fixe` lists the series. An existing schedule becomes one series at the upgrade, its
-  rounds and moderators with it (docs/api.md §20.1, §20.2, §20.9; part 1 of 3).
+  rounds and moderators with it; an agent whose owner did not set the schedule waits as a
+  pending moderator for its owner's consent, whose request the jour fixe sweep of part 2 files
+  (docs/api.md §20.1, §20.2, §20.9; part 1 of 3).
 
 ### Removed
 
