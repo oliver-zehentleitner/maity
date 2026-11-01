@@ -8,7 +8,7 @@ brought, not run — the hub never starts or owns an agent process.
 - What it is and is not: `README.md`
 - How it fits together: `docs/` (grows with the design)
 - Why it is built this way: `context/index.md`
-- What is open and who does what: `TASKS.md`
+- What is open and who does what: the project's board in Maity
 - If `AGENTS.local.md` exists in this checkout, read that too: personal notes, not committed
 
 ## How we work
