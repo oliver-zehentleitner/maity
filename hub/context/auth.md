@@ -413,3 +413,31 @@ The session's three mails count for a second-factor session only; a full session
 **No way to lock yourself out:** the confirmation checks the mail settings and the admin's verified address again, since both can change in its 15 minutes. Under `email` removing the verified address is refused without TOTP, also when a held removal is approved, and turning TOTP off is refused without a verified address: either step alone looks harmless, and together they leave the human at a second step nothing can complete.
 
 **Downgrade:** the `downgrade()` of `20261031191500_mail_factor` refuses while `sign_in.second_factor` is stored as `email`, so the operator switches first and rule 5's silent drop cannot come from a database downgrade. **Known limit:** a rollback of the code alone, with the database left as it is, cannot be refused, since old builds cannot be changed: a build below #943 reads the value as unknown and falls back to the environment's policy, and a build from #943 up to this change keeps `email` with the sign-in link on, which breaks rule 3. Switch away from `email` before such a rollback.
+
+## A request run again after a deadlock is still the first user of its nonce
+
+**Id:** 05c462cb-0a99-41e7-98d3-c226c085a697
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-q18vgx41yr5f, from a note of the #92 review; checked on 2026-11-01 by injecting a transient failure after the nonce is spent
+**Revisit when:** the process's nonce window goes away, or SQLite and MariaDB keep their nonces in the database as PostgreSQL does
+
+`NonceWindow` remembers which request spent a nonce (`RequestFacts.request`, one object per request),
+and the same request counts as the first again. On PostgreSQL nothing changes: the nonce is a row in
+the transaction, and a retry's rollback takes it back.
+
+**Reason:** `retrying` runs the whole authentication again, and the nonce is spent before it ends. The
+process's window is not part of the transaction, so on SQLite and MariaDB a deadlock in the
+authentication's side effects answered `401 nonce_reused` to a request that had done nothing wrong,
+which defeated the retry on signed requests. Only the object is compared and only the object is kept, so
+the window holds nothing of the request.
+
+**Rejected alternatives:**
+- Giving the nonce back when the attempt fails: between the failure and the repeat a replay of the same
+  request would count as the first, and every path out of the transaction would have to do it.
+- Spending the nonce after the commit: two copies of a request could both authenticate before either
+  spends it.
+- Moving the nonces into the database on every engine: a table and a write per signed request on the
+  engines that run one replica, for what one comparison solves.
+
