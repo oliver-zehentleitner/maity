@@ -163,7 +163,7 @@ def test_ask_action_is_checked_before_sending(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "body.json").write_text("{}")
     (tmp_path / "not-json.txt").write_text("trust: guest")
-    (tmp_path / "big.json").write_text(json.dumps({"x": "y" * (64 * 1024)}))
+    (tmp_path / "big.json").write_text(json.dumps({"x": "y" * (48 * 1024)}))
     argv = ["ask", "Go?", "--to", "owner", "--class", "decision", *extra]
     assert cli.main(argv) == cli.EXIT_USAGE
     assert fake.signed() == []

@@ -1075,7 +1075,7 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
 
 
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-ACTION_BODY_MAX = 64 * 1024  # §7
+ACTION_BODY_MAX = 48 * 1024  # §7
 
 
 def _read_bytes(source: str, flag: str) -> bytes:
@@ -1107,7 +1107,7 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
     if body_source is not None:
         data = _read_bytes(body_source, "--action-body")
         if len(data) > ACTION_BODY_MAX:
-            raise UsageError("--action-body is at most 64 KiB")
+            raise UsageError("--action-body is at most 48 KiB")
         try:
             body = data.decode("utf-8")
             json.loads(body)
