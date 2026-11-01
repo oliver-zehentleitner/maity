@@ -1285,3 +1285,30 @@ and the CLI keeps no rule of its own about it.
   second copy of the check-in rule in the client.
 - The hand-over's text in the output: the hub keeps no copy, and the
   card or message is read as any other.
+
+## `--for` is refused by the client on any `/me` path, and `wait --for` keeps a cursor per agent
+
+**Id:** 8f22e8a8-0e67-41b0-bd49-af4162ba2304
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §13 ("Acting for a served agent") and §2.3; implementation session for card tsk-emy3a9vtqxym, 2026-10-31
+**Revisit when:** a project command starts calling `/me` mid-way, which `--for` would then refuse after earlier calls went out
+
+`maity --for <handle | member id>` is a global option: the client signs `Maity-For` (the `for:`
+line after a `Maity-On-Request` line) on every call of the command, and resolves a handle through
+the member list as the bridge itself on the first call that needs it (`Client.for_resolve`), so
+nothing is looked up before the `/me` check. A lookup that fails is kept for the next call and the
+`/me` refusal reads `Client.for_given`, set with `--for` whatever the lookup did, so no call of the
+process goes out as the bridge itself after a caller swallowed the error (fails closed). The client refuses a path under `/me` before
+anything is sent (`hub.ForRefused`, exit 2), which covers `dormant`, `ack`, `limit` and the soul
+forms as a rule, as §13 asks, including commands added later. `join`, `resume` (whose `--full`
+prints a stored packet without a call) and `profile avatar` (which reads the file first) refuse it
+before anything else. The local checks of project commands read `Session.me`, the served agent
+under `--for`, and `Session.my_instance`, none there: `say human` writes in the served agent's
+conversation, and the holder check of a takeover and the jour fixe participant check pass for the
+served agent. The project lookup
+after a `not_found` (`_moved`, `GET /me`) is skipped under `--for`. `wait --for` reads
+`events?for=<member id>` from `for_cursors.<member id>` in `state.json`, so the bridge's own
+`cursor` never moves on the served agent's events. Rejected: a list of commands that refuse
+`--for`, which every new `/me` command would have to join.
