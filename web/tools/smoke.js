@@ -7389,6 +7389,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = ppPatch;
   {
     // A person's page (§16.9): sent through PATCH /me, the hub's page_served decides the link.
+    {
+      const refusedLinks = await win.Maity.api.patch("/me", { website: "http://x", social: { github: "https://github.com/a", mastodon: "anna", nope: "a" }, links_visible: "all" }).catch((e) => e);
+      const f = refusedLinks.details.fields;
+      expect(f.website === "format" && f["social.github"] === "format" && f["social.mastodon"] === "format" && f["social.nope"] === "unknown" && f.links_visible === "unknown", "profile links: the fixture hub refuses as the hub " + JSON.stringify(f));
+      const set = await win.Maity.api.patch("/me", { website: "https://example.org/me", social: { github: "anna", mastodon: "@Anna@Mastodon.Social" }, links_visible: "everyone" });
+      expect(set.member.social.mastodon === "@Anna@mastodon.social" && set.member.website === "https://example.org/me", "profile links: stored, the host lower-cased");
+      const merged = await win.Maity.api.patch("/me", { social: { github: null } });
+      expect(!("github" in merged.member.social) && merged.member.social.mastodon, "profile links: social merges, null clears one");
+      await win.Maity.api.patch("/me", { website: null, social: null, links_visible: "private" });
+    }
     const gone = await win.Maity.api.patch("/me", { public_profile: true, public_bio: "Builds tools." });
     const refused = await win.Maity.api.patch("/me", { public_bio: "a\u0001b" }).catch((e) => e);
     await win.Maity.api.patch("/me", { public_profile: false, public_bio: null });

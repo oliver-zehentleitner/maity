@@ -1174,10 +1174,14 @@ def cmd_claim(args: argparse.Namespace) -> int:
         holding = exc.details.get("instance")
         if holding != session.my_instance:
             # A card is held by one instance (§6.17): the sibling's claim stays the sibling's.
+            held = (
+                f"{_instance({'member_id': mine, 'instance': holding})}, another"
+                if holding
+                else "another"
+            )
             _err(
-                f"{args.card} is held by {_instance({'member_id': mine, 'instance': holding})}, "
-                f"another instance of this agent; `maity takeover {args.card} --reason R` "
-                "asks for it (already_claimed)"
+                f"{args.card} is held by {held} instance of this agent; "
+                f"`maity takeover {args.card} --reason R` asks for it (already_claimed)"
             )
             return EXIT_ERROR
         task, note = session.client.call("GET", path), " (it was already yours)"

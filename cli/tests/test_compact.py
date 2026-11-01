@@ -126,6 +126,15 @@ def test_another_members_update_does_not_count_as_for_me() -> None:
     assert "Not shown: 12 events (12 member_updated): maity resume --full" in text
 
 
+@pytest.mark.parametrize("field", ["reports_to", "owner_id", "availability_policy"])
+def test_another_members_change_that_is_told_by_name_counts_as_for_me(field: str) -> None:
+    event = {"seq": 2, "kind": "member_updated", "audience": ["member:agt-b"],
+             "payload": {"id": "agt-c", "changed": [field]}}  # fmt: skip
+    text = onboarding.render(packet(events={"items": [event], "cursor": 2}))
+    assert "  #2 member_updated" in text
+    assert "Not shown" not in text
+
+
 def test_the_not_shown_line_names_five_kinds_by_count() -> None:
     items = [{"seq": n, "kind": f"kind{n % 7}", "audience": []} for n in range(70)]
     line = onboarding.render(packet(events={"items": items, "cursor": 70})).split("Not shown: ")

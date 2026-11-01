@@ -861,6 +861,30 @@ window.Maity = window.Maity || {};
     if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
     return null;
   }
+  // As hub/person_links: the name on each network, with the host parts lower-cased first.
+  const PERSON_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+  const PERSON_HOST = PERSON_LABEL + "(?:\\." + PERSON_LABEL + ")+";
+  const PERSON_NETWORK_FORMS = {
+    github: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/,
+    gitlab: /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/,
+    x: /^[A-Za-z0-9_]{1,15}$/,
+    mastodon: new RegExp("^@[A-Za-z0-9_]{1,30}@" + PERSON_HOST + "$"),
+    bluesky: new RegExp("^(?:" + PERSON_HOST + "|did:plc:[a-z2-7]{24})$"),
+    linkedin: /^[A-Za-z0-9-]{3,100}$/,
+    discord: /^[a-z0-9_.]{2,32}$/,
+  };
+  function personNetworkName(network, name) {
+    let value = String(name);
+    if (network === "mastodon") { const at = value.lastIndexOf("@"); value = value.slice(0, at + 1) + value.slice(at + 1).toLowerCase(); }
+    if (network === "bluesky") value = value.toLowerCase();
+    if (network === "gitlab" && /\.(git|atom)$/i.test(value)) return null;
+    if (!PERSON_NETWORK_FORMS[network].test(value)) return null;
+    if (network === "mastodon" || (network === "bluesky" && !value.startsWith("did:"))) {
+      const host = value.slice(value.lastIndexOf("@") + 1);
+      if (host.length > 253 || /^\d+$/.test(host.split(".").pop())) return null;
+    }
+    return value;
+  }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
     if (ft.operator === "") errors["footer.operator"] = "invalid";
@@ -1733,7 +1757,24 @@ window.Maity = window.Maity || {};
       }
       if ("public_profile" in body) mm.public_profile = !!body.public_profile;
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
-      if (Object.keys(body).length && Object.keys(body).every((k) => k === "public_profile" || k === "public_bio" || k === "handle")) return meView();
+      // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
+      if ("website" in body || "social" in body || "links_visible" in body) {
+        const errors = {};
+        if (body.website) { const problem = websiteProblem(body.website, 200); if (problem) errors.website = problem; }
+        if ("links_visible" in body && !["private", "friends", "colleagues", "friends_and_colleagues", "everyone"].includes(body.links_visible)) errors.links_visible = "unknown";
+        const merged = Object.assign({}, mm.social || {});
+        Object.entries(body.social || {}).forEach(([network, name]) => {
+          if (!(network in PERSON_NETWORK_FORMS)) errors["social." + network] = "unknown";
+          else if (!name) delete merged[network];
+          else { const fixed = personNetworkName(network, name); if (fixed === null) errors["social." + network] = "format"; else merged[network] = fixed; }
+        });
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if ("website" in body) mm.website = body.website || null;
+        if ("social" in body) mm.social = body.social === null ? {} : merged;
+        if ("links_visible" in body) mm.links_visible = body.links_visible;
+      }
+      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle"];
+      if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
       if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";

@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import fakehub
 import pytest
 
-from maity import cli, state
+from maity import citecheck, cli, state
 
 P = "/api/v1/projects/oliver/maity"
 REVIEW = {
@@ -269,3 +271,56 @@ def test_a_quote_with_a_line_break_is_left_to_the_hub(
     path = _review_at(tmp_path, {"path": "b.txt", "line": line, "quote": "first\nsecond"})
     assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
     assert fake.signed()[-1].json()["review"]["cites"][0]["quote"] == "first\nsecond"
+
+
+def test_a_shallow_clone_does_not_refuse_a_removed_quote_it_cannot_see(
+    joined: Path, tmp_path: Path
+) -> None:
+    _commit("b.txt", "old text\nkept\n")
+    _commit("b.txt", "kept\n")
+    _commit("b.txt", "kept\nmore\n")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    clone = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", Path.cwd().as_uri(), str(clone)],
+        check=True,
+        capture_output=True,
+    )
+    review = {"head": head, "cites": [{"path": "b.txt", "quote": "old text"}]}
+    result = citecheck.check(clone, review)
+    assert result.bad == []
+    assert result.unchecked == "a shallow clone can't show what was removed from b.txt"
+    invented = {"head": head, "cites": [{"path": "b.txt", "line": 1, "quote": "invented"}]}
+    assert citecheck.check(clone, invented).bad  # a named line is still read from the file
+
+
+def test_a_quote_with_umlauts_stands_under_a_c_locale(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "b.txt").write_text("zweite ünï Zeile\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    identity = ["-c", "user.name=t", "-c", "user.email=t@example.org"]
+    subprocess.run(["git", "-C", str(tmp_path), *identity, "commit", "-qm", "c"], check=True)
+    head = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        encoding="ascii",
+    ).stdout.strip()
+    script = (
+        "import sys; from pathlib import Path; from maity import citecheck;"
+        f"review = {{'head': {head!r}, 'cites': "
+        "[{'path': 'b.txt', 'line': 1, 'quote': '\\u00fcn\\u00ef'}]};"
+        "result = citecheck.check(Path.cwd(), review);"
+        "sys.exit(1 if result.bad or result.unchecked else 0)"
+    )
+    env = {
+        **os.environ,
+        "LC_ALL": "C",
+        "PYTHONUTF8": "0",
+        "PYTHONCOERCECLOCALE": "0",
+        "PYTHONPATH": str(Path(citecheck.__file__).parent.parent),
+    }
+    done = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, check=False)
+    assert done.returncode == 0

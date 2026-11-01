@@ -2314,6 +2314,29 @@ def public_page_step(run: Run, page: Page) -> None:
     expect(profile).to_contain_text("Saved.")
     member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     assert member["public_profile"] is True and member["public_bio"] == "Builds things in e2e.", member
+    # The links: the hub's refusal stands at its field, in words; then what it stored comes back.
+    profile.locator("#public-github").fill("https://github.com/owner")
+    profile.get_by_role("button", name="Save", exact=True).click()
+    expect(profile.locator("#public-github-error")).to_contain_text("Give the name, not a link.")
+    run.problems = [p for p in run.problems if "PATCH /api/v1/me answered 400" not in p]  # the refusal asked for
+    profile.locator("#public-github").fill("e2e-owner")
+    profile.locator("#public-website").fill("https://example.org/e2e")
+    profile.locator("#public-mastodon").fill("@Owner@Mastodon.Social")
+    profile.locator("#public-links-visible").select_option("everyone")
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/api/v1/me")) as saved:
+        profile.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.status
+    expect(profile.locator("#public-mastodon")).to_have_value("@Owner@mastodon.social")
+    expect(profile.locator("#public-github-error")).to_be_empty()
+    member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    assert member["website"] == "https://example.org/e2e" and member["links_visible"] == "everyone", member
+    assert member["social"] == {"github": "e2e-owner", "mastodon": "@Owner@mastodon.social"}, member
+    run.a11y(page, "account, public profile with links")
+    run.shot(page, "account-public-profile")
+    profile.locator("#public-github").fill("")
+    profile.locator("#public-mastodon").fill("")
+    profile.locator("#public-website").fill("")
+    profile.locator("#public-links-visible").select_option("private")
     profile.locator("#public-profile").uncheck()
     profile.locator("#public-bio").fill("")
     with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/api/v1/me")) as saved:
@@ -2322,6 +2345,7 @@ def public_page_step(run: Run, page: Page) -> None:
     expect(profile.locator("#public-bio")).to_have_value("")
     member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     assert member["public_profile"] is False and member["public_bio"] is None, member
+    assert member["website"] is None and member["social"] == {} and member["links_visible"] == "private", member
     no_problems(run, "public page")
 
 
