@@ -789,6 +789,9 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str], stats: Any
 _SWITCH = re.compile(r'(<a href=")(\?lang=[A-Za-z-]+)(")')
 
 
+SOCIAL_IMAGE = "/assets/brand/og-image-team.png"
+
+
 def carry_origin(html: str, variant: str, campaign: str | None, public_url: str) -> str:
     """Every link to `/register` on this host, a path or this hub's own address, carries the
     visitor's origin, `v` and (for a known campaign) `c`, so the registration knows where they
@@ -873,7 +876,10 @@ def landing_document(
     ]
     footer = _landing_footer(setting, words, legal, lang, tags, links, open_source)
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
-    head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
+    origin = escape(public_url.rstrip("/"), quote=True)
+    head = f'<link rel="canonical" href="{origin}/">' + _social_tags(
+        page["title"], page.get("description") or "", origin
+    )
     if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
         head += '<meta name="robots" content="noindex">'
     if sheet:
@@ -888,6 +894,21 @@ def landing_document(
         body=banner + header + f"<main>{body}</main>" + footer,
         languages=tags,
         style="" if sheet else STYLE,
+    )
+
+
+def _social_tags(title: str, description: str, origin: str) -> str:
+    """What a link preview shows of the landing page; the image's address must be whole."""
+    said = (
+        f'<meta property="og:description" content="{escape(description, quote=True)}">'
+        if description
+        else ""
+    )
+    return (
+        '<meta property="og:type" content="website">'
+        f'<meta property="og:title" content="{escape(title, quote=True)}">{said}'
+        f'<meta property="og:image" content="{origin}{SOCIAL_IMAGE}">'
+        '<meta name="twitter:card" content="summary_large_image">'
     )
 
 

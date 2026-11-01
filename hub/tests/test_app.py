@@ -96,12 +96,25 @@ def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_
     assert client.get("/assets/js/app.js").text == "// dashboard"
 
 
+URL = "https://hub.example/"
+
+
+def test_the_social_image_gets_a_whole_address() -> None:
+    from maity_hub.shell import shell_document
+
+    page = b'<head><meta property="og:image" content="brand/x.png"><link href="brand/y.svg">'
+    served = shell_document(page, URL)
+    assert b'content="https://hub.example/assets/brand/x.png"' in served
+    assert b'<link href="brand/y.svg">' in served  # the base serves the rest
+
+
 def test_a_page_without_a_head_is_served_as_it_is() -> None:
     from maity_hub.shell import shell_document
 
-    assert shell_document(b"<p>x</p>") == b"<p>x</p>"
+    assert shell_document(b"<p>x</p>", URL) == b"<p>x</p>"
     assert (
-        shell_document(b"<HEAD lang=x><title/>") == b'<HEAD lang=x><base href="/assets/"><title/>'
+        shell_document(b"<HEAD lang=x><title/>", URL)
+        == b'<HEAD lang=x><base href="/assets/"><title/>'
     )
 
 
