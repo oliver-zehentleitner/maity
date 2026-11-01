@@ -80,10 +80,13 @@ out_sk="$(render -f "$minimal" --set secretKey.existingSecret=s)"
 [ "$(grep -c 'name: MAITY_SECRET_KEY' <<<"$out_sk")" = 2 ] && ok "the instance key reaches the hub and the migrate Job, once each" \
     || bad "the instance key is not in both the hub and the migrate Job"
 out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
-[ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 2 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 2 ] \
-    && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 2 ] \
-    && ok "the attachment volume reaches the hub and the migrate Job, once each, at the default path" \
-    || bad "the attachment volume is not in both the hub and the migrate Job"
+[ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 1 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 1 ] \
+    && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
+    && ok "the attachment volume reaches the hub once, at the default path" \
+    || bad "the attachment volume is not in the hub exactly once"
+# A ReadWriteOnce claim in the Job blocks an upgrade on a second node (Multi-Attach).
+grep -q "MAITY_ATTACHMENT\|claimName\|name: attachments" <<<"$(render -f "$minimal" --set attachments.existingClaim=c --show-only templates/migrate-job.yaml)" \
+    && bad "the migrate Job has the attachment volume or its settings" || ok "the migrate Job has no attachment volume or settings"
 grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "no quota set but MAITY_ATTACHMENT_QUOTA rendered" || ok "no quota unless set"
 render -f "$minimal" --set attachments.mountPath=relative >/dev/null 2>&1 && bad "a relative attachments.mountPath is accepted" || ok "a relative attachments.mountPath is refused by the schema"
 render -f "$minimal" --set attachments.quotaBytes=10 >/dev/null 2>&1 && bad "a quota below 1024 bytes is accepted" || ok "a quota below 1024 bytes is refused by the schema"

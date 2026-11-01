@@ -189,7 +189,7 @@ silently ignored. These are the values that matter:
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
-| `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub and the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`; empty claim: attachments off. The files are not in the database: back the volume up with it |
+| `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`; empty claim: attachments off. The files are not in the database: back the volume up with it |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
@@ -206,7 +206,7 @@ silently ignored. These are the values that matter:
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
 | `service.type`, `.annotations` | `ClusterIP`, none | |
-| `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | for the hub and the migrate Job |
+| `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | for the hub and the migrate Job; a `ReadWriteOnce` claim here must land both on one node |
 | `resources` | 50m / 128Mi requested, 512Mi limit | |
 | `terminationGracePeriodSeconds` | `65` | lets open long-polls (up to 55 s) finish |
 

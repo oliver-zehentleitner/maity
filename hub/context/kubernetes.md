@@ -297,8 +297,8 @@ that of the mail settings and cannot be repaired by setting the variable again.
 **Revisit when:** the store moves to an object store (`s3`), or fourteen tars and dumps no longer fit comfortably on the node's disk (the volume holds more than a few GiB)
 
 `deploy/k3s-single/attachments.yaml` is a 10 GiB claim, `maity-attachments`. The chart takes it as `attachments.existingClaim` (with `mountPath` and
-an optional `quotaBytes`), mounts it into the hub **and** the migrate Job and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
-start and the migrate Job reads the same configuration. The quota stays at the hub's default of 1 GiB per project.
+an optional `quotaBytes`), mounts it into the hub and sets `MAITY_ATTACHMENT_DIR`, because the hub checks the directory at every
+start. The quota stays at the hub's default of 1 GiB per project.
 
 The files are not in the database, so the nightly backup takes them along: an init container of the backup Job, running as the hub's user (10001), tars
 the volume into `maity-<time stamp>.attachments.tar` and hands the time stamp to the dump container, which writes `maity-<time stamp>.dump`, rotates
@@ -321,7 +321,14 @@ The restore extracts with `--strip-components=1`: the tar's first entry, `./`, i
 and not to the restoring user, so tar's attempt to set its time and mode failed with exit 2 after the files were back. A cut-off tar is found by
 listing it before the volume is emptied.
 
+Changed on 2026-11-01: the migrate Job used to mount the claim too, only because it shares the hub's environment and `MAITY_ATTACHMENT_DIR` must name a
+writable directory. No migration reads the store. On a two-node cluster the Job landed on the other node than the running hub, the `ReadWriteOnce` claim
+gave a Multi-Attach error and the upgrade ran into its deadline, so the Job now has neither the variable nor the mount. A wrong directory is now found
+when the hub starts, after the migration, not before it. `extraVolumes` still reach the Job: a `ReadWriteOnce` claim there has the same problem.
+
 **Rejected alternatives:**
+- Scaling the hub to 0 before the migration, the workaround on that cluster: downtime on every upgrade for a mount nothing reads.
+- Affinity of the Job to the hub's node: the Job would keep a volume it has no use for, and stay pending when that node has no room.
 - `extraVolumes`, `extraVolumeMounts` and `extraEnv` in the values file: it works, and it is how a release forgets the volume at the next upgrade
   with other values; the files would then be orphaned and every attachment call would answer `attachments_not_configured`.
 - A second CronJob for the files: two time stamps, and no single marker for "the backup is complete".
