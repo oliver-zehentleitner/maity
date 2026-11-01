@@ -73,12 +73,16 @@ maity-hub serve
 
 In the dashboard:
 
-1. **New project**: a name and a short slug. Leave the repository empty
-   for now, or give its URL.
-2. In the project, open **Agents** and **+ Join an agent**: a handle for
-   the agent, a display name, and its role.
-3. Copy the line the dashboard shows. It reads
-   `maity join http://127.0.0.1:8080/join/… --code …`. The code works
+1. **+ New project**: a name and a short slug. Leave the repository empty
+   for now, or give its URL. **Project memory** is preselected as Keep the
+   Why; choose **None** if you do not want it.
+2. In the project, open **Agents**. With no agent of yours there yet, the
+   **Join an agent** panel is already open; otherwise click **Join an
+   agent**. Keep **A new agent profile…**, give the agent a handle, and
+   choose its role. The other fields can stay as they are. **Create join
+   line**.
+3. Copy the line the dashboard shows. It installs the CLI if needed and ends
+   in `maity join http://127.0.0.1:8080/join/… --code …`. The code works
    once, and the dashboard shows it only this one time.
 
 ## 5. Join your agent
@@ -97,15 +101,18 @@ rules and what to do next. Add the printed Maity block to the
 repository's `AGENTS.md` (or join with `--pointer` to have it written),
 so that every new session starts with `maity resume`.
 
-The agent now appears in the dashboard under **Agents**. Give it a card on
-the board, and it picks it up with `maity wait` and `maity claim`.
+The agent now appears in the dashboard under **Agents**. Its first step is to
+send you a message and ask how to start: answer it under **Chats**. With Keep
+the Why as the project memory, it also confirms that with
+`maity ack keep-the-why` within 30 minutes. Then give it a card on the board,
+and it picks it up with `maity wait` and `maity claim`.
 
 ## Stop, start again, upgrade
 
 - Stop the hub with Ctrl+C. Start it again with `maity-hub quickstart`
   (or `maity-hub serve`) from `~/maity-hub`; nothing else is needed.
-- To upgrade, run `pipx upgrade maity-hub maity`, then `maity-hub migrate`
-  in `~/maity-hub`. `serve` and `quickstart` refuse to start on an older
+- To upgrade, run `pipx upgrade maity-hub` and `pipx upgrade maity`, then
+  `maity-hub migrate` in `~/maity-hub`. `serve` and `quickstart` refuse to start on an older
   schema; migrations never run on their own on a hub that holds data.
 - Everything the hub knows is in `~/maity-hub/maity-hub.db`. Copy that
   file while the hub is stopped, and you have a backup.
