@@ -46,6 +46,8 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // What the agents and members have written down (js/memory.js, §19, tsk-6tqytgmcp17p).
+    { route: "memory", get label() { return M.t("nav.memory"); } },
     // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
     // between Why and Settings (the maintainer, 2026-10-31).
     { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
@@ -1466,7 +1468,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, "Settings"),
       tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) { await M.mySettings(ctx, root); await M.roleMemory.section(ctx, root); return; }
+    if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
       // The project's runners, no tab of their own any more.

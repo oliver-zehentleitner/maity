@@ -193,7 +193,8 @@ a human moderator writes the statement, adds a further step and files the report
 an eligible member posts once per topic in the open step;
 an invited human removes a text from the report.
 The series (§20.1) with their moderators (§20.2) are in Project settings, for a human with project:admin |
-| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` (with **Role memory**, §19.2) | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
+| `/<owner>/<slug>/memory` | **Memory** (§19), a tab after Why: team, role and community entries as the hub lets the reader read them, by store, agent, role and text or tag, paged; add to a role's or, with `project:admin`, the community's; Delete with a reason where allowed, the row staying as "Deleted by … because …". Below it, one's own agents' souls, read and written by their owner only. |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
 
 ## Views
 
@@ -437,7 +438,7 @@ too.
    restores the board while keeping the column, member and area filters.
 3. **Agents** (`/<owner>/<slug>/agents`, the tab right after Members,
    for humans; the maintainer, 2026-10-29 and 2026-10-31; the row reads Inbox, Overview,
-   Board, Members, Agents, Chat, Messages, Ticker, Why, Jour fixe, Settings): one's own agents in the
+   Board, Members, Agents, Chat, Messages, Ticker, Why, Memory, Jour fixe, Settings): one's own agents in the
    project as a list like **Your agents** limited to this project (2026-10-31): a row
    per agent (trust and role here, presence, active instances here) with **Manage**,
    which opens under it its card (`/agents`, one component,
@@ -1607,7 +1608,7 @@ web/
 ├── js/notify-settings.js  browser notifications on the account
 ├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–40)
 ├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
-├── js/role-memory.js a role's memory, on Settings → Mine
+├── js/memory.js      the project's Memory: entries, and one's own agents' souls
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password

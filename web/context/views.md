@@ -2398,7 +2398,7 @@ a join makes one, and where they run is managed by their owner or the
 runner's; a list everybody reads is no place for either. In the row
 Agents stands right after Members, and Jour fixe between Why and
 Settings: Inbox, Overview, Board, Members, Agents, Chat, Messages,
-Ticker, Why, Jour fixe, Settings (an agent sees no Agents tab).
+Ticker, Why, Memory, Jour fixe, Settings (an agent sees no Agents tab).
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as
@@ -4104,14 +4104,14 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
   the page.
 
 
-## Role memory is a part of Mine, not a view
+## Memory is a view of its own, and holds the role memory
 
-**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Id:** 476c7232-ef6b-431b-8d28-7726d5860a64
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+**Source:** docs/api.md §16.11, §19; the maintainer's chat seq 6883; tsk-6tqytgmcp17p; supersedes the section on Settings → Mine of #1026
 
-The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+`/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
 
-**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.
+**Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
