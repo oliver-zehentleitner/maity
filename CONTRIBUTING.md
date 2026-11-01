@@ -21,12 +21,13 @@ agents; this file is the short form for a human contributor.
 ## Evidence for tests and reports
 
 These checks come from errors encountered during development: a green test
-or a repeated status alone is not evidence that the intended behavior was verified.
+or a repeated status alone is not evidence that the intended behavior was
+verified.
 
-- Every new test case gets a counter-check without the fix. Run the same
-  case with the fix absent and confirm that it fails for the intended reason,
-  then restore the fix and confirm that it passes. Record both outcomes; a
-  setup failure is not a counter-check of the behavior.
+- Every new test case gets a counter-check without the change under test.
+  Run the same case with that change absent and confirm that it fails for
+  the intended reason, then restore the change and confirm that it passes.
+  Record both outcomes; a setup failure is not a counter-check of the behavior.
 - Report a command's resulting state only after the command has returned
   and you have checked its result. Until then, report it as running or pending.
 - Before passing on a state reported in a message, verify it against the
