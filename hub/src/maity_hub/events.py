@@ -163,6 +163,40 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     ).one()
 
 
+WATCHERS = "watchers:"
+
+
+def _watched_card(
+    kind: str, payload: dict[str, Any], subject: tuple[str, str] | None
+) -> str | None:
+    """The card whose watchers this event reaches (§6.4): a status change, and an `update`
+    message. Written whoever watches, so the audience never tells whether anyone does."""
+    if kind == "task_updated" and "status" in (payload.get("fields") or []):
+        return subject[1] if subject and subject[0] == "task" else payload.get("id")
+    if kind == "message" and payload.get("type") == "update":
+        task_id: str | None = payload.get("task_id")
+        return task_id
+    return None
+
+
+def watched_seqs(conn: Connection, rows: Sequence[Any], membership: Any) -> frozenset[int]:
+    """The events among `rows` whose private watcher list holds this member (§6.4)."""
+    seqs = [
+        r.seq
+        for r in rows
+        if any(isinstance(token, str) and token.startswith(WATCHERS) for token in r.audience or [])
+    ]
+    if not seqs or membership is None:
+        return frozenset()
+    return frozenset(
+        conn.execute(
+            select(t.event_watcher.c.seq).where(
+                t.event_watcher.c.membership_id == membership.id, t.event_watcher.c.seq.in_(seqs)
+            )
+        ).scalars()
+    )
+
+
 def emit(
     conn: Connection,
     project_id: str,
@@ -176,11 +210,20 @@ def emit(
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
     project = lock_project(conn, project_id)
+    watched_card = _watched_card(kind, payload, subject)
+    watchers: list[int] = []
+    if watched_card is not None:
+        from maity_hub import card_watches
+
+        audience = [*audience, f"{WATCHERS}{watched_card}"]
+        watchers = card_watches.at_write(conn, watched_card)
     wakes = None
     if project.team_wake:  # only a project with a narrowing team pays the lookup
         from maity_hub.instances import team_wakes  # instances writes events itself
 
-        wakes = team_wakes(conn, project_id, audience, actor.membership_id if actor else None)
+        wakes = team_wakes(
+            conn, project_id, audience, actor.membership_id if actor else None, watchers
+        )
     # Under the project's lock `seq` follows commit order; `at` must not run backwards
     # against it (a clock step back, replicas whose clocks differ): never before the
     # project's last event (§18.2, "at is monotonic per project").
@@ -218,6 +261,11 @@ def emit(
     if key is None:
         raise RuntimeError("the event insert returned no seq")
     seq = int(key[0])
+    if watchers:
+        conn.execute(
+            insert(t.event_watcher),
+            [{"seq": seq, "membership_id": watcher} for watcher in watchers],
+        )
     if kind in {"message", "task_claimed"}:
         from maity_hub import onboarding
 
@@ -296,8 +344,10 @@ def hidden_redactions(
     - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
       one, whose request it may not read now: no item, no placeholder, no notice;
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
-      chat's event in the batch names: the owner reads along (§9.2)."""
+      chat's event in the batch names: the owner reads along (§9.2);
+    - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
+    hidden |= {f"watching:{seq}" for seq in watched_seqs(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
     seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
     if not seqs:
@@ -437,6 +487,7 @@ def readable_by(
     return (
         "all" in audience
         or _names_team(audience, principal)
+        or f"watching:{row.seq}" in hidden
         or bool(tokens_of(membership.trust, membership.role, membership.role_base) & set(audience))
     )
 
@@ -556,6 +607,7 @@ def wakes(
     credential_id: str | None = None,
     supervised: bool = False,
     dormant: bool = False,
+    watched: frozenset[int] = frozenset(),
 ) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
@@ -568,7 +620,8 @@ def wakes(
 
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
-    sender's own) is still `all`."""
+    sender's own) is still `all`. `watched`: the events the reader's private watcher list holds
+    it on (`watched_seqs`), which wake it as its `member:` token would (§6.4)."""
     if row.kind in NON_WAKING or _isolated(membership):
         return False
     if dormant:
@@ -646,8 +699,10 @@ def wakes(
         return instance is None
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
-    if f"member:{principal}" not in audience and not (
-        tokens_of(membership.trust, membership.role, membership.role_base) & set(audience)
+    if (
+        f"member:{principal}" not in audience
+        and row.seq not in watched
+        and not (tokens_of(membership.trust, membership.role, membership.role_base) & set(audience))
     ):
         return False
     chosen = (row.wakes or {}).get(principal)
@@ -713,10 +768,11 @@ def read_waking(
     rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
     # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
     notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
+    watched = watched_seqs(conn, rows, membership)
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal, instance, credential_id, supervised, dormant)
+        if wakes(r, membership, principal, instance, credential_id, supervised, dormant, watched)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

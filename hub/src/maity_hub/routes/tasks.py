@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import (
     availability,
     card_search,
+    card_watches,
     cards,
     clock,
     contract_text,
@@ -923,7 +924,8 @@ def create_card(
         _touch_parents(conn, mine, caller, {body.parent}, fg)
     _ping(conn, mine, caller, card, found, "body", before=[])
     releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-    return idempotency.Outcome(201, "task", card_id, {**view, "watching": False})
+    watching = bool(card_watches.watching(conn, [card_id], mine.id))  # by its dependencies
+    return idempotency.Outcome(201, "task", card_id, {**view, "watching": watching})
 
 
 def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -> None:

@@ -1733,6 +1733,17 @@ message_delivery = Table(
     **MYSQL_TABLE,
 )
 
+# Who an event reached through a watch (§6.4): fixed when the event is written, kept apart from
+# it because it is never served.
+event_watcher = Table(
+    "event_watcher",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 # A group chat (§9.2): a room of two to twelve members, created by a human, closed
 # for good when its last human leaves. Its messages are `message` events whose
 # `conversation_id` is the chat's id. `hub_thread` marks a jour fixe round's thread
@@ -2258,7 +2269,7 @@ notification_position = Table(
     **MYSQL_TABLE,
 )
 
-# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# A member's own watch on a card (§6.4), by membership, so it ends with the membership;
 # never written into an event's audience.
 card_watch = Table(
     "card_watch",

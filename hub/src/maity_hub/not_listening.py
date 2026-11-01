@@ -57,16 +57,32 @@ class _Unnarrowed:
         return None if name == "wakes" else getattr(self._row, name)
 
 
-def waits_for(row: Any, member: Any, principal: str, credential: Any) -> bool:
+def waits_for(
+    row: Any,
+    member: Any,
+    principal: str,
+    credential: Any,
+    watched: frozenset[int] = frozenset(),
+) -> bool:
     """Whether the event waits for this instance (§5.3)."""
     dormant = credential.dormant_since is not None  # only its own token counts (§6.17)
-    if events.wakes(row, member, principal, credential.instance, credential.id, dormant=dormant):
+    if events.wakes(
+        row,
+        member,
+        principal,
+        credential.instance,
+        credential.id,
+        dormant=dormant,
+        watched=watched,
+    ):
         return True
     chosen = (row.wakes or {}).get(principal)
     if (
         dormant
         or chosen != []
-        or not events.wakes(_Unnarrowed(row), member, principal, credential.instance, credential.id)
+        or not events.wakes(
+            _Unnarrowed(row), member, principal, credential.instance, credential.id, watched=watched
+        )
     ):
         return False
     return member.lead_instance is None or credential.instance == member.lead_instance
@@ -80,8 +96,9 @@ def oldest_waiting(conn: Connection, session: Any, member: Any, credential: Any)
         rows, examined, truncated = events.read(
             conn, member.project_id, member, principal, after, 500
         )
+        watched = events.watched_seqs(conn, rows, member)
         for row in rows:
-            if waits_for(row, member, principal, credential):
+            if waits_for(row, member, principal, credential, watched):
                 return row
         if not truncated and len(rows) < 500:
             return None

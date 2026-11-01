@@ -52,6 +52,7 @@ MESSAGE_TYPES = (
     "review_result",
     "handover",
     "notice",
+    "update",
     "chat",
 )
 
@@ -286,6 +287,8 @@ def post_message(
     are bound to it in the same transaction (§8.7)."""
     if body.type not in MESSAGE_TYPES:
         raise invalid({"type": "unknown"})
+    if body.type == "update" and body.task_id is None:
+        raise invalid({"task_id": "required_for_update"}, "an update is news on a card")
     me = mine.principal_id
     group: Any = None
     review: dict[str, Any] | None = None
@@ -340,10 +343,12 @@ def post_message(
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
-        if body.to is None:
+        if body.to is None and body.type != "update":
             raise invalid({"to": "required"})
         to = body.to
-        if to == "all":
+        if to is None:  # an update reaches the card's watchers, which `emit` adds (§6.4)
+            target = f"member:{me}"
+        elif to == "all":
             target = "all"
         elif to.startswith(("role:", "trust:")):
             from maity_hub.scopes import token_known
