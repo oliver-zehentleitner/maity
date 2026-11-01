@@ -165,12 +165,14 @@ def test_a_waiting_request_wakes_a_watcher_both_ways(
     assert asked.status_code == 201, asked.text
     blocked = _last(migrated, "task_updated")
     assert blocked.payload["status"] == "blocked" and blocked.seq in _woken(migrated, watcher)
+    assert _last(migrated, "request_created").seq < blocked.seq  # the cause first
     answered = owner.post(
         f"/projects/maintainer/maity/requests/{asked.json()['id']}/answer", {"text": "This one."}
     )
     assert answered.status_code == 200, answered.text
     back = _last(migrated, "task_updated")
     assert back.payload["status"] == "in_progress" and back.seq in _woken(migrated, watcher)
+    assert _last(migrated, "request_answered").seq < back.seq and back.actor_membership is not None
 
 
 def test_a_redaction_is_readable_as_the_event_it_is_about(

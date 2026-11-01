@@ -417,7 +417,8 @@ instead of one problem per attempt.
 hidden facts, and `wakes` takes the set as an argument. `_wakes` in `views.py` serves only the
 reader's own entries of such an event, and nothing to a view without a reader. A claim, a release, a
 report, a request that blocks or unblocks the card, and a holder's isolation or removal write a `task_updated` when they move the
-status, beside their own event, which never carries the token; a refresh writes none. The contract
+status, after their own event, which never carries the token: a reader takes one event at a time
+(`maity wait --one`) and sees what happened before what followed from it. A refresh writes none. The contract
 names the report; the claim and the release are the coordinator's reading of §6.4's "a status
 change" (2026-11-01), and a blocking request is this entry's reading of the same words. A redaction
 and a deleted attachment take over the list of the event they are about, so they stay readable as

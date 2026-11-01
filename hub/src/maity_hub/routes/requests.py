@@ -467,6 +467,7 @@ def create_request(
             )
         )
         holder = card.claim_holder if card is not None else None
+        blocked: str | None = None
         if (
             card is not None
             and body.while_open == "wait"
@@ -485,14 +486,7 @@ def create_request(
                     updated_at=now,
                 )
             )
-            from maity_hub.routes.tasks import status_moved  # tasks reads requests
-
-            status_moved(
-                conn,
-                conn.execute(select(t.card).where(t.card.c.id == card.id)).one(),
-                mine.project.state,
-                caller.actor(mine.id),
-            )
+            blocked = card.id
         view = request_view(conn, _row(conn, request_id))
         emit(
             conn,
@@ -503,6 +497,7 @@ def create_request(
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -900,15 +895,30 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
 # --- answering and withdrawing --------------------------------------------------------------
 
 
-def _unblock(conn: Connection, row: Any) -> None:
+def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
+    """The status change a request caused, told after the request's own event: what happened
+    first, then what followed from it (§6.4)."""
+    if card_id is None:
+        return
+    from maity_hub.routes.tasks import status_moved  # tasks reads requests
+
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+    state = conn.execute(
+        select(t.project.c.state).where(t.project.c.id == card.project_id)
+    ).scalar_one()
+    status_moved(conn, card, state, actor)
+
+
+def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
     waiting request of its holder on it is open, naming the oldest; when none is
-    left, the remembered status comes back (§7)."""
+    left, the remembered status comes back (§7). Returns the card whose status moved, for
+    `_status_moved` after the caller's event."""
     if row.task_id is None:
-        return
+        return None
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
     if card.status != "blocked":
-        return
+        return None
     holder = card.claim_holder
     still_waiting = conn.execute(
         select(t.request.c.id)
@@ -933,18 +943,11 @@ def _unblock(conn: Connection, row: Any) -> None:
     conn.execute(
         update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
-    if "status" in values:
-        from maity_hub.routes.tasks import status_moved  # tasks reads requests
-
-        state = conn.execute(
-            select(t.project.c.state).where(t.project.c.id == card.project_id)
-        ).scalar_one()
-        moved = conn.execute(select(t.card).where(t.card.c.id == card.id)).one()
-        status_moved(conn, moved, state, None)
     if values.get("status") == "review":
         from maity_hub import merged
 
         merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
+    return card.id if "status" in values else None
 
 
 def _self_answer() -> ApiError:
@@ -1075,7 +1078,7 @@ def answer(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
@@ -1097,6 +1100,7 @@ def answer(
             subject=("request", row.id),
         )
         ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
+        _status_moved(conn, moved, caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     try:
@@ -1398,7 +1402,7 @@ def withdraw(
                 changed_via=caller.via,
             )
         )
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
@@ -1411,6 +1415,7 @@ def withdraw(
             actor=caller.actor(mine.id),
             subject=("request", row.id),
         )
+        _status_moved(conn, moved, caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -1517,7 +1522,7 @@ def close_request(
             )
         )
         kind, extra = "request_answered", {}
-    _unblock(conn, row)
+    moved = _unblock(conn, row)
     if not unknown:
         proposals.settle(
             conn,
@@ -1544,6 +1549,7 @@ def close_request(
     if kind == "request_answered":
         project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
         ticker.on_request_answered(conn, project, _row(conn, row.id), actor)
+    _status_moved(conn, moved, actor)
 
 
 def file_consent(
@@ -2038,7 +2044,7 @@ def answer_personal(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
         proposals.settle(
@@ -2057,6 +2063,7 @@ def answer_personal(
                 actor=caller.actor(member.id) if member is not None else None,
                 subject=("request", row.id),
             )
+            _status_moved(conn, moved, caller.actor(member.id) if member is not None else None)
         return idempotency.Outcome(200, "request", row.id, view)
 
     try:
@@ -2093,7 +2100,7 @@ def withdraw_personal(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         # A proposal is settled wherever its request closes (`proposals`): the invited
         # human's own withdrawal of an organisation's invitation counts as their no.
         if row.proposal is not None:
@@ -2118,6 +2125,7 @@ def withdraw_personal(
                 actor=caller.actor(member.id) if member is not None else None,
                 subject=("request", row.id),
             )
+            _status_moved(conn, moved, caller.actor(member.id) if member is not None else None)
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
