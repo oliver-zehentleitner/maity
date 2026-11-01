@@ -181,3 +181,37 @@ def test_the_export_lists_the_signatures_a_person_gave(
     exported = team["reviewer"].get("/me/export").json()
     assert [row["card"]["id"] for row in exported["card_approvals"]] == [card["id"]]
     assert team["tester"].get("/me/export").json()["card_approvals"] == []
+
+
+def test_a_rework_of_a_half_signed_card_is_no_signature_in_the_export(
+    owner: flow.Human, team: dict[str, Any]
+) -> None:
+    card = _in_review(owner, team["worker"])
+    assert _sign(team["reviewer"], card).status_code == 200
+    back = team["tester"].patch(f"{BASE}/tasks/{card['id']}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    assert team["tester"].get("/me/export").json()["card_approvals"] == []
+    assert len(team["reviewer"].get("/me/export").json()["card_approvals"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("authority", "tester_reached"),
+    [("reviewer", False), ("tester", True), ("reviewer_and_tester", True)],
+)
+def test_a_report_reaches_the_testers_only_where_they_decide(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    authority: str,
+    tester_reached: bool,
+) -> None:
+    _authority(owner, authority)
+    _in_review(owner, _person(make_client, migrated, "wor", "coder"))
+    with migrated.connect() as conn:
+        event = conn.execute(
+            select(t.event).where(t.event.c.kind == "task_reported").order_by(t.event.c.seq.desc())
+        ).first()
+    assert event is not None
+    assert "role:reviewer" in event.audience
+    assert ("role:tester" in event.audience) == tester_reached
+    assert ("role:red-team" in event.audience) == tester_reached

@@ -2031,7 +2031,16 @@ def report(
             conn,
             mine.project.id,
             "task_reported",
-            list(dict.fromkeys(targets)) + [*role_tokens("reviewer"), "trust:admin"],
+            list(dict.fromkeys(targets))
+            + [
+                *role_tokens("reviewer"),
+                *(
+                    role_tokens("tester")
+                    if mine.project.done_authority in ("tester", "reviewer_and_tester")
+                    else []
+                ),
+                "trust:admin",
+            ],
             # The persisted status on both sides, so that a reader tells an entry into
             # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
             {**stored, "status_before": status_before, "status_after": card.status},

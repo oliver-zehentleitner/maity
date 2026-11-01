@@ -902,7 +902,8 @@ def _card_approvals(
     rows = [
         row
         for row in _events(conn, project_ids, "task_updated", my_ids)
-        if "approvals" in ((row.payload or {}).get("fields") or [])
+        # A rework clears them too (§6.4): that entry signs nothing.
+        if any(((row.payload or {}).get("approvals") or {}).values())
     ]
     titles.load_cards(row.subject_id for row in rows)
     return [
