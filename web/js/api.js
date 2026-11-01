@@ -35,6 +35,7 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  const mockRoleMemory = []; // §19.2, this tab's
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
@@ -1456,6 +1457,27 @@ window.Maity = window.Maity || {};
       fixtureSignedIn = true;
       return { member: me().member, next: mailNext };
     }],
+    // §19.2: a role's memory; an entry belongs to the role, a deleted one keeps its row without the text.
+    ["GET", /^\/projects\/([^/]+)\/memory$/, (m, body, path, query) => {
+      const role = query.get("role");
+      const items = mockRoleMemory.filter((e) => e.role === role && (query.get("deleted") === "true" || !e.deleted)).slice().reverse();
+      return { items, next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/memory$/, (m, body, path) => {
+      // Without `role`, the caller's own (§19.2).
+      const mineIn = (slug) => { const p = (me().projects || []).find((x) => x.slug === slug || x.full_name === slug || x.full_name.endsWith("/" + slug)); return p ? p.role : null; };
+      if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
+      const entry = { id: "mem-" + (mockRoleMemory.length + 1), store: "role", member_id: null, role: body.role || mineIn(decodeURIComponent(m[1])), text: body.text, tags: body.tags || [],
+        by: { kind: "human", member_id: me().member.id, handle: me().member.handle }, confirmed_by: null, request_id: null, created_at: nowIso(), deleted: null };
+      mockRoleMemory.push(entry);
+      return entry;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/memory\/([^/]+)$/, (m, body, path) => {
+      const entry = mockRoleMemory.find((e) => e.id === m[2]);
+      if (!entry) fail(404, "not_found", "no such entry", path);
+      Object.assign(entry, { text: null, deleted: { by: { handle: me().member.handle }, reason: null, at: nowIso() } });
+      return entry;
+    }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
       return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"],
@@ -2473,7 +2495,7 @@ window.Maity = window.Maity || {};
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
       // made or cancelled. The commitment reads optional under none, and required
@@ -2781,7 +2803,7 @@ window.Maity = window.Maity || {};
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
       const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
       const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
-        trigger: "manual", mode: "message", scheduled_for: now,
+        trigger: "manual", scheduled_for: now,
         opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
         moderator: { member_id: moderator.member_id, instance: null },

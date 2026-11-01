@@ -1574,3 +1574,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .user-reset { margin-top: 16px; max-width: 42rem; }
 .user-reset label { display: block; margin-bottom: 4px; }
 .user-reset textarea { width: 100%; box-sizing: border-box; }
+
+/* Settings → Mine: role memory (§19.2). */
+.role-memory { margin-top: 24px; max-width: 42rem; }
+.role-memory .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 8px 0; }
+.role-memory-add textarea { width: 100%; box-sizing: border-box; }
+.role-memory-list { list-style: none; padding: 0; }
+.role-memory-list li { border-top: 1px solid var(--border); padding: 8px 0; }
+.role-memory-text { white-space: pre-wrap; margin: 0 0 4px; }

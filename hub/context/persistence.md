@@ -769,6 +769,35 @@ stays is still dropped on its own, once no foreign key needs it.
   three steps for what `drop_table` does in one, and on SQLite a
   foreign key goes only through `batch_alter_table`.
 
+## On MariaDB a migration run commits per step, and a refusal stays where it refused
+
+**Id:** e7f302f4-ee65-49f6-bc75-849bacb94ba8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the `hub-mariadb` run 41286365304 and a local reproduction on MariaDB 10.11, 2026-11-01
+**Revisit when:** MySQL/MariaDB support is dropped
+
+`migrations/env.py` keeps one transaction around a run on PostgreSQL and SQLite, so a refusal
+there undoes the whole run. On MariaDB it opens none and lets alembic commit each step with its
+`alembic_version` update. A downgrade across several revisions that one of them refuses then
+stops at the refusing revision, with the later ones already undone: the operator removes what
+the refusal names and runs the same downgrade again.
+
+**Reason:** every DDL statement commits on MariaDB, so the outer transaction only held the last
+version update, and a refusal rolled back that update alone. The recorded revision then named a
+schema already gone, and the next downgrade failed on `DROP TABLE event_watcher` with 1051; in
+the test suite this broke the worker's schema for every later test.
+
+**Rejected alternatives:**
+- Changing only the test: an operator hits the same state on a real MariaDB.
+- Checking every refusal before the first step: the refusals live in their own migrations, and
+  a central list has to be kept in step with them for one engine's sake.
+
+**Known limit:** a migration that fails between two DDL statements of one step still leaves that
+step half done on MariaDB; no transaction can undo it.
+
 ## A card is written in one shape by a migration, and no read branch carries the old one
 
 **Id:** 87be2d15-0c4d-4292-b9dd-e713b0df3de6

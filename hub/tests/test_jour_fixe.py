@@ -225,7 +225,6 @@ def test_only_owners_and_admins_start_and_at_most_two_a_day(
                     series_id=sid,
                     status="reported",
                     trigger="manual",
-                    mode="message",
                     scheduled_for=clock.now(),
                     steps=[],
                     invited=[],
