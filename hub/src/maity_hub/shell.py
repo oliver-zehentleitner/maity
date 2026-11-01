@@ -8,6 +8,7 @@ answers to a visitor with a session or while the landing page is off (§16.7).
 from __future__ import annotations
 
 import re
+from html import escape
 from pathlib import Path
 
 from fastapi import Request, Response
@@ -44,13 +45,17 @@ class AssetFiles(StaticFiles):
 
 BASE = b'<base href="/assets/">'
 _HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
+_SOCIAL_IMAGE = re.compile(rb'(property="og:image" content=")(brand/[^"]+")')
 
 
-def shell_document(page: bytes) -> bytes:
+def shell_document(page: bytes, public_url: str) -> bytes:
     """`index.html` with `<base href="/assets/">` right after `<head>`: the file names its
     scripts, stylesheets and brand files relative to itself, so that it also opens from
     `file://` in fixture mode; served at any depth of a path, the base makes them load
-    from `/assets/` (§16.11 leaves a `<base>` to the dashboard)."""
+    from `/assets/` (§16.11 leaves a `<base>` to the dashboard). A crawler reads no `<base>`
+    and needs a whole address, which only the hub knows, so the social image gets one."""
+    assets = escape(public_url.rstrip("/"), quote=True).encode() + b"/assets/"
+    page = _SOCIAL_IMAGE.sub(lambda found: found[1] + assets + found[2], page)
     opened = _HEAD.search(page)
     if opened is None:
         return page
@@ -65,8 +70,9 @@ class ShellRoute(BaseRoute):
     `GET` and `HEAD` on a path that is the shell's is `not_found`.
     """
 
-    def __init__(self, web_dir: Path) -> None:
+    def __init__(self, web_dir: Path, public_url: str) -> None:
         self.web_dir = web_dir
+        self.public_url = public_url
         self.name = "shell"
 
     def matches(self, scope: Scope) -> tuple[Match, Scope]:
@@ -80,16 +86,16 @@ class ShellRoute(BaseRoute):
             # A stored public page first, for a visitor, while the instance serves pages (§16.9).
             response = await run_in_threadpool(public_pages.answer, Request(scope, receive))
             if response is None:
-                response = shell_response(self.web_dir)
+                response = shell_response(self.web_dir, self.public_url)
         else:
             response = error_response(404, "not_found", "no such resource")
         await response(scope, receive, send)
 
 
-def shell_response(web_dir: Path) -> Response:
+def shell_response(web_dir: Path, public_url: str) -> Response:
     """`index.html` as the shell: `200`, `no-cache`, `noindex` (§16.11)."""
     return Response(
-        shell_document((web_dir / "index.html").read_bytes()),
+        shell_document((web_dir / "index.html").read_bytes(), public_url),
         media_type="text/html",
         headers=SHELL_HEADERS,
     )

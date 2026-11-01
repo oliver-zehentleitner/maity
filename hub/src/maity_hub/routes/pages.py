@@ -130,7 +130,7 @@ def root(
 def _shell(settings: Any) -> Response:
     if settings.web_dir is None or not (settings.web_dir / "index.html").is_file():
         raise not_found()  # a hub without a dashboard serves the API alone
-    return shell_response(settings.web_dir)
+    return shell_response(settings.web_dir, settings.public_url)
 
 
 @page_router.api_route("/for/{slug}", methods=["GET", "HEAD"], include_in_schema=False)

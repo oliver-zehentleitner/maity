@@ -1229,7 +1229,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && thCss.includes(':root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }')
     && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
     "brand: the dark lockup shows where the page is dark, by the system or by the pick");
-  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image.png"', 'href="brand/loader.css"']
+  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image-team.png"', 'href="brand/loader.css"']
     .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading Maity…<\/p>/.test(html)
     && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
   expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
