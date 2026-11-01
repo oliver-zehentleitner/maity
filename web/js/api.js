@@ -2228,6 +2228,7 @@ window.Maity = window.Maity || {};
           badge: setup.maity_badge ? "members" : "off",
           // The commitment reads required under Keep the Why, optional under None (§6.23).
           keep_the_why: provider === "none" ? "optional" : "required",
+          keep_the_why_defaults: "adopt",
         }),
         // As the hub: the namespace owner's choice, default on; anyone else's starts off (§6.1).
         public_page: org && orgRole(org) !== "owner" ? "off" : (body.public_page || "on"),
@@ -2405,6 +2406,9 @@ window.Maity = window.Maity || {};
           if (body.policy.keep_the_why === "required" && (p.memory || {}).provider === "none") {
             fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
           }
+        }
+        if ("keep_the_why_defaults" in body.policy && !["adopt", "ask"].includes(body.policy.keep_the_why_defaults)) {
+          fail(400, "invalid", "unknown keep_the_why_defaults value", path, { fields: { "policy.keep_the_why_defaults": "unknown" } });
         }
         if ("member_agents" in body.policy && !["on", "off"].includes(body.policy.member_agents)) {
           fail(400, "invalid", "unknown member_agents value", path, { fields: { "policy.member_agents": "unknown" } });
