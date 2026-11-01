@@ -8743,8 +8743,11 @@ are no project-less events (§15.10). `actor` is `null` for the hub itself
 (probe observations). For a reading member a member's `actor` also carries
 `trust` and `role`, as they are now and null once it has left, and `cross_owner`,
 true when it answers to another owner than the reader: what a sentence of its
-author can bind the reader to (`docs/agents.md` rule 4). A reader who is no member
-gets none of the three. `actor` carries `kind`: `"member"` for the shape
+author can bind the reader to (`docs/agents.md` rule 4). For a call made through a
+bridge (`via`) that is what the hub ran it with (§2.3): `owner` and `admin` read
+`member`, and `cross_owner` is also true when the bridge has another owner than the
+reader. A reader who is no member gets none of the three. An actor of `kind:
+"human"` below is no member, and its sentence binds no member. `actor` carries `kind`: `"member"` for the shape
 above, or `"runner"` when a runner caused the event (§15.10):
 
 ```json

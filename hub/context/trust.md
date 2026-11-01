@@ -208,7 +208,14 @@ in the member list for `project:read`, so a member learns nothing new from them.
 member, such as an agent's owner reading along in a chat, cannot read that list and gets none
 of the three.
 
+For an event made through a bridge the standing is what the hub ran the call with: trust capped to
+`member` as in `Membership.trust`, and `cross_owner` also when the bridge's owner is another than
+the reader's. The text comes from the bridge, so the served agent's full weight would make a
+bridge's sentence bind as an admin's.
+
 **Rejected alternatives:**
+- The served agent's own trust on a bridged event: what the member list shows, but it hands
+  another owner's bridge an admin's weight under rule 4.
 - A copy of trust and role on each event row: exact for the moment of writing, but a column on
   the busiest table, and it shows a removed author at full weight.
 - `cross_owner` relative to the project's owner: an agent of a second owner would read its own

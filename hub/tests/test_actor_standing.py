@@ -104,3 +104,21 @@ def test_an_outsider_reading_along_gets_no_standing(owner: flow.Human, migrated:
         project = conn.execute(select(t.project)).first()
         actor = event_views(conn, [row], Outsider(project, "hum-outsider"))[0]["actor"]
     assert not {"trust", "role", "cross_owner"} & set(actor)
+
+
+def test_a_bridges_event_has_the_standing_the_hub_ran_it_with(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reader = flow.agent(make_client, owner)
+    served = flow.agent(make_client, owner, role="admin")
+    bridge = second_owners_agent(migrated, "anna", "builder")
+    via = {"member_id": bridge, "instance": None, "bridge_id": "brg-1"}
+    with events.transaction(migrated) as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        by = member_row(conn, project_id, served.id).id
+        events.emit(conn, project_id, "message", ["all"], {}, actor=events.Actor(by, bridge=via))
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.event).order_by(t.event.c.seq.desc())).first()
+        seen = SimpleNamespace(id=member_row(conn, project_id, reader.id).id, trust="member")
+        actor = event_views(conn, [row], seen)[0]["actor"]
+    assert (actor["trust"], actor["cross_owner"], actor["via"]) == ("member", True, via)

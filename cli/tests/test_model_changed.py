@@ -72,3 +72,5 @@ def test_the_standing_of_an_author_is_in_the_line() -> None:
     assert line(trust="member", cross_owner=False) == "#7 message"
     assert line(trust=None, cross_owner=False) == "#7 message (former member)"
     assert line(member_id="agt-a") == "#7 message"  # an older hub sends none
+    assert line(trust="member", via={"member_id": "agt-b"}) == "#7 message (through a bridge)"
+    assert line(kind="human", id="hum-a", handle="anna") == "#7 message (no member)"
