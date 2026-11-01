@@ -88,8 +88,8 @@ window.Maity = window.Maity || {};
 
   // Under the title: who it is — for a direct chat the agent's handle and
   // harness, which tell apart names that share their owner's prefix; for a
-  // group its people — then an unsent draft, else the last message where
-  // the hub sends it (`last_message`), else nothing. Presence is the dot
+  // group its people — then an unsent draft, else the last message
+  // (`last_message`, null in a chat with none yet), else nothing. Presence is the dot
   // (and its words for a screen reader), not a line of its own. The open
   // chat's own draft is in its composer, not repeated here.
   function sublines(ctx, chat, current) {

@@ -18,6 +18,8 @@ from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.jourfixe import (
     answers,
+    choices,
+    circle,
     exchange,
     moderators,
     redaction,
@@ -151,13 +153,14 @@ def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[di
     return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
 
 
-def _round(conn: Connection, project_id: str, round_id: str) -> Any:
+def _round(conn: Connection, mine: Any, round_id: str) -> Any:
+    """The round, `not_found` to a member who may not read it (§20.7, an owner's series)."""
     row = conn.execute(
         select(t.jour_fixe_round).where(
-            t.jour_fixe_round.c.id == round_id, t.jour_fixe_round.c.project_id == project_id
+            t.jour_fixe_round.c.id == round_id, t.jour_fixe_round.c.project_id == mine.project.id
         )
     ).first()
-    if row is None:
+    if row is None or not circle.reads(conn, row, mine):
         raise not_found()
     return row
 
@@ -265,11 +268,15 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             seen = series.sight(conn, row, mine)
             if seen is None:
                 continue
-            entry = series.view(conn, row, seen)
+            entry = _shown(conn, row, mine, seen)
             slot = rounds.next_at(row, now)
             entry["next_at"] = clock.rfc3339(slot) if slot is not None else None
             if seen == "full":
                 running, last = rounds.current(conn, row.id), _last_reported(conn, row.id)
+                running, last = (
+                    r if r is not None and circle.reads(conn, r, mine) else None
+                    for r in (running, last)
+                )
                 found = [r for r in (running, last) if r is not None]
                 views_of = dict(
                     zip([r.id for r in found], _views(conn, found, slug, mine), strict=True)
@@ -289,8 +296,16 @@ def list_series(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         for row in series.of_project(conn, mine.project.id):
             seen = series.sight(conn, row, mine)
             if seen is not None:
-                items.append(series.view(conn, row, seen))
+                items.append(_shown(conn, row, mine, seen))
         return JSONResponse({"items": items})
+
+
+def _shown(conn: Connection, row: Any, mine: Any, seen: Any = "full") -> dict[str, Any]:
+    """The series as the caller sees it, with its own choices when it sees it all (§20.2)."""
+    shown = series.view(conn, row, seen)
+    if seen == "full":
+        shown.update(choices.shown(conn, row, mine))
+    return shown
 
 
 def _fields(body: SeriesIn) -> dict[str, Any]:
@@ -397,6 +412,81 @@ def end_moderator(
         return JSONResponse(series.view(conn, row))
 
 
+def _choose(
+    slug: str, series_id: str, request: Request, caller: Caller, member_id: str | None, act: Any
+) -> JSONResponse:
+    """One of the member's own choices in a series (§20.2), for itself or, with `?member=`,
+    for one of the calling human's agents; `200` with the series as the caller sees it."""
+    with events.transaction(engine_of(request)) as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("project:read")
+        events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        if series.sight(conn, row, mine) != "full":
+            raise not_found()
+        act(conn, row, choices.target(conn, mine, member_id))
+        return JSONResponse(_shown(conn, row, mine))
+
+
+@router.put("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/opt-out")
+def opt_out(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        choices.set_opt_out(conn, row, target, True)
+
+    return _choose(slug, series_id, request, caller, member, act)
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/opt-out")
+def opt_back_in(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        choices.set_opt_out(conn, row, target, False)
+
+    return _choose(slug, series_id, request, caller, member, act)
+
+
+def _recipient(on: bool) -> Any:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        if not choices.reads_rounds(conn, row, target):
+            raise not_found()  # only a member who reads the rounds receives the report
+        choices.set_recipient(conn, row, target, on)
+
+    return act
+
+
+@router.put("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/report")
+def report_to(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    return _choose(slug, series_id, request, caller, member, _recipient(True))
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/report")
+def report_off(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    return _choose(slug, series_id, request, caller, member, _recipient(False))
+
+
 # --- rounds ------------------------------------------------------------------------------------
 
 
@@ -425,9 +515,7 @@ def list_rounds(
             query = query.where(
                 or_(c.scheduled_for < after_at, and_(c.scheduled_for == after_at, c.id < after_id))
             )
-        rows = conn.execute(
-            query.order_by(c.scheduled_for.desc(), c.id.desc()).limit(limit + 1)
-        ).all()
+        rows = _readable(conn, mine, query.order_by(c.scheduled_for.desc(), c.id.desc()), limit + 1)
         page = rows[:limit]
         next_cursor = (
             paging.cursor(page[-1].scheduled_for, page[-1].id, bound) if len(rows) > limit else None
@@ -435,6 +523,28 @@ def list_rounds(
         return JSONResponse(
             {"items": _views(conn, list(page), slug, mine), "next_cursor": next_cursor}
         )
+
+
+def _readable(conn: Connection, mine: Any, query: Any, wanted: int) -> list[Any]:
+    """Up to `wanted` rounds of the ordered query that the member reads: the rounds of an
+    owner's series it may not read are left out, not counted against the page (§20.7)."""
+    c, last = t.jour_fixe_round.c, None
+    found: list[Any] = []
+    while len(found) < wanted:
+        batch = query
+        if last is not None:
+            batch = batch.where(
+                or_(
+                    c.scheduled_for < last.scheduled_for,
+                    and_(c.scheduled_for == last.scheduled_for, c.id < last.id),
+                )
+            )
+        rows = conn.execute(batch.limit(wanted)).all()
+        found += [r for r in rows if circle.reads(conn, r, mine)]
+        if len(rows) < wanted:
+            break
+        last = rows[-1]
+    return found[:wanted]
 
 
 def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) -> dict[str, Any]:
@@ -476,7 +586,7 @@ def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> 
                 raise
             return JSONResponse(_observer_round(conn, caller, slug, round_id))
         mine.require("project:read")
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse(_views(conn, [row], slug, mine)[0])
 
 
@@ -526,7 +636,7 @@ def answer(
     def action(conn: Connection) -> tuple[int, dict[str, Any]]:
         mine = membership(conn, caller, slug)
         events.lock_project(conn, mine.project.id)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return 201, answers.submit(conn, row, mine, texts, body.anonymous)
 
     if body.anonymous:
@@ -554,7 +664,7 @@ def read_answers(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse({"items": answers.listed(conn, row, mine, mine_only)})
 
 
@@ -564,7 +674,7 @@ def withdraw_answer(slug: str, round_id: str, request: Request, caller: AnyCalle
     with events.transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         events.lock_project(conn, mine.project.id)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse(answers.withdraw(conn, row, mine))
 
 
@@ -577,7 +687,7 @@ def statement(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         topics = [topic.model_dump(by_alias=True) for topic in body.topics]
         exchange.submit_statement(conn, row, mine, topics, caller.actor(mine.id))
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
@@ -603,7 +713,7 @@ def post(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         made = exchange.submit_post(conn, row, mine, body.model_dump(), caller.actor(mine.id))
         return idempotency.Outcome(
             201, "jour_fixe_post", f"{row.id}/{made['id']}", views.post(made)
@@ -618,7 +728,7 @@ def further_step(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
 
@@ -658,7 +768,7 @@ def report(
         # The caller's membership and role as of the lock: a demotion or a removal that
         # commits first decides whether it may still decide (§20.6).
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
         return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
 
@@ -680,9 +790,9 @@ def redact(
     def action(conn: Connection) -> idempotency.Outcome:
         events.lock_project(conn, membership(conn, caller, slug).project.id)
         mine = membership(conn, caller, slug)  # its role as of the lock
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         redaction.redact(conn, row, mine, body.target, body.reason, caller.actor(mine.id))
-        shown = _views(conn, [_round(conn, mine.project.id, round_id)], slug, mine)[0]
+        shown = _views(conn, [_round(conn, mine, round_id)], slug, mine)[0]
         return idempotency.Outcome(200, "jour_fixe_round", row.id, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)

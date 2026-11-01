@@ -361,14 +361,32 @@ def hidden_redactions(
       one, whose request it may not read now: no item, no placeholder, no notice;
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
       chat's event in the batch names: the owner reads along (§9.2);
-    - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4)."""
+    - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4);
+    - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
+      it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7);
+    - `outside:<conversation>` for each thread of such a round whose `circle_owner` the
+      human is not: owning an agent in it does not let them read along (§20.5)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     hidden |= {f"watching:{seq}" for seq in watched_seqs(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
-    seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
+    hidden |= _owners_circles(conn, rows)
+    hidden |= _outside_rounds(conn, rows, membership)
+    # Only an event's redaction names a seq; a round's (§20.8) names the round.
+    seqs = {
+        int(r.subject_id)
+        for r in rows
+        if r.kind == "event_redacted" and r.subject_type == "event" and r.subject_id
+    }
     if not seqs:
         return frozenset(hidden)
     subjects = conn.execute(select(t.event).where(t.event.c.seq.in_(seqs))).all()
+    # Redacting an event of an owner's round is as private as that event (§20.8).
+    marked = _owners_circles(conn, subjects)
+    hidden |= {
+        f"circle:{r.seq}"
+        for r in rows
+        if r.kind == "event_redacted" and f"circle:{r.subject_id}" in marked
+    }
     for subject in subjects:
         if subject.kind in HUMANS_ONLY_KINDS:
             hidden.add(str(subject.seq))
@@ -376,6 +394,70 @@ def hidden_redactions(
             hidden.add(f"notice:{subject.seq}")
     hidden |= {f"ticker:{seq}" for seq in ticker_read.withheld(conn, subjects, membership)}
     return frozenset(hidden)
+
+
+def _jour_fixe_ref(row: Any) -> tuple[str | None, str | None]:
+    """The round and the series a jour fixe event concerns, from its payload or subject."""
+    payload = getattr(row, "payload", None) or {}
+    kind = getattr(row, "kind", "") or ""
+    if not (kind.startswith("jour_fixe_") or "round_id" in payload or "jour_fixe" in payload):
+        return None, None
+    found = payload.get("jour_fixe")
+    marker: dict[str, Any] = found if isinstance(found, dict) else {}
+    round_id = payload.get("round_id") or marker.get("round_id")
+    if round_id is None and getattr(row, "subject_type", None) == "jour_fixe":
+        round_id = row.subject_id
+    return round_id, payload.get("series_id")
+
+
+def _owners_circles(conn: Connection, rows: Sequence[Any]) -> set[str]:
+    """`circle:<seq>` for the jour fixe events of an owner's round or series (§20.7): a round
+    is judged by the `config` it opened with, so it stays private after its series goes."""
+    refs = {r.seq: _jour_fixe_ref(r) for r in rows if getattr(r, "seq", None) is not None}
+    round_ids = {rid for rid, _ in refs.values() if rid}
+    series_ids = {sid for rid, sid in refs.values() if sid and not rid}
+    owners: set[str] = set()
+    if round_ids:
+        for rid, config in conn.execute(
+            select(t.jour_fixe_round.c.id, t.jour_fixe_round.c.config).where(
+                t.jour_fixe_round.c.id.in_(round_ids)
+            )
+        ):
+            if (config or {}).get("circle") == "owner":
+                owners.add(rid)
+    if series_ids:
+        owners |= set(
+            conn.execute(
+                select(t.jour_fixe_series.c.id).where(
+                    t.jour_fixe_series.c.id.in_(series_ids),
+                    t.jour_fixe_series.c.circle == "owner",
+                )
+            ).scalars()
+        )
+    return {
+        f"circle:{seq}"
+        for seq, (rid, sid) in refs.items()
+        if (rid and rid in owners) or (not rid and sid in owners)
+    }
+
+
+def _outside_rounds(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
+    if membership is None or membership.human_id is None:
+        return set()
+    chats = {r.conversation_id for r in rows if (r.conversation_id or "").startswith("cnv-")}
+    if not chats:
+        return set()
+    found = conn.execute(
+        select(t.jour_fixe_round.c.conversation_id, t.jour_fixe_round.c.config).where(
+            t.jour_fixe_round.c.conversation_id.in_(chats)
+        )
+    ).all()
+    return {
+        f"outside:{chat}"
+        for chat, config in found
+        if (config or {}).get("circle") == "owner"
+        and (config or {}).get("circle_owner") != membership.human_id
+    }
 
 
 def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
@@ -490,7 +572,10 @@ def readable_by(
         # instance's token is its whole team's (§8.2).
         return (
             _names_team(audience, principal)
-            or any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+            or (
+                f"outside:{row.conversation_id}" not in hidden
+                and any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+            )
             # A round's thread names `trust:owner`: every human owner reads along (§20.5).
             or (
                 "trust:owner" in audience
@@ -498,8 +583,8 @@ def readable_by(
                 and membership.trust == "owner"
             )
         )
-    if membership.trust in SEE_ALL_TRUSTS:
-        return True
+    if membership.trust in SEE_ALL_TRUSTS and f"circle:{row.seq}" not in hidden:
+        return True  # an owner's jour fixe reaches only its own audience (§20.7)
     return (
         "all" in audience
         or _names_team(audience, principal)
@@ -582,6 +667,8 @@ NON_WAKING = frozenset(
         "request_claimed",  # a claim wakes nobody (§7)
         "keep_the_why_acknowledged",  # the owner's and the admins' record only (§6.23)
         "attachment_deleted",  # a deleted file wakes nobody (§8.7)
+        "jour_fixe_skipped",  # a skip and a series change wake nobody (§20.9)
+        "jour_fixe_series_changed",
     }
 )
 
@@ -682,6 +769,11 @@ def wakes(
         # A round's thread, its statement and its posts wake nobody: each step wakes its
         # eligible members once (§20.5).
         return False
+    if row.kind == "jour_fixe_reported":
+        # The report wakes each agent on the series' report list once, at the instance its
+        # team's rule selected; `all` and the round's readers read it unwoken (§20.9).
+        own = instance is not None and f"instance:{principal}#{instance}" in (row.audience or [])
+        return own and row.actor_membership != membership.id
     if row.kind == "request_forwarded":
         # Only a forward to a member wakes, and only that member; an opening to the
         # admins wakes no agent, it would wake every admin agent at once (§7).

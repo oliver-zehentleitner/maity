@@ -21,9 +21,8 @@ from maity_hub import tables as t
 from maity_hub.board import history
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
-from maity_hub.jourfixe import answers
+from maity_hub.jourfixe import answers, circle
 from maity_hub.jourfixe.answers import refused
-from maity_hub.scopes import in_admin_team
 
 REDACTED_TITLE = "[redacted jour fixe proposal]"
 REDACTED_TEXT = "[redacted]"
@@ -274,17 +273,23 @@ def statement_redacted(
 
 
 def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
-    """§20.3's readers by `member:`: the moderator, the humans of the admin team (no proxy), and a
-    named answer's author; never the author of an anonymous one."""
-    humans = conn.execute(
-        select(t.membership.c.human_id).where(
-            t.membership.c.project_id == round_row.project_id,
-            t.membership.c.active.is_(True),
-            t.membership.c.human_id.isnot(None),
-            t.membership.c.trust.in_(("owner", "admin")),
-            t.membership.c.role != "proxy",
-        )
-    ).scalars()
+    """§20.3's readers by `member:`: the moderator, the humans of the admin team (no proxy), or
+    an owner's series' `circle_owner`, and a named answer's author; never the author of an
+    anonymous one."""
+    owner = circle.owner_of(round_row)
+    humans = (
+        [owner]
+        if owner
+        else conn.execute(
+            select(t.membership.c.human_id).where(
+                t.membership.c.project_id == round_row.project_id,
+                t.membership.c.active.is_(True),
+                t.membership.c.human_id.isnot(None),
+                t.membership.c.trust.in_(("owner", "admin")),
+                t.membership.c.role != "proxy",
+            )
+        ).scalars()
+    )
     tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
     if not row.anonymous and row.author is not None:
         author = conn.execute(select(t.membership).where(t.membership.c.id == row.author)).one()
@@ -313,11 +318,7 @@ def _redact_answer(
         allowed = (
             moderator
             or (human and mine.may("events:admin"))
-            or (
-                human
-                and in_admin_team(mine.trust, mine.role)
-                and not answers.window_open(round_row)
-            )
+            or (answers.answer_reader(round_row, mine) and not answers.window_open(round_row))
         )
     else:
         allowed = moderator or (human and (own or mine.may("events:admin")))
@@ -401,7 +402,7 @@ def redact(
         conn,
         round_row.project_id,
         "event_redacted",
-        ["all"],
+        circle.audience(conn, round_row, ["all"]),
         {"round_id": round_row.id, "target": target, "reason": reason},
         actor=actor,
         subject=("jour_fixe", round_row.id),

@@ -6184,6 +6184,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "src/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Shop Dev",
         "handle": "shop-dev",
@@ -6213,6 +6214,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Anna's Shop Dev",
         "handle": "shop-dev",

@@ -1365,8 +1365,8 @@ def claim(
 
 def status_moved(conn: Connection, card: Any, project_state: str, actor: Any) -> None:
     """The `task_updated` of a status moved under an event of another kind (a claim, a release,
-    a report, a request that blocks or unblocks the card): the one a card's watchers are
-    reached by (§6.4, §8.2)."""
+    a report, a request that blocks or unblocks the card, a holder's isolation or removal): the
+    one a card's watchers are reached by (§6.4, §8.2)."""
     emit(
         conn,
         card.project_id,

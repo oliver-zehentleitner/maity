@@ -151,8 +151,7 @@ window.Maity = window.Maity || {};
   // off turns the mode on with it, and clearing the last turns it off.
   // The hub's note (member.meat_proxy_note, §2) stands under the parts as
   // /me and each answer carry it — what agents read now, or would read
-  // once it is on — never a copy of the page's own; a hub that does not
-  // send it shows none.
+  // once it is on — never a copy of the page's own.
   const MEAT_PARTS = [
     ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
     ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],
@@ -160,7 +159,6 @@ window.Maity = window.Maity || {};
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
     const status = M.statusLine();
-    const noteOf = (m) => (typeof m.meat_proxy_note === "string" && m.meat_proxy_note ? m.meat_proxy_note : null);
     const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
     const parts = MEAT_PARTS.map(([field, id]) => [field, h("input", { type: "checkbox", id })]);
     const hint = h("p", { class: "hint", id: "meat-proxy-hint" });
@@ -170,10 +168,10 @@ window.Maity = window.Maity || {};
     function show() {
       box.checked = !!ctx.me.meat_proxy;
       parts.forEach(([field, input]) => { input.checked = !!ctx.me[field]; });
-      const note = noteOf(ctx.me);
-      hint.textContent = !note ? M.t("meat.hint") : ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
-      append(clear(quote), note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null);
-      box.setAttribute("aria-describedby", note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint");
+      hint.textContent = ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
+      // GET /me carries the note always, off too: what switching on would send (§5.2).
+      append(clear(quote), h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, ctx.me.meat_proxy_note)));
+      box.setAttribute("aria-describedby", "meat-proxy-hint meat-proxy-note");
     }
     async function send(body) {
       inputs.forEach((x) => { x.disabled = true; });
@@ -188,7 +186,7 @@ window.Maity = window.Maity || {};
         show();
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? (noteOf(ctx.me) ? M.t("meat.saved.on_note") : M.t("meat.saved.on"))
+          ? M.t("meat.saved.on_note")
           : M.t("meat.saved.off")));
       } catch (err) {
         show();

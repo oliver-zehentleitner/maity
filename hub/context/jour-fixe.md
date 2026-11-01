@@ -268,3 +268,56 @@ reaches every way a membership ends, as for `circle_owner_gone` (de0c97c0).
   requests with their events and records as the hub writes them.
 - Ending rights in every place a membership ends: one missed path leaves a
   moderator who is no member.
+
+## A round of an owner's series takes its readers from its own config, and the report list is read, not kept
+
+**Id:** 10e772ac-0e65-449e-9fd3-8ba6a4976b56
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 3 of 3); `to: member` confirmed by the team lead; contract `docs/api.md` §20.2, §20.5–§20.7, §20.9
+**See:** jour-fixe.md#the-moderator-rights-two-consents-ride-on-consent-requests-and-the-sweep-ends-rights-and-files-what-the-upgrade-owes — 8dcb08a3-672d-48a2-816a-453bf27996c5 — as of 2026-10-31
+**Revisit when:** a series' deletion stops leaving its rounds behind, or the request table allows a non-personal request to one human
+
+Whether a member reads a round of an owner's series, and who its events,
+thread and redactions reach, is decided from the round's `config` (its
+`circle` and `circle_owner` as the round opened), never from the series row
+(`jourfixe/circle.py`). The round's thread knows its `circle_owner` from the
+round too (`group_chats.round_keepers`), and is told it at creation, before
+the round points at its thread. Its events also escape the owners' and admins'
+see-all (§8.2): the batch's reading marks them `circle:<seq>` (from the
+round's `config`, or the series row for a series event), and only their
+audience reads them. A series event of an owner's series that was since
+deleted is no longer found and falls back to the see-all; it carries no
+topic, and the admins are in its audience anyway. In such a thread, owning
+the moderator agent does not bring its owner in either (`outside:<chat>`).
+The round points at its thread before `conversation_created` is written, so
+that event names the round and its observers. The report list may hold a
+moderator of the series (§20.2), but a round's report goes only to those
+who read that round (§20.7): a moderator reads the rounds it moderated. A `to_owner` proposal goes to the
+`circle_owner` as `to: member` while they are a member, and as a personal
+request once they left. The rounds list leaves out what the caller may not
+read by reading on in batches until the page is full. The report list
+(`jour_fixe_recipient`) stores only what differs from the default — a member
+on it, a keeper off it — and who receives a report is worked out when it is
+read: the keepers and the listed, each only while it reads the series'
+rounds; the human recipient's inbox item is derived the same way. The report
+wakes only the agent recipients' selected instances; a skip and a series
+change wake nobody.
+
+**Reason:** a deleted series' running round runs to its end (§20.1) with no
+series row left, so only the round can still name its owner. The request
+table holds a request to one named human only as a personal one, while §20.6
+asks for a personal request only once the owner left, and a member is
+reachable as `to: member` (the check `ck_request_personal_shape` allows
+`to_kind: human` only together with `personal`; the team lead confirmed
+`to: member` for a member, 2026-10-31). Reading the list rather than pruning it covers
+every way a member stops reading the rounds — leaving, a moderator right
+that ends — without a hook in each.
+
+**Rejected alternatives:**
+- Looking the series up from the round: gone once the series is deleted.
+- Filtering the rounds list after the page is cut: short pages, and a
+  cursor that skips rounds.
+- Deleting list rows wherever reading ends: one missed path leaves a
+  recipient who may not read the report.

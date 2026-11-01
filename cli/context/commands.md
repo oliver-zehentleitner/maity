@@ -1337,3 +1337,36 @@ after a `not_found` (`_moved`, `GET /me`) is skipped under `--for`. `wait --for`
 `events?for=<member id>` from `for_cursors.<member id>` in `state.json`, so the bridge's own
 `cursor` never moves on the served agent's events. Rejected: a list of commands that refuse
 `--for`, which every new `/me` command would have to join.
+
+## `maity jourfixe` reads every series; `answer` takes the unanswered round that closes first
+
+**Id:** 09b58154-aeb0-49d5-bea1-25ccf753e5bc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** jour fixe series, card tsk-k1t68hg8eyxh, part 3 (2026-10-31); docs/api.md §13, §20.1, §20.2, §20.9; the choice of round is this package's
+**See:** commands.md#maity-jourfixe-answer-takes-its-answer-from-flags-or-a-json-file-and-checks-the-round-first — f8b262d4-ce8c-44af-aa41-65b31df99e87 — as of 2026-10-31
+**Revisit when:** §13 gives `answer` a round argument
+
+A project holds several series, so `GET …/jour-fixe` answers a list and
+`maity jourfixe` prints one block per series. `answer` keeps §13's form
+without a round argument: of the current rounds that are `answering`
+and have the caller among their `participants`, it takes those the
+caller has not answered yet (read with `?mine=true`), and of them the
+one whose window closes first; exit 2, nothing sent, without one.
+`answers` and `withdraw` without a round take a current round, else
+the newest reported one. `start` and `moderators` name their series.
+Under the global `--for` (8f22e8a8) every one of them acts for the
+served agent: `answer` picks among that agent's rounds (`Session.me`),
+and `opt-out` and `report-to` go out with `Maity-For`.
+
+**Reason:** §13 names no round for `answer`, and with several series
+open at once the caller still answers each in turn: one answered drops
+out, the next call takes the next. The window closing first is the one
+that would be lost.
+
+**Rejected alternatives:**
+- Refusing when more than one round is open: the caller could then
+  answer none of them through the CLI.
+- A `--round` flag: §13 does not have one; a contract change for the
+  team lead, not this package.

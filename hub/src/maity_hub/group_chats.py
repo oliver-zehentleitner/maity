@@ -198,9 +198,14 @@ def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
     current = stays(conn, conversation_id)
     if any(s.membership_id == mine.id for s in current):
         return "participant"
-    if mine.kind == "human" and mine.principal_id in observers(conn, current):
+    if mine.kind != "human":
+        return None
+    keeper = round_keepers(conn, [conversation_id]).get(conversation_id)
+    if keeper is not None:  # an owner's round: only its `circle_owner` reads along (§20.5)
+        return "observer" if mine.principal_id == keeper else None
+    if mine.principal_id in observers(conn, current):
         return "observer"
-    if mine.kind == "human" and mine.trust == "owner" and _round_of(conn, conversation_id):
+    if mine.trust == "owner" and _round_of(conn, conversation_id):
         return "observer"  # every project owner reads a round's thread along (§20.5)
     return None
 
@@ -211,6 +216,59 @@ def _round_of(conn: Connection, conversation_id: str) -> str | None:
         select(t.jour_fixe_round.c.id).where(t.jour_fixe_round.c.conversation_id == conversation_id)
     ).scalar()
     return found
+
+
+def keeper_of(config: Any) -> str | None:
+    """The `circle_owner` of a round's `config` when its series is an owner's, else None."""
+    config = config or {}
+    owner: str | None = config.get("circle_owner") if config.get("circle") == "owner" else None
+    return owner
+
+
+def observer_window(current: list[Any], owned: set[str]) -> int:
+    """The seq after which an observer's window starts (§9.2): the earliest join of its own
+    agents in the chat; a round's thread read along without one (§20.5) from the earliest
+    join of anyone in it."""
+    joins = [s.window_after for s in current if s.agent_id in owned] or [
+        s.window_after for s in current
+    ]
+    return int(min(joins, default=0))
+
+
+def round_keepers(conn: Connection, conversation_ids: Iterable[str]) -> dict[str, str]:
+    """The `circle_owner` of each thread that is a round of an owner's series (§20.5): that
+    human alone reads it along, in place of the agents' owners and the project's owners.
+    Another owner's agent that moderates it does not bring its owner in."""
+    wanted = {c for c in conversation_ids if c}
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        select(t.jour_fixe_round.c.conversation_id, t.jour_fixe_round.c.config).where(
+            t.jour_fixe_round.c.conversation_id.in_(wanted)
+        )
+    ).all()
+    found = {}
+    for row in rows:
+        keeper = keeper_of(row.config)
+        if keeper:
+            found[row.conversation_id] = keeper
+    return found
+
+
+def thread_observers(current: list[Any], owners: dict[str, str], keeper: str | None) -> list[str]:
+    """`observers_of`, or for a round of an owner's series its `circle_owner` alone; the
+    agents that serve a participant across owners are added by `shown_observers`."""
+    if keeper is None:
+        return observers_of(current, owners)
+    inside = {s.human_id for s in current if s.human_id}
+    return [] if keeper in inside else [keeper]
+
+
+def _observers(conn: Connection, conversation: Any, current: list[Any]) -> list[str]:
+    keeper = round_keepers(conn, [conversation.id]).get(conversation.id)
+    if keeper is None:
+        return observers(conn, current)
+    return thread_observers(current, {}, keeper)
 
 
 def view(
@@ -230,7 +288,7 @@ def view(
         "participants": [{**found[s.membership_id], "joined_at": ts(s.joined_at)} for s in current],
         "observers": shown_observers(
             current,
-            observers(conn, current),
+            _observers(conn, conversation, current),
             carriers(conn, [s.membership_id for s in current]),
         ),
         "closed_at": ts(conversation.closed_at),
@@ -401,10 +459,13 @@ def create(
     actor: Actor | None,
     *,
     hub_thread: bool = False,
+    round_id: str | None = None,
 ) -> str:
     """Create a group chat; returns its id. `creator` is the creating human's membership
     row (a participant whether or not `member_ids` names it), None for the hub's thread
-    (§20.5), which skips the cap, `use_direct` and the quota."""
+    (§20.5), which skips the cap, `use_direct` and the quota. `round_id` names the round
+    whose thread it is: the round points at it before `conversation_created` is written,
+    so that event names the round and its readers."""
     project = lock_project(conn, project.id)  # its state as of the lock, not the read before
     refuse_closed_project(project)
     names = list(member_ids)
@@ -454,6 +515,12 @@ def create(
     by = principal(creator) if creator is not None else None
     for row in members.values():
         _join(conn, conversation_id, row.id, by, after)
+    if round_id is not None:
+        conn.execute(
+            update(t.jour_fixe_round)
+            .where(t.jour_fixe_round.c.id == round_id)
+            .values(conversation_id=conversation_id)
+        )
     conversation = find(conn, project.id, conversation_id)
     _announce(conn, conversation, "conversation_created", {}, [], actor)
     return conversation_id
@@ -593,7 +660,10 @@ def _announce(
     """`conversation_created`/`_updated` to the participants after the change and whoever
     it removed (§8.2); a conversation's event, so no see-all reaches it."""
     current = stays(conn, conversation.id)
-    readers = ["trust:owner"] if conversation.hub_thread else []  # they read along (§20.5)
+    readers = []
+    if conversation.hub_thread:  # they read along (§20.5)
+        keeper = round_keepers(conn, [conversation.id]).get(conversation.id)
+        readers = [f"member:{keeper}"] if keeper else ["trust:owner"]
     emit(
         conn,
         conversation.project_id,

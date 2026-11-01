@@ -522,8 +522,8 @@ window.Maity = window.Maity || {};
       }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
-        // The briefing (§6.2), edited here; sent only to whom may see it.
-        if ("briefing" in m && M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
+        // The briefing (§6.2), edited here; an admin is sent every member's.
+        if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
       }

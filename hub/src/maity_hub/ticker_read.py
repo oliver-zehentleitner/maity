@@ -135,7 +135,11 @@ def wakes(row: Any, principal: str) -> bool:
 
 def ticker_subjects(conn: Connection, rows: Sequence[Any]) -> set[str]:
     """The `subject_id`s of the `event_redacted` among `rows` that removed a ticker item."""
-    seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
+    seqs = {
+        int(r.subject_id)
+        for r in rows
+        if r.kind == "event_redacted" and r.subject_type == "event" and r.subject_id
+    }  # a round's redaction (§20.8) names the round, not a seq
     if not seqs:
         return set()
     return {

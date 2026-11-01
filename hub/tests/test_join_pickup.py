@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, events
+from maity_hub import clock, cross_owner, events
 from maity_hub import tables as t
 from maity_hub.routes import agents, joins
 from tests import factory, flow
@@ -419,6 +419,43 @@ def test_a_taken_handle_is_refused_at_the_pickup(setup: Setup, make_client: Clie
     refused = pick_up(setup, placement)
     assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
     assert refused.json()["error"]["details"] == {"why": "handle_taken"}
+
+
+def test_a_new_profile_under_another_owners_boss_waits_for_the_boss_side(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.2 "Joins and placements": the membership starts without the boss, and the creator's
+    creating the profile is the subordinate owner's consent, so only the boss's side is asked."""
+    friend = flow.human(make_client, setup.engine, "friend")
+    with setup.engine.connect() as conn:
+        project = conn.execute(select(t.project.c.id)).scalar_one()
+    boss = factory.agent(setup.engine, project, friend.id).agent_id
+    placement = placed(
+        setup, agent={"handle": "agent-n", "display_name": "Agent N"}, reports_to=boss
+    )
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    with setup.engine.connect() as conn:
+        created = conn.execute(
+            select(t.membership).where(t.membership.c.agent_id == joined.headers["Maity-Member-Id"])
+        ).one()
+        boss_row = conn.execute(select(t.membership).where(t.membership.c.agent_id == boss)).one()
+        [request] = [
+            r
+            for r in conn.execute(select(t.request)).all()
+            if (r.proposal or {}).get("kind") == cross_owner.KIND
+        ]
+    assert created.reports_to is None
+    assert (request.to_human, request.status) == (friend.id, "open")
+    assert request.proposal["side"] == "boss"
+    assert (request.proposal["target"], request.proposal["boss"]) == (created.id, boss_row.id)
+    answered = friend.post(f"/requests/{request.id}/answer", {"reply_id": "go"})
+    assert answered.status_code == 200, answered.text
+    with setup.engine.connect() as conn:
+        after = conn.execute(select(t.membership).where(t.membership.c.id == created.id)).one()
+    assert after.reports_to == boss_row.id
 
 
 # --- supervised sessions (§15.11) ----------------------------------------------------------

@@ -102,7 +102,7 @@ def test_a_decided_adoption_opens_a_card_and_to_owner_files_a_decision(
     assert proposal_one["task_id"] == task_id and proposal_two["request_id"] == request_id
     assert proposal_two["statement_proposal_id"] == "t1.s1"
     [reported] = kinds(reporting.engine, "jour_fixe_reported")
-    assert reported.audience == ["all"]
+    assert reported.audience == ["all", f"member:{reporting.owner.id}"]  # the keeper (§20.2)
     assert [p["outcome"] for p in reported.payload["proposals"]] == ["adopt", None]
     again = report(reporting)
     assert again.status_code == 409 and again.json()["error"]["code"] == "jour_fixe_state"
