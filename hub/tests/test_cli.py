@@ -38,12 +38,15 @@ def test_migrate_then_report(capsys: pytest.CaptureFixture[str]) -> None:
 @pytest.mark.wheel
 def test_the_installed_entry_point_answers() -> None:
     """The console script the package declares is on the path and starts the hub's CLI."""
+    import os
     import shutil
     import subprocess
 
     from maity_hub import __version__
 
     script = shutil.which("maity-hub")
+    if script is None and not os.environ.get("CI"):  # CI installs it: there, missing is a failure
+        pytest.skip("maity-hub is not on the path: `make install` in a venv (hub/README.md)")
     assert script is not None
     result = subprocess.run([script, "--version"], capture_output=True, text=True, check=True)
     assert result.stdout.strip() == f"maity-hub {__version__}"
