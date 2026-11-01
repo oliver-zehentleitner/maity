@@ -3700,14 +3700,15 @@ a name per language does the same (`{{country_de}}`).
 
 `landing.LANGUAGE_NAMES` carries the list and each language's own name, which
 the language bar shows, since ten bare tags read as a code list. The page's
-frame words are in `render.WORDS`. `web/tools/maity-site.json` holds every text
-in all ten; a command line in the demo, an agent's handle and a cookie's name
-stay as they are. `hub/tests/test_site_values.py` and the e2e step import the
-real file, filled with made-up values, and read every language.
+frame words are in `render.WORDS`. The instance's own site file holds every
+text in all ten; a command line in the demo, an agent's handle and a cookie's
+name stay as they are. `hub/tests/test_site_values.py` and the e2e step import
+a neutral file with the same shape (`web/tools/site-fixture.json`), filled with
+made-up values, and read every language; **Check the file** covers a real file
+when it is imported.
 
-**Reason:** the operator asked that the import works for certain, so the test
-is the file itself. A wrong placeholder in one language would otherwise show
-only on the live page.
+**Reason:** the operator asked that the import works for certain. A wrong
+placeholder in one language would otherwise show only on the live page.
 
 **Rejected alternative:** Right-to-left support: no listed language needs it,
 and it touches the stylesheet's every side. Traditional Chinese answered with
@@ -3715,6 +3716,26 @@ Simplified: `Accept-Language: zh-TW` goes on to the reader's next language.
 
 The translated legal texts are machine translations, reviewed by nobody with
 legal training. The English and German are not changed by them.
+
+## An instance's site file is not in the public repository
+
+**Id:** 68502afd-2713-4ea1-b341-73a6efb50537
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction on the card tsk-pfn7yg91d1y7, 2026-11-01, and the coordinator's word on the same card that **Check the file** is enough for the real file; the maintainer named no reason for the move
+**Revisit when:** a public template for operators is wanted again
+**See:** views.md#the-whole-site-is-one-json-maity-site1-checked-part-by-part-and-saved-in-turn-by-the-dashboard — 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd — as of 2026-11-01
+
+The site file of the instance the project runs is kept outside this
+repository, and an operator writes their own. Tests, smoke and e2e read
+`web/tools/site-fixture.json`: every section type and all ten languages, with
+placeholder text and the seven placeholders, none of an instance's words. Git
+history keeps the old versions, and nobody rewrites it.
+
+**Rejected alternative:** Tests skipped when no file is there: CI would no
+longer cover an import in every language. A public copy of the instance's
+texts kept as a template: that is what the instruction ends.
 
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
@@ -3738,10 +3759,11 @@ the landing page). The second factor is asked for once, since a step-up
 holds for 10 minutes; each call still goes through the step-up helper, so
 an expired window asks again rather than fails. A save that stops says
 what is saved and what is not and goes no further, with no rollback. The
-template `web/tools/maity-site.json` replaces `landing-v3-complete.json`.
-It carries no registration: registration is the instance's own, and a
-template imported whole would otherwise close an open registration
-without a word.
+template that replaced `landing-v3-complete.json` has since left the
+repository (views.md#an-instances-site-file-is-not-in-the-public-repository).
+A site file need carry no registration: registration is the instance's own,
+and a file imported whole would otherwise close an open registration without
+a word.
 Its placeholders are in square brackets: the hub's Markdown rules read
 `<Operator>` as an HTML tag and refuse the text.
 

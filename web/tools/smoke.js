@@ -9566,10 +9566,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "landing editor: an emptied operator line is left out, and Save goes through the step-up");
     byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
     await leSave();
-    // The prepared landing V3 itself (tsk-k7pwrzs8vb8k; the landing part of tools/maity-site.json): loaded, checked without a refusal,
+    // A prepared landing file (the landing part of tools/site-fixture.json): loaded, checked without a refusal,
     // every section of both languages in the editor, its own footer taken; saved as it is.
     // Its footer's one placeholder takes a value here, as the site import would.
-    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8")).landing;
+    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/site-fixture.json"), "utf8")).landing;
     v3.footer.operator = "Example operator";
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
@@ -9675,7 +9675,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // changes nothing; a file with only the legal pages leaves the rest; an unknown key is named; a save that stops says the state.
   {
     const SI = win.Maity.siteIo;
-    const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8"));
+    const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/site-fixture.json"), "utf8"));
     // Placeholders (§16.7.3): each one in the template named, none filled yet, so nothing can be saved and the hub is not asked.
     const siNames = ["address", "date", "email", "hosting_provider", "mail_provider", "name", "operator"];
     const siEmpty = await SI.check(template, await SI.readNow());

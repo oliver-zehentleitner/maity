@@ -1820,10 +1820,11 @@ and lists it as changes, the same as saved, not in the file, or refused.
 page, registration, the landing page), the second factor asked for once
 (§2.8.4: it holds for 10 minutes). A save that stops says what is saved
 and what is not, and goes no further; nothing is rolled back. The
-sections' own imports stay. `web/tools/maity-site.json` is the template:
-the landing page as it runs, the privacy notice, the terms and the
-imprint in all ten languages of `docs/api.md` §16.7, and no registration, which is
-the instance's own (a part the file leaves out stays as it is).
+sections' own imports stay. An operator writes their own file: the format
+is in `docs/api.md` §16.7, and **Export** gives a start. A file may leave out
+registration, which is the instance's own (a part the file leaves out stays
+as it is). `web/tools/site-fixture.json` is a neutral file for the tests, with
+every section and all ten languages, not a text to publish.
 Placeholders are written `{{name}}` (`{{operator}}`, `{{address}}`), and
 **Site values** in the same section keeps their values (`docs/api.md`
 §16.7.3). **Check the file** replaces them in every text and says for

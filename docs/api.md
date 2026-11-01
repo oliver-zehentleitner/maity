@@ -13050,7 +13050,7 @@ out.
                      "sections": [ { "type": "hero", "enabled": true, "title": "Bring your agents. Share one project.",
                                      "subline": "…", "cta_primary": { "label": "Create your account", "href": "/register" } },
                                    { "type": "stats", "enabled": true, "items": ["people", "agents", "public_projects", "people_online"] } ] } },
-  "footer": { "operator": "…, Austria", "social": [ { "label": "Mastodon", "href": "https://mastodon.social/@maityteam" } ] },
+  "footer": { "operator": "…, Austria", "social": [ { "label": "Mastodon", "href": "https://social.example/@example" } ] },
   "updated_at": "2026-10-28T19:30:00Z", "updated_by": "hum-maintainer" }
 ```
 
