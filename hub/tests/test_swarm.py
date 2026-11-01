@@ -281,6 +281,7 @@ def test_a_public_page_counts_a_link_event_only_while_the_repository_is_public(
         "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
         "task_id": task,
         "public": True,
+        "read_via": "instance",
     }
     event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
     assert public_prs(migrated, project_id) is None
@@ -289,6 +290,28 @@ def test_a_public_page_counts_a_link_event_only_while_the_repository_is_public(
             update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
         )
     assert public_prs(migrated, project_id) == 1
+
+
+@pytest.mark.parametrize("read_via", [None, "app", "owner_token"])
+def test_a_public_page_counts_a_link_event_only_as_read_with_the_instances_token(
+    owner: flow.Human, migrated: Engine, project_id: str, read_via: str | None
+) -> None:
+    """§11.4: nor one written before the event named its source, though it says public."""
+    task = card(migrated, project_id, membership_of(migrated, owner.id))
+    payload: dict[str, Any] = {
+        "new": {"found": True, "title": "x", "state": "merged"},
+        "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
+        "task_id": task,
+        "public": True,
+    }
+    if read_via is not None:
+        payload["read_via"] = read_via
+    event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) is None
 
 
 def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_is_public(

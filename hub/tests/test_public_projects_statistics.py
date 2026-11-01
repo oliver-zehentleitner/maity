@@ -159,6 +159,7 @@ def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_co
                         "new": {"found": True, "title": "x", "state": "merged"},
                         "forge_url": f"https://github.com/acme/maity/pull/{number}",
                         "public": True,
+                        "read_via": "instance",
                         "task_id": card,
                     },
                 )

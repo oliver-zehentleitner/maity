@@ -177,7 +177,7 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
             if (payload.get("new") or {}).get("state") != "merged":
                 continue
             url, tasks = payload.get("forge_url"), [payload.get("task_id")]
-            public = payload.get("public") is True
+            public = payload.get("public") is True and payload.get("read_via") == "instance"
         key = pull_key(url)
         first.setdefault(key, at)
         if public and open_repository:

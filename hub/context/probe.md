@@ -362,12 +362,12 @@ prevent.
 **Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b
 **Revisit when:** another page without sign-in shows data the probe read, or the forge stops reporting visibility in the GraphQL read
 
-`link_observed` carries `public`: whether the instance's token made the
-read and the same GraphQL read reported the repository public
-(`isPrivate: false`), `false` when it did not say or an owner's grant read
-it. A page without sign-in counts merged pull requests only from events with
-`public: true`, and only while the repository's last check found it public.
-Events written before the field existed do not count.
+`link_observed` carries `public`: whether the same GraphQL read reported the
+repository public (`isPrivate: false`), `false` when it did not say; and
+`read_via`: the source that read it. A page without sign-in counts merged pull
+requests only from events with `public: true` and `read_via: instance`, and only
+while the repository's last check found it public. Events without those fields
+do not count.
 
 Changed on 2026-11-01: the count read only `link_observed`, which only a
 card's forge link produces, while nearly all pull requests of a project
@@ -382,8 +382,9 @@ line: a 0 there says nothing was merged.
 
 Changed on 2026-11-02: until then a link event read through a grant counted when the read found
 the repository public, and the link events skipped the last check. Both went against §11.4. Events
-already written with `public: true` run out of the 30-day window; they can't be told apart by
-token. A public project read only through an App or an owner's token has no line.
+already written with `public: true` can't be told apart by token, so they stopped counting at once
+rather than running out of the 30-day window; that takes no data change, and few merges come from
+links. A public project read only through an App or an owner's token has no line.
 
 The ticker's `merge.public` is tested at the probe: a scan with the instance's token writes
 `true`, one through an App or an owner's token writes `false`, since that line is the only thing
