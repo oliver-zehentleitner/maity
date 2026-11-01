@@ -302,6 +302,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.health_engine = health_engine or engine
+    # Read once: it loads every migration file, and the files do not change under a running hub.
+    app.state.schema_head = head_revision(engine)
     app.state.forge_access = forge_access.ForgeAccess(
         engine, settings.github_app, settings.secret_key
     )
@@ -420,7 +422,7 @@ def _api_router() -> APIRouter:
         except SQLAlchemyError:
             log.exception("health: database unreachable")
             return error_response(503, "database_unavailable", "the database is unreachable")
-        head = head_revision(engine)
+        head = request.app.state.schema_head
         if current != head:
             return error_response(
                 503,
