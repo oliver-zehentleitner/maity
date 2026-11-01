@@ -453,8 +453,9 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
 
 def _return_held(conn: Connection, human_id: str) -> None:
     """A `decision` request one of its memberships, or one of its agents', holds after a
-    forward or a claim goes back to the admins (`holder: trust:admin`, §7)."""
-    from maity_hub.routes.requests import return_to_pool
+    forward or a claim goes back to the admins (`holder: trust:admin`, §7), or to its
+    addressee if an owner's round filed it (§20.7)."""
+    from maity_hub.routes.requests import return_held
 
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     mine = select(t.membership.c.id).where(
@@ -466,7 +467,7 @@ def _return_held(conn: Connection, human_id: str) -> None:
         .where(t.request.c.holder_member.in_(mine), t.request.c.status == "open")
         .order_by(t.request.c.created_at, t.request.c.id),
     ):
-        return_to_pool(conn, request_id, human_id, "the holder's account was deleted")
+        return_held(conn, request_id, human_id, "the holder's account was deleted")
 
 
 def _leave_projects(conn: Connection, human_id: str) -> None:

@@ -76,14 +76,17 @@ def request_link(body: LinkRequest, request: Request, background: BackgroundTask
     _anonymous(request)
     hub, engine = settings_of(request), engine_of(request)
     with engine.begin() as conn:
-        _enabled(conn, hub)
+        # Under `email` the answer stays the `202` and nothing is sent (§2.8.8, rule 3).
+        silent = sign_in_settings.second_factor_policy(conn, hub) == "email"
+        if not silent:
+            _enabled(conn, hub)
     origin = origin_of(request)
     wait, allowed = LIMITS.take(body.address, origin.address)
     if wait:
         raise rate_limited(wait)
     pending = secrets.token_urlsafe(32)
     requested_at = clock.now()
-    if allowed:
+    if allowed and not silent:
         background.add_task(
             deliver,
             engine,

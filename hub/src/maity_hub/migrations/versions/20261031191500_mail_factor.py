@@ -21,6 +21,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
+from maity_hub.types import JSON_VALUE
+
 revision: str = "20261031191500_mail_factor"
 down_revision = "20261031190604_jour_fixe_series"
 branch_labels: str | Sequence[str] | None = None
@@ -56,6 +58,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # A build below this one reads a stored `email` as unknown and falls back to the environment's
+    # policy, a silent drop that §2.8.8's rule 5 forbids: the operator switches first.
+    setting = sa.table("instance_setting", sa.column("name"), sa.column("value", JSON_VALUE))
+    stored = op.get_bind().execute(
+        sa.select(setting.c.value).where(setting.c.name == "sign_in.second_factor")
+    )
+    if stored.scalar() == "email":
+        raise RuntimeError(
+            "sign_in.second_factor is email: switch it to another value before this downgrade"
+        )
     with op.batch_alter_table("human_session", schema=None) as batch_op:
         batch_op.drop_column("mail_sent_at")
         batch_op.drop_column("mail_sent")

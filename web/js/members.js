@@ -113,10 +113,13 @@ window.Maity = window.Maity || {};
 
   function presenceNodes(m, warn, ctx) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
+    const asleep = M.dom.dormantOf(m);
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence]() : String(m.presence || M.t("members.presence.unknown")),
       M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · ", M.t("members.seen", { ago: formatAgo(m.last_seen_at) })) : null,
+      // Each dormant instance with the address that reaches it (§6.17); every one at rest is the team's limit (§6.12), said below.
+      asleep.map((i) => h("span", { class: "member-dormant" }, " · ", M.dom.dormantNote(ctx, m, i))),
       ctx ? availabilityNodes(ctx, m) : null];
   }
 
@@ -335,6 +338,29 @@ window.Maity = window.Maity || {};
         h("p", { class: "hint" }, words.effect));
     }
 
+    // Put an instance to rest or wake it (§6.17): its owner, or a human with
+    // members:admin, whose change to another owner's agent waits for that
+    // owner's consent. The lead instance is not offered: the hub refuses it.
+    function dormantPart(m, memberPath) {
+      if (m.kind !== "agent" || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      if (!active.length) return null;
+      const lead = (m.team || {}).lead_instance;
+      const address = (i) => "@" + (M.dom.handleOf(ctx, m) || m.handle) + "#" + i.id;
+      return h("div", { class: "member-dormant-part" },
+        h("h4", null, M.t("instance.rest.title")),
+        h("p", { class: "hint" }, M.t("instance.rest.hint")),
+        h("ul", { class: "member-dormant-list" }, active.map((i) => h("li", null,
+          h("span", { class: "mono" }, address(i)), " ",
+          i.dormant ? h("span", { class: "muted" }, M.dom.dormantNote(ctx, m, i)) : null, " ",
+          i.dormant
+            ? keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.wake.busy"), M.t("instance.wake.done", { address: address(i) }),
+              () => M.api.patch(memberPath, { dormant: false, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.wake", { address: address(i) })))
+            : i.id === lead ? h("span", { class: "muted" }, M.t("instance.rest.lead"))
+              : keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.rest.busy"), M.t("instance.rest.done", { address: address(i) }),
+                () => M.api.patch(memberPath, { dormant: true, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.rest", { address: address(i) })))))));
+    }
+
     // Lifting (§6.2): the events of the isolation stay readable unless the
     // box is ticked; then they stay hidden from the agent for good. Unticked
     // by default (the maintainer, tsk-zwxtdfmdscf7).
@@ -542,7 +568,7 @@ window.Maity = window.Maity || {};
         : h("span", { class: "ok" }, done));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart, bridgesPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -614,14 +640,14 @@ window.Maity = window.Maity || {};
         return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
           P.reportsToPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
-          P.teamForm(m, memberPath), P.bridgesPart(m, memberPath)));
+          P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; an admin is sent every member's.
         if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
       return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
@@ -870,12 +896,12 @@ window.Maity = window.Maity || {};
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
-    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
-    // page, an agent on Your agents' Join an agent, each with this project chosen. A guest brings no agent (§3.1).
+    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations page with this project
+    // chosen, an agent on this project's Agents with the join panel open (2026-11-01). A guest brings no agent (§3.1).
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: "/agents?project=" + encodeURIComponent(ctx.slug) }, M.t("members.join_agent")) : null;
+      ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),

@@ -241,6 +241,11 @@ window.Maity = window.Maity || {};
   // The links that are set, as plain https only: what the header and the overview show.
   const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
     .filter((x) => x.url);
+  // Where a forge lists its pull requests. No hub field: the repository's own URL and forge
+  // say it, and a forge not in this table gets no button.
+  const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
+  const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
+  const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -260,11 +265,12 @@ window.Maity = window.Maity || {};
     // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
     // and the project's own links stand beside it.
     const name = M.t("project.link.repository");
+    const pulls = pullsUrl(repo, forge);
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+      [pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
@@ -305,6 +311,9 @@ window.Maity = window.Maity || {};
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
   // sign-in page comes with a note; nothing more is asked until a sign-in.
+  // A view left open when the hub requires the factor: drawn again, once, it becomes the setup.
+  let enrolling = false;
+  M.onEnrolmentRequired = () => { if (!enrolling) { enrolling = true; render(); } };
   // Signing in again returns to the same route.
   let sessionEnded = false;
   M.onSessionEnded = (path, epoch) => {
@@ -370,6 +379,11 @@ window.Maity = window.Maity || {};
       else goNext(next);
     };
     M.secondFactor.page(main, session, done, logout);
+  }
+  function renderEnrolment(main) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    // Drawn again, not routed: the address stays what was asked for, often "/" already.
+    M.security.enrolPage(main, () => { enrolling = false; render(); }, logout);
   }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
@@ -1245,6 +1259,8 @@ window.Maity = window.Maity || {};
       count: (c) => c.inbox || 0, said: (count) => M.t("all.page.inbox.count", { count }) },
     { scope: "chats", href: "/chats", label: () => M.t("all.page.chats"),
       count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
+    // One's own agent profiles (/agents): a human's page, and nothing counted on it.
+    { scope: "agents", href: "/agents", label: () => M.t("all.page.agents"), when: (ctx) => ctx.me.kind === "human", count: () => 0 },
     { scope: "all-jour-fixe", href: "/all/jour-fixe", label: () => M.t("all.page.jour_fixe"), count: () => 0 },
     { scope: "all-why", href: "/all/why", label: () => M.t("all.page.why"), count: () => 0 },
   ];
@@ -1371,6 +1387,7 @@ window.Maity = window.Maity || {};
         { label: M.t("menu.picture"), href: "/account/picture" },
         { label: M.t("menu.preferences"), href: "/account/preferences" },
         { label: M.t("menu.theme"), href: "/account/theme" },
+        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
         ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
         { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
         { label: M.t("menu.change_password"), href: "/account" },
@@ -1398,10 +1415,10 @@ window.Maity = window.Maity || {};
         switcher(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
+            projectLinks(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null,
-            projectLinks(ctx.project))
+            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.
@@ -1416,7 +1433,7 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
-            ALL_PAGES.map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+            ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
@@ -1752,6 +1769,8 @@ window.Maity = window.Maity || {};
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      // So does one that must set the factor up first (§2.8.5): the setup is its page.
+      if (session && session.second_factor === "enrolment_required" && M.security) { renderEnrolment(main); return; }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.

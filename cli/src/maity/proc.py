@@ -43,7 +43,8 @@ def run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> subprocess.Compl
             env=env,
             stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            encoding="utf-8",  # what a file holds is not this machine's locale
+            errors="replace",
             timeout=timeout,
             check=False,
         )

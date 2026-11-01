@@ -1,10 +1,10 @@
 """Handles and their aliases (docs/api.md §6.24).
 
-A human or an agent profile has a fixed id and a handle that can change; a handle given up stays
-with the id as an alias, which nobody else can take. A handle is unique among all humans, and
-among the live profiles of one owner (§6.3). Every path that gives a handle (registration, the
-operator's `owner create`, `POST /agents`, a join, a placement) asks `ensure_free` under the
-handle's lock; a rename is `rename`.
+A human, an organisation or an agent profile has a fixed id and a handle that can change; a
+handle given up stays with the id as an alias, which nobody else can take. A handle is unique
+among all humans and organisations, and among the live profiles of one owner (§6.3). Every path
+that gives a handle (registration, the operator's `owner create`, `POST /agents`, a join, a
+placement) asks `ensure_free` under the handle's lock; a rename is `rename`.
 
 The lock is a row per (scope, handle) in `handle_lock`, taken after the renamed id's own row: two
 claims of one handle in one scope run one after the other, and the second sees the first's
@@ -18,7 +18,7 @@ from collections.abc import Iterable, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, delete, insert, select, true, update
+from sqlalchemy import Connection, delete, func, insert, select, true, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock, mentions, paths
@@ -30,6 +30,12 @@ RENAME_LIMIT = 3
 RENAME_WINDOW = timedelta(hours=24)
 HUMANS = "human"  # the scope of every human's handle
 FORMAT = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
+
+
+def _alias_id() -> Any:
+    """The id an alias belongs to, whichever of its three columns holds it."""
+    c = t.handle_alias.c
+    return func.coalesce(c.human_id, c.org_id, c.agent_id).label("owner")
 
 
 def scope_of(owner_id: str | None) -> str:
@@ -48,15 +54,15 @@ def aliases(
     if not wanted:
         return found
     rows = conn.execute(
-        select(t.handle_alias.c.human_id, t.handle_alias.c.agent_id, t.handle_alias.c.handle)
+        select(_alias_id(), t.handle_alias.c.handle)
         .where(
-            (t.handle_alias.c.human_id.in_(wanted)) | (t.handle_alias.c.agent_id.in_(wanted)),
+            _alias_id().in_(wanted),
             true() if include_retired else t.handle_alias.c.live.is_(True),
         )
         .order_by(t.handle_alias.c.id)
     )
     for row in rows:
-        found[row.human_id or row.agent_id].append(row.handle)
+        found[row.owner].append(row.handle)
     return found
 
 
@@ -66,6 +72,21 @@ def human_id_of(conn: Connection, handle: str) -> str | None:
     if found is None:
         found = conn.execute(
             select(t.handle_alias.c.human_id).where(
+                t.handle_alias.c.scope == HUMANS,
+                t.handle_alias.c.handle == handle,
+                t.handle_alias.c.live.is_(True),
+            )
+        ).scalar()
+    return None if found is None else str(found)
+
+
+def org_id_of(conn: Connection, handle: str) -> str | None:
+    """The organisation whose current handle or alias is `handle`, a deleted one's included:
+    both stay reserved for good (§6.24, §6.26)."""
+    found = conn.execute(select(t.org.c.id).where(t.org.c.handle == handle)).scalar()
+    if found is None:
+        found = conn.execute(
+            select(t.handle_alias.c.org_id).where(
                 t.handle_alias.c.scope == HUMANS,
                 t.handle_alias.c.handle == handle,
                 t.handle_alias.c.live.is_(True),
@@ -111,14 +132,14 @@ def holder(conn: Connection, scope: str, handle: str) -> str | None:
     if current is not None:
         return str(current)
     alias = conn.execute(
-        select(t.handle_alias.c.human_id, t.handle_alias.c.agent_id).where(
+        select(_alias_id()).where(
             t.handle_alias.c.scope == scope,
             t.handle_alias.c.handle == handle,
             t.handle_alias.c.live.is_(True),
         )
     ).first()
     if alias is not None:
-        return str(alias.human_id or alias.agent_id)
+        return str(alias.owner)
     if scope != HUMANS:
         reserved = conn.execute(
             select(t.placement.c.id).where(
@@ -174,13 +195,14 @@ class AliasLimit(ApiError):
 def rename(
     conn: Connection, subject_id: str, owner_id: str | None, handle: str
 ) -> tuple[str, str] | None:
-    """Give the human (`owner_id` None) or the profile `subject_id` a new handle; the old one
-    becomes an alias, an alias of its own taken back leaves the list. `(old, new)`, or `None`
-    for the id's own current handle (§6.24: a no-op, nothing changes, no event). The caller has
-    checked who may rename."""
+    """Give the human or the organisation (`owner_id` None) or the profile `subject_id` a new
+    handle; the old one becomes an alias, an alias of its own taken back leaves the list.
+    `(old, new)`, or `None` for the id's own current handle (§6.24: a no-op, nothing changes,
+    no event). The caller has checked who may rename."""
     if not FORMAT.fullmatch(handle):
         raise invalid({"handle": "format"})
-    table = t.human if owner_id is None else t.agent_profile
+    org = subject_id.startswith("org-")
+    table = t.org if org else t.human if owner_id is None else t.agent_profile
     # The id's own row first, then the handle's lock: the order every rename takes.
     row = conn.execute(select(table).where(table.c.id == subject_id).with_for_update()).one()
     # The caller looked at the profile before this lock: a delete that won the lock in between
@@ -211,7 +233,8 @@ def rename(
     if len(recent) >= RENAME_LIMIT:
         wait = recent[len(recent) - RENAME_LIMIT] + RENAME_WINDOW - now
         raise rate_limited(max(1, int(wait.total_seconds()) + 1))
-    column = t.handle_alias.c.human_id if owner_id is None else t.handle_alias.c.agent_id
+    name = "org_id" if org else "human_id" if owner_id is None else "agent_id"
+    column = t.handle_alias.c[name]
     if back:
         conn.execute(
             delete(t.handle_alias).where(
@@ -221,7 +244,7 @@ def rename(
             )
         )
     conn.execute(update(table).where(table.c.id == subject_id).values(handle=handle))
-    if owner_id is None:  # the register follows the account's current handle (§6.26)
+    if owner_id is None:  # the register follows the current handle (§6.26)
         try:
             with conn.begin_nested():
                 conn.execute(
@@ -233,8 +256,7 @@ def rename(
             raise invalid({"handle": "taken"}) from None
     conn.execute(
         insert(t.handle_alias).values(
-            human_id=subject_id if owner_id is None else None,
-            agent_id=None if owner_id is None else subject_id,
+            **{name: subject_id},
             scope=scope,
             handle=row.handle,
             created_at=now,

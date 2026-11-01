@@ -24,6 +24,7 @@ from typing import Any
 
 from maity import (
     __version__,
+    citecheck,
     environment,
     gitfacts,
     hub,
@@ -1158,6 +1159,15 @@ def cmd_claim(args: argparse.Namespace) -> int:
         mine = session.me
         if exc.code != "already_claimed" or not mine or exc.details.get("holder") != mine:
             raise
+        holding = exc.details.get("instance")
+        if holding != session.my_instance:
+            # A card is held by one instance (§6.17): the sibling's claim stays the sibling's.
+            _err(
+                f"{args.card} is held by {_instance({'member_id': mine, 'instance': holding})}, "
+                f"another instance of this agent; `maity takeover {args.card} --reason R` "
+                "asks for it (already_claimed)"
+            )
+            return EXIT_ERROR
         task, note = session.client.call("GET", path), " (it was already yours)"
     lease = _field(task, "claim", "lease_until")
     return _done(args, task, f"claimed {args.card}{note}; lease until {lease}")
@@ -1768,6 +1778,14 @@ def cmd_say(args: argparse.Namespace) -> int:
     if args.task is not None:
         body["task_id"] = args.task
     if review is not None:
+        cites = citecheck.check(Path.cwd(), review)
+        if cites.bad:
+            _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
+            for line in cites.bad:
+                _err(line)
+            return EXIT_ERROR
+        if cites.unchecked:
+            _err(f"cites not checked: {cites.unchecked}")
         body["review"] = review  # as given: the hub checks it and names each bad path
     return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
 
@@ -4058,7 +4076,8 @@ def build_parser() -> argparse.ArgumentParser:
         dest="review_file",
         metavar="PATH",
         help="with --type review_result, required: the review object (subject, head, verdict, "
-        "cites) as JSON from PATH, - for stdin; sent as given",
+        "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
+        "in this clone",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)

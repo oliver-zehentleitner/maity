@@ -2371,7 +2371,8 @@ included:
 - A second-factor session reaches only `GET /auth/session` (which
   answers `{second_factor: "required", via, session_id, csrf_token,
   expires_at}`, under `via: email` also `mail`: `sent`, `rate_limited`
-  (with `retry_after`) or `unavailable` (§2.8.8), and no member — the verify carries the CSRF token as
+  (with `retry_after`) or `unavailable` (§2.8.8) and, while the address
+  is verified, `address_hint` (§2.8.7), and no member — the verify carries the CSRF token as
   every cookie call),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
@@ -2593,7 +2594,9 @@ every one of those mails tells the human that someone has the password.
 - **Admin → Users**: "Reset two-factor sign-in" with a reason, saying
   that the person confirms it by mail.
 - **Under `second_factor: email`** (§2.8.8): after the first factor,
-  "We sent a link to <masked address>. Open it in this browser, or
+  "We sent a link to <masked address>" (`address_hint` of `GET
+  /auth/session`: the address's first character, `***` and its domain,
+  so `a***@example.com`). "Open it in this browser, or
   enter the code from the mail", with "Send again"; the step-up modal
   sends a code and asks for it. **Admin → Sign-in** offers "Mail for
   everyone" only while the mail settings are complete and enabled,
@@ -2699,7 +2702,9 @@ sets it so, so that no such account falls under "never had one".
   second-factor reset --handle <handle>` (§2.8.3) sends the next sign-in
   into enrolment once. Removing the verified address under `email` is
   refused for a human without TOTP (`forbidden`, `details.reason:
-  second_factor_required`), so nobody locks themselves out by it.
+  second_factor_required`), so nobody locks themselves out by it; so is
+  turning TOTP off (§2.8.1) for a human without a verified address, and
+  `required` in `GET /auth/second-factor` says so.
 
 The second-factor session never tells a verified address from an
 unverified one beyond this: the first factor already proved the
@@ -6008,6 +6013,7 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
@@ -11261,7 +11267,7 @@ cursor never moves on the served agent's events.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged") |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |

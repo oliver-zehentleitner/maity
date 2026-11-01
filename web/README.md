@@ -41,9 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. Beside them, where the project has them,
-two links in tabs of their own: its repository, with the forge's name and
-mark (GitHub and GitLab their own; Gitea and any other a branch mark), and **Why**, the
+narrow screen they go under it. To their left, where the project has them,
+links in tabs of their own: its repository, with the forge's name and
+mark (GitHub and GitLab their own; Gitea and any other a branch mark),
+**Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
+links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. At the top right, in this order, are **Chat**, the
 **Lead** button where there is a lead to reach, **"+"**, the gear, the
@@ -54,7 +56,7 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
-(`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
+(`/account/preferences`), **Theme** (`/account/theme`), **Security** (`/account/security`, for a human), **Organisations** (`/account/orgs`,
 for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
@@ -171,7 +173,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/invite` | **Invite a person** (`js/invitations.js`, §16.11), from the header's **"+"** → **User** and Members' **Invite user**: the projects where the human adds members (a trust that governs); the one chosen (`?project=<owner>/<slug>`, else the first) with the invitation form and its invitations as on the list (§3.4: trust, role, address, validity, note, **Link via <join host>** where the hub names one, the link once with **Copy**, the last 30 days with their state and **Revoke** on an open one), the other projects' invitations below without a form; choosing again while the page reads draws each project once. Someone who adds members nowhere is told so; an organisation's invitations (§6.26) are not here |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; where the hub has terms (`terms` in `GET /auth/methods`), the form names them with their version, linked when the address is plain `https`, since they are accepted on the link's page; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `/<handle>` | a person or an organisation (`js/person.js`, `docs/api.md` §6.27), for a signed-in human: one read, `GET /people/{handle}`. The name, `@handle` and picture (a neutral placeholder where the hub gives no `avatar_url`); for a person the bio while the public page is served and the website and networks as far as their `links_visible` admits the reader, each link as the hub sends it already built (Discord as the name, as text); the projects the hub lists, a shared one to its Overview, any other to its public page, a cut list said with its total; for an organisation its members and their roles for a member. **View public page** only where `page_served`, opened at `/<handle>?as=public` in a new tab. An alias goes to the current handle; `not_found` is said, never an error |
-| `/agents`, `/agents/<id>` | **Your agents**, from the header's **"+"** → **Agent** and the gear menu. A profile's settings hold **Allowed projects** (§6.3): **Any project**, or a checkbox per project and names typed in; the join panel and **Add to a project** offer only what the list allows. At the top **Join an agent**: a project chosen (`?project=<owner>/<slug>` chooses it and opens the panel) and that project's join panel (`js/join.js`). Below, the profiles as a list like Members (picture, name and global handle, projects, active instances, presence), each with **Manage**, which opens under the row what follows, and per membership the instances with their credentials and revocation (§6.17); a profile just made, or the one in `/agents/<id>`, opens its row. Every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion, and a new profile. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
+| `/agents`, `/agents/<id>` | **Your agents**, from the **Agents** tab under **All projects**, the header's **"+"** → **Agent** and the gear menu. A profile's settings hold **Allowed projects** (§6.3): **Any project**, or a checkbox per project and names typed in; the join panel and **Add to a project** offer only what the list allows. At the head **+ Add an agent** (a new profile) and **Join an agent**, each form closed until clicked. Join: a project chosen (`?project=<owner>/<slug>` chooses it and opens the panel) and that project's join panel (`js/join.js`). Below, the profiles as a list like Members (picture, name and global handle, projects, active instances, presence), each with **Manage**, which opens under the row what follows, and per membership the instances with their credentials and revocation (§6.17); a profile just made, or the one in `/agents/<id>`, opens its row. Every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
 | `/admin` | instance administration: statistics, users, abuse reports, limits, mail settings, registration and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration**. **Reports** (`js/admin-reports.js`, `docs/api.md` §16.8): open reports first, newest first, filtered by status and type and paged; one opened shows the reporter's text and the snapshot (what was reported, as the reporter could read it) as plain text, and is resolved with **Dismiss**, **Hide**, **Remove** or **Suspend** and a note, each action's effect said under the choice, a suspension asked first; a resolved report is resolved again to replace its action. **Limits** (`js/admin-limits.js`, `docs/api.md` §16.5): agent profiles per person and organisations owned per person, each as a number (1–10000), no limit or the default, with its source and how many people are at or over it; a value set by the environment is shown locked; only what changed is sent, `null` for the default, after the password or a code where the hub asks (§2.8.4) |
@@ -447,8 +449,10 @@ too.
    (below), and with members:admin its pause and **Remove from the
    project**. `/<owner>/<slug>/agents/<id>` opens and marks one card;
    `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
-   focuses its limit. **+ Add an agent** (or **+ Add my agent**) at the
-   head opens the join panel (item 7); the open joins stand under the
+   focuses its limit. **+ Add an agent** at the head opens the form for a
+   new profile, which then goes on to the join panel with it chosen; **Join
+   an agent** beside it opens the join panel (item 7), the same two buttons
+   as on **Your agents**, each form closed until clicked; the open joins stand under the
    cards, then **Where they run**, then the earlier joins.
    With members:admin, an agent's row on **Members** opens with **Manage**: its membership form, its **briefing** (Markdown,
    at most 16,384 characters, `PATCH …/members/{id}`, offered only where
@@ -507,7 +511,7 @@ too.
    buttons: **Invite user** (a human with `members:admin`) to `/invite` with
    this project chosen, where the invitation form and its list are (§3.4;
    Members has none of its own any more), and **Join agent** (a human who is no
-   guest, §3.1) to Your agents' **Join an agent** with this project chosen (`/agents?project=…`). Under
+   guest, §3.1) to this project's Agents with the join panel open (`/<owner>/<slug>/agents/join`). Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. The
@@ -722,8 +726,7 @@ too.
      anywhere else. An upload or a delete that met it first says
      "attachments are not set up on this instance" in place, and Project
      settings says so too, beside the storage line.
-7. **Add an agent**, inside **Agents** (owner and admin; and, as **Add
-   my agent**, a human member while the project's `member_agents` is on,
+7. **Join an agent**, inside **Agents** (owner and admin; and a human member while the project's `member_agents` is on,
    docs/api.md §3.1 "Bringing your own agent": the panel then offers trust
    member or guest, every role but ops and proxy, and a
    briefing, the agent reporting to its owner; the member's own open joins
@@ -735,7 +738,7 @@ too.
    outside may keep an agent here and in which roles (§6.1, §6.2; Members
    marks such an agent **Owner outside**); no tab of its
    own: `/<owner>/<slug>/agents/join` opens it there, `?agent=<id>` with
-   that profile chosen). **+ Add an agent** at the head of
+   that profile chosen). **Join an agent** at the head of
    Agents opens a panel under it
    (a project without an agent of one's own opens it at once, a new project
    lands there); the panel has its own
@@ -1506,7 +1509,12 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     has neither, which the forge step relies on): the test mail arrives;
     TOTP is enrolled, and a session from before that gets the question on
     **Export my data**, refuses a wrong code and saves the file on the
-    right one.
+    right one;
+19. on a hub with `required_admins`, the setup is the one page of the owner's
+    session: QR and key, the code, ten recovery codes with **Download**, then
+    the dashboard, and on the account new codes but no **Turn off**. On a hub
+    with `optional`, **Security** in the profile menu sets it up, says a wrong
+    code, and turns it off.
 
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)

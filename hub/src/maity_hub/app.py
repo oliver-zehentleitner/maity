@@ -51,6 +51,7 @@ from maity_hub import (
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
+from maity_hub.auth import mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
@@ -172,6 +173,14 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+            # The environment's `email` takes effect at once, so it may not lock out every
+            # human without TOTP at the start (§2.8.8).
+            if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(
+                conn, settings
+            ):
+                raise ConfigError(
+                    "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
+                )
         check_secrets(engine, settings.secret_key)
         with transaction(engine) as conn:  # an event wakes the long-polls once it commits
             # The hub's own generated text is a rules input: a start with other text bumps

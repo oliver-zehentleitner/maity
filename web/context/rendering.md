@@ -274,7 +274,7 @@ back to following the system once a choice was made.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's ask that an id in a request's text, or anywhere text is shown, be a link (tsk-dcj6qwjxc9cq), 2026-10-25; hub/src/maity_hub/ids.py (a prefix and 12 Crockford base32 characters); docs/api.md §6.13 (GitHub the one forge, the project repository's host); the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's ask that an id in a request's text, or anywhere text is shown, be a link (tsk-dcj6qwjxc9cq), 2026-10-25; hub/src/maity_hub/ids.py (a prefix and 12 Crockford base32 characters); docs/api.md §6.13 (GitHub the one forge, the project repository's host); the dashboard's implementation, 2026-10-25; tsk-8nbw39n0snsd for a reference after a slash
 **Revisit when:** the hub gives another forge, another id shape, a page of its own to one card, or the designer reworks the inbox entry
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
@@ -305,7 +305,10 @@ URL fits both without knowing which it is.
 the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
-button: it is the entry's name for the keyboard and for the list.
+button: it is the entry's name for the keyboard and for the list. Keeping
+`/` in the lookbehind: `#909/#911` would link only the first. A lookbehind
+for `/` after a reference: it matches `issues/#5/#6`'s `#6` too, since it
+cannot know whether `#5` was itself accepted, so the check sits in the loop.
 
 ## Nested lists nest by indentation: further in than the item before opens a list inside it
 
