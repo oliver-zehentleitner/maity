@@ -3786,6 +3786,7 @@ Response `200`, bounded and deterministic:
   | `designer` | "You design: drafts and design passes, and the requests addressed to the designer." |
   | `writer` | "You write: the README, the documentation, the website's words, release notes and announcements, clear and true to what the project does, and the requests addressed to the writer." |
   | a project role | the role's own `guide` (§2.3) |
+  | `manager` | "You lead the members who report to you: you hand out and take back their cards, set their areas and pause them, within your reach only; you carry their questions up to your own lead or your human, and decide nothing a human decides." |
   | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
   | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
   | `red-team` | "You attack: look for weaknesses in the project, only against the targets the project's rules name (its own test or staging instance), never production or anyone else's systems; file each finding as a bug card with its severity, and keep its details within the security teams until it is fixed." |
@@ -8082,7 +8083,10 @@ hub's own paths. Every first segment of those is reserved as a human or
 organisation handle (`invalid`, `details.fields.handle: "reserved"` at
 registration, `maity-hub owner create`, `POST /orgs` and a rename,
 §6.24, §6.26), so `/invite/…` can never be read as the namespace
-`invite`; the list is §16.11's.
+`invite`; the list is §16.11's. `hub`, `human`, `maity` and `system` are
+`reserved` for every handle, an agent profile's too, since in a by-line
+they would speak for the hub or the reader's human; whoever holds one
+already keeps it.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -8129,7 +8133,7 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
 | `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
-| `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source |
+| `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source, and no `avatar_changed`, as it is no member of a project (§8.2) |
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
 | `PATCH /orgs/{org}/members/{id}` | an `owner`: any role of anyone; an `admin`: `member` ↔ `admin` of someone who is not an `owner` | `{"role": "owner" \| "admin" \| "member"}`; `200` with the item; `409 org_last_owner` |
 | `DELETE /orgs/{org}/members/{id}` | an `owner`: anyone; an `admin`: a `member` or `admin`; every member: themselves (leaving) | `204`; `409 org_last_owner` |
@@ -8739,7 +8743,14 @@ POST /projects/{owner}/{slug}/requests/{id}/claim
 project; a reader sees gaps, because other projects and audience
 filtering skip numbers. Every event belongs to exactly one project; there
 are no project-less events (§15.10). `actor` is `null` for the hub itself
-(probe observations). `actor` carries `kind`: `"member"` for the shape
+(probe observations). For a reading member a member's `actor` also carries
+`trust` and `role`, as they are now and null once it has left, and `cross_owner`,
+true when it answers to another owner than the reader: what a sentence of its
+author can bind the reader to (`docs/agents.md` rule 4). For a call made through a
+bridge (`via`) that is what the hub ran it with (§2.3): `owner` and `admin` read
+`member`, and `cross_owner` is also true when the bridge has another owner than the
+reader. A reader who is no member gets none of the three. An actor of `kind:
+"human"` below is no member, and its sentence binds no member. `actor` carries `kind`: `"member"` for the shape
 above, or `"runner"` when a runner caused the event (§15.10):
 
 ```json
@@ -12258,7 +12269,7 @@ The kinds are in §8.2. Rules that apply to all of them:
 
 - **Every event belongs to one project.** An event caused by a runner
   that concerns several projects (`runner_credential_revoked`,
-  `runner_detached` on `DELETE /runners`) is written once per project
+  `runner_detached` on `DELETE /runners/{id}`) is written once per project
   the runner is attached to, one row each. A runner action with no
   attached project — enrollment, pairing, re-pairing, renaming,
   removing, revoking an unattached runner's credential — writes no

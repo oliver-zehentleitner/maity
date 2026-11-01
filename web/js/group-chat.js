@@ -400,10 +400,11 @@ window.Maity = window.Maity || {};
         hint.hidden = !outside.length;
         if (outside.length) append(hint, M.t("group.compose.outside", { handle: outside[0] }));
       };
-      text.addEventListener("input", () => {
+      const typedInChat = () => {
         if (text.value.trim()) parts.drafts.set(key, text.value); else parts.drafts.delete(key);
         hintMention();
-      });
+      };
+      text.addEventListener("input", typedInChat);
       hintMention();
       const button = h("button", { type: "submit", class: "primary" }, M.t("group.compose.send"));
       const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
@@ -435,7 +436,8 @@ window.Maity = window.Maity || {};
       compose = h("form", { class: "compose", onsubmit: sendIt });
       append(compose,
         parts.composeHead(compose, text, h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) }))),
-        text, hint, files ? files.el : null, parts.actionRow(files, button, meat));
+        // Only the participants: a group chat resolves a mention against them alone (§8.6).
+        text, M.projectMentionPicker(ctx, text, { allowed: (m) => view.participants.some((p) => p.member_id === m.id), onPick: typedInChat }), hint, files ? files.el : null, parts.actionRow(files, button, meat));
     }
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());

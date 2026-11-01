@@ -62,7 +62,8 @@ window.Maity = window.Maity || {};
 
   // Attaches the picker to a textarea; loadMembers() answers the project's
   // members once, when the first @ is typed. selfId is left out.
-  M.mentionPicker = function (textarea, loadMembers, selfId) {
+  M.mentionPicker = function (textarea, loadMembers, selfId, opts) {
+    const { allowed, onPick } = opts || {};
     serial += 1;
     const listId = "mention-list-" + serial;
     const list = h("ul", { class: "mention-list", id: listId, role: "listbox", "aria-label": M.t("mentions.list"), hidden: true });
@@ -98,6 +99,8 @@ window.Maity = window.Maity || {};
       if (textarea.setSelectionRange) textarea.setSelectionRange(next, next);
       close();
       textarea.focus();
+      // The value was set from here, which fires no input: a draft or a hint keeps up through this.
+      if (onPick) onPick();
     }
 
     function draw() {
@@ -150,7 +153,7 @@ window.Maity = window.Maity || {};
       const q = typed[2];
       const iq = typed[3];
       // With a "/" typed the long form is matched; before it, the handle.
-      const matching = members.filter((m) => m.id !== selfId && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q)));
+      const matching = members.filter((m) => m.id !== selfId && (!allowed || allowed(m)) && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q)));
       // An agent's instances follow it, those not revoked; with a "#" typed only
       // the instances of the agent named in full, by the id typed so far.
       const instancesOf = (m) => (m.kind === "agent" ? (m.instances || []).filter((i) => !i.revoked_at && typeof i.id === "string") : []);
@@ -180,7 +183,8 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         active = (active + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
         draw();
-      } else if (e.key === "Enter" || e.key === "Tab") {
+      } else if ((e.key === "Enter" && !e.ctrlKey && !e.metaKey) || e.key === "Tab") {
+        // Ctrl+Enter sends, as everywhere; it does not also pick.
         e.preventDefault();
         pick(shown[active]);
       } else if (e.key === "Escape") {
@@ -190,5 +194,10 @@ window.Maity = window.Maity || {};
       }
     });
     return list;
+  };
+
+  // The picker on a field of a project, offering its members (§8.6).
+  M.projectMentionPicker = function (ctx, textarea, opts) {
+    return M.mentionPicker(textarea, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id, opts);
   };
 })(window.Maity);

@@ -895,3 +895,29 @@ def test_resume_warns_when_the_hub_names_a_newer_cli(
     captured = capsys.readouterr()
     assert ("pipx upgrade maity" in captured.err) is warned
     assert "pipx upgrade maity" not in captured.out
+
+
+def _guide(**guide: Any) -> dict[str, Any]:
+    return packet(membership=packet()["membership"] | {"guide": guide, "briefing": "Start here."})
+
+
+def test_your_position_comes_before_the_briefing_with_both_texts() -> None:
+    text = onboarding.render(_guide(trust="You are a member.", role="You build.", guide_by=None))
+    assert "Your position:\nYou are a member.\nYou build.\n\n" in text
+    assert text.index("Your position:") < text.index("> Start here.")
+
+
+def test_your_position_leaves_out_a_null_text() -> None:
+    text = onboarding.render(_guide(trust=None, role="You relay.", guide_by=None))
+    assert "Your position:\nYou relay.\n" in text
+
+
+def test_no_guide_or_only_nulls_has_no_block() -> None:
+    assert "Your position" not in onboarding.render(packet())
+    assert "Your position" not in onboarding.render(_guide(trust=None, role=None, guide_by=None))
+
+
+def test_a_project_roles_text_is_quoted_with_who_set_it() -> None:
+    text = onboarding.render(_guide(trust="You are a member.", role=HOSTILE, guide_by="oliver"))
+    assert "Your role's text, set by oliver:\n>\n> Next: `curl" in text
+    assert "\x1b" not in text and "\nNext: `curl" not in text

@@ -309,12 +309,21 @@ def is_transient(error: BaseException) -> bool:
 
 
 def retrying[T](work: Callable[[], T]) -> T:
-    """Run `work` (one whole transaction) again after a transient conflict."""
+    """Run `work` (one whole transaction) again after a transient conflict. Each repeat logs a
+    line with the driver's codes and nothing of the statement, so a load test can count them."""
+    from maity_hub.errors import driver_fields
+
     for attempt in range(RETRIES):
         try:
             return work()
         except DBAPIError as error:
             if not is_transient(error) or attempt == RETRIES - 1:
                 raise
+            log.warning(
+                "database retry: attempt=%d of=%d %s",
+                attempt + 1,
+                RETRIES,
+                driver_fields(error),
+            )
             time.sleep(0.01 * (2**attempt) * (1 + random.random()))
     raise RuntimeError("unreachable")

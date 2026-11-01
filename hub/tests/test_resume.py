@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine, func, select
 
-from maity_hub import CLI_VERSION
+from maity_hub import CLI_VERSION, guide
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -73,6 +73,11 @@ def test_the_packet_has_every_part_of_the_contract(
         "reports_to": owner.id,
         "areas": ["hub/"],
         "capabilities": [],
+        "guide": {
+            "trust": guide.TRUST["member"],
+            "role": guide.ROLE["coder"],
+            "guide_by": None,
+        },
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
         "isolated": None,  # §6.2

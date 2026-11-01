@@ -308,7 +308,7 @@ def create(
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
-    elif handle in paths.RESERVED_FIRST:
+    elif paths.handle_reserved(handle):
         errors["handle"] = "reserved"
     if not display_name_ok(display_name):
         errors["display_name"] = "invalid"

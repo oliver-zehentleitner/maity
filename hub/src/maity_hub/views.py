@@ -1184,6 +1184,54 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
 
 
+def _standing_of(conn: Connection, events: Sequence[Any], reader: Any) -> dict[int, dict[str, Any]]:
+    """Per event `seq`, what a sentence of its actor can bind this reader to (docs/agents.md
+    rule 4, §8.1): `trust` and `role` today, null once it left, and whether it answers to another
+    owner than the reader. Only for a member, who reads all of it in the member list anyway. A
+    bridge's call counts as the hub ran it (§2.3): its trust capped as in `Membership.trust`, and
+    the bridge's owner counts too, since the text is the bridge's."""
+    wanted = {e.actor_membership for e in events if e.actor_membership is not None}
+    if getattr(reader, "trust", None) is None or not wanted:  # nobody, or an `Outsider` (§9.2)
+        return {}
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id, m.human_id, m.trust, m.role, m.active, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.id.in_({*wanted, reader.id}))
+    ).all()
+    members = {r.id: r for r in rows}
+    owners = {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
+    mine = owners.get(reader.id)
+    bridges = {e.actor_bridge["member_id"] for e in events if e.actor_bridge}
+    bridge_owners: dict[str, str] = (
+        dict(
+            conn.execute(
+                select(t.agent_profile.c.id, t.agent_profile.c.owner_id).where(
+                    t.agent_profile.c.id.in_(bridges)
+                )
+            ).all()
+        )
+        if bridges
+        else {}
+    )
+    found: dict[int, dict[str, Any]] = {}
+    for event in events:
+        row = members.get(event.actor_membership)
+        if row is None:
+            continue
+        trust = row.trust if row.active else None
+        cross = owners[row.id] != mine
+        if event.actor_bridge:
+            trust = "member" if trust in ("owner", "admin") else trust
+            cross = cross or bridge_owners.get(event.actor_bridge["member_id"]) != mine
+        found[event.seq] = {
+            "trust": trust,
+            "role": row.role if row.active else None,
+            "cross_owner": cross,
+        }
+    return found
+
+
 def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> list[dict[str, Any]]:
     """`event_view` for several events, with one query for the actors. `reader` (a
     `Membership`) is the member the views are for; without one a redaction's reason is
@@ -1229,6 +1277,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     )
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
+    standing = _standing_of(conn, rows, reader)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -1246,6 +1295,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if row.actor_bridge:  # made by a bridge for the member (§2.3)
                 actor["via"] = row.actor_bridge
+            actor.update(standing.get(row.seq, {}))
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {
