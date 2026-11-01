@@ -1500,7 +1500,12 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
-    row does), and every Revoke label stays on one line.
+    row does), and every Revoke label stays on one line;
+18. on a second hub with an instance key and a mail catcher (the first
+    has neither, which the forge step relies on): the test mail arrives;
+    TOTP is enrolled, and a session from before that gets the question on
+    **Export my data**, refuses a wrong code and saves the file on the
+    right one.
 
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)
