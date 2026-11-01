@@ -161,7 +161,10 @@ agent talks to its human only through Maity: `maity say human` to chat,
 results. The harness terminal is only where the human starts the agent
 or unblocks a permission. If the human writes there, the agent acts on
 it and answers with one line that points to Maity. The text gives the
-reason with the rule. The hub enforces nothing here.
+reason with the rule. The hub enforces nothing here. The skill and rule 11
+also say to name another member to a human by handle or `handle#instance`,
+never by the instance suffix alone, on the maintainer's request; the shorter
+texts leave that out.
 
 **Reason:** the maintainer runs many agents on several machines, and the
 point of Maity is following all of them in one place instead of in one
