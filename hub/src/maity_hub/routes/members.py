@@ -874,12 +874,14 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
     its claims released, every `reports_to` that names it cleared."""
     from maity_hub import onboarding
+    from maity_hub.routes.requests import withdraw_owners_round
 
     onboarding.member_removed(
         conn, change.project.id, target.agent_id or target.human_id, change.actor
     )
     foreign_agent.withdraw_open(conn, target.id, change.actor, "member_removed")
     cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
+    withdraw_owners_round(conn, target.id, change.actor)  # §20.7
     bridges.end_for_member(conn, target.id, change.actor, "member_removed")  # §2.3
     now = clock.now()
     credentials = (

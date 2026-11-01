@@ -335,6 +335,9 @@ that ends — without a hook in each.
 also covers an answer, a forward, a claim and a withdrawal), not the resume packet. A substitute's cover skips
 them as well, since it would read them. Its owner may forward it to one human, a deliberate step; never to the
 pool of admins or to an agent. Its answer writes no `decision` item on the ticker, which would name it to the admins.
+If the one human it was forwarded to loses their account, it goes back to the owner, not to the pool of admins. If
+the owner leaves the project, an open one nobody holds is withdrawn, since nobody else may read or answer it; one held
+by someone else stays with them, and is withdrawn when they go too.
 
 **Reason:** the round is private to the owner's circle (§20.7), and the proposal it files carries what was said
 in it.

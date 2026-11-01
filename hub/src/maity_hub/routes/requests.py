@@ -1408,21 +1408,30 @@ def withdraw(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> None:
+def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None:
     """Give an open `decision` request its holder can no longer hold back to the admins
     (`holder: trust:admin`, §7), from inside the hub: a step `opened` in `forwarding` and
-    `request_forwarded`, as a forward to the pool would write, with the hub as actor."""
+    `request_forwarded`, as a forward to the pool would write, with the hub as actor. One
+    of an owner's round never reaches that pool (§20.7): it goes back to its addressee, a
+    step `forwarded`, or is withdrawn when that member has left too."""
     row = _row(conn, request_id)
     if row.status != "open" or row.holder_member is None:
         return
     project = lock_project(conn, row.project_id)
-    steps = _step(conn, row, "opened", "trust:admin", by, reason)
+    alone = bool(inbox.owners_alone(conn, [row]))
+    if alone and not _addressee_active(conn, row):
+        close_request(conn, row.id, "withdrawn", None, reason=reason)
+        return
+    if alone:
+        steps = _step(conn, row, "forwarded", inbox.addressee_of(row).text(conn), by, reason)
+    else:
+        steps = _step(conn, row, "opened", "trust:admin", by, reason)
     conn.execute(
         update(t.request)
         .where(t.request.c.id == row.id)
         .values(
             holder_member=None,
-            holder_pool=True,
+            holder_pool=None if alone else True,
             forwarding=steps,
             changed_by_credential=None,
             changed_via=None,
@@ -1439,6 +1448,31 @@ def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> N
         {**view, "step": steps[-1]},
         subject=("request", row.id),
     )
+
+
+def _addressee_active(conn: Connection, row: Any) -> bool:
+    return bool(
+        conn.execute(
+            select(t.membership.c.active).where(t.membership.c.id == row.to_member)
+        ).scalar()
+    )
+
+
+def withdraw_owners_round(conn: Connection, member_id: int, actor: Actor | None) -> None:
+    """The addressee of a request of an owner's round leaves (§6.2, §20.7): nobody else may
+    read it, so it would lie open with nobody to answer it. One it forwarded stays with its
+    holder."""
+    rows = conn.execute(
+        select(t.request)
+        .where(
+            t.request.c.to_member == member_id,
+            t.request.c.status == "open",
+            or_(t.request.c.holder_member.is_(None), t.request.c.holder_member == member_id),
+        )
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).all()
+    for request_id in sorted(inbox.owners_alone(conn, rows)):
+        close_request(conn, request_id, "withdrawn", actor, reason="member_removed")
 
 
 def close_request(

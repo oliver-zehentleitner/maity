@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, cover, listening
+from maity_hub import account_deletion, clock, cover, events, listening
 from maity_hub import tables as t
 from maity_hub.jourfixe import worker
 from tests import factory, flow
@@ -306,6 +306,79 @@ def test_the_answer_writes_no_ticker_item_and_the_request_goes_to_one_human_at_m
     assert answered.status_code == 200, answered.text
     decisions = [e for e in _kinds(circle.engine, "ticker") if e.payload.get("type") == "decision"]
     assert decisions == []
+
+
+def _given_to_a_colleague(circle: Circle, make_client: ClientFactory) -> tuple[str, flow.Human]:
+    """The open request of the owner's round, forwarded by its owner to one human admin."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    colleague = _member(make_client, circle.engine, "colleague")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == colleague.id)
+            .values(trust="admin")
+        )
+    given = circle.friend.post(
+        f"{BASE}/requests/{request_id}/forward", {"to": colleague.id, "reason": "t"}
+    )
+    assert given.status_code == 200, given.text
+    return request_id, colleague
+
+
+def _delete_account(who: flow.Human, engine: Engine) -> None:
+    with events.transaction(engine) as conn:
+        account_deletion.delete_account(conn, who.client.app.state.settings, who.id)  # type: ignore[attr-defined]
+
+
+def test_the_holders_deleted_account_gives_the_request_back_to_its_owner_not_the_admins(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    """§20.7: the pool would read what the forward to it is refused for."""
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    other = _member(make_client, circle.engine, "otheradmin")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == other.id).values(trust="admin")
+        )
+    _delete_account(colleague, circle.engine)
+    path = f"{BASE}/requests/{request_id}"
+    back = circle.friend.get(path)
+    assert back.status_code == 200, back.text
+    assert back.json()["holder"] == circle.friend.id
+    assert back.json()["forwarding"][-1]["action"] == "forwarded"
+    assert other.get(path).status_code == 404
+    assert request_id not in {r["id"] for r in other.get(f"{BASE}/requests?to=all").json()["items"]}
+    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+
+
+def _status(engine: Engine, request_id: str) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+
+
+def test_the_circle_owner_leaving_leaves_no_request_of_the_round_open(circle: Circle) -> None:
+    """Nobody else may read it, so nobody could ever answer it."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    _delete_account(circle.friend, circle.engine)
+    row = _status(circle.engine, request_id)
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+
+
+def test_a_forwarded_request_outlives_the_circle_owner_until_its_holder_goes_too(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _delete_account(circle.friend, circle.engine)
+    assert _status(circle.engine, request_id).status == "open"
+    assert colleague.get(f"{BASE}/requests/{request_id}").status_code == 200
+    _delete_account(colleague, circle.engine)
+    row = _status(circle.engine, request_id)
+    assert row.status == "withdrawn" and not row.holder_pool
 
 
 def test_a_substitute_gets_no_request_of_an_owners_round(circle: Circle, migrated: Engine) -> None:
