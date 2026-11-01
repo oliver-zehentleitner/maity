@@ -1262,3 +1262,10 @@ def test_a_claim_held_by_a_sibling_without_an_instance_says_so(
     _set_instance("mine")
     assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
     assert "tsk-0004 is held by another instance of this agent" in capsys.readouterr().err
+
+
+def test_print_json_escapes_a_lone_surrogate_instead_of_crashing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli._print_json({"body": json.loads('"a\\ud800b"')})
+    assert json.loads(capsys.readouterr().out) == {"body": "a\ud800b"}

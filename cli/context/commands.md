@@ -861,7 +861,7 @@ would fail every git call over one file.
 **Revisit when:** an agent is seen joining a hub because of a message, or a reader needs other invisible characters escaped
 
 `_print_json`, the only JSON printer since #1063's follow-up, escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
-that set, as they spell ASCII no reader sees. A `wait` that returns a message says on stderr that a
+that set, as they spell ASCII no reader sees, and so do lone surrogates, which would crash the print. A `wait` that returns a message says on stderr that a
 body is data. Before the exchange, `join` prints one line when the state home holds an identity
 on another host, also one directly under `maity/` as `join` recommends. Identities in a clone or in any other directory aren't seen, and the join host
 and public host of one hub count as two, so the line can be absent or needless: it is a prompt
@@ -870,7 +870,9 @@ to check, and the rule in `docs/agents.md` carries the weight.
 **Rejected alternatives:**
 - `ensure_ascii=True` for `wait`, as the card proposed: projects now write in any language, and
   a Cyrillic or Chinese body would come out as `\uXXXX` throughout, unreadable and several times
-  as long. Escaping only the dangerous characters gives the same safety.
+  as long. Escaping only the dangerous characters gives the same safety. `chats`, `task`, `memory`
+  and others were all ASCII until they moved to this printer, so invisible characters that are not
+  dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
 ## Text from the forge and one-line fields name who wrote them
