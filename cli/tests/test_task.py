@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import urllib.parse
 from pathlib import Path
@@ -171,6 +172,15 @@ def test_create_sends_parent_and_related(
         "title": "split the join", "area": "cli/", "parent": "tsk-1", "related": ["tsk-7"]
     }  # fmt: skip
     assert capsys.readouterr().out == "created tsk-8 under tsk-1 (proposed)\n"
+
+
+def test_create_reads_the_body_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda s: (201, card("tsk-8", "open"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("the `body`\n"))
+    assert cli.main(["task", "create", "a title", "--body", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"title": "a title", "body": "the `body`"}
 
 
 def test_create_without_assign_sends_no_assignment(joined: Path, fake: fakehub.FakeHub) -> None:

@@ -509,7 +509,7 @@ def cmd_join(args: argparse.Namespace) -> int:
 def _chat_note(packet: dict[str, Any]) -> None:
     """The line an agent gives its human as its last message in the agent's window (§5.2):
     the direct chat with its owner, where the two talk from then on. Left out when the
-    packet has no web address there (a human's membership, an older hub)."""
+    packet has no web address there (a human's membership)."""
     url = onboarding.get(packet, "membership", "chat_url")
     if isinstance(url, str) and url.startswith(("https://", "http://")):
         print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
@@ -1489,15 +1489,6 @@ def _conversations(session: Session) -> list[dict[str, Any]]:
             return items
 
 
-def _conversation_id(c: dict[str, Any]) -> Any:
-    # A hub from before §9.3's shape lists the direct conversation as `{agent_id, …}` alone.
-    return c.get("id") or c.get("agent_id")
-
-
-def _conversation_kind(c: dict[str, Any]) -> Any:
-    return c.get("kind") or ("direct" if c.get("agent_id") else None)
-
-
 def _handles(conversation: dict[str, Any]) -> dict[str, str]:
     people = [_obj(p) for p in conversation.get("participants") or []]
     shown = onboarding.shown_names(
@@ -1535,8 +1526,8 @@ def cmd_chats(args: argparse.Namespace) -> int:
             )
         closed = "  closed" if c.get("closed_at") else ""
         print(
-            f"{onboarding.inline(_conversation_id(c))}  "
-            f"{onboarding.inline(_conversation_kind(c))}  {title}  {people}  {unread}{closed}"
+            f"{onboarding.inline(c.get('id'))}  "
+            f"{onboarding.inline(c.get('kind'))}  {title}  {people}  {unread}{closed}"
         )
     return EXIT_OK
 
@@ -1648,7 +1639,7 @@ def _unread_group(
 def cmd_chat(args: argparse.Namespace) -> int:
     session = Session()
     conversation = args.conversation
-    listed = next((c for c in _conversations(session) if _conversation_id(c) == conversation), None)
+    listed = next((c for c in _conversations(session) if c.get("id") == conversation), None)
     handles = _handles(listed) if listed else {}
     limit = args.limit or CHAT_DEFAULT
     notes: list[str] = []
@@ -1662,7 +1653,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
         items, _ = _messages(session, conversation, query)
     elif listed is None:
         raise CommandError(f"{conversation} is not in your conversations (`maity chats`)")
-    elif _conversation_kind(listed) == "direct":
+    elif listed.get("kind") == "direct":
         items, notes = _unread_direct(session, conversation, limit)
     else:
         items, notes = _unread_group(session, conversation, listed, limit)
@@ -2577,7 +2568,7 @@ def _address(
     if chat_hint and member == who and not any(m["id"] == who for m in members):
         # An unavailable advisory read must not replace the command's own outcome.
         with contextlib.suppress(hub.HubError):
-            if any(_conversation_id(c) == to for c in _conversations(session)):
+            if any(c.get("id") == to for c in _conversations(session)):
                 shown = shlex.quote(onboarding.inline(to))
                 raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
@@ -2980,8 +2971,7 @@ def _ticker_limit(value: str) -> int:
 
 
 def cmd_ticker_post(args: argparse.Namespace) -> int:
-    """`POST …/ticker` (§17.6), every flag to its field. Against a hub without the ticker it
-    prints the interim `maity say` line and sends nothing."""
+    """`POST …/ticker` (§17.6), every flag to its field."""
     to = args.to or []
     if any(t in ("computed", "all") for t in to) and len(to) > 1:
         raise UsageError("--to computed or --to all stands alone")
@@ -4177,8 +4167,7 @@ def build_parser() -> argparse.ArgumentParser:
         "post",
         help="post an item by hand (owner and admin): a note, a deploy, a release",
         description="`POST …/ticker` (§17.6), every flag to its field. --to and --area repeat, "
-        "one value each; --to computed or --to all stands alone. Against a hub without the "
-        "ticker it prints the `maity say` line to use instead and exits 2, sending nothing.",
+        "one value each; --to computed or --to all stands alone.",
         formatter_class=fmt,
     )
     r.add_argument("text", help="1 to 280 characters, plain text")
@@ -4391,7 +4380,7 @@ def build_parser() -> argparse.ArgumentParser:
         "create", help="create a card, or a subtask with --parent", formatter_class=fmt
     )
     r.add_argument("title", help="the card's title")
-    r.add_argument("--body", help="the card's body, Markdown")
+    r.add_argument("--body", help="the card's body, Markdown; - reads stdin")
     r.add_argument("--area", help="the repository path the card is about")
     r.add_argument("--label", help="the card's label")
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
@@ -4642,6 +4631,7 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
 TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
     cmd_note_add: (("body", "body_file", "the note", True),),
+    cmd_task_create: (("body", "body_file", "--body", False),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_jourfixe_post: (("body", "body_file", "the post", True),),
     cmd_checkpoint: (

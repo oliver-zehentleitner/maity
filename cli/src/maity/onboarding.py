@@ -791,7 +791,7 @@ def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
 
 def _ktw_loading(block: dict[str, Any]) -> list[str]:
     """How to load the skill, whatever the machine has installed (§6.23): texts for the agent,
-    never run here. Every field is optional, so an older hub's block prints what it has."""
+    never run here. Every field is optional: the block prints what it has."""
     skill = _dict(block.get("skill"))
     lines = [inline(skill["load"])] if skill.get("load") else []
     install = [i for i in skill.get("install") or [] if isinstance(i, str)]

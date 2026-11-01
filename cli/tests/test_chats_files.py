@@ -152,7 +152,8 @@ def test_chat_with_nothing_unread_fetches_nothing(
     assert "no unread messages; earlier: maity chat cnv-0007 --before 5021" in out
 
 
-DIRECT_TODAY = {"agent_id": "agt-b", "last_message_at": "x", "unread": 2,
+DIRECT_TODAY = {"id": "agt-b", "kind": "direct", "agent_id": "agt-b",
+                "last_message_at": "x", "unread": 2,
                 "last_message": {"seq": 4300, "from": "hum-1", "body": "?", "sent_at": "x",
                                  "redacted": False}}  # fmt: skip
 
