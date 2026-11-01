@@ -6829,7 +6829,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pmGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(text(main).includes("Only messages within the hub's latest 5000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
+  expect(/Only messages within the hub's latest 5.?000 events \(all projects counted\) are shown/.test(text(main)) && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
   win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)

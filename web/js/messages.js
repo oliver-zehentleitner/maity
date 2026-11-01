@@ -18,11 +18,13 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
-  const TYPES = [
-    ["notice", "Notice"], ["handover", "Handover"], ["blocker", "Blocker"], ["go_request", "Asks for a go"],
-    ["review_result", "Review result"], ["interface_change", "Interface change"],
-  ];
-  const TYPE_WORDS = Object.fromEntries(TYPES);
+  // The words are read when drawn, so a language set after the page loads applies.
+  const TYPE_WORDS = {
+    notice: () => M.t("messages.type.notice"), handover: () => M.t("messages.type.handover"),
+    blocker: () => M.t("messages.type.blocker"), go_request: () => M.t("messages.type.go_request"),
+    review_result: () => M.t("messages.type.review_result"), interface_change: () => M.t("messages.type.interface_change"),
+  };
+  const typeWord = (type) => (Object.hasOwn(TYPE_WORDS, type) ? TYPE_WORDS[type]() : type);
   const PAGE = 200;
   // How far back the view reads, said when cut: a window of the hub's event
   // numbers (`seq` counts across every project, §8.3), so it holds fewer of
@@ -35,8 +37,8 @@ window.Maity = window.Maity || {};
   const isMessage = (e) => e.kind === "message" && !e.redacted && e.payload && e.payload.type !== "chat";
 
   function toWords(ctx, to) {
-    if (to === "all") return "everyone";
-    if (/^role:/.test(to || "")) return "every " + to.slice(5);
+    if (to === "all") return M.t("messages.to.everyone");
+    if (/^role:/.test(to || "")) return M.t("messages.to.role", { role: to.slice(5) });
     return M.dom.memberRef(ctx, to);
   }
 
@@ -54,7 +56,7 @@ window.Maity = window.Maity || {};
       kept.push(...page.items.filter(keep || isMessage));
       if (page.items.length < PAGE) return { kept, cut: start > 0 };
       const next = page.items[page.items.length - 1].seq;
-      if (!(next > after)) throw new Error("the hub's event cursor did not move past " + after);
+      if (!(next > after)) throw new Error(M.t("messages.cursor_stuck", { after }));
       after = next;
     }
     return { kept, cut: true };
@@ -67,7 +69,10 @@ window.Maity = window.Maity || {};
   // A review result's facts (§8.4): the verdict, what was reviewed, the
   // commit at its short head, and the places the reviewer read, each with
   // its quote as written. Folded after five; all text as text.
-  const VERDICTS = { approve: "Approve", changes: "Changes requested", comment: "Comment" };
+  const VERDICTS = {
+    approve: () => M.t("messages.verdict.approve"), changes: () => M.t("messages.verdict.changes"),
+    comment: () => M.t("messages.verdict.comment"),
+  };
   const CITES_SHOWN = 5;
   // A commit's page on the project's forge, GitHub and GitLab, whose path
   // shapes are known; anything else gets no link.
@@ -83,18 +88,20 @@ window.Maity = window.Maity || {};
     const short = h("code", null, head.slice(0, 7));
     const url = commitUrl(ctx.project && ctx.project.repository, head);
     const cite = (c) => h("li", { class: "review-cite" },
-      h("span", { class: "review-place" }, h("code", null, c.path + (c.line ? ":" + c.line : "")), c.line ? null : h("span", { class: "muted" }, " removed")),
+      h("span", { class: "review-place" }, h("code", null, c.path + (c.line ? ":" + c.line : "")), c.line ? null : h("span", { class: "muted" }, " " + M.t("messages.review.removed"))),
       h("code", { class: "review-quote" }, c.quote));
     const cites = r.cites || [];
     const shown = cites.slice(0, CITES_SHOWN);
     const rest = cites.slice(CITES_SHOWN);
     return h("div", { class: "review" },
       h("p", { class: "review-head" },
-        h("span", { class: "pill review-verdict verdict-" + r.verdict }, VERDICTS[r.verdict] || String(r.verdict)),
-        " " + (r.subject || "") + " at ",
-        url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank", title: head }, short) : h("span", { title: head }, short)),
-      cites.length ? h("ul", { class: "review-cites", "aria-label": "Places the reviewer read" }, shown.map(cite)) : null,
-      rest.length ? h("details", { class: "review-more" }, h("summary", null, rest.length + " more " + (rest.length === 1 ? "place" : "places")),
+        h("span", { class: "pill review-verdict verdict-" + r.verdict }, Object.hasOwn(VERDICTS, r.verdict) ? VERDICTS[r.verdict]() : String(r.verdict)),
+        " ", M.tn("messages.review.subject_at", {
+          subject: r.subject || "",
+          commit: url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank", title: head }, short) : h("span", { title: head }, short),
+        })),
+      cites.length ? h("ul", { class: "review-cites", "aria-label": M.t("messages.review.places") }, shown.map(cite)) : null,
+      rest.length ? h("details", { class: "review-more" }, h("summary", null, M.t("messages.review.more", { count: rest.length })),
         h("ul", { class: "review-cites" }, rest.map(cite))) : null);
   }
 
@@ -109,7 +116,7 @@ window.Maity = window.Maity || {};
     const list = h("ol", { class: "project-messages" });
     const shows = (e) => !filter || e.payload.type === filter;
     const itemOf = (seq) => Array.from(list.querySelectorAll("li.pmsg")).find((li) => li.getAttribute("data-seq") === String(seq));
-    const empty = () => h("li", { class: "empty muted" }, filter ? "No message of this type." : "No project messages yet.");
+    const empty = () => h("li", { class: "empty muted" }, filter ? M.t("messages.none_of_type") : M.t("messages.none"));
     const fillEmpty = () => {
       const blank = list.querySelector("li.empty");
       const any = list.querySelector("li.pmsg");
@@ -127,18 +134,18 @@ window.Maity = window.Maity || {};
     }
 
     async function remove(e) {
-      const reason = M.chatParts.askReason("Remove this message for everyone who can read it? Its text and files are replaced by a note. Say why:");
+      const reason = M.chatParts.askReason(M.t("messages.remove.ask"));
       if (reason === null) return;
-      status.busy("Removing…");
+      status.busy(M.t("messages.remove.busy"));
       try {
         await M.api.post(ctx.base + "/events/" + encodeURIComponent(e.seq) + "/redact", { reason });
       } catch (err) {
-        status.fail("Not removed: ", err);
+        status.fail(M.t("messages.remove.failed"), err);
         return;
       }
       drop(e.seq);
       status.done();
-      append(status.el, h("span", { class: "ok" }, "Removed."));
+      append(status.el, h("span", { class: "ok" }, M.t("messages.remove.done")));
       status.el.focus();
     }
 
@@ -150,8 +157,8 @@ window.Maity = window.Maity || {};
       const canDelete = () => from === ctx.me.id || ctx.canAdmin;
       return h("li", { class: "pmsg type-" + p.type, "data-seq": String(e.seq) },
         h("div", { class: "pmsg-head" },
-          h("span", { class: "badge" }, TYPE_WORDS[p.type] || p.type),
-          h("span", null, " ", M.dom.memberRef(ctx, from, { instance: e.actor }), " to ", toWords(ctx, p.to)),
+          h("span", { class: "badge" }, typeWord(p.type)),
+          h("span", null, " ", M.tn("messages.from_to", { from: M.dom.memberRef(ctx, from, { instance: e.actor }), to: toWords(ctx, p.to) })),
           p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
         review,
@@ -159,7 +166,7 @@ window.Maity = window.Maity || {};
         p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx), { mentions: p.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
         M.attachments ? M.attachments.render(ctx, { attachments: p.attachments, body: p.body || "" }, canDelete) : null,
         ctx.canAdmin ? h("div", { class: "actions" },
-          h("button", { type: "button", class: "small", "aria-label": "Remove this message for everyone", onclick: () => remove(e) }, "Remove")) : null);
+          h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(e) }, M.t("messages.remove"))) : null);
     }
 
     // The whole list, only when the filter changes; the feed patches it.
@@ -186,18 +193,18 @@ window.Maity = window.Maity || {};
       if (added) {
         fillEmpty();
         status.done();
-        append(status.el, h("span", null, added === 1 ? "1 new message." : added + " new messages."));
+        append(status.el, h("span", null, M.t("messages.new", { count: added })));
       }
     });
 
     const pick = h("select", { id: "messages-type", onchange: (ev) => { filter = ev.target.value; draw(); } },
-      h("option", { value: "" }, "every type"), TYPES.map(([v, l]) => h("option", { value: v }, l)));
+      h("option", { value: "" }, M.t("messages.filter.every_type")), Object.keys(TYPE_WORDS).map((v) => h("option", { value: v }, typeWord(v))));
     append(root,
-      h("div", { class: "toolbar" }, h("h2", null, "Messages"), h("a", { class: "button small", href: ctx.link("message") }, "Message the project")),
-      h("p", { class: "muted" }, "The project's messages you can read, newest first. Chats are in Chat."),
-      read.cut ? h("p", { class: "muted pmsg-cut" }, "Only messages within the hub's latest " + WINDOW + " events (all projects counted) are shown; older ones are not read here.") : null,
+      h("div", { class: "toolbar" }, h("h2", null, M.t("messages.title")), h("a", { class: "button small", href: ctx.link("message") }, M.t("messages.write"))),
+      h("p", { class: "muted" }, M.t("messages.intro")),
+      read.cut ? h("p", { class: "muted pmsg-cut" }, M.t("messages.cut", { window: WINDOW })) : null,
       h("form", { class: "board-filter", role: "search", onsubmit: (ev) => ev.preventDefault() },
-        h("label", { for: "messages-type" }, "Type"), pick),
+        h("label", { for: "messages-type" }, M.t("messages.filter.type")), pick),
       status.el, list);
     draw();
   };
