@@ -214,8 +214,8 @@ Under `free` a card gets an `assigned_instance` only when `assign` names one,
 which the jour fixe of 2026-11-01 asked for after cards crossed between the
 instances of a team; it was refused with `distribution_free` before. Naming one
 holds the card for it, as under the other rules; there is no way yet to clear
-it again but to name another. On an assign that moves an expired claim of another
-holder under `free`, `instance` still only names where the claim lands. Every path
+it again but to name another. An assign that moves an expired claim follows the
+same rule, so an expired claim and a free card are not told apart. Every path
 that assigns a card — create, `PATCH assigned_to`, the area-owner default
 and `assign` — sets `assigned_instance` by the team's distribution.
 

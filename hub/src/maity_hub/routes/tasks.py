@@ -1656,8 +1656,6 @@ def assign(
         if body.instance is None and card.assigned_to == assignee:
             # The same team again: its instance stays; a new turn only for a new team.
             chosen = card.assigned_instance
-        elif takes and assignee_row.distribution == "free":
-            chosen = None  # the instance only names where the expired claim lands (§6.18)
         else:
             chosen = instances.assigned_for(conn, assignee_row, body.instance)
         now = clock.now()
