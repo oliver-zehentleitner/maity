@@ -1701,9 +1701,9 @@ cards created, claimed and done, reviews — with the window's figure (the
 sum, or for people their highest day), today's value and a small line of
 the window; who comes back after 7 and 30 days, in one sentence; when the
 hub counted. **7 / 30 / 90 days** reads that window again. Reviews before
-the hub kept card history are unknown: a dashed line in the row's trend, and –, with the date from
-which they count. Every day is in a folded table, the readable form of
-the lines; a failed read clears the old counts and says so. The lines are
+the hub kept card history are unknown: a dashed line in the row's trend,
+and –, with the date from which they count. Every day is in a folded
+table, the readable form of the lines; a failed read clears the old counts and says so. The lines are
 the dashboard's own SVG, no chart library.
 
 Mail settings identify values set by the environment and keep them read-only.
