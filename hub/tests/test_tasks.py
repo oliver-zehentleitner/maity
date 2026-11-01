@@ -308,6 +308,13 @@ def test_an_edge_patch_that_changes_nothing_says_nothing(
     assert len(updates) == 1
 
 
+def test_needs_offers_the_roles_of_the_contract() -> None:
+    assert set(cards.NEEDS) == {
+        "coder", "reviewer", "tester", "designer", "ops", "writer",
+        "red-team", "blue-team", "purple-team",
+    }  # fmt: skip
+
+
 def test_needs_is_set_changed_shown_and_filtered_and_routes_nothing(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

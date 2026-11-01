@@ -13,14 +13,13 @@ from sqlalchemy import Connection, delete, insert, select
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.errors import ApiError, invalid
+from maity_hub.scopes import ROLES
 
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
-# The built-in roles a card may be for (§6.4), besides a project's own (§2.3).
-NEEDS = (
-    "coder", "reviewer", "tester", "designer", "ops", "writer",
-    "red-team", "blue-team", "purple-team",
-)  # fmt: skip
+# The built-in roles a card may be for (§6.4), besides a project's own (§2.3): every role
+# that does a card's work, which the proxy and the manager do not.
+NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager"))
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 CLOSED = ("done", "cancelled")
 CREATE_STATUSES = ("proposed", "open")
