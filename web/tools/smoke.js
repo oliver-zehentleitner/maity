@@ -4429,6 +4429,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.yourData.save = (name, words, type) => { secSaved.push([name, words, type]); };
   secBtn("Set up two-factor sign-in").click(); await secPass();
   expect(secBox().querySelector(".qr-box svg") && text(secBox()).includes("JBSWY3DPEHPK3PXP"), "security: the QR and the key to type");
+  secBtn("Cancel").click(); await secPass();
+  expect(!byId("security-code") && text(secBox()).includes("Off.") && secBtn("Set up two-factor sign-in"), "security: a started setup can be left");
+  secBtn("Set up two-factor sign-in").click(); await secPass();
   byId("security-code").value = "000000";
   secBox().querySelector("form.security-setup").dispatch("submit"); await secPass();
   expect(text(secBox()).includes("That code is not valid.") && byId("security-code"), "security: a wrong code is said, the setup stays");
@@ -4442,7 +4445,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   secBtn("New recovery codes").click(); await secPass();
   expect(secBox().querySelectorAll(".security-code-list li").length === 10 && text(secBox()).includes("klmno-pqrs0"), "security: new codes, shown once");
   secBtn("I have saved them").click(); await secPass();
+  // Turn off asks for the code first and turns off only after it (§2.8.1).
+  const secDel = win.Maity.api.del;
+  const secDels = [];
+  let secAsked = false;
+  win.Maity.api.del = (p, b) => {
+    if (p !== "/auth/second-factor") return secDel(p, b);
+    secDels.push(p);
+    if (!secAsked) { secAsked = true; return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" })); }
+    return secDel(p, b);
+  };
   secBtn("Turn off").click(); await secPass();
+  expect(byId("step-up-step_up_required") && secDels.length === 1 && secBtn("Turn off"), "security: Turn off asks for the code, and nothing is off yet");
+  byId("step-up-step_up_required").value = "123456";
+  secBox().querySelector("form.step-up").dispatch("submit"); await secPass();
+  win.Maity.api.del = secDel;
   expect(text(secBox()).includes("Two-factor sign-in is off.") && secBtn("Set up two-factor sign-in"), "security: turned off, and said");
   // Where the hub has no instance key, the section says so and offers nothing.
   const secGet = win.Maity.api.get;
@@ -4456,6 +4473,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(secBtn("New recovery codes") && !secBtn("Turn off"), "security: a required factor cannot be turned off here");
   win.Maity.api.get = secGet;
   await win.Maity.api.post("/auth/second-factor/totp/confirm", { code: "123456" });
+  // A view left open when the hub moves the session into enrolment (§2.8.5): the next refusal draws the setup.
+  const lateSession = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/session" ? lateSession(p).then((x) => ({ ...x, second_factor: "enrolment_required" }))
+    : p === "/auth/second-factor" ? lateSession(p) : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "second_factor_enrolment_required" })));
+  win.Maity.onEnrolmentRequired();
+  await secPass();
+  expect(main.querySelector(".security-enrol"), "enrolment: a refusal in an open view brings the setup");
+  win.Maity.api.get = lateSession;
   // A session in enrolment_required (§2.8.5): the setup is its one page, then the dashboard.
   const enrolDone = [];
   const enrolMain = main;

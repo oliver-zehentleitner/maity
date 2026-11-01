@@ -303,6 +303,9 @@ window.Maity = window.Maity || {};
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
   // sign-in page comes with a note; nothing more is asked until a sign-in.
+  // A view left open when the hub requires the factor: drawn again, once, it becomes the setup.
+  let enrolling = false;
+  M.onEnrolmentRequired = () => { if (!enrolling) { enrolling = true; render(); } };
   // Signing in again returns to the same route.
   let sessionEnded = false;
   M.onSessionEnded = (path, epoch) => {
@@ -372,7 +375,7 @@ window.Maity = window.Maity || {};
   function renderEnrolment(main) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     // Drawn again, not routed: the address stays what was asked for, often "/" already.
-    M.security.enrolPage(main, () => render(), logout);
+    M.security.enrolPage(main, () => { enrolling = false; render(); }, logout);
   }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));

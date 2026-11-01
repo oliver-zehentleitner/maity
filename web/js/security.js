@@ -132,7 +132,7 @@ window.Maity = window.Maity || {};
       append(clear(body), h("p", { class: "security-state" }, stateWords(state)),
         note ? h("p", { class: "ok", role: "status" }, note) : null, steps);
       if (!state.enrolled) {
-        setup(steps, redraw(M.t("security.done.on")), null);
+        setup(steps, redraw(M.t("security.done.on")), redraw(null));
         return;
       }
       append(steps, h("div", { class: "actions" },

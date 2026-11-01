@@ -3833,6 +3833,19 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
 
+## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
+
+**Id:** ed407146-2c2b-4686-87ef-a5d8e6d020e2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §2.8.5, §2.8.7; the card tsk-94jtz06aps4b; #1004
+**Revisit when:** mail as a factor gets a section of its own
+
+A session in `enrolment_required` gets the setup drawn by `render()` like the second-factor step, not routed, so the address asked for stays, often `/`. The secret and the recovery codes live only in the DOM of the step that shows them and go with it; the codes leave the page only by the human's **Download**. Setup, new codes and **Turn off** go through `M.stepUp.run`, as the hub asks for the password or the factor and the page repeats the call.
+
+**Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
+
 ## Availability and cover hang under the presence as one note
 
 **Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3

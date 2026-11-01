@@ -4274,6 +4274,8 @@ window.Maity = window.Maity || {};
         return answer;
       }, (err) => {
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
+        // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
+        if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
         throw err;
       });
     }
