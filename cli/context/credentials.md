@@ -89,6 +89,39 @@ it inherits, which is why the list lives on the directory.
 - `pywin32`: the CLI has no dependencies, on purpose.
 - Skipping the check on Windows: the silent gap `check_private` exists to close.
 
+## On Windows maity speaks UTF-8 on its own streams, and refuses other input
+
+**Id:** 7e9214f8-e8f1-4e6e-91a4-52260895c81e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`
+**Revisit when:** the oldest supported Python has UTF-8 mode on by default (PEP 686, 3.15)
+
+On Windows `main` sets stdin, stdout and stderr to UTF-8 before anything is read
+or printed. Output uses `backslashreplace`, so a character can't stop a print.
+Stdin is strict: a text in another encoding is refused with a message.
+
+Three smaller Windows choices belong with it. The home's `env-secret` lies under
+`%LOCALAPPDATA%\maity`. `core.hooksPath` is `os.devnull`, because `/dev/null`
+there names a path under the drive root that any user can create, with hooks in
+it. An existing `./maity-files/` goes through `check_private` on Windows only:
+a clone there may inherit write access for everyone, so someone else may have
+made the folder, while POSIX keeps a folder as its owner set it.
+
+**Reason:** a pipe on Windows takes the ANSI code page. A harness reading maity
+through a pipe would get an error at the first `…`, and a body on stdin would
+arrive altered. The hub and every file maity writes speak UTF-8. An altered body
+is worse than a refusal, because nobody sees it until a human reads the message.
+
+**Rejected alternatives:**
+- `PYTHONUTF8=1` or `-X utf8`: has to be set by whoever starts maity, and the
+  pipx launcher doesn't.
+- `PYTHONIOENCODING`: the same, set outside maity.
+- Leaving it to the harness (`chcp 65001`, `$OutputEncoding`): every harness
+  would have to know.
+- `backslashreplace` on stdin: never stops, but sends `Gr\xfc\xdfe` to the hub.
+
 ## The runner does not run on Windows, by decision
 
 **Id:** c7109a1d-4f47-40e2-9165-ec01f5f94277

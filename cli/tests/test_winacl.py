@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import io
 import os
 import subprocess
@@ -252,3 +253,49 @@ def test_maity_files_is_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.chdir(tmp_path)
     assert_private(cli._files_dir())
+
+
+def test_stdin_in_another_encoding_is_refused_not_altered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from maity import cli
+
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO("Grüße".encode("cp1252"))))
+    monkeypatch.setattr(sys, "platform", "win32")
+    cli._utf8_streams()
+    with pytest.raises(cli.UsageError, match="stdin is not UTF-8"):
+        cli._stdin_text()
+
+
+@pytest.mark.parametrize("start", [b"\xef\xbb\xbf", b""])
+def test_a_join_file_may_start_with_a_byte_order_mark(tmp_path: Path, start: bytes) -> None:
+    from maity import cli
+
+    path = tmp_path / "join"
+    path.write_bytes(start + b"https://hub.example/j/t\nCODE\n")
+    args = argparse.Namespace(join_file=str(path), url=None, code=None)
+    assert cli._join_line(args) == ("https://hub.example/j/t", "CODE")
+
+
+def test_a_join_file_in_utf16_is_named_not_a_traceback(tmp_path: Path) -> None:
+    from maity import cli
+
+    path = tmp_path / "join"
+    path.write_bytes("https://hub.example/j/t\nCODE\n".encode("utf-16"))
+    args = argparse.Namespace(join_file=str(path), url=None, code=None)
+    with pytest.raises(cli.UsageError, match="not UTF-8"):
+        cli._join_line(args)
+
+
+@windows
+def test_a_maity_files_folder_others_can_reach_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Someone else made it, or the list of a new one failed: nothing lands in it."""
+    from maity import cli
+
+    monkeypatch.chdir(tmp_path)
+    folder = cli._files_dir()
+    _grant_users(folder)
+    with pytest.raises(state.StateError, match="icacls"):
+        cli._files_dir()
