@@ -413,6 +413,14 @@ def test_an_outside_moderators_owner_does_not_read_the_round(
     assert started.status_code == 201, started.text
     round_id, thread = started.json()["id"], started.json()["conversation_id"]
     assert started.json()["moderator"]["member_id"] == outside.id
+    # A message in the thread: the moderator's statement after the answers (dzse at #975).
+    assert mine.post(_rounds(round_id, "/answers"), {"went_badly": "slow CI"}).status_code == 201
+    now[0] += STEP
+    worker.sweep(migrated)
+    statement = {"topics": [{"title": "CI", "items": [{"text": "slow CI", "from": mine.id}]}]}
+    stated = outside.post(_rounds(round_id, "/statement"), statement)
+    assert stated.status_code == 201, stated.text
+    assert [e for e in _kinds(migrated, "message") if e.conversation_id == thread]
     assert other.get(f"{BASE}/conversations/{thread}").status_code == 404
     found = other.get(f"{BASE}/events?after=0&limit=100").json()
     items = found.get("events", found.get("items", []))
