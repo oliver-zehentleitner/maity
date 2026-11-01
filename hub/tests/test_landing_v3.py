@@ -270,6 +270,9 @@ def test_the_scales_are_three_columns_in_the_html(
     assert columns == [("You", "Solo"), ("Team", "Team")]
 
 
+TEXT_SECTION = {"type": "text", "enabled": True, "markdown": "Words."}
+
+
 def test_the_opensource_section_has_its_words_tiles_and_links(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -279,9 +282,8 @@ def test_the_opensource_section_has_its_words_tiles_and_links(
         and "<h3>MIT</h3>" in html
         and "<h3>Self-hosted</h3>" in html
     )
-    assert re.search(
-        r'<a class="btn btn-secondary" href="https://example\.com/src">Source</a>', html
-    )
+    assert '<a class="text-link" href="https://example.com/src">Source</a>' in html
+    assert "btn-secondary" not in html.split('class="section section-alt opensource"')[1]
     minimal = {
         "type": "opensource",
         "enabled": True,
@@ -289,6 +291,45 @@ def test_the_opensource_section_has_its_words_tiles_and_links(
         "tiles": OPENSOURCE["tiles"][:1],
     }
     assert 'class="links"' not in page(owner, make_client, minimal)
+
+
+def test_a_tile_label_and_an_eyebrow_stand_above_their_titles(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    labelled = {
+        **OPENSOURCE,
+        "eyebrow": "Open source · MIT",
+        "tiles": [{"label": "laptop", "title": "Solo", "text": "One machine."}],
+    }
+    html = page(owner, make_client, labelled)
+    assert '<p class="eyebrow">Open source · MIT</p><h2>' in html
+    assert '<span class="tile-label">laptop</span><h3>Solo</h3>' in html
+    # Neither is required: no empty element stands in their place.
+    plain = page(owner, make_client, OPENSOURCE).split('class="section section-alt opensource"')[1]
+    assert 'class="eyebrow"' not in plain and 'class="tile-label"' not in plain
+
+
+@pytest.mark.parametrize("section", [SECTIONS[3], DEMO, TEXT_SECTION])
+def test_the_other_sections_carry_an_eyebrow(
+    owner: flow.Human, make_client: ClientFactory, section: dict[str, Any]
+) -> None:
+    html = page(owner, make_client, {**section, "eyebrow": "A <small> line"})
+    assert '<p class="eyebrow">A &lt;small&gt; line</p>' in html
+
+
+@pytest.mark.parametrize(
+    "change, path",
+    [
+        ({"eyebrow": "x" * 41}, "eyebrow"),
+        ({"tiles": [{"label": "x" * 41, "title": "T", "text": "t"}]}, "tiles.0.label"),
+    ],
+)
+def test_an_eyebrow_or_a_tile_label_over_its_limit_is_refused(
+    owner: flow.Human, change: dict[str, Any], path: str
+) -> None:
+    answer = put(owner, {**OPENSOURCE, **change})
+    assert answer.status_code == 400
+    assert list(fields(answer)) == [f"pages.en.sections.1.{path}"]
 
 
 def test_the_faq_is_details_and_the_band_carries_the_loader(

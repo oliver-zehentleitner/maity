@@ -9142,7 +9142,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await leSave();
   const leV3 = lePatches[lePatches.length - 1][1].pages.en.sections;
   expect(leV3[4].terminal_lines.map((x) => x.kind).join() === "cmd,out" && leV3[4].steps.length === 3 && leV3[4].inbox && leV3[4].inbox.question === ""
-    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5])
+    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5]) && !("eyebrow" in leV3[5]) && !("label" in leV3[5].tiles[0])
     && text(byId("lp-pages-en-sections-4-terminal-lines-0-text-error")) && text(byId("lp-pages-en-sections-4-inbox-question-error"))
     && text(byId("lp-pages-en-sections-5-tiles-0-title-error")),
     "landing editor: the lists and the inbox item sent in the draft's shape; the hub's refusals said at each field's path");
@@ -9151,6 +9151,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   leFill("lp-pages-en-sections-4-terminal-lines-1-text", "joined");
   leFill("lp-pages-en-sections-4-inbox-from", "agent-a"); leFill("lp-pages-en-sections-4-inbox-question", "Merge #12?");
   [0, 1, 2].forEach((k) => { leFill("lp-pages-en-sections-4-steps-" + k + "-title", "Step " + k); leFill("lp-pages-en-sections-4-steps-" + k + "-text", "Does " + k); });
+  // The optional eyebrow and tile label (§16.7): over the limit refused at the path, by the same check as the hub's.
+  const leLong = await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "opensource", enabled: true, eyebrow: "x".repeat(41), title: "O", tiles: [{ label: "x".repeat(41), title: "T", text: "t" }] }] } } }).catch((err) => err.details.fields);
+  expect(leLong["pages.en.sections.0.eyebrow"] && leLong["pages.en.sections.0.tiles.0.label"], "landing editor: an eyebrow or a tile label over 40 is refused " + JSON.stringify(leLong));
+  leFill("lp-pages-en-sections-5-eyebrow", "Open source · MIT"); leFill("lp-pages-en-sections-5-tiles-0-label", "laptop");
   leFill("lp-pages-en-sections-5-title", "Open source"); leFill("lp-pages-en-sections-5-tiles-0-title", "MIT"); leFill("lp-pages-en-sections-5-tiles-0-text", "Yours.");
   btn(leOss(), "Add link").click(); await tick();
   leFill("lp-pages-en-sections-5-links-0-label", "Code"); leFill("lp-pages-en-sections-5-links-0-href", "javascript:alert(1)");

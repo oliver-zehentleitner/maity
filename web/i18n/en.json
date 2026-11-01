@@ -1429,6 +1429,8 @@
   "landing.json.not_json": "this is not JSON ({reason})",
   "landing.json.not_loaded": "Not loaded: ",
   "landing.json.refused": "Loaded into the editor, but the hub refuses parts of it: ",
+  "landing.eyebrow": "Eyebrow (optional)",
+  "landing.tile_label": "Label (optional)",
   "landing.json.shape": "neither the landing page's body (with pages) nor one page (with sections)",
   "landing.json.wrong_kind": "the footer and variants must be objects and campaigns a list",
   "landing.json.title": "Import or export JSON",
