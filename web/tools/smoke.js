@@ -902,7 +902,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(bBox(), "Edit briefing").click(); await tick();
   expect(byId("briefing-agt-b") && byId("briefing-agt-b").value.startsWith("You build the hub"), "the editor starts with the briefing");
   byId("briefing-agt-b").value = "x".repeat(16 * 1024 + 1);
+  // The limit is a formatted number: English here, whatever the machine's locale.
+  const briefingLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick();
+  win.Maity.i18n.locale = briefingLocale;
   expect(!patches.length && text(main).includes("the briefing is longer than 16,384 characters"), "a briefing over 16 KiB is refused before sending");
   // 16,384 characters pass however many bytes they take, as the hub counts.
   byId("briefing-agt-b").value = "é".repeat(16 * 1024);
@@ -6844,8 +6848,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The scan reads the latest window and says so; a cursor that does not move fails loud.
   const pmGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
+  // The window is a number in the reader's locale: English here.
+  const pmLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(text(main).includes("Only messages within the hub's latest 5000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
+  win.Maity.i18n.locale = pmLocale;
+  expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
   win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)

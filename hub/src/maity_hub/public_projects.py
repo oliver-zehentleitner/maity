@@ -159,7 +159,7 @@ def agent_statistics(
     }
     found = swarm.CACHE.get(conn, project_id)
     folded: dict[str, Any] = swarm.fold(
-        found, people, days=STAT_DAYS, include=lambda member: member in agents
+        found, people, days=STAT_DAYS, include=lambda member: member in agents, public_only=True
     )
     return {"totals": folded["totals"], "members": folded["members"]}
 
@@ -169,6 +169,13 @@ def _duration(seconds: int | None) -> str:
         return "-"
     hours, rest = divmod(seconds, 3600)
     return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
+
+
+def stat_labels(totals: dict[str, Any]) -> list[tuple[str, str]]:
+    """The counters a page shows: no line for merges it may not count (`swarm.fold`)."""
+    return [
+        (key, label) for key, label in STAT_LABELS if key != "prs_merged" or totals[key] is not None
+    ]
 
 
 def stat_value(key: str, value: Any) -> str:
@@ -191,17 +198,17 @@ def _per_day_html(series: list[dict[str, Any]]) -> str:
 
 def _statistics_html(stats: dict[str, Any]) -> str:
     totals = stats["totals"]
+    labels = stat_labels(totals)
     items = "".join(
-        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>"
-        for key, label in STAT_LABELS
+        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>" for key, label in labels
     )
     html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
     html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
     if stats["members"]:
-        head = "".join(f"<th>{escape(label)}</th>" for _, label in STAT_LABELS)
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in labels)
         body = "".join(
             f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
-            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in STAT_LABELS)
+            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in labels)
             + "</tr>"
             for row in stats["members"]
         )
@@ -356,6 +363,34 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
     ]
+
+
+def explore_html(conn: Connection, hub: Settings) -> str:
+    """The page of `/explore`: every project that has a page now, by name. It shows only what
+    those pages already show, and is rendered per request, behind the public cache."""
+    shown = sorted(
+        (
+            (namespace.full_name(conn, project), project.name)
+            for project in conn.execute(
+                select(t.project).where(
+                    t.project.c.public_page == "on", t.project.c.state != "archived"
+                )
+            )
+            if served(conn, project)
+        ),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+    items = "".join(
+        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
+        for full, name in shown
+    )
+    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
+    return render.page_document(
+        lang="en",
+        title="Public projects on Maity",
+        canonical=f"{hub.public_url.rstrip('/')}/explore",
+        content=f"<h1>Public projects</h1>{listed}",
+    )
 
 
 public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

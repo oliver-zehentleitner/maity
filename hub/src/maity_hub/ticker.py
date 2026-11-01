@@ -827,6 +827,8 @@ class Merge:
     paths_truncated: bool
     # contract file → its sections, or None when they could not be told
     contract: dict[str, set[str] | None] = field(default_factory=dict)
+    # Read with the instance's token, which reads public repositories only (§11.4).
+    public: bool = False
 
 
 def write_merge(
@@ -918,6 +920,7 @@ def write_merge(
                 "base": merge.base,
                 "merged_at": merge.merged_at,
                 "author": merge.author,
+                "public": merge.public,
             },
             "paths": merge.paths[:50],
             "paths_total": len(merge.paths),

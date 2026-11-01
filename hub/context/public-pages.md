@@ -21,8 +21,7 @@ public, max-age=60`, its ETag (`304` on a match), the CSP of the static pages an
 a cookie; the shell of the same addresses carries `Vary: Cookie` too. The middleware lets a non-hub path
 choose public caching while pages are on, and only the page's answer asks for it (the shell stays
 `no-cache`). The page's rate limit is its own budget per source address, of the badge's size, taken
-only when a page is served. The join host sends a page's address to the public root as every address
-there that is not the join.
+only when a page is served. The join host sends a page's address on to the same path on the public host.
 
 **Reason:** one row per page makes taking a page off one `DELETE` in the same transaction, and every
 replica of the hub serves the same page; the route that already answers every other address is the one
@@ -467,3 +466,23 @@ write lock; storing the first answer avoids a window in which a page of a public
 - Look inside the transaction: a slow or down forge would hold the project's rows, and the call still has to answer.
 - Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
   case is exactly the private one without a grant.
+
+## A visitor on the way to a public page never ends at the login
+
+**Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of 2026-11-01 on the card tsk-jj1tfre7n6zb (public projects and the profile "always login"); reproduced in a browser without a session; `docs/api.md` §1.1, §16.9, §16.11
+**Revisit when:** visitors get the app itself, read-only (the plan on the same card)
+
+The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
+which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
+public project stays the login and links the page, and a signed-in non-member goes to `?as=public`. `/explore`
+is rendered per request behind the public cache: it shows only what the pages show, and a stored row would
+need a new input for every project. The board leaves out a `security` card until it is done, as the model
+of public projects (projects.md, 038e685e) said and the code did not.
+
+**Rejected:** redirecting a dashboard address to the public page: a card's link from a mail would end there
+after a session expired, instead of going on after the sign-in.
