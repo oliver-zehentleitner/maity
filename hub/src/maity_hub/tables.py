@@ -1524,6 +1524,11 @@ request = Table(
     _ref("takeover_id", "takeover.id", index=True),
     # A decision the hub filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6).
     Column("jour_fixe", JSON_VALUE),
+    # A proxy's call waiting for the owner's go: `{method, path, query, body, body_sha256}`;
+    # the columns below record the call that spent it (§2.3, §7).
+    Column("action", JSON_VALUE),
+    Column("action_used_at", UtcDateTime()),
+    Column("action_used_seq", BigInteger),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
