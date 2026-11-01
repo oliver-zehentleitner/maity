@@ -19,7 +19,7 @@ from sqlalchemy import Connection
 from maity_hub import avatars, idempotency, images, moderation, orgs
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.routes.agents import owned
 from maity_hub.routes.project_images import _matches
 
@@ -128,10 +128,12 @@ def delete_agent_avatar(agent_id: str, request: Request, caller: HumanCaller) ->
     return _change(request, caller, agent_id, _owners_agent(agent_id, caller))
 
 
-def _org_avatar(request: Request, caller: HumanCaller, org: str) -> JSONResponse:
+def _org_avatar(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
     """§6.26: an owner of the organisation. Someone outside it gets `not_found`, as for a handle
     that names nothing; the role is read again in `_change`, before the replay too."""
-    if caller.human_id is None:
+    if caller.kind == "agent":
+        raise humans_only("an organisation is for humans")
+    if caller.kind != "human" or caller.human_id is None:
         raise forbidden()
     human_id = caller.human_id
     with engine_of(request).begin() as conn:
@@ -147,10 +149,10 @@ def _org_avatar(request: Request, caller: HumanCaller, org: str) -> JSONResponse
 
 
 @router.put("/orgs/{org}/avatar")
-def put_org_avatar(org: str, request: Request, caller: HumanCaller) -> JSONResponse:
+def put_org_avatar(org: str, request: Request, caller: AnyCaller) -> JSONResponse:
     return _org_avatar(request, caller, org)
 
 
 @router.delete("/orgs/{org}/avatar")
-def delete_org_avatar(org: str, request: Request, caller: HumanCaller) -> JSONResponse:
+def delete_org_avatar(org: str, request: Request, caller: AnyCaller) -> JSONResponse:
     return _org_avatar(request, caller, org)

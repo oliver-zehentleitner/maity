@@ -503,7 +503,9 @@ def test_an_organisations_owner_changes_its_picture_and_nobody_else(
     refused = put_human(member, path, image())
     assert (refused.status_code, refused.json()["error"]["details"]["reason"]) == (403, "org_role")
     agent = flow.agent(make_client, owner)
-    assert agent.client.delete("/api/v1/orgs/oz-team/avatar", headers=agent.auth).status_code == 403
+    refused = agent.client.delete("/api/v1/orgs/oz-team/avatar", headers=agent.auth)
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"] == {"reason": "humans_only"}
 
     removed = owner.delete(path)
     assert removed.status_code == 200, removed.text
