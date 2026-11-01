@@ -201,25 +201,14 @@ def test_a_report_replay_answers_only_a_member(
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=other.id)
-    series = {
-        "enabled": False,
-        "recurrence": {"freq": "daily"},
-        "time": "10:00",
-        "timezone": "UTC",
-        "moderator": other.id,
-    }
-    assert (
-        owner.patch(
-            "/projects/maintainer/maity", {"policy": {"jour_fixe": series}, "reason": "r"}
-        ).status_code
-        == 200
-    )
+    from tests.test_jour_fixe import ensure_series, grant, start
+
+    sid = ensure_series(owner)
+    assert grant(other, sid, other.id).status_code == 201  # a keeper, to themselves
     member = flow.agent(make_client, owner)
     listen(member)
     other.get("/me")
-    round_id = other.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "r"}).json()[
-        "id"
-    ]
+    round_id = start(other, sid).json()["id"]
     member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
     now[0] += STEP
     worker.sweep(migrated)

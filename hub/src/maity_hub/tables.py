@@ -603,12 +603,6 @@ project = Table(
     # The setup options chosen at creation and the ids of the cards made for them
     # (§6.21); NULL for a project that predates the field.
     Column("setup", JSON_VALUE),
-    # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
-    # its weekly interval counts from, and the last slot the hub handled.
-    Column("jour_fixe", JSON_VALUE),
-    Column("jour_fixe_moderators", JSON_VALUE),
-    Column("jour_fixe_anchor", UtcDateTime),
-    Column("jour_fixe_last_slot", UtcDateTime),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -1569,11 +1563,74 @@ request = Table(
 
 # --- the jour fixe (§20) ---------------------------------------------------------------
 
+# A jour fixe series (§20.1): a topic, a circle, its schedule and windows as `config` (the
+# shape `jourfixe.schedule` reads), the day its weekly interval counts from and the last slot
+# the hub handled.
+jour_fixe_series = Table(
+    "jour_fixe_series",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("topic", String(300), nullable=False),
+    Column("circle", String(8), nullable=False),  # owner, humans, all
+    _ref("circle_owner", "human.id"),  # with `circle: owner` only
+    Column("enabled", Boolean, nullable=False),
+    Column("config", JSON_VALUE, nullable=False),
+    Column("anchor", UtcDateTime),
+    Column("last_slot", UtcDateTime),
+    Column("created_by", String(ID)),  # a human id, or null (the upgrade, §20.1)
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The right to moderate a series (§20.2): `active`, or `pending` until both the agent's owner
+# and a keeper said go; the consent requests filed for it and who already consented.
+jour_fixe_moderator = Table(
+    "jour_fixe_moderator",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("state", String(8), nullable=False),
+    Column("granted_by", String(ID)),  # the granting human's or member's id
+    Column("granted_at", UtcDateTime, nullable=False),
+    Column("owner_consent", Boolean, nullable=False),
+    Column("keeper_consent", Boolean, nullable=False),
+    Column("owner_request_id", String(ID)),
+    Column("keeper_request_id", String(ID)),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# A member who opted out of a series (§20.2): not invited, not woken, never its moderator.
+jour_fixe_opt_out = Table(
+    "jour_fixe_opt_out",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# Who receives a series' report besides the default (§20.2): a member on the list
+# (`receives: true`), or a keeper who took itself off (`receives: false`).
+jour_fixe_recipient = Table(
+    "jour_fixe_recipient",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("receives", Boolean, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 jour_fixe_round = Table(
     "jour_fixe_round",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
+    _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
     Column("mode", String(16), nullable=False),  # message, chat

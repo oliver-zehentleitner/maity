@@ -408,3 +408,76 @@ def test_the_bridges_owner_outside_the_project_ends_the_connection(
     assert (ended.json()["ended_by"], ended.json()["end_reason"]) == (friend.id, "bridge_ended")
     assert _bridges(migrated) == []
     assert friend.get(f"{PROJECT}/members/{served}").status_code == 404  # nothing else
+
+
+@pytest.mark.parametrize(
+    ("side", "values", "expected"),
+    [
+        ("bridge", {"active": None}, {"bridge": "not_a_member"}),
+        ("served", {"active": None}, {"member": "not_an_agent"}),
+        ("bridge", {"isolated_since": "now"}, {"bridge": "isolated"}),
+    ],
+)
+def test_a_change_of_purpose_is_refused_at_the_go_for_a_side_that_is_gone(
+    side: str,
+    values: dict[str, Any],
+    expected: dict[str, str],
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+) -> None:
+    """Checked again at the last `go` (§2.3): a side that left is named as such, not as
+    isolated, and the request stays open."""
+    from maity_hub import clock
+
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    answer(friend, connect(owner, served, bridge).json()["id"], "go")
+    [row] = _bridges(migrated)
+    change = owner.patch(f"{PROJECT}/members/{served}/bridges/{row.id}", {"purpose": "reviews"})
+    assert change.status_code == 202, change.text
+    gone = {k: (clock.now() if v == "now" else v) for k, v in values.items()}
+    with migrated.begin() as conn:  # meanwhile, as a race with the answer would leave it
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == (row.served if side == "served" else row.bridge))
+            .values(**gone)
+        )
+    refused = answer(friend, change.json()["id"], "go")
+    assert refused.status_code == 400, refused.text
+    assert _fields(refused) == expected
+    with migrated.connect() as conn:
+        still = conn.execute(select(t.request).where(t.request.c.id == change.json()["id"])).one()
+    assert still.status == "open" and [r.purpose for r in _bridges(migrated)] == [PURPOSE]
+
+
+def test_a_new_connection_is_refused_at_the_go_when_the_check_fails_then(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    asked = connect(owner, served, bridge)
+    assert asked.status_code == 202, asked.text
+    with migrated.begin() as conn:  # the served agent took a role the limits exclude
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == served)
+            .values(role="reviewer", role_base="reviewer")
+        )
+    refused = answer(friend, asked.json()["id"], "go")
+    assert refused.status_code == 400, refused.text
+    assert _fields(refused) == {"member": "outside_role"}
+    assert _bridges(migrated) == []
+
+
+def test_the_bridges_owner_leaving_the_project_ends_its_connections(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    factory.membership(migrated, _project(migrated), "member", human_id=friend.id)
+    answer(friend, connect(owner, served, bridge).json()["id"], "go")
+    [row] = _bridges(migrated)
+    left = owner.delete(f"{PROJECT}/members/{friend.id}")
+    assert left.status_code == 200, left.text
+    assert _bridges(migrated) == []
+    with migrated.connect() as conn:
+        ended = conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
+    assert (ended.end_reason, ended.ended_by) == ("owner_not_member", None)

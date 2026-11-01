@@ -293,6 +293,7 @@ window.Maity = window.Maity || {};
 
   let taskSerial = 0;
   let consentSerial = 0;
+  let jfSerial = 0;
   // tasks:admin and tasks:review, by the human's trust and role in a project (§2.3).
   const mineIn = (slug) => me().projects.find((p) => p.slug === slug) || {};
   const trustIn = (slug) => mineIn(slug).trust;
@@ -685,18 +686,64 @@ window.Maity = window.Maity || {};
       }
     });
   }
+  // §20.1: the series of a project as the hub shows them to the caller. An owner's series
+  // (circle `owner`) is read by its circle owner, that owner's agents and its moderators; the
+  // humans with project:admin see only that it exists (id, circle owner, enabled, schedule).
+  const JF_OPEN = ["answering", "statement", "exchange", "reporting"];
+  const jfAdmin = (slug) => me().member.kind === "human" && tasksAdmin(slug);
+  function jfReads(slug, s) {
+    if (s.circle !== "owner") return true;
+    const who = me().member;
+    const profile = (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === who.id) || who;
+    return who.id === s.circle_owner || (who.kind === "agent" && profile.owner_id === s.circle_owner)
+      || (s.moderators || []).concat(s.pending_moderators || []).some((x) => x.member_id === who.id);
+  }
+  // The circle owner keeps an owner's series; the humans with project:admin keep the others (§20.1).
+  const jfKeeps = (slug, s) => me().member.kind === "human" && (s.circle === "owner" ? me().member.id === s.circle_owner : tasksAdmin(slug));
+  const jfDeletes = (slug, s) => jfKeeps(slug, s) || (s.circle === "owner" && jfAdmin(slug));
+  function jfSeriesView(slug, s) {
+    const out = Object.assign({}, s);
+    delete out.next_at; delete out.opted_out_members; delete out.report_list;
+    if (jfReads(slug, s)) {
+      // §20.2: the caller's own flags, their agents' when they own any, the report list for a keeper only.
+      const flags = (id) => ({ opted_out: (s.opted_out_members || []).includes(id), report_recipient: (s.report_list || []).includes(id) });
+      Object.assign(out, flags(me().member.id));
+      const agents = me().member.kind === "human" ? (fixtures()[slug + "/members.json"].items || []).filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at) : [];
+      if (agents.length) out.own_agents = agents.map((x) => Object.assign({ member_id: x.id }, flags(x.id)));
+      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).slice();
+      return out;
+    }
+    if (!jfAdmin(slug)) return null;
+    return { id: s.id, circle: s.circle, circle_owner: s.circle_owner, enabled: s.enabled, recurrence: s.recurrence, time: s.time, timezone: s.timezone };
+  }
+  const jfSeriesOf = (slug, id, path) => file(slug, "jour-fixe.json", path).series.find((x) => x.id === id) || null;
+  // What the caller may not see does not exist for them; an admin finds the owner's series to delete it (§20.1).
+  function jfSeries(slug, id, path) {
+    const s = jfSeriesOf(slug, id, path);
+    if (!s || !(jfReads(slug, s) || jfAdmin(slug))) fail(404, "not_found", "Not found", path);
+    return s;
+  }
   function jfRound(slug, id, path) {
     const r = file(slug, "jour-fixe.json", path).rounds.find((x) => x.id === id);
-    if (!r) fail(404, "not_found", "Not found", path);
+    const s = r && r.series_id ? jfSeriesOf(slug, r.series_id, path) : null;
+    // A round of a series the caller may not read answers not_found, an admin included (§20.7).
+    if (!r || (s && !jfReads(slug, s))) fail(404, "not_found", "Not found", path);
     return r;
   }
-  // §20.1: policy.jour_fixe as the hub checks it, each refusal at its field path.
+  // §20.1: a series as the hub checks it, each refusal at its field path.
   const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
   function jourFixeErrors(jf, members) {
-    // As hub/jourfixe/schedule.py names each refusal (§20.1).
     const e = {};
-    const at = (k) => "policy.jour_fixe." + k;
+    const at = (k) => k;
     const zone = jf.timezone;
+    if (typeof jf.topic !== "string" || !jf.topic.trim()) e.topic = "required";
+    else if (jf.topic.trim().length > 300) e.topic = "too_long";
+    if (!["owner", "humans", "all"].includes(jf.circle)) e.circle = "unknown";
+    if (jf.circle === "owner") {
+      const owner = members.find((x) => x.id === jf.circle_owner);
+      if (jf.circle_owner == null) e.circle_owner = "required";
+      else if (!owner || owner.kind !== "human" || owner.removed_at) e.circle_owner = "not_a_member";
+    } else if (jf.circle_owner != null) e.circle_owner = "invalid";
     if (typeof jf.enabled !== "boolean") e[at("enabled")] = "not_a_boolean";
     if (zone != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(zone)) e[at("timezone")] = "unknown_timezone";
     if (jf.enabled === true) {
@@ -708,7 +755,6 @@ window.Maity = window.Maity || {};
     [["answer_window_minutes", 30, 1440], ["step_window_minutes", 30, 1440], ["report_window_hours", 1, 72]].forEach(([k, lo, hi]) => {
       if (!(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
     });
-    if (jf.moderator !== "admin_agent" && !members.some((x) => x.id === jf.moderator && !x.removed_at)) e[at("moderator")] = "not_a_member";
     const r = jf.recurrence;
     if (r != null) {
       const key = (k) => at("recurrence." + k);
@@ -2422,58 +2468,128 @@ window.Maity = window.Maity || {};
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
-        if ("jour_fixe" in body.policy && body.policy.jour_fixe !== null) {
-          // Checked and stored with the defaults filled in, as the hub does (schedule.filled, §20.1).
-          const filled = Object.assign({ enabled: false, moderator: "admin_agent", answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 },
-            body.policy.jour_fixe);
-          const errors = jourFixeErrors(filled, file(m[1], "members.json", path).items);
-          if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
-          body.policy = Object.assign({}, body.policy, { jour_fixe: filled });
-        }
         p.policy = Object.assign({}, p.policy, body.policy);
         if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
       return p;
     }],
-    // §20.9 the jour fixe: the series, the moderator order, the rounds; members only.
+    // §20.9 the jour fixe: the series with their next slot and rounds, the rounds; members only.
     ["GET", /^\/projects\/([^/]+)\/jour-fixe$/, (m, body, path) => {
-      const p = project(m[1], path);
+      project(m[1], path);
       const jf = file(m[1], "jour-fixe.json", path);
-      const policy = (p.policy || {}).jour_fixe || null;
-      const rounds = jf.rounds;
-      return { policy, moderators: jf.moderators, next_at: policy && policy.enabled ? jf.next_at : null,
-        current_round: rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status)) || null,
-        last_round: rounds.find((r) => r.status === "reported") || null };
+      return { series: jf.series.map((s) => {
+        const view = jfSeriesView(m[1], s);
+        if (!view) return null;
+        // The rounds of a series are shown to its readers only (§20.7).
+        const rounds = jfReads(m[1], s) ? jf.rounds.filter((r) => r.series_id === s.id) : [];
+        return Object.assign(view, { next_at: s.enabled && jfReads(m[1], s) ? s.next_at || null : null,
+          current_round: rounds.find((r) => JF_OPEN.includes(r.status)) || null, last_round: rounds.find((r) => r.status === "reported") || null });
+      }).filter(Boolean) };
     }],
-    ["PUT", /^\/projects\/([^/]+)\/jour-fixe\/moderators$/, (m, body, path) => {
-      const p = project(m[1], path);
-      const all = file(m[1], "members.json", path).items;
-      const adminAgents = all.filter((x) => x.kind === "agent" && x.trust === "admin" && x.role !== "proxy" && !x.removed_at);
-      const human = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
-      if (!human && !adminAgents.some((x) => x.id === me().member.id)) fail(403, "forbidden", "project:admin or an admin agent", path);
-      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
-      const order = body.order;
-      if (order !== null && !(Array.isArray(order) && order.every((id) => adminAgents.some((x) => x.id === id)))) {
-        fail(400, "invalid", "the request does not validate", path, { fields: { order: "not_admin_agent" } });
-      }
-      p.policy = Object.assign({}, p.policy, { jour_fixe_moderators: order });
-      // The resolved order: the named ones first, the other admin agents after them.
-      const named = (order || []).map((id) => adminAgents.find((x) => x.id === id));
-      const rest = adminAgents.filter((x) => !(order || []).includes(x.id)).sort((a, b) => (a.handle < b.handle ? -1 : 1));
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/series$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: file(m[1], "jour-fixe.json", path).series.map((s) => jfSeriesView(m[1], s)).filter(Boolean), next_cursor: null };
+    }],
+    // §20.1: a series is written by its keepers with a reason, at most 10 per project.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series$/, (m, body, path) => {
+      project(m[1], path);
       const jf = file(m[1], "jour-fixe.json", path);
-      jf.moderators = named.concat(rest).map((x) => ({ member_id: x.id, handle: x.handle }));
-      return { moderators: jf.moderators };
+      const draft = Object.assign({ circle_owner: null, enabled: false, recurrence: null, time: null, timezone: null,
+        answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 }, body);
+      const keeper = me().member.kind === "human" && (draft.circle === "owner" ? me().member.id === draft.circle_owner : tasksAdmin(m[1]));
+      if (!keeper) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
+      if (!body.reason) errors.reason = "required";
+      if (jf.series.length >= 10) errors.series = "too_many";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const made = { id: "jfs-f" + String(++jfSerial).padStart(2, "0"), topic: draft.topic.trim(), circle: draft.circle, circle_owner: draft.circle_owner, enabled: draft.enabled,
+        recurrence: draft.recurrence, time: draft.time, timezone: draft.timezone, answer_window_minutes: draft.answer_window_minutes,
+        step_window_minutes: draft.step_window_minutes, report_window_hours: draft.report_window_hours, moderators: [], pending_moderators: [],
+        created_by: me().member.id, created_at: nowIso(), next_at: null };
+      jf.series.push(made);
+      return jfSeriesView(m[1], made);
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      if (!jfKeeps(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      const fields = {};
+      ["circle", "circle_owner"].forEach((k) => { if (k in body && body[k] !== s[k]) fields[k] = "fixed"; });
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const draft = Object.assign({}, s, body);
+      const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
+      if (!body.reason) errors.reason = "required";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      ["topic", "enabled", "recurrence", "time", "timezone", "answer_window_minutes", "step_window_minutes", "report_window_hours"].forEach((k) => {
+        if (k in body) s[k] = k === "topic" ? body[k].trim() : body[k];
+      });
+      return jfSeriesView(m[1], s);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      if (!jfDeletes(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      if (!(body && body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const jf = file(m[1], "jour-fixe.json", path);
+      jf.series = jf.series.filter((x) => x !== s);
+      return Object.assign({}, s, { next_at: undefined });
+    }],
+    // §20.2: a grant takes effect with the agent's owner and a keeper; the granter's own action is one
+    // consent. 201 when both are there, else 202 and the grant waits in pending_moderators.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/moderators$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      const who = me().member;
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id && !x.removed_at);
+      if (!(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      if (!target) fail(400, "invalid", "the request does not validate", path, { fields: { member_id: "not_a_member" } });
+      const keeper = jfKeeps(m[1], s);
+      const owns = target.kind === "agent" && target.owner_id === who.id;
+      // A human grants it to themselves only, for a series they keep; in an owner's series only that owner grants.
+      if (who.kind !== "human" || (s.circle === "owner" && !keeper) || (target.kind === "human" && !(target.id === who.id && keeper)) || (!keeper && !owns)) {
+        fail(403, "forbidden", "not allowed to grant this right", path, { reason: "not_series_keeper" });
+      }
+      if ((s.moderators || []).concat(s.pending_moderators || []).some((x) => x.member_id === target.id)) fail(409, "conflict", "already held or pending", path);
+      const ownerOk = target.kind === "human" || owns;
+      if (ownerOk && keeper) {
+        s.moderators.push({ member_id: target.id, granted_by: who.id, granted_at: nowIso() });
+        return jfSeriesView(m[1], s);
+      }
+      s.pending_moderators.push({ member_id: target.id, granted_by: who.id, granted_at: nowIso() });
+      const to = [!ownerOk ? target.owner_id : null, !keeper ? "owner" : null].filter(Boolean);
+      return { series: jfSeriesView(m[1], s), requests: to.map((t, i) => ({ id: "req-jfs" + (i + 1), to: t })) };
+    }],
+    // §20.2: opting out of a series and the report list, for oneself or, with ?member=, for one's own agent.
+    ...[["opt-out", "opted_out_members"], ["report", "report_list"]].flatMap(([name, field]) => ["PUT", "DELETE"].map((verb) => [verb,
+      new RegExp("^\\/projects\\/([^/]+)\\/jour-fixe\\/series\\/([^/]+)\\/" + name + "$"), (m, body, path, query) => {
+        const s = jfSeries(m[1], m[2], path);
+        if (!jfReads(m[1], s)) fail(404, "not_found", "Not found", path);
+        const who = me().member.id, id = query.get("member") || who;
+        const agent = (file(m[1], "members.json", path).items || []).find((x) => x.id === id && x.kind === "agent" && x.owner_id === who);
+        if (id !== who && !agent) fail(403, "forbidden", "only for oneself or one's own agent", path);
+        const rest = (s[field] || []).filter((x) => x !== id);
+        s[field] = verb === "PUT" ? rest.concat(id) : rest;
+        return jfSeriesView(m[1], s);
+      }])),
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/moderators\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      const who = me().member;
+      const held = s.moderators.concat(s.pending_moderators).find((x) => x.member_id === m[3]);
+      if (!held) fail(404, "not_found", "Not found", path);
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === m[3]) || {};
+      // The agent's owner, the member itself, the granter or a keeper ends it (§20.2).
+      if (!(jfKeeps(m[1], s) || who.id === m[3] || who.id === held.granted_by || (target.kind === "agent" && target.owner_id === who.id))) {
+        fail(403, "forbidden", "not allowed to end this right", path, { reason: "not_series_keeper" });
+      }
+      s.moderators = s.moderators.filter((x) => x !== held);
+      s.pending_moderators = s.pending_moderators.filter((x) => x !== held);
+      return jfSeriesView(m[1], s);
     }],
     ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path, query) => {
       project(m[1], path);
-      const status = query.get("status");
-      return { items: file(m[1], "jour-fixe.json", path).rounds.filter((r) => !status || r.status === status), next_cursor: null };
+      const status = query.get("status"), series = query.get("series");
+      // A series the caller may not read is left out, its rounds with it (§20.9).
+      const readable = (r) => { const s = r.series_id ? jfSeriesOf(m[1], r.series_id, path) : null; return !s || jfReads(m[1], s); };
+      return { items: file(m[1], "jour-fixe.json", path).rounds.filter((r) => readable(r) && (!status || r.status === status) && (!series || r.series_id === series)), next_cursor: null };
     }],
-    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => {
-      const r = file(m[1], "jour-fixe.json", path).rounds.find((x) => x.id === m[2]);
-      if (!r) fail(404, "not_found", "Not found", path);
-      return r;
-    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => jfRound(m[1], m[2], path)],
     // §20.3–§20.8 the round's writes, as the hub checks them: one answer per member, the
     // statement, posts once per topic and step, a further step, the report, redaction.
     ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path, query) => {
@@ -2573,22 +2689,32 @@ window.Maity = window.Maity || {};
       } else fail(400, "invalid", "the request does not validate", path, { fields: { target: "redact_the_message" } });
       return r;
     }],
-    // §20.1: started by hand with a reason, by trust owner or admin; one round at a time.
-    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path) => {
+    // §20.1: started by hand with a reason, by the series' keepers and moderators; one round of a
+    // series at a time, at most 2 by hand in 24 hours.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/rounds$/, (m, body, path) => {
       const p = project(m[1], path);
-      if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "jour_fixe:start needed", path, { scope: "jour_fixe:start" });
+      const s = jfSeries(m[1], m[2], path);
+      if (!(jfReads(m[1], s) && (jfKeeps(m[1], s) || (s.moderators || []).some((x) => x.member_id === me().member.id)))) {
+        fail(403, "forbidden", "not a keeper or moderator of this series", path, { reason: "not_series_keeper" });
+      }
       if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
       const jf = file(m[1], "jour-fixe.json", path);
-      const open = jf.rounds.find((r) => ["answering", "statement", "exchange", "reporting"].includes(r.status));
+      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
       if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
       if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
-      const cfg = Object.assign({ answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 }, (p.policy || {}).jour_fixe || {});
+      if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
+      const day = Date.now() - 24 * 3600000;
+      if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
+        fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
+      }
       const now = nowIso();
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
-      const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", trigger: "manual", mode: "message",
-        scheduled_for: now, opened_at: now, answers_close_at: new Date(Date.now() + cfg.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
-        steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config: cfg,
-        moderator: { member_id: (jf.moderators[0] || {}).member_id || null, instance: null },
+      const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
+      const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
+        trigger: "manual", mode: "message", scheduled_for: now,
+        opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
+        moderator: { member_id: s.moderators[0].member_id, instance: null },
         invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
       jf.rounds.unshift(round);
       return round;

@@ -2527,6 +2527,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = ownersDel; win.Maity.api.get = ownersGet;
   await go("#/maintainer/maity/inbox");
 
+  // Outage and cover (§6.12) in a member list: the limit and its reason, who covers, whom one covers; nothing for the rest.
+  const avFixture = await win.Maity.api.getAll("/projects/maintainer/maity/members");
+  const avGetAll = win.Maity.api.getAll;
+  const avOne = avFixture.items.find((x) => x.id === "agt-b"), avOther = avFixture.items.find((x) => x.id === "agt-a");
+  win.Maity.api.getAll = (p) => avGetAll(p).then((r) => (p.startsWith("/projects/maintainer/maity/members") ? Object.assign({}, r, { items: r.items.map((x) => (x.id === avOne.id
+    ? Object.assign({}, x, { availability: { state: "limited", since: "2026-10-31T00:00:00Z", until: "2026-10-31T09:00:00Z", source: "self", reason: "quota" }, covered_by: { member_id: avOther.id, since: "2026-10-31T00:10:00Z" } })
+    : x.id === avOther.id ? Object.assign({}, x, { covering: [{ member_id: avOne.id, since: "2026-10-31T00:10:00Z" }] }) : x)) }) : r));
+  const avGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? win.Maity.api.getAll(p) : avGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const avNote = (id) => { const r = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id); return r && r.querySelector(".availability-note"); };
+  expect(avNote(avOne.id) && text(avNote(avOne.id)).includes("Away until") && text(avNote(avOne.id)).includes("(quota)") && text(avNote(avOne.id)).includes("Covered by " + avOther.display_name),
+    "availability: the list says until when and why, and who covers " + (avNote(avOne.id) && text(avNote(avOne.id))));
+  expect(avNote(avOther.id) && text(avNote(avOther.id)).includes("Covering " + avOne.display_name), "availability: the substitute's row says whom it covers");
+  expect(main.querySelectorAll(".availability-note").length === 2, "availability: nothing for a member with no outage and no cover");
+  await go("#/maintainer/maity/members/" + avOne.id); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".availability-note") && text(main.querySelector(".availability-note")).includes("Away until"), "availability: a member's page says it too");
+  win.Maity.api.getAll = avGetAll; win.Maity.api.get = avGet;
+  await go("#/maintainer/maity/inbox");
+
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
@@ -4433,97 +4453,217 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.post = fgPost;
     delete win.location.assign;
   }
-  // The jour fixe (§20, tsk-6h70epze0906): the series in Project settings, the moderator order, the rounds,
-  // one round as a member reads it, and a round started by hand.
+  // The jour fixe (§20): the series with their rounds, topics and starts by hand, the series kept in
+  // Project settings (create, change, delete, their moderators with consent), the owner's series
+  // private, one round as a member reads it.
   {
-    const jfPatches = [], jfPuts = [], jfPosts = [];
-    const jfPatch = win.Maity.api.patch, jfPut = win.Maity.api.put, jfPost = win.Maity.api.post;
-    win.Maity.api.patch = (p, b) => { if (b && b.policy && "jour_fixe" in b.policy) jfPatches.push(b); return jfPatch(p, b); };
-    win.Maity.api.put = (p, b) => { if (p.endsWith("/jour-fixe/moderators")) jfPuts.push(b); return jfPut(p, b); };
-    win.Maity.api.post = (p, b) => { if (p.endsWith("/jour-fixe/rounds")) jfPosts.push(b); return jfPost(p, b); };
-    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
-    const jfRounds = () => main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
-    expect(JSON.stringify(jfRounds()) === JSON.stringify(["jfx-0002", "jfx-0001"]) && text(main).includes("fewer than two members were present")
-      && text(main).includes("No scheduled rounds"),
-      "jour fixe: a tab of its own; the rounds newest first, a skipped one with its reason; no schedule said so");
-    // Paged (§1.4): older rounds by the hub's cursor, appended.
+    const jfCalls = [];
+    const jfPatch = win.Maity.api.patch, jfPost = win.Maity.api.post, jfDel = win.Maity.api.del, jfPut = win.Maity.api.put;
+    const rec = (verb, f) => (p, b) => {
+      if (p.includes("/jour-fixe/series")) jfCalls.push([verb, p.replace(/^.*\/jour-fixe\/series/, ""), b && JSON.parse(JSON.stringify(b))]);
+      return f(p, b);
+    };
+    win.Maity.api.patch = rec("PATCH", jfPatch); win.Maity.api.post = rec("POST", jfPost); win.Maity.api.del = rec("DELETE", jfDel); win.Maity.api.put = rec("PUT", jfPut);
+    const settle = async (n) => { for (let k = 0; k < (n || 8); k++) await tick(); };
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfBlock = (id) => main.querySelector("section.jf-series-block[data-series=\"" + id + "\"]");
+    const jfIn = (id) => jfBlock(id).querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
+    expect(jfBlock("jfs-0001") && jfBlock("jfs-0002") && text(jfBlock("jfs-0001").querySelector(".jf-series-title")) === "How we work: reviews, merges, the queue"
+      && JSON.stringify(jfIn("jfs-0001")) === JSON.stringify(["jfx-0002", "jfx-0001"]) && JSON.stringify(jfIn("jfs-0002")) === JSON.stringify(["jfx-0003"])
+      && text(jfBlock("jfs-0001")).includes("fewer than two members were present") && text(jfBlock("jfs-0001")).includes("Every member · Weekly on Monday at 09:00 (Europe/Vienna)")
+      && text(jfBlock("jfs-0001")).includes("Next round:") && text(jfBlock("jfs-0002")).includes("No scheduled rounds")
+      && text(jfBlock("jfs-0002").querySelector(".jf-series-title")) === "My agents: how the queue feels" && text(jfBlock("jfs-0002")).includes("@maintainer and their agents"),
+      "jour fixe: the rounds listed per series under its topic, the next slot of a series that is on, an owner's series for its owner ");
+    // Paged (§1.4): older rounds by the hub's cursor, appended to their series.
     const jfGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/jour-fixe/rounds"
       ? jfGet(p).then((x) => Object.assign({}, x, { items: x.items.slice(0, 1), next_cursor: "c2" }))
       : p === "/projects/maintainer/maity/jour-fixe/rounds?cursor=c2"
         ? jfGet("/projects/maintainer/maity/jour-fixe/rounds").then((x) => Object.assign({}, x, { items: x.items.slice(1), next_cursor: null }))
         : jfGet(p));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
-    const jfFirst = JSON.stringify(jfRounds());
-    btn(main, "Load older rounds").click(); for (let k = 0; k < 6; k++) await tick();
-    expect(jfFirst === JSON.stringify(["jfx-0002"]) && JSON.stringify(jfRounds()) === JSON.stringify(["jfx-0002", "jfx-0001"]) && !btn(main, "Load older rounds"),
-      "jour fixe: the rounds are paged; older ones loaded by the hub's cursor, then no more offered");
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfFirst = JSON.stringify(jfIn("jfs-0001")) + JSON.stringify(jfIn("jfs-0002"));
+    btn(main, "Load older rounds").click(); await settle(6);
+    expect(jfFirst === JSON.stringify(["jfx-0002"]) + "[]" && JSON.stringify(jfIn("jfs-0001")) === JSON.stringify(["jfx-0002", "jfx-0001"])
+      && JSON.stringify(jfIn("jfs-0002")) === JSON.stringify(["jfx-0003"]) && !btn(main, "Load older rounds"),
+      "jour fixe: the rounds are paged; older ones loaded by the hub's cursor into their series, then no more offered");
     win.Maity.api.get = jfGet;
-    await go("#/maintainer/maity/jour-fixe/jfx-0001"); for (let k = 0; k < 6; k++) await tick();
+    await go("#/maintainer/maity/jour-fixe/jfx-0001"); await settle(6);
     const jfTopic = () => main.querySelector("li.jf-topic");
-    expect(text(main).includes("reported") && text(main).includes("3 answers received") && text(main).includes("no instance listening")
+    expect(text(main).includes("reported") && text(main).includes("Topic: How we work: reviews, merges, the queue") && text(main).includes("3 answers received") && text(main).includes("no instance listening")
       && jfTopic() && text(jfTopic()).includes("Reviews wait overnight") && text(jfTopic()).includes("anonymous") && !jfTopic().querySelector("b")
       && text(jfTopic()).includes("Agreed, a second reviewer helps.") && text(jfTopic()).includes("Reason: posted a token") && !text(jfTopic()).includes("token</")
       && text(main.querySelector("section.jf-report")).includes("to the owner") && text(main.querySelector("section.jf-report")).includes("adopted: Within the rules.")
       && main.querySelector("section.jf-report").querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/inbox/req-0091"),
-      "jour fixe: a round shows its phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
-    // Project settings: the series, sent whole with a reason; the moderator order set and reset.
-    await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
-    const jfForm = () => main.querySelector("form.jf-settings");
-    expect(jfForm() && byId("jf-freq").value === "weekly" && !byId("jf-enabled").checked, "jour fixe: the series in Project settings, off by default");
-    byId("jf-enabled").checked = true; byId("jf-time").value = ""; byId("jf-reason").value = "every second Monday";
-    jfForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    expect(!jfPatches.length && text(byId("jf-error")).includes("A time and a time zone"), "jour fixe: switched on, a time is needed before anything is sent");
-    byId("jf-time").value = "10:00"; byId("jf-timezone").value = "Europe/Vienna"; byId("jf-interval").value = "2";
-    byId("jf-day-mon").checked = true; byId("jf-day-thu").checked = true;
-    jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    const jfSent = jfPatches[0] && jfPatches[0].policy.jour_fixe;
-    expect(jfSent && jfSent.enabled === true && JSON.stringify(jfSent.recurrence) === JSON.stringify({ freq: "weekly", interval: 2, weekdays: ["mon", "thu"] })
-      && jfSent.time === "10:00" && jfSent.timezone === "Europe/Vienna" && jfSent.moderator === "admin_agent" && jfPatches[0].reason === "every second Monday",
-      "jour fixe: the series sent whole with its reason " + JSON.stringify(jfPatches[0]));
-    const jfOrder = () => main.querySelector("ol.jf-order");
-    expect(jfOrder() && text(jfOrder()).includes("Agent A"), "jour fixe: the moderator order, the admin agents in their resolved order");
-    // The default order is said as such; saving it unchanged, or resetting it, sends nothing (it would freeze the default).
-    const jfMods = () => main.querySelector("section.jf-moderators");
-    byId("jf-order-reason").value = "agent-a knows the team";
-    btn(jfMods(), "Save the order").click(); await tick();
-    btn(jfMods(), "Back to the default order").click(); await tick();
-    expect(text(jfMods()).includes("The default order: by time online") && !jfPuts.length && text(jfMods()).includes("Nothing changed."),
-      "jour fixe: the default order said as such; unchanged, neither save nor reset sends anything");
-    // An explicit order stored: said so, and reset to the default with a reason.
-    await win.Maity.api.put("/projects/maintainer/maity/jour-fixe/moderators", { order: ["agt-a"], reason: "set elsewhere" });
-    jfPuts.length = 0;
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
-    expect(text(jfMods()).includes("An explicit order is set"), "jour fixe: an explicit order is said as such");
-    byId("jf-order-reason").value = "back to time online";
-    btn(jfMods(), "Back to the default order").click(); for (let k = 0; k < 4; k++) await tick();
-    expect(JSON.stringify(jfPuts[0]) === JSON.stringify({ order: null, reason: "back to time online" }) && text(jfMods()).includes("The order is saved.")
-      && text(jfMods()).includes("The default order"), "jour fixe: the explicit order reset to the default with a reason");
-    // The hub's refusal of a field is said at that field.
-    byId("jf-timezone").value = "Not a zone!"; byId("jf-reason").value = "a typo";
-    jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    expect(text(byId("jf-timezone-error")) === "not a time zone the hub knows" && text(main).includes("see the fields marked below"),
-      "jour fixe: the hub's refusal of the time zone said at its field");
-    // A refusal of a path with no field of its own is named in the status line, beside the fields marked.
-    const jfPatchNow = win.Maity.api.patch;
-    win.Maity.api.patch = (p, b) => (b && b.policy && "jour_fixe" in b.policy
-      ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { "policy.jour_fixe.time": "format", "policy.jour_fixe.recurrence": "not_an_object" } }))
-      : jfPatchNow(p, b));
-    byId("jf-timezone").value = "Europe/Vienna"; jfForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    expect(text(byId("jf-time-error")) === "a time as HH:MM, 24-hour" && text(main).includes("see the fields marked below; recurrence: not_an_object"),
-      "jour fixe: a refusal with no field of its own is named in the status line, the others at their fields");
-    win.Maity.api.patch = jfPatchNow;
-    // Started by hand: a reason, then the new round; a second start while it is open is refused in words.
-    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
-    expect(text(main).includes("Next round:"), "jour fixe: with the series on, the next slot is said");
-    byId("jf-start-reason").value = "before the launch"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    win.onhashchange(); for (let k = 0; k < 6; k++) await tick(); // the shim's hash change, as a browser's
-    expect(JSON.stringify(jfPosts[0]) === JSON.stringify({ reason: "before the launch" }) && /^#\/maintainer\/maity\/jour-fixe\/jfx-/.test(win.location.hash)
-      && text(main).includes("answering"), "jour fixe: started by hand with a reason, the new round opened " + win.location.hash);
-    await go("#/maintainer/maity/jour-fixe"); for (let k = 0; k < 6; k++) await tick();
-    byId("jf-start-reason").value = "again"; main.querySelector("form.jf-start").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    expect(text(main).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round while one is open is refused in words");
-    win.Maity.api.patch = jfPatch; win.Maity.api.put = jfPut; win.Maity.api.post = jfPost;
+      "jour fixe: a round shows its topic, phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
+
+    // Project settings: the series, created, changed and deleted with a reason.
+    await go("#/maintainer/maity/settings"); await settle();
+    const jfItem = (id) => main.querySelector("li.jf-series[data-series=\"" + id + "\"]");
+    const jfItems = () => main.querySelectorAll("li.jf-series").map((li) => li.getAttribute("data-series"));
+    const jfForm = () => main.querySelector("form.jf-series-form");
+    expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-0001", "jfs-0002"]) && text(jfItem("jfs-0001")).includes("Weekly on Monday at 09:00 (Europe/Vienna)")
+      && text(jfItem("jfs-0001")).includes("on schedule") && text(jfItem("jfs-0002")).includes("paused") && text(jfItem("jfs-0002")).includes("My agents: how the queue feels")
+      && !jfForm() && btn(main, "New series"), "jour fixe: Project settings list the series with their topic, circle, state and schedule; no form until one is asked for");
+    btn(main, "New series").click(); await tick();
+    expect(jfForm() && byId("jfs-circle").value === "all" && !byId("jfs-circle").disabled && !jfForm().querySelector(".jf-weekly").hidden,
+      "jour fixe: the form for a new series, the circle open to choose");
+    byId("jfs-topic").value = " "; byId("jfs-reason").value = "a look back";
+    jfForm().dispatch("submit"); await settle(4);
+    expect(!jfCalls.length && text(byId("jfs-error")).includes("Write the topic."), "jour fixe: a series without a topic is not sent");
+    byId("jfs-topic").value = "Reviews"; byId("jfs-circle").value = "humans"; byId("jfs-enabled").checked = true; byId("jfs-time").value = ""; byId("jfs-reason").value = "a look back";
+    jfForm().dispatch("submit"); await settle(4);
+    expect(!jfCalls.length && text(byId("jfs-error")).includes("A time and a time zone"), "jour fixe: switched on, a time is needed before anything is sent");
+    byId("jfs-time").value = "10:00"; byId("jfs-timezone").value = "Europe/Vienna"; byId("jfs-interval").value = "2";
+    byId("jfs-day-mon").checked = true; byId("jfs-day-thu").checked = true; byId("jfs-reason").value = "";
+    jfForm().dispatch("submit"); await settle(4);
+    expect(!jfCalls.length, "jour fixe: a series without a reason is not sent");
+    byId("jfs-reason").value = "a look back";
+    jfForm().dispatch("submit"); await settle();
+    const jfNew = jfCalls[0] && jfCalls[0][2];
+    expect(jfCalls[0] && jfCalls[0][0] === "POST" && jfCalls[0][1] === "" && jfNew.topic === "Reviews" && jfNew.circle === "humans" && !("circle_owner" in jfNew)
+      && jfNew.enabled === true && JSON.stringify(jfNew.recurrence) === JSON.stringify({ freq: "weekly", interval: 2, weekdays: ["mon", "thu"] })
+      && jfNew.time === "10:00" && jfNew.timezone === "Europe/Vienna" && jfNew.answer_window_minutes === 120 && jfNew.reason === "a look back",
+      "jour fixe: the series sent whole with its reason " + JSON.stringify(jfCalls[0]));
+    const jfMine = () => main.querySelectorAll("li.jf-series").find((li) => text(li).includes("Reviews"));
+    expect(!jfForm() && jfMine() && text(jfMine()).includes("The project's humans") && text(jfMine()).includes("Every 2 weeks on Monday, Thursday at 10:00 (Europe/Vienna)")
+      && text(main).includes("The series is saved.") && jfItems().length === 3, "jour fixe: the new series listed with its schedule as a sentence");
+    // A series for one owner: the owner is chosen among the humans; a hub refusal is said at its field.
+    btn(main, "New series").click(); await tick();
+    byId("jfs-circle").value = "owner"; byId("jfs-circle").dispatch("change");
+    expect(!byId("jfs-circle_owner").parentNode.hidden && byId("jfs-circle_owner").value === "hum-maintainer", "jour fixe: an owner's series asks whose it is, the own human first");
+    byId("jfs-topic").value = "Mine"; byId("jfs-enabled").checked = true; byId("jfs-time").value = "10:00"; byId("jfs-timezone").value = "Not a zone!"; byId("jfs-reason").value = "a typo";
+    jfForm().dispatch("submit"); await settle();
+    expect(text(byId("jfs-timezone-error")) === "not a time zone the hub knows" && text(main).includes("see the fields marked below") && jfItems().length === 3
+      && jfCalls[1][2].circle === "owner" && jfCalls[1][2].circle_owner === "hum-maintainer", "jour fixe: the hub's refusal of the time zone said at its field");
+    // A refusal with no field of its own is named in the status line, beside the fields marked; the limit of 10 at the topic.
+    const jfPostNow = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p.endsWith("/jour-fixe/series")
+      ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { time: "format", recurrence: "not_an_object", series: "too_many" } }))
+      : jfPostNow(p, b));
+    byId("jfs-timezone").value = "Europe/Vienna"; jfForm().dispatch("submit"); await settle();
+    expect(text(byId("jfs-time-error")) === "a time as HH:MM, 24-hour" && text(byId("jfs-series-error")) === "a project holds at most 10 series"
+      && text(main).includes("see the fields marked below; recurrence: not_an_object"), "jour fixe: a refusal with no field of its own is named in the status line, the others at their fields");
+    win.Maity.api.post = jfPostNow;
+    btn(jfForm(), "Cancel").click(); await tick();
+    expect(!jfForm() && btn(main, "New series"), "jour fixe: Cancel closes the form");
+    // Change it: the circle is fixed once the series exists.
+    const mineId = jfMine().getAttribute("data-series");
+    jfCalls.length = 0;
+    jfMine().querySelector(".jfs-edit").click(); await tick();
+    expect(jfForm() && byId("jfs-topic").value === "Reviews" && byId("jfs-circle").getAttribute("disabled") !== undefined && byId("jfs-circle").value === "humans" && byId("jfs-interval").value === "2"
+      && byId("jfs-day-thu").checked, "jour fixe: the series opens in the form as it is, its circle fixed ");
+    byId("jfs-topic").value = "Reviews and merges"; byId("jfs-reason").value = "wider";
+    jfForm().dispatch("submit"); await settle();
+    expect(jfCalls.length === 1 && jfCalls[0][0] === "PATCH" && jfCalls[0][1] === "/" + mineId && jfCalls[0][2].topic === "Reviews and merges" && !("circle" in jfCalls[0][2])
+      && jfCalls[0][2].reason === "wider" && text(jfItem(mineId)).includes("Reviews and merges"), "jour fixe: a change sent with its reason, the circle not sent");
+    // Delete with the row's reason.
+    jfCalls.length = 0;
+    jfItem(mineId).querySelector(".jfs-delete").click(); await settle(4);
+    expect(!jfCalls.length, "jour fixe: a series is not deleted without a reason");
+    byId("jfs-reason-" + mineId).value = "not needed"; jfItem(mineId).querySelector(".jfs-delete").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/" + mineId, { reason: "not needed" }]]) && !jfItem(mineId) && text(main).includes("The series is deleted."),
+      "jour fixe: a series deleted with its reason");
+
+    // Moderators: a grant that takes effect (201), one that waits for consent (202), ending both.
+    jfCalls.length = 0;
+    const jfMods = (id) => jfItem(id).querySelectorAll("ul.jf-moderators-list li").map((li) => li.getAttribute("data-member"));
+    expect(JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a"]) && text(jfItem("jfs-0002")).includes("Nobody holds the right to moderate yet."),
+      "jour fixe: the moderators of each series, none said so");
+    byId("jfs-grant-jfs-0001").value = "agt-b"; byId("jfs-reason-jfs-0001").value = "";
+    jfItem("jfs-0001").querySelector(".jfs-grant").click(); await settle(4);
+    expect(!jfCalls.length, "jour fixe: a grant without a reason is not sent");
+    byId("jfs-reason-jfs-0001").value = "knows the queue"; jfItem("jfs-0001").querySelector(".jfs-grant").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["POST", "/jfs-0001/moderators", { member_id: "agt-b", reason: "knows the queue" }]])
+      && JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a", "agt-b"]) && text(main).includes("@agent-b may now moderate this series.") && !jfItem("jfs-0001").querySelector("li.jf-pending"),
+      "jour fixe: a grant to an agent of the keeper's own takes effect at once ");
+    jfCalls.length = 0;
+    byId("jfs-reason-jfs-0001").value = "";  // ending the right needs no reason
+    jfItem("jfs-0001").querySelectorAll("ul.jf-moderators-list li").find((li) => li.getAttribute("data-member") === "agt-b").querySelector(".jfs-end").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-0001/moderators/agt-b", undefined]]) && JSON.stringify(jfMods("jfs-0001")) === JSON.stringify(["agt-a"]),
+      "jour fixe: the right ended without a reason or a body");
+
+    // The owner's series is private: its keeper reads it; an admin who is not its owner only learns it exists, and may delete it.
+    await go("#/maintainer/sample/settings"); await settle();
+    expect(JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1", "jfs-s2"]) && text(jfItem("jfs-s2")).includes("A private series of @hum-anna.") && !text(jfItem("jfs-s2")).includes("Anna's agents")
+      && !jfItem("jfs-s2").querySelector(".jfs-edit") && !jfItem("jfs-s2").querySelector("ul.jf-moderators-list") && jfItem("jfs-s2").querySelector(".jfs-delete")
+      && text(jfItem("jfs-s1")).includes("Shop: how we work"), "jour fixe: an owner's series is shown to an admin without its topic, to be deleted only");
+    // Grant to an agent of another owner: 202, it waits for that owner's and a keeper's consent.
+    jfCalls.length = 0;
+    byId("jfs-grant-jfs-s1").value = "agt-s2"; byId("jfs-reason-jfs-s1").value = "shop-dev two knows the shop";
+    jfItem("jfs-s1").querySelector(".jfs-grant").click(); await settle();
+    const jfPending = () => jfItem("jfs-s1").querySelector("li.jf-pending");
+    expect(JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1", "agt-s2"]) && jfPending() && jfPending().getAttribute("data-member") === "agt-s2"
+      && text(jfPending()).includes("waiting for the consent of the agent's owner and of a keeper of the series")
+      && text(main).includes("will moderate once the agent's owner and a keeper of the series have consented.") && !text(main).includes("@shop-dev may now moderate"),
+      "jour fixe: a grant that needs another's consent is shown pending with who must consent");
+    jfCalls.length = 0;
+    byId("jfs-reason-jfs-s1").value = ""; jfPending().querySelector(".jfs-end").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s1/moderators/agt-s2", undefined]]) && !jfPending() && JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1"]),
+      "jour fixe: a pending grant withdrawn with End");
+    // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
+    await go("#/maintainer/sample/jour-fixe"); await settle(6);
+    const jfSampleRounds = main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
+    expect(!jfBlock("jfs-s2") && text(main).includes("A private series of @hum-anna.") && !text(main).includes("Anna's agents") && !jfSampleRounds.includes("jfx-s4")
+      && JSON.stringify(jfSampleRounds) === JSON.stringify(["jfx-s3", "jfx-s2", "jfx-s1"]) && !(await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds")).items.some((r) => r.id === "jfx-s4")
+      && (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe/rounds/jfx-s4").catch((err) => err.code)) === "not_found",
+      "jour fixe: an owner's series is no block of the view for an admin who is not its owner; its rounds are left out and not found");
+    jfCalls.length = 0;
+    await go("#/maintainer/sample/settings"); await settle();
+    byId("jfs-reason-jfs-s2").value = "its owner left"; jfItem("jfs-s2").querySelector(".jfs-delete").click(); await settle();
+    expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s2", { reason: "its owner left" }]]) && JSON.stringify(jfItems()) === JSON.stringify(["jfs-s1"]),
+      "jour fixe: an admin deletes an owner's series with a reason");
+
+    // A member's part in a series (§20.2): opting out and back in, for oneself and for one's own agent
+    // (?member=), and the report list, shown to a keeper.
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfPart = (who) => jfBlock("jfs-0001").querySelectorAll("li.jf-part").find((li) => li.getAttribute("data-member") === who);
+    const jfPress = async (who, cls) => { jfPart(who).querySelector(cls).click(); await settle(); };
+    const jfRecipients = () => text(jfBlock("jfs-0001").querySelector(".jf-recipients"));
+    jfCalls.length = 0;
+    expect(jfPart("hum-maintainer") && jfPart("agt-b") && !jfPart("hum-nobody") && text(jfPart("hum-maintainer")).includes("taking part") && !jfBlock("jfs-0002").querySelector("li.jf-part[data-member=\"hum-x\"]")
+      && jfRecipients() === "Also on the report list: Agent A", "jour fixe: the caller's part in a series, their agents' and, for a keeper, the report list");
+    await jfPress("hum-maintainer", ".jf-optout");
+    expect(jfCalls.length === 1 && jfCalls[0][0] === "PUT" && jfCalls[0][1] === "/jfs-0001/opt-out" && text(jfPart("hum-maintainer")).includes("opted out")
+      && text(jfPart("hum-maintainer")).includes("Take part again") && text(jfPart("agt-b")).includes("taking part"), "jour fixe: opted out of a series");
+    await jfPress("hum-maintainer", ".jf-optout");
+    expect(jfCalls[1][0] === "DELETE" && jfCalls[1][1] === "/jfs-0001/opt-out" && text(jfPart("hum-maintainer")).includes("taking part"), "jour fixe: back in again");
+    await jfPress("agt-b", ".jf-optout");
+    expect(jfCalls[2][0] === "PUT" && jfCalls[2][1] === "/jfs-0001/opt-out?member=agt-b" && text(jfPart("agt-b")).includes("opted out") && text(jfPart("hum-maintainer")).includes("taking part"),
+      "jour fixe: an owner opts out one of their agents, named by ?member=");
+    await jfPress("agt-b", ".jf-optout");
+    expect(jfCalls[3][0] === "DELETE" && jfCalls[3][1] === "/jfs-0001/opt-out?member=agt-b" && text(jfPart("agt-b")).includes("taking part"), "jour fixe: the agent back in");
+    await jfPress("hum-maintainer", ".jf-report-toggle");
+    expect(jfCalls[4][0] === "PUT" && jfCalls[4][1] === "/jfs-0001/report" && jfRecipients().includes("Maintainer") && text(jfPart("hum-maintainer")).includes("gets the report"),
+      "jour fixe: put on the report list");
+    await jfPress("agt-c", ".jf-report-toggle");
+    expect(jfCalls[5][1] === "/jfs-0001/report?member=agt-c" && jfRecipients().includes("Agent C"), "jour fixe: an owner puts an agent of theirs on the report list");
+    await jfPress("agt-c", ".jf-report-toggle"); await jfPress("hum-maintainer", ".jf-report-toggle");
+    expect(jfCalls[6][0] === "DELETE" && jfCalls[7][0] === "DELETE" && jfRecipients() === "Also on the report list: Agent A" && !text(jfPart("hum-maintainer")).includes("gets the report"),
+      "jour fixe: taken off the report list again");
+    // An agent of another owner is not the caller's to switch: the hub refuses, the refusal is said.
+    expect(!jfPart("agt-s2") && (await win.Maity.api.put("/projects/maintainer/sample/jour-fixe/series/jfs-s1/opt-out?member=agt-s2").catch((err) => err.code)) === "forbidden",
+      "jour fixe: an agent of someone else is not switched by its owner's colleague");
+
+    // Started by hand, per series: a reason, then the new round; a refusal is said in words, per series.
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    const jfStart = (id) => jfBlock(id).querySelector("form.jf-start");
+    jfCalls.length = 0;
+    byId("jf-start-reason-jfs-0002").value = "try"; jfStart("jfs-0002").dispatch("submit"); await settle();
+    expect(text(jfBlock("jfs-0002")).includes("Not started: nobody to moderate was present") && !text(jfBlock("jfs-0001")).includes("Not started")
+      && JSON.stringify(jfCalls) === JSON.stringify([["POST", "/jfs-0002/rounds", { reason: "try" }]]), "jour fixe: a start refused with no moderator says why at its own series");
+    byId("jf-start-reason-jfs-0001").value = ""; jfStart("jfs-0001").dispatch("submit"); await settle(4);
+    expect(jfCalls.length === 1, "jour fixe: a start without a reason is not sent");
+    byId("jf-start-reason-jfs-0001").value = "before the launch"; jfStart("jfs-0001").dispatch("submit"); await settle();
+    win.onhashchange(); await settle(6); // the shim's hash change, as a browser's
+    expect(JSON.stringify(jfCalls[1]) === JSON.stringify(["POST", "/jfs-0001/rounds", { reason: "before the launch" }]) && /^#\/maintainer\/maity\/jour-fixe\/jfx-/.test(win.location.hash)
+      && text(main).includes("answering") && text(main).includes("Topic: How we work: reviews, merges, the queue"), "jour fixe: started by hand for a series with a reason, the new round opened " + win.location.hash);
+    await go("#/maintainer/maity/jour-fixe"); await settle(6);
+    expect(text(jfBlock("jfs-0001")).includes("Open round:") && !text(jfBlock("jfs-0002")).includes("Open round:") && jfIn("jfs-0001").length === 3,
+      "jour fixe: the open round is said under its series, the new round listed there");
+    byId("jf-start-reason-jfs-0001").value = "again"; jfStart("jfs-0001").dispatch("submit"); await settle();
+    expect(text(jfBlock("jfs-0001")).includes("Not started: an earlier round is not yet final"), "jour fixe: a second round of a series while one is open is refused in words");
+    win.Maity.api.patch = jfPatch; win.Maity.api.post = jfPost; win.Maity.api.del = jfDel; win.Maity.api.put = jfPut;
   }
   // The round's actions (§20.3–§20.8, tsk-6h70epze0906 part 2): an answer, by name or anonymously with the
   // limits said first, read back and withdrawn; the answers for their readers; the statement; a post; the report.
