@@ -1101,16 +1101,16 @@ def answer(
             raise not_found()
         _refuse_unless_open(row)
         proposals.require_known(row)
-        refusal = inbox.needs_a_human(row, mine)
-        if refusal is not None:
-            raise humans_only(refusal)
-        if row.action is not None and (mine.kind != "human" or mine.trust != "owner"):
+        if inbox.needs_the_owner(row, mine):
             raise ApiError(
                 403,
                 "forbidden",
                 "only a human with trust owner answers a proxy's call, directly",
                 {"reason": "action_needs_owner"},
             )
+        refusal = inbox.needs_a_human(row, mine)
+        if refusal is not None:
+            raise humans_only(refusal)
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
         _refuse_by_kind(conn, row, mine)
@@ -1317,6 +1317,8 @@ def forward(
         values: dict[str, Any]
         alone = bool(inbox.owners_alone(conn, [row]))
         if body.to == "trust:admin":
+            if row.action is not None:  # no admin may answer it: it would strand there (§2.3)
+                raise invalid({"to": "action_needs_owner"})
             if alone:  # the whole pool would read an owner's round (§20.7)
                 raise invalid({"to": "owners_round"}, "this goes to one human, not to the admins")
             target_id = None
@@ -1333,6 +1335,8 @@ def forward(
                 row.on_behalf_of,
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
+            if row.action is not None and (target.agent_id is not None or target.trust != "owner"):
+                raise invalid({"to": "action_needs_owner"})
             original = _originally_for(row, target)
             if (
                 "trust:admin" not in tokens_of(target.trust, target.role, target.role_base)

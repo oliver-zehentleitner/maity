@@ -13,8 +13,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, cover, inbox
 from maity_hub import tables as t
+from maity_hub.access import Membership
 from maity_hub.auth import credentials
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -281,3 +282,61 @@ def test_only_the_owner_answers_directly(
     ):
         assert answering.status_code == 403, answering.text
         assert answering.json()["error"]["details"]["reason"] == "action_needs_owner"
+
+
+def test_action_needs_owner_comes_before_humans_only(
+    owner: flow.Human, proxy: Proxy, make_client: ClientFactory, migrated: Engine
+) -> None:
+    request_id = proxy.ask(humans_only=True).json()["id"]
+    second = factory.agent(migrated, _project(migrated), owner.id, "proxy", instance="prx4")
+    refused = Proxy(make_client(), second).call(
+        "POST", f"{PROJECT}/requests/{request_id}/answer", json.dumps({"reply_id": "go"})
+    )
+    assert refused.json()["error"]["details"]["reason"] == "action_needs_owner"
+
+
+def test_nobody_else_is_offered_it_to_answer(
+    owner: flow.Human, proxy: Proxy, migrated: Engine
+) -> None:
+    request_id = proxy.ask().json()["id"]
+    admin = factory.agent(migrated, _project(migrated), owner.id, "coder", trust="admin")
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+        member = conn.execute(
+            select(t.membership).where(t.membership.c.agent_id == admin.agent_id)
+        ).one()
+        project = conn.execute(select(t.project)).one()
+        assert not inbox.may_answer(conn, row, Membership(project, member, "agent"))
+
+
+def test_it_is_forwarded_only_to_a_human_owner_and_never_strands(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, proxy: Proxy
+) -> None:
+    request_id = proxy.ask().json()["id"]
+    admin = flow.human(make_client, migrated, "an-admin")
+    factory.membership(migrated, _project(migrated), "coder", trust="admin", human_id=admin.id)
+    second = flow.human(make_client, migrated, "second-owner")
+    factory.membership(migrated, _project(migrated), "owner", human_id=second.id)
+    path = f"{PROJECT}/requests/{request_id}/forward"
+    for target in ("trust:admin", admin.id):
+        refused = owner.post(path, {"to": target})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"]["to"] == "action_needs_owner"
+    assert owner.post(path, {"to": second.id}).status_code == 200
+
+
+def test_only_a_human_owner_covers_it(
+    owner: flow.Human, proxy: Proxy, make_client: ClientFactory, migrated: Engine
+) -> None:
+    request_id = proxy.ask().json()["id"]
+    admin = flow.human(make_client, migrated, "an-admin")
+    pid = _project(migrated)
+    factory.membership(migrated, pid, "coder", trust="admin", human_id=admin.id)
+    second = flow.human(make_client, migrated, "second-owner")
+    factory.membership(migrated, pid, "owner", human_id=second.id)
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+        project = conn.execute(select(t.project)).one()
+        members = {m.human_id: m for m in conn.execute(select(t.membership)).all()}
+    assert not cover.may_take_request(project, row, members[owner.id], members[admin.id])
+    assert cover.may_take_request(project, row, members[owner.id], members[second.id])
