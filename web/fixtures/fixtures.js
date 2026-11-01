@@ -3973,7 +3973,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "blocked",
         "title": "Hub: credential exchange and storage",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "hub/",
@@ -4041,7 +4042,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "review",
         "title": "Hub: skeleton with health endpoint",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "cli/",
@@ -4073,7 +4075,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "open",
         "title": "CLI: join and wait",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4104,7 +4107,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "Dashboard skeleton against fixtures",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "context/",
@@ -4129,7 +4133,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "proposed",
         "title": "Context round after the skeletons",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "docs/",
@@ -4171,7 +4176,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "Contract: event kinds for chat",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "/",
@@ -4202,7 +4208,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "done",
         "title": "Repository scaffold",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "docs/",
@@ -4227,7 +4234,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "cancelled",
         "title": "Second site placeholder",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "/",
@@ -4449,7 +4457,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "review",
         "title": "Board: subtasks",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4478,7 +4487,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "open",
         "title": "Subtasks: the collapsed row",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4507,7 +4517,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "done",
         "title": "Subtasks: the counts",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4536,7 +4547,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "cancelled",
         "title": "Old plan for the board",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4565,7 +4577,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "open",
         "title": "A step of the old plan, still open",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       }
     ],
     "next_cursor": null
@@ -6420,7 +6433,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "review",
         "title": "Checkout rounding",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "src/",
@@ -6443,7 +6457,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "done",
         "title": "Checkout totals in the receipt",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "src/",

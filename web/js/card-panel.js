@@ -83,6 +83,7 @@ window.Maity = window.Maity || {};
     // Only the hub knows whether a card of the reader's depends on this one:
     // an implied watch shows as any other, and taking it away is refused.
     let watching = c.watching === true;
+    let updatesRun = 0;
     const watchStatus = M.statusLine();
     const watchButton = h("button", { type: "button", class: "small card-watch", onclick: () => toggleWatch() });
     const drawWatch = () => {
@@ -94,9 +95,9 @@ window.Maity = window.Maity || {};
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("span", { class: "card-panel-actions" }, typeof c.watching === "boolean" ? watchButton : null,
+        h("span", { class: "card-panel-actions" }, watchButton,
           h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
-      typeof c.watching === "boolean" ? watchStatus.el : null,
+      watchStatus.el,
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
@@ -180,10 +181,12 @@ window.Maity = window.Maity || {};
     // are in the history below. The hub's listing has no card filter: the
     // newest page of updates, this card's among them (context/views.md).
     async function updates() {
+      const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
       clear(updatesBox);
       if (!watching) return;
       try {
         const page = await M.api.get(ctx.base + "/messages?type=update&limit=" + UPDATES_PAGE);
+        if (run !== updatesRun) return;
         const items = page.items.filter((m) => m.task_id === c.id);
         append(updatesBox, h("h3", null, M.t("cardpanel.updates")), items.length
           ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
@@ -191,6 +194,7 @@ window.Maity = window.Maity || {};
             h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
           : h("p", { class: "muted" }, M.t("cardpanel.updates.none")));
       } catch (err) {
+        if (run !== updatesRun) return;
         append(updatesBox, h("h3", null, M.t("cardpanel.updates")),
           h("p", { class: "send-status failed" }, M.t("cardpanel.updates.read_failed", { reason: err.message })));
       }

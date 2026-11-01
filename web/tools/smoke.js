@@ -3166,6 +3166,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = cpWatchDel;
   cpWatch().click(); await cpSettle();
   expect(text(cpWatch()) === "Watch" && !cpMarked() && !cpPanel().querySelector(".card-update-list"), "card watch: off again, updates gone");
+  // A read of the updates still on its way when the watch ends draws nothing.
+  let cpLate = null;
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? new Promise((resolve) => { cpLate = resolve; }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  cpWatch().click(); await cpSettle();
+  cpLate({ items: [cpUpdate(2, "tsk-0001")], next_cursor: null }); await cpSettle();
+  expect(text(cpWatch()) === "Watch" && !cpPanel().querySelector(".card-update-list"), "card watch: a late read after the watch ended draws nothing");
   win.Maity.api.get = cpWatchGet;
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },

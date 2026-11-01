@@ -2,6 +2,7 @@
   "items": [
     {
       "id": "tsk-0021",
+      "watching": false,
       "kind": "task",
       "title": "Checkout rounding",
       "body": "",
@@ -48,6 +49,7 @@
     },
     {
       "id": "tsk-0022",
+      "watching": false,
       "kind": "task",
       "title": "Checkout totals in the receipt",
       "body": "",
