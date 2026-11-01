@@ -2724,21 +2724,27 @@ window.Maity = window.Maity || {};
       }
       if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
       const jf = file(m[1], "jour-fixe.json", path);
-      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
-      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
-      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
       const people = file(m[1], "members.json", path).items.filter((x) => !x.removed_at);
+      // The hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`), so that a test sees the same
+      // first refusal against the fixture as against the hub where two overlap.
       // An owner who left stops the series' rounds, by schedule and by hand (§20.1).
       if (s.circle === "owner" && !people.some((x) => x.id === s.circle_owner)) fail(409, "jour_fixe_state", "the circle owner is gone", path, { reason: "circle_owner_gone" });
-      if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
-      // The circle: the owner and their agents, the humans, or everyone (§20.2); two are needed to talk.
-      const circle = s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
-        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people;
-      if (circle.length < 2) fail(409, "too_few", "fewer than two members are in the circle", path);
       const day = Date.now() - 24 * 3600000;
       if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
         fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
       }
+      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
+      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
+      // Who opted out takes no part at all, so a moderator who did moderates nothing either. The circle
+      // without them, and the moderator, who counts also outside the circle (§20.1, §20.2); two are needed
+      // to talk. Presence is not modelled: every member counts as present.
+      const out = s.opted_out_members || [];
+      const moderator = s.moderators.find((x) => !out.includes(x.member_id));
+      if (!moderator) fail(409, "no_moderator", "nobody to moderate is present", path);
+      const circle = (s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
+        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people).map((x) => x.id).filter((id) => !out.includes(id));
+      if (new Set(circle.concat([moderator.member_id])).size < 2) fail(409, "too_few", "fewer than two members take part", path);
       const now = nowIso();
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
       const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
@@ -2746,7 +2752,7 @@ window.Maity = window.Maity || {};
         trigger: "manual", mode: "message", scheduled_for: now,
         opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
-        moderator: { member_id: s.moderators[0].member_id, instance: null },
+        moderator: { member_id: moderator.member_id, instance: null },
         invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
       jf.rounds.unshift(round);
       return round;
