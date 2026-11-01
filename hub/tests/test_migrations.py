@@ -665,6 +665,32 @@ def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
     assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"
 
 
+def test_the_org_alias_downgrade_drops_what_the_old_check_cannot_hold(engine: Engine) -> None:
+    from datetime import UTC, datetime
+
+    from sqlalchemy import insert, text
+
+    from maity_hub import tables as t
+
+    migrate(engine)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human).values(
+                id="hum-o", handle="o", display_name="O", password_hash="x", created_at=now
+            )
+        )
+        conn.execute(
+            insert(t.org).values(id="org-o", handle="new", display_name="O", created_at=now)
+        )
+        for values in ({"org_id": "org-o", "handle": "old"}, {"human_id": "hum-o", "handle": "p"}):
+            conn.execute(insert(t.handle_alias).values(**values, scope="human", created_at=now))
+    downgrade(engine, _before(engine, "20261101050000_org_alias"))
+    with engine.connect() as conn:
+        left = conn.execute(text("SELECT handle FROM handle_alias")).scalars().all()
+    assert left == ["p"]
+
+
 def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) -> None:
     """0097 (§6.1): `released_at` from the earliest found tag of a release; a missing tag,
     a tag of no release and a project without either stay `null`."""

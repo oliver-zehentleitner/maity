@@ -643,12 +643,18 @@ handle_alias = Table(
     Column("id", Integer, primary_key=True, autoincrement=True),
     _ref("human_id", "human.id"),
     _ref("agent_id", "agent_profile.id"),
+    _ref("org_id", "org.id"),
     Column("scope", String(ID), nullable=False),
     Column("handle", String(HANDLE), nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("live", Boolean, server_default=true()),
     UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
-    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint(
+        "(human_id IS NOT NULL AND agent_id IS NULL AND org_id IS NULL)"
+        " OR (human_id IS NULL AND agent_id IS NOT NULL AND org_id IS NULL)"
+        " OR (human_id IS NULL AND agent_id IS NULL AND org_id IS NOT NULL)",
+        name="one_id",
+    ),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
