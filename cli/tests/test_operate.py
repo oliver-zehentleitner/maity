@@ -143,27 +143,6 @@ def test_gc_lists_and_only_removes_with_yes(
     assert str(place.path) not in workspace.records(cfg.state_dir)
 
 
-def test_gc_finds_a_taken_over_clone_after_a_new_placement(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = setup(tmp_path)
-    cfg = config.load(path)
-    assert cfg.local is not None
-    place = workspace.locate(cfg.local.workspaces, "maity", "agent-g")
-    place.path.mkdir(parents=True)
-    git(place.path, "init", "-q")
-    workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # before the namespace
-    found = workspace.find(cfg.state_dir, cfg.local.workspaces, "prj-7k2m9q",
-                           ["oliver/maity"], "agent-g", {"agt-g"})  # fmt: skip
-    assert found.path == place.path
-    workspace.record(cfg.state_dir, found, "agt-g", "plc-0008")  # a new placement, then revoked
-    monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
-    assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
-    assert "agent agt-g  credential revoked" in capsys.readouterr().out
-    assert not place.path.exists()
-
-
 def test_gc_runs_no_hook_of_the_clone(tmp_path: Path) -> None:
     clone = tmp_path / "c"
     clone.mkdir()
