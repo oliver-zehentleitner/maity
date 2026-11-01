@@ -314,6 +314,9 @@ window.Maity = window.Maity || {};
   // tasks:review: a reviewer or the purple team (§2.3), or the governance scopes.
   const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["reviewer", "purple-team"].includes(mineIn(slug).role));
 
+  // tasks:test: a tester or the red team (§2.3), or the governance scopes.
+  const tasksTest = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["tester", "red-team"].includes(mineIn(slug).role));
+
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
   // after the write: two levels, no closed parent, no release, no cycle with
@@ -377,9 +380,10 @@ window.Maity = window.Maity || {};
     const meId = me().member.id;
     const holds = !!(card.claim && card.claim.holder === meId);
     const keys = Object.keys(body);
-    const reviewMove = keys.length === 1 && keys[0] === "status" && card.status === "review" && ["done", "in_progress"].includes(body.status);
+    const reviewMove = keys.filter((k) => k !== "approve").length === 1 && keys.includes("status") && card.status === "review" && ["done", "in_progress"].includes(body.status);
     const authority = project(slug, path).policy.done_authority;
-    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : tasksAdmin(slug);
+    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : authority === "tester" ? tasksTest(slug)
+      : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
     if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
@@ -397,6 +401,20 @@ window.Maity = window.Maity || {};
         if (!hasAuthority) fail(403, "forbidden", "this needs done authority", path, { scope: "tasks:review" });
       } else if (!(from === "in_progress" && to === "done" && authority === "holder" && holds)) {
         fail(409, "invalid_transition", "not a transition the hub allows", path, { from, to });
+      }
+      // §6.4: a signature, and the card stays in review until both are there; a rework clears them.
+      if (authority === "reviewer_and_tester" && from === "review" && to === "in_progress") card.approvals = null;
+      if (authority === "reviewer_and_tester" && from === "review" && to === "done") {
+        const held = [["review", tasksReview(slug)], ["test", tasksTest(slug)]].filter(([, may]) => may).map(([slot]) => slot);
+        const slot = body.approve || (held.length === 1 ? held[0] : null);
+        if (!slot) fail(400, "invalid", "say which signature", path, { fields: { approve: "required" } });
+        const a = card.approvals || { review: null, test: null };
+        const other = a[slot === "review" ? "test" : "review"];
+        if (other && other.by === meId) fail(400, "invalid", "one member never fills both", path, { fields: { approve: "same_member" } });
+        if (!a[slot]) a[slot] = { by: meId, at: nowIso(), revision: card.report ? card.report.revision : null };
+        card.approvals = a;
+        if (!(a.review && a.test)) { card.updated_at = nowIso(); return card; }
+        card.approvals = null;
       }
       if (to === "done") {
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });

@@ -4160,3 +4160,17 @@ The card shows `Needs: <role>` beside its label. It is set in the new-card form 
 
 **Rejected alternatives:** a server filter with `needs=`: a board redraw would have to merge a second list for one of its filters. A form of its own for needs in the opened card: the card has one edit form, and two would each need a Save.
 
+## Under two signatures the board's Done is a signature, and only the menu can say which one
+
+**Id:** 2668871f-769c-445b-94e1-f8802fa8e57e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1, §6.4 (`approvals`, `approve`); the hub's #1028; tsk-tx9qcehevfnk
+
+A card in review under `done_authority: reviewer_and_tester` lists both places, signed or not. The Move menu offers the signatures the caller may still give, named as signatures rather than "Move to Done". A caller with one signature left may also drop the card on Done, which sends that signature. A caller holding both, such as an owner, cannot drop it there. Someone who has signed one place is offered neither, and rework still is.
+
+**Reason:** the hub refuses a call holding both scopes without `approve`, and a drop cannot ask. "Move to Done" would also be untrue, because the first signature leaves the card in review, so the status line says the signature was saved and the card waits for the other one.
+
+**Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it.
+
