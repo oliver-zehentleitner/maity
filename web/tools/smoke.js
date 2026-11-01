@@ -7306,6 +7306,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
     "keep the why: switched to optional as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  // Who closes a card (§6.1): every value of the contract, a change needs a reason, and it goes as a policy change.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  {
+    const daForm = () => main.querySelector("form.done-authority-form");
+    expect(daForm() && byId("done-authority-select").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "holder,reviewer,tester,reviewer_and_tester,admin",
+      "done authority: Settings offer every value of the contract");
+    const was = byId("done-authority-select").value, sent = [], patch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { if (b && b.policy && "done_authority" in b.policy) sent.push(b); return patch(p, b); };
+    byId("done-authority-select").value = "reviewer_and_tester"; daForm().dispatch("submit"); await tick();
+    expect(!sent.length, "done authority: a change needs a reason");
+    byId("done-authority-select").value = "reviewer_and_tester"; byId("done-authority-reason").value = "Review and test";
+    daForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(sent[0]) === JSON.stringify({ policy: { done_authority: "reviewer_and_tester" }, reason: "Review and test" }) && byId("done-authority-select").value === "reviewer_and_tester",
+      "done authority: saved as a policy change with its reason " + JSON.stringify(sent));
+    // The fixture signs as the hub does (§6.4): one member, one place, and not outside a card in review.
+    const sign = await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "done", approve: "review" });
+    const twice = await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "done", approve: "test" }).catch((e) => e);
+    const outside = await patch("/projects/maintainer/maity/tasks/tsk-0006", { title: "x", approve: "review" }).catch((e) => e);
+    expect(sign.status === "review" && sign.approvals.review && twice.details.fields.approve === "same_member" && outside.details.fields.approve === "not_applicable",
+      "two signatures: the fixture keeps the card in review, refuses a second place and refuses approve elsewhere");
+    await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "in_progress" });
+    await patch("/projects/maintainer/maity", { policy: { done_authority: was }, reason: "back" });
+    win.Maity.api.patch = patch;
+  }
   // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
   const kdForm = () => main.querySelector("form.ktw-defaults-form");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
