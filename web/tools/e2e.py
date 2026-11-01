@@ -2117,8 +2117,12 @@ def notifications_step(run: Run, page: Page) -> None:
         expect(page.locator("header nav.views a").nth(index)).to_have_attribute("aria-current", "page")
         view = page.locator("main section.view-all-" + name)
         expect(view.locator("section.all-project").first).to_be_visible()
+        expect(view).not_to_contain_text("Reading…")
         expect(view).not_to_contain_text("Could not read this project")
         run.a11y(page, "all projects, " + name)
+    # These projects have no Keep the Why export: the hub says so with a 409, and the page says it too.
+    expect(page.locator("main section.view-all-why")).to_contain_text("publishes no Keep the Why export")
+    run.problems = [p for p in run.problems if "/keep-the-why answered 409" not in p]
     page.locator("header nav.views a").nth(0).click()
     expect(page).to_have_url(re.compile(r"/all$"))
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
