@@ -54,7 +54,7 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
-(`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
+(`/account/preferences`), **Theme** (`/account/theme`), **Security** (`/account/security`, for a human), **Organisations** (`/account/orgs`,
 for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
