@@ -1355,7 +1355,8 @@ and plural forms its language does not have (`PLURALS` in `tools/check.py`).
 A key left out reads in English and is only a note. `make fixtures` keeps
 `i18n/<lang>.meta.json`, which says which English text each translation
 follows, so a change of the English marks it out of date until its translation
-changes too; `tools/check.py --missing <lang>` lists what is missing or out of
+changes too (so correcting a typo there marks it current even if the English
+is newer); `tools/check.py --missing <lang>` lists what is missing or out of
 date, and `make release-check` fails on either.
 
 The hub's refusals stay in English in the API. `js/errors.js` gives them the

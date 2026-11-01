@@ -599,6 +599,26 @@ English: when the translation's text changes it follows today's English, with no
   file would read as new translations.
 - A command that marks a language as translated: one run after any edit would mark every key current.
 
+## What counts as prose: sentences by shape wherever they stand, a lone word only by where it stands
+
+**Id:** c14e7b90-3a6d-4f28-8e15-7d2a60b9f3c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review findings on card tsk-ya56x9gx986r, 2026-11-02: `"Pick a conversation."` and `" reads what you write here…"` were not counted, so a baseline of zero would have proved nothing
+**Revisit when:** the baseline reaches zero, or a false positive cannot be worded around
+
+`prose()` in `tools/check.py` counts a literal of three words or more that starts with a capital or ends
+like a sentence wherever it stands; no context hides one. Other literals are excluded by shape (class
+lists, paths, selectors) and by the code before them (`class:`, `===`, `querySelector(`). A lone lowercase
+word counts only as a piece of a sentence (`"to "`) or where a person reads it (`textContent =`, the content
+of `h()`, `title:`). Others stay with the reviewer: `"online"` beside a variable cannot be told from a key.
+
+**Rejected alternatives:**
+- Counting every lone word: thousands of keys and values, and the ratchet would mean nothing.
+- Shape alone: `"Text (Markdown)"` and `", in "` read like code to it, `"reply primary"` like words.
+- A browser run that collects what is on screen: it sees only the views a run opens.
+
 ## A refusal is translated by code in `ApiError`; in English the hub's message stays
 
 **Id:** 8b52e0d4-1f7a-4c69-b3d8-60a7c9e1f24d
@@ -611,7 +631,9 @@ English: when the translation's text changes it follows today's English, with no
 `ApiError` asks `M.errorWords` once, so no view changes. The catalog has one sentence per code of §1.3
 and a few for `details.reason`: it says the kind of refusal. The hub's message says the case, naming a
 card or a limit, and a translation loses that. So English readers keep the hub's message, and only a
-translated language gets the kind.
+translated language gets the kind. A `details.reason` the catalog knows comes before the code, since
+under `forbidden` it says more. Each code is written out as `M.tOwn("error.<code>")`, because
+`tools/check.py` reads keys only as literals.
 
 **Rejected alternatives:**
 - Translating the roughly 795 messages: a sentence per place in the hub, in ten languages, with values
@@ -619,6 +641,7 @@ translated language gets the kind.
 - Using the catalog's sentence in English too: every English reader would lose the specifics for the
   sake of one rule.
 - A map in every view: 50 places to keep in step.
+- One computed key per code: the key check could not see it, and every `error.*` key would read as unused.
 
 ## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
 

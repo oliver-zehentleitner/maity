@@ -55,4 +55,36 @@ meta = check.translation_meta(de, newer, meta)
 expect(check.translation_gaps(de, newer, meta)[1] == [], "a changed translation follows today's English")
 expect(check.translation_meta({"a.gone": "x"}, EN, {"a.gone": {"en": "0", "text": "0"}}) == {}, "a key English dropped leaves the meta")
 
+expect(problems("de", {"a.plain": 5, "a.files": {"one": 5, "other": "x"}}, EN) == []
+       and check.translation_meta({"a.plain": ["x"]}, EN, {}) == {},
+       "an entry load_catalog already reports breaks nothing here")
+
+prose = check.prose
+for text, before in [
+    ("Pick a conversation.", ""),
+    (" reads what you write here at its next wait or resume.", ""),
+    ("Text (Markdown)", ""),
+    (", in ", ""),
+    ("to ", ""),
+    (" not saved: ", ""),
+    ("A sentence stays one.", 'class: '),
+    ("online", 'h("span", null, '),
+    ("online", 'el.textContent = '),
+    ("Save", 'h("button", { type: "submit" }, '),
+]:
+    expect(prose(text, before), "prose: %r after %r" % (text, before))
+for text, before in [
+    ("use strict", ""),
+    ("send-status failed", ""),
+    ("reply primary", 'class: '),
+    ("button, input, select", ""),
+    ("M12 3a6 6 0 0 0-6 6", ""),
+    ("online", ""),
+    ("ArrowDown", 'e.key === '),
+    ("isolate-reason:", ""),
+    ("adopt", '{ id: "x" },\n      [['),
+    (" wanted", 'el.className += '),
+]:
+    expect(not prose(text, before), "code: %r after %r" % (text, before))
+
 raise SystemExit(1 if failures else 0)
