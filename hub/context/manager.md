@@ -179,7 +179,10 @@ for a foreign boss, `asked_by_human` when they are no member); an admin agent's 
 and a join, which starts the membership with `reports_to: null` and asks the boss's side at the exchange
 with the join's creator as asker. A further `PATCH` of the member's `reports_to` withdraws the open
 requests (`superseded`), an agent that did not ask is refused (`pending_consent`), the removal of either
-member withdraws them (`member_removed`).
+member withdraws them (`member_removed`). A `PATCH` that waits for a human's go first (`line_change`, an
+admin agent's `member_change`) is refused the same way when it is made, and withdraws the pair at its `go`,
+not when it is filed: until a human agrees nothing has superseded the owners' decision. The check at the `go`
+catches a pair filed while the change waited.
 
 Who reads and withdraws: either owner of the edge, member of the project or not, reads and withdraws
 **both** requests of the pair, also the one addressed to the other owner, under `/requests/{id}` (and on

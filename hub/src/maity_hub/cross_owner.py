@@ -21,6 +21,7 @@ from maity_hub import namespace, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
+from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
 from maity_hub.views import principal_id
 
@@ -126,6 +127,20 @@ def join_waits(conn: Connection, row: Any) -> bool:
     )
     side = owner_of(conn, boss)
     return owner is not None and side is not None and owner != side
+
+
+def check_may_supersede(conn: Connection, mine: Membership, target_id: int) -> None:
+    """A further `PATCH` of `reports_to` ends the open pair; an agent that did not ask for it
+    does not end the decision of the two owners (§6.2 "Pending"), also where its `PATCH` would
+    wait for a human's go first."""
+    pending = open_pair(conn, target_id)
+    if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an agent that did not ask for the edge does not end the owners' decision",
+            {"reason": "pending_consent"},
+        )
 
 
 def withdraw_open(conn: Connection, target_id: int, actor: Actor | None, reason: str) -> None:

@@ -270,6 +270,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     the member still in its reach, the pause still its to touch, the new boss still in
     the reach and the chain still within depth and free of cycles. Otherwise the answer
     is refused and the request stays open."""
+    from maity_hub import cross_owner
     from maity_hub.routes import members
 
     if s.outcome != "go" or s.approver is None:
@@ -315,6 +316,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     agent = principal_id(conn, request.asked_by)
     assert agent is not None
     change = members.Change(project, s.proposer, agent, s.approver, None, None, line=True)
+    if "reports_to" in values:  # a pair filed while this waited ends here (§6.2 "Pending")
+        cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
     members.apply_patch(
         conn, change, target, values, (bool(given), reason), instance=proposal.get("instance")
     )

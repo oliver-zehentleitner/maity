@@ -303,7 +303,8 @@ def test_a_managers_consented_line_change_never_makes_a_cross_owner_edge(
     owner: flow.Human, team: dict[str, Any], migrated: Engine
 ) -> None:
     """§2.3: a `line_change` stays inside the reach, so it has no cross-owner edge to ask
-    for (§6.2): another owner's agent is refused when it is asked and when the go comes."""
+    for (§6.2): another owner's agent is refused when it is asked, and a new boss that left
+    the reach is refused at the go."""
     manager, first, stranger = team["manager"], team["first"], team["stranger"]
     reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
     _set(migrated, reviewer, reports_to=manager.id)
@@ -316,6 +317,52 @@ def test_a_managers_consented_line_change_never_makes_a_cross_owner_edge(
     go = owner.post(f"{PROJECT}/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
     assert (go.status_code, go.json()["error"]["code"]) == (409, "not_in_line")
     assert _row(migrated, reviewer).reports_to == _mid(migrated, manager.id)
+
+
+def _open_pair(owner: flow.Human, target: str, migrated: Engine) -> str:
+    """A pair open on `target`, asked by the human `owner` for another owner's agent."""
+    friend = factory.human(migrated, "friend")
+    boss = factory.agent(migrated, _project_id(migrated), friend).agent_id
+    filed = owner.patch(f"{PROJECT}/members/{target}", {"reports_to": boss})
+    assert filed.status_code == 202, filed.text
+    request_id: str = filed.json()["id"]
+    return request_id
+
+
+def _request_status(engine: Engine, request_id: str) -> str:
+    with engine.connect() as conn:
+        status: str = conn.execute(
+            select(t.request.c.status).where(t.request.c.id == request_id)
+        ).scalar_one()
+    return status
+
+
+def test_a_managers_change_waiting_for_a_go_does_not_end_the_owners_decision(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    """§6.2 "Pending": refused before anything is filed, as without the wait."""
+    manager = team["manager"]
+    reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
+    _set(migrated, reviewer, reports_to=manager.id)
+    pair = _open_pair(owner, reviewer, migrated)
+    refused = member(manager, reviewer, {"reports_to": team["first"].id})
+    assert (refused.status_code, details(refused)) == (403, {"reason": "pending_consent"})
+    assert _request_status(migrated, pair) == "open"
+
+
+def test_a_managers_go_ends_a_pair_filed_while_it_waited(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    manager, first = team["manager"], team["first"]
+    reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
+    _set(migrated, reviewer, reports_to=manager.id)
+    waiting = member(manager, reviewer, {"reports_to": first.id})
+    assert waiting.status_code == 202, waiting.text
+    pair = _open_pair(owner, reviewer, migrated)
+    go = owner.post(f"{PROJECT}/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert _request_status(migrated, pair) == "withdrawn"
+    assert _row(migrated, reviewer).reports_to == _mid(migrated, first.id)
 
 
 # --- pauses ---------------------------------------------------------------------------

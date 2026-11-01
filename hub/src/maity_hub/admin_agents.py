@@ -285,6 +285,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         announce(conn, change, target, "removed", target.role, None, request.id)
         return
     values = dict(proposal["values"])
+    if "reports_to" in values:  # a pair filed while this waited ends here (§6.2 "Pending")
+        cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
     boss = values.get("reports_to")
     if boss is not None:  # the boss may have left while the request waited (§6.2)
         active = conn.execute(
