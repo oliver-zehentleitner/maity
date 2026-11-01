@@ -12258,7 +12258,7 @@ The kinds are in §8.2. Rules that apply to all of them:
 
 - **Every event belongs to one project.** An event caused by a runner
   that concerns several projects (`runner_credential_revoked`,
-  `runner_detached` on `DELETE /runners`) is written once per project
+  `runner_detached` on `DELETE /runners/{id}`) is written once per project
   the runner is attached to, one row each. A runner action with no
   attached project — enrollment, pairing, re-pairing, renaming,
   removing, revoking an unattached runner's credential — writes no

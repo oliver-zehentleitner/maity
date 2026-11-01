@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import typing
 from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select
 
-from maity_hub import avatars
+from maity_hub import avatars, clock, middleware
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -468,3 +469,42 @@ def test_a_replay_is_no_way_around_losing_the_agent(
     again = owner.client.request(method, url, **(body if method == "PUT" else {"headers": headers}))
     assert again.status_code == 404, again.text
     assert "Idempotent-Replayed" not in again.headers
+
+
+def test_an_organisations_owner_changes_its_picture_and_nobody_else(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    made = owner.post("/orgs", {"handle": "oz-team", "display_name": "OZ Team"})
+    assert made.status_code == 201, made.text
+    org_id = made.json()["id"]
+    path = "/orgs/oz-team/avatar"
+
+    answer = put_human(owner, path, image())
+    assert answer.status_code == 200, answer.text
+    url = answer.json()["avatar_url"]
+    assert url.startswith(f"/api/v1/avatars/{org_id}?v=")
+    assert owner.get("/orgs/oz-team").json()["avatar_url"] == url
+    assert owner.client.get(url).status_code == 200
+    # Over the limit of a JSON body, under the 1 MiB of a picture (§11.2).
+    noise = io.BytesIO()
+    Image.frombytes("RGB", (300, 300), os.urandom(300 * 300 * 3)).save(noise, format="PNG")
+    assert len(noise.getvalue()) > middleware.BODY_CAP
+    assert put_human(owner, path, noise.getvalue()).status_code == 200
+
+    outsider = flow.human(make_client, migrated, "outsider")
+    assert put_human(outsider, path, image()).status_code == 404
+    member = flow.human(make_client, migrated, "colleague")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.org_member).values(
+                org_id=org_id, human_id=member.id, role="member", joined_at=clock.now()
+            )
+        )
+    refused = put_human(member, path, image())
+    assert (refused.status_code, refused.json()["error"]["details"]["reason"]) == (403, "org_role")
+    agent = flow.agent(make_client, owner)
+    assert agent.client.delete("/api/v1/orgs/oz-team/avatar", headers=agent.auth).status_code == 403
+
+    removed = owner.delete(path)
+    assert removed.status_code == 200, removed.text
+    assert owner.get("/orgs/oz-team").json()["avatar_url"] is None
