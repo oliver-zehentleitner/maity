@@ -1772,7 +1772,13 @@ window.Maity = window.Maity || {};
       return set;
     }],
     // A deleted profile (tombstone) is never listed (§6.3).
-    ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    ["GET", /^\/agents$/, (m, body, path, query) => {
+      // ?allowed_in= (§6.3): only the profiles whose list admits the project.
+      const inProject = query && query.get("allowed_in");
+      if (inProject !== null && inProject !== undefined && !/^[^/]+\/[^/]+$/.test(inProject)) fail(400, "invalid", "allowed_in is a project's full name", path, { fields: { allowed_in: "format" } });
+      return Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at
+        && (!inProject || !a.allowed_projects || a.allowed_projects.includes(inProject))) });
+    }],
     // §6.3: a human's new profile; its handle unique among the owner's profiles.
     ["POST", /^\/agents$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
@@ -1801,6 +1807,11 @@ window.Maity = window.Maity || {};
       }
       if ("display_name" in body) agent.display_name = String(body.display_name).trim();
       if ("git_identity" in body) agent.git_identity = body.git_identity;
+      if ("allowed_projects" in body) {
+        const names = body.allowed_projects;
+        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[^/]+\/[^/]+$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
+        agent.allowed_projects = names;
+      }
       return agent;
     }],
     // §6.3: the owner deletes a profile. In use (an active membership) only with
