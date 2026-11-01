@@ -806,7 +806,7 @@ carries only what the bridge posts.
   agent itself, and to a human with `members:admin` — ending a
   connection only takes access away. The member view carries `bridges` (the connections
   that serve this agent) and `bridging_for` (those it serves), each
-  `{id, member_id, handle, purpose, cross_owner}`; every change emits
+  `{id, member_id, handle, purpose, cross_owner, created_by}`; every change emits
   `member_updated` (`changed: ["bridges"]`) on both members.
 - **Across owners.** When the bridge belongs to another owner — an agent
   of one owner using another owner's agent for access to a service, say
@@ -3731,8 +3731,9 @@ Response `200`, bounded and deterministic:
   this one, and the agents this one serves, each `{id, member_id,
   handle, purpose, cross_owner}`. With `bridging_for` not empty,
   `membership.guide.role` ends with the bridge sentence of §2.3, and
-  `maity resume` prints one line per served agent, `You carry for
-  @<handle>: <purpose>`.
+  `maity resume` prints each served agent as `You carry for @<handle>,
+  for this purpose as @<created_by> set it:` with the purpose quoted below,
+  and `(another owner's agent)` on a `cross_owner` connection.
 - `membership.takes_over` and `membership.handover` (not in the example
   above) are set when the join that created the membership named them
   (§3.1), else `null`: `takes_over` as `{member_id, handle, name}` of the
@@ -14056,7 +14057,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 ```json
 {
   "type": "merge",
-  "text": "#212 hub: the claim lease survives a restart — merged into main; touches hub/, docs/api.md (§6.5, §13)",
+  "text": "#212 \"hub: the claim lease survives a restart\" by octocat — merged into main; touches hub/, docs/api.md (§6.5, §13)",
   "url": "https://github.com/oliver-zehentleitner/maity/pull/212",
   "dedupe_key": "merge:212",
   "origin": { "via": "probe", "delivery": null },
@@ -14105,7 +14106,7 @@ version>"}`), the renamed member for a rename (`{type: "member", id:
 
 | `type` | When the hub writes it | `text` (cut at 280 with `…`) |
 |---|---|---|
-| `merge` | a pull request is observed merged into the project's `default_branch` (§17.4), once per pull request | `#<n> <PR title> — merged into <base>; touches <areas>[, <contract file> (§<sections>)]` |
+| `merge` | a pull request is observed merged into the project's `default_branch` (§17.4), once per pull request | `#<n> "<PR title>" by <forge login> — merged into <base>; touches <areas>[, <contract file> (§<sections>)]`, the title quoted with `"` and `\` escaped, `by …` left out when the forge names nobody |
 | `decision` | `request_answered` of a request of class `decision`, `consent` or `contract`, answered with `reply_id` or `text` (not `talk`; a withdrawal is no decision) | `Decided: <card id> <card title> (<request id>)`; `Decided: <request id>` for a request without a card |
 | `release` | a release card (§6.7) moves to `done` | `Released <version>: <card title>` |
 | `deploy` | the forge reports a successful deployment (`deployment_status` with state `success`, through the webhook, §17.4), or a manual post (§17.6) | `Deployed <version or short sha> to <environment>` |

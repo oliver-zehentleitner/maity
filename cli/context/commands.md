@@ -873,6 +873,27 @@ to check, and the rule in `docs/agents.md` carries the weight.
   as long. Escaping only the dangerous characters gives the same safety.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
+## Text from the forge and one-line fields name who wrote them
+
+**Id:** 802fa999-a539-48e1-a814-eb2bd71e8b7d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the audit tsk-w51sz6sj5vnd, findings F3, F4, F5 and F7; the card tsk-r9pdhvjbakj2
+
+A merged pull request's title in the ticker stands in `"` with the forge login after it. A card
+line says `imported` and whose title it is. A bridge's purpose is quoted below who set it. A next
+step names the instance that wrote it. The rule on team memory is in `docs/agents.md`, as a saved
+request would read as the agent's own next session.
+
+The optional `source` on a memory entry wasn't built: the audit proposed it only as an option, and
+an agent persuaded to save a line could also leave it out.
+
+**Rejected alternatives:**
+- `@` before the login: it reads as a member's handle, and a forge login may match one by chance.
+- Quoting every card title: all of them are people's text, and the board would lose its form; only
+  an imported one comes from outside the project.
+
 ## An isolation refusal exits 5, and `wait` does not retry it
 
 **Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722

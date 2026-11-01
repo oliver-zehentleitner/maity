@@ -869,7 +869,11 @@ def write_merge(
         conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
     )
     touches = ", ".join(areas) or "no area"
-    text = f"#{merge.number} {merge.title} — merged into {merge.base}; touches {touches}"
+    # The title is the forge author's text (often no member's): quoted, with who wrote it. A
+    # quote inside it is escaped, so it can't end the quote; the login gets no `@`, as no mention.
+    title = merge.title.replace("\\", "\\\\").replace('"', '\\"')
+    by = f" by {merge.author}" if merge.author else ""
+    text = f'#{merge.number} "{title}"{by} — merged into {merge.base}; touches {touches}'
     for f in touched:
         secs = merge.contract[f]
         text += (

@@ -95,6 +95,7 @@ def views(conn: Connection, membership_ids: Sequence[int]) -> dict[int, dict[str
             "handle": handle,
             "purpose": row.purpose,
             "cross_owner": row.cross_owner,
+            "created_by": row.created_by,
         }
 
     for row in found:
