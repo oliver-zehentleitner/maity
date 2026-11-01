@@ -3846,6 +3846,30 @@ A session in `enrolment_required` gets the setup drawn by `render()` like the se
 
 **Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
 
+## The enrolment page is guarded only while it is on the page
+
+**Id:** 056d57c5-e0d5-4fc1-83d1-d4042c55dab8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.5; review of #1004; tsk-xtnxws153a7x
+
+A refusal `second_factor_enrolment_required` draws the setup through `render()`; a flag stops a late refusal from drawing it over itself, which would throw away the secret being typed. `render()` clears the flag and only `renderEnrolment` sets it for good, so it says "the setup is on the page". The first form, cleared only when the setup succeeded, left a tab that signed out, or whose hub let go of the requirement, deaf to the next refusal.
+
+**Rejected alternative:** tying the flag to the session epoch: a hub that releases the same session keeps the epoch, and the tab stays deaf.
+
+## The reset form stays open and names no enrolment state
+
+**Id:** a5c7675b-8785-4a40-b088-b0a0022818c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
+
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+
+**Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
+
 ## Availability and cover hang under the presence as one note
 
 **Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3

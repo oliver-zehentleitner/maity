@@ -1563,3 +1563,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .meat-chat-icon { display: inline-block; width: 20px; height: 20px; background-color: currentColor;
   -webkit-mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; }
 .meat-chat-toggle[aria-pressed="true"] .meat-chat-icon { -webkit-mask-image: url("../brand/meat-proxy.svg"); mask-image: url("../brand/meat-proxy.svg"); }
+
+/* Admin → Users: reset two-factor sign-in (§2.8.7). */
+.user-reset { margin-top: 16px; max-width: 42rem; }
+.user-reset label { display: block; margin-bottom: 4px; }
+.user-reset textarea { width: 100%; box-sizing: border-box; }

@@ -975,7 +975,11 @@ or name (case-insensitive, 1–64 characters, read 300 ms after typing
 stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
 **Load more** follows its cursor. Anyone but the instance admin gets
 neither the link nor the list. On a phone each row is a
-card.
+card. **Reset two-factor sign-in** on another person's row (§2.8.3) asks a
+reason and sends the person a mail, after the admin's step-up; only the
+person's press on its button resets anything. The form says so, and to
+confirm the request by another channel first, and says the hub's refusals in
+words. Not on one's own row: that is a recovery code or the operator's command.
 
 **Pictures** (`/account/picture`, `docs/api.md` §6.10). The account
 shows the human's picture as it shows now, where it comes from (uploaded,
@@ -1044,7 +1048,8 @@ link**; when that read fails, the password alone.
 where the human is signed in, newest first, from `GET /auth/sessions?ended=true`.
 - Each says the browser and system it claimed, how it signed in, where
   from and when, which session approved a device code, and whether it is
-  confirmed (`good_standing`). The current one is marked.
+  confirmed (`good_standing`) and passed the second factor (§2.8.7). The
+  current one is marked.
 - **This was me** on a session whose sign-in alert is unread, ended
   sessions included, marks that alert read by its id (§18.3); it is
   offered only from a confirmed session older than the one it confirms,
@@ -1510,7 +1515,11 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     session: QR and key, the code, ten recovery codes with **Download**, then
     the dashboard, and on the account new codes but no **Turn off**. On a hub
     with `optional`, **Security** in the profile menu sets it up, says a wrong
-    code, and turns it off.
+    code, and turns it off;
+20. on the second hub, **Sessions** marks the session that passed the factor;
+    the admin asks a reset under **Users** for a person who registered by mail,
+    which changes nothing until that person presses the button in the mail,
+    and their next sign-in starts with the setup.
 
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)

@@ -1324,6 +1324,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!header.querySelectorAll("a").some((a) => a.textContent === "Instance administration") && text(main).includes("Only the instance admin can open this area.")
     && !main.querySelector("table.users"), "users: no link and no list for anyone else");
   win.Maity.api.get = uGet;
+  // Reset two-factor sign-in (§2.8.3, §2.8.7): a reason, what it does, the step-up, the hub's refusals.
+  await usersOpen(); await tick();
+  const urForm = () => main.querySelector("form.user-reset");
+  const urRow = (name) => userRows().find((r) => text(r).includes(name));
+  expect(!btn(urRow("(you)"), "Reset two-factor sign-in") && text(urRow("(you)")).includes("yours: a recovery code"), "user reset: not offered on one's own row");
+  btn(urRow("Ops on call"), "Reset two-factor sign-in").click(); await tick();
+  expect(urForm() && text(urForm()).includes("of Ops on call") && text(urForm()).includes("the person confirms the reset by mail")
+    && text(urForm()).includes("by another channel first"), "user reset: says the person confirms by mail, and to ask them first");
+  const urPost = win.Maity.api.post;
+  const urCalls = [];
+  let urAnswer = null;
+  win.Maity.api.post = (p, b) => { urCalls.push([p, b]); return urAnswer ? Promise.reject(urAnswer) : urPost(p, b); };
+  urForm().dispatch("submit"); await tick();
+  expect(!urCalls.length && text(urForm()).includes("say why"), "user reset: no reason, no call");
+  byId("user-reset-reason").value = "  lost the phone  ";
+  urForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(urCalls.length === 1 && /^\/admin\/users\/[^/]+\/second-factor\/reset$/.test(urCalls[0][0]) && urCalls[0][1].reason === "lost the phone"
+    && text(urForm()).includes("The mail to Ops on call is on its way"), "user reset: the reason goes, trimmed, and the page says the mail left");
+  for (const [code, details, words] of [["address_unverified", {}, "no verified address"], ["mail_not_configured", {}, "sends no mail"],
+    ["conflict", {}, "no two-factor sign-in set up"], ["rate_limited", {}, "three resets a day"], ["forbidden", { reason: "own_account" }, "your own is not reset here"]]) {
+    urAnswer = new win.Maity.api.ApiError("raw", code === "forbidden" ? 403 : 409, "/x", code, details);
+    byId("user-reset-reason").value = "x";
+    urForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(urForm()).includes(words) && !text(urForm()).includes("raw"), "user reset: " + code + " in words");
+  }
+  urAnswer = null;
+  // A sensitive call: the step-up's question, then the call again.
+  let urNeed = true;
+  win.Maity.api.post = (p, b) => {
+    if (p.endsWith("/second-factor/reset") && urNeed) return Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" }));
+    if (p === "/auth/second-factor/verify") urNeed = false;
+    return urPost(p, b);
+  };
+  byId("user-reset-reason").value = "x";
+  urForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(byId("step-up-step_up_required") && text(urForm()).includes("Resetting a person's two-factor sign-in"), "user reset: the step-up says why");
+  byId("step-up-step_up_required").value = "123456"; urForm().querySelector("form.step-up").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(!urNeed && text(urForm()).includes("is on its way"), "user reset: after the code the call goes again");
+  win.Maity.api.post = urPost;
+  btn(urForm(), "Close").click(); await tick();
+  expect(!urForm(), "user reset: Close takes the form away");
   await go("#/maintainer/maity/inbox");
   // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
@@ -4501,14 +4542,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(secBtn("New recovery codes") && !secBtn("Turn off"), "security: a required factor cannot be turned off here");
   win.Maity.api.get = secGet;
   await win.Maity.api.post("/auth/second-factor/totp/confirm", { code: "123456" });
-  // A view left open when the hub moves the session into enrolment (§2.8.5): the next refusal draws the setup.
-  const lateSession = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/auth/session" ? lateSession(p).then((x) => ({ ...x, second_factor: "enrolment_required" }))
-    : p === "/auth/second-factor" ? lateSession(p) : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "second_factor_enrolment_required" })));
-  win.Maity.onEnrolmentRequired();
+  // A view left open when the hub moves the session into enrolment (§2.8.5): a real refusal, through the
+  // api, draws the setup; a late one leaves it as it is; away from it, the next one draws it again.
+  const enrolRefused = () => win.Maity.api.get("/me").then(() => false, (err) => err.details.reason === "second_factor_enrolment_required");
+  win.MAITY_FIXTURE_ENROLMENT = true;
+  expect(await enrolRefused(), "enrolment: the fixture hub refuses");
   await secPass();
-  expect(main.querySelector(".security-enrol"), "enrolment: a refusal in an open view brings the setup");
-  win.Maity.api.get = lateSession;
+  const enrolDrawn = main.querySelector(".security-enrol");
+  expect(enrolDrawn, "enrolment: a refusal in an open view brings the setup");
+  await enrolRefused(); await secPass();
+  expect(main.querySelector(".security-enrol") === enrolDrawn, "enrolment: a late refusal does not draw the setup over itself");
+  win.MAITY_FIXTURE_ENROLMENT = false;
+  await go("#/account"); await secPass();
+  expect(!main.querySelector(".security-enrol"), "enrolment: released, the dashboard again");
+  win.MAITY_FIXTURE_ENROLMENT = true;
+  await enrolRefused(); await secPass();
+  expect(main.querySelector(".security-enrol"), "enrolment: a later refusal in the same tab brings the setup again");
+  win.MAITY_FIXTURE_ENROLMENT = false;
+  win.Maity.api.get = secGet;
   // A session in enrolment_required (§2.8.5): the setup is its one page, then the dashboard.
   const enrolDone = [];
   const enrolMain = main;
@@ -7441,7 +7492,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const meOrder = header.querySelector(".me").childNodes.map((el) => (el.getAttribute("class") || "").split(" ").concat(el.tagName ? [el.tagName.toLowerCase()] : []).join(" "));
   expect(chatBtn() && chatBtn().getAttribute("href") === "#/chats" && chatBtn().getAttribute("aria-label") === "1 unread chat message"
     && text(chatBtn().querySelector(".count")) === "1" && chatBtn().querySelector(".count").getAttribute("aria-hidden") === "true"
-    && /chat-button/.test(meOrder[0]) && /lead-button/.test(meOrder[1]) && /menu-box/.test(meOrder[2]) && header.querySelector(".me").childNodes[2].querySelector(".add-menu")
+    && /lead-button/.test(meOrder[0]) && /chat-button/.test(meOrder[1]) && /menu-box/.test(meOrder[2]) && header.querySelector(".me").childNodes[2].querySelector(".add-menu")
     && header.querySelector(".me").childNodes[3].querySelector(".settings-menu") && /bell-box/.test(meOrder[4])
     && header.querySelector(".me").childNodes[5].querySelector(".profile-menu") && header.querySelector(".me").childNodes.length === 6,
     "header: Chat, Lead, \"+\", the gear, Notifications, the profile; the chat badge a number, its words in the label " + JSON.stringify(meOrder));
@@ -7918,6 +7969,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(sesPosts[0]) === JSON.stringify(["/me/notifications/read", { ids: ["ntf-acr-7"] }])
     && text(sesRow("hss-41d2")).includes("confirmed") && !text(sesRow("hss-41d2")).includes("not confirmed") && text(sesBox()).includes("Confirmed: Firefox on Linux is yours."),
     "sessions: This was me marks the alert read by its id; the session is confirmed");
+  expect(text(sesRow("hss-41c0")).includes("second factor passed") && !text(sesRow("hss-41c7")).includes("second factor passed"), "sessions: says which passed the second factor");
   btn(main.querySelector(".address-change"), "Approve").click(); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(sesPosts[1]) === JSON.stringify(["/me/notification-settings/email/address-change/approve", { id: "adc-7f2a", address: "maint@example.net" }])
     && !main.querySelector(".address-change") && text(sesBox()).includes("Approved."), "sessions: the held change approved by its id and address");

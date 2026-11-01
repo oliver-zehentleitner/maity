@@ -6583,7 +6583,8 @@ window.MAITY_FIXTURES = {
         "ip": "198.51.100.7",
         "last_seen_at": "2026-10-22T14:01:30Z",
         "method": "password",
-        "os": "Linux"
+        "os": "Linux",
+        "second_factor": true
       },
       {
         "approved_by": "hss-41c0",
@@ -6603,7 +6604,8 @@ window.MAITY_FIXTURES = {
         "ip": "203.0.113.24",
         "last_seen_at": "2026-10-22T13:40:00Z",
         "method": "device_code",
-        "os": "iOS"
+        "os": "iOS",
+        "second_factor": false
       },
       {
         "approved_by": null,
@@ -6623,7 +6625,8 @@ window.MAITY_FIXTURES = {
         "ip": "192.0.2.80",
         "last_seen_at": "2026-10-22T13:19:10Z",
         "method": "email_link",
-        "os": "Linux"
+        "os": "Linux",
+        "second_factor": false
       },
       {
         "approved_by": null,
@@ -6643,7 +6646,8 @@ window.MAITY_FIXTURES = {
         "ip": "198.51.100.40",
         "last_seen_at": "2026-10-15T18:20:00Z",
         "method": "password",
-        "os": "Windows"
+        "os": "Windows",
+        "second_factor": false
       }
     ]
   }
