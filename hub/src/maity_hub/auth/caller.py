@@ -15,7 +15,7 @@ import hashlib
 import hmac
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -67,6 +67,21 @@ class Bridged:
         return {"member_id": self.agent_id, "instance": self.instance, "bridge_id": self.bridge_id}
 
 
+@dataclass(eq=False)
+class OnRequest:
+    """A signed `Maity-On-Request` and the call it came with, as §2.3 compares them.
+    `spent_seq` names the event of this call's spend: a route may read its membership more than
+    once. It proves nothing alone, since a retried transaction has rolled that spend back; only
+    the request's row, showing the same seq, does."""
+
+    request_id: str
+    method: str
+    path: str  # below /api/v1
+    query: str | None
+    body_sha256: str | None
+    spent_seq: int | None = None
+
+
 @dataclass(frozen=True)
 class Caller:
     kind: str  # human, agent, runner
@@ -84,6 +99,7 @@ class Caller:
     model: str | None = None
     runner_id: str | None = None
     bridge: Bridged | None = None  # a bridge calling as this agent (`Maity-For`, §2.3)
+    on_request: OnRequest | None = None  # a proxy's go for this call, signed (§2.3)
 
     @property
     def principal_id(self) -> str:
@@ -281,6 +297,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         nonce,
         facts.body,
         facts.headers.get("maity-for"),
+        facts.headers.get("maity-on-request"),
     )
     if not credentials.signature_matches(row.verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")
@@ -295,7 +312,8 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
     if is_runner_credential(row.id):
         return _runner(conn, row)
-    return _agent(conn, row, "signed", renew, facts)
+    caller = _agent(conn, row, "signed", renew, facts)
+    return replace(caller, on_request=_on_request(facts))
 
 
 NONCES = credentials.NonceWindow()
@@ -304,6 +322,19 @@ PROCESS_STARTED = int(time.time())
 
 def _timestamp_shape(timestamp: str) -> bool:
     return 0 < len(timestamp) <= 12 and timestamp.isascii() and timestamp.isdigit()
+
+
+def _on_request(facts: RequestFacts) -> OnRequest | None:
+    request_id = facts.headers.get("maity-on-request")
+    if request_id is None:
+        return None
+    return OnRequest(
+        request_id=request_id,
+        method=facts.method.upper(),
+        path=facts.raw_path.decode("latin-1").removeprefix("/api/v1"),
+        query=facts.raw_query.decode("latin-1") or None,
+        body_sha256=hashlib.sha256(facts.body).hexdigest() if facts.body else None,
+    )
 
 
 def _hex64(signature: str) -> bool:

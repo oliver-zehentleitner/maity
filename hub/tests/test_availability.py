@@ -678,7 +678,7 @@ def test_seat_resets_name_the_humans_who_decide(
     )
     owner.delete(f"/projects/maintainer/maity/members/{cover.id}")
     reset = [e for e in events(migrated, "member_updated") if e.payload.get("changed")][-1]
-    assert reset.audience == ["all", f"member:{owner.id}"]
+    assert reset.audience[:2] == ["all", f"member:{owner.id}"]
 
 
 def test_a_state_never_stored_reads_the_same_since_on_every_read(

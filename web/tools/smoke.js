@@ -7313,6 +7313,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const kdAt = kdForms.findIndex((c) => c.includes("ktw-defaults-form"));
   expect(kdAt > kdForms.findIndex((c) => c.includes("ktw-policy-form")) && kdAt < kdForms.findIndex((c) => c.includes("badge-form")),
     "keep the why: the personal settings stand between the commitment and the badge");
+  // The public page (§16.9): for the namespace owner, says what becomes public, sends what changed.
+  for (let k = 0; k < 6; k++) await tick();
+  const ppForm = () => main.querySelector("form.public-page-form");
+  expect(ppForm() && /anyone can read/.test(text(ppForm())) && /Never public/.test(text(ppForm())) && /reads "anyone"/.test(text(ppForm())) && !ppForm().querySelector(".public-page-link"),
+    "public page: the owner's form says what becomes public and what agent_owners then reads; no link while it is off");
+  const ppPatch = win.Maity.api.patch, ppSent = [];
+  win.Maity.api.patch = (p, b) => { if (b && ("public_page" in b || "public_about" in b)) ppSent.push(b); return ppPatch(p, b); };
+  byId("public-page").checked = true; byId("public-about").value = "# Hello";
+  ppForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(ppSent[0]) === JSON.stringify({ public_page: "on", public_about: "# Hello" }) && byId("public-page").checked && byId("public-about").value === "# Hello"
+    && ppForm().querySelector(".public-page-link a") && /\/maintainer\/maity\?as=public$/.test(ppForm().querySelector(".public-page-link a").getAttribute("href")),
+    "public page: switched on with its text, and the link is there " + JSON.stringify(ppSent));
+  byId("public-about").value = "x".repeat(4097); ppForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(text(byId("public-about-error")) === "The text is longer than 4 KiB.", "public page: too long is said at the field");
+  byId("public-page").checked = false; byId("public-about").value = ""; ppForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(ppSent[ppSent.length - 1]) === JSON.stringify({ public_page: "off", public_about: null }) && !ppForm().querySelector(".public-page-link"), "public page: off and the text cleared " + JSON.stringify(ppSent));
+  win.Maity.api.patch = ppPatch;
+  {
+    // A person's page (§16.9): sent through PATCH /me, the hub's page_served decides the link.
+    const gone = await win.Maity.api.patch("/me", { public_profile: true, public_bio: "Builds tools." });
+    const refused = await win.Maity.api.patch("/me", { public_bio: "a\u0001b" }).catch((e) => e);
+    await win.Maity.api.patch("/me", { public_profile: false, public_bio: null });
+    expect(gone.member.public_profile === true && gone.member.public_bio === "Builds tools." && refused.details.fields.public_bio === "control_character", "public profile: the fixture takes both fields and refuses a control character");
+  }
   expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
     "keep the why: the personal settings read adopt and name the repository's file");
   const kdPatches = [];

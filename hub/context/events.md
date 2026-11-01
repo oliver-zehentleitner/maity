@@ -457,3 +457,30 @@ are read per batch, so an event without the token costs nothing and no card look
   away from being served, and the contract keeps it apart.
 - Resolving watchers at read: a watch begun later would reach earlier events, which §6.4 excludes.
 
+## `member_updated` is read by everyone and wakes the member and the coordinators
+
+**Id:** 67c594b0-ca9e-4ef6-a3d7-e684c38a1085
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe of 2026-11-01 (round jfx-1h88k3dgtfy3), accepted by the owner; card tsk-7n4yx3yqj84d
+**Revisit when:** a team needs to react to another member's change without being the coordinator
+
+The audience stays `all`, so everyone reads the change; `member:<id>` and the coordinator's token
+are added in `events.emit`, the one place all writers pass, and `events.wakes` ignores `all` for
+this kind unless `changed` names `reports_to` or `owner_id` or the member was removed. A merge
+ticker wakes a member named only as a card's holder at the holding instance.
+
+**Reason:** every instance of every team woke on each bridge, dormant or team-rule change of anyone,
+and each wake is a model run. A change of who reports to whom, an owner or a removal keeps waking
+everyone, since addressing depends on them. The removal is this implementation's reading: the
+round named owner and supervisor changes, and a removal ends an address too, and moves the reports.
+
+**Rejected alternatives:**
+- Narrowing the audience: others would no longer read it in the stream, which everyone agreed to keep.
+- A list at each of the fifteen writers: a new writer that forgets it would wake everyone again.
+- Waking the whole project on a rename: the old handle stays an alias, and a ticker item says it.
+
+**Known limit:** `changed` is what decides; a writer that moves `reports_to` without naming it would
+wake too few. `reports_to` moves through `members.apply_patch` and a removal today, and tests hold
+both. Nothing changes an agent's owner yet, so `owner_id` holds the rule for when something does.
