@@ -1348,6 +1348,29 @@ window.Maity = window.Maity || {};
     token: { configured: false, login: null, status: null, checked_at: null },
   };
   // §16.5: the limits per human as the fixture hub holds them.
+  // §2.6.6 the sign-in methods. `email` waits for the code mailed to the admin (§2.8.8);
+  // the fixture's code is 123456.
+  const signInSetting = {
+    password: { value: true, source: "fixed" },
+    device_code: { value: true, source: "default" },
+    email_link: { value: true, source: "default" },
+    second_factor: { value: "optional", source: "default" },
+    secret_key: true,
+    signing_key: true,
+    pending: false,
+  };
+  const signInMailReady = () => { const mail = fixtures()["admin-mail.json"]; return !!(mail.complete && mail.enabled); };
+  function signInView() {
+    const missing = [];
+    if (!signInSetting.email_link.value) missing.push("switched_off");
+    if (signInSetting.second_factor.value === "email") missing.push("second_factor_email");
+    if (!signInMailReady()) missing.push("mail");
+    if (!signInSetting.signing_key) missing.push("signing_key");
+    const available = !missing.length;
+    if (!signInSetting.secret_key) missing.push("secret_key");
+    const { password, device_code, email_link, second_factor } = signInSetting;
+    return JSON.parse(JSON.stringify({ password, device_code, email_link, second_factor, email_link_available: available, missing }));
+  }
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
@@ -1409,7 +1432,7 @@ window.Maity = window.Maity || {};
     }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
-    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available, registration: false, terms: null })],
     // §3.4: the invitation page and accepting, signed out and in; per token
     // fixtures/invitations.json says what the page shows or how accept refuses.
     ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
@@ -2125,6 +2148,43 @@ window.Maity = window.Maity || {};
         limitsSetting[k] = v === null ? { value: defaults[k], source: "default" } : { value: v, source: "admin" };
       });
       return JSON.parse(JSON.stringify(limitsSetting));
+    }],
+    // §2.6.6, §2.8.8 the sign-in methods, refused as the hub refuses them.
+    ["GET", /^\/admin\/settings\/sign-in$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return signInView();
+    }],
+    ["PATCH", /^\/admin\/settings\/sign-in$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const fields = {};
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "password") fields[k] = "fixed";
+        else if (!["device_code", "email_link", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
+        else if (signInSetting[k].source === "env") fields[k] = "set_by_environment";
+        else if (k === "second_factor") {
+          if (v !== null && !["off", "optional", "required_admins", "email"].includes(v)) fields[k] = "invalid";
+          else if (v === "required_admins" && !signInSetting.secret_key) fields[k] = "secret_key_missing";
+          else if (v === "email" && !(signInMailReady() && signInSetting.signing_key)) fields[k] = "mail_not_ready";
+          else if (v === "email" && fixtures()["notifications.json"].settings.email.address_status !== "verified") fields[k] = "no_verified_address";
+        } else if (v !== null && typeof v !== "boolean") fields[k] = "invalid";
+      });
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const defaults = { device_code: true, email_link: true, second_factor: "optional" };
+      const waits = body.second_factor === "email";
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "second_factor" && waits) return;
+        signInSetting[k] = v === null ? { value: defaults[k], source: "default" } : { value: v, source: "admin" };
+      });
+      if ("second_factor" in body) signInSetting.pending = waits; // a new PATCH replaces an open confirmation
+      return waits ? { expires_in: 900 } : signInView();
+    }],
+    ["POST", /^\/admin\/settings\/sign-in\/second-factor-email\/confirm$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      if (signInSetting.second_factor.source === "env") fail(400, "invalid", "the request does not validate", path, { fields: { second_factor: "set_by_environment" } });
+      if (!signInSetting.pending || body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
+      signInSetting.second_factor = { value: "email", source: "admin" };
+      signInSetting.pending = false;
+      return signInView();
     }],
     // §16.4 Registration: the settings with their sources, what is missing, the
     // accounts that wait and lifting a block, for the instance admin.

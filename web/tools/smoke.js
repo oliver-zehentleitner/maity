@@ -359,7 +359,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // Ctrl+Enter sends; with the list open it does not also pick.
     freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
     freeText.dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick();
-    expect(freeText.value === "Ask @age", "mentions: Ctrl+Enter does not pick " + freeText.value);
+    const openList = hashEntry.querySelector(".mention-list");
+    expect(freeText.value === "Ask @age" && openList.hidden, "mentions: Ctrl+Enter does not pick, and closes the list " + freeText.value);
     freeText.value = ""; freeText.dispatch("input"); await tick();
   }
   const pickList = hashEntry.querySelector(".mention-list");
@@ -1327,7 +1328,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each section's id is a fixed word, the same in every language (#891's review).
   const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
-    "admin-registration", "admin-landing-page", "admin-legal-pages", "admin-whole-site", "admin-instance-information"]),
+    "admin-registration", "admin-sign-in", "admin-landing-page", "admin-legal-pages", "admin-whole-site", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -3924,6 +3925,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = bump("sample");
   await fireIntervals(); await tick(); await tick();
   expect(text(main).includes("What waits for you changed") && btn(main, "Reload the list"), "a changed open count offers to reload the list");
+  // The button itself: a new read of the list, and what is new stands in it (#1074; a project, then /all with a filter).
+  const reloadShows = async (where, wanted) => {
+    const before = main.querySelectorAll("li.entry").length;
+    const allGet = win.Maity.api.getAll;
+    const reads = [];
+    win.Maity.api.getAll = async (p, ...rest) => {
+      const got = await allGet(p, ...rest);
+      if (!wanted(p)) return got;
+      reads.push(p);
+      const like = got.items.find((x) => x.status === "open" && (x.project ? x.project.full_name === "maintainer/sample" : !x.personal));
+      return Object.assign({}, got, { items: got.items.concat(Object.assign({}, like, { id: "req-reload-new", title: "Came in meanwhile" })) });
+    };
+    btn(main, "Reload the list").click();
+    for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = allGet;
+    expect(reads.length === 1 && main.querySelectorAll("li.entry").length === before + 1 && text(main).includes("Came in meanwhile"),
+      where + ": Reload the list reads the list anew and shows the new entry " + JSON.stringify(reads) + " " + before + " " + main.querySelectorAll("li.entry").length);
+  };
+  await reloadShows("project inbox", (p) => p.endsWith("/requests?status=all"));
+  win.Maity.api.get = realGet2;
+  await go("#/all");
+  byId("inbox-project").value = "maintainer/sample"; byId("inbox-project").dispatch("change"); await tick();
+  await tick();
+  win.Maity.api.get = bump("sample");
+  await fireIntervals(); await tick(); await tick();
+  await reloadShows("/all with a filter", (p) => p === "/requests");
+  expect(byId("inbox-project").value === "maintainer/sample" && main.querySelector(".inbox-filter-hidden"), "/all: the filter stays over the reload and says what it hides");
+  byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
+  win.Maity.api.get = bump("sample");
+  await go("#/maintainer/sample/inbox");
+  await fireIntervals(); await tick(); await tick();
   // A hidden tab asks the hub nothing: no /me, no events; shown again, it catches up once.
   const hidGets = [];
   win.Maity.api.get = (p) => { hidGets.push(p); return realGet2(p); };
@@ -9820,6 +9852,57 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/admin/reports/rpt-0002/more"); await tick();
   expect(text(main).includes("No such view"), "admin: no deeper address under /admin/reports/<id>");
   await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
+  // Sign-in (§2.6.6, §2.8.8): sources, only what changed is sent; Mail for everyone only with mail ready, and on only with the mailed code.
+  {
+    const siPatches = [];
+    const siPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/sign-in") siPatches.push(b); return siPatch(p, b); };
+    const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in");
+    const siSubmit = async () => { siSection().querySelector("form.admin-sign-in").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
+    const redraw = async () => { await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick(); };
+    const policyOptions = () => byId("admin-sign-in-second_factor").querySelectorAll("option").map((o) => o.getAttribute("value"));
+    await redraw();
+    expect(siSection() && text(siSection()).includes("Password: always on.") && policyOptions().includes("email"), "sign-in: the section and Mail for everyone with mail ready");
+    await siSubmit();
+    expect(!siPatches.length && text(siSection()).includes("Nothing changed"), "sign-in: nothing changed, nothing sent");
+    byId("admin-sign-in-device_code").checked = false;
+    await siSubmit();
+    expect(JSON.stringify(siPatches[0]) === JSON.stringify({ device_code: false }) && text(siSection()).includes("Saved"), "sign-in: only the changed switch is sent");
+    // Without mail ready the choice is not offered, and the section says why.
+    const siGet = win.Maity.api.get;
+    win.Maity.api.get = async (p, o) => { const v = await siGet(p, o); return p === "/admin/settings/sign-in" ? Object.assign(v, { missing: ["mail"], email_link_available: false }) : v; };
+    await redraw();
+    expect(!policyOptions().includes("email") && text(siSection()).includes("Mail is not ready"), "sign-in: no Mail for everyone while mail is not ready");
+    win.Maity.api.get = siGet;
+    await redraw();
+    // No verified address: said at the field, no code asked for.
+    win.Maity.api.patch = async () => { throw Object.assign(new Error("invalid"), { code: "invalid", details: { fields: { second_factor: "no_verified_address" } } }); };
+    byId("admin-sign-in-second_factor").value = "email";
+    await siSubmit();
+    expect(text(byId("admin-sign-in-second_factor-error")).includes("must be verified") && !byId("admin-sign-in-code"), "sign-in: no verified address is said at the field");
+    win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/sign-in") siPatches.push(b); return siPatch(p, b); };
+    await redraw();
+    // The 202: the setting has not changed; a wrong code is said; the right one turns it on.
+    const sel = byId("admin-sign-in-second_factor");
+    sel.value = "email"; sel.dispatch("change");
+    expect(text(siSection()).includes("mails you a code first") && text(siSection()).includes("authenticator app"), "sign-in: the choice says the code comes first and advises TOTP");
+    await siSubmit();
+    expect(byId("admin-sign-in-code") && (await win.Maity.api.get("/admin/settings/sign-in")).second_factor.value === "optional", "sign-in: the 202 asks for the code and changes nothing yet");
+    const confirmForm = () => siSection().querySelector("form.admin-sign-in-confirm");
+    byId("admin-sign-in-code").value = "000000";
+    confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("admin-sign-in-code-error")) === "That code is wrong or was used." && byId("admin-sign-in-code").getAttribute("aria-invalid") === "true", "sign-in: a wrong code is said at the field");
+    byId("admin-sign-in-code").value = "123 456";
+    confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    const siOn = await win.Maity.api.get("/admin/settings/sign-in");
+    expect(siOn.second_factor.value === "email" && !siOn.email_link_available && text(siSection()).includes("Mail for everyone is on.")
+      && text(siSection()).includes("one mailbox is not two factors") && !(await win.Maity.api.get("/auth/methods")).email_link, "sign-in: the code turns it on, and the link is no longer offered");
+    // Away from it needs no code, and the fixture is put back for what follows.
+    await win.Maity.api.patch("/admin/settings/sign-in", { second_factor: null, device_code: null });
+    win.Maity.api.patch = siPatch;
+    for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/sign-in") adminWrites.splice(i, 1);
+    await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick();
+  }
   // Limits per person (§16.5, tsk-d4ppa9jsj0d7): each value with its source, the people at it; only what changed is sent.
   const lmPatches = [];
   const lmPatch = win.Maity.api.patch;

@@ -165,6 +165,7 @@ window.Maity = window.Maity || {};
       ["/admin/reports", "reports", M.t("reports.section"), (s) => M.adminReports.section(ctx, s, into === "reports" ? where.args[0] || null : null)],
       [MAIL, "mail-settings", M.t("admin.section.mail"), (s) => mailSection(ctx, s)],
       ["/admin/settings/registration", "registration", M.t("admin.section.registration"), (s) => M.adminRegistration.section(ctx, s)],
+      ["/admin/settings/sign-in", "sign-in", M.t("admin.section.sign_in"), (s) => M.adminSignIn.section(ctx, s)],
       ["/admin/settings/landing", "landing-page", M.t("admin.section.landing"), (s) => M.landing.section(ctx, s)],
       ["/admin/settings/legal", "legal-pages", M.t("admin.section.legal"), (s) => M.legal.section(ctx, s)],
       // The three above as one JSON (tsk-xw8a2hd84x3a): exported and imported in one go.

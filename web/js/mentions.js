@@ -183,8 +183,14 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         active = (active + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length;
         draw();
-      } else if ((e.key === "Enter" && !e.ctrlKey && !e.metaKey) || e.key === "Tab") {
-        // Ctrl+Enter sends, as everywhere; it does not also pick.
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        if (e.ctrlKey || e.metaKey) {
+          // Ctrl+Enter sends and does not pick. Not prevented, so that it still sends; the list
+          // closes, as it would stand over the emptied field and swallow the next Enter.
+          generation += 1;
+          close();
+          return;
+        }
         e.preventDefault();
         pick(shown[active]);
       } else if (e.key === "Escape") {
