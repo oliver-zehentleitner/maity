@@ -944,7 +944,7 @@ owner decides, and it decides nothing itself:
   or `consent` request it files itself, `to: owner`, with `action:
   {method, path, query, body}` — the full call it will make: `query`
   the exact query string or `null`, `body` the exact JSON text it will
-  send (at most 64 KiB) or `null` (§7). The owner sees that call
+  send (at most 48 KiB, so that it fits its request of 64 KiB, §1.7) or `null` (§7). The owner sees that call
   rendered on the request — method, path, query and the body
   pretty-printed — in the dashboard and the CLI, and decides on it.
   The header is valid only
