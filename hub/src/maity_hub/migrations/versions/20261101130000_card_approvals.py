@@ -4,7 +4,7 @@ The downgrade also turns the two done authorities the older schema's hub does no
 `reviewer`, the nearest one it does.
 
 Revision ID: 20261101130000_card_approvals
-Revises: 20261101050000_org_alias
+Revises: 20261101120000_card_needs
 Create Date: 2026-11-01
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20261101130000_card_approvals"
-down_revision: str | None = "20261101050000_org_alias"
+down_revision: str | None = "20261101120000_card_needs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
