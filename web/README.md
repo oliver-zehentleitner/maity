@@ -1263,7 +1263,7 @@ link to the member (`/<owner>/<slug>/members/<id>`), taken from the text at
 its offset (code points) only where it reads `@` and the stored handle,
 or `@` and the stored global name for a long mention, either followed by
 `#` and the stored instance for an instance mention (§6.17; it links to
-the member, the instance in its title); nothing typed becomes a link. The **@ picker** in the inbox's free text offers the
+the member, the instance in its title); nothing typed becomes a link. The **@ picker** (the inbox's free text, the project message, direct and group chats, a new card's text and a note; a group chat offers its participants alone) offers the
 project's members by handle (`GET …/members`, read on the first `@`),
 by `owner/handle` where the short handle is shared, never the writer:
 typing either form narrows it (`@anna/` too), arrow keys choose, Enter or

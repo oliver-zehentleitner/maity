@@ -98,7 +98,7 @@ window.Maity = window.Maity || {};
     h("label", { for: "message-card" }, "About a card"), card,
     h("label", { for: "message-body" }, "Message (" + M.dom.SEND_KEYS + " sends)"), body,
     // With the @ picker; the hub resolves, not the page.
-    M.mentionPicker(body, () => M.api.getAll(ctx.base + "/members").then((r) => r.items), ctx.me.id),
+    M.projectMentionPicker(ctx, body),
     h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "
       + "at most 10 members per message. An unsent message is not kept when you leave this view."),
     files ? files.el : null,
