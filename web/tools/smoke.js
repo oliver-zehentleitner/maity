@@ -7355,11 +7355,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" }, action: Object.assign(act().action, { used_at: "2026-11-01T11:00:00Z", used_seq: 9 }) });
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
     expect(/Used /.test(text(call())), "action: a used go says when");
+    // What the proxy wrote cannot hide from the owner: a body that parsing changes, invisible characters.
+    const again = async () => { await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick(); };
+    const warns = () => main.querySelectorAll(".request-action-warning").map((p) => text(p)).join(" | ");
+    current = act({ action: Object.assign(act().action, { body: '{"n":9007199254740993}' }) });
+    await again();
+    expect(/differs/.test(warns()) && call().querySelector("details").getAttribute("open") !== null && text(pres()[1]).includes("9007199254740993"), "action: a rounded number is said, and the text as sent is open " + warns());
+    current = act({ action: Object.assign(act().action, { body: '{ "a": 1,\n  "b": "x y" }' }) });
+    await again();
+    expect(warns() === "", "action: white space alone is no difference " + warns());
+    current = act({ action: Object.assign(act().action, { path: "/projects/a\u202eb", query: "", body: '{"a":"x\u200by"}' }) });
+    await again();
+    expect(/cannot normally see/.test(warns()) && text(call()).includes("\\u202E") && text(pres()[0]).includes("\\u200B") && !text(call()).includes("\u202e") && /\(empty\)/.test(text(call())), "action: invisible characters are named, in the path too; an empty query shows " + text(call()));
     current = act();
     const owner = win.Maity.trust.owner;
     win.Maity.trust.owner = () => false;
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
-    expect(call() && buttons().length === 0 && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and no buttons");
+    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later");
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }

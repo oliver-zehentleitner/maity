@@ -2213,6 +2213,15 @@ def request_action_step(run: Run, page: Page) -> None:
         assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.a11y(page, "inbox, action request")
         run.shot(page, "inbox-action-request")
+        # A body that parsing changes and a character nobody sees: said, and readable at both widths.
+        entry["action"] = dict(entry["action"], path="/projects/owner/e2e\u202e-alpha", body='{"n": 9007199254740993}')
+        page.goto(f"{run.base}/owner/e2e-alpha/settings")
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/req-action")
+        expect(call.locator(".request-action-warning")).to_have_count(2)
+        expect(call.locator("mark.hidden-char")).to_have_text("\\u202E")
+        expect(call.locator("details pre")).to_be_visible()
+        expect(call.locator("details pre")).to_contain_text("9007199254740993")
+        run.a11y(page, "inbox, action request that warns")
     finally:
         page.unroute(pattern, answer)
 
