@@ -46,6 +46,7 @@ class Page:
     toc: list[tuple[int, str, str]] = field(default_factory=list)  # (level, id, text)
     lead: str = ""
     hide: set[str] = field(default_factory=set)
+    hidden: set[str] = field(default_factory=set)  # anchors of sections left out of a split page
     parent: str | None = None  # url of the split page this section belongs to
     children: list["Page"] = field(default_factory=list)
 
@@ -143,6 +144,9 @@ def build_pages(repo: Path, nav: list[dict]) -> tuple[list[Page], dict[str, Page
                     title = section.splitlines()[0][3:].strip()
                     child = Page(src=src, url="", title=title, parent=page.url)
                     child.body, child.toc = render(section, seen)
+                    if child.toc[0][2] in page.hide:  # no page, no sitemap line, no search entry
+                        page.hidden.update(anchor for _, anchor, _ in child.toc)
+                        continue
                     child.url = f"{page.url}{child.toc[0][1]}/"
                     child.heading = child.toc[0][2]
                     child.hide = page.hide
@@ -174,11 +178,14 @@ def rewrite_links(page: Page, by_src: dict[str, Page], anchors: dict[tuple[str, 
 
     def target(href: str) -> str:
         href = html.unescape(href)
+        # A README that PyPI shows too links the repository absolutely; on the site it is a link.
+        if href.startswith(f"{GITHUB}/blob/main/"):
+            href = "/".join([".."] * page.src.count("/") + [href.removeprefix(f"{GITHUB}/blob/main/")])
         if re.match(r"^[a-z][a-z0-9+.-]*:", href) or href.startswith("/"):
             return href
         path, _, frag = href.partition("#")
         src = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), path)) if path else page.src
-        if src in by_src:
+        if src in by_src and frag not in by_src[src].hidden:
             if frag:
                 return anchors.get((src, frag), by_src[src].url) + "#" + frag
             return by_src[src].url
@@ -203,8 +210,6 @@ def nav_html(nav: list[dict], by_src: dict[str, Page], current: Page) -> str:
             if page.children and here:
                 out.append('<ul class="nav-sub">')
                 for child in page.children:
-                    if child.heading in page.hide:
-                        continue
                     aria = ' aria-current="page"' if current is child else ""
                     out.append(f'<li><a href="{child.url}"{aria}>{html.escape(child.heading)}</a></li>')
                 out.append("</ul>")
@@ -263,8 +268,11 @@ def main(argv: list[str] | None = None) -> int:
         target = out_root / page.url.removeprefix(BASE) / "index.html"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(doc, encoding="utf-8")
+        hidden = False
         for level, anchor, text in page.toc:
-            if level <= 3 and text not in page.hide:
+            if level <= 2:
+                hidden = text in page.hide  # what stands under a hidden heading goes with it
+            if level <= 3 and not hidden:
                 search.append({"t": text, "p": page.title if not page.parent else page.heading, "u": f"{page.url}#{anchor}" if level > 1 else page.url})
 
     assets = out_root / "_assets"

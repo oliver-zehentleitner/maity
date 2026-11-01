@@ -34,9 +34,8 @@
       title: API
       split: true
       hide: ["14. Changes against the dashboard's fixture proposal"]
-    - src: docs/architecture.md
-      title: Architecture
-      hide: ["12. Reconciliation with the dashboard's endpoint proposal"]
+    # docs/architecture.md stays out until it is rewritten: it is the first design of
+    # 2026-10-21 and no longer describes the product. Links to it go to GitHub.
 
 - group: Project
   pages:

@@ -1046,7 +1046,9 @@ fault close to the change that caused it without making every author wait for it
 
 `tools/site_docs.py` renders every page `docs/nav.yml` lists when the site
 deploys, with GitHub's anchors, so links from the repository and from the
-site are the same.
+site are the same. A section `hide` names on a split page gets no page, and
+`docs/architecture.md` stays out of the list until it is rewritten, as it
+still describes the first design of 2026-10-21 (the lead's call on #1095).
 
 **Reason:** the repository and the site would otherwise drift apart, and
 each command is checked only once.

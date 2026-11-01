@@ -70,5 +70,16 @@ class SiteDocsTest(unittest.TestCase):
             self.assertTrue((site / "docs/_assets/search.json").is_file())
 
 
+    def test_the_real_nav_builds_and_hides_section_14(self):
+        repo = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(site_docs.main([tmp, "--repo", str(repo)]), 0)
+            out = Path(tmp) / "docs"
+            self.assertTrue((out / "api" / "index.html").is_file())
+            self.assertFalse(list((out / "api").glob("14-*")))
+            self.assertNotIn("/docs/api/14-", (out / "_assets" / "search.json").read_text("utf-8"))
+            self.assertIn('href="/docs/api/', (out / "cli" / "index.html").read_text("utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
