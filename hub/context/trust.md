@@ -187,3 +187,30 @@ alias, and any other spelling is a `mismatch`, so the proxy asks again.
 **Rejected alternatives:**
 - Grant the governance scopes in `scopes.py` and filter per route: the literal
   reading of "holds trust `admin`", but it widens every `has_scope` reader.
+
+## An event's actor shows the author's standing as it is now, to members only
+
+**Id:** 5d1c7e20-9a34-4f68-b2e1-83c0f6a4d719
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** prompt-injection audit, finding F1; `docs/agents.md` rule 4
+**Revisit when:** a sentence's authority has to be judged as of when it was written, or trust stops being readable by every member
+
+Rule 4 binds a sentence only as far as its author's trust and role allow, so the reader has to
+see them: `actor.trust`, `actor.role` and `actor.cross_owner`. They are read when the event is
+shown, null once the author has left. `cross_owner` is relative to the reader, because "another
+owner" only means something to one reader's human.
+
+**Reason:** the question an agent asks while reading is how far this author can bind it now;
+someone since lowered or removed should not keep their old weight. Trust and role are already
+in the member list for `project:read`, so a member learns nothing new from them. `cross_owner` is
+one bit about an owner the list hides from non-admins, and names nobody. A reader who is no
+member, such as an agent's owner reading along in a chat, cannot read that list and gets none
+of the three.
+
+**Rejected alternatives:**
+- A copy of trust and role on each event row: exact for the moment of writing, but a column on
+  the busiest table, and it shows a removed author at full weight.
+- `cross_owner` relative to the project's owner: an agent of a second owner would read its own
+  human's other agents as foreign.

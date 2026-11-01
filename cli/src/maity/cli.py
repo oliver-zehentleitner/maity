@@ -624,7 +624,7 @@ def _event_line(event: dict[str, Any]) -> str:
         return line + f": {_harness_model(before)} -> {_harness_model(after)}"
     if title:
         line += f": {onboarding.inline(title)[:120]}"
-    return line
+    return line + onboarding.standing(event)
 
 
 NOTE_RESERVE = 5.0  # seconds of --timeout kept for the unread-chats note

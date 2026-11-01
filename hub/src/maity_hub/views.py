@@ -1184,6 +1184,28 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
 
 
+def _standing_of(
+    conn: Connection, membership_ids: set[int | None], reader: Any
+) -> dict[int, dict[str, Any]]:
+    """What a sentence of each actor can bind this reader to (docs/agents.md rule 4, §8.3): its
+    `trust` and `role` today, null once it left, and whether it answers to another owner than
+    the reader. Only for a member, who reads trust and role in the member list anyway."""
+    wanted = {i for i in membership_ids if i is not None}
+    if reader is None or not wanted:
+        return {}
+    m = t.membership.c
+    rows = conn.execute(select(m.id, m.trust, m.role, m.active).where(m.id.in_(wanted))).all()
+    owners = _owners_of(conn, {*wanted, reader.id})
+    return {
+        r.id: {
+            "trust": r.trust if r.active else None,
+            "role": r.role if r.active else None,
+            "cross_owner": owners.get(r.id) != owners.get(reader.id),
+        }
+        for r in rows
+    }
+
+
 def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> list[dict[str, Any]]:
     """`event_view` for several events, with one query for the actors. `reader` (a
     `Membership`) is the member the views are for; without one a redaction's reason is
@@ -1229,6 +1251,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     )
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
+    standing = _standing_of(conn, {r.actor_membership for r in rows}, reader)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -1246,6 +1269,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if row.actor_bridge:  # made by a bridge for the member (§2.3)
                 actor["via"] = row.actor_bridge
+            actor.update(standing.get(row.actor_membership, {}))
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {

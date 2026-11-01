@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, handles
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -409,3 +409,14 @@ def test_a_tombstone_keeps_listing_its_aliases_though_they_are_free(
     assert tomb.status_code == 200 and tomb.json()["aliases"] == ["bee"]
     # The names are free for a new profile of the owner all the same (§6.3).
     assert owner.post("/agents", {"handle": "bee", "display_name": "New"}).status_code == 201
+
+
+@pytest.mark.parametrize("handle", sorted(handles.MISLEADING))
+def test_a_handle_that_speaks_for_the_hub_is_refused_for_an_agent_too(
+    make_client: ClientFactory, migrated: Engine, handle: str
+) -> None:
+    owner = flow.human(make_client, migrated)
+    made = owner.post("/agents", {"handle": handle, "display_name": "Looks official"})
+    assert made.status_code == 400, made.text
+    assert _fields(made) == {"handle": "reserved"}
+    assert _fields(owner.patch("/me", {"handle": handle})) == {"handle": "reserved"}

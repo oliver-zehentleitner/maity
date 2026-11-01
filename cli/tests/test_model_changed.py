@@ -62,3 +62,13 @@ def test_a_model_change_event_is_read_as_words() -> None:
     assert cli._event_line(event) == ("#41 session_model_changed agt-w: Claude Code/opus -> Codex")
     bare = {**event, "payload": {"from": None, "to": {}}}
     assert cli._event_line(bare) == "#41 session_model_changed agt-w: ? -> ?"
+
+
+def test_the_standing_of_an_author_is_in_the_line() -> None:
+    def line(**actor: object) -> str:
+        return cli._event_line({"seq": 7, "kind": "message", "actor": actor})
+
+    assert line(trust="guest", cross_owner=True) == "#7 message (guest, other owner)"
+    assert line(trust="member", cross_owner=False) == "#7 message"
+    assert line(trust=None, cross_owner=False) == "#7 message (former member)"
+    assert line(member_id="agt-a") == "#7 message"  # an older hub sends none

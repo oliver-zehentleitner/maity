@@ -30,6 +30,9 @@ RENAME_LIMIT = 3
 RENAME_WINDOW = timedelta(hours=24)
 HUMANS = "human"  # the scope of every human's handle
 FORMAT = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
+# Read in a by-line these speak for the hub or for a reader's own human, in every scope: an agent
+# named `hub` reads as well as a human named so. Those who hold one already keep it.
+MISLEADING = frozenset({"hub", "human", "maity", "system"})
 
 
 def _alias_id() -> Any:
@@ -167,7 +170,7 @@ def ensure_free(
     lock first, so the answer holds until the transaction ends. `exclude`: the id that may have
     it (itself)."""
     scope = scope_of(owner_id)
-    if owner_id is None and handle in paths.RESERVED_FIRST:
+    if handle in MISLEADING or (owner_id is None and handle in paths.RESERVED_FIRST):
         raise invalid({field: "reserved"})
     lock(conn, scope, handle)
     taken = holder(conn, scope, handle)
