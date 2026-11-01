@@ -3539,7 +3539,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540 },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a4" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false },
@@ -3605,6 +3605,10 @@ Response `200`, bounded and deterministic:
 }
 ```
 
+- `hints.cli_version`, and `cli_version` in every answer of `GET …/events`
+  (§8.3), name the newest `maity` CLI this hub knows to be published. A CLI
+  older than that says so on stderr with the upgrade command, on `resume` and
+  on `wait`; nothing is refused, and a newer CLI says nothing.
 - `hints.wait_timeout` is the number of seconds a `wait` on this harness
   should run before it exits 3, from a table the hub ships per declared
   harness (600 unless the harness is known to kill commands earlier, then
@@ -8936,7 +8940,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a4" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger

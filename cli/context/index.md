@@ -69,7 +69,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 ## U
 
 ## V
-- [version.md](version.md) — release version beside build identity: packages freeze revision and dirty state, source checkouts show their current revision, and a source archive keeps its stamp when rebuilt
+- [version.md](version.md) — release version beside build identity: packages freeze revision and dirty state, source checkouts show their current revision, the hub names the published CLI so an older one warns, and a source archive keeps its stamp when rebuilt
 
 ## W
 

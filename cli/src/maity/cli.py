@@ -363,6 +363,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
+    _warn_old_cli(field(packet, "hints", "cli_version"))
     wait_timeout = field(packet, "hints", "wait_timeout")
     if isinstance(wait_timeout, int) and wait_timeout > 0:
         session.data["wait_timeout"] = wait_timeout
@@ -680,6 +681,13 @@ def _save_wait_cursor(session: Session, cursor: Any) -> None:
     session.save()
 
 
+def _warn_old_cli(expected: object) -> None:
+    """One line when the hub names a newer published CLI (§5.2); it refuses nothing."""
+    if versioninfo.older(__version__, expected):
+        shown = onboarding.inline(expected)
+        _err(f"this CLI is {__version__}, {shown} is out; `pipx upgrade maity` brings it")
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -705,6 +713,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     backoff = 2.0
     warned = False
     skewed = False
+    version_checked = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -748,6 +757,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 continue
             raise
         backoff = 2.0
+        if not version_checked:
+            _warn_old_cli(page.get("cli_version"))
+            version_checked = True
         if page.get("superseded"):
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED

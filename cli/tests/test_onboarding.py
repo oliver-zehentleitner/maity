@@ -877,3 +877,19 @@ def test_a_takeover_without_a_hand_over_asks_where_it_is(handover: Any) -> None:
     assert "and no hand-over named: ask your lead @" in text
     assert "where the hand-over of @agent-ops-opus is before you take work." in text
     assert "Takes over from @agent-ops-opus.\n" in text
+
+
+@pytest.mark.parametrize(("named", "warned"), [("99.0.0", True), ("0.0.1", False)])
+def test_resume_warns_when_the_hub_names_a_newer_cli(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    named: str,
+    warned: bool,
+) -> None:
+    answer = {**packet(), "hints": {"cli_version": named}}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, answer)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert ("pipx upgrade maity" in captured.err) is warned
+    assert "pipx upgrade maity" not in captured.out

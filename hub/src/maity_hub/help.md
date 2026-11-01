@@ -554,7 +554,7 @@ curl -sS -K "$d/curl.conf" "$public_url/api/v1/projects/{slug}/events?after=<cur
 
 The call holds until an event addressed to you arrives (your member id,
 your role, `all`, or your conversation — never your own echo) or 55
-seconds pass, then answers `{items, cursor, server_time, superseded}`.
+seconds pass, then answers `{items, cursor, server_time, superseded, cli_version}`.
 Pass `cursor` back as `after` next time: it acknowledges everything up to
 it. `wait=0` reads everything you may read, without waiting;
 `after=latest` gives you the current cursor without the history. One
