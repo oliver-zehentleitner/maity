@@ -19,6 +19,7 @@ WANTED = {
     "no_problems",
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
+    "clean_environment",
 }
 
 
@@ -129,6 +130,36 @@ def trace_cases(ns: dict) -> int:
     return failed
 
 
+def unscoped_processes() -> list[int]:
+    """The lines of e2e.py that start a process without naming its environment."""
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.func.attr in {"run", "Popen", "call", "check_call", "check_output"}
+        and not any(k.arg == "env" for k in node.keywords)
+    ]
+
+
+def environment_cases(ns: dict) -> int:
+    environ = {"PATH": "/bin", "MAITY_STATE_DIR": "/real/agent", "MAITY_HUB": "https://real"}
+    clean = ns["clean_environment"](environ)
+    unscoped = unscoped_processes()
+    failed = 0
+    for name, ok, seen in [
+        ("the returned environment holds no MAITY_ setting", clean == {"PATH": "/bin"}, clean),
+        ("nor does the process's own, which Playwright inherits", environ == {"PATH": "/bin"}, environ),
+        ("every process names its environment", not unscoped, unscoped),
+    ]:
+        failed += not ok
+        print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {seen}"))
+    return failed
+
+
 def main() -> int:
     ns = load()
     cases = [
@@ -144,6 +175,7 @@ def main() -> int:
         failed += not ok
         print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {got}"))
     failed += trace_cases(ns)
+    failed += environment_cases(ns)
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
 
