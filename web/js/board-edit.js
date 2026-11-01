@@ -64,7 +64,19 @@ window.Maity = window.Maity || {};
     if (a === "holder") return holds(ctx, c);
     if (a === "reviewer") return M.trust.reviews(ctx);
     if (a === "tester") return M.trust.tests(ctx);
+    if (a === "reviewer_and_tester") return M.trust.reviews(ctx) || M.trust.tests(ctx);
     return isAdmin(ctx);
+  }
+
+  const twoSignatures = (ctx) => (ctx.project.policy || {}).done_authority === "reviewer_and_tester";
+
+  // The signatures (§6.4) this human may still give on a card in review: none
+  // once they signed either, since one member never fills both.
+  function signSlots(ctx, c) {
+    if (c.status !== "review" || !twoSignatures(ctx)) return [];
+    const a = c.approvals || {};
+    if ([a.review, a.test].some((m) => m && m.by === ctx.me.id)) return [];
+    return [["review", M.trust.reviews(ctx)], ["test", M.trust.tests(ctx)]].filter(([slot, may]) => may && !a[slot]).map(([slot]) => slot);
   }
 
   // The statuses this human may move the card to, as the hub would allow.
@@ -75,7 +87,9 @@ window.Maity = window.Maity || {};
     const out = [];
     if (editor && s === "proposed") out.push("open");
     if (editor && s === "open") out.push("proposed");
-    if (s === "review" && doneAuthority(ctx, c)) out.push("done", "in_progress");
+    // Under two signatures Done is a column only with one signature left to
+    // give: holding both, the caller has to say which, so only the menu offers it.
+    if (s === "review" && doneAuthority(ctx, c)) out.push(...(!twoSignatures(ctx) || signSlots(ctx, c).length === 1 ? ["done"] : []), "in_progress");
     if (s === "in_progress" && (ctx.project.policy || {}).done_authority === "holder" && holds(ctx, c)) out.push("done");
     if (isAdmin(ctx) || (s === "open" && c.created_by === ctx.me.id)) out.push("cancelled");
     return out;
@@ -167,12 +181,14 @@ window.Maity = window.Maity || {};
   // The status menu: the card's column, and the columns this human may move
   // it to; picking one moves it at once.
   function moveControl(ctx, c, move) {
-    const allowed = targets(ctx, c);
-    if (!allowed.length) return null;
+    const slots = signSlots(ctx, c);
+    const allowed = targets(ctx, c).filter((s) => !(s === "done" && slots.length));
+    if (!allowed.length && !slots.length) return null;
     const menu = M.menuButton({
       label: M.t("cards.move.label", { id: c.id, column: columnName(c.status) }),
       face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) })),
+      items: () => slots.map((slot) => ({ label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
+        .concat(allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
     });
     menu.button.setAttribute("data-focus", "move:" + c.id);
     menu.el.className = "menu-box card-move";
@@ -302,5 +318,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, said, COLUMNS, columnName };
+  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, signSlots, said, COLUMNS, columnName };
 })(window.Maity);

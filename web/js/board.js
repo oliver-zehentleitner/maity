@@ -244,6 +244,16 @@ window.Maity = window.Maity || {};
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
 
+  // The two signatures under reviewer_and_tester (§6.4), while the card waits for them.
+  function approvals(ctx, c) {
+    if (c.status !== "review" || (ctx.project.policy || {}).done_authority !== "reviewer_and_tester") return null;
+    const a = c.approvals || {};
+    const signed = (m) => ({ name: ctx.nameOf(m.by), ago: formatAgo(m.at), revision: m.revision });
+    return h("ul", { class: "card-approvals" },
+      h("li", null, a.review ? M.t("board.approvals.review.signed", signed(a.review)) : M.t("board.approvals.review.none")),
+      h("li", null, a.test ? M.t("board.approvals.test.signed", signed(a.test)) : M.t("board.approvals.test.none")));
+  }
+
   function report(ctx, c) {
     const r = c.report;
     if (!r) return null;
@@ -581,6 +591,7 @@ window.Maity = window.Maity || {};
       h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
         : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
+      approvals(ctx, c),
       // In the panel the row of controls comes right under the claim (the
       // designer's pass part 2): on a phone it was far down.
       inPanel ? controls : null,
@@ -696,9 +707,10 @@ window.Maity = window.Maity || {};
     // what it returns is called with the fresh cards for the words to say.
     async function write(label, done, call, focusKey, stale) {
       const fromPanel = !!(panel && panel.el.contains(document.activeElement));
+      let answer;
       status.busy(label + "…");
       try {
-        await call();
+        answer = await call();
       } catch (err) {
         const words = stale && stale(err);
         if (words) {
@@ -710,6 +722,7 @@ window.Maity = window.Maity || {};
         return false;
       }
       // Said once the board shows it: the words and the board never disagree.
+      if (typeof done === "function") done = done(answer);
       try {
         await reload(focusKey, fromPanel);
       } catch (err) {
@@ -722,8 +735,16 @@ window.Maity = window.Maity || {};
     }
 
     const cardPath = (c) => ctx.base + "/tasks/" + encodeURIComponent(c.id);
-    const move = (c, to, focusKey) => write("Moving", c.id + " is now " + to.replace("_", " ") + ".",
-      () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    const move = (c, to, focusKey, slot) => {
+      // Under two signatures (§6.4) done is a signature, and the card may stay in review.
+      const approve = slot || (to === "done" && E.signSlots(ctx, c)[0]);
+      if (approve) {
+        return write(M.t("board.sign.busy"), (card) => (card && card.status === "done" ? c.id + " is now done." : M.t("board.sign.saved", { id: c.id })),
+          () => M.api.patch(cardPath(c), { status: "done", approve }), focusKey || "move:" + c.id);
+      }
+      return write("Moving", c.id + " is now " + to.replace("_", " ") + ".",
+        () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    };
     // Within a column (§6.4): the order changes once the hub has answered,
     // never before; a neighbour gone or moved to another column meanwhile
     // re-reads the board.

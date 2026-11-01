@@ -1942,6 +1942,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: a member moves only its own cards; a reviewer has done authority");
   expect(JSON.stringify(T(Object.assign({}, mctx, { project: { policy: { done_authority: "holder" } } }), tc("in_progress", { claim: { holder: "hum-maintainer" } }))) === JSON.stringify(["done"]),
     "board: with holder authority the holder moves its card to done");
+  // Two signatures (§6.4): done is a signature; holding both, only the menu can say which; one member never fills both.
+  const SS = win.Maity.boardEdit.signSlots;
+  const twoCtx = (x) => Object.assign({}, bctx, { project: { policy: { done_authority: "reviewer_and_tester" } } }, x);
+  const signed = (by) => ({ by, at: "2026-11-01T10:00:00Z", revision: 1 });
+  expect(JSON.stringify(SS(twoCtx(), tc("review"))) === JSON.stringify(["review", "test"]) && JSON.stringify(T(twoCtx(), tc("review"))) === JSON.stringify(["in_progress", "cancelled"]),
+    "two signatures: an owner holds both and has to say which, so Done is no column to drop on");
+  const asTester = twoCtx({ trust: "member", role: "tester" });
+  expect(JSON.stringify(SS(asTester, tc("review"))) === JSON.stringify(["test"]) && JSON.stringify(T(asTester, tc("review"))) === JSON.stringify(["done", "in_progress"]),
+    "two signatures: a tester gives the test signature, by the menu or a drop");
+  expect(!SS(asTester, tc("review", { approvals: { review: null, test: signed("agt-a") } })).length && !T(asTester, tc("review", { approvals: { review: null, test: signed("agt-a") } })).includes("done"),
+    "two signatures: a place another member filled is not offered");
+  expect(!SS(twoCtx(), tc("review", { approvals: { review: signed("hum-maintainer"), test: null } })).length,
+    "two signatures: after signing one, the same member is offered no other");
+  expect(!SS(twoCtx(), tc("in_progress")).length && !SS(bctx, tc("review")).length, "two signatures: only on a card in review, only under this policy");
   const bWrites = [];
   const bPatch = win.Maity.api.patch, bPost = win.Maity.api.post;
   win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };

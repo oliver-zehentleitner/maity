@@ -249,6 +249,10 @@
     "one": "{count} new notification",
     "other": "{count} new notifications"
   },
+  "board.approvals.review.none": "Review: not signed yet",
+  "board.approvals.review.signed": "Review: signed by {name}, {ago}, on report revision {revision}",
+  "board.approvals.test.none": "Test: not signed yet",
+  "board.approvals.test.signed": "Test: signed by {name}, {ago}, on report revision {revision}",
   "board.assigned_to": "Assigned to {name}",
   "board.blocking.checklist_open": "checklist item {item} is open",
   "board.blocking.group_incomplete": "the group {tasks} does not ship complete",
@@ -300,6 +304,8 @@
   "board.report.pr_unknown": "PR unknown: {reason}",
   "board.save": "Save",
   "board.saving": "Saving…",
+  "board.sign.busy": "Signing",
+  "board.sign.saved": "{id}: signature saved. It goes to done with the other one.",
   "board.subtask_of": "Subtask of {card}",
   "board.subtasks.not_loaded": "{count} more not loaded on the board",
   "board.subtasks.words": "Subtasks · {open} of {total} open",
@@ -468,6 +474,8 @@
     "other": "Not done yet: its subtasks {subtasks} still open, and {deps} it depends on."
   },
   "cards.refused.unknown": "Not a known value.",
+  "cards.sign.review": "Sign the review",
+  "cards.sign.test": "Sign the test",
   "cards.watching": "Watching",
   "chat.instance.dormant": "dormant, only this address wakes it",
   "chat.instance.hint": "The whole team reads every message; this only chooses which instance is woken.",
