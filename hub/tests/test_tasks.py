@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import cards
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -307,6 +308,13 @@ def test_an_edge_patch_that_changes_nothing_says_nothing(
             select(t.event).where(t.event.c.kind == "task_updated", t.event.c.subject_id == a["id"])
         ).all()
     assert len(updates) == 1
+
+
+def test_needs_offers_the_roles_of_the_contract() -> None:
+    assert set(cards.NEEDS) == {
+        "coder", "reviewer", "tester", "designer", "ops", "writer",
+        "red-team", "blue-team", "purple-team",
+    }  # fmt: skip
 
 
 def test_needs_is_set_changed_shown_and_filtered_and_routes_nothing(
