@@ -325,7 +325,7 @@ one pragma.
 **Id:** 308ec265-2ca6-463a-9006-6d149c5b0b79
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** implementation session, 2026-10-21 (the join slice; a CI failure on MariaDB, reproduced locally under load)
 **Revisit when:** a transient conflict still reaches a client as 503, or a second replica changes how often they happen
 
