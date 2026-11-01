@@ -1101,6 +1101,10 @@ def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine)
         )
     with pytest.raises(RuntimeError, match="sign_in.second_factor is email"):
         downgrade(engine, _before(engine, revision))
+    # PostgreSQL and SQLite roll the whole run back; MariaDB cannot roll DDL back, so it stays
+    # at the refusing revision, and the recorded revision has to name the schema it has.
+    stays_at = revision if engine.dialect.name in ("mariadb", "mysql") else head_revision(engine)
+    assert current_revision(engine) == stays_at
     with engine.begin() as conn:
         conn.execute(t.instance_setting.delete())
     downgrade(engine, _before(engine, revision))
