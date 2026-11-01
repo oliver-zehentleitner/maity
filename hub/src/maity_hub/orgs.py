@@ -81,14 +81,15 @@ def lock(conn: Connection, org_id: str) -> Any:
 
 
 def find(conn: Connection, human_id: str, handle: str) -> tuple[Any, str]:
-    """The organisation `handle` names and the caller's role in it; `not_found` for a
-    handle that names none, and for one the caller is not a member of: the routes tell
+    """The organisation `handle` or an alias names (§6.24) and the caller's role in it;
+    `not_found` for a handle that names none, and for one the caller is not a member of: the
+    routes tell
     nobody which organisations exist (§6.26)."""
     row = conn.execute(
         select(t.org, t.org_member.c.role)
         .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
         .where(
-            t.org.c.handle == handle,
+            t.org.c.id == handles.org_id_of(conn, handle),
             t.org.c.deleted_at.is_(None),
             t.org_member.c.human_id == human_id,
         )
@@ -106,7 +107,7 @@ def view(conn: Connection, org: Any, role: str) -> dict[str, Any]:
         "handle": org.handle,
         "display_name": org.display_name,
         "avatar_url": avatars.urls(conn, [org.id])[org.id],
-        "aliases": [],
+        "aliases": handles.aliases(conn, [org.id])[org.id],
         "created_at": ts(org.created_at),
         "my_role": role,
         "members_create_projects": bool(org.members_create_projects),
@@ -340,12 +341,41 @@ def create(
     return org, "owner"
 
 
-def change_settings(conn: Connection, org: Any, fields: dict[str, Any]) -> Any:
-    """`display_name`, `members_create_projects`, `public_page`, as the owner sent them."""
+def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
+    """A new handle under every rule of §6.24; each project of the organisation says so in its
+    log and on its ticker (§6.26). The caller holds the organisation's lock."""
+    from maity_hub import moderation, project_names
+
+    if handle == org.handle:  # a no-op, so no rename for a hold to refuse
+        return
+    moderation.refuse_held(conn, "org", org.id, "suspend")
+    projects = conn.execute(
+        select(t.project.c.id).where(t.project.c.owner_org_id == org.id).order_by(t.project.c.id)
+    ).scalars()
+    old_names = {project: namespace.name_of(conn, project) for project in projects}
+    handles.rename(conn, org.id, None, handle)
+    for project, old in old_names.items():
+        own = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project,
+                t.membership.c.human_id == caller.human_id,
+                t.membership.c.active.is_(True),
+            )
+        ).scalar()
+        actor = caller.actor(own) if own is not None else None
+        by = caller.principal_id if own is not None else None
+        project_names.announce(conn, project, old, {"owner": handle}, actor, by)
+
+
+def change_settings(conn: Connection, org: Any, fields: dict[str, Any], caller: Any) -> Any:
+    """`handle`, `display_name`, `members_create_projects`, `public_page`, as the owner sent
+    them."""
     values: dict[str, Any] = {}
     nulled = {name: "invalid" for name, value in fields.items() if value is None}
     if nulled:  # a field that is sent is a value: `null` does not mean "leave it"
         raise invalid(nulled)
+    if "handle" in fields:
+        rename(conn, org, fields["handle"], caller)
     if "display_name" in fields:
         if not display_name_ok(fields["display_name"]):
             raise invalid({"display_name": "invalid"})

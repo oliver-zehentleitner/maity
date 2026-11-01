@@ -48,7 +48,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## G
 
 ## H
-- [handles.md](handles.md) — one alias table scoped by where handles are unique (all humans, one owner's profiles); a per-handle lock row for rename and creation; the rename limit counted in the database
+- [handles.md](handles.md) — one alias table scoped by where handles are unique (all humans, one owner's profiles); a per-handle lock row for rename and creation; the rename limit counted in the database; an organisation's alias in a column of its own, renamed through the one `handles.rename`
 
 ## I
 - [idempotency.md](idempotency.md) — an `Idempotency-Key` replays only the call it was first used for: method, route, path parameters and body hashed, the project by its id so an old name is the same call; a key stored before answers 409 for its remaining 24 hours

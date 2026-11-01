@@ -102,7 +102,7 @@ names a person was once known by, for anyone to take.
 **Evidence:** inferred
 **Source:** the merge of the alias card onto main's `handle_register` (organisations, §6.26), 2026-10-30; `docs/api.md` §6.24 ("a human's and an organisation's handle share the scope")
 **See:** handles.md#a-handle-given-up-becomes-a-row-in-one-alias-table-scoped-by-where-handles-are-unique — dd5b64e5-289d-4c8c-877e-8d246149bda7 — as of 2026-10-30
-**Revisit when:** an organisation can be renamed (`PATCH /orgs/{org}` with `handle`, §6.24; card `tsk-xbwj3ht47jsq`), or aliases move into the register
+**Revisit when:** aliases move into the register
 
 `handles.holder` for the humans' scope asks the register first (current handles of
 humans and organisations, deleted ones included), then `handle_alias`. A human's
@@ -114,7 +114,28 @@ the register's primary key is the second line of defence, not the first.
 
 **Reason:** the register was built as the one place where two principals cannot share
 a handle, on every engine; aliases had to join it without a second source of truth for
-current handles. Organisation renames are not built here, so no org alias exists yet.
+current handles. An organisation's rename moves its register row the same way (see the next entry).
 
 **Rejected alternative:** moving aliases into `handle_register` — its unique owner
 column allows one row per principal, and an alias is a second handle of one owner.
+
+## An organisation's alias has a column of its own, and a rename goes through the one `handles.rename`
+
+**Id:** 6f2a8c14-9e37-4d0b-a1c5-7b3e90d2f648
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.24, §6.26 ("Rename"); card `tsk-xbwj3ht47jsq`
+**See:** handles.md#the-humans-scope-is-the-handle-register-plus-the-alias-table-a-rename-moves-the-register-row — e25fcf0f-ce5a-40f7-a963-c78eb1d465a5 — as of 2026-11-01
+**Revisit when:** a fourth kind of id gets aliases, or a rename of an organisation must differ from a human's in more than its table
+
+`handle_alias` gains `org_id`, and `one_id` holds exactly one of the three columns. `handles.rename` takes the
+organisation's id with `owner_id` None, as it takes a human's: same format, lock order, limits, register move
+and alias rows, so the two cannot drift apart. `handles.org_id_of` is what `{org}`, `owner` in `POST /projects`
+and `namespace.resolve_owner` ask. A suspended organisation is refused only for a real rename; its own current
+handle is a no-op, and a no-op renames nothing for the hold to refuse.
+
+**Reason:** `human_id` has a foreign key to `human`, so an organisation's id cannot sit there, and §6.26 asks
+for every rule of §6.24 unchanged.
+
+**Rejected alternatives:** unknown; no other shape was weighed beyond the foreign key above.
