@@ -1203,7 +1203,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" ? "page" : null }, "All projects", all),
+      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" || ctx.scope === "agents" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -1257,6 +1257,8 @@ window.Maity = window.Maity || {};
       count: (c) => c.inbox || 0, said: (count) => M.t("all.page.inbox.count", { count }) },
     { scope: "chats", href: "/chats", label: () => M.t("all.page.chats"),
       count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
+    // One's own agent profiles (/agents): a human's page, and nothing counted on it.
+    { scope: "agents", href: "/agents", label: () => M.t("all.page.agents"), when: (ctx) => ctx.me.kind === "human", count: () => 0 },
   ];
   function allCount(page) {
     const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
@@ -1425,9 +1427,9 @@ window.Maity = window.Maity || {};
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label, tabCount(ctx, item.route))))
-        : ctx.scope === "all" || ctx.scope === "chats"
+        : ctx.scope === "all" || ctx.scope === "chats" || ctx.scope === "agents"
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
-            ALL_PAGES.map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+            ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.

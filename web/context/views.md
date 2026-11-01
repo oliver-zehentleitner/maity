@@ -2307,10 +2307,11 @@ The account keeps the human's own picture and points to this page; an
 agent's picture stays settable on its card on a project's Agents and in
 its Manage row on Members as well.
 
-Since 2026-10-31 the page opens with **Join an agent**: a project chosen
+Since 2026-10-31 the page has **Join an agent**: a project chosen
 (`?project=<owner>/<slug>`, which also opens the panel at once) and that
 project's join panel, the same component mounted with the project's
-context. The profiles below are a list like Members (picture, name and
+context; since 2026-11-01 it stays closed until asked for (1ac94340).
+The profiles below are a list like Members (picture, name and
 global handle, projects, active instances, presence). **Manage** opens
 under a row what the card held, and per membership the instances with
 their credentials and revocation, the part Members' Manage uses, read in
@@ -3925,6 +3926,44 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.
 
 **Add to a project** on Your agents compares the list in the page, with a project's full name and its aliases: the page does not know the owner's old handles, so a project allowed under one is missing there and stays offered in that project's own join panel. An `?allowed_in=` read per project was rejected: one request per project for a rare case, on a page that lists them all.
+
+## Add and Join are two buttons, the same on a project's Agents and on /agents, each opening its form
+
+**Id:** 1ac94340-cc4e-4d87-9ec0-c26fbdf57e96
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer on the card tsk-mzaf9w83emn6, 2026-11-01; the split of the two words proposed on the card and accepted by the coordinator
+**Revisit when:** a member's limit needs its own wording on the button, or profiles and joins merge into one form
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
+
+Both pages have **+ Add an agent** and **Join an agent** at their head, and
+a click opens the matching form, one at a time. Add makes a new profile. Join
+is the join panel, for this project on a project's Agents, with a project to
+choose on `/agents`. The section that stood open on `/agents` and the form
+under its list are gone. This narrows the earlier use of "add" for the join
+flow (1031c11b): on these two buttons add means a profile. A profile made on
+a project's Agents goes straight on to the join panel, chosen there, since
+it is in no project yet and would not show in that project's list.
+
+The join panel still opens at once in three cases: `/<owner>/<slug>/agents/join`,
+`/agents?project=`, and a project without an agent of one's own. A member
+without `members:admin` sees the same **Join an agent** instead of **+ Add my
+agent**; the limit beside it is unchanged.
+
+Members' **Join an agent** leads to the project's Agents with the panel open,
+no longer to `/agents`, and **All projects** has an **Agents** tab to `/agents`
+(tsk-8sdgr8fbrn5v), which keeps its tabs on that page.
+
+**Reason:** the maintainer wants the two pages as alike as possible, with the
+forms folded until asked for. Add already opened the join panel on the
+project's page, so a separate Join there needed Add to mean something else.
+
+**Rejected alternatives:**
+- Two buttons that both open the join panel on the project's page: the same
+  action twice.
+- Leaving the join section open on `/agents`: the maintainer asked for the form
+  to open on the click.
 
 ## A watch in the opened card: the toggle, and the updates read from one page
 
