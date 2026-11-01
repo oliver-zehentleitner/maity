@@ -48,7 +48,7 @@ probe shares on the same API host.
 
 **Id:** 96d70040-21c8-4c0f-9d75-0b7a5802ef4c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-22 (docs/api.md §1.1, §1.7, §11.2)
 **Revisit when:** another route needs to be cached by the browser, or another upload is added

@@ -4,7 +4,7 @@
 
 **Id:** 838c7e0a-0586-442b-874d-57d9c8328b73
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-23, delivered by the design agent; web/brand/BRAND.md
 **Revisit when:** the mark, the loader or the shape language changes, or the fonts proposed in BRAND.md are bundled

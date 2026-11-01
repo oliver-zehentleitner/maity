@@ -4,7 +4,7 @@
 
 **Id:** 3dacd29b-bd09-4757-80bb-7f3cfbd9af91
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
 **Revisit when:** a feature needs a database-specific capability (LISTEN/NOTIFY, JSON indexing) that cannot stay behind the abstraction

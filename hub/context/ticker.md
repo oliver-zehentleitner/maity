@@ -55,7 +55,7 @@ renamed request title shows as it is now.
 
 **Id:** 66053e8f-9e9b-447b-896d-be37f8007724
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §17.3 (contract sections, linked cards, the 300-file cap) and §17.4 (the probe, every 2 minutes, nothing older than the switch); the agreed second part of the hub card (tsk-0wtpcjkdhgq8), 2026-10-23; the implementation, 2026-10-23
 **Revisit when:** the webhook (part 3) makes the probe look sooner, or a forge other than GitHub is observed

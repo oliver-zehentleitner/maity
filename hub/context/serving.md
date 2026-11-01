@@ -45,7 +45,7 @@ reported where it was made instead of as a 404 on `/` later.
 
 **Id:** 2b3a388d-15e6-4b30-a566-aad5e5116838
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-21
 **Revisit when:** the hub authenticates every endpoint and serves TLS, or sits behind a documented reverse proxy
@@ -236,7 +236,7 @@ without a restart.
 
 **Id:** 261f1ce2-819b-4aac-ae4a-387bb83d0907
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.11 and the maintainer's decision of 2026-10-29 behind it (the contract owner's `context/routing.md`, root context); the way to serve it is the implementer's
 **Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships, or public pages (§16.9) arrive at `/<owner>/<slug>` and `/<handle>`: the shell sends `noindex` on every path of its own, and those pages are listed in the sitemap, so the shell must not claim them

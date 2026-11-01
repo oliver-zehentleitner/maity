@@ -37,7 +37,7 @@ order in `index.html` and one global namespace instead of imports.
 
 **Id:** ad2319c8-9158-483e-b180-ee88691c6b87
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's review of the dashboard pull request, 2026-10-21
 **Revisit when:** CI can run a real browser without adding a package manager to the repository, or the shim starts to need browser behaviour it does not have
