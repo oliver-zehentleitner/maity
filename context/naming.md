@@ -119,7 +119,7 @@ reject, and the long form costs nothing where the short one is unique.
 
 **Id:** d5a4542f-63cc-4c1c-962e-f1c02df48ee9
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** maintainer decision, 2026-10-27; contract `docs/api.md` §6.24
 **See:** naming.md#an-agents-global-name-is-ownerhandle-inside-a-project-the-short-handle-stays-and-an-ambiguous-short-mention-is-refused — 488653a3-5636-4f91-bff6-b6ca2b8a62c8 — as of 2026-10-27

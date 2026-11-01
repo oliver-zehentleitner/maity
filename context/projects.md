@@ -4,7 +4,7 @@
 
 **Id:** f55d74ac-1758-4318-8d81-e28dee965939
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
 **Revisit when:** the hub serves the change ticker's merge items (§17; the contract alone does not count): its merge items are then added to `reports`, de-duplicated by pull request number, not a replacement for the card reports; or the overview needs data no existing read has
@@ -115,7 +115,7 @@ not the rule set every agent loads, which stays a human's.
 
 **Id:** c436ef08-627d-46c9-b3c9-92b1b0fdf3e4
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** maintainer decision with the designer, 2026-10-25; contract in `docs/api.md` §6.20, §6.1
 **Revisit when:** public projects or join requests exist, or a badge variant needs more than counts
@@ -310,7 +310,7 @@ there for.
 
 **Id:** 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-25, in the project's chat, after the team rule of `process.md` was recorded the same day; contract in `docs/api.md` §6.23, §6.1, §5.2, §6.6, §8.2, §13, §18.1
 **Revisit when:** the probe can read a file at a pull request's head (then the hub can verify the referenced entry instead of trusting the reference), or a project needs a different reminder interval than 30 and 60 minutes, or a second memory provider needs a commitment of its own
@@ -406,7 +406,7 @@ hands out instructions and a path, and the settings stay in
 
 **Id:** 281820c9-2286-45c4-9389-603b7e8a3923
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
 **Revisit when:** organisations become namespace owners (they share the namespace of human handles); or the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6)

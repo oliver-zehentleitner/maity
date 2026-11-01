@@ -7,7 +7,7 @@ way they are.
 
 **Id:** 3d31dece-721f-4df2-85dc-40378b31d1df
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's ruling on the first part of the card, 2026-10-29 (an inbox record instead of a personal request, and mailed)
 **Revisit when:** a request can belong to no project, or the instance has more than one admin and they need to see who of them took a report
@@ -33,7 +33,7 @@ and target type, never the content.
 
 **Id:** 442bb50d-5a43-44f2-85c3-24a3fd39878f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.8 ("what they cannot read is `not_found`, exactly as a read would answer"); the implementation of the card; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29
 **Revisit when:** a further target becomes readable outside a membership (public profiles and pages, §16.9), or an owner outside a project reads a group chat along and should report from it
@@ -114,7 +114,7 @@ the record that a target was reported and how it was resolved.
 
 **Id:** f0b94c9e-f06a-40ba-bfa7-c12f6b4e2b3a
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's rulings on the second part of the card, 2026-10-29 (an account record instead of a personal request; a suspension mailed whatever the mode; an ordinary notice, no open matter)
 **Revisit when:** a request can belong to no project, or a suspended account gets a way to read its notices
@@ -174,7 +174,7 @@ members that the contract waives only for this one change.
 
 **Id:** aab2c1b8-0a27-4bcf-832d-4f34a389e3d8
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.8 ("a moderation hold"), §16.9; the coordinator asked for the `hide` part to be recorded, 2026-10-29
 **Revisit when:** public profiles or pages come (§16.9): `hide` must then switch those off as well, and their writes must check the hold

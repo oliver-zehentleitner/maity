@@ -148,7 +148,7 @@ would leak into the card view.
 
 **Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the card tsk-wq0mhep8mzec from the coordinator, 2026-10-28, after the live forge reads ran into GitHub's limit; the contract text in PR #500 (§11.4 "Rate limits": one budget per source, `probe_unavailable` with `details.retry_at` until the reset)
 **Revisit when:** the hub reads with more than one source per owner (a GitHub App installation, owner tokens), or GitHub changes its rate limit headers
@@ -246,7 +246,7 @@ stored. The step-up has to be in place before those grants land.
 
 **Id:** a91a5a3d-a29a-4c9e-9721-d01d89aeacd2
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 1)
 **Revisit when:** the owner's grants (§11.4: App installation, owner token) land and a read picks its source before it is made
@@ -305,7 +305,7 @@ stored hash does not already make, and the hub would need a key for it.
 
 **Id:** a5b07f08-306e-4f33-8643-8b59af50dd71
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 5a)
 **Revisit when:** organisations become namespace owners (§6.25), or one repository serves projects of several owners with different grants and that needs one shared read

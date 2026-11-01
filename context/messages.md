@@ -380,7 +380,7 @@ needs; the backlog does not.
 
 **Id:** 671a0ee8-e764-4a0e-9f80-f7ae3e6af861
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
 **Revisit when:** the hub reads repositories itself and could check a cite, or reviews move to the forge's own review API

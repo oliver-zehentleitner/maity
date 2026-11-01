@@ -4,7 +4,7 @@
 
 **Id:** 098ef90f-83b8-4b38-9c21-1e89c086b6db
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
 **Revisit when:** a second forge (GitLab) is needed, or the probe's token handling has to change
@@ -29,7 +29,7 @@ descriptions repeats the incident it is meant to prevent.
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
 **Revisit when:** a second forge kind comes, organisations become namespace owners (§6.25), or the App's own webhook replaces the per-project one

@@ -73,7 +73,7 @@ uses, and an allowlist of one cannot miss a scheme.
 
 **Id:** f6560be2-4153-4d19-adc7-6fdc8589991f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's request for a picture that differs per member, relayed by the coordinator, 2026-10-22; web PR #128, 2026-10-22
 **Revisit when:** avatars can be uploaded (docs/api.md #136) and an upload should replace the generated one everywhere, or a design asks for another pattern

@@ -137,7 +137,7 @@ night's merges deployed before the maintainer is back was stated.
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
@@ -201,7 +201,7 @@ run names.
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
 **Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
