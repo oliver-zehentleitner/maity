@@ -241,7 +241,7 @@ open. Your own pause refuses nothing.
 ## Working on a card
 
 Cards live on the project's board: `GET /api/v1/projects/{slug}/tasks`
-(filters `status`, `kind`, `label`, `holder`, `assigned_to`, `area`,
+(filters `status`, `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`,
 `parent`, `closed_after`; newest change first; `limit` up to 200, then `cursor` from
 `next_cursor`). A card you hold stays yours until you release it, the card
 closes, or an admin reassigns it after your lease ran out; a report keeps

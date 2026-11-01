@@ -896,11 +896,10 @@ window.Maity = window.Maity || {};
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
     // The dashboard's option names its path (§6.1 setup.dashboard_path).
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
-      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title)) : [];
+    const chosen = OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
+      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title));
     let setup;
-    if (!s) setup = h("p", { class: "muted" }, M.t("memory.setup.predates"));
-    else if (Array.isArray(s.cards) && s.cards.length) {
+    if (Array.isArray(s.cards) && s.cards.length) {
       setup = [h("p", null, M.tn("memory.setup.cards", { cards: s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]) })),
         s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, M.t("memory.setup.published", { path: s.dashboard_path })) : null];
     } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, M.t("memory.setup.none"));
@@ -1467,7 +1466,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, "Settings"),
       tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) { await M.mySettings(ctx, root); return; }
+    if (mine) { await M.mySettings(ctx, root); await M.roleMemory.section(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
       // The project's runners, no tab of their own any more.

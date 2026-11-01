@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, and_, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -31,6 +32,7 @@ from maity_hub import (
     moderation,
     namespace,
     paging,
+    project_roles,
     ranks,
     releases,
     seats,
@@ -109,6 +111,7 @@ class TaskCreate(Written):
     body: str | None = markdown(default=None)
     kind: str = "task"
     label: str | None = None
+    needs: str | None = None
     area: str | None = None
     status: str = "open"
     assigned_to: str | None = None
@@ -127,8 +130,11 @@ class TaskPatch(Written):
     title: str | None = title(default=None)
     body: str | None = markdown(default=None)
     label: str | None = None
+    needs: str | None = None
     area: str | None = None
     status: str | None = None
+    approve: Literal["review", "test"] | None = None  # §6.4, under `reviewer_and_tester`
+    approvals: Any = None  # the hub's alone
     depends_on: list[str] | None = Field(default=None, max_length=100)
     ships_with: list[str] | None = Field(default=None, max_length=100)
     parent: str | None = Field(default=None, max_length=40)
@@ -137,6 +143,11 @@ class TaskPatch(Written):
     assigned_to: str | None = None
     release: ReleasePatchIn | None = None
     contract: ContractPatchIn | None = None
+
+    @field_validator("approvals", mode="before")
+    @classmethod
+    def _approvals_read_only(cls, _value: Any) -> Any:
+        raise PydanticCustomError("read_only", "the hub sets the approvals")
 
 
 class ClaimIn(Strict):
@@ -505,9 +516,29 @@ def _check_area(area: str | None) -> None:
         raise invalid({"area": "invalid_path"})
 
 
+def _revision(card: Any) -> int | None:
+    revision: int | None = (card.report or {}).get("revision")
+    return revision
+
+
+def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+    """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
+    if not (card.status == "review" and body.status == "done"):
+        return None
+    if not cards.two_signatures(mine.project):
+        return None
+    return cards.sign(mine, card, body.approve, _revision(card))
+
+
 def _check_label(label: str | None) -> None:
     if label is not None and label not in cards.LABELS:
         raise invalid({"label": "unknown"})
+
+
+def _check_needs(project: Any, needs: str | None) -> None:
+    """The role a card is for (§6.4): it routes nothing, so it only has to be a role."""
+    if needs is not None and needs not in (*cards.NEEDS, *project_roles.names(project)):
+        raise invalid({"needs": "unknown"})
 
 
 def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any]:
@@ -606,6 +637,7 @@ def list_tasks(
     status: str = "all",
     kind: str | None = None,
     label: str | None = None,
+    needs: str | None = None,
     holder: str | None = None,
     assigned_to: str | None = None,
     area: str | None = None,
@@ -629,6 +661,7 @@ def list_tasks(
         for column, value in (
             (t.card.c.kind, kind),
             (t.card.c.label, label),
+            (t.card.c.needs, needs),
             (t.card.c.area, area),
             (t.card.c.parent, parent),
         ):
@@ -650,8 +683,9 @@ def list_tasks(
                 or_(t.card.c.closed_at.is_(None), t.card.c.closed_at > closed_after)
             )
         bound = paging.scope(
-            status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
-            area=area, parent=parent, closed_after=closed_after, order=order,
+            status=status, kind=kind, label=label, needs=needs, holder=holder,
+            assigned_to=assigned_to, area=area, parent=parent, closed_after=closed_after,
+            order=order,
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
@@ -757,6 +791,7 @@ CREATED = (
     "title",
     "body",
     "label",
+    "needs",
     "status",
     "area",
     "assigned_to",
@@ -814,6 +849,7 @@ def create_card(
     _check_label(body.label)
     _check_area(body.area)
     mine = _locked(conn, mine)
+    _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
     if imported_from is not None:
@@ -871,6 +907,7 @@ def create_card(
                     body=body.body,
                     mentions=found,
                     label=body.label,
+                    needs=body.needs,
                     status=status,
                     parent=body.parent,
                     area=body.area,
@@ -972,7 +1009,7 @@ def patch_task(
             _refuse_against_a_human(conn, mine, card)
         # A status-only move out of review is done authority's, whoever holds it (§6.4).
         review_move = (
-            given == {"status"}
+            given - {"approve"} == {"status"}
             and card.status == "review"
             and body.status in ("done", "in_progress")
         )
@@ -999,6 +1036,10 @@ def patch_task(
             and not (review_move and cards.has_done_authority(mine, card))
         ):
             raise forbidden("tasks:admin", "only the holder, the creator or an admin edits a card")
+        if "approve" in given and not (
+            review_move and body.status == "done" and cards.two_signatures(mine.project)
+        ):
+            raise invalid({"approve": "not_applicable"})
         values: dict[str, Any] = {}
         parent = body.parent if "parent" in given else card.parent
         wanted_status = body.status if body.status is not None else card.status
@@ -1038,6 +1079,9 @@ def patch_task(
         if "label" in given:
             _check_label(body.label)
             values["label"] = body.label
+        if "needs" in given:
+            _check_needs(mine.project, body.needs)
+            values["needs"] = body.needs
         if "area" in given:
             _check_area(body.area)
             values["area"] = body.area
@@ -1081,9 +1125,15 @@ def patch_task(
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            values["status"] = body.status
-            if body.status in cards.CLOSED:
-                values.update(_closing(card))
+            signed = _signatures(mine, card, body)
+            if signed is not None:
+                values["approvals"] = signed
+            if card.status == "review" and body.status == "in_progress":
+                values["approvals"] = None  # a signature covers the work it was given on (§6.4)
+            if signed is None or cards.signed_by_two(signed, _revision(card)):
+                values["status"] = body.status
+                if body.status in cards.CLOSED:
+                    values.update(_closing(card))
         previous_mentions = card.mentions or []
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
         edges_changed = depends_changed or bool(partners) or bool(related)
@@ -1900,6 +1950,8 @@ def report(
                 raise cards.invalid_transition(card.status, "review")
         closing = body.done and not already_done
         was_closed = card.status in cards.CLOSED
+        previous_report = card.report or {}
+        revision = (previous_report.get("revision") or 1) + 1 if card.report else 1
         if closing:
             # Refused as a whole, nothing stored: the agent reports again without done.
             if not cards.has_done_authority(mine, card):
@@ -1910,6 +1962,15 @@ def report(
             cards.refuse_same_team_review(mine, card)
             cards.refuse_open_dependencies(conn, card.id)
             _refuse_unready(conn, card, fg)
+        # Every report clears the signatures; under `reviewer_and_tester` a `done` fills at
+        # most the caller's own on the new revision and never closes (§6.4, §6.6). A caller
+        # holding both has no `approve` here to say which, so it fills neither.
+        signatures: dict[str, Any] | None = None
+        if closing and cards.two_signatures(mine.project):
+            closing = False
+            if not (mine.may("tasks:review") and mine.may("tasks:test")):
+                empty = SimpleNamespace(approvals=None)
+                signatures = cards.sign(mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {
@@ -1933,9 +1994,11 @@ def report(
             "observed": None,
             # A report without code is never probed: nothing to compare (§6.6).
             "mismatch": None if body.code else False,
+            "revision": revision,
         }
         values: dict[str, Any] = {
             "report": stored,
+            "approvals": signatures,
             # Every instance that ever reported the card: one that reports again does not
             # clear another's work for its own review (§6.18).
             "reported_instances": _reporters(card, mine),
@@ -1977,6 +2040,22 @@ def report(
         )
         if card.status != status_before:
             status_moved(conn, card, mine.project.state, caller.actor(mine.id))
+        if signatures is not None:
+            emit(
+                conn,
+                mine.project.id,
+                "task_updated",
+                audience(conn, card),
+                {
+                    "id": card.id,
+                    "fields": ["approvals"],
+                    "approvals": signatures,
+                    "history": [],
+                    "project_state": mine.project.state,
+                },
+                actor=caller.actor(mine.id),
+                subject=("task", card.id),
+            )
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
         if card.parent is not None and was_closed != (card.status in cards.CLOSED):
             _touch_parents(conn, mine, caller, {card.parent}, fg)

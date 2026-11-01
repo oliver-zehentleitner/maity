@@ -258,3 +258,22 @@ comparison would let the same issue be imported twice.
 
 **Rejected alternative:** the exact comparison the first version made:
 it let the same issue be imported twice through two spellings of its URL.
+
+## What the contract leaves open about the two signatures
+
+**Id:** f3fc14f2-3a61-4fc5-9b94-b7be0bbfa9d5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-g8ar5th7h6wj, building `approvals` from §6.4 and §6.6
+
+A place already filled keeps its signature when a second member of that role signs: the call answers 200 and changes
+nothing. A `report` with `done` by someone holding both `tasks:review` and `tasks:test` fills neither, since a report has
+no `approve` to say which. Open dependencies refuse the first signature too, not only the one that would close the card.
+The downgrade turns `tester` and `reviewer_and_tester` into `reviewer`, the nearest authority the older hub knows.
+
+**Reason:** each is the narrowest reading: nothing a member signed is replaced, nothing is signed that the caller did not
+name, a signature does not stand on a card that could not close, and a downgrade does not leave a project without anyone
+able to close a card.
+
+**Rejected alternatives:** unknown; these were the first reading, not chosen against others.
