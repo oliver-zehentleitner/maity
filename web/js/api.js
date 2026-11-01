@@ -35,6 +35,7 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  const mockRoleMemory = []; // §19.2, this tab's
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
@@ -1455,6 +1456,25 @@ window.Maity = window.Maity || {};
       mailPending = false;
       fixtureSignedIn = true;
       return { member: me().member, next: mailNext };
+    }],
+    // §19.2: a role's memory; an entry belongs to the role, a deleted one keeps its row without the text.
+    ["GET", /^\/projects\/([^/]+)\/memory$/, (m, body, path, query) => {
+      const role = query.get("role");
+      const items = mockRoleMemory.filter((e) => e.role === role && (query.get("deleted") === "true" || !e.deleted)).slice().reverse();
+      return { items, next_cursor: null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/memory$/, (m, body, path) => {
+      if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
+      const entry = { id: "mem-" + (mockRoleMemory.length + 1), store: "role", member_id: null, role: body.role, text: body.text, tags: body.tags || [],
+        by: { kind: "human", member_id: me().member.id, handle: me().member.handle }, confirmed_by: null, request_id: null, created_at: nowIso(), deleted: null };
+      mockRoleMemory.push(entry);
+      return entry;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/memory\/([^/]+)$/, (m, body, path) => {
+      const entry = mockRoleMemory.find((e) => e.id === m[2]);
+      if (!entry) fail(404, "not_found", "no such entry", path);
+      Object.assign(entry, { text: null, deleted: { by: { handle: me().member.handle }, reason: null, at: nowIso() } });
+      return entry;
     }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);

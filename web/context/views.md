@@ -4089,3 +4089,15 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 - Waiting for every project before drawing: the slowest export would hold up
   the page.
 
+
+## Role memory is a part of Mine, not a view
+
+**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+
+The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+
+**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.

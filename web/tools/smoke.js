@@ -7976,6 +7976,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
     "settings: settings/mine shows one's own settings, its tab marked, not the project's");
+  // Role memory (§19.2), on Mine: add, delete with a row left behind, any role for an admin, nothing to write for a guest.
+  {
+    const rmText = () => text(main.querySelector("section.role-memory"));
+    const rmForm = () => main.querySelector("form.role-memory-add");
+    expect(main.querySelector("section.role-memory") && rmText().includes("Nothing in this memory yet") && byId("role-memory-role"), "role memory: on Mine, empty, a role to choose for an admin");
+    rmForm().dispatch("submit"); await tick();
+    expect(rmText().includes("write the entry first"), "role memory: no text, no call");
+    byId("role-memory-text").value = "Rebase before the review"; byId("role-memory-tags").value = "git, review";
+    rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("Rebase before the review") && rmText().includes("git, review") && byId("role-memory-text").value === "", "role memory: an entry is added with its tags");
+    const rmRole = byId("role-memory-role").value;
+    byId("role-memory-role").value = rmRole === "tester" ? "coder" : "tester"; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(!rmText().includes("Rebase before the review"), "role memory: another role's memory is its own");
+    byId("role-memory-role").value = rmRole; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    const rmConfirm = win.confirm; win.confirm = () => true;
+    btn(main.querySelector("section.role-memory"), "Delete").click(); for (let k = 0; k < 4; k++) await tick();
+    win.confirm = rmConfirm;
+    expect(!rmText().includes("Rebase before the review"), "role memory: Delete takes the entry away");
+    byId("role-memory-deleted").checked = true; byId("role-memory-deleted").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("Deleted by") && !rmText().includes("Rebase before the review"), "role memory: its row says who, the text is gone");
+    byId("role-memory-deleted").checked = false;
+    const rmPost = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 409, p, "memory_full", {}));
+    byId("role-memory-text").value = "x"; rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("full at 64 KiB") && !rmText().includes("raw"), "role memory: full is said in words");
+    win.Maity.api.post = rmPost;
+    const rmDiv = document.createElement("div");
+    await win.Maity.roleMemory.section({ base: "/projects/maintainer/maity", role: "coder", trust: "guest", members: [] }, rmDiv);
+    expect(!rmDiv.querySelector("form.role-memory-add") && text(rmDiv).includes("As a guest you read"), "role memory: a guest writes nothing");
+  }
   const msForm = () => main.querySelector("form.my-settings");
   expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");
