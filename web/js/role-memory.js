@@ -15,8 +15,10 @@ window.Maity = window.Maity || {};
 
   function said(err) {
     if (err.code === "memory_full") return { message: M.t("rolememory.refused.full") };
-    if (err.details && err.details.fields && err.details.fields.text) return { message: M.t("rolememory.refused.text") };
-    if (err.details && err.details.fields && err.details.fields.tags) return { message: M.t("rolememory.refused.tags") };
+    // One bad tag comes back as tags.0, too many as tags (hub errors.py).
+    const fields = Object.keys((err.details && err.details.fields) || {});
+    if (fields.includes("text")) return { message: M.t("rolememory.refused.text") };
+    if (fields.some((k) => k === "tags" || k.startsWith("tags."))) return { message: M.t("rolememory.refused.tags") };
     return err;
   }
   const tagsOf = (value) => value.trim().split(/[\s,]+/).filter(Boolean);
@@ -97,11 +99,13 @@ window.Maity = window.Maity || {};
     if (writes && role) {
       const text = h("textarea", { id: "role-memory-text", rows: "3", required: true });
       const tags = h("input", { id: "role-memory-tags", autocomplete: "off" });
+      const add = h("button", { type: "submit", class: "primary" }, M.t("rolememory.add"));
       const form = h("form", { class: "role-memory-add", onsubmit: async (e) => {
         e.preventDefault();
         const said0 = text.value.trim();
         if (!said0) { status.fail(M.t("rolememory.not_done"), { message: M.t("rolememory.text_needed") }); return; }
         status.busy(M.t("rolememory.adding"));
+        add.disabled = true;
         try {
           const body = { store: "role", text: said0, tags: tagsOf(tags.value) };
           if (governs) body.role = role;
@@ -109,6 +113,8 @@ window.Maity = window.Maity || {};
         } catch (err) {
           status.fail(M.t("rolememory.not_done"), said(err));
           return;
+        } finally {
+          add.disabled = false;
         }
         text.value = "";
         tags.value = "";
@@ -117,7 +123,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "field" }, h("label", { for: "role-memory-text" }, M.t("rolememory.text")), text),
       h("div", { class: "field" }, h("label", { for: "role-memory-tags" }, M.t("rolememory.tags")), tags,
         h("p", { class: "hint" }, M.t("rolememory.tags.hint"))),
-      h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, M.t("rolememory.add"))));
+      h("div", { class: "actions" }, add));
       parts.push(form);
     } else if (!writes) {
       parts.push(h("p", { class: "hint" }, M.t("rolememory.guest")));

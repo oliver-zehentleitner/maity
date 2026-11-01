@@ -1464,8 +1464,10 @@ window.Maity = window.Maity || {};
       return { items, next_cursor: null };
     }],
     ["POST", /^\/projects\/([^/]+)\/memory$/, (m, body, path) => {
+      // Without `role`, the caller's own (§19.2).
+      const mineIn = (slug) => { const p = (me().projects || []).find((x) => x.slug === slug || x.full_name === slug || x.full_name.endsWith("/" + slug)); return p ? p.role : null; };
       if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
-      const entry = { id: "mem-" + (mockRoleMemory.length + 1), store: "role", member_id: null, role: body.role, text: body.text, tags: body.tags || [],
+      const entry = { id: "mem-" + (mockRoleMemory.length + 1), store: "role", member_id: null, role: body.role || mineIn(decodeURIComponent(m[1])), text: body.text, tags: body.tags || [],
         by: { kind: "human", member_id: me().member.id, handle: me().member.handle }, confirmed_by: null, request_id: null, created_at: nowIso(), deleted: null };
       mockRoleMemory.push(entry);
       return entry;
