@@ -25,7 +25,7 @@ WANTED = {
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
     "clean_environment",
-    "LOCK_PATH", "_machine_lock", "take_machine_lock",
+    "LOCK_PATH", "_machine_lock", "open_lock_file", "take_machine_lock",
 }
 
 
@@ -201,6 +201,18 @@ def lock_cases(ns: dict) -> int:
         cases.append(("the lock: a second hub of the same run takes it no further", ns["_machine_lock"] == first))
         os.close(first)
         ns["_machine_lock"] = None
+        # An existing file, possibly another user's, is opened without O_CREAT (fs.protected_regular).
+        flags = []
+        real_open = os.open
+        os.open = lambda p, f, *a: (flags.append(f), real_open(p, f, *a))[1]
+        try:
+            os.close(ns["open_lock_file"](path))
+            fresh = Path(tmp) / "fresh"
+            os.close(ns["open_lock_file"](fresh))
+        finally:
+            os.open = real_open
+        cases.append(("the lock: an existing file is opened without O_CREAT", not flags[0] & os.O_CREAT))
+        cases.append(("the lock: a new file is open to every user", fresh.stat().st_mode & 0o777 == 0o666))
     for name, ok in cases:
         print(("ok   " if ok else "FAIL ") + name)
     return sum(not ok for _, ok in cases)

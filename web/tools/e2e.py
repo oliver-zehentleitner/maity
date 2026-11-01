@@ -302,18 +302,29 @@ LOCK_PATH = Path("/tmp/maity-e2e.lock")
 _machine_lock = None
 
 
+def open_lock_file(path: Path) -> int:
+    """The lock file, whichever user came first. Never O_CREAT on a file that exists: in sticky
+    /tmp, fs.protected_regular refuses that for another user's file, whatever its mode."""
+    while True:
+        try:
+            return os.open(path, os.O_RDWR)
+        except FileNotFoundError:
+            pass
+        try:
+            descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            continue  # another run made it just now
+        os.fchmod(descriptor, 0o666)  # the mode above passes through the umask; holds no secret
+        return descriptor
+
+
 def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, pause: float = 1) -> None:
     """Hold the machine's e2e lock until this process ends, waiting for it as long as it takes.
     In start_hub, not main, so that a script of a few lines borrowing the hub waits too."""
     global _machine_lock
     if _machine_lock is not None:  # a run starts several hubs
         return
-    # 0o666, whichever user came first: the file holds no secret.
-    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
-    try:
-        os.fchmod(descriptor, 0o666)  # the mode above passes through the umask
-    except PermissionError:
-        pass  # another user's file, already open to all
+    descriptor = open_lock_file(path)
     told = 0.0
     while True:
         try:

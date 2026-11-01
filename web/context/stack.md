@@ -257,5 +257,5 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 
 **Rejected alternatives:** a PID file, which a crash leaves behind and which then needs checking; failing when the lock is taken, which hands the waiting back to whoever started the run; taking it in `main()`, which ad-hoc scripts never call.
 
-**Known limit:** a script that starts a browser without `start_hub` does not wait.
+**Known limits:** a script that starts a browser without `start_hub` does not wait. There is no timeout: a run that hangs, rather than dies, holds up every later one, and only the line each minute names its pid.
 
