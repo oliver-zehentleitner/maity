@@ -243,13 +243,13 @@ def test_the_medians_are_pooled_over_the_projects_and_the_counters_summed(
             now,
             claim_to_done=[(first_member, s, day) for s in (100, 200, 300)],
             reviews=[(first_member, day)] * 2,
-            prs=[({first_member}, day)],
+            public_prs=[({first_member}, day)],
         ),
         second_id: _window(
             now,
             claim_to_done=[(second_member, s, day) for s in (1000, 2000, 3000)],
             reviews=[(second_member, day)] * 3,
-            prs=[({second_member}, day)] * 2,
+            public_prs=[({second_member}, day)] * 2,
         ),
     }
     monkeypatch.setattr(swarm.CACHE, "get", lambda conn, project_id: windows[project_id])

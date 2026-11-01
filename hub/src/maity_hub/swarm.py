@@ -46,6 +46,8 @@ class Window:
     done: list[tuple[int | None, date]] = field(default_factory=list)  # (holder, day)
     reviews: list[tuple[int, date]] = field(default_factory=list)  # (reviewer or -1, day)
     prs: list[tuple[set[int], date]] = field(default_factory=list)  # (its members, day)
+    # The same, for a page without sign-in: only what a read found public (§11.4).
+    public_prs: list[tuple[set[int], date]] = field(default_factory=list)
     handovers: list[tuple[int, date]] = field(default_factory=list)  # (moved from, day)
     claim_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
     review_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
@@ -141,26 +143,46 @@ def pull_key(url: Any) -> str:
 
 
 def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found: Window) -> None:
-    """Pull requests by their first retained `link_observed` to `merged` (§6.13), deduplicated
-    by repository and number across links and cards; a merge seen before the hub kept those
-    events is not counted. Each member holding a card that links it gets it once."""
+    """Pull requests by their first retained merge: a ticker item (§17.2), which a report's pull
+    request gets, or a `link_observed` to `merged` (§6.13), deduplicated by repository and
+    number. Each member holding a card that names it gets it once. `public_prs` keeps what may
+    reach a page without sign-in (§11.4): an event that says its read was public, and of the
+    ticker only while the repository's last check found it public."""
+    open_repository = (
+        conn.execute(
+            select(t.project.c.repository_public).where(t.project.c.id == project_id)
+        ).scalar()
+        is True
+    )
     first: dict[str, datetime] = {}
+    first_public: dict[str, datetime] = {}
     cards: dict[str, set[str]] = {}
-    for at, payload in conn.execute(
-        select(t.event.c.at, t.event.c.payload)
-        .where(t.event.c.project_id == project_id, t.event.c.kind == "link_observed")
+    for at, kind, payload in conn.execute(
+        select(t.event.c.at, t.event.c.kind, t.event.c.payload)
+        .where(
+            t.event.c.project_id == project_id,
+            (t.event.c.kind == "link_observed")
+            | ((t.event.c.kind == "ticker") & (t.event.c.subject_type == "pull_request")),
+        )
         .order_by(t.event.c.seq)
     ):
         payload = payload or {}
-        # Only what a read found public reaches this page without sign-in (§11.4); an
-        # event from before the field was written counts as not public.
-        if payload.get("public") is not True:
-            continue
-        if (payload.get("new") or {}).get("state") != "merged":
-            continue
-        key = pull_key(payload.get("forge_url"))
+        if kind == "ticker":
+            merge = payload.get("merge")
+            if payload.get("type") != "merge" or not merge:
+                continue
+            url, tasks = payload.get("url"), payload.get("tasks") or []
+            public = merge.get("public") is True and open_repository
+        else:
+            if (payload.get("new") or {}).get("state") != "merged":
+                continue
+            url, tasks = payload.get("forge_url"), [payload.get("task_id")]
+            public = payload.get("public") is True
+        key = pull_key(url)
         first.setdefault(key, at)
-        cards.setdefault(key, set()).add(str(payload.get("task_id")))
+        if public:
+            first_public.setdefault(key, at)
+        cards.setdefault(key, set()).update(str(task) for task in tasks)
     holders = (
         dict(
             conn.execute(
@@ -172,10 +194,11 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
         if cards
         else {}
     )
-    for key, at in first.items():
-        if at >= since:
-            members = {m for m in (member(holders.get(c)) for c in cards[key]) if m}
-            found.prs.append((members, utc_day(at)))
+    for times, into in ((first, found.prs), (first_public, found.public_prs)):
+        for key, at in times.items():
+            if at >= since:
+                members = {m for m in (member(holders.get(c)) for c in cards[key]) if m}
+                into.append((members, utc_day(at)))
 
 
 def _durations(
@@ -238,18 +261,26 @@ def median_of(values: list[int]) -> int | None:
 
 
 def fold(
-    found: Window, members: dict[int, dict[str, Any]], *, days: int, include: Any
+    found: Window,
+    members: dict[int, dict[str, Any]],
+    *,
+    days: int,
+    include: Any,
+    public_only: bool = False,
 ) -> dict[str, Any]:
     """`members` and `totals` over the last `days` days of the window and the memberships
     `include` admits; a contribution without a member (no holder, a holder gone) counts in
-    the totals only when `include` admits `None`."""
+    the totals only when `include` admits `None`. `public_only` is the page without sign-in
+    (§11.4): only merges read as public, and `prs_merged` is None when there is none, since a
+    0 would claim that nothing was merged."""
     today = utc_day(found.as_of)
     shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
     cut = shown[0]
     reviews_known = found.reviews_since is not None
     done = [(m, d) for m, d in found.done if d >= cut]
     reviews = [(None if m == -1 else m) for m, d in found.reviews if d >= cut]
-    prs = [ms for ms, d in found.prs if d >= cut]
+    prs = [ms for ms, d in (found.public_prs if public_only else found.prs) if d >= cut]
+    prs_known = bool(prs) or not public_only
     handovers = [m for m, d in found.handovers if d >= cut]
     claim = [(m, s) for m, s, d in found.claim_to_done if d >= cut]
     review = [(m, s) for m, s, d in found.review_to_done if d >= cut]
@@ -261,8 +292,10 @@ def fold(
         return {
             "cards_done": sum(1 for m, _ in done if mine(m)),
             "reviews_given": sum(1 for m in reviews if mine(m)) if reviews_known else None,
-            "prs_merged": sum(
-                1 for ms in prs if (of in ms if of is not None else _any(ms, include))
+            "prs_merged": (
+                sum(1 for ms in prs if (of in ms if of is not None else _any(ms, include)))
+                if prs_known
+                else None
             ),
             "handovers": sum(1 for m in handovers if mine(m)),
             "claim_to_done_median_seconds": median_of([s for m, s in claim if mine(m)]),

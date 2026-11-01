@@ -364,8 +364,23 @@ prevent.
 
 `link_observed` carries `public`: whether the same GraphQL read reported
 the repository public (`isPrivate: false`), `false` when it did not say.
-The swarm page counts merged pull requests only from events with
+A page without sign-in counts merged pull requests only from events with
 `public: true`. Events written before the field existed do not count.
+
+Changed on 2026-11-01: the count read only `link_observed`, which only a
+card's forge link produces, while nearly all pull requests of a project
+working with `maity report` are on reports: 4 of 712 cards had links, and a
+public page showed 0 with over a thousand merges. It now also reads the ticker's
+merge items, which carry `merge.public` (read with the instance's token, per
+§11.4 no owner's grant), and only while the last check found the repository
+public. Members' Overview counts every merge. Old items carry no flag and stay
+uncounted on public pages; setting the flag on them is a data change that needs
+no code, should the maintainer allow it. With nothing flagged the page has no
+line: a 0 there says nothing was merged.
+
+The rule above that a grant's read counts when the read found the repository
+public contradicts §11.4 ("data read through an owner's grant never appears
+there"); the ticker follows the contract. Open for link events.
 
 **Reason:** the flag follows what the read itself saw, not which token
 made it. With the token as the test, a public repository read with an

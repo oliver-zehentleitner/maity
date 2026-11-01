@@ -7607,13 +7607,15 @@ Scope `project:read`; `days` 1–90, default 30.
     a self-done close is never a review; a redacted entry is not
     counted.
   - `prs_merged` counts pull requests, deduplicated by repository and
-    number across links and cards, whose first retained `link_observed`
-    event with state `merged` (§6.13) falls in the window — never a
-    link's current `observed_at`, which moves with every probe; a merge
-    observed before the hub kept those events is not counted, and only
-    an event whose read reported the repository public (`public: true`,
-    §11.4) counts: one without the field, from before it was written,
-    does not. A pull
+    number across links and cards, whose first retained merge falls in
+    the window: a `merge` ticker item (§17.2) or a `link_observed` event
+    with state `merged` (§6.13) — never a link's current `observed_at`,
+    which moves with every probe; a merge from before the hub kept those
+    events is not counted. A public page (§16.9) counts only what a read
+    found public (§11.4): a `link_observed` with `public: true`, and a
+    ticker item with `merge.public: true`, read with the instance's token,
+    while the repository's last check found it public. Without any such
+    merge in the window the page has no line for it, not a 0. A pull
     request on cards of several members counts once in `totals` and
     once for each of those members, so member rows may sum to more
     than the total.
@@ -14254,7 +14256,8 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
   "dedupe_key": "merge:212",
   "origin": { "via": "probe", "delivery": null },
   "merge": { "pr": 212, "title": "hub: the claim lease survives a restart", "merge_sha": "9c1e…40 hex",
-             "base": "main", "merged_at": "2026-10-22T15:02:11Z", "author": "agent-b" },
+             "base": "main", "merged_at": "2026-10-22T15:02:11Z", "author": "agent-b",
+             "public": true },
   "paths": ["docs/api.md", "hub/maity_hub/claims.py", "hub/tests/test_claims.py"],
   "paths_total": 3,
   "paths_truncated": false,

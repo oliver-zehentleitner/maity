@@ -159,7 +159,7 @@ def agent_statistics(
     }
     found = swarm.CACHE.get(conn, project_id)
     folded: dict[str, Any] = swarm.fold(
-        found, people, days=STAT_DAYS, include=lambda member: member in agents
+        found, people, days=STAT_DAYS, include=lambda member: member in agents, public_only=True
     )
     return {"totals": folded["totals"], "members": folded["members"]}
 
@@ -169,6 +169,13 @@ def _duration(seconds: int | None) -> str:
         return "-"
     hours, rest = divmod(seconds, 3600)
     return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
+
+
+def stat_labels(totals: dict[str, Any]) -> list[tuple[str, str]]:
+    """The counters a page shows: no line for merges it may not count (`swarm.fold`)."""
+    return [
+        (key, label) for key, label in STAT_LABELS if key != "prs_merged" or totals[key] is not None
+    ]
 
 
 def stat_value(key: str, value: Any) -> str:
@@ -191,17 +198,17 @@ def _per_day_html(series: list[dict[str, Any]]) -> str:
 
 def _statistics_html(stats: dict[str, Any]) -> str:
     totals = stats["totals"]
+    labels = stat_labels(totals)
     items = "".join(
-        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>"
-        for key, label in STAT_LABELS
+        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>" for key, label in labels
     )
     html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
     html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
     if stats["members"]:
-        head = "".join(f"<th>{escape(label)}</th>" for _, label in STAT_LABELS)
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in labels)
         body = "".join(
             f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
-            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in STAT_LABELS)
+            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in labels)
             + "</tr>"
             for row in stats["members"]
         )
