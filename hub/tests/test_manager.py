@@ -299,6 +299,25 @@ def test_a_reviewers_pause_and_edge_wait_for_a_humans_go(
     assert seat.status_code == 202, seat.text
 
 
+def test_a_managers_consented_line_change_never_makes_a_cross_owner_edge(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine
+) -> None:
+    """§2.3: a `line_change` stays inside the reach, so it has no cross-owner edge to ask
+    for (§6.2): another owner's agent is refused when it is asked and when the go comes."""
+    manager, first, stranger = team["manager"], team["first"], team["stranger"]
+    reviewer = factory.agent(migrated, _project_id(migrated), owner.id, "reviewer").agent_id
+    _set(migrated, reviewer, reports_to=manager.id)
+    _set(migrated, stranger, line_consent=True)  # in the reach, as a (b) member
+    _not_in_line(member(manager, reviewer, {"reports_to": stranger}))
+    waiting = member(manager, reviewer, {"reports_to": first.id})
+    assert waiting.status_code == 202, waiting.text
+    # The new boss comes to report to the other owner's agent before the go.
+    _set(migrated, first.id, reports_to=stranger)
+    go = owner.post(f"{PROJECT}/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    assert (go.status_code, go.json()["error"]["code"]) == (409, "not_in_line")
+    assert _row(migrated, reviewer).reports_to == _mid(migrated, manager.id)
+
+
 # --- pauses ---------------------------------------------------------------------------
 
 
