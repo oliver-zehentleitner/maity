@@ -58,6 +58,8 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
     ("invitation", "address_normalized"): True,
+    ("jour_fixe_moderator", "granted_by"): True,  # the human who granted the right
+    ("jour_fixe_series", "created_by"): True,
     ("legal_version", "created_by"): True,
     ("membership", "briefing_by"): True,
     ("membership", "isolated_by"): True,
@@ -112,6 +114,9 @@ DELETION_KEEPS = {
     "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
     "instance_setting": f"who changed an instance setting: {_RECORD}",
+    "jour_fixe_moderator": f"who granted a moderator right: {_RECORD}",
+    "jour_fixe_series": "an owner's series stays, disabled, until a human with `project:admin` "
+    f"deletes it (§20.1); who created a series: {_RECORD}",
     "legal_version": f"who wrote a version of a legal page: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
     "project": "an archived project of the namespace stays under its name (§2.9); "
@@ -163,6 +168,8 @@ EXPORT_LEAVES_OUT = {
     "instance_setting": _INSTANCE,
     "invitation": _UNLISTED,
     "join_link": _UNLISTED,
+    "jour_fixe_moderator": f"names a person only as who granted a right; {_UNLISTED}",
+    "jour_fixe_series": f"the project's jour fixe, not the caller's data; {_UNLISTED}",
     "mail_item_sent": _BOOKKEEPING,
     "mail_outbox": _BOOKKEEPING,
     "memory_entry": _UNLISTED,
