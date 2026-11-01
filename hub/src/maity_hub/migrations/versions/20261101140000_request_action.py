@@ -5,7 +5,7 @@ from it so that the call's transaction spends the go with a conditional update, 
 field would not give on every database; `action_used_seq` names the event of that call.
 
 Revision ID: 20261101140000_request_action
-Revises: 20261101050000_org_alias
+Revises: 20261101130000_card_approvals
 Create Date: 2026-11-01
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from maity_hub.types import JSON_VALUE, UtcDateTime
 
 revision: str = "20261101140000_request_action"
-down_revision = "20261101050000_org_alias"
+down_revision = "20261101130000_card_approvals"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
