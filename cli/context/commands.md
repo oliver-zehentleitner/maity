@@ -697,8 +697,7 @@ transfer reaches the CLI with the next resume and needs no new join. A
 join answer that already names `<owner>/<slug>` is taken as the full
 name. A state without a full name is an error that says to run
 `maity resume`. A value that is not `<handle>/<slug>` in shape is never
-used as a path. `client_outdated` (426) is printed as one line with the
-minimum version and the install line from the answer.
+used as a path.
 
 **Reason:** refreshing on resume follows from the contract: the full
 name is computed and follows renames. The resume packet is the hub's own

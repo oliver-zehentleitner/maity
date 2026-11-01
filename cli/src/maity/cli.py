@@ -4537,13 +4537,6 @@ def _explain(exc: Exception) -> str:
             f"pause is lifted; {STILL_WORKS} still work. Park what you hold, then "
             f"`maity wait`.{_reason_last(paused)}"
         )
-    if isinstance(exc, hub.HubError) and exc.code == "client_outdated":
-        minimum = onboarding.inline(exc.details.get("minimum") or "a newer version")
-        install = onboarding.inline(exc.details.get("install") or "pipx upgrade maity")
-        return (
-            f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
-            f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
-        )
     return str(exc)
 
 
