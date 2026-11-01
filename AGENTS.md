@@ -13,6 +13,9 @@ brought, not run — the hub never starts or owns an agent process.
 
 ## How we work
 
+- Follow the [evidence rules for tests and reports](CONTRIBUTING.md#evidence-for-tests-and-reports):
+  counter-check new tests, await command results, verify relayed states,
+  and include the counting rule in findings.
 - Work lands as a pull request against `main`; branches are named
   `<who>/<topic>`. Nothing is pushed to `main` directly after the initial
   scaffold.
