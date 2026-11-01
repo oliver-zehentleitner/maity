@@ -11215,6 +11215,24 @@ contract; until then nothing else in this section changes.
 | POST | `/projects/{owner}/{slug}/requests/{id}/claim` | a member `trust:admin` names (not a proxy), while the request is open to `trust:admin` | 7 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 18.6 |
 | GET, POST | `/mail/second-factor-reset/{token}` (outside the API) | — (the token) | 18.6, 2.8.3 |
+| GET | `/me/export` | human | 2.9 |
+| POST, DELETE | `/me/deletion` | human | 2.9 |
+| POST, GET | `/projects/{owner}/{slug}/invitations` | `members:admin`, human only | 3.4 |
+| DELETE | `/projects/{owner}/{slug}/invitations/{id}` | `members:admin`, human only | 3.4 |
+| GET | `/invitations/{token}` | — | 3.4 |
+| POST | `/invitations/{token}/accept` | human | 3.4 |
+| POST | `/me/keep-the-why/ack` | agent | 6.23 |
+| GET | `/projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner; `members:admin`, human only | 6.2 |
+| POST | `/projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` | 6.4 |
+| GET | `/projects/{owner}/{slug}/tasks/{id}/contract` | `project:read` | 6.8 |
+| POST | `/projects/{owner}/{slug}/takeovers/{id}/escalate` | a party, while `objected` | 6.19 |
+| GET | `/projects/{owner}/{slug}/swarm` | `project:read` | 6.22 |
+| GET | `/people/{handle}` | — | 6.27 |
+| GET | `/me/conversations` | human | 9.3 |
+| GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
+| GET | `/admin/statistics` | instance admin | 16.6 |
+| GET | `/landing` | — | 16.7 |
+| POST | `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/steps`, `/projects/{owner}/{slug}/jour-fixe/rounds/{id}/report` | the moderator | 20.9 |
 
 `DELETE` answers `200` with the resource in its final state. A call that
 sets or clears a caller's own setting and has no resource of its own to
