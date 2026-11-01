@@ -136,12 +136,17 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     limit = parse_limit(request)
     engine = engine_of(request)
 
-    def start() -> tuple[Membership, int, bool]:
+    served_param = request.query_params.get("for")
+
+    def start() -> tuple[Caller, Membership, int, bool]:
         with engine.begin() as conn:
-            mine = membership(conn, caller, slug)
+            reader = _reader(conn, caller, served_param, request, slug, waiting=wait > 0)
+            mine = membership(conn, reader, slug)
             mine.require("project:read")
+            # A runner supervises the bridge's session, not the agent it reads for (§15.11).
             supervised = (
                 caller.kind == "agent"
+                and reader.bridge is None
                 and conn.execute(
                     select(t.agent_session.c.supervisor).where(
                         t.agent_session.c.id == caller.session_id
@@ -153,17 +158,23 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
             else:
                 after = after_param
-                _acknowledge(conn, caller, after)
+                if reader.bridge is None:  # a bridge's read for an agent moves no cursor (§2.3)
+                    _acknowledge(conn, caller, after)
             not_listening.called(conn, caller.session_id)
-            return mine, after, supervised
+            return reader, mine, after, supervised
 
-    mine, after, supervised = await run_in_threadpool(start)
+    reader, mine, after, supervised = await run_in_threadpool(start)
+    carried = reader.bridge is not None
     if after_param == "latest" and wait == 0:
         # From now on, without the history; acknowledges nothing (§8.3).
         return answer([], after, superseded=False)
 
-    def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int]:
+    def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
+        """The events after `since` and the new cursor; None when a bridge's connection
+        ended or the bridge was isolated or removed since the call began (§2.3)."""
         with engine.begin() as conn:
+            if carried and not _still_carried(conn, reader):
+                return None
             row = mine.row
             if caller.kind == "agent":
                 # As of now, not as of the call's start: an isolation that committed since
@@ -178,28 +189,38 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                     since,
                     limit,
                     instance=mine.instance,
-                    credential_id=caller.credential_id,
+                    # The bridge's own credential is not the served agent's (dormancy, §6.17).
+                    credential_id=None if carried else caller.credential_id,
                     supervised=supervised,
+                    carried=carried,
                 )
             else:
                 rows, examined, _ = events.read(
                     conn, mine.project.id, row, mine.principal_id, since, limit
                 )
-            if caller.kind == "agent":  # a human's side is the conversation endpoint (§9)
+            # A human's side is the conversation endpoint (§9); a bridge reading for an agent
+            # delivers nothing to it (§2.3).
+            if caller.kind == "agent" and not carried:
                 events.mark_delivered(conn, rows, mine.principal_id)
             cursor = rows[-1].seq if rows else max(examined, since)
             return event_views(conn, rows, mine), cursor
 
     if wait == 0:
-        items, cursor = await run_in_threadpool(read, False, after)
-        return answer(items, cursor, superseded=False)
+        found = await run_in_threadpool(read, False, after)
+        if found is None:
+            return answer([], after, superseded=False)
+        return answer(*found, superseded=False)
 
+    key = caller.credential_id or f"session:{caller.human_session}"
     waiter = longpoll.Waiter(
-        key=caller.credential_id or f"session:{caller.human_session}",
+        # One wait per served agent beside the bridge's own: none supersedes another (§2.3).
+        key=f"{key}|for:{reader.agent_id}" if carried else key,
         project_id=mine.project.id,
         session_id=caller.session_id,
         loop=asyncio.get_running_loop(),
-        membership_id=caller.membership_id,
+        membership_id=reader.membership_id,
+        bridge_id=reader.bridge.bridge_id if reader.bridge else None,
+        bridge_membership_id=reader.bridge.membership_id if reader.bridge else None,
     )
     closed = await wakeups.opened(
         engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
@@ -216,7 +237,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
-            items, cursor = await run_in_threadpool(read, True, since)
+            found = await run_in_threadpool(read, True, since)
+            if found is None:
+                return answer([], since, superseded=False)
+            items, cursor = found
             if waiter.superseded:
                 return answer([], after, superseded=True)
             if items:
@@ -231,6 +255,47 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     finally:
         closed()
         longpoll.registry.leave(waiter)
+
+
+def _reader(
+    conn: Connection,
+    caller: Caller,
+    served: str | None,
+    request: Request,
+    slug: str,
+    waiting: bool,
+) -> Caller:
+    """Who reads: the caller, or with `for` the agent its bridge reads for, as its
+    `member:` token would (§2.3). `Maity-For` already made the caller that agent; a `for`
+    beside it must name the same one."""
+    if served is None:
+        return caller
+    if caller.bridge is not None:
+        if served != caller.agent_id:
+            raise invalid({"for": "not_maity_for"}, "for names another agent than Maity-For")
+        return caller
+    from maity_hub import bridges
+
+    return bridges.carry(conn, caller, served, request.url.path, slug, renew_leases=not waiting)
+
+
+def _still_carried(conn: Connection, reader: Caller) -> bool:
+    """The connection a bridge reads through is live and the bridge an active agent that is
+    not isolated, as of now: a long-poll outlives the check at its start (§2.3)."""
+    assert reader.bridge is not None
+    return (
+        conn.execute(
+            select(t.bridge.c.id)
+            .join(t.membership, t.membership.c.id == t.bridge.c.bridge)
+            .where(
+                t.bridge.c.id == reader.bridge.bridge_id,
+                t.bridge.c.live.is_(True),
+                t.membership.c.active.is_(True),
+                t.membership.c.isolated_since.is_(None),
+            )
+        ).first()
+        is not None
+    )
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
@@ -318,6 +383,14 @@ def post_message(
         audience = group_chats.audience(current)
     elif body.type == "chat":
         assert body.conversation_id is not None
+        if caller.bridge is not None:
+            # A bridge reads the direct conversation as an observer, on either route (§2.3).
+            raise ApiError(
+                403,
+                "forbidden",
+                "a bridge does not write in the direct conversation",
+                {"reason": "bridge_observer"},
+            )
         try:
             agent, human = chat_parties(conn, mine, body.conversation_id)
         except ApiError:

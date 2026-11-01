@@ -108,6 +108,30 @@ state built in, which the feed's 5-second interval needs. Only a
 documented local script — on this VM it could not run, so nobody would
 have seen the dashboard in a browser before the maintainer.
 
+## The browser test removes the caller's MAITY_* settings from its own environment
+
+**Id:** 798f7da4-9902-4fbe-8c24-d96762ec0224
+**Type:** incident
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-qxrsgcxc3n5g, 2026-11-01
+
+`web/tools/e2e.py` deletes every `MAITY_*` variable from `os.environ` at
+start, and every `subprocess` call in it still names its environment,
+which `web/tools/test_e2e_harness.py` checks.
+
+**Reason:** on 2026-11-01 a run started from an agent's shell inherited
+`MAITY_STATE_DIR` through the one `subprocess.Popen` that named no
+environment. Its CLI calls used the real credential and took over that
+agent's `maity wait` (exit 6). A test run must not be able to act on the
+real hub. Clearing the process's own environment also covers what the
+harness does not start by name, such as Playwright's driver and browser.
+
+**Rejected alternative:** only adding the missing `env=CLEAN_ENV`. It
+fixes this call, and leaves Playwright's children inheriting the
+settings.
+
 ## The browser test checks accessibility with axe-core from the npm tarball, pinned by its sha512 and read without npm
 
 **Id:** fedb8f92-42ff-4918-9840-5bfcc6c7c6cb

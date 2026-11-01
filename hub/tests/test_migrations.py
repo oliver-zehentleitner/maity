@@ -868,3 +868,150 @@ def test_a_human_with_the_meat_proxy_switch_on_gets_both_parts_by_0103(engine: E
         rows = conn.execute(text("SELECT id, meat_proxy FROM human")).all()
     switch = {r[0]: bool(r[1]) for r in rows}
     assert switch[on] is True and switch[off] is False
+
+
+def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
+    engine: Engine,
+) -> None:
+    """20261031190604 (§20.1, "From the single schedule"): a project with `policy.jour_fixe` gets
+    one series, `circle: all`, topic "How we work", its schedule, its rounds and `created_by`
+    the human of the last change; the admin agents get the right, at once when their owner set
+    the policy, else pending; a project with rounds but no policy gets a disabled series; one
+    `jour_fixe_series_changed` and one rules bump each. The downgrade puts the schedule back."""
+    from datetime import UTC, datetime
+
+    import sqlalchemy as sa
+    from sqlalchemy import text
+
+    from maity_hub import tables as t
+    from maity_hub.types import JSON_VALUE
+    from tests import factory
+
+    revision = "20261031190604_jour_fixe_series"
+    migrate(engine, _before(engine, revision))
+    scheduled = factory.project(engine, "scheduled")
+    by_hand = factory.project(engine, "byhand")
+    with engine.connect() as conn:
+        setter = conn.execute(text("SELECT id FROM human WHERE handle = 'maintainer'")).scalar_one()
+    other = factory.human(engine, "otter")
+    factory.membership(engine, scheduled, "owner", human_id=setter)
+    factory.membership(engine, scheduled, "owner", human_id=other)
+    own = factory.agent(engine, scheduled, setter, "admin", trust="admin", with_session=False)
+    foreign = factory.agent(engine, scheduled, other, "admin", trust="admin", with_session=False)
+    policy = {
+        "enabled": True,
+        "recurrence": {"freq": "daily"},
+        "time": "10:00",
+        "timezone": "UTC",
+        "moderator": "admin_agent",
+        "answer_window_minutes": 90,
+        "step_window_minutes": 120,
+        "report_window_hours": 12,
+    }
+    now = datetime.now(UTC)
+    project = sa.table("project", sa.column("id"), sa.column("jour_fixe", JSON_VALUE))
+    with engine.begin() as conn:
+        conn.execute(project.update().where(project.c.id == scheduled).values(jour_fixe=policy))
+        conn.execute(
+            t.event.insert().values(
+                project_id=scheduled,
+                kind="policy_changed",
+                at=now,
+                actor_human_id=setter,
+                audience=["all"],
+                payload={"old": {"jour_fixe": None}, "new": {"jour_fixe": policy}},
+                redacted=False,
+            )
+        )
+        for n, project_id in enumerate((scheduled, by_hand)):
+            conn.execute(
+                t.jour_fixe_round.insert().values(
+                    id=f"jfx-old{n}",
+                    project_id=project_id,
+                    status="reported",
+                    trigger="manual",
+                    mode="message",
+                    scheduled_for=now,
+                    steps=[],
+                    invited=[],
+                    absent=[],
+                    answers_received=0,
+                    posts=[],
+                    created_at=now,
+                )
+            )
+    migrate(engine)
+    with engine.connect() as conn:
+        series = {r.project_id: r for r in conn.execute(sa.select(t.jour_fixe_series)).all()}
+        assert series[scheduled].topic == "How we work" and series[scheduled].circle == "all"
+        assert series[scheduled].enabled is True and series[scheduled].created_by == setter
+        assert series[scheduled].config["answer_window_minutes"] == 90
+        assert series[by_hand].enabled is False and series[by_hand].created_by is None
+        rounds_of = dict(
+            conn.execute(sa.select(t.jour_fixe_round.c.id, t.jour_fixe_round.c.series_id)).all()
+        )
+        assert rounds_of == {"jfx-old0": series[scheduled].id, "jfx-old1": series[by_hand].id}
+        grants = {
+            r.membership_id: r.state
+            for r in conn.execute(
+                sa.select(t.jour_fixe_moderator).where(
+                    t.jour_fixe_moderator.c.series_id == series[scheduled].id
+                )
+            )
+        }
+        assert grants == {own.membership_id: "active", foreign.membership_id: "pending"}
+        changed = conn.execute(
+            sa.select(t.event.c.project_id, t.event.c.payload).where(
+                t.event.c.kind == "jour_fixe_series_changed"
+            )
+        ).all()
+        assert {r.project_id for r in changed} == {scheduled, by_hand}
+        assert all(r.payload["change"] == "created" and r.payload["by"] is None for r in changed)
+    downgrade(engine, _before(engine, revision))
+    with engine.connect() as conn:
+        restored = conn.execute(
+            sa.select(project.c.jour_fixe).where(project.c.id == scheduled)
+        ).scalar_one()
+    assert restored["time"] == "10:00" and restored["moderator"] == "admin_agent"
+
+
+def test_an_account_with_a_verified_or_disabled_address_counts_as_having_had_one(
+    engine: Engine,
+) -> None:
+    """20261031191500 (§2.8.8): the flag "ever verified" is set for `verified` and `disabled`
+    addresses at the upgrade, so no such account falls under "never had one"."""
+    from sqlalchemy import select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine, _before(engine, "20261031191500_mail_factor"))
+    humans = {
+        status: factory.human(engine, f"h-{status}")
+        for status in ("none", "pending", "verified", "disabled")
+    }
+    with engine.begin() as conn:
+        for status, human_id in humans.items():
+            conn.execute(
+                t.notification_settings.insert().values(
+                    human_id=human_id,
+                    preferences={},
+                    address_status=status,
+                    epoch=0,
+                    hard_failures=0,
+                    updated_at=clock.now(),
+                )
+            )
+    migrate(engine)
+    with engine.connect() as conn:
+        flags = {
+            row.address_status: row.address_ever_verified
+            for row in conn.execute(
+                select(
+                    t.notification_settings.c.address_status,
+                    t.notification_settings.c.address_ever_verified,
+                )
+            )
+        }
+    assert flags == {"none": False, "pending": False, "verified": True, "disabled": True}

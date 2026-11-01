@@ -263,15 +263,17 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             # A new instance (§6.17) starts at the project's head, not at 0: the handover
             # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
             cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
-        # A resume that omits `model` keeps the previous session's (§5.3).
+        # A resume that omits `model` keeps the previous session's (§5.3); so does one that omits
+        # `harness`, so that a switch across such a resume is still seen.
         model = body.model if body.model is not None or previous is None else previous.model
+        harness = body.harness if body.harness is not None or previous is None else previous.harness
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
                 id=session_id,
                 credential_id=caller.credential_id,
                 membership_id=mine.id,
-                harness=body.harness,
+                harness=harness,
                 harness_version=body.harness_version,
                 model=model,
                 client=body.client,
@@ -300,13 +302,11 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         session = {
             "id": session_id,
             "started_at": ts(now),
-            "harness": body.harness,
+            "harness": harness,
             "model": model,
             "client": body.client,
         }
-        actor = events.Actor(
-            mine.id, session_id, caller.credential_id, caller.via, body.harness, model
-        )
+        actor = events.Actor(mine.id, session_id, caller.credential_id, caller.via, harness, model)
         started = events.emit(
             conn,
             mine.project.id,
@@ -317,7 +317,7 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             subject=("session", session_id),
         )
         if previous is not None:
-            _announce_model_change(conn, mine, caller, previous, body.harness, model, session_id)
+            _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
         # The member's next resume clears its limit (§6.12); a returning agent is
         # announced before its packet is built.
         if mine.row.limit_until is not None:
@@ -570,7 +570,7 @@ def _packet(
         "hints": (
             {"duty": "supervised"}
             if body.supervisor is not None
-            else {"duty": "self", "wait_timeout": wait_timeout(body.harness)}
+            else {"duty": "self", "wait_timeout": wait_timeout(session["harness"])}
         ),
         "me": {
             "member_id": agent.id,

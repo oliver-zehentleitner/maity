@@ -424,6 +424,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
 .badge.member-isolated { color: var(--bad); }
+.availability-note { display: block; font-size: 0.85rem; color: var(--muted); }
+.availability-note > span { display: block; }
+.availability-limited { color: var(--text); }
 .badge.member-owner-outside { color: var(--muted); }
 .badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
@@ -580,8 +583,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 /* WCAG 2.2 target size: each row at least 24 px apart, the box itself 18 px. */
 .pair-projects .check { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text); }
 .pair-projects input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.project-private { display: grid; gap: 4px; }
 .outside-roles { border: 0; margin: 0; padding: 0; }
-.outside-roles .check { min-height: 28px; gap: 8px; }
+.outside-roles .check { min-height: 28px; }
 .outside-roles input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
@@ -882,6 +886,21 @@ tr.member-level-3 > th { padding-inline-start: 84px; }
 .project-form label { font-size: 0.85rem; color: var(--muted); }
 .project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
 .project-form button { justify-self: end; margin-top: 6px; }
+/* The jour fixe's forms (js/jour-fixe-act.js, js/jour-fixe-series.js) stack label over input as the project forms do. */
+.jfa-answer-form, .jfa-post-form, .jfa-statement form, .jfa-report-form form, .jfa-topic, .jf-series-form, .jfa-step {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
+.jfa-answer-form label, .jfa-post-form label, .jfa-statement label, .jfa-report-form label, .jf-series-form label, .jf-series-settings label, .jf-start label {
+  font-size: 0.85rem; color: var(--muted); }
+.jfa-answer-form label.check, .jf-series-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.jfa-answer-form button[type="submit"], .jfa-post-form button[type="submit"] { justify-self: end; }
+.jfa-topics, .jf-series-list, .jf-part-list, .jf-moderators-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.jfa-topic { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: none; }
+.jfa-triage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.jf-series { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.jf-series .actions, .jf-participation .jf-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.jf-series-block { margin: 12px 0; }
+.jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
+.jf-weekly[hidden], .jf-monthly[hidden], .jfs-owner[hidden] { display: none; }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--bad); }
 .field-error:empty { display: none; }
 /* The join's handle, free or taken while typed (js/join.js). */
@@ -924,7 +943,7 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .me-name { display: none; }
   .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
-  .actions > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
+  .actions > button, .jfa-answer-form > button, .jfa-post-form > button, .inline-form > button, .login > button, .join-form > button, .project-form > button,
   .compose > button, .compose-actions > button, .free-text > button, .briefing-form .row > button, .rows-form .row > button,
   .release-edit .row > button, .pause > button, .runner-actions > button, .runner-actions .rename { flex: 1 1 100%; justify-self: stretch; }
   .runner-actions .rename input { flex: 1 1 auto; min-width: 0; }
@@ -1443,6 +1462,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .agent-card-head h3 { margin: 0; }
 .agent-settings { margin-top: 8px; }
+.agent-allowed { margin-top: 12px; }
+.agent-allowed h4 { margin: 0; }
+.agent-allowed-parts { display: grid; gap: 6px; }
+.agent-allowed .check { min-height: 28px; }
+.agent-allowed input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .agent-new { margin-top: 20px; }
 /* A project's Agents: what belongs to the membership, under the card. */
 .agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }

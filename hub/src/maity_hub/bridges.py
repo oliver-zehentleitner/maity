@@ -17,13 +17,13 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, namespace, policy, proposals
+from maity_hub import clock, longpoll, namespace, policy, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.cross_owner import owner_of
 from maity_hub.errors import ApiError, invalid
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, on_commit
 from maity_hub.ids import new_id
 from maity_hub.views import member_view, principal_id, ts
 
@@ -241,6 +241,19 @@ def _owner_is_member(conn: Connection, project_id: str, human_id: str | None) ->
     return human_id is not None and _member(conn, project_id, human_id) is not None
 
 
+def _still_active(served: Any, bridge: Any) -> None:
+    """At the last `go`: both sides still members and neither isolated (§2.3); a side that
+    left is named as such, not as isolated."""
+    if served.active is None:
+        raise invalid({"member": "not_an_agent"}, "the served agent left the project")
+    if bridge.active is None:
+        raise invalid({"bridge": "not_a_member"}, "the bridge left the project")
+    if served.isolated_since is not None:
+        raise invalid({"member": "isolated"}, "the served agent is isolated")
+    if bridge.isolated_since is not None:
+        raise invalid({"bridge": "isolated"}, "the bridge is isolated")
+
+
 def check(
     conn: Connection,
     project: Any,
@@ -265,14 +278,7 @@ def check(
     if bridge.role_base == "proxy":
         raise invalid({"bridge": "role"}, "a proxy carries nobody's hands")
     if at_go:
-        if served.active is None:
-            raise invalid({"member": "not_an_agent"}, "the served agent left the project")
-        if bridge.active is None:
-            raise invalid({"bridge": "not_a_member"}, "the bridge left the project")
-        if served.isolated_since is not None:
-            raise invalid({"member": "isolated"}, "the served agent is isolated")
-        if bridge.isolated_since is not None:
-            raise invalid({"bridge": "isolated"}, "the bridge is isolated")
+        _still_active(served, bridge)
     b = t.bridge.c
     exists = conn.execute(
         select(b.id).where(b.served == served.id, b.bridge == bridge.id, b.live.is_(True))
@@ -403,6 +409,7 @@ def end(
         .where(t.bridge.c.id == row.id)
         .values(ended_at=clock.now(), ended_by=by, end_reason=reason, live=None)
     )
+    on_commit(conn, lambda: longpoll.registry.end_bridge(row.id))
     if actor is not None:
         announce(conn, row.project_id, _active(conn, (row.served, row.bridge)), actor)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
@@ -589,10 +596,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         ).first()
         if row is None:
             return  # ended meanwhile: the end withdrew the change
-        for member in (served, bridge):
-            if member.active is None or member.isolated_since is not None:
-                side = "member" if member is served else "bridge"
-                raise invalid({side: "isolated"}, "a side is no longer an active agent")
+        _still_active(served, bridge)
         limits(conn, project, served, owner_of(conn, bridge))
         set_purpose(conn, row, proposal["purpose"], actor)
         return
@@ -646,3 +650,95 @@ proposals.register(
         refusal="a human with members:admin answers for the project",
     ),
 )
+
+
+# --- calls for a served agent -----------------------------------------------------------
+
+
+def not_your_bridge() -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "the caller is no bridge of this agent",
+        {"reason": "not_your_bridge"},
+    )
+
+
+def carry(
+    conn: Connection,
+    caller: Caller,
+    value: str,
+    path: str,
+    slug: str | None,
+    renew_leases: bool = True,
+) -> Caller:
+    """A call with `Maity-For` (§2.3): made as the served agent, the bridge kept in
+    `caller.bridge`. Only on the routes of the connection's project; the connection must be
+    direct, so a bridge never chains; an isolated served agent is refused as its own
+    credentials would be. Decided before any route runs."""
+    from dataclasses import replace
+
+    from maity_hub.auth.caller import Bridged
+    from maity_hub.isolation import refusal
+
+    if caller.kind != "agent" or caller.bridge is not None:
+        raise not_your_bridge()
+    if slug is None or not path.startswith("/api/v1/projects/"):
+        raise invalid({"Maity-For": "route"}, "Maity-For is taken on project routes only")
+    m, b, a = t.membership.c, t.bridge.c, t.agent_profile.c
+    found = conn.execute(
+        select(t.membership, b.id.label("bridge_id"), a.owner_id.label("served_owner"))
+        .select_from(
+            t.bridge.join(t.membership, m.id == b.served).join(t.agent_profile, a.id == m.agent_id)
+        )
+        .where(
+            b.bridge == caller.membership_id,
+            b.project_id == caller.project_id,
+            b.live.is_(True),
+            m.agent_id == value.strip(),
+            m.active.is_(True),
+        )
+    ).first()
+    if found is None:
+        raise not_your_bridge()
+    if found.isolated_since is not None:
+        raise refusal(found)
+    if renew_leases:
+        _renew_carried(conn, found.id, caller.project_id)
+    assert caller.membership_id is not None and caller.agent_id is not None
+    # An instance id is per membership (§6.17): the served agent has none of its own here, so
+    # what it holds through the bridge is held without one, and `via` names the bridge's.
+    return replace(
+        caller,
+        agent_id=found.agent_id,
+        owner_id=found.served_owner,
+        membership_id=found.id,
+        instance=None,
+        bridge=Bridged(
+            membership_id=caller.membership_id,
+            agent_id=caller.agent_id,
+            instance=caller.instance,
+            bridge_id=found.bridge_id,
+        ),
+    )
+
+
+def _renew_carried(conn: Connection, served: int, project_id: str | None) -> None:
+    """A call through the bridge renews the leases of what the served agent holds through a
+    bridge, the claims without an instance (§6.5): the bridge's own call renewed only its
+    own. `claim_session_id` stays: a session belongs to the bridge's membership."""
+    from maity_hub.auth.caller import CLOSED_STATUSES
+    from maity_hub.availability import renewed_lease
+
+    lease = conn.execute(
+        select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
+    ).scalar_one()
+    conn.execute(
+        update(t.card)
+        .where(
+            t.card.c.claim_holder == served,
+            t.card.c.claim_instance.is_(None),
+            t.card.c.status.notin_(CLOSED_STATUSES),
+        )
+        .values(lease_until=renewed_lease(conn, served, clock.now(), lease))
+    )

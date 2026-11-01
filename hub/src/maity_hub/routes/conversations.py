@@ -184,12 +184,16 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "seq": row.seq,
             "conversation_id": row.conversation_id,
             "from": principal_id(conn, row.actor_membership),
-            "from_instance": instance_of.get(row.actor_credential_id or ""),
+            "from_instance": (
+                None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+            ),
             "to": payload.get("to"),
             "to_instance": payload.get("to_instance"),  # a direct chat's, as written (§9.1)
             "body": None if row.redacted else payload.get("body"),
             "sent_at": ts(row.at),
         }
+        if row.actor_bridge:  # carried by a bridge for the sender (§2.3)
+            view["via"] = row.actor_bridge
         if not group:  # several recipients: no read receipt is modelled (§9.2)
             view["delivered_at"] = ts(delivered.get(row.seq))
         view |= {
@@ -324,14 +328,7 @@ def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id:
     if caller.kind == "human":
         seen = _read_mark(conn, mine.id, agent_id)
     else:  # the agent's side is its event cursor
-        seen = (
-            conn.execute(
-                select(t.agent_session.c.acknowledged_seq).where(
-                    t.agent_session.c.id == caller.session_id
-                )
-            ).scalar()
-            or 0
-        )
+        seen = conversation_list.agent_cursor(conn, caller, mine.id)
     counted = select(func.count()).where(
         t.event.c.project_id == mine.project.id,
         t.event.c.kind == "message",
@@ -852,11 +849,13 @@ def read_messages(
                 ).all()
             )
             cursor = rows[-1].seq if rows else start
-            if group is None:
+            # A bridge reading for an agent delivers and marks nothing for it (§2.3).
+            carried = caller.bridge is not None
+            if group is None and not carried:
                 events.mark_delivered(conn, rows, mine.principal_id)
             # A direct chat's human party, a group chat's participant; never an observer.
             marks = found == "participant" if group is not None else mine.kind == "human"
-            if rows and marks:
+            if rows and marks and not carried:
                 remember_read(conn, mine.id, conversation_id, rows[-1].seq)
         earlier = None
         if rows:

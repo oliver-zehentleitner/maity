@@ -80,9 +80,16 @@ AXE_FAIL = {"serious", "critical"}
 # Light at desktop and phone width, then dark at desktop width.
 PASSES = ((1280, 900, "light"), (390, 844, "light"), (1280, 900, "dark"))
 
-# The caller's own MAITY_* settings (a state dir, a forge token) never reach
-# the throwaway hub or the scratch clones.
-CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("MAITY_")}
+
+def clean_environment(environ) -> dict:
+    """Drop the caller's own MAITY_* settings (a state dir, a forge token) from `environ` and
+    return what is left, so no process this run starts can act on the real hub."""
+    for name in [k for k in environ if k.startswith("MAITY_")]:
+        del environ[name]
+    return dict(environ)
+
+
+CLEAN_ENV = clean_environment(os.environ)
 
 
 class Run:
@@ -493,6 +500,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_role("button", name="Create project", exact=True).click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
+    expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
 def join_line(
@@ -750,6 +758,7 @@ def scenario(run: Run, page: Page) -> None:
     wait = subprocess.Popen(
         ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
+        env=CLEAN_ENV,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -913,6 +922,7 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    availability_step(run, page, alpha)
     agent_owners_step(run, page)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
@@ -2273,25 +2283,42 @@ def project_links_step(run: Run, page: Page) -> None:
 
 
 def jour_fixe_step(run: Run, page: Page) -> None:
-    """The jour fixe (docs/api.md §20): the series saved in Project settings against the
-    real hub, the view says the next slot, and a start by hand opens a round or says why
-    not (on this hub no admin agent may be present to moderate)."""
-    run.step("jour fixe: the series saved in Project settings, the next slot shown, a start by hand")
+    """The jour fixe (docs/api.md §20): a series kept in Project settings against the real hub,
+    the owner granted the right to moderate it, the view says its next slot and the member's part,
+    and a start by hand opens a round of that series or says why not."""
+    run.step("jour fixe: a series saved in Project settings, a moderator granted, a start by hand")
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
-    form = page.locator("form.jf-settings")
+    page.get_by_role("button", name="New series", exact=True).click()
+    form = page.locator("form.jf-series-form")
     expect(form).to_be_visible()
-    page.locator("#jf-enabled").check()
-    page.locator("#jf-time").fill("10:00")
-    page.locator("#jf-timezone").fill("Europe/Vienna")
-    page.locator("#jf-day-mon").check()
-    page.locator("#jf-reason").fill("e2e: a weekly look back")
-    form.get_by_role("button", name="Save the jour fixe", exact=True).click()
-    expect(page.locator("main")).to_contain_text("Jour fixe saved.")
-    expect(page.locator("ol.jf-order")).to_be_visible()
+    page.locator("#jfs-topic").fill("e2e: how we work")
+    page.locator("#jfs-enabled").check()
+    page.locator("#jfs-time").fill("10:00")
+    page.locator("#jfs-timezone").fill("Europe/Vienna")
+    page.locator("#jfs-day-mon").check()
+    page.locator("#jfs-reason").fill("e2e: a weekly look back")
+    form.get_by_role("button", name="Save the series", exact=True).click()
+    expect(page.locator("main")).to_contain_text("The series is saved.")
+    row = page.locator("li.jf-series", has_text="e2e: how we work")
+    expect(row).to_contain_text("Weekly on Monday at 10:00 (Europe/Vienna)")
+    # The owner grants the right to themselves: a keeper's own grant takes effect at once.
+    row.locator("select.jfs-grant-member").select_option(value=me["id"])
+    row.locator("input[id^=jfs-reason-]").fill("e2e: the owner moderates")
+    row.get_by_role("button", name="Grant", exact=True).click()
+    expect(row.locator("ul.jf-moderators-list li")).to_have_count(1)
     page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
-    expect(page.locator("main")).to_contain_text("Next round:")
-    page.locator("#jf-start-reason").fill("e2e: before the launch")
-    page.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
+    block = page.locator("section.jf-series-block", has_text="e2e: how we work")
+    expect(block).to_contain_text("Next round:")
+    # Opting out and back in, as the member's own part in the series: only where the hub names it
+    # (`opted_out` in the series, §20.2); a hub without those calls shows no switch.
+    if block.locator("li.jf-part .jf-optout").count():
+        block.locator("li.jf-part .jf-optout").first.click()
+        expect(block.locator("li.jf-part").first).to_contain_text("opted out")
+        block.locator("li.jf-part .jf-optout").first.click()
+        expect(block.locator("li.jf-part").first).to_contain_text("taking part")
+    block.locator("input[id^=jf-start-reason-]").fill("e2e: before the launch")
+    block.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
     opened = re.compile(r"/owner/e2e-alpha/jour-fixe/jfx-")
     expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
     if opened.search(page.url):
@@ -2301,9 +2328,8 @@ def jour_fixe_step(run: Run, page: Page) -> None:
         page.locator("form.jfa-answer-form").get_by_role("button", name="Send my answer", exact=True).click()
         expect(page.locator("section.jfa-answer")).to_contain_text("Your answer, by name.")
     else:
-        # The hub's refusal (409: nobody to moderate, too few present) is the expected answer here.
-        refused = "POST /api/v1/projects/owner/e2e-alpha/jour-fixe/rounds answered 409"
-        run.problems = [p for p in run.problems if p != refused]
+        # The hub's refusal (409: nobody to moderate, too few in the circle) is the expected answer here.
+        run.problems = [p for p in run.problems if not (p.startswith("POST /api/v1/projects/owner/e2e-alpha/jour-fixe/series/") and p.endswith("/rounds answered 409"))]
     run.shot(page, "jour-fixe")
     run.a11y(page, "jour fixe")
     no_problems(run, "jour fixe")
@@ -2603,6 +2629,20 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "memory provider")
 
 
+def availability_step(run: Run, page: Page, clone: Path) -> None:
+    """Outage and cover (docs/api.md §6.12) on the real hub: the agent declares a limit,
+    Members says until when and why, and the next resume clears it."""
+    run.step("members: an agent's declared limit shows until when and why")
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run.maity(clone, "limit", "--until", until, "--reason", "e2e quota")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    note = page.locator("table.members tr.member", has_text="E2E Agent").locator(".availability-note")
+    expect(note).to_contain_text("Away until")
+    expect(note).to_contain_text("(e2e quota)")
+    run.a11y(page, "members, an agent away")
+    run.maity(clone, "resume")
+
+
 def agent_owners_step(run: Run, page: Page) -> None:
     """Agents of owners who are not members (docs/api.md §6.1) on the real hub: the hub takes
     the setting and the roles, and the form then reads them back, no longer offering unset."""
@@ -2677,6 +2717,26 @@ def agents_page_step(run: Run, page: Page) -> None:
     expect(row).to_be_visible()
     row.get_by_role("button", name=re.compile(r"^Manage ")).click()
     expect(row.get_by_role("button", name=re.compile(r"^Manage "))).to_have_attribute("aria-expanded", "true")
+    inside = page.locator("tr.agent-manage").first
+    # Allowed projects (§6.3) on the real hub: a list saved, then any project again.
+    inside.locator("details.agent-settings summary").click()
+    allowed = inside.locator("form.agent-allowed")
+    allowed.get_by_label("Any project").uncheck()
+    allowed.get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    run.a11y(page, "agents page, allowed projects")
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
+    if not inside.locator("form.agent-allowed").is_visible():
+        inside.locator("details.agent-settings summary").click()
+    inside.locator("form.agent-allowed").get_by_label("Any project").check()
+    inside.locator("form.agent-allowed").get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
     inside = page.locator("tr.agent-manage").first
     expect(inside.locator(".agent-instances", has_text="Instances in E2E Alpha").first).to_be_visible()
     expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()

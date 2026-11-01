@@ -340,7 +340,10 @@ def complete_redemption(request: Request) -> JSONResponse:
                 "next": row.next or "/",
             }
         else:
-            answer = pending_answer(state)  # the second step is owed (§2.8.2)
+            # the second step is owed (§2.8.2)
+            answer = pending_answer(
+                state, second_factor.via(conn, settings_of(request), row.human_id)
+            )
     response = JSONResponse(answer)
     set_session_cookies(response, request, session_id, csrf, device)
     response.delete_cookie(

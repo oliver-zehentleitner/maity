@@ -3538,28 +3538,26 @@ the real PATCH, which saves on success. Moving the landing editor onto
 the shared part in the same change: its import also takes one page of
 several and redraws the section list, so it keeps its own for now.
 
-## The jour fixe is a tab of its own; its series and moderator order are in Project settings
+## The jour fixe is a tab of its own: its rounds and what each reader may do under one; its series are the next entry
 
 **Id:** 8310dfc9-6e1c-48ed-a069-4579214194da
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's card tsk-6h70epze0906 with the maintainer's request to have the jour fixe before the launch, 2026-10-31; docs/api.md §20 (the hub implements it), §16.11 (`/<owner>/<slug>/jour-fixe/<round id>`)
-**Revisit when:** a project may run more than one series, or an agent moderator's work (the statement, the report) is to be done in the dashboard
+**Revisit when:** an agent moderator's work (the statement, the report) is to be done in the dashboard
+**See:** views.md#the-jour-fixe-is-kept-per-series-in-project-settings-and-the-tab-groups-its-rounds-by-series — d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998 — as of 2026-10-31
 
 **Jour fixe** is a tab of the project. At `jour-fixe` it lists the
-rounds, the next slot and the open round, and offers a start by hand to
-trust owner and admin, the holders of `jour_fixe:start`. At
-`jour-fixe/<id>` it shows one round as a member reads it (§20.7): phase
-and deadline, moderator, the number of answers but never an answer,
+rounds, grouped by series (below). At `jour-fixe/<id>` it shows one
+round as a member reads it (§20.7): the series' topic, phase and
+deadline, moderator, the number of answers but never an answer,
 participants and the absent with their reason, the steps, the
 statement, the posts and the report with each proposal's triage. The
-series (`policy.jour_fixe`) is a form in Project settings, sent whole
-with a reason as the contract replaces it. Beside it is the moderator
-order, set or reset through `PUT …/jour-fixe/moderators`. Both are for a
-human with `project:admin`, as every policy field is. The order shown
-unchanged is never sent: saving the resolved order would freeze the
-default (by time online) as an explicit list.
+series themselves, their moderators and the start by hand are the next
+entry's: the contract made them several per project (§20.1), and that
+part of this entry, a single schedule in Project settings and a
+moderator order, ended with it.
 
 Under the round, each reader gets what they may do (`js/jour-fixe-act.js`):
 - **A participant** answers while the window is open: three texts, by name
@@ -3584,18 +3582,41 @@ decision is offered only where the project names its `rules_version`,
 so the basis never carries an invented one.
 
 **Reason:** a round is read by every member, so it belongs in the
-project's tabs. The series is a policy field and sits with the others.
-The contract keeps answers with their readers, so the round's page
-never shows one, only the count.
+project's tabs. The contract keeps answers with their readers, so the
+round's page never shows one, only the count.
 
 **Rejected alternatives:**
 - The rounds inside Project settings: members without `project:admin`
   read rounds too.
 - The anonymity limits in a link or a tooltip: §20.4 asks for them to be
   shown before an anonymous answer is sent, so they open with the choice.
-- Editing the series field by field: the contract replaces
-  `policy.jour_fixe` whole, so a partial form would reset the fields it
-  leaves out.
+- Editing the former single schedule field by field (it was replaced
+  whole, so a partial form would have reset what it left out): gone with
+  the single schedule, since a series is its own resource.
+
+## The jour fixe is kept per series in Project settings, and the tab groups its rounds by series
+
+**Id:** d6739fd7-d3d5-49ea-b6e3-2ee8f0d58998
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §20.1, §20.2, §20.7, §20.9 (contracts #934 and #936); the card tsk-39sjeqre25gw
+**See:** views.md#the-jour-fixe-is-a-tab-of-its-own-its-rounds-and-what-each-reader-may-do-under-one-its-series-are-the-next-entry — 8310dfc9-6e1c-48ed-a069-4579214194da — as of 2026-10-31
+**Revisit when:** the hub names the link targets of the two jour fixe inbox items (§18.1), the shape of `pending_moderators`, `own_agents` and the 202 body is fixed, or a series' keeper who is no project admin is to keep it from the dashboard
+
+**Project settings** has a section "Jour fixe series" for a human with `project:admin` (`js/jour-fixe-series.js`): the list of series with topic, circle, on or paused and the schedule as a sentence; one form for a new series and for editing one (topic, circle `owner`, `humans` or `all`, the circle owner among the human members, `enabled`, recurrence, time, timezone, the three windows, a reason). Circle and circle owner are fixed once created, so the form shows them disabled when editing. A hub refusal is shown at its field, the 10-series limit under the topic. Per series it lists the moderators and the grants waiting in `pending_moderators`, each with End, and a member selector with Grant; the grant's answer is not read from the status (201 takes effect, 202 waits) but the series is read again, which shows which of the two happened, and a pending entry says it waits for the agent owner's and a keeper's consent. An owner series of someone else shows an admin only the line "a private series of @owner" with its schedule and Delete, never its topic, moderators or rounds (§20.1).
+
+The **jour fixe tab** shows one block per series the reader may see: the topic as heading, circle and schedule, the next slot or that none is scheduled, the open round and its rounds, a "Start a round now" for the series' keepers and moderators that shows the hub's 409 reason in words (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`), and each member's own switches (§20.2, §18.1): opt out of the series and take part again, get the report or stop getting it, for oneself and for each of one's own agents (sent with `?member=`). Nothing is drawn for a series the reader may not see.
+
+**Reason:** moderating, the schedule and the circle belong to one series, and a project may have ten, so a settings form for one schedule cannot hold them; a list with one form is the smallest thing that creates, edits and deletes several. The tab is where keepers and moderators start rounds and where every member, not only an admin, opts out, so those parts sit in the series block and not in the settings. Re-reading the series after a grant is used because the status is not available to the page (`M.api` returns the body) and the contract leaves the 202 body unspecified.
+
+**Rejected alternatives:**
+- One form with a series selector: creating and deleting several items needs a list anyway.
+- Per-series moderators and the manual start in the settings only: the start is for moderators who are no admins, and the opt-out is every member's.
+- Reading the series from `GET …/series`: its shape is not given in the contract, so the tab reads them from `GET …/jour-fixe`; the fixture hub serves both.
+- A link for each of the two inbox items: §18.1 names no target type for them, so they fall back to the project inbox until the hub names one (`linkOf` in `notify.js` then needs a branch).
+
+**Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only.
 
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
@@ -3651,6 +3672,28 @@ provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
 
+## The Keep the Why personal settings are left out under no memory provider, and show no values
+
+**Id:** 2e30b22e-1cf1-4559-a77a-16f8237bb53b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-j8gwrdy9d5c2; docs/api.md §6.23 "The dashboard's part"; a review of the pull request
+
+Project settings offer `policy.keep_the_why_defaults` only while the
+memory provider is Keep the Why, and name the repository's
+`.keep-the-why` as the origin without showing its values.
+
+**Reason:** without the provider no agent is told about personal
+settings at all, so the choice would have no effect. The commitment form
+above it stays visible and disabled there because it explains why Keep the
+Why cannot be required, which this one has nothing to add to. The values
+are not shown because the hub does not read that file.
+
+**Rejected alternative:** a read-only view of the defaults with a link to
+edit them, which the card asked for: §6.23 asks only for the origin, and
+so it was dropped.
+
 ## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
 
 **Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
@@ -3699,3 +3742,17 @@ would overwrite another admin's change to a link it did not touch.
 The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page`, `state` and `moderation`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
+
+## The join panel reads all of a human's profiles and offers only those a project is allowed for
+
+**Id:** de22411f-43b5-4a4e-b21f-eb1b03b61fdb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.3; the card tsk-4sm441es9nwe
+
+The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the second list. A handle is taken among all of a human's profiles, whichever projects they may join, so the handle check keeps reading the first.
+
+**Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.
+
+**Add to a project** on Your agents compares the list in the page, with a project's full name and its aliases: the page does not know the owner's old handles, so a project allowed under one is missing there and stays offered in that project's own join panel. An `?allowed_in=` read per project was rejected: one request per project for a rare case, on a page that lists them all.

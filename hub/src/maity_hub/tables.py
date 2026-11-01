@@ -391,6 +391,12 @@ human_session = Table(
     Column("password_at", UtcDateTime),
     Column("second_factor_at", UtcDateTime),
     Column("second_factor", String(16)),
+    # The mail factor of a second-factor session (§2.8.8): the HMACs of the mailed token and
+    # code, which only this session's browser can use, and how many mails it was sent.
+    Column("mail_token_mac", String(HEX_SHA256)),
+    Column("mail_code_mac", String(HEX_SHA256)),
+    Column("mail_sent", Integer, nullable=False, server_default="0"),
+    Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
     **MYSQL_TABLE,
 )
@@ -603,12 +609,6 @@ project = Table(
     # The setup options chosen at creation and the ids of the cards made for them
     # (§6.21); NULL for a project that predates the field.
     Column("setup", JSON_VALUE),
-    # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
-    # its weekly interval counts from, and the last slot the hub handled.
-    Column("jour_fixe", JSON_VALUE),
-    Column("jour_fixe_moderators", JSON_VALUE),
-    Column("jour_fixe_anchor", UtcDateTime),
-    Column("jour_fixe_last_slot", UtcDateTime),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -1429,6 +1429,7 @@ card_history = Table(
     Column("at", UtcDateTime, nullable=False),
     _membership_ref("actor_membership"),
     Column("actor_session_id", String(ID)),
+    Column("actor_bridge", JSON_VALUE),  # as on `event` (§2.3)
     Column("field", String(32), nullable=False),
     # The link a `links` entry adds or removes: what a replayed add or a repeated
     # removal finds it by, even once the entry is redacted.
@@ -1568,11 +1569,74 @@ request = Table(
 
 # --- the jour fixe (§20) ---------------------------------------------------------------
 
+# A jour fixe series (§20.1): a topic, a circle, its schedule and windows as `config` (the
+# shape `jourfixe.schedule` reads), the day its weekly interval counts from and the last slot
+# the hub handled.
+jour_fixe_series = Table(
+    "jour_fixe_series",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("topic", String(300), nullable=False),
+    Column("circle", String(8), nullable=False),  # owner, humans, all
+    _ref("circle_owner", "human.id"),  # with `circle: owner` only
+    Column("enabled", Boolean, nullable=False),
+    Column("config", JSON_VALUE, nullable=False),
+    Column("anchor", UtcDateTime),
+    Column("last_slot", UtcDateTime),
+    Column("created_by", String(ID)),  # a human id, or null (the upgrade, §20.1)
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The right to moderate a series (§20.2): `active`, or `pending` until both the agent's owner
+# and a keeper said go; the consent requests filed for it and who already consented.
+jour_fixe_moderator = Table(
+    "jour_fixe_moderator",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("state", String(8), nullable=False),
+    Column("granted_by", String(ID)),  # the granting human's or member's id
+    Column("granted_at", UtcDateTime, nullable=False),
+    Column("owner_consent", Boolean, nullable=False),
+    Column("keeper_consent", Boolean, nullable=False),
+    Column("owner_request_id", String(ID)),
+    Column("keeper_request_id", String(ID)),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# A member who opted out of a series (§20.2): not invited, not woken, never its moderator.
+jour_fixe_opt_out = Table(
+    "jour_fixe_opt_out",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# Who receives a series' report besides the default (§20.2): a member on the list
+# (`receives: true`), or a keeper who took itself off (`receives: false`).
+jour_fixe_recipient = Table(
+    "jour_fixe_recipient",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("receives", Boolean, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 jour_fixe_round = Table(
     "jour_fixe_round",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
+    _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
     Column("mode", String(16), nullable=False),  # message, chat
@@ -1700,6 +1764,9 @@ event = Table(
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
+    # The bridge that made the call for `actor_membership` (§2.3): `{member_id, instance,
+    # bridge_id}`, kept as it was since a connection can end; no foreign key.
+    Column("actor_bridge", JSON_VALUE),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -2139,6 +2206,9 @@ notification_settings = Table(
     Column("address_normalized", String(254), unique=True),
     Column("address_status", String(16), nullable=False),  # none pending verified disabled
     Column("verified_at", UtcDateTime),
+    # Set at the first verification, never cleared: the account has had a verified address, so
+    # a lost one fails closed under `second_factor: email` instead of enrolling (§2.8.8).
+    Column("address_ever_verified", Boolean, nullable=False, server_default=false()),
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),

@@ -2020,23 +2020,19 @@ window.MAITY_FIXTURES = {
     "next_cursor": null
   },
   "maity/jour-fixe.json": {
-    "moderators": [
-      {
-        "handle": "agent-a",
-        "member_id": "agt-a"
-      }
-    ],
-    "next_at": "2026-11-03T09:00:00Z",
     "rounds": [
       {
+        "circle": "all",
         "id": "jfx-0002",
         "missed_slots": 0,
         "mode": "message",
         "opened_at": null,
         "project": "maintainer/maity",
         "scheduled_for": "2026-10-30T09:00:00Z",
+        "series_id": "jfs-0001",
         "skip_reason": "too_few",
         "status": "skipped",
+        "topic": "How we work: reviews, merges, the queue",
         "trigger": "schedule"
       },
       {
@@ -2050,6 +2046,7 @@ window.MAITY_FIXTURES = {
         ],
         "answers_close_at": "2026-10-27T11:00:01Z",
         "answers_received": 3,
+        "circle": "all",
         "config": {
           "answer_window_minutes": 120,
           "enabled": false,
@@ -2183,6 +2180,7 @@ window.MAITY_FIXTURES = {
         "report_due_at": "2026-10-28T01:40:00Z",
         "reported_at": "2026-10-27T15:02:00Z",
         "scheduled_for": "2026-10-27T09:00:00Z",
+        "series_id": "jfs-0001",
         "statement": {
           "by": "agt-a",
           "message_seq": 6120,
@@ -2241,7 +2239,84 @@ window.MAITY_FIXTURES = {
             "reason": null
           }
         ],
+        "topic": "How we work: reviews, merges, the queue",
         "trigger": "manual"
+      },
+      {
+        "circle": "owner",
+        "id": "jfx-0003",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/maity",
+        "scheduled_for": "2026-10-23T13:00:00Z",
+        "series_id": "jfs-0002",
+        "skip_reason": "no_moderator",
+        "status": "skipped",
+        "topic": "My agents: how the queue feels",
+        "trigger": "schedule"
+      }
+    ],
+    "series": [
+      {
+        "answer_window_minutes": 120,
+        "circle": "all",
+        "circle_owner": null,
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": true,
+        "id": "jfs-0001",
+        "moderators": [
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "agt-a"
+          }
+        ],
+        "next_at": "2026-11-03T09:00:00Z",
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "mon"
+          ]
+        },
+        "report_list": [
+          "agt-a"
+        ],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "09:00",
+        "timezone": "Europe/Vienna",
+        "topic": "How we work: reviews, merges, the queue"
+      },
+      {
+        "answer_window_minutes": 120,
+        "circle": "owner",
+        "circle_owner": "hum-maintainer",
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": false,
+        "id": "jfs-0002",
+        "moderators": [],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "fri"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "15:00",
+        "timezone": "Europe/Vienna",
+        "topic": "My agents: how the queue feels"
       }
     ]
   },
@@ -3016,6 +3091,7 @@ window.MAITY_FIXTURES = {
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
       "keep_the_why": "required",
+      "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,
@@ -5724,13 +5800,6 @@ window.MAITY_FIXTURES = {
     "next_cursor": null
   },
   "sample/jour-fixe.json": {
-    "moderators": [
-      {
-        "handle": "maintainer",
-        "member_id": "hum-maintainer"
-      }
-    ],
-    "next_at": null,
     "rounds": [
       {
         "absent": [],
@@ -5758,6 +5827,7 @@ window.MAITY_FIXTURES = {
         ],
         "answers_close_at": "2026-10-31T10:00:01Z",
         "answers_received": 2,
+        "circle": "all",
         "config": {},
         "conversation_id": null,
         "exchange_closed_at": null,
@@ -5799,6 +5869,7 @@ window.MAITY_FIXTURES = {
         "report_due_at": null,
         "reported_at": null,
         "scheduled_for": "2026-10-31T08:00:00Z",
+        "series_id": "jfs-s1",
         "statement": null,
         "status": "statement",
         "steps": [
@@ -5814,6 +5885,7 @@ window.MAITY_FIXTURES = {
             "reason": null
           }
         ],
+        "topic": "Shop: how we work",
         "trigger": "manual"
       },
       {
@@ -5833,6 +5905,7 @@ window.MAITY_FIXTURES = {
         ],
         "answers_close_at": "2026-10-28T10:00:01Z",
         "answers_received": 1,
+        "circle": "all",
         "config": {},
         "conversation_id": null,
         "exchange_closed_at": null,
@@ -5874,6 +5947,7 @@ window.MAITY_FIXTURES = {
         "report_due_at": null,
         "reported_at": null,
         "scheduled_for": "2026-10-28T08:00:00Z",
+        "series_id": "jfs-s1",
         "statement": {
           "by": "agt-s1",
           "message_seq": null,
@@ -5913,6 +5987,7 @@ window.MAITY_FIXTURES = {
             "reason": null
           }
         ],
+        "topic": "Shop: how we work",
         "trigger": "manual"
       },
       {
@@ -5932,6 +6007,7 @@ window.MAITY_FIXTURES = {
         ],
         "answers_close_at": "2026-10-25T10:00:01Z",
         "answers_received": 1,
+        "circle": "all",
         "config": {},
         "conversation_id": null,
         "exchange_closed_at": "2026-10-25T12:30:00Z",
@@ -5962,6 +6038,7 @@ window.MAITY_FIXTURES = {
         "report_due_at": "2026-10-26T00:30:00Z",
         "reported_at": null,
         "scheduled_for": "2026-10-25T08:00:00Z",
+        "series_id": "jfs-s1",
         "statement": {
           "by": "hum-maintainer",
           "message_seq": null,
@@ -6000,7 +6077,87 @@ window.MAITY_FIXTURES = {
             "reason": null
           }
         ],
+        "topic": "Shop: how we work",
         "trigger": "manual"
+      },
+      {
+        "circle": "owner",
+        "id": "jfx-s4",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/sample",
+        "scheduled_for": "2026-10-24T09:00:00Z",
+        "series_id": "jfs-s2",
+        "skip_reason": "no_moderator",
+        "status": "skipped",
+        "topic": "Anna's agents: the board",
+        "trigger": "schedule"
+      }
+    ],
+    "series": [
+      {
+        "answer_window_minutes": 120,
+        "circle": "all",
+        "circle_owner": null,
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": false,
+        "id": "jfs-s1",
+        "moderators": [
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "agt-s1"
+          }
+        ],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "wed"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "10:00",
+        "timezone": "Europe/Vienna",
+        "topic": "Shop: how we work"
+      },
+      {
+        "answer_window_minutes": 120,
+        "circle": "owner",
+        "circle_owner": "hum-anna",
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-anna",
+        "enabled": false,
+        "id": "jfs-s2",
+        "moderators": [],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "thu"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "11:00",
+        "timezone": "Europe/Vienna",
+        "topic": "Anna's agents: the board"
       }
     ]
   },

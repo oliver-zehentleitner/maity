@@ -94,8 +94,6 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
         "keep_the_why": "required",
         "keep_the_why_defaults": "adopt",
         "merged_closes": "notify",  # §6.6: a merge wakes the done authority
-        "jour_fixe": None,
-        "jour_fixe_moderators": None,
         "takeover_window_minutes": 60,
         "member_agents": "on",
         "member_agents_max": 3,

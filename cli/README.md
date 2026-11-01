@@ -213,8 +213,8 @@ line; `--no-resume` stores the credential and opens no session; and
 9. the next step
 
 The check-in block is display only: send the message yourself. The CLI
-never sends one automatically. Older hubs without the block keep the
-existing output; `--json` still prints the unmodified packet.
+never sends one automatically. A packet without the block prints
+nothing for it; `--json` still prints the unmodified packet.
 
 Almost every string in the packet was written by someone, and none of it
 may pass for the command's own output:
@@ -363,7 +363,12 @@ them in a `Setup waits` block after `Check in`, one line per card with
 its id and status, and who holds it when it is claimed. It is a hint:
 nothing is refused while it is shown.
 
-The resume shows a `Keep the Why` block there: either the time this
+In every project that uses Keep the Why, required or not, the resume
+shows a `Keep the Why` block before the briefing: how to load the skill,
+how to install it on a machine without it, where the project's settings
+file is, and where the personal settings come from if the project has
+no personal file on this machine yet. Where the commitment
+is required the block goes on with either the time this
 instance confirmed, or the request to confirm with
 `maity ack keep-the-why` by the deadline, 30 minutes after the
 instance's first resume. At the deadline the hub sends one reminder,
@@ -400,9 +405,7 @@ dropped connection) succeeds and says so.
 `…` stands for the project's routes, `/api/v1/projects/<owner>/<slug>`
 (§6.25). The CLI keeps the project's `full_name` (`oliver/maity`) in its
 state and takes it anew from every `maity resume`, so a renamed or
-transferred project needs no new join. A hub that
-needs a newer CLI answers `client_outdated` (426), and the CLI prints the
-minimum version and the upgrade line from the answer.
+transferred project needs no new join.
 
 | Command | Call (`docs/api.md`) |
 |---|---|
