@@ -88,6 +88,29 @@ def test_a_merge_on_a_card_in_review_wakes_the_done_authority_once(
     assert len(_events(migrated, "task_merged")) == 1
 
 
+def test_a_sweep_sees_the_merge_of_a_report_first_observed_open(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    github.pull(7)
+    _, card_id = _reported(owner, make_client)
+    probe.sweep(migrated, READER)
+    assert _card(owner, card_id)["report"]["observed"]["pr_state"] == "open"
+    assert _events(migrated, "task_merged") == []
+    github.pull(7, merged=True)
+    probe.sweep(migrated, READER)
+    assert _card(owner, card_id)["report"]["observed"]["pr_state"] == "merged"
+    assert len(_events(migrated, "task_merged")) == 1
+    reads = len(github.calls)
+    probe.sweep(migrated, READER)  # a merged report has nothing more to say
+    assert [c for c in github.calls[reads:] if "/pulls/7" in c] == []
+
+
 def test_auto_under_holder_closes_the_card_itself(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

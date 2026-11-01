@@ -13,9 +13,9 @@
 A report is stored and answered without touching the forge; its card id
 then goes onto the queue of one daemon thread per hub process, which reads
 the branch and the pull request and fills `report.observed`. The same
-thread sweeps every five minutes: reports still without an observation on
-open cards of any age and on cards closed within a day, and the open
-release of every observable project. A round ends at the first read the
+thread sweeps every five minutes: reports without an observation or whose
+pull request was last seen open, on open cards of any age and on cards
+closed within a day, and the open release of every observable project. A round ends at the first read the
 forge does not answer, and between two reads when the hub stops. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
@@ -34,6 +34,34 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
   database access would have to leave the loop again.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
+
+## A sweep reads a report again while its pull request was last seen open
+
+**Id:** 9092661c-3553-4e0f-81d1-fa521fa05581
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-bex2nzwmceh8, 2026-11-01
+**Revisit when:** a verified `pull_request` delivery refreshes the report itself, or the forge budget (§11) cannot carry these reads
+
+Until 2026-11-01 a sweep read only reports without an observation, so a
+report first seen with its pull request open stayed `open` after the
+merge: `task_merged` and `merged_closes` (§6.6) never fired for it, and
+`maity report` refused a follow-up pull request on the card because the
+last one looked open. The tests called `observe_report` directly on a merged pull
+request, so none noticed. A sweep now also reads a report last seen open.
+
+**Reason:** the contract's "A merge closes the loop" needs someone to look
+again, and the sweep is the only reader that runs on its own.
+
+**Consequence:** two forge reads per sweep for each such report, answered
+from the observation while it is under 60 s old; they end with the merge, or
+a day after the card closes. Open cards keep being read at any age.
+
+**Rejected alternative:** refreshing from the merge ticker alone: it sees
+only merges into the default branch, and a pull request closed unmerged or
+merged into another base would stay open on its card. Alternatives beyond
+that: unknown.
 
 ## A change is detected where the observation is written, by whichever read sees it first
 

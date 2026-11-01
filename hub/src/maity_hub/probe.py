@@ -315,6 +315,15 @@ def _core(report: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in report.items() if k not in ("observed", "mismatch")}
 
 
+def _still_to_observe(report: dict[str, Any]) -> bool:
+    """A report a sweep reads: never observed, or its pull request last seen open, since a merge
+    only shows when someone looks again (§6.6). A merged or closed one has nothing more to say."""
+    if report.get("code") is False:
+        return False
+    observed = report.get("observed")
+    return observed is None or observed.get("pr_state") == "open"
+
+
 def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
     observed = dict(report.get("observed") or {})
     observed.pop("observed_at", None)
@@ -422,9 +431,7 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
         (observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
-        if card.project_id in observable
-        and card.report.get("observed") is None
-        and card.report.get("code") is not False
+        if card.project_id in observable and _still_to_observe(card.report)
     ]
     order = _rotated(sorted(observable), "sweep")
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
