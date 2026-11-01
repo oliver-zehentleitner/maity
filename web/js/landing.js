@@ -574,8 +574,8 @@ window.Maity = window.Maity || {};
         const target = lang || "en";
         if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
         const before = { draft, lang };
-        // Variants and campaigns as in the whole site's import: a value of the wrong kind refuses, never the draft's in its place.
-        const wrongKind = whole && (("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
+        // Footer, variants and campaigns as in the whole site's import: a value of the wrong kind refuses, never the draft's in its place.
+        const wrongKind = whole && (("footer" in data && !isObject(data.footer)) || ("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
         let next;
         if (whole) {
           // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).

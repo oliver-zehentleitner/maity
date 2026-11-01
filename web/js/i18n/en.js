@@ -1436,7 +1436,7 @@ window.MAITY_I18N["en"] = {
   "landing.json.refused": "Loaded into the editor, but the hub refuses parts of it: ",
   "landing.json.shape": "neither the landing page's body (with pages) nor one page (with sections)",
   "landing.json.title": "Import or export JSON",
-  "landing.json.wrong_kind": "variants must be an object and campaigns a list",
+  "landing.json.wrong_kind": "the footer and variants must be objects and campaigns a list",
   "landing.save.step_up": "Saving the landing page",
   "landing.variant.add": "Add the variant",
   "landing.variant.bad_slug": "Not a free slug: lowercase letters, digits and dashes, at most 40, no dash at either end, not default, not taken.",

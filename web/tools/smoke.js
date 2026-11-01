@@ -3296,6 +3296,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(cpPanel()).includes("No updates on this card yet"), "card watch: none at the end of the list");
   cpWatch().click(); await cpSettle();
   win.Maity.api.get = cpWatchGet;
+  // A card outside the board's window (closed long ago): in no list, read by its id; what the hub answers still reaches its panel.
+  const cpOldHref = cpLink.getAttribute("href").replace("tsk-0001", "tsk-0900");
+  const cpOld = Object.assign({}, await cpWatchGet("/projects/maintainer/maity/tasks/tsk-0001"), { id: "tsk-0900", title: "Closed long ago", status: "done", watching: false });
+  const cpOldPut = win.Maity.api.put;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/tasks/tsk-0900" ? Promise.resolve(cpOld) : cpWatchGet(p));
+  win.Maity.api.put = (p) => (p.endsWith("/tasks/tsk-0900/watch") ? Promise.resolve(Object.assign({}, cpOld, { watching: true })) : cpOldPut(p));
+  await go(cpOldHref); await cpSettle();
+  const cpOldCardIn = () => cpPanel().querySelector(".card-panel-card article.card");
+  expect(cpPanel() && text(cpPanel().querySelector(".card-id")) === "tsk-0900" && cpOldCardIn() && !cpOldCardIn().querySelector(".card-watching")
+    && !main.querySelector(".columns").querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-0900"),
+    "card panel: a card outside the board's window opens by its id, in no column");
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watching" && cpOldCardIn() && cpOldCardIn().querySelector(".card-watching"),
+    "card watch: the panel of a card outside the board's window shows the hub's answer");
+  win.Maity.api.get = cpWatchGet; win.Maity.api.put = cpOldPut;
+  await go(cpLink.getAttribute("href")); await cpSettle();
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
     { id: "tsk-0001", title: "Links", links: [
@@ -9084,6 +9100,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const wwOffered = byId(wwId("items-pick")).querySelectorAll("option").map((o) => o.getAttribute("value") + "=" + text(o));
   expect(text(wwBox()).includes("Works with") && wwSlugs.length === 19 && JSON.stringify(wwOffered) === JSON.stringify(wwSlugs),
     "landing editor: works_with offers exactly the hub's agents, by name, in its order " + JSON.stringify(wwOffered));
+  // The check before a save (js/api.js) has its own copy, in the same order.
+  const wwChecked = fs.readFileSync(path.join(WEB, "js/api.js"), "utf8").match(/const LANDING_AGENTS = (\[[^\]]*\]);/)[1];
+  expect(wwChecked === JSON.stringify(wwSlugs.map((x) => x.split("=")[0])).replace(/,/g, ", "),
+    "landing editor: the check's LANDING_AGENTS are the hub's agents, in its order " + wwChecked);
   const wwAdd = async (slug) => { byId(wwId("items-pick")).value = slug; btn(wwBox().querySelector(".lp-agents .inline-form"), "Add").click(); await tick(); };
   await wwAdd("codex"); await wwAdd("claude-code");
   byId(wwId("label")).value = "Works with"; byId(wwId("label")).dispatch("input");
@@ -9248,8 +9268,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     jsWrong.pages.en.title = jsKept + " from the file";
     byId("lp-json").value = JSON.stringify(Object.assign(jsWrong, { campaigns: {} }));
     await jsLoad();
-    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("variants must be an object and campaigns a list"),
+    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("the footer and variants must be objects and campaigns a list"),
       "landing JSON: campaigns of the wrong kind refuse the import, and say so " + byId("lp-pages-en-title").value);
+    // A footer of the wrong kind, as in the whole site's import: refused, never the editor's in its place.
+    for (const footer of ["x", null, []]) {
+      byId("lp-json").value = JSON.stringify(Object.assign(JSON.parse(JSON.stringify(jsWrong)), { campaigns: [], footer }));
+      await jsLoad();
+      expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("the footer and variants must be objects"),
+        "landing JSON: a footer of the wrong kind refuses the import " + JSON.stringify(footer));
+    }
     // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);

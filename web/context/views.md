@@ -4133,8 +4133,9 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
 The editor offers the agents of a **Works with** section from a list in
 `js/landing.js`, the slugs and names of `AGENTS` in
-`hub/src/maity_hub/landing.py`, in the same order. `tools/smoke.js` reads the
-hub's file and fails when the two differ.
+`hub/src/maity_hub/landing.py`, in the same order. The check before a save
+has the slugs as `LANDING_AGENTS` in `js/api.js`. `tools/smoke.js` reads the
+hub's file and fails when either copy differs from it.
 
 **Reason:** the contract serves no such list, and adding an agent is a change
 in the code anyway, so a comparison catches a drift when it is made.
