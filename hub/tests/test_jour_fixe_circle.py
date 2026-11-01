@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, listening
+from maity_hub import clock, cover, listening
 from maity_hub import tables as t
 from maity_hub.jourfixe import worker
 from tests import factory, flow
@@ -225,6 +225,63 @@ def test_the_report_stays_with_the_circle_and_goes_to_its_owner(circle: Circle) 
     assert off.json()["report_recipient"] is False
     items = circle.friend.get("/me/notifications").json()["items"]
     assert not [i for i in items if (i.get("target") or {}).get("type") == "jour_fixe_round"]
+
+
+def test_a_to_owner_request_is_the_circle_owners_and_no_other_admins(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    """§20.6 (b), §20.7: `requests:answer` opens nothing here, also not on a direct address."""
+    other_admin = flow.agent(make_client, circle.owner)
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == other_admin.id)
+            .values(trust="admin")
+        )
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    done = _report(circle)
+    assert done.status_code == 200, done.text
+    [request_id] = done.json()["requests"]
+    path = f"{BASE}/requests/{request_id}"
+    assert circle.friend.get(path).status_code == 200  # the owner it is addressed to
+    assert circle.lead.get(path).status_code == 200  # the moderator who asked
+    listed = circle.friend.get(f"{BASE}/requests?to=all").json()["items"]
+    assert request_id in [r["id"] for r in listed]
+    for reader in (circle.owner, other_admin):
+        assert reader.get(path).status_code == 404
+        for query in ("to=all", f"to={circle.friend.id}", "to=me"):
+            listed = reader.get(f"{BASE}/requests?{query}").json()["items"]
+            assert request_id not in [r["id"] for r in listed], query
+        answered = reader.post(f"{path}/answer", {"reply_id": "adopt"})
+        assert answered.status_code == 404
+        assert reader.post(f"{path}/withdraw", {}).status_code == 404
+        assert reader.post(f"{path}/claim", {}).status_code == 404
+        events = reader.get(f"{BASE}/events").json()["items"]
+        assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
+    packet = other_admin.resume().json()["requests"]
+    assert request_id not in [r["id"] for r in packet["to_answer"]]
+    assert circle.friend.post(f"{path}/answer", {"reply_id": "adopt"}).status_code == 200
+    # Its answer is as private, and the reader who may read sees what the others do not.
+    seen = circle.friend.get(f"{BASE}/events").json()["items"]
+    assert request_id in [(e.get("subject") or {}).get("id") for e in seen]
+    for reader in (circle.owner, other_admin):
+        events = reader.get(f"{BASE}/events").json()["items"]
+        assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
+
+
+def test_a_substitute_gets_no_request_of_an_owners_round(circle: Circle, migrated: Engine) -> None:
+    """§20.7: a cover would let the substitute read it."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        friend = conn.execute(
+            select(t.membership).where(t.membership.c.human_id == circle.friend.id)
+        ).one()
+        _, requests = cover._cover_set(conn, project, friend)
+    assert request_id not in [r.id for r in requests]
 
 
 def test_only_the_circle_owner_decides_as_a_human_in_an_owners_round() -> None:

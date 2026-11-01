@@ -286,6 +286,8 @@ def _project_request(conn: Connection, mine: Membership, request_id: str) -> Any
     ).first()
     if row is None:
         raise not_found()
+    if inbox.owners_alone(conn, [row]) and not inbox.may_read(conn, row, mine):
+        raise not_found()  # the project route never tells anyone else it exists (§20.7)
     return row
 
 
@@ -640,7 +642,8 @@ def _filtered(
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
     if to == "all":
         if mine.may("requests:answer"):
-            return list(rows)
+            alone = inbox.owners_alone(conn, rows)
+            return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
         return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
     target = _parse_to(conn, mine, to)
     # A member id alone also names the instance addresses of its team: the team reads them.

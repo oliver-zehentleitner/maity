@@ -321,3 +321,25 @@ that ends — without a hook in each.
   cursor that skips rounds.
 - Deleting list rows wherever reading ends: one missed path leaves a
   recipient who may not read the report.
+
+## A decision from an owner's round is read only by its asker and the circle owner
+
+**Id:** 07a4354a-a9ba-4f93-a0e3-69c1deaf7592
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on request req-c770teqm1yq9, 2026-11-01; card tsk-dv4kcbgq93sk
+
+`inbox.owners_alone` names the requests filed from an owner's round, judged by the round's `config`. For them
+`requests:answer` opens nothing: not the list, not the single request (`not_found` on the project route, which
+also covers an answer, a forward, a claim and a withdrawal), not the resume packet. A substitute's cover skips
+them as well, since it would read them.
+
+**Reason:** the round is private to the owner's circle (§20.7), and the proposal it files carries what was said
+in it.
+
+**Consequence:** an admin does not see such a request if the owner leaves it lying; the maintainer accepted that
+price.
+
+**Rejected alternatives:** every holder of `requests:answer` reading it, as before: it opened a private round's
+proposals to the project's admins.
