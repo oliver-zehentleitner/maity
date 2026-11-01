@@ -116,8 +116,8 @@ def _owner_create(
         return _fail(
             "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
         )
-    if handle in paths.RESERVED_FIRST:  # a first segment of the hub (§16.11), the first account too
-        return _fail(f"the handle {handle!r} is a reserved first segment", EXIT_CONFIG)
+    if paths.handle_reserved(handle):  # a first segment of the hub (§16.11), the first account too
+        return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
     password = _read_password()
@@ -285,7 +285,7 @@ def _default_handle() -> str:
         login = getpass.getuser().lower()
     except (KeyError, OSError):  # no passwd entry, no LOGNAME
         return "owner"
-    return login if HANDLE.fullmatch(login) and login not in paths.RESERVED_FIRST else "owner"
+    return login if HANDLE.fullmatch(login) and not paths.handle_reserved(login) else "owner"
 
 
 def _quickstart(settings: Settings, handle: str | None, display_name: str | None) -> int:

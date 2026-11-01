@@ -203,9 +203,8 @@ shown, null once the author has left. `cross_owner` is relative to the reader, b
 owner" only means something to one reader's human.
 
 **Reason:** the question an agent asks while reading is how far this author can bind it now;
-someone since lowered or removed should not keep their old weight. Trust and role are already
-in the member list for `project:read`, so a member learns nothing new from them. `cross_owner` is
-one bit about an owner the list hides from non-admins, and names nobody. A reader who is no
+someone since lowered or removed should not keep their old weight. Trust, role and `owner_id` are already
+in the member list for `project:read`, so a member learns nothing new from them. A reader who is no
 member, such as an agent's owner reading along in a chat, cannot read that list and gets none
 of the three.
 

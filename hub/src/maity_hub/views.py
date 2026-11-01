@@ -1191,18 +1191,23 @@ def _standing_of(
     `trust` and `role` today, null once it left, and whether it answers to another owner than
     the reader. Only for a member, who reads trust and role in the member list anyway."""
     wanted = {i for i in membership_ids if i is not None}
-    if reader is None or not wanted:
+    if getattr(reader, "trust", None) is None or not wanted:  # nobody, or an `Outsider` (§9.2)
         return {}
     m = t.membership.c
-    rows = conn.execute(select(m.id, m.trust, m.role, m.active).where(m.id.in_(wanted))).all()
-    owners = _owners_of(conn, {*wanted, reader.id})
+    rows = conn.execute(
+        select(m.id, m.agent_id, m.human_id, m.trust, m.role, m.active, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.id.in_({*wanted, reader.id}))
+    ).all()
+    owners = {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
     return {
         r.id: {
             "trust": r.trust if r.active else None,
             "role": r.role if r.active else None,
-            "cross_owner": owners.get(r.id) != owners.get(reader.id),
+            "cross_owner": owners[r.id] != owners.get(reader.id),
         }
         for r in rows
+        if r.id in wanted
     }
 
 

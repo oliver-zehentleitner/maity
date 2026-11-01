@@ -7,8 +7,10 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, handles
+from maity_hub import clock, paths
 from maity_hub import tables as t
+from maity_hub.cli import main
+from maity_hub.registration_accounts import check_names
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_mentions import second_owners_agent
@@ -411,8 +413,8 @@ def test_a_tombstone_keeps_listing_its_aliases_though_they_are_free(
     assert owner.post("/agents", {"handle": "bee", "display_name": "New"}).status_code == 201
 
 
-@pytest.mark.parametrize("handle", sorted(handles.MISLEADING))
-def test_a_handle_that_speaks_for_the_hub_is_refused_for_an_agent_too(
+@pytest.mark.parametrize("handle", sorted(paths.MISLEADING_HANDLES))
+def test_a_handle_that_speaks_for_the_hub_is_refused_on_every_path(
     make_client: ClientFactory, migrated: Engine, handle: str
 ) -> None:
     owner = flow.human(make_client, migrated)
@@ -420,3 +422,12 @@ def test_a_handle_that_speaks_for_the_hub_is_refused_for_an_agent_too(
     assert made.status_code == 400, made.text
     assert _fields(made) == {"handle": "reserved"}
     assert _fields(owner.patch("/me", {"handle": handle})) == {"handle": "reserved"}
+    org = owner.post("/orgs", {"handle": handle, "display_name": "Looks official"})
+    assert _fields(org) == {"handle": "reserved"}
+    with migrated.connect() as conn:
+        assert check_names(conn, handle, "Someone")["handle"] == "reserved"
+    assert main(["owner", "create", "--handle", handle, "--display-name", "X"]) == 2
+
+
+def test_an_agent_may_have_a_word_that_is_only_a_path() -> None:
+    assert paths.handle_reserved("admin") and not paths.handle_reserved("admin", of_agent=True)

@@ -5,6 +5,7 @@ handle given up stays with the id as an alias, which nobody else can take. A han
 among all humans and organisations, and among the live profiles of one owner (§6.3). Every path
 that gives a handle (registration, the operator's `owner create`, `POST /agents`, a join, a
 placement) asks `ensure_free` under the handle's lock; a rename is `rename`.
+The words nobody may take are `paths.handle_reserved`, which each of those paths asks too.
 
 The lock is a row per (scope, handle) in `handle_lock`, taken after the renamed id's own row: two
 claims of one handle in one scope run one after the other, and the second sees the first's
@@ -30,9 +31,6 @@ RENAME_LIMIT = 3
 RENAME_WINDOW = timedelta(hours=24)
 HUMANS = "human"  # the scope of every human's handle
 FORMAT = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
-# Read in a by-line these speak for the hub or for a reader's own human, in every scope: an agent
-# named `hub` reads as well as a human named so. Those who hold one already keep it.
-MISLEADING = frozenset({"hub", "human", "maity", "system"})
 
 
 def _alias_id() -> Any:
@@ -170,7 +168,7 @@ def ensure_free(
     lock first, so the answer holds until the transaction ends. `exclude`: the id that may have
     it (itself)."""
     scope = scope_of(owner_id)
-    if handle in MISLEADING or (owner_id is None and handle in paths.RESERVED_FIRST):
+    if paths.handle_reserved(handle, of_agent=owner_id is not None):
         raise invalid({field: "reserved"})
     lock(conn, scope, handle)
     taken = holder(conn, scope, handle)

@@ -23,6 +23,18 @@ RESERVED_FIRST = frozenset(
     }
 )  # fmt: skip
 
+# Read in a by-line these speak for the hub or for a reader's own human, in every scope: an agent
+# named `hub` reads as well as a human named so. They name no path, and those who hold one already
+# keep it, so the migration's check of the reserved words does not ask for them.
+MISLEADING_HANDLES = frozenset({"hub", "human", "maity", "system"})
+
+
+def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
+    """Whether nobody may take `handle`: the one check of every path that gives one (§6.25). An
+    agent's handle is no first segment of a path, so only the misleading words hold for it."""
+    return handle in MISLEADING_HANDLES or (not of_agent and handle in RESERVED_FIRST)
+
+
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never
 # one of them, so that `/<owner>/<word>` stays free for pages of an owner's own.
 PROJECT_VIEWS = frozenset(

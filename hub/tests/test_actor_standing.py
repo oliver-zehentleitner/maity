@@ -12,6 +12,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import events
 from maity_hub import tables as t
 from maity_hub.access import member_row
+from maity_hub.routes.conversations import Outsider
 from maity_hub.views import event_views
 from tests import flow
 from tests.conftest import ClientFactory
@@ -35,7 +36,11 @@ def _actor(engine: Engine, author: str, reader: str | None) -> dict[str, Any]:
         events.emit(conn, project_id, "message", ["all"], {}, actor=events.Actor(by))
     with engine.connect() as conn:
         row = conn.execute(select(t.event).order_by(t.event.c.seq.desc())).first()
-        seen = SimpleNamespace(id=member_row(conn, project_id, reader).id) if reader else None
+        seen = (
+            SimpleNamespace(id=member_row(conn, project_id, reader).id, trust="member")
+            if reader
+            else None
+        )
         return dict(event_views(conn, [row], seen)[0]["actor"])
 
 
@@ -81,7 +86,7 @@ def test_someone_who_left_binds_nobody(
         conn.execute(update(t.membership).where(t.membership.c.id == by).values(active=None))
     with migrated.connect() as conn:
         row = conn.execute(select(t.event).order_by(t.event.c.seq.desc())).first()
-        seen = SimpleNamespace(id=member_row(conn, project_id, reader.id).id)
+        seen = SimpleNamespace(id=member_row(conn, project_id, reader.id).id, trust="member")
         actor = event_views(conn, [row], seen)[0]["actor"]
     assert (actor["trust"], actor["role"]) == (None, None)
 
@@ -90,3 +95,12 @@ def test_without_a_reading_member_the_standing_stays_out(
     owner: flow.Human, migrated: Engine
 ) -> None:
     assert not {"trust", "role", "cross_owner"} & set(_actor(migrated, owner.id, None))
+
+
+def test_an_outsider_reading_along_gets_no_standing(owner: flow.Human, migrated: Engine) -> None:
+    _actor(migrated, owner.id, None)
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.event).order_by(t.event.c.seq.desc())).first()
+        project = conn.execute(select(t.project)).first()
+        actor = event_views(conn, [row], Outsider(project, "hum-outsider"))[0]["actor"]
+    assert not {"trust", "role", "cross_owner"} & set(actor)
