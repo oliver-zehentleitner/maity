@@ -902,7 +902,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(bBox(), "Edit briefing").click(); await tick();
   expect(byId("briefing-agt-b") && byId("briefing-agt-b").value.startsWith("You build the hub"), "the editor starts with the briefing");
   byId("briefing-agt-b").value = "x".repeat(16 * 1024 + 1);
+  // The limit is a formatted number: English here, whatever the machine's locale.
+  const briefingLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick();
+  win.Maity.i18n.locale = briefingLocale;
   expect(!patches.length && text(main).includes("the briefing is longer than 16,384 characters"), "a briefing over 16 KiB is refused before sending");
   // 16,384 characters pass however many bytes they take, as the hub counts.
   byId("briefing-agt-b").value = "é".repeat(16 * 1024);
