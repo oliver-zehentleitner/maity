@@ -1757,7 +1757,7 @@ imported again:
 ```json
 {
   "format": "maity-site/1",
-  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…} },
+  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…}, "variants": {…}, "campaigns": […] },
   "legal": { "imprint": { "languages": { "en": { "title": "…", "markdown": "…" } } }, "privacy": {…}, "terms": {…} },
   "registration": { "mode": "closed", "domains": [], "addresses": [], "approval": "operator", "terms": null, "max_new_accounts_per_hour": 20 }
 }
@@ -1768,9 +1768,9 @@ out stays as it is. An unknown `format` refuses the file, and so does an
 unknown key anywhere in it, named by its path (`landing.enabeld`,
 `legal.privacy.foo`) down to each part and legal page; deeper keys, and
 values of the wrong kind, refuse their part (the hub's preview names
-the field). The landing page's `variants` and `campaigns` are
-not in `maity-site/1` while the landing editor's import does not take
-them, so they are refused as well. **Export** reads the three settings
+the field). The landing part carries the page's `variants` and
+`campaigns` too, as the landing editor's import does; a file that leaves
+them out keeps the saved ones. **Export** reads the three settings
 again first (copy, or **Download as a file**), so an edit saved in
 another section since the page opened is in the file; registration is
 left out when the environment sets every field. The section has its own

@@ -18,9 +18,8 @@ window.Maity = window.Maity || {};
   const REGISTRATION = "/admin/settings/registration";
   const PAGES = ["imprint", "privacy", "terms"];
   const KEYS = ["format", "landing", "legal", "registration"];
-  // The landing part takes what the landing editor imports; variants and campaigns
-  // are not in maity-site/1 while that import does not know them.
-  const LANDING_KEYS = ["enabled", "default_language", "pages", "footer"];
+  // The landing part takes what the landing editor imports.
+  const LANDING_KEYS = ["enabled", "default_language", "pages", "footer", "variants", "campaigns"];
   const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   // Getters: the words are the catalog's when said.
@@ -36,7 +35,7 @@ window.Maity = window.Maity || {};
     const [landing, legal, registration] = await Promise.all([M.api.get(LANDING), M.api.get(LEGAL), M.api.get(REGISTRATION)]);
     const fixed = (k) => (registration[k] || {}).source === "env" || (k === "terms" && (registration.terms || {}).source === "legal_pages");
     return {
-      landing: { enabled: !!landing.enabled, default_language: landing.default_language, pages: landing.pages || {}, footer: landing.footer || { social: [] } },
+      landing: { enabled: !!landing.enabled, default_language: landing.default_language, pages: landing.pages || {}, footer: landing.footer || { social: [] }, variants: landing.variants || {}, campaigns: landing.campaigns || [] },
       legal: Object.fromEntries(PAGES.filter((p) => legal.pages && legal.pages[p]).map((p) => [p, { languages: legal.pages[p].languages }])),
       registration: Object.fromEntries(M.adminRegistration.FIELDS.filter((k) => registration[k] && !fixed(k)).map((k) => [k, registration[k].value])),
       fixed: M.adminRegistration.FIELDS.filter(fixed),
@@ -69,13 +68,15 @@ window.Maity = window.Maity || {};
   async function checkLanding(d, now) {
     // A value of the wrong kind refuses the part rather than falling back to the saved one without a word.
     if (!isObject(d) || !isObject(d.pages) || ("enabled" in d && typeof d.enabled !== "boolean")
-      || ("default_language" in d && (typeof d.default_language !== "string" || !d.default_language)) || ("footer" in d && !isObject(d.footer))) {
+      || ("default_language" in d && (typeof d.default_language !== "string" || !d.default_language)) || ("footer" in d && !isObject(d.footer))
+      || ("variants" in d && !isObject(d.variants)) || ("campaigns" in d && !Array.isArray(d.campaigns))) {
       return { state: "refused", words: M.t("site.refused.landing_shape") };
     }
     const next = { enabled: "enabled" in d ? d.enabled : now.landing.enabled, default_language: "default_language" in d ? d.default_language : now.landing.default_language,
-      pages: d.pages, footer: "footer" in d ? d.footer : now.landing.footer };
+      pages: d.pages, footer: "footer" in d ? d.footer : now.landing.footer,
+      variants: "variants" in d ? d.variants : now.landing.variants, campaigns: "campaigns" in d ? d.campaigns : now.landing.campaigns };
     if (same(next, now.landing)) return { state: "same" };
-    try { await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer }); }
+    try { await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer, variants: next.variants, campaigns: next.campaigns }); }
     catch (err) { return { state: "refused", words: refusalWords(err) }; }
     return { state: "changes", steps: [{ what: PART_WORDS.landing, call: () => M.api.patch(LANDING, next) }] };
   }

@@ -8960,16 +8960,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siUnknown = await SI.check({ format: "maity-site/1", landing: siNow.landing, colours: {} }, siNow);
     const siFormat = await SI.check({ format: "maity-site/9" }, siNow);
     expect(/colours/.test(siUnknown.refused || "") && /maity-site\/9/.test(siFormat.refused || ""), "site: an unknown key and an unknown format are refused, by name");
-    // An unknown key inside a part refuses the whole file too, by its path; variants and campaigns are not in maity-site/1.
-    const siDeep = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, { enabeld: true, variants: {} }),
+    // An unknown key inside a part refuses the whole file too, by its path.
+    const siDeep = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, { enabeld: true }),
       legal: { privacy: { languages: template.legal.privacy.languages, foo: 1 }, faq: {} }, registration: { colour: "red" } }, siNow);
-    expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
+    expect(["landing.enabeld", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
       "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
+    // Variants and campaigns are in the landing part: a change saves them, and a file that leaves them out keeps the saved ones.
+    const siAB = { variants: { spring: { pages: siNow.landing.pages } }, campaigns: [{ code: "spring", label: "Spring" }] };
+    const siWith = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, siAB) }, siNow);
+    expect(!siWith.refused && siWith.parts.landing.state === "changes", "site: variants and campaigns in the file are a change to the landing part " + JSON.stringify(siWith.refused || siWith.parts.landing));
+    const siSaved = Object.assign({}, siNow, { landing: Object.assign({}, siNow.landing, siAB) });
+    const { variants: siNoV, campaigns: siNoC, ...siWithout } = siSaved.landing;
+    const siKept = await SI.check({ format: "maity-site/1", landing: siWithout }, siSaved);
+    expect(siKept.parts.landing.state === "same", "site: a file without variants and campaigns keeps the saved ones");
     // A landing value of the wrong kind refuses the part, never the saved value in its place.
-    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }].map((bad) =>
+    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }, { variants: [] }, { campaigns: {} }].map((bad) =>
       SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));
     expect(siKinds.every((r) => r.parts && r.parts.landing.state === "refused"),
-      "site: a landing footer, enabled or default language of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
+      "site: a landing footer, enabled, default language, variants or campaigns of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
     // Registration all from the environment: the export leaves the part out, and imports again.
     const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
     const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);

@@ -3608,9 +3608,11 @@ Its placeholders are in square brackets: the hub's Markdown rules read
 An unknown key anywhere in the file refuses the whole file, named by its
 path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
-field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
-landing editor's import does not know them, and are refused the same
-way. Export and Download read the three settings again first: the admin
+field names); a landing value of the wrong kind refuses its part. `variants` and
+`campaigns` are in the landing part, as in the landing editor's import
+(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+the format's name stays `maity-site/1`, since a file without them still
+means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
 first read would carry the state from before an edit in another section,
 and importing it again would revert that edit.
