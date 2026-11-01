@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import cards
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
