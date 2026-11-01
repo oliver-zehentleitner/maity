@@ -808,6 +808,33 @@ cannot both come from standard input, which is read once (1be5edbf).
 - Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
   hub's.
 
+## `say --review-file` reads the cites at the head before sending
+
+**Id:** 7f3c1e52-8a46-4d0b-9b57-2e6a1c94d3f8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head
+**Revisit when:** a valid cite is refused in practice, or an invented quote passes because the text once stood in the file's history
+
+The card asks for a refusal when a quote is not on the named line or not in the file, and for a
+plain statement when no clone or commit is available. So a bad cite sends nothing and exits 1,
+while a missing clone or commit sends with a note on stderr: the second case says nothing about
+the quotes. There is no flag to send anyway: the way out of a refusal is a corrected cite.
+
+§8.4 lets a cite without a line quote what the change removed, so such a quote also passes when
+`git log -S` finds it left or entered the file in the history of the head. That is looser than
+the change itself, which would need its base: the CLI does not know it, and a stacked pull
+request has no fixed one. An invented quote still fails, an old real one does not.
+
+The check lives in the CLI, not the hub: the hub does not read the repository (§8.4). It does
+not repeat the hub's rules either: a malformed review or cite is passed on for the hub to name
+(0870475d). This entry adds to that one, which left only the JSON check to the CLI.
+
+**Rejected alternatives:**
+- Refusing when the commit is missing: the card separates this case from a bad quote.
+- Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
+
 ## An isolation refusal exits 5, and `wait` does not retry it
 
 **Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722

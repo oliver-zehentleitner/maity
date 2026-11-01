@@ -209,7 +209,7 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
-.state, .source, .badge, .prio, .kind, .presence, .count {
+.state, .source, .badge, .card-watching, .prio, .kind, .presence, .count {
   display: inline-block;
   border-radius: 999px;
   padding: 1px 8px;
@@ -1353,6 +1353,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .device-stage { max-width: 36rem; }
 .device-code-text { font-family: var(--mono); font-size: 2rem; font-weight: 700; letter-spacing: 0.08em; margin: 8px 0; }
 /* Dark on light in either theme: that is what scanners read. */
+.security-setup { display: grid; gap: 8px; justify-items: start; max-width: 28rem; }
+.security-key { overflow-wrap: anywhere; }
+.security-code-list { list-style: none; margin: 8px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 4px 16px; }
 .qr-box { display: inline-block; background: #ffffff; padding: 8px; border-radius: 8px; line-height: 0; }
 .qr .qr-light { fill: #ffffff; }
 .qr .qr-dark { fill: #000000; }
@@ -1391,6 +1394,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
 @media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-panel-actions { display: flex; align-items: center; gap: 8px; }
 .card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
 /* The panel is the card: no frame inside the frame, no second id, no second title. */
 .card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
