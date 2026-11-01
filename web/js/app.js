@@ -239,6 +239,11 @@ window.Maity = window.Maity || {};
   // The links that are set, as plain https only: what the header and the overview show.
   const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
     .filter((x) => x.url);
+  // Where a forge lists its pull requests. No hub field: the repository's own URL and forge
+  // say it, and a forge not in this table gets no button.
+  const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
+  const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
+  const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -258,11 +263,12 @@ window.Maity = window.Maity || {};
     // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
     // and the project's own links stand beside it.
     const name = M.t("project.link.repository");
+    const pulls = pullsUrl(repo, forge);
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+      [pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
@@ -1394,10 +1400,10 @@ window.Maity = window.Maity || {};
         switcher(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
+            projectLinks(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null,
-            projectLinks(ctx.project))
+            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.

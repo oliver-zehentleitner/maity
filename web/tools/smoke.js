@@ -2072,19 +2072,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(hlLinks().map((a) => a.getAttribute("href") + "|" + a.getAttribute("aria-label") + "|" + text(a)).join()
     === "https://github.com/oliver-zehentleitner/maity|Repository on GitHub (opens in a new tab)|Repository,"
+    + "https://github.com/oliver-zehentleitner/maity/pulls|Pull Requests (opens in a new tab)|Pull Requests,"
     + "https://github.com/oliver-zehentleitner/maity/issues|Issues (opens in a new tab)|Issues,"
     + "https://discord.gg/maity|Chat (opens in a new tab)|Chat,"
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
-    "header: the repository (\"Repository\", its forge in the mark and the name), the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+    "header: the repository (\"Repository\", its forge in the mark and the name), Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+  const hlBlock = Array.from(header.querySelector(".project-state").childNodes).map((c) => String(c.className || ""));
+  expect(hlBlock.indexOf("header-link") === 0 && hlBlock.lastIndexOf("header-link") < hlBlock.findIndex((c) => c.split(" ").includes("state")),
+    "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv): " + hlBlock.join());
+  // Pull Requests per forge (tsk-hf70q6maf8cv): none for a forge the table does not know.
+  const hlPulls = win.Maity.api.get;
+  for (const [forge, url, want] of [
+    ["gitlab", "https://gitlab.com/o/r.git", "https://gitlab.com/o/r/-/merge_requests"],
+    ["gitea", "https://git.example.org/o/r/", "https://git.example.org/o/r/pulls"],
+    ["bitbucket", "https://bitbucket.org/o/r", "https://bitbucket.org/o/r/pull-requests"],
+    ["constructor", "https://git.example.org/o/r", null],
+    ["other", "https://git.example.org/o/r", null],
+    [null, "https://git.example.org/o/r", null],
+  ]) {
+    win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlPulls(p).then((x) => Object.assign({}, x, { repository: Object.assign({}, x.repository, { url, forge }) })) : hlPulls(p));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    const found = hlLinks().filter((a) => text(a) === "Pull Requests");
+    expect(want ? found.length === 1 && found[0].getAttribute("href") === want && text(hlLinks()[1]) === "Pull Requests" : found.length === 0, "header: Pull Requests on " + forge + ": " + want);
+    await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
+  win.Maity.api.get = hlPulls;
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 1 && text(hlLinks()[0]) === "Repository", "header: a project without a Keep the Why dashboard or links shows the repository alone");
+  expect(hlLinks().length === 2 && text(hlLinks()[0]) === "Repository" && text(hlLinks()[1]) === "Pull Requests", "header: a project without a Keep the Why dashboard or links shows the repository alone");
   const hlGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x,
     { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }), links: Object.assign({}, x.links, { wiki: "http://plain.example/wiki" }),
       keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 3 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+  expect(hlLinks().length === 4 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
     "header: another forge in the name for a screen reader; a dashboard or a link that is not plain https gets no link");
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null, links: { issues: null, wiki: null, discussions: null, chat: null } })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();

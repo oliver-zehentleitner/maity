@@ -2384,6 +2384,7 @@ window.MAITY_I18N["en"] = {
   "project.link.discussions": "Discussions",
   "project.link.issues": "Issues",
   "project.link.opens": "{what} (opens in a new tab)",
+  "project.link.pull_requests": "Pull Requests",
   "project.link.repository": "Repository",
   "project.link.repository_on": "Repository on {forge}",
   "project.link.wiki": "Wiki",
