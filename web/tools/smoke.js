@@ -4480,8 +4480,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const suSlot = document.createElement("div");
     const suPosts = [];
     let suCalls = 0;
-    // As the hub answers today: no via in GET /auth/second-factor; being asked without TOTP is the mail factor (§2.8.4).
-    win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ instance_off: false, enrolled: false, required: false }) : sfGet(p, ...r));
+    // GET /auth/second-factor names the factor in via (§2.8.1, hub #992).
+    win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ instance_off: false, enrolled: false, required: false, via: "email" }) : sfGet(p, ...r));
     win.Maity.api.post = (p, b) => { if (/^\/auth\/second-factor\//.test(p)) suPosts.push([p, JSON.stringify(b)]); return sfPost(p, b); };
     const suRun = win.Maity.stepUp.run(() => (++suCalls === 1 ? Promise.reject(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "step_up_required" })) : Promise.resolve("done")),
       suSlot, "Changing your password");

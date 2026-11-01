@@ -2814,7 +2814,7 @@ the fragment (the query `?token=` in fixture mode), drops it from the
 address and posts it at once. A browser without that session, or one
 already signed in, gets the contract's sentence on where to open the
 link instead. The step-up asks `GET /auth/second-factor` when the hub
-wants the factor: a human not enrolled whose `via` is `email` is mailed
+wants the factor: a human whose `via` there is `email` is mailed
 a code as the question opens, with Send again, and types it
 (`email_code`); everyone else keeps the app's code.
 

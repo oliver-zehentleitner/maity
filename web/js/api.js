@@ -4223,6 +4223,9 @@ window.Maity = window.Maity || {};
         // Not JSON; the status text and the Maity-Error header are all there is.
       }
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
+      // A rate limit's wait comes as the Retry-After header only (§1.4): kept with the details.
+      const wait = res.status === 429 && res.headers && res.headers.get ? Number(res.headers.get("Retry-After")) : NaN;
+      if (Number.isFinite(wait) && wait > 0 && !("retry_after" in details)) details = Object.assign({}, details, { retry_after: wait });
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
     // 204 has no body: a deletion, a removal, a withdrawal (§6.26 among them).
