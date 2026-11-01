@@ -245,6 +245,35 @@ All settings come from the environment.
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
+### Settings for a public instance
+
+What an instance needs before strangers can register, in the order of
+[Opening registration](../docs/install/README.md#opening-registration).
+All but `MAITY_PUBLIC_URL`, `MAITY_REGISTRATION_BREAKER`, `MAITY_SECRET_KEY`,
+`MAITY_MAIL_SIGNING_KEY`, `MAITY_TRUSTED_PROXIES`,
+`MAITY_ALLOW_PLAIN_HTTP` and the `MAITY_PUBLIC_PAGES*` settings can also
+be set by the instance admin in the dashboard; the environment wins.
+
+| Variable | Default | Without it | Contract |
+|---|---|---|---|
+| `MAITY_PUBLIC_URL` | derived from the bind address | Links in mails and join lines point at the wrong address. | §1.1 |
+| `MAITY_TRUSTED_PROXIES` | empty | Behind a proxy, every client shares the proxy's address and one rate-limit bucket, and the request does not count as HTTPS. | §2.5 |
+| `MAITY_ALLOW_PLAIN_HTTP` | `0` | Leave it off on a public instance: `1` lets credentials and cookies travel unencrypted. | §2.5 |
+| `MAITY_SECRET_KEY` | unset | No second factor by authenticator app, no stored SMTP password or forge secret (`secret_key_missing`). A lost key locks out enrolled humans. | §16.2, §2.8.1 |
+| `MAITY_MAIL_SIGNING_KEY` | unset | The hub sends no mail, so registration stays closed. | §16.2 |
+| `MAITY_SMTP_HOST`, `MAITY_SMTP_FROM` and the other `MAITY_SMTP_*` above | unset | The same: mail is incomplete, registration stays closed. | §16.2 |
+| `MAITY_REGISTRATION` | `closed` | Nobody can register. `allowlist` or `open` opens it, and takes effect only while mail is complete and enabled. | §16.4, §2.7 |
+| `MAITY_REGISTRATION_DOMAINS`, `MAITY_REGISTRATION_ADDRESSES` | empty | An `allowlist` without entries registers nobody. | §16.4 |
+| `MAITY_REGISTRATION_APPROVAL` | `operator` | New accounts wait as `pending` until an admin decides each; `automatic` makes them usable at once. | §16.4, §2.7.5 |
+| `MAITY_REGISTRATION_MAX_NEW_PER_HOUR` | `20` | Past it, the completion page says to try again later. | §16.4, §2.7.3 |
+| `MAITY_REGISTRATION_BREAKER` | `120` | Requests per minute across the instance; past it every registration is `rate_limited` for a minute. | §16.4, §2.7.3 |
+| `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | unset | Both or neither. Neither: the `terms` legal page, if written; else no terms are asked for. | §16.4, §16.7.1 |
+| `MAITY_SIGN_IN_SECOND_FACTOR` | `optional` | Admins may sign in on a password alone. `required_admins` holds them to a second factor and needs `MAITY_SECRET_KEY`, or the hub does not start. `email` needs complete mail. | §2.8.5 |
+| `MAITY_MAX_AGENTS_PER_HUMAN` | `100` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
+| `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
+
 The hub logs each request as method, path and status on the
 `maity_hub.access` logger, never a query string or a header value, with
 join and pairing tokens shown as `…`; uvicorn's own access log is off.
