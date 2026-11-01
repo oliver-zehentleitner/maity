@@ -408,7 +408,8 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     open release and the links, then the REREAD_PER_ROUND reports of such cards with the oldest
     observation whose pull request was last seen open. The round ends at the first of those
     reads the forge does not answer (down or rate-limited: the rest would fail alike) and when
-    `stop` is set."""
+    `stop` is set. A project no source covers says nothing about the others: only its own work
+    is left out of the round, and its reports use none of the REREAD_PER_ROUND."""
     since = clock.now() - REPORT_WINDOW
     with engine.connect() as conn:
         projects = conn.execute(
@@ -434,14 +435,14 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         [p.id for p in visible if forge.kind_of(p.repository_url) == "github"], "visibility"
     )
     observable = {p.id for p in projects if fg.for_project(p.id).configured_for(p.repository_url)}
-    work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
-        (observe_report, (engine, fg, card.id, MAX_AGE))
+    work: list[tuple[str, Callable[..., Any], tuple[Any, ...]]] = [
+        (card.project_id, observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
         if card.project_id in observable and _never_observed(card.report)
     ]
     order = _rotated(sorted(observable), "sweep")
-    work += [(observe_release, (engine, fg, project_id)) for project_id in order]
-    work += [(observe_links, (engine, fg, project_id)) for project_id in order]
+    work += [(project_id, observe_release, (engine, fg, project_id)) for project_id in order]
+    work += [(project_id, observe_links, (engine, fg, project_id)) for project_id in order]
     # Last and oldest first: these stay on the list while a pull request stays open, and must not
     # spend what a new report, a release or a link needs (§11.4). A read that stores a new
     # `observed_at` sends the report to the back, whichever replica made it.
@@ -449,9 +450,6 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         (card for card in cards if card.project_id in observable and _last_seen_open(card.report)),
         key=lambda card: card.report["observed"].get("observed_at") or "",
     )
-    work += [
-        (observe_report, (engine, fg, card.id, MAX_AGE)) for card in seen_open[:REREAD_PER_ROUND]
-    ]
     # A repository that turned private comes off a public page whatever else the forge refuses
     # this round (§16.9): the visibility reads go first, for every project with a public page
     # (also one the hub can no longer read: that is private), and never end the round, since a
@@ -460,11 +458,27 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
         if stop is not None and stop.is_set():
             return
         _guarded(observe_visibility, engine, fg, project_id)
-    for job, args in work:
+    not_covered: set[str] = set()
+    for owning_project, job, args in work:
         if stop is not None and stop.is_set():
             return
-        if not _guarded(job, *args):
+        if owning_project in not_covered:
+            continue
+        answered = _covered(not_covered, owning_project, job, *args)
+        if answered is False:
             return
+    left = REREAD_PER_ROUND
+    for card in seen_open:
+        if left == 0 or (stop is not None and stop.is_set()):
+            return
+        if card.project_id in not_covered:
+            continue
+        answered = _covered(
+            not_covered, card.project_id, observe_report, engine, fg, card.id, MAX_AGE
+        )
+        if answered is False:
+            return
+        left -= 1 if answered else 0
 
 
 def announce_merges(
@@ -623,11 +637,13 @@ def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = 
                 t.project.c.id.in_(select(t.ticker_source.c.project_id))
             )
         ).all()
+    not_covered: set[str] = set()
     for row in _rotated(sorted(rows, key=lambda r: r.id), "merges"):
         if stop is not None and stop.is_set():
             return
-        if fg.for_project(row.id).configured_for(row.repository_url) and not _guarded(
-            announce_merges, engine, fg, row.id
+        if (
+            fg.for_project(row.id).configured_for(row.repository_url)
+            and _covered(not_covered, row.id, announce_merges, engine, fg, row.id) is False
         ):
             return
 
@@ -643,6 +659,26 @@ def _guarded(work: Callable[..., Any], *args: Any) -> bool:
     """Run one piece of work; False when the forge did not answer."""
     try:
         work(*args)
+    except forge.ForgeUnavailableError as error:
+        log.warning("probe: %s", error)  # the next round tries again
+        return False
+    except Exception:
+        log.exception("probe: %s failed", work.__name__)
+    return True
+
+
+def _covered(
+    not_covered: set[str], project_id: str, work: Callable[..., Any], *args: Any
+) -> bool | None:
+    """`_guarded` for one project's work; None when no source covers its repository, which
+    `not_covered` then remembers for the round. It costs the other projects nothing, and the line
+    names the project, as the reason alone can't be told apart when several have it."""
+    try:
+        work(*args)
+    except forge.NotCoveredError as error:
+        log.warning("probe: project %s: %s", project_id, error)
+        not_covered.add(project_id)
+        return None
     except forge.ForgeUnavailableError as error:
         log.warning("probe: %s", error)  # the next round tries again
         return False
