@@ -467,3 +467,25 @@ write lock; storing the first answer avoids a window in which a page of a public
 - Look inside the transaction: a slow or down forge would hold the project's rows, and the call still has to answer.
 - Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
   case is exactly the private one without a grant.
+
+## Visitors read the app from one route over stored rows, and the member routes stay closed
+
+**Id:** eb7fd1c7-d4f1-478f-b77f-bb6878cd515a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only, nothing private, "as on GitHub"); the lead's approval of the plan; `docs/api.md` §16.9
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-01
+**Revisit when:** visitors need a read a stored row cannot answer, such as search or paging through a whole board
+
+`GET /public/pages/{path}` answers the `data` the page's render stored beside its HTML. A visitor's read costs
+one row, every removal rule of the pages holds without being written twice, and a field is public only if the
+renderer puts it there.
+
+**Rejected:**
+
+- A visitor caller in the member routes, with their fields filtered: the routes return members' data by
+  default, so a field added later would be public unless someone remembered to exclude it, and every route would
+  need its own review. Here the default is that nothing is public.
+- A second renderer querying per request: the same output at the cost of a query for every anonymous call.
+- Parsing the stored HTML in the browser: a page's markup would become an interface.
