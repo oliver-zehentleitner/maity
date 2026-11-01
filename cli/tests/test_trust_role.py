@@ -310,3 +310,16 @@ def test_resume_shows_the_role_memory() -> None:
 )
 def test_is_admin_reads_the_trust(membership: dict[str, Any], admin: bool) -> None:
     assert onboarding.is_admin({"membership": membership}) is admin
+
+
+def test_action_body_of_exactly_the_cap_with_nothing_to_escape_is_sent(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    _ask(fake)
+    text = "[1]" + " " * (48 * 1024 - 3)
+    full = tmp_path / "full.json"
+    full.write_text(text, encoding="utf-8")
+    argv = ["ask", "Go?", "--to", "owner", "--class", "decision"]
+    argv += ["--action", "PATCH /x", "--action-body", str(full)]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["action"]["body"] == text
