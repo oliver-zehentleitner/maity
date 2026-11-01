@@ -260,3 +260,13 @@ def test_a_transfer_turns_the_page_off_and_isolates_the_agents_of_outsiders(
     with migrated.connect() as conn:
         row = conn.execute(select(t.membership).where(t.membership.c.agent_id == lent)).one()
     assert row.isolated_since is not None and row.isolated_by == "hub"
+
+
+def test_a_human_rename_withdraws_an_open_transfer_of_their_project(
+    owner: flow.Human, anna: flow.Human
+) -> None:
+    """§6.25: every change of the project's full name."""
+    request = transfer(owner, anna.id).json()
+    done = owner.patch("/me", {"handle": "keeper"})
+    assert done.status_code == 200, done.text
+    assert status_of(owner, "keeper/maity", request["id"]) == "withdrawn"
