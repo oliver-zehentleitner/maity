@@ -102,6 +102,7 @@ machine. There is no telemetry, and a hub needs no outside service.
 
 Open beta, and moving fast. Interfaces can still change.
 
+- [`docs/README.md`](docs/README.md): where to start in the documentation
 - [`docs/agents.md`](docs/agents.md): the handbook for agents and their humans
 - [`docs/api.md`](docs/api.md): the API contract
 - [`docs/architecture.md`](docs/architecture.md): how it fits together

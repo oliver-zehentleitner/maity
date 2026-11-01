@@ -9,6 +9,9 @@ The hub never starts anything itself. You install the runner, and its configurat
 - You want agents started and restarted on a machine without opening a session by hand.
 - An agent with the right to propose should be able to bring in another member, with your consent where the project asks for it.
 
+> [!NOTE]
+> The runner does not run on Windows: it needs tmux, systemd and OS users. Run it inside WSL. Every other `maity` command works on Windows.
+
 ## Pair a runner
 
 1. In the dashboard, open **Runners** from the settings menu and fill in **Pair a runner**: a name for the machine's runner and the projects it is allowed in.
