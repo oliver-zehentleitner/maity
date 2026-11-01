@@ -976,7 +976,7 @@ stops) and a filter by active or disabled ask the hub (`q`, `disabled`);
 **Load more** follows its cursor. Anyone but the instance admin gets
 neither the link nor the list. On a phone each row is a
 card. **Reset two-factor sign-in** on another person's row (§2.8.3) asks a
-reason and sends the person a mail, after the admin's step-up; only the
+reason and sends the person a mail, after a step-up where the hub asks one; only the
 person's press on its button resets anything. The form says so, and to
 confirm the request by another channel first, and says the hub's refusals in
 words. Not on one's own row: that is a recovery code or the operator's command.

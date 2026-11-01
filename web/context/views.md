@@ -1247,7 +1247,7 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
 
-The signed-in header reads Chat, Lead, "+", the gear, the bell, the
+The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
 User (`/invite`), for humans only. `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
@@ -2046,7 +2046,7 @@ to open: their credentials and the preferences switch were theirs on the
 Agents page. Loading every agent's credentials with the list: a call per
 agent on every visit, for rows mostly never opened.
 
-## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+## The lead is reached by a Lead button left of Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
 **Type:** decision
@@ -2056,7 +2056,7 @@ agent on every visit, for rows mostly never opened.
 **Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
 
 Chat in the header is a button like the bell and always opens every chat.
-The Lead button beside it reaches whom `M.leadChat.targets` names (the
+The Lead button left of it (first right of Chat; the maintainer swapped them on 2026-11-01, tsk-td5c6z21xg5s) reaches whom `M.leadChat.targets` names (the
 policy's lead now, one's own proxy; without a lead the admin agents and
 one's own proxy; until 2026-10-30 on an older hub only one's own admin
 and proxy agents, e1699490), across every project outside one: one is opened at once,
