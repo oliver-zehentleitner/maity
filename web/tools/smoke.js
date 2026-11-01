@@ -5067,6 +5067,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelector("section.agents-join").hidden && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: Join an agent opens the form again");
   main.querySelector(".agents-head button.agent-add-open").click(); await tick();
   expect(main.querySelector("section.agents-join").hidden && main.querySelector("form.agent-new"), "agents page: Add an agent folds the join away");
+  // Add clicked while Join still reads: that read is dropped, and only the new profile's form stays open.
+  await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  main.querySelector(".agents-head button.join-open").click();
+  main.querySelector(".agents-head button.agent-add-open").click();
+  for (let k = 0; k < 10; k++) await tick();
+  expect(main.querySelector("section.agents-join").hidden && main.querySelector("form.agent-new") && !main.querySelector(".agents-head button.join-open").hidden
+    && !main.querySelector(".agents-head button.join-open").disabled, "agents page: a join still reading does not open beside the new profile's form");
   // On a project's Agents a profile just made goes on to the join panel, chosen there.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
   main.querySelector("button.agent-add-open").click(); await tick();
