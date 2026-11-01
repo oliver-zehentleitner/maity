@@ -332,7 +332,9 @@ built and sort in Python, a stable sort per band; the cursor carries the band, a
 changed so a cursor from before the bands is refused instead of read wrongly.
 
 **Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
-and come back on a later join. The places where access ends are few and already central.
+and come back on a later join. The places where access ends are few and already central. The
+downgrade only drops the table, and the index goes with it: MariaDB refuses
+`DROP INDEX ix_conversation_pin_project` while the foreign key on `project_id` needs it (error 1553).
 
 **Rejected alternatives:**
 - A pin valid while its `pinned_at` is after the start of the current access: every list would need
@@ -340,6 +342,8 @@ and come back on a later join. The places where access ends are few and already 
 - Pruning while reading a list: a `GET` that writes, and a list without `observed` cannot tell a
   chat read along from one no longer read.
 - Keying by membership: an owner outside the project holds none, and the limit is per human.
+- A downgrade that drops the foreign key and then the index before the table: dropping the table
+  already removes both, so the extra steps would order nothing.
 
 ## A review result's `review` is checked for its shape and stored as given; the repository is never read
 
