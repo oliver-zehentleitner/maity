@@ -151,8 +151,7 @@ window.Maity = window.Maity || {};
   // off turns the mode on with it, and clearing the last turns it off.
   // The hub's note (member.meat_proxy_note, §2) stands under the parts as
   // /me and each answer carry it — what agents read now, or would read
-  // once it is on — never a copy of the page's own; a hub that does not
-  // send it shows none.
+  // once it is on — never a copy of the page's own.
   const MEAT_PARTS = [
     ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
     ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],

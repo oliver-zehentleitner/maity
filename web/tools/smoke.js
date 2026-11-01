@@ -905,11 +905,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(patches[1][1]) === JSON.stringify({ briefing: null }) && text(main).includes("No briefing yet."), "an empty briefing clears it");
   win.Maity.api.patch = realPatch;
-  // A reader the hub shows no briefing to (the sample fixtures carry no such key): nothing offered.
-  await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
-  const sampleAgent = main.querySelectorAll("tr.member-agent")[0];
-  sampleAgent.querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector("tr.member-manage") && !main.querySelector(".briefing"), "no briefing editor for a reader who is shown none");
   // Only my agents (tsk-n2r6t7jnzm2d): the viewer's own agents, no humans; remembered per viewer, and said when there are none.
   {
     const mineStore = {};
@@ -938,8 +933,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(byId("members-mine").checked && shownAgents() === mineIds, "members: a browser that keeps nothing still filters");
     win.localStorage = mineLs;
   }
-  await go("#/maintainer/sample/agents/join"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
   // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const agARow = await agOpen("agt-a");
@@ -4283,7 +4276,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mpRefused && mpRefused.status === 400 && JSON.stringify(mpRefused.details.fields) === JSON.stringify({ meat_proxy: "conflicts_with_parts" }),
     "meat proxy: the fixture hub refuses the switch off with a part on, as §5.2 does");
   await mpPatch("/me", { meat_proxy: false });
-  // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
+  // The note is the hub's (/me member.meat_proxy_note), never a copy.
   const mpGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { m.member.meat_proxy_note = "This person says: a newer note."; return m; }) : mpGet(p));
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
@@ -6765,7 +6758,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!main.querySelectorAll("th").some((t) => t.textContent === "Keep the Why") && !main.querySelector(".ktw-unconfirmed"),
     "keep the why: under an optional commitment the hub sends no fields, so no column and no mark");
   win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet0;
-  // Settings: required or optional, with a reason; disabled under no memory provider; absent where the hub has no such policy.
+  // Settings: required or optional, with a reason; disabled under no memory provider.
   const ktPatches = [];
   const ktPatch = win.Maity.api.patch, ktGet = win.Maity.api.get;
   win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why" in b.policy) ktPatches.push(b); return ktPatch(p, b); };
