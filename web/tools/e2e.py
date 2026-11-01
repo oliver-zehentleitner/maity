@@ -3381,7 +3381,7 @@ def landing_variants_step(run: Run, page: Page) -> None:
     expect(whole.locator("li.site-part[data-part='landing']")).to_have_class(re.compile(r"\bsite-same\b"))
 
     # The link h() refused once, which fixtures cannot show: they have no address for it.
-    nav.get_by_role("button", name="Statistics", exact=True).click()
+    page.locator("nav.admin-nav").get_by_role("button", name="Statistics", exact=True).click()
     csv = page.locator("section.admin-section[aria-label='Statistics'] .campaign-stats").get_by_role(
         "link", name="Download as CSV", exact=True
     )
@@ -3390,6 +3390,8 @@ def landing_variants_step(run: Run, page: Page) -> None:
     assert download.value.suggested_filename == "campaigns.csv", download.value.suggested_filename
 
     # Off again: while either is set the hub rewrites links and keeps an origin (§16.7.2).
+    page.locator("nav.admin-nav").get_by_role("button", name="Pages", exact=True).click()
+    nav.get_by_role("button", name="Landing pages", exact=True).click()
     section.locator(".lp-variant-tabs").get_by_role("button", name="/for/e2e-spring", exact=True).click()
     section.get_by_role("button", name="Remove /for/e2e-spring", exact=True).click()
     section.locator(".lp-campaign-list").get_by_role("button", name="Remove", exact=True).click()
