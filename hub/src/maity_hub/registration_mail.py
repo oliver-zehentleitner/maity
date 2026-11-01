@@ -114,7 +114,7 @@ def _confirm(conn: Connection, hub: Any, pending_id: str | None) -> tuple[str, s
         hub.mail.signing_key,
         {"i": pending.id, "p": "register", "n": nonce, "x": int(pending.expires_at.timestamp())},
     )
-    words = _WORDS[language_of(pending.language)]
+    words = _WORDS[language_of(pending.interface_language or pending.language)]
     browser, system = sessions.describe(pending.user_agent)
     body = words["confirm"].format(
         url=hub.public_url,

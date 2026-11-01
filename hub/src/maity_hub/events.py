@@ -756,6 +756,8 @@ def wakes(
     wake it as its `member:` token would (§6.4)."""
     if row.kind in NON_WAKING or _isolated(membership):
         return False
+    if row.kind == "member_updated" and (row.payload or {}).get("changed") == ["language"]:
+        return False  # read at the next wake-up, never a reason for one (§6.2)
     if dormant:
         # A dormant instance (§6.17) is woken by its own token alone: not by `all`, the team's
         # tokens, a group chat's messages, nor under a runner by the supervised set. The

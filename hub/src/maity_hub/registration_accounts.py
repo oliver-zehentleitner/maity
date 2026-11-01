@@ -219,6 +219,7 @@ def complete(
                 last_seen_at=now,
                 account_status=status,
                 registered_at=now,
+                interface_language=pending.interface_language,
                 terms_version=terms["version"] if terms is not None else None,
                 terms_accepted_at=now if terms is not None else None,
             )
@@ -234,6 +235,10 @@ def complete(
         _void(conn, pending.id, now)  # a loser: as an expired link, never why (§2.7.1)
         return Completion("gone")
     made.commit()
+    if pending.chosen_language is not None:
+        from maity_hub.notifications import preferences
+
+        preferences.set_language(conn, human_id, pending.chosen_language)
     campaigns.registered(conn, human_id, pending.origin)  # §16.7.2: counted, kept 30 days
     if status == "pending":
         conn.execute(

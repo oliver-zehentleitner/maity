@@ -161,7 +161,9 @@ def for_human(
     if row.address_status != "verified" or row.address is None:
         return 0
     state = _state(conn, human_id)
-    prefs = preferences.preferences(conn, human_id)["email"]
+    # The settings, with the language this mail is in (§6.2).
+    email = preferences.preferences(conn, human_id)["email"]
+    prefs = {**email, "language": preferences.text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
