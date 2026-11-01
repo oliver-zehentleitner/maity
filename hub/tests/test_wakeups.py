@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -324,3 +325,43 @@ def test_without_postgresql_a_held_wait_polls(migrated: Engine) -> None:
         return time.monotonic() - began
 
     assert asyncio.run(hold_and_wait()) < 0.5
+
+
+def test_two_waits_arriving_in_the_opposite_order_of_their_starts_leave_the_newer(
+    postgres: Engine,
+) -> None:
+    async def waiting() -> tuple[longpoll.Waiter, longpoll.Waiter]:
+        loop = asyncio.get_running_loop()
+        older = longpoll.Waiter("order", None, None, loop)
+        newer = longpoll.Waiter("order", None, None, loop)
+        registry = longpoll.Registry()
+        await wakeups.opened(
+            postgres, "events", "order", lambda: registry.supersede(older), older.started_at
+        )
+        await wakeups.opened(
+            postgres, "events", "order", lambda: registry.supersede(newer), newer.started_at
+        )
+        assert older.started < newer.started
+        registry.enter(newer)
+        registry.enter(older)
+        digest = hashlib.sha256(b"events:order").hexdigest()
+        wakeups.supersede(f"{digest}:{newer.started}")  # as the listener hears it
+        return older, newer
+
+    older, newer = asyncio.run(waiting())
+    assert older.superseded and not newer.superseded
+
+
+def test_the_later_arrival_takes_over_where_no_clock_decides() -> None:
+    async def waiting() -> tuple[longpoll.Waiter, longpoll.Waiter]:
+        loop = asyncio.get_running_loop()
+        first = longpoll.Waiter("same", None, None, loop)
+        second = longpoll.Waiter("same", None, None, loop)
+        registry = longpoll.Registry()
+        registry.enter(first)
+        registry.enter(second)
+        assert len(registry) == 1
+        return first, second
+
+    first, second = asyncio.run(waiting())
+    assert first.superseded and not second.superseded
