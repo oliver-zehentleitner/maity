@@ -6,6 +6,8 @@
 // code in the slot it is given, proves it (POST /auth/reauthenticate,
 // POST /auth/second-factor/verify) and makes the call again. Cancel ends
 // with an ApiError of code "cancelled", which the caller says or ignores.
+// A human without TOTP under the mail factor (§2.8.8) is sent a code by
+// mail instead (POST /auth/second-factor/email) and types that.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -17,25 +19,39 @@ window.Maity = window.Maity || {};
 
   const ASK = {
     reauthentication_required: {
-      title: "Confirm with your password",
-      hint: (what) => what + " needs your password again on this browser (it counts for 10 minutes).",
-      label: "Password", type: "password", autocomplete: "current-password",
+      get title() { return M.t("stepup.password.title"); },
+      hint: (what) => M.t("stepup.password.hint", { what }),
+      get label() { return M.t("stepup.password.label"); }, type: "password", autocomplete: "current-password",
       prove: (value) => M.api.post("/auth/reauthenticate", { password: value }),
       wrong: (err) => (err.code === "invalid" && err.details && err.details.fields && err.details.fields.password
-        ? "That is not your password." : err.code === "rate_limited" ? "Too many wrong passwords; wait a few minutes." : null),
+        ? M.t("stepup.password.wrong") : err.code === "rate_limited" ? M.t("stepup.password.rate_limited") : null),
     },
     step_up_required: {
-      title: "Confirm with your second factor",
-      hint: (what) => what + " needs your second factor: enter the code from your authenticator app, or a recovery code (it counts for 10 minutes).",
-      label: "Code", type: "text", autocomplete: "one-time-code",
+      get title() { return M.t("stepup.code.title"); },
+      hint: (what) => M.t("stepup.code.hint", { what }),
+      get label() { return M.t("stepup.code.label"); }, type: "text", autocomplete: "one-time-code",
       // A code may be typed with spaces ("482 913"): six digits without them are a code (§2.8.1).
       prove: (value) => {
         const digits = value.replace(/\s+/g, "");
         return M.api.post("/auth/second-factor/verify", /^\d{6}$/.test(digits) ? { code: digits } : { recovery_code: value });
       },
-      wrong: (err) => (err.code === "code_invalid" ? "That code is not valid." : err.code === "rate_limited" ? "Too many wrong codes; wait a few minutes." : null),
+      wrong: (err) => (err.code === "code_invalid" ? M.t("stepup.code.wrong") : err.code === "rate_limited" ? M.t("stepup.code.rate_limited") : null),
+    },
+    // §2.8.8 rule 4: the code comes by mail, sent when the question opens, again on request.
+    step_up_mail: {
+      get title() { return M.t("stepup.mail.title"); },
+      hint: (what) => M.t("stepup.mail.hint", { what }),
+      get label() { return M.t("stepup.mail.label"); }, type: "text", autocomplete: "one-time-code",
+      send: () => M.api.post("/auth/second-factor/email", {}),
+      prove: (value) => M.api.post("/auth/second-factor/verify", { email_code: value.replace(/\s+/g, "") }),
+      wrong: (err) => (err.code === "code_invalid" ? M.t("stepup.code.wrong") : err.code === "rate_limited" ? M.t("stepup.mail.rate_limited")
+        : err.code === "mail_not_configured" ? M.t("sf.mail.not_configured") : err.code === "address_unverified" ? M.t("sf.mail.address_lost") : null),
     },
   };
+
+  // Whether this human proves the factor by mail: GET /auth/second-factor says so in `via`
+  // (§2.8.1, §2.8.8). A failed read keeps the code question.
+  const byMail = () => M.api.get("/auth/second-factor").then((s) => !!s && s.via === "email", () => false);
 
   // Shows the question in slot; resolves once proven, rejects on Cancel. A
   // question still open in the slot (another call's) is cancelled first, so
@@ -48,9 +64,21 @@ window.Maity = window.Maity || {};
       const id = "step-up-" + reason;
       const input = h("input", { id, type: a.type, autocomplete: a.autocomplete, "aria-describedby": id + "-error" });
       const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-      const submit = h("button", { type: "submit" }, "Confirm");
+      const submit = h("button", { type: "submit" }, M.t("stepup.confirm"));
       const done = () => { open.delete(slot); clear(slot); slot.hidden = true; };
-      open.set(slot, () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); });
+      // The mailed code: sent as the question opens; a failure is said where the code goes.
+      const sent = a.send ? h("p", { class: "hint step-up-sent", role: "status" }) : null;
+      async function send(again) {
+        error.textContent = "";
+        try {
+          await a.send();
+          sent.textContent = again ? M.t("stepup.mail.sent_again") : M.t("stepup.mail.sent");
+        } catch (err) {
+          sent.textContent = "";
+          error.textContent = a.wrong(err) || M.t("stepup.not_confirmed", { reason: err.message });
+        }
+      }
+      open.set(slot, () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); });
       const form = h("form", {
         class: "step-up inline-form",
         onsubmit: async (e) => {
@@ -66,17 +94,19 @@ window.Maity = window.Maity || {};
             resolve();
           } catch (err) {
             submit.disabled = false;
-            error.textContent = a.wrong(err) || "Not confirmed: " + err.message;
+            error.textContent = a.wrong(err) || M.t("stepup.not_confirmed", { reason: err.message });
             input.value = "";
             input.focus();
           }
         },
       },
       h("h4", { class: "step-up-title" }, a.title),
-      h("p", { class: "hint" }, a.hint(what || "This")),
+      h("p", { class: "hint" }, a.hint(what || M.t("stepup.this_action"))), sent,
       h("label", { for: id }, a.label), input, submit,
-      h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError("Cancelled", 0, "", "cancelled")); } }, "Cancel"),
+      a.send ? h("button", { type: "button", class: "step-up-resend", onclick: () => send(true) }, M.t("stepup.mail.send_again")) : null,
+      h("button", { type: "button", onclick: () => { done(); reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled")); } }, M.t("stepup.cancel")),
       error);
+      if (a.send) send(false);
       slot.hidden = false;
       append(clear(slot), form);
       window.setTimeout(() => input.focus(), 0);
@@ -91,7 +121,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         const reason = err && err.code === "forbidden" && err.details && err.details.reason;
         if (!ASK[reason] || i >= TRIES) throw err;
-        await ask(slot, reason, what);
+        await ask(slot, reason === "step_up_required" && await byMail() ? "step_up_mail" : reason, what);
       }
     }
   }

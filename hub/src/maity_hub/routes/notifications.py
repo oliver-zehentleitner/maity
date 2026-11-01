@@ -4,7 +4,6 @@ is `forbidden` with `humans_only`, a runner credential `forbidden`."""
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -16,12 +15,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, longpoll, namespace
+from maity_hub import card_watches, clock, longpoll, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
-from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions
 from maity_hub.notifications.items import KINDS, Item, Scope
@@ -156,16 +155,42 @@ async def list_notifications(
         with engine_of(request).begin() as conn:
             _require_live(conn, session)
 
+    def projects() -> frozenset[str]:
+        with engine_of(request).connect() as conn:
+            return frozenset(
+                conn.execute(
+                    select(t.membership.c.project_id).where(
+                        t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+                    )
+                ).scalars()
+            )
+
     first, seen = await _limited(request, answer)
     if not wait or first["items"]:
         return JSONResponse(first)
+    engine = engine_of(request)
+    shared = engine.dialect.name == "postgresql"
+    project_ids = await run_in_threadpool(projects) if shared else frozenset()
     token = object()
-    _holding[session] = token
+    _holding[session] = token  # held before the announcement, which may supersede it at once
+    # Woken by an event in the human's projects and by the human's own records and read
+    # marks; every event there wakes it, and the stamp tells whether the answer moved.
+    hold = wakeups.held(
+        engine, "bell", wait_key=session, ring_key=human_id, poll=POLL, project_ids=project_ids
+    )
+
+    def taken_over() -> None:  # a newer wait of the session on another replica (`wakeups`)
+        if _holding.get(session) is token:
+            del _holding[session]
+        hold.wake()
+
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     try:
+        closed = await wakeups.opened(engine, "bell", session, taken_over)
         # A stopping hub answers with what it has; the dashboard simply waits again.
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
-            await asyncio.sleep(POLL)
+            await hold.pause(deadline - time.monotonic())
             if _holding.get(session) is not token:
                 await run_in_threadpool(still_live)
                 return JSONResponse({**first, "superseded": True})
@@ -177,6 +202,9 @@ async def list_notifications(
         last, _ = await _limited(request, answer)
         return JSONResponse(last)
     finally:
+        hold.close()
+        if closed is not None:
+            closed()
         if _holding.get(session) is token:
             del _holding[session]
 
@@ -323,10 +351,9 @@ def unwatch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSO
 
 
 def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: bool) -> JSONResponse:
-    """Idempotent; no event. A watch is the human's own mark on the card, shown as
-    `watching`, and notifies nothing since cards make no notification (§6.4, §18.1)."""
-    if caller.kind == "agent":
-        raise humans_only("watching is for the notifications of humans")
+    """Idempotent; no event. A watch is the member's own, shown as `watching`; it notifies a
+    human of nothing, since cards make no notification (§6.4, §18.1). One that comes with a
+    dependency cannot be ended here."""
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         card = conn.execute(
@@ -334,6 +361,13 @@ def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: boo
         ).first()
         if card is None:
             raise not_found()
+        if not on and card.id in card_watches.implied(conn, [card.id], mine.id):
+            raise ApiError(
+                400,
+                "invalid",
+                "the watch comes with a card that depends on this one",
+                {"reason": "implied"},
+            )
         conn.execute(
             delete(t.card_watch).where(
                 t.card_watch.c.card_id == card.id, t.card_watch.c.membership_id == mine.id

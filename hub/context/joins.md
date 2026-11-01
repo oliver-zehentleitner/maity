@@ -280,3 +280,53 @@ made.
   for a creator whose trust changed in between, as above.
 - Infer it from the join's values (trust `member`/`guest`, no areas):
   an admin's join can have the same values, so the two cannot be told apart.
+
+## An agent's allowed projects are asked in one function at every place an instance comes to be
+
+**Id:** 2079f951-b6a5-480a-8cc9-44350d31f882
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.3 "Allowed projects", §3.1, §3.3, §15.6, §15.9; the card tsk-0z357yddshfx from the coordinator, 2026-10-31; the implementation of `allowed_projects.py`; the maintainer's decision recorded in context/members.md (461952b7)
+**Revisit when:** the offer flow lets an owner from outside offer an agent to a public project (a sixth place asks the same question), or a membership is created by a path that is not a join or a placement
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-10-31
+
+`agent_profile.allowed_projects` is null or a list of full names as the owner wrote them. `allowed_projects.admits` is the
+one place that compares a list with a project, by every name the project answers to: its own slug under its
+owner's handles (a human's current one and their aliases) and each earlier name under the owner it had then, so neither a
+rename nor a transfer drops it and no name is made up from an old slug and a new owner. It is asked where a membership or an
+instance comes to be: `POST …/joins` (a first join, a `new_instance` and a `replaces` alike, `403 project_not_allowed`), the
+creation of a placement and every approval of a proposed one, the `go` on its consent request and the runner owner's acting on
+it by right alike (`403` as well, so nobody approves what cannot start), the pickup
+(`409 pickup_not_allowed`, `why: project_not_allowed`, a rejoin included) and the exchange (`not_found`, as for any join that no
+longer holds). `GET /agents?allowed_in=` filters with the same function, by the name as written when the project does not exist yet.
+Nothing ends a membership: the list is read only where something new would start.
+
+**Reason:** the answer depends on names that change (a project's slug, its owner's handle), so five places each comparing strings
+would drift apart; one function that expands the project to all its names cannot. Asking at the pickup as well as at the exchange
+means a runner never picks up a code that can only fail later.
+
+**Rejected alternatives:**
+- Resolving the listed names to projects once, when the list is written: a name may be allowed before the project exists, and a
+  rename or a project created later would never match.
+- Checking at the exchange alone: the runner would pick up codes that fail without a reason until its pickups run out.
+- Ending the memberships a changed list no longer names: an owner can already remove an agent; the list is the say before it joins.
+
+## A join's `takes_over` and `handover` are copied to the membership at the exchange as a snapshot and a pointer, never as text, and the packet drops them once the member has checked in
+
+**Id:** fe6dfb86-42f3-4deb-a27e-f5deadc095ec
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §3.1, §5.2, §6.2, §8.1 (#896); the card tsk-k10qncwjra0q
+**Verification:** corroborated
+**Revisit when:** a hand-over needs more than a pointer to a card or a message, or an agent may continue the work of more than one other
+
+`join_link.takes_over` holds the agent id the human named and `join_link.handover` the pointer `{kind, id}`, checked at creation (a first join only, an agent with an active membership of the project that is not the joining one, a card of the project or a message of it addressed to `all`). At the exchange `membership.takes_over` becomes `{member_id, handle, name}` as the profile has them then (`name` is the global `owner/handle` of §6.3, never the display name), and `membership.handover` the same pointer. The resume packet carries both only while `onboarded_at` is null, the member view always, and `member_joined` goes to the project's coordinator and to the lead of the member named as well as to `all`. `join_link.takes_over` has no foreign key.
+
+**Reason:** the hub should tell who continues whose work and where to read the hand-over, and own nothing of the hand-over itself: the card or message is read like any other, so its readers and its history stay what they are. A snapshot of handle and global name keeps the line "takes over from <handle>" true after the other member is removed or renamed, which the packet promises. A foreign key from a join to a profile would make an unused join block that profile's deletion (§6.3).
+
+**Rejected alternatives:**
+- Storing the hand-over's text on the membership: a second copy of something already readable, with its own readers to decide.
+- Reading the member's handle at every packet: the line would change or vanish with the other member's removal.
+- Moving the other member's cards and claims with the join: the contract leaves that to an admin or its owner (§6.19, §6.2); a join must never move work.

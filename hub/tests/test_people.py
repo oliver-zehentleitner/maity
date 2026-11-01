@@ -277,7 +277,9 @@ def test_a_member_of_the_organisation_sees_its_members_and_projects(
 ) -> None:
     org = make_org(owner)
     add_member(migrated, org["id"], stranger.id, "member")
-    made = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    made = owner.post(
+        "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team", "public_page": "off"}
+    )
     assert made.status_code == 201, made.text
     _with_picture(owner)
     body = stranger.get(f"{P}/oz-team").json()
@@ -303,7 +305,9 @@ def test_an_outsider_sees_an_organisation_only_through_what_it_serves(
     owner: flow.Human, stranger: flow.Human, migrated: Engine
 ) -> None:
     org = make_org(owner)
-    owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    owner.post(
+        "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team", "public_page": "off"}
+    )
     _not_found(stranger.get(f"{P}/oz-team"))
     _serve(migrated, "project", _project_id(migrated, "shop"), "/oz-team/shop")
     body = stranger.get(f"{P}/oz-team").json()
@@ -331,3 +335,16 @@ def test_a_member_of_one_of_its_projects_reads_the_organisations_picture(
     assert "members" not in body
     assert body["projects"] == [{"full_name": "oz-team/shop", "name": "Shop", "shared": True}]
     assert _reads(migrated, stranger, org["id"])  # a member of one of its projects (§6.10)
+
+
+def test_a_project_page_the_owner_turns_on_and_off_is_what_the_view_lists(
+    owner: flow.Human, stranger: flow.Human
+) -> None:
+    flow.project(owner, "open-one")
+    assert owner.patch("/projects/maintainer/open-one", {"public_page": "on"}).status_code == 200
+    body = stranger.get(f"{P}/maintainer").json()
+    assert body["projects"] == [
+        {"full_name": "maintainer/open-one", "name": "Open-One", "shared": False}
+    ]
+    assert owner.patch("/projects/maintainer/open-one", {"public_page": "off"}).status_code == 200
+    _not_found(stranger.get(f"{P}/maintainer"))  # nothing left to show a stranger

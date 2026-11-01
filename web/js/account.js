@@ -36,7 +36,7 @@ window.Maity = window.Maity || {};
   }
 
   // Names in a sentence: "a, b, c" in English, in the catalog's language.
-  const names = (list) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(list);
+  const names = (list) => M.fmt.list(list);
 
   // One picture and its controls: what shows now, where it comes from, an
   // upload and, for an upload, Remove. who: { id, display_name,
@@ -86,7 +86,7 @@ window.Maity = window.Maity || {};
     return h("div", { class: "picture" },
       h("div", { class: "picture-now" }, M.avatar(who, 64),
         h("p", { class: "muted" }, Object.hasOwn(SOURCE_WORDS, who.avatar_source) ? SOURCE_WORDS[who.avatar_source] : M.t("picture.source.generated"))),
-      h("div", { class: "picture-controls" },
+      h("div", { class: "picture-controls field-stack" },
         h("label", { for: id }, own ? M.t("picture.upload_own") : M.t("picture.upload_for", { name: who.display_name })),
         input,
         h("p", { class: "hint" }, M.t("picture.hint")),
@@ -151,8 +151,7 @@ window.Maity = window.Maity || {};
   // off turns the mode on with it, and clearing the last turns it off.
   // The hub's note (member.meat_proxy_note, §2) stands under the parts as
   // /me and each answer carry it — what agents read now, or would read
-  // once it is on — never a copy of the page's own; a hub that does not
-  // send it shows none.
+  // once it is on — never a copy of the page's own.
   const MEAT_PARTS = [
     ["meat_proxy_lead", "meat-proxy-lead", () => M.t("meat.part.lead")],
     ["meat_proxy_hands", "meat-proxy-hands", () => M.t("meat.part.hands")],
@@ -160,7 +159,6 @@ window.Maity = window.Maity || {};
   async function meatProxySection(ctx) {
     if (ctx.me.kind !== "human") return null;
     const status = M.statusLine();
-    const noteOf = (m) => (typeof m.meat_proxy_note === "string" && m.meat_proxy_note ? m.meat_proxy_note : null);
     const box = h("input", { type: "checkbox", id: "meat-proxy", "aria-describedby": "meat-proxy-hint" });
     const parts = MEAT_PARTS.map(([field, id]) => [field, h("input", { type: "checkbox", id })]);
     const hint = h("p", { class: "hint", id: "meat-proxy-hint" });
@@ -170,10 +168,10 @@ window.Maity = window.Maity || {};
     function show() {
       box.checked = !!ctx.me.meat_proxy;
       parts.forEach(([field, input]) => { input.checked = !!ctx.me[field]; });
-      const note = noteOf(ctx.me);
-      hint.textContent = !note ? M.t("meat.hint") : ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
-      append(clear(quote), note ? h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, note)) : null);
-      box.setAttribute("aria-describedby", note ? "meat-proxy-hint meat-proxy-note" : "meat-proxy-hint");
+      hint.textContent = ctx.me.meat_proxy ? M.t("meat.hint.on") : M.t("meat.hint.off");
+      // GET /me carries the note always, off too: what switching on would send (§5.2).
+      append(clear(quote), h("blockquote", { class: "meat-proxy-note", id: "meat-proxy-note" }, h("p", null, ctx.me.meat_proxy_note)));
+      box.setAttribute("aria-describedby", "meat-proxy-hint meat-proxy-note");
     }
     async function send(body) {
       inputs.forEach((x) => { x.disabled = true; });
@@ -188,7 +186,7 @@ window.Maity = window.Maity || {};
         show();
         status.done();
         append(status.el, h("span", { class: "ok" }, ctx.me.meat_proxy
-          ? (noteOf(ctx.me) ? M.t("meat.saved.on_note") : M.t("meat.saved.on"))
+          ? M.t("meat.saved.on_note")
           : M.t("meat.saved.off")));
       } catch (err) {
         show();
@@ -288,6 +286,8 @@ window.Maity = window.Maity || {};
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     // Your data (§2.9): the export and the deletion of the account.
     const yourData = M.yourData ? await M.yourData.section(ctx) : null;
+    // Forge access (§11.4): the grants one's projects read their repositories with.
+    const forge = M.forge ? await M.forge.section(ctx) : null;
     const preferences = M.preferences ? await M.preferences.section(ctx) : null;
     // The theme (js/theme.js): signed in, it is chosen here, not in the
     // header (the maintainer's instruction). Per browser, as before: what
@@ -315,6 +315,7 @@ window.Maity = window.Maity || {};
       preferences ? preferences.el : null,
       notify ? notify.el : null,
       sessions ? sessions.el : null,
+      forge ? forge.el : null,
       yourData ? yourData.el : null,
       h("h3", null, M.t("password.title")),
       h("p", { class: "muted" }, M.t("password.hint")),
@@ -331,5 +332,7 @@ window.Maity = window.Maity || {};
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
     // /account/data (the mail's link to the export, §2.9) starts at Your data.
     if (yourData && args && args[0] === "data") window.setTimeout(() => yourData.heading.focus(), 0);
+    // /settings/forge (the hub's redirect after an installation, §11.4) starts at Forge access.
+    if (forge && args && args[0] === "forge") window.setTimeout(() => forge.heading.focus(), 0);
   };
 })(window.Maity);

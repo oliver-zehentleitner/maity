@@ -160,7 +160,7 @@ and makes "nothing else opens" a property of the shape of the body.
 **Evidence:** confirmed
 **Source:** docs/api.md §6.2 ("Across owners"), §3.1, §2.3 and the contract change that adapted them (#769); the maintainer's go and the coordinator's decisions on card tsk-3jdqtppzmtdb, 2026-10-30 (the personal request instead of a project route for a human outside the project; the owner's own path included; existing edges stay)
 **See:** manager.md#an-agents-owner-moves-its-reports_to-on-a-path-of-their-own-to-nobody-to-a-member-they-own-or-by-asking-the-other-side — 4a7342a5-50d1-4d38-bc6b-daa38413efd1 — as of 2026-10-30
-**Revisit when:** an organisation's agents get their own owner rules (§6.26), or the consent flow gains a third party, or a manager's consented change (`line_change`) and a placement's new profile (§15.6) are made to ask as the others do
+**Revisit when:** an organisation's agents get their own owner rules (§6.26), or the consent flow gains a third party, or a manager's reach comes to hold another owner's member as a new boss, or a placement creates its profile other than through a join
 
 `cross_owner.owners` decides: the subordinate is an agent and the boss's side (an agent's owner, or a human)
 is not its owner. `cross_owner.file` then files one `consent` request per owner still to consent, as a
@@ -179,7 +179,10 @@ for a foreign boss, `asked_by_human` when they are no member); an admin agent's 
 and a join, which starts the membership with `reports_to: null` and asks the boss's side at the exchange
 with the join's creator as asker. A further `PATCH` of the member's `reports_to` withdraws the open
 requests (`superseded`), an agent that did not ask is refused (`pending_consent`), the removal of either
-member withdraws them (`member_removed`).
+member withdraws them (`member_removed`). A `PATCH` that waits for a human's go first (`line_change`, an
+admin agent's `member_change`) is refused the same way when it is made, and withdraws the pair at its `go`,
+not when it is filed: until a human agrees nothing has superseded the owners' decision. The check at the `go`
+catches a pair filed while the change waited.
 
 Who reads and withdraws: either owner of the edge, member of the project or not, reads and withdraws
 **both** requests of the pair, also the one addressed to the other owner, under `/requests/{id}` (and on
@@ -205,9 +208,11 @@ every personal request is, and opens no call into the project.
 - A column naming the pair: the proposal carries its sibling ids, and nothing queries by them but the
   hub's own withdrawals.
 
-**Not covered, and why:** a manager's consented change (`line_change`) and a placement's new profile
-(§15.6) still set a cross-owner `reports_to` directly; the contract names the join, the `PATCH` and the
-owner. Existing cross-owner edges stay as they are (alpha, no migration of data).
+**Not a second path:** a manager's consented change (`line_change`) cannot make a cross-owner edge, as its
+new boss is the manager or an (a) member of its reach, checked when it is asked and again at the `go`. A
+placement's new profile (§15.6) is created through a join, so `join_waits` and `_ask_boss_side` cover it.
+This entry once named both as uncovered; tests now hold both. Existing cross-owner edges stay as they are
+(alpha, no migration of data).
 
 ## A join whose creator left the project asks nobody for the boss's side
 

@@ -15,7 +15,9 @@ from passing for this command's own output:
   field is collapsed onto one line (`inline`), so no field can start a line of the output.
 
 Long text is capped in this rendering only (`MAX_BODY_*`, `MAX_EVENTS_CHARS`) with a pointer to
-the full value; `--json` stays complete.
+the full value; `--json` stays complete. By default the text is compact (`COMPACT_*`): the last
+answers and the last events addressed to this member or instance, the rest counted, shorter
+bodies; `maity resume --full` renders the same packet without that.
 """
 
 from __future__ import annotations
@@ -31,6 +33,17 @@ HANDBOOK = "https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.
 MAX_BODY_LINES = 40
 MAX_BODY_CHARS = 4000
 MAX_EVENTS_CHARS = 64 * 1024
+COMPACT_ANSWERS = 10
+COMPACT_EVENTS = 10
+COMPACT_LINES = 5
+COMPACT_CHARS = 200
+UNREAD_CHATS = 10  # chats with unread messages listed in the resume; the rest are counted
+COMPACT_KINDS = 5
+FULL = "maity resume --full"
+WAIT_ON = (
+    ", then start maity wait in the background and keep working from what it returns. "
+    "Do not wait for your human in the terminal."
+)
 
 # Characters a terminal acts on rather than shows, plus the Unicode line and paragraph
 # separators, which some readers break lines on. Kept: newline (handled by quote/inline) and
@@ -66,21 +79,25 @@ def quote(text: Any) -> list[str]:
     return [f"> {line}".rstrip() for line in lines]
 
 
-def _capped(text: Any, pointer: str) -> list[str]:
-    """`quote(text)`, cut at MAX_BODY_LINES lines or MAX_BODY_CHARS characters."""
+def _capped(text: Any, pointer: str, compact: bool = False) -> list[str]:
+    """`quote(text)`, cut at MAX_BODY_LINES lines or MAX_BODY_CHARS characters, or at the
+    COMPACT_* ones in the compact text."""
+    max_lines, max_chars = (
+        (COMPACT_LINES, COMPACT_CHARS) if compact else (MAX_BODY_LINES, MAX_BODY_CHARS)
+    )
     full = str(text)
     lines = full.rstrip("\n").split("\n")
     kept: list[str] = []
     size = 0
     for line in lines:
-        if len(kept) == MAX_BODY_LINES or size + len(line) > MAX_BODY_CHARS:
+        if len(kept) == max_lines or size + len(line) > max_chars:
             break
         kept.append(line)
         size += len(line) + 1
     if len(kept) == len(lines):
         return quote(full)
     if not kept:  # one line longer than the cap
-        kept = [lines[0][:MAX_BODY_CHARS]]
+        kept = [lines[0][:max_chars]]
     rest = len(lines) - len(kept)
     return [*quote("\n".join(kept)), f"… (cut, {rest} more lines: {pointer})"]
 
@@ -179,6 +196,9 @@ def _name(value: Any, names: dict[str, str]) -> str:
     return inline(names.get(value, value) if isinstance(value, str) else value)
 
 
+DORMANT_OFF = "maity dormant --off"
+
+
 def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     me, ms = _dict(packet.get("me")), _dict(packet.get("membership"))
     member_id = me.get("member_id")
@@ -191,20 +211,31 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     if me.get("member_id"):
         line += f", member id {inline(me['member_id'])}"
     lines = [line + "."]
-    others = [_sibling(handle, i) for i in _items(packet.get("team"))]
-    if others:
-        lines.append("Other instances of you: " + "; ".join(others))
+    team = _items(packet.get("team"))
+    if team:
+        lines.append("Other instances of you: " + "; ".join(_sibling(handle, i) for i in team))
+    lead = ms.get("reports_to")
+    if lead:
+        lines.append(f"Your lead: @{_name(lead, names)}")
+    for carried in _items(ms.get("bridging_for")):  # the agents it lends its hands to (§2.3)
+        who = carried.get("handle") or carried.get("member_id") or "?"
+        lines.append(f"You carry for @{inline(who)}: {inline(carried.get('purpose') or '')}")
+    if team:
+        lines.append(_coordinate(handle, team, bool(lead)))
+    if me.get("dormant") and instance:  # §6.17
+        address = f"@{handle}#{inline(instance)}"
+        lines.append(f"Dormant: only {address} wakes this instance. End it with: {DORMANT_OFF}")
     if ms.get("trust") or ms.get("role"):
-        role = _trust_role(ms, "Trust: {trust}, role: {role}")
-        if ms.get("reports_to"):
-            role += f", reporting to {_name(ms['reports_to'], names)}"
-        lines.append(role)
+        lines.append(_trust_role(ms, "Trust: {trust}, role: {role}"))
     areas = ms.get("areas")
     if isinstance(areas, list) and areas:
         lines.append("Areas you own: " + ", ".join(inline(a) for a in areas))
     owner = get(me, "owner", "handle")
     if owner:
         lines.append(f"Your human: {inline(owner)}")
+        note = get(me, "owner", "meat_proxy_note")
+        if isinstance(note, str) and note.strip():
+            lines += quote(note)
     return lines
 
 
@@ -217,7 +248,22 @@ def _sibling(handle: str, item: dict[str, Any]) -> str:
         facts.append(f"{claims} claim" + ("" if claims == 1 else "s"))
     facts += ["lead"] if item.get("lead") is True else []
     facts += ["paused"] if item.get("paused") else []
+    facts += ["dormant"] if item.get("dormant") else []
     return f"{handle}#{inline(item.get('id') or '?')}" + (f" ({', '.join(facts)})" if facts else "")
+
+
+def _coordinate(handle: str, team: list[dict[str, Any]], has_lead: bool) -> str:
+    """What two instances of one member do so they do not cross: ask through the team's lead
+    instance (`lead`, §6.18) or the member's lead before taking or handing over work."""
+    via = [
+        f"@{handle}#{inline(i.get('id') or '?')} (team lead)" for i in team if i.get("lead") is True
+    ]
+    via += ["your lead"] if has_lead else []
+    through = f" through {' or '.join(via)}" if via else ""
+    return (
+        f"Before you take or hand over work, check with them{through}; cards held by them "
+        "are not yours."
+    )
 
 
 def _project(packet: dict[str, Any]) -> list[str]:
@@ -282,6 +328,38 @@ def _availability(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Availability", *lines, ""] if lines else []
 
 
+def _chat_meat_proxy(chat: dict[str, Any]) -> list[str]:
+    """The note of each human for whom the meat-proxy mode holds in this chat (§5.2, §9.3),
+    quoted under `<handle> here:`; a chat where it holds for nobody prints nothing."""
+    lines = []
+    for person in _items(chat.get("meat_proxy")):
+        note = person.get("meat_proxy_note")
+        if isinstance(note, str) and note.strip():
+            lines.append(f"    {inline(person.get('handle') or '?')} here:")
+            lines += [f"    {line}" for line in quote(note)]
+    return lines
+
+
+def _unread_chats(packet: dict[str, Any]) -> list[str]:
+    """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
+    a group chat's messages wake nobody unless they mention you, so the resume says so."""
+    unread = [
+        c for c in _items(packet.get("conversations"))
+        if isinstance(c.get("unread"), int) and not isinstance(c.get("unread"), bool)
+        and c["unread"] > 0
+    ]  # fmt: skip
+    lines = []
+    for c in unread[:UNREAD_CHATS]:
+        chat = inline(c.get("id") or "?")
+        name = inline(c.get("title")) if c.get("title") else inline(c.get("kind") or "chat")
+        counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
+        lines.append(f"  {name} {chat} ({counts}): maity chat {chat}")
+        lines += _chat_meat_proxy(c)
+    if len(unread) > UNREAD_CHATS:
+        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: maity chats")
+    return lines
+
+
 def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
     line = f"  {inline(card.get('id'))} [{inline(card.get('status'))}] {inline(card.get('title'))}"
     line += _cover(card, names or {})
@@ -294,13 +372,16 @@ def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
     return line
 
 
-def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False) -> list[str]:
+def _request(
+    req: dict[str, Any], names: dict[str, str], answering: bool = False, compact: bool = False
+) -> list[str]:
     lines = [
         f"  {inline(req.get('id'))} ({inline(req.get('class'))}): {inline(req.get('title'))}"
         + _cover(req, names)
     ]
     if answering:
         if req.get("summary"):
+            # A request asks for action: its summary stays whole, compact or not (§13).
             lines += ["  " + q for q in quote(req["summary"])]
         replies = _items(req.get("replies"))
         if replies:
@@ -316,7 +397,8 @@ def _request(req: dict[str, Any], names: dict[str, str], answering: bool = False
     if answer.get("talk"):
         lines.append("  they want to talk first: read your chat, " "`maity chat <your member id>`")
     if answer.get("text"):
-        lines += ["  " + q for q in quote(answer["text"])]
+        text = _capped(answer["text"], FULL, compact) if compact else quote(answer["text"])
+        lines += ["  " + q for q in text]
     return lines
 
 
@@ -324,7 +406,49 @@ def _read_more(slug: str, after: Any) -> str:
     return f"`maity api GET /projects/{slug}/events --query after={inline(after)}`"
 
 
-def _event(event: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
+def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
+    """What a jour fixe event that wakes someone asks of the reader (§20.9), as plain lines;
+    [] for any other event. The questions are the hub's text and are quoted."""
+    kind = event.get("kind")
+    payload = _dict(event.get("payload"))
+    round_id = inline(payload.get("round_id") or "?")
+    if kind == "jour_fixe_opened":
+        lines = [
+            f"jour fixe {round_id} is open: answer by {inline(payload.get('answers_close_at'))} "
+            "with `maity jourfixe answer`, or not at all; the answer goes to the moderator only"
+        ]
+        questions = payload.get("questions")
+        if isinstance(questions, list):
+            questions = "\n".join(str(q) for q in questions)
+        return lines + (quote(questions) if questions else [])
+    if kind == "jour_fixe_answers_closed":
+        return [
+            f"jour fixe {round_id}: answers closed, {inline(payload.get('answers_received'))} "
+            f"received; you moderate: read them with `maity jourfixe answers {round_id}`, the "
+            f"statement is due by {inline(payload.get('statement_due_at'))} "
+            f"(`maity jourfixe statement {round_id} --file …`)"
+        ]
+    if kind == "jour_fixe_step_opened":
+        step, step_kind = inline(payload.get("step")), inline(payload.get("kind"))
+        topics = payload.get("topics")
+        named = ", ".join(inline(x) for x in topics) if isinstance(topics, list) else ""
+        return [
+            f"jour fixe {round_id}: step {step} ({step_kind}) is open for you "
+            f"until {inline(payload.get('closes_at'))}"
+            + (f", topics {named}" if named else "")
+            + f': `maity jourfixe post {round_id} --step {step_kind} --topic <topic> "…"`'
+        ]
+    if kind == "jour_fixe_exchange_closed":
+        return [
+            f"jour fixe {round_id}: the exchange closed; you moderate: the report is due by "
+            f"{inline(payload.get('report_due_at'))} (`maity jourfixe report {round_id} --file …`)"
+        ]
+    return []
+
+
+def _event(
+    event: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
+) -> list[str]:
     actor = get(event, "actor", "member_id") or "the hub"
     subject = get(event, "subject", "id")
     seq = event.get("seq")
@@ -332,18 +456,21 @@ def _event(event: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]
     if subject:
         head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":
-        return [head]
+        return [head, *("  " + line for line in jour_fixe_lines(event))]
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))
-    head += f" ({inline(payload.get('type'))}, to {_name(payload.get('to'), names)})"
+    # an `update` may have no recipient: it goes to the card's watchers (§6.4)
+    to = "" if payload.get("to") is None else f", to {_name(payload.get('to'), names)}"
+    head += f" ({inline(payload.get('type'))}{to})"
     after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
     pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
-    return [head, *("  " + q for q in _capped(payload.get("body") or "", pointer))]
+    body = _capped(payload.get("body") or "", pointer, compact)
+    return [head, *("  " + q for q in body)]
 
 
 def _event_list(
-    items: list[dict[str, Any]], slug: str, names: dict[str, str]
+    items: list[dict[str, Any]], slug: str, names: dict[str, str], compact: bool = False
 ) -> tuple[list[str], bool, Any]:
     """The events as text, cut at MAX_EVENTS_CHARS: the lines, whether they were cut, and the
     `seq` of the last event shown."""
@@ -352,7 +479,7 @@ def _event_list(
     for event in items:
         if event.get("kind") == "ticker":
             continue  # printed in the Ticker section (§17.9), never twice
-        block = _event(event, slug, names)
+        block = _event(event, slug, names, compact)
         cost = sum(len(line) + 1 for line in block)
         if lines and size + cost > MAX_EVENTS_CHARS:
             return lines, True, last
@@ -362,9 +489,43 @@ def _event_list(
     return lines, False, last
 
 
-def _events(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[str]:
+def _for_me(packet: dict[str, Any]) -> set[str]:
+    """The audience tokens that mean this member or this instance (§8.2)."""
+    member, instance = get(packet, "me", "member_id"), get(packet, "me", "instance")
+    tokens = {f"member:{member}"} if isinstance(member, str) else set()
+    if isinstance(member, str) and isinstance(instance, str):
+        tokens.add(f"instance:{member}#{instance}")
+    return tokens
+
+
+def _not_shown(left: list[dict[str, Any]], earlier: int) -> str:
+    """`Not shown: <n> events (<k> <kind>, …; <m> earlier for you)`, kinds by count."""
+    counts: dict[str, int] = {}
+    for event in left:
+        kind = inline(event.get("kind") or "?")
+        counts[kind] = counts.get(kind, 0) + 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    kinds = [f"{n} {kind}" for kind, n in ranked[:COMPACT_KINDS]]
+    kinds += ["…"] if len(ranked) > COMPACT_KINDS else []
+    parts = ", ".join(kinds) + (f"; {earlier} earlier for you" if earlier else "")
+    return f"  Not shown: {len(left)} events ({parts}): {FULL}"
+
+
+def _events(
+    packet: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
+) -> list[str]:
     events = _dict(packet.get("events"))
-    lines, cut, last = _event_list(_items(events.get("items")), slug, names)
+    items = [e for e in _items(events.get("items")) if e.get("kind") != "ticker"]
+    left: list[dict[str, Any]] = []
+    if compact:
+        tokens = _for_me(packet)
+        mine = [e for e in items if tokens & set(e.get("audience") or [])]
+        shown = mine[-COMPACT_EVENTS:]
+        left = [e for e in items if not any(e is s for s in shown)]
+        items = shown
+    lines, cut, last = _event_list(items, slug, names, compact)
+    if left:
+        lines.append(_not_shown(left, len(mine) - len(shown)))
     more = last if cut else events.get("cursor") if events.get("truncated") else None
     if more is not None:
         lines.append(f"  … more events after #{inline(more)}: {_read_more(slug, more)}")
@@ -405,6 +566,22 @@ def _handover(packet: dict[str, Any], slug: str, names: dict[str, str]) -> list[
     return ["", f"Handed over from {named}:", *lines]
 
 
+def _answered(reqs: dict[str, Any], names: dict[str, str], compact: bool) -> list[str]:
+    """`Answered since your last session:`, in the compact text the last COMPACT_ANSWERS.
+    Ordered by `answered_at`, since the hub sends them in the order they were asked: an old
+    request answered just now is the one most likely to matter. One without it counts as the
+    oldest."""
+    answered = sorted(
+        _items(reqs.get("answered_since_cursor")),
+        key=lambda r: (1, r["answered_at"]) if isinstance(r.get("answered_at"), str) else (0, ""),
+    )
+    shown = answered[-COMPACT_ANSWERS:] if compact else answered
+    lines = [ln for r in shown for ln in _request(r, names, compact=compact)]
+    if len(shown) < len(answered):
+        lines.append(f"  … {len(answered) - len(shown)} earlier answers: {FULL}")
+    return lines
+
+
 def _is_seq(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
@@ -438,16 +615,22 @@ def _ticker(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) -> str:
+def _next_step(
+    packet: dict[str, Any], paused: bool, board_empty: bool = False, first: bool = False
+) -> str:
+    """The one action the text ends with, which the agent can take without asking its human
+    (§13): the work it holds or was given, and always the background wait after it."""
     claims = _items(packet.get("claims"))
     assigned = _items(packet.get("assigned"))
+    handover = _items(get(packet, "handover", "items"))
+    read_first = "read what was handed over to you above, then " if handover else ""
     if paused:
         return "You are paused: park what you hold (checkpoint or report), then `maity wait`."
     if claims:
         card = inline(claims[0].get("id"))
-        return f"Continue {card} from its checkpoint; `maity wait` when nothing is left."
+        return f"{read_first}continue {card} from its checkpoint{WAIT_ON}"
     if assigned:
-        return f"`maity claim {inline(assigned[0].get('id'))}`, the card assigned to you."
+        return f"{read_first}maity claim {inline(assigned[0].get('id'))}{WAIT_ON}"
     if board_empty and is_admin(packet):
         state = get(packet, "project", "state")
         if state == "archived":
@@ -459,7 +642,16 @@ def _next_step(packet: dict[str, Any], paused: bool, board_empty: bool = False) 
             "The board is empty. As an admin you run the board: create cards on "
             "the board, or ask your human what work to set up."
         )
-    return "`maity wait` until something is addressed to you."
+    if first:
+        lead = get(packet, "membership", "reports_to")
+        names = _names(packet)
+        if isinstance(lead, str) and lead:
+            who = _name(lead, names)
+            to = f'report to @{who} with maity say {who} "…" --type notice'
+        else:
+            to = 'report to your human with maity say human "…"'
+        return f"{read_first}{to}{WAIT_ON}"
+    return f"{read_first}{WAIT_ON.removeprefix(', then ')}"
 
 
 def _author(by: Any) -> str:
@@ -545,13 +737,39 @@ def _memory(packet: dict[str, Any]) -> list[str]:
     return [*out, ""]
 
 
+def _takes_over(packet: dict[str, Any]) -> list[str]:
+    """`Takes over from <handle>; the hand-over is in <card | message #seq>.` when the join
+    named them (§3.1, §5.2). Never the hand-over's text: it is read as any card or message."""
+    ms = _dict(packet.get("membership"))
+    who = ms.get("takes_over")
+    if not isinstance(who, dict):
+        return []
+    return [f"Takes over from @{label(who)}{_handover_ref(ms)}."]
+
+
+def _handover_ref(ms: dict[str, Any]) -> str:
+    """`; the hand-over is in <card | message #seq>: <command>` for a hand-over the join named
+    in a form that can be read; empty otherwise, so nothing points at it as `above`."""
+    handover = _dict(ms.get("handover"))
+    kind, ref = handover.get("kind"), handover.get("id")
+    if kind == "task" and isinstance(ref, str) and ref:
+        return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
+    if kind == "message" and isinstance(ref, int) and not isinstance(ref, bool):
+        return f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
+    return ""
+
+
 def _check_in(packet: dict[str, Any]) -> list[str]:
+    """The `Check in` block, with the takeover line before the hint (§5.2); a takeover without
+    a check-in target stands alone where the block would."""
+    takes_over = _takes_over(packet)
     block = _dict(packet.get("onboarding"))
     target = _dict(block.get("check_in_with"))
-    if not target.get("handle"):
-        return []  # Old hubs omit the block; tolerate a partial packet as elsewhere.
+    if not target.get("handle"):  # Old hubs omit the block; tolerate a partial packet.
+        return [*takes_over, ""] if takes_over else []
     lines = [
         "Check in:",
+        *takes_over,
         f"Report to @{label(target)} ({inline(target.get('kind'))}) "
         "with a message before you take any work.",
     ]
@@ -573,22 +791,52 @@ def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Setup waits:", *lines, ""] if lines else []
 
 
-def _keep_the_why(packet: dict[str, Any]) -> list[str]:
-    """The `Keep the Why` block (§6.23, §13) when the project requires the commitment: the
-    confirmation, or the sentence that asks for it with its deadline. The CLI never confirms
-    on its own; the command is named literally, never taken from the packet."""
-    block = _dict(packet.get("keep_the_why"))
+def _ktw_loading(block: dict[str, Any]) -> list[str]:
+    """How to load the skill, whatever the machine has installed (§6.23): texts for the agent,
+    never run here. Every field is optional: the block prints what it has."""
+    skill = _dict(block.get("skill"))
+    lines = [inline(skill["load"])] if skill.get("load") else []
+    given = skill.get("install")
+    install = [i for i in given if isinstance(i, str)] if isinstance(given, list) else []
+    if install:
+        lines += ["If the skill is not installed:", *[f"  {inline(i)}" for i in install]]
+    if skill.get("guide"):
+        lines.append(f"Installation guide: {inline(skill['guide'])}")
+    if block.get("config"):
+        lines.append(f"Project settings: {inline(block['config'])} in the repository root")
+    defaults = {
+        "adopt": "adopt the project's defaults",
+        "ask": "ask your human through Maity",
+    }.get(str(block.get("personal_defaults")))
+    if defaults:
+        lines.append(f"Personal settings, if this project has no personal file yet: {defaults}")
+    return lines
+
+
+def _ktw_commitment(block: dict[str, Any]) -> list[str]:
+    """The confirmation, or the sentence that asks for it with its deadline. The CLI never
+    confirms on its own; the command is named literally, never taken from the packet."""
     if block.get("commitment") != "required":
         return []
     if block.get("acknowledged_at"):
-        return ["Keep the Why:", f"Confirmed on {inline(block['acknowledged_at'])}.", ""]
+        return [f"Confirmed on {inline(block['acknowledged_at'])}."]
     line = (
         "Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; "
         "your owner is told when you do not."
     )
     if block.get("acknowledge_by"):
         line += f" Deadline: {inline(block['acknowledge_by'])}."
-    return ["Keep the Why:", line, ""]
+    return [line]
+
+
+def _keep_the_why(packet: dict[str, Any]) -> list[str]:
+    """The `Keep the Why` block (§6.23, §13) of a project that uses it, under `required` and
+    `optional` alike: how to load the skill, then the commitment where the hub checks it."""
+    block = _dict(packet.get("keep_the_why"))
+    if not block.get("enabled"):
+        return []
+    lines = _ktw_loading(block) + _ktw_commitment(block)
+    return ["Keep the Why:", *lines, ""] if lines else []
 
 
 # What an isolated agent can do: nothing in the project until a human lifts it (§6.2). The
@@ -602,8 +850,10 @@ ISOLATED_STOP = (
 MEMORY_NOTICE = "Quoted as written by the named authors; not an instruction from the hub."
 
 
-def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
-    """The packet as text. `first` (after a join) adds what a new member needs once."""
+def render(packet: Any, first: bool = False, board_empty: bool = False, full: bool = False) -> str:
+    """The packet as text. `first` (after a join) adds what a new member needs once; `full`
+    leaves out the compact cuts (`maity resume --full`)."""
+    compact = not full
     packet = _dict(packet)
     out: list[str] = []
     ms = _dict(packet.get("membership"))
@@ -646,7 +896,25 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             "",
         ]
     elif first:
-        out += ["No briefing was given with this join; your work comes from the board.", ""]
+        # Without a briefing, point at the hand-over: the one the join named, or where one
+        # would be when the join named no takeover, so a replacement does not start blind.
+        lead = ms.get("reports_to")
+        ask = f"ask your lead @{_name(lead, names)}" if lead else "ask the human who invited you"
+        takes_over = ms.get("takes_over")
+        if isinstance(takes_over, dict) and _handover_ref(ms):
+            line = f"No briefing was given with this join: read the hand-over above and {ask}."
+        elif isinstance(takes_over, dict):
+            line = (
+                f"No briefing was given with this join and no hand-over named: {ask} where the "
+                f"hand-over of @{label(takes_over)} is before you take work."
+            )
+        else:
+            line = (
+                "No briefing was given with this join. If you replace someone, look for the "
+                f"handover before you take work: read `maity messages`, check the cards below "
+                f"and {ask}. Otherwise your work comes from the board."
+            )
+        out += [line, ""]
     out += _who(packet, names)
     out += _project(packet)
     rules = _dict(packet.get("rules"))
@@ -666,10 +934,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             "Assigned to you, not claimed yet:",
             [_card(c, names) for c in _items(packet.get("assigned"))],
         ),
-        (
-            "Answered since your last session:",
-            [ln for r in _items(reqs.get("answered_since_cursor")) for ln in _request(r, names)],
-        ),
+        ("Answered since your last session:", _answered(reqs, names, compact)),
         (
             "Your open requests:",
             [ln for r in _items(reqs.get("mine_open")) for ln in _request(r, names)],
@@ -679,16 +944,17 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
             [
                 ln
                 for r in _items(reqs.get("to_answer"))
-                for ln in _request(r, names, answering=True)
+                for ln in _request(r, names, answering=True, compact=compact)
             ],
         ),
+        ("Unread chats:", _unread_chats(packet)),
         *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
     ]
     for title, lines in sections:
         if lines:
             out += ["", title, *lines]
     out += _handover(packet, slug, names)
-    events = _events(packet, slug, names)
+    events = _events(packet, slug, names, compact)
     if events:
         out += ["", "Events since your last session:", *events]
 
@@ -709,7 +975,8 @@ def render(packet: Any, first: bool = False, board_empty: bool = False) -> str:
     if isinstance(isolated, dict):
         out += ["", "Next: You are isolated: stop, and do not re-arm `maity wait`."]
     else:
-        out += ["", "Next: " + _next_step(packet, isinstance(paused, dict), board_empty)]
+        step = _next_step(packet, isinstance(paused, dict), board_empty, first)
+        out += ["", "Next: " + step]  # worded as §13 writes it, lower case included
     if first:
         out.append(pointer.HUMAN_CHANNEL)
         out.append(f"How to work as a member, and the rules that matter: {HANDBOOK}")

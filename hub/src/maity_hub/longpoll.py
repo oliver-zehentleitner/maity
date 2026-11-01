@@ -10,6 +10,7 @@ goes through `call_soon_threadsafe`.
 from __future__ import annotations
 
 import asyncio
+import random
 import threading
 from dataclasses import dataclass, field
 
@@ -27,12 +28,20 @@ class Waiter:
     # Set when the agent's membership was isolated: the wait ends at once (§6.2).
     ended: bool = False
     membership_id: int | None = None
+    # A bridge's wait for a served agent (§2.3): ended with the connection or with the
+    # bridge's own isolation, as well as with the served agent's.
+    bridge_id: str | None = None
+    bridge_membership_id: int | None = None
     # A runner's waiter reads several projects (docs/api.md §15.8); the reader
     # replaces the set on every pass, an assignment the notifier reads atomically.
     project_ids: frozenset[str] = frozenset()
+    listening_wait: str | None = None  # its row in the listening registry (`listening`)
 
     def wake(self) -> None:
         self.loop.call_soon_threadsafe(self.event.set)
+
+    def wake_later(self, seconds: float) -> None:
+        self.loop.call_soon_threadsafe(self.loop.call_later, seconds, self.event.set)
 
 
 class Registry:
@@ -48,14 +57,23 @@ class Registry:
             previous.superseded = True
             previous.wake()
         if waiter.session_id:
-            listening.opened(waiter.session_id)
+            waiter.listening_wait = listening.opened(waiter.session_id)
 
     def leave(self, waiter: Waiter) -> None:
         with self._lock:
             if self._by_key.get(waiter.key) is waiter:
                 del self._by_key[waiter.key]
-        if waiter.session_id:
-            listening.closed(waiter.session_id)
+        if waiter.session_id and waiter.listening_wait is not None:
+            listening.closed(waiter.session_id, waiter.listening_wait)
+            waiter.listening_wait = None
+
+    def supersede(self, waiter: Waiter) -> None:
+        """A newer wait of the same key took over on another replica (`wakeups`)."""
+        with self._lock:
+            if self._by_key.get(waiter.key) is waiter:
+                del self._by_key[waiter.key]
+        waiter.superseded = True
+        waiter.wake()
 
     def notify(self, project_id: str, _seq: int) -> None:
         with self._lock:
@@ -68,18 +86,38 @@ class Registry:
             waiter.wake()
 
     def end(self, membership_id: int) -> None:
-        """End every open wait of an isolated agent's credentials (§6.2, "Isolation")."""
+        """End every open wait of an isolated agent's credentials (§6.2, "Isolation"), and
+        every wait a bridge holds for it or as it."""
         with self._lock:
-            waiting = [w for w in self._by_key.values() if w.membership_id == membership_id]
+            waiting = [
+                w
+                for w in self._by_key.values()
+                if membership_id in (w.membership_id, w.bridge_membership_id)
+            ]
+        self._end(waiting)
+
+    def end_bridge(self, bridge_id: str) -> None:
+        """End every wait a bridge holds through a connection that ended (§2.3)."""
+        with self._lock:
+            waiting = [w for w in self._by_key.values() if w.bridge_id == bridge_id]
+        self._end(waiting)
+
+    @staticmethod
+    def _end(waiting: list[Waiter]) -> None:
         for waiter in waiting:
             waiter.ended = True
             waiter.wake()
 
-    def wake_all(self) -> None:
+    def wake_all(self, spread: float = 0.0) -> None:
+        """Wake every waiter to read once; with `spread`, each at a random moment within
+        that many seconds, so many waits do not all read the database in the same instant."""
         with self._lock:
             waiting = list(self._by_key.values())
         for waiter in waiting:
-            waiter.wake()
+            if spread > 0:
+                waiter.wake_later(random.uniform(0, spread))
+            else:
+                waiter.wake()
 
     def __len__(self) -> int:
         with self._lock:

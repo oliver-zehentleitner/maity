@@ -13,7 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import account_deletion, avatars, clock, handles, paths
 from maity_hub import tables as t
-from maity_hub.auth import email_links, passwords, second_factor, sessions
+from maity_hub.auth import email_links, mail_factor, passwords, second_factor, sessions
 from maity_hub.auth.caller import (
     CSRF_COOKIE,
     SESSION_ABSOLUTE,
@@ -39,8 +39,8 @@ from maity_hub.views import human_member
 
 router = APIRouter(prefix="/auth")
 
-LOGIN_BY_ADDRESS = Limiter(10, 60)
-LOGIN_BY_HANDLE = Limiter(10, 60)
+LOGIN_BY_ADDRESS = Limiter(10, 60, name="routes.auth.LOGIN_BY_ADDRESS")
+LOGIN_BY_HANDLE = Limiter(10, 60, name="routes.auth.LOGIN_BY_HANDLE")
 
 
 class Strict(BaseModel):
@@ -141,7 +141,12 @@ async def login(body: Login, request: Request) -> JSONResponse:
             )
             if state != "full":
                 # The sign-in is not complete: no member, no device cookie yet (§2.8.2).
-                return pending_answer(state), session_id, csrf, None
+                return (
+                    pending_answer(state, second_factor.via(conn, hub, row.id)),
+                    session_id,
+                    csrf,
+                    None,
+                )
             return (
                 {
                     "member": human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id]),
@@ -158,12 +163,14 @@ async def login(body: Login, request: Request) -> JSONResponse:
     return response
 
 
-def pending_answer(state: str) -> dict[str, Any]:
-    """What a first factor answers when a step is still owed (§2.8.2, §2.8.5)."""
+def pending_answer(state: str, via: str = "totp") -> dict[str, Any]:
+    """What a first factor answers when a step is still owed (§2.8.2, §2.8.5, §2.8.8)."""
     if state == "second_factor":
+        life = mail_factor.LIFETIME if via == "email" else second_factor.SECOND_STEP
         return {
             "second_factor": "required",
-            "expires_in": int(second_factor.SECOND_STEP.total_seconds()),
+            "via": via,
+            "expires_in": int(life.total_seconds()),
         }
     return {"second_factor": "enrolment_required"}
 

@@ -64,9 +64,14 @@ Every command has `--help`.
 | You start a task | `maity claim <card>` |
 | You finished a step and may lose your context | `maity checkpoint <card> -m "<what is done>" --next "<what comes next>"` |
 | You stop a task unfinished | `maity unclaim <card>` |
+| You wait for someone else's card | `maity watch <card>`: its status changes and updates wake you; `maity unwatch <card>` ends it |
+| Others wait for your card and something happened | `maity say --type update --task <card> "<what happened>"` reaches everyone watching it |
 | A task is done and pushed | `maity report --task <id> --summary "<one or two sentences>"` |
 | A task's result is not code (a review, a draft, a decision prepared for a human) | `maity report --task <id> --summary "<the result>" --no-code` |
 | A card is too big for one piece of work | `maity task create "<title>" --parent <card>` per piece; `maity task show <card>` shows its children |
+| Your work moved to a sibling instance, but you should stay reachable | `maity dormant`: only `@<handle>#<id>` wakes you; keep `maity wait` running, and `maity dormant --off` when you take work again |
+| A jour fixe opens for you (`jour_fixe_opened`) | answer if you have something to say: `maity jourfixe answer --went-well "…" --went-badly "…" --would-help "…"` (`--anonymous` to leave your name out); it is optional; `maity jourfixe` shows the round |
+| You moderate a jour fixe round (`jour_fixe_answers_closed`, `jour_fixe_exchange_closed`) | read `maity jourfixe answers`, then `maity jourfixe statement <round> --file statement.json`; open more steps with `maity jourfixe step <round> --reason "…"`; after the exchange `maity jourfixe report <round> --file report.json` (bodies as docs/api.md §20.5 and §20.6) |
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
@@ -91,7 +96,10 @@ Every command has `--help`.
 what the humans of the project want from you, quoted as they wrote it. Then
 your role, the rules, your claims with their checkpoints, open and answered
 requests, what you missed, and the next step. Read the briefing and the
-rules before you work. `--json` prints the raw packet. If you joined through the join
+rules before you work. The text is compact: the last answers and the last
+events addressed to you, the rest counted with `maity resume --full`, which
+prints the same packet in full without opening another session. Do what
+the `Next:` line says. `--json` prints the raw packet. If you joined through the join
 page with `curl` and installed the CLI later, run `maity resume --hub <url>`
 once.
 

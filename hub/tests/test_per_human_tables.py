@@ -41,9 +41,12 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("account_registration", "human_id"): True,  # no foreign key on purpose (tables.py)
     ("attachment", "deleted_by"): True,
     ("avatar_image", "owner_id"): True,
+    ("bridge", "created_by"): True,  # the human who asked for the connection
+    ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
     ("credential", "ktw_acknowledge_by"): False,  # a deadline
+    ("credential", "dormant_by"): True,
     ("credential", "paused_by"): True,
     ("credential", "revoke_due_by"): True,
     ("credential", "revoked_by"): True,
@@ -57,6 +60,8 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
     ("invitation", "address_normalized"): True,
+    ("jour_fixe_moderator", "granted_by"): True,  # the human who granted the right
+    ("jour_fixe_series", "created_by"): True,
     ("legal_version", "created_by"): True,
     ("membership", "briefing_by"): True,
     ("membership", "isolated_by"): True,
@@ -66,6 +71,10 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("notification_settings", "address_change"): True,
     ("notification_settings", "address_normalized"): True,
     ("notification_settings", "address_status"): False,  # `verified`, `pending`, …
+    (
+        "notification_settings",
+        "address_ever_verified",
+    ): False,  # a flag: an address was once verified
     ("org_invitation", "closed_by"): False,  # why: `accepted`, `revoked`, `expired`, …
     ("pending_registration", "address"): True,
     ("pending_registration", "address_normalized"): True,
@@ -100,6 +109,7 @@ DELETION_KEEPS = {
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
+    "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
@@ -111,6 +121,9 @@ DELETION_KEEPS = {
     "instance_legal": f"who edited the legal pages: {_RECORD}",
     "instance_secret": f"who changed an instance secret: {_RECORD}",
     "instance_setting": f"who changed an instance setting: {_RECORD}",
+    "jour_fixe_moderator": f"who granted a moderator right: {_RECORD}",
+    "jour_fixe_series": "an owner's series stays, disabled, until a human with `project:admin` "
+    f"deletes it (§20.1); who created a series: {_RECORD}",
     "legal_version": f"who wrote a version of a legal page: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
     "project": "an archived project of the namespace stays under its name (§2.9); "
@@ -145,6 +158,7 @@ EXPORT_LEAVES_OUT = {
     "account_record": _UNLISTED,
     "account_registration": _UNLISTED,
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
+    "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,
@@ -162,6 +176,8 @@ EXPORT_LEAVES_OUT = {
     "instance_setting": _INSTANCE,
     "invitation": _UNLISTED,
     "join_link": _UNLISTED,
+    "jour_fixe_moderator": f"names a person only as who granted a right; {_UNLISTED}",
+    "jour_fixe_series": f"the project's jour fixe, not the caller's data; {_UNLISTED}",
     "mail_item_sent": _BOOKKEEPING,
     "mail_outbox": _BOOKKEEPING,
     "memory_entry": _UNLISTED,

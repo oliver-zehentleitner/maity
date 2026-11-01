@@ -20,7 +20,7 @@ from tests.test_jour_fixe_exchange import Round, kinds, rounds_path
 @pytest.fixture(autouse=True)
 def _no_listeners() -> Iterator[None]:
     yield
-    listening._open.clear()
+    listening.reset()
 
 
 @pytest.fixture
@@ -102,7 +102,7 @@ def test_a_decided_adoption_opens_a_card_and_to_owner_files_a_decision(
     assert proposal_one["task_id"] == task_id and proposal_two["request_id"] == request_id
     assert proposal_two["statement_proposal_id"] == "t1.s1"
     [reported] = kinds(reporting.engine, "jour_fixe_reported")
-    assert reported.audience == ["all"]
+    assert reported.audience == ["all", f"member:{reporting.owner.id}"]  # the keeper (§20.2)
     assert [p["outcome"] for p in reported.payload["proposals"]] == ["adopt", None]
     again = report(reporting)
     assert again.status_code == 409 and again.json()["error"]["code"] == "jour_fixe_state"
@@ -201,25 +201,14 @@ def test_a_report_replay_answers_only_a_member(
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     factory.membership(migrated, project_id, "admin", human_id=other.id)
-    series = {
-        "enabled": False,
-        "recurrence": {"freq": "daily"},
-        "time": "10:00",
-        "timezone": "UTC",
-        "moderator": other.id,
-    }
-    assert (
-        owner.patch(
-            "/projects/maintainer/maity", {"policy": {"jour_fixe": series}, "reason": "r"}
-        ).status_code
-        == 200
-    )
+    from tests.test_jour_fixe import ensure_series, grant, start
+
+    sid = ensure_series(owner)
+    assert grant(other, sid, other.id).status_code == 201  # a keeper, to themselves
     member = flow.agent(make_client, owner)
     listen(member)
     other.get("/me")
-    round_id = other.post("/projects/maintainer/maity/jour-fixe/rounds", {"reason": "r"}).json()[
-        "id"
-    ]
+    round_id = start(other, sid).json()["id"]
     member.post(rounds_path(round_id, "/answers"), {"went_well": "ok"})
     now[0] += STEP
     worker.sweep(migrated)

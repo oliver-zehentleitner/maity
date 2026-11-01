@@ -21,6 +21,7 @@ from maity_hub.events import Actor, emit, lock_project, on_commit
 from maity_hub.views import isolated, member_view
 
 REASON = "membership_isolated"
+BY_HUB = "hub"  # `isolated.by` of an isolation the hub made itself (§6.2)
 CLOSED = ("done", "cancelled")
 
 
@@ -39,8 +40,18 @@ def refusal(row: Any) -> ApiError:
     )
 
 
-def release_claims(conn: Connection, membership_id: int) -> None:
-    """Every open card the member holds goes back to the board (§6.5)."""
+def release_claims(conn: Connection, membership_id: int) -> list[str]:
+    """Every open card the member holds goes back to the board (§6.5). Returns the cards that
+    left `in_progress`, for `tell_released` after the caller's own event."""
+    moved = (
+        conn.execute(
+            select(t.card.c.id).where(
+                t.card.c.claim_holder == membership_id, t.card.c.status == "in_progress"
+            )
+        )
+        .scalars()
+        .all()
+    )
     conn.execute(
         update(t.card)
         .where(t.card.c.claim_holder == membership_id, t.card.c.status.notin_(CLOSED))
@@ -54,6 +65,20 @@ def release_claims(conn: Connection, membership_id: int) -> None:
             updated_at=clock.now(),
         )
     )
+    return list(moved)
+
+
+def tell_released(conn: Connection, moved: list[str], actor: Actor | None) -> None:
+    """The status change of cards `release_claims` gave back, for their watchers (§6.4)."""
+    if not moved:
+        return
+    from maity_hub.routes.tasks import status_moved  # tasks reads availability, and this
+
+    for card in conn.execute(select(t.card).where(t.card.c.id.in_(moved))).all():
+        state = conn.execute(
+            select(t.project.c.state).where(t.project.c.id == card.project_id)
+        ).scalar_one()
+        status_moved(conn, card, state, actor)
 
 
 def _announce(conn: Connection, project: Any, target: Any, actor: Actor) -> None:
@@ -80,7 +105,11 @@ def _tell_owner(
     handle = conn.execute(
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == target.agent_id)
     ).scalar_one()
-    who = conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar_one()
+    who = (
+        "the hub"
+        if human_id == BY_HUB
+        else conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar_one()
+    )
     summary = "\n".join(
         [f"Project: `{namespace.full_name(conn, project)}`.", *lines, f"By: `{who}`."]
     )
@@ -104,12 +133,15 @@ def isolate(
             isolated_reason=reason,
             isolated_since=clock.now(),
             isolated_by=human_id,
+            # Where a hidden window would start: the first event this isolation makes (§6.2).
+            isolated_from_seq=_head(conn, project.id) + 1,
         )
     )
-    release_claims(conn, target.id)
+    released = release_claims(conn, target.id)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
+    tell_released(conn, released, actor)
     _tell_owner(
         conn,
         project,
@@ -121,30 +153,64 @@ def isolate(
     on_commit(conn, lambda: longpoll.registry.end(target.id))
 
 
-def lift(conn: Connection, project: Any, target: Any, human_id: str, actor: Actor) -> None:
-    """Lift the isolation: access only, not the claims or the chats (§6.2)."""
+def _head(conn: Connection, project_id: str) -> int:
+    """The project's newest event seq, 0 for none."""
+    head = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project_id)
+    ).scalar()
+    return int(head or 0)
+
+
+def lift(
+    conn: Connection,
+    project: Any,
+    target: Any,
+    human_id: str,
+    actor: Actor,
+    *,
+    hide: bool = False,
+) -> None:
+    """Lift the isolation: access only, not the claims or the chats (§6.2). With `hide` the
+    events between the isolation and now stay out of what the agent may read for good: the
+    window `{from_seq, to_seq}`, both ends included, joins its `isolation_windows`."""
     lock_project(conn, project.id)
     target = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if not is_isolated(target) or target.active is None:
         return
+    windows = list(target.isolation_windows or [])
+    to_seq = _head(conn, project.id)  # before the lift's own events: the agent reads those
+    from_seq = target.isolated_from_seq
+    if hide and from_seq is None:
+        # An isolation made before the column existed: its first event is the first one at or
+        # after the moment it began.
+        from_seq = conn.execute(
+            select(func.min(t.event.c.seq)).where(
+                t.event.c.project_id == project.id, t.event.c.at >= target.isolated_since
+            )
+        ).scalar()
+    if hide and from_seq is not None and from_seq <= to_seq:
+        windows.append({"from_seq": from_seq, "to_seq": to_seq})
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
-        .values(isolated_reason=None, isolated_since=None, isolated_by=None)
+        .values(
+            isolated_reason=None,
+            isolated_since=None,
+            isolated_by=None,
+            isolated_from_seq=None,
+            isolation_windows=windows or None,
+        )
     )
     # What happened while it was left out is not read afterwards: its sessions' cursors
     # move to the project's head, where the next resume starts (§6.2).
-    head = conn.execute(
-        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project.id)
-    ).scalar()
-    if head is not None:
+    if to_seq:
         conn.execute(
             update(t.agent_session)
             .where(
                 t.agent_session.c.membership_id == target.id,
-                t.agent_session.c.acknowledged_seq < head,
+                t.agent_session.c.acknowledged_seq < to_seq,
             )
-            .values(acknowledged_seq=head)
+            .values(acknowledged_seq=to_seq)
         )
     _announce(conn, project, target, actor)
     _tell_owner(

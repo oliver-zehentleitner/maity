@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import (
+    allowed_projects,
     avatars,
     clock,
     events,
@@ -41,6 +42,8 @@ class AgentPatch(Strict):
     handle: str | None = None  # checked by handles.rename: format, taken, aliases (§6.24)
     display_name: str | None = title(default=None)
     git_identity: GitIdentity | None = None
+    # null: any project; a list of full names limits where the agent may go (§6.3)
+    allowed_projects: Any = None
 
 
 def load_agent(conn: Connection, agent_id: str) -> dict[str, Any]:
@@ -114,7 +117,11 @@ def create_profile(
 
 
 @router.get("/agents")
-def list_agents(request: Request, caller: HumanCaller) -> JSONResponse:
+def list_agents(
+    request: Request, caller: HumanCaller, allowed_in: str | None = None
+) -> JSONResponse:
+    if allowed_in is not None and namespace.FULL_NAME.match(allowed_in) is None:
+        raise invalid({"allowed_in": "format"}, "allowed_in is a project's <owner>/<slug>")
     with engine_of(request).begin() as conn:
         rows = conn.execute(
             select(t.agent_profile)
@@ -124,6 +131,12 @@ def list_agents(request: Request, caller: HumanCaller) -> JSONResponse:
             )
             .order_by(t.agent_profile.c.handle)
         ).all()
+        if allowed_in is not None:  # only the profiles the project is allowed for (§6.3)
+            rows = [
+                r
+                for r in rows
+                if allowed_projects.admits_name(conn, r.allowed_projects, allowed_in)
+            ]
         pictures = avatars.states(conn, [r.id for r in rows])  # one query for the list
         items = [agent_view(conn, r, pictures[r.id]) for r in rows]
         return JSONResponse({"items": items, "next_cursor": None})
@@ -171,6 +184,8 @@ def patch_agent(
         if "git_identity" in given:
             git = body.git_identity
             values.update(git_name=git.name if git else None, git_email=git.email if git else None)
+        if "allowed_projects" in given:  # the owner's, as a human (§6.3)
+            values["allowed_projects"] = allowed_projects.parse(body.allowed_projects)
         if values:
             conn.execute(
                 update(t.agent_profile).where(t.agent_profile.c.id == agent_id).values(**values)

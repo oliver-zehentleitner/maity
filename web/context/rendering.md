@@ -288,7 +288,10 @@ button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
 project the human is not in, a chat read along from outside, `/observe`)
 links none. Known false positive, accepted: a three-digit hex colour
-(`#123`) links as a number.
+(`#123`) links as a number. A reference right after a slash links only
+when the reference before that slash matched (`#909/#911`), so a path or
+URL stays plain; the check is in the loop, since a regular expression's
+lookbehind cannot know whether the earlier reference was itself accepted.
 
 **Reason:** one request per id to know whether it exists would cost a
 read for every id in every text, and the page behind the link has to say
@@ -636,11 +639,42 @@ progress" in the board bar's name, "2 urgent") is one key per word with
 `{count}`, not the label lowercased after a number. A key that counts
 has its plural forms even where English writes them alike ("Earlier
 joins ({count}): …", "{count} urgent"): another language may not, and the
-form chosen by `Intl.PluralRules` is there to be translated. A key per value also lets a
+form chosen by `Intl.PluralRules` is there to be translated. Two counts
+in one sentence (Why's "1 error, 2 warnings") are a plural key each inside
+a frame key, since each may be one or many on its own and a count the
+export does not carry reads "—" with no plural rule. Rejected: one
+sentence with two numbers, which no single `count` can choose a form
+for. A key per value also lets a
 value read in its own words ("you work in ops", not "you are an ops").
 Not in the catalog: the runner's starter configuration
 (`runners.js`), a file the runner reads and `tools/starter_configs.py`
-checks as written, with commands and product names. Still put together from
+checks as written, with commands and product names. An element's id or
+a key that code matches never comes from a translated label (the admin
+area's sections are keyed by a fixed word, `admin-users` in every
+language), since it would change with the language. The board's column
+names are one set of keys (`cards.column.*`) for the board and the
+overview: the board keeps its columns as `[status, name]` pairs, the name
+a getter on index 1, because `board.js` reads them as pairs; the
+overview a getter per status. Rejected: a second set for the overview,
+the same words twice for a translator. A member's page (its Cards tab)
+names a card's status with those names too (`M.boardEdit.columnName`),
+so a status has one key and renaming a column renames it everywhere.
+Rejected: `memberpage.status.*`, a second translation that could drift
+from the board's. A refusal a view has no words for reads as
+`{field}: {reason}` from one key (`members.refused.unknown`), the
+field's underscores as spaces and the hub's reason as it comes: the
+sentence's shape is the catalog's, while the two values stay the hub's.
+Rejected: the English glued together in code, which no translation
+reaches. A text the
+dashboard writes into the hub for the reader (the title of a chat the
+Lead button makes) is taken from the catalog in the writer's language
+and stays as written, as a title they typed would: the hub keeps no
+language beside it, the other participants read it as it is, and the
+chat is found again by its participants, never by its title; its
+maker may rename it (§9.2). Rejected: a chat without a title (the
+hub allows one), named from its participants when read: every list
+that shows the chat would need that naming, and the participants alone
+do not say what the chat is for. Still put together from
 pieces: a status line's prefix and its reason ("Not saved: " + the
 hub's words, `status.fail`), for a later part of stage 2.
 
@@ -657,4 +691,83 @@ first-party scripts only. A check that fails on every prose literal: it
 would fail on today's code until every view had moved. Sentences put
 together from translated pieces: word order differs between languages,
 so those pieces cannot be translated on their own.
+
+## One renderer draws every text people and agents write, its stored mentions linked where they stand
+
+**Id:** 4315382f-022b-47f2-b23b-b4eeccbdb315
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request that formatting is the same in the chat and the inbox, the copy button included, relayed by the coordinator on the card tsk-8n1p6h3zypwp, 2026-10-31; docs/api.md §8.6 (stored mentions by code-point offset)
+**See:** rendering.md#chat-messages-are-markdown-drawn-as-dom-nodes-by-a-small-renderer-of-our-own-never-an-html-producing-library — 854c8122-770c-4c80-be9f-0ce9c90c0d2e — as of 2026-10-31
+**Revisit when:** a text needs Markdown inside an interactive control, or the hub stores mentions in a form other than offsets
+
+`js/markdown.js` draws the texts of:
+- chats and project messages;
+- a request's summary, what was tried, its options' details and its
+  answer;
+- a card's description and notes, and a report's summary.
+
+All of them get the same code with its copy, links and ids. The mentions
+the hub stored for a text are taken in where they stand
+(`M.dom.mentionSpans`, the same check as before: offsets in code points,
+the text there is the handle). They are marked as private-use
+placeholders that no Markdown rule reads, drawn as member links in text
+and restored as written inside code, a link's label and address and a
+fence's info string; a mention the hub stored inside a link stays the
+link's text, never a member link inside it. `M.dom.withMentions`, the inbox's
+and the board's own plain-text path, is gone. A project message's
+separate line of mentions is gone as well, because the mentions are now
+links in its text. A request's title stays plain text: it is the label
+of the entry's button, which can hold neither a link nor a copy control.
+Its ids are offered beside it, as before (3274d199).
+
+**Reason:** two ways of drawing the same kind of text drifted. The
+inbox showed code as text that could not be copied with one click,
+while the chat could. Placeholders keep the stored offsets valid against
+the source while Markdown rewrites it, so a mention is never re-detected
+from what someone typed.
+
+**Rejected alternatives:**
+- Linking any `@handle` the renderer finds: a typed name that the hub
+  did not store as a mention would become a link (§8.6).
+- Drawing a request's title as Markdown inside its button: a link or a
+  copy control inside a button is not operable.
+
+## A field's label and control share one layout class; smoke fails on any label that runs inline
+
+**Id:** f8cb056b-9e0c-4729-bc97-c73341204bc0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the registration form on prod, where labels ran inline with their fields (tsk-egx8xpcrz5z2, #939); the audit of all forms in #939's reviews and the card tsk-jpaqk8m7j52v (one shared rule, and a check so this kind of bug cannot come back); the dashboard's implementation, 2026-10-31
+**Revisit when:** the dashboard gets a real browser layout check in smoke, or the jour fixe forms get their layout (then their exemption goes)
+
+A wrapper that holds a label and its control (and a hint or an error)
+carries the class `field-stack`: one column, the label above the control.
+One rule for every such wrapper, whatever else it is called. Smoke walks
+every page it shows, before leaving it and after arriving. It fails on
+any label with `for` whose control sits in the same parent when the CSS
+lays that parent out neither as grid nor as flex. A checkbox or a radio
+beside its label is meant, and so is skipped. A field's error is a
+`field-error`, which takes no space while empty; a box-shaped `.error`
+that is empty takes none either (`.error:empty { display: none; }`, for
+every such box rather than one by one, since the empty box on the
+account page came from one that missed its own rule). The jour fixe settings and
+action page (`jf-`, `jfa-`), with another implementer, are named
+exemptions until their forms get a layout.
+
+**Reason:** a label and an input are inline by default, so a wrapper
+without a rule runs them together, and nothing failed when one was
+missing: the registration form shipped that way, and an audit then found
+six more. A shared class makes the right layout the easy one, and a check
+on what smoke renders finds the next one before a person does.
+
+**Rejected alternative:** six rules, one per wrapper, which the next
+wrapper would miss in the same way. A check that every wrapper class has
+a rule, which needs a list of wrapper classes to keep up to date: the
+walk over rendered pages needs none. The check reads a rule in its
+context (a descendant selector counts only under its ancestor) and leaves
+out rules inside `@media` and CSS comments: a layout that holds at some
+widths only is no layout for the label.
 

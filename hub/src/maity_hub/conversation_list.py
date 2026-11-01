@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 
-from maity_hub import group_chats
+from maity_hub import chat_meat_proxy, events, group_chats
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.views import principal_ids, ts
@@ -31,9 +31,21 @@ CHUNK = 100  # chats per statement that names each one's window
 Key = tuple[str, str]  # (project id, chat id)
 
 
+# What a participant shows in a list: who it is, and for a human the meat-proxy fields (§9.3).
+SHORT = (
+    "member_id",
+    "kind",
+    "handle",
+    "name",
+    "meat_proxy",
+    "meat_proxy_chat",
+    "meat_proxy_note",
+)
+
+
 def short(person: dict[str, Any]) -> dict[str, Any]:
     """A participant as the list shows it; an agent with its global name (§6.3)."""
-    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
+    return {k: person[k] for k in SHORT if k in person}
 
 
 def preview(row: Any, sender: str | None) -> dict[str, Any] | None:
@@ -56,14 +68,19 @@ def _chunks(items: Sequence[Any]) -> Iterable[Sequence[Any]]:
         yield batch
 
 
-def _after(key: Key, seq: int) -> Any:
-    """Messages of the chat `key` past `seq`."""
-    return and_(
+def _after(key: Key, seq: int, mines: dict[str, Any] | None = None) -> Any:
+    """Messages of the chat `key` past `seq`, but those in the hidden isolation windows of the
+    caller's membership in that project (§6.2), when `mines` names it."""
+    clause = and_(
         t.event.c.project_id == key[0], t.event.c.conversation_id == key[1], t.event.c.seq > seq
     )
+    visible = events.outside_windows(getattr(mines.get(key[0]), "row", None)) if mines else None
+    return clause if visible is None else and_(clause, visible)
 
 
-def _latest(conn: Connection, windows: dict[Key, int]) -> dict[Key, Any]:
+def _latest(
+    conn: Connection, windows: dict[Key, int], mines: dict[str, Any] | None = None
+) -> dict[Key, Any]:
     """Per chat the newest message after its window: the whole row."""
     found: dict[Key, Any] = {}
     for batch in _chunks(list(windows)):
@@ -73,7 +90,7 @@ def _latest(conn: Connection, windows: dict[Key, int]) -> dict[Key, Any]:
                 t.event.c.conversation_id,
                 func.max(t.event.c.seq).label("seq"),
             )
-            .where(t.event.c.kind == "message", or_(*(_after(k, windows[k]) for k in batch)))
+            .where(t.event.c.kind == "message", or_(*(_after(k, windows[k], mines) for k in batch)))
             .group_by(t.event.c.project_id, t.event.c.conversation_id)
             .subquery()
         )
@@ -92,7 +109,9 @@ def _counts(conn: Connection, mines: dict[str, Any], seen: dict[Key, int]) -> di
                 t.event.c.kind == "message",
                 or_(
                     *(
-                        and_(_after(k, seen[k]), t.event.c.actor_membership != mines[k[0]].id)
+                        and_(
+                            _after(k, seen[k], mines), t.event.c.actor_membership != mines[k[0]].id
+                        )
                         for k in batch
                     )
                 ),
@@ -215,7 +234,7 @@ def direct_entries(
     if not chats:
         return []
     people = group_chats.people(conn, {agents[k].id for k in chats} | {humans[k].id for k in chats})
-    lasts = _latest(conn, dict.fromkeys(chats, 0))
+    lasts = _latest(conn, dict.fromkeys(chats, 0), by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
     unread = _direct_unread(conn, by_project, caller, chats)
     entries = []
@@ -240,7 +259,26 @@ def direct_entries(
                 "_project": project_id,
             }
         )
+    chat_meat_proxy.shown(
+        conn,
+        [(e["_project"], e["id"], e["participants"]) for e in entries],
+        caller.human_id if caller.kind == "human" else None,
+    )
     return entries
+
+
+def agent_cursor(conn: Connection, caller: Any, membership_id: int) -> int:
+    """How far an agent has read its events: its session's cursor; through a bridge, whose
+    session is the bridge's, the furthest of the served agent's own sessions, ended ones too,
+    since a new session takes the cursor over (§2.3)."""
+    a = t.agent_session.c
+    if caller.bridge is None:
+        found = conn.execute(select(a.acknowledged_seq).where(a.id == caller.session_id))
+    else:
+        found = conn.execute(
+            select(func.max(a.acknowledged_seq)).where(a.membership_id == membership_id)
+        )
+    return int(found.scalar() or 0)
 
 
 def _direct_unread(
@@ -252,15 +290,8 @@ def _direct_unread(
         marks = _marks(conn, mines, chats)
         seen = {k: marks.get(k, 0) for k in chats}
     else:  # the agent's side is its event cursor
-        cursor = (
-            conn.execute(
-                select(t.agent_session.c.acknowledged_seq).where(
-                    t.agent_session.c.id == caller.session_id
-                )
-            ).scalar()
-            or 0
-        )
-        seen = dict.fromkeys(chats, int(cursor))
+        cursor = agent_cursor(conn, caller, next(iter(mines.values())).id) if mines else 0
+        seen = dict.fromkeys(chats, cursor)
     return _counts(conn, mines, seen)
 
 
@@ -302,6 +333,17 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         ):
             if by_project[project_id].principal_id == owner_id:
                 pairs.add((project_id, chat))
+        # A round's thread is read along by every project owner, or for an owner's series
+        # by its `circle_owner`, with or without an agent of theirs in it (§20.5).
+        r = t.jour_fixe_round.c
+        for project_id, chat, config in conn.execute(
+            select(r.project_id, r.conversation_id, r.config).where(
+                r.project_id.in_([m.project.id for m in humans]), r.conversation_id.isnot(None)
+            )
+        ):
+            mine, keeper = by_project[project_id], group_chats.keeper_of(config)
+            if keeper == mine.principal_id or (keeper is None and mine.trust == "owner"):
+                pairs.add((project_id, chat))
     if not pairs:
         return []
     groups = {
@@ -340,7 +382,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         else {}
     )
     rounds: set[str] = set()
-    if any(m.kind == "human" and m.role == "owner" for m in mines):
+    if any(m.kind == "human" and m.trust == "owner" for m in mines):
         rounds = set(
             conn.execute(
                 select(t.jour_fixe_round.c.conversation_id).where(
@@ -348,12 +390,16 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 )
             ).scalars()
         )
-    found = _access(by_project, pairs, stays, owners_of, rounds)
+    keepers = group_chats.round_keepers(conn, {c for _, c in pairs})
+    found = _access(by_project, pairs, stays, owners_of, rounds, keepers)
     if not found:
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
+    carried = group_chats.carriers(
+        conn, {s.membership_id for _, chat in found for s in stays[chat]}
+    )
     windows = _windows(conn, by_project, found, stays)
-    lasts = _latest(conn, windows)
+    lasts = _latest(conn, windows, by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
     unread, mentioned = _unread(
         conn, by_project, {k: w for k, w in windows.items() if found[k] == "participant"}
@@ -369,7 +415,11 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "kind": "group",
                 "title": group.title,
                 "participants": [short(people[s.membership_id]) for s in current],
-                "observers": group_chats.observers_of(current, owners_of),
+                "observers": group_chats.shown_observers(
+                    current,
+                    group_chats.thread_observers(current, owners_of, keepers.get(chat)),
+                    carried,
+                ),
                 "access": access,
                 "closed_at": ts(group.closed_at),
                 "last_message_at": ts(last.at) if last is not None else None,
@@ -380,6 +430,10 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "_project": project_id,
             }
         )
+    viewer = next((m.principal_id for m in mines if m.kind == "human"), None)
+    chat_meat_proxy.shown(
+        conn, [(e["_project"], e["id"], e["participants"]) for e in entries], viewer
+    )
     return entries
 
 
@@ -389,19 +443,24 @@ def _access(
     stays: dict[str, list[Any]],
     owners: dict[str, str],
     rounds: set[str],
+    keepers: dict[str, str],
 ) -> dict[Key, str]:
     """`group_chats.access` of each chat, from the rows already read: the chats that
     exist for the caller, with how it sees them."""
     found: dict[Key, str] = {}
     for key in sorted(pairs):
         mine, current = mines[key[0]], stays[key[1]]
+        keeper = keepers.get(key[1])
         if any(s.membership_id == mine.id for s in current):
             found[key] = "participant"
+        elif keeper is not None:  # an owner's round: only its `circle_owner` reads along
+            if mine.kind == "human" and mine.principal_id == keeper:
+                found[key] = "observer"
         elif mine.kind == "human" and mine.principal_id in group_chats.observers_of(
             current, owners
         ):
             found[key] = "observer"
-        elif mine.kind == "human" and mine.role == "owner" and key[1] in rounds:
+        elif mine.kind == "human" and mine.trust == "owner" and key[1] in rounds:
             found[key] = "observer"  # every project owner reads a round's thread along (§20.5)
     return found
 
@@ -427,7 +486,7 @@ def _windows(
             mine = mines[key[0]]
             windows[key] = int(next(s.window_after for s in current if s.membership_id == mine.id))
         else:
-            windows[key] = int(min(s.window_after for s in current if s.agent_id in owned))
+            windows[key] = group_chats.observer_window(current, owned)
     return windows
 
 
@@ -458,7 +517,9 @@ def _unread(
                 t.event.c.kind == "message",
                 or_(
                     *(
-                        and_(_after(k, seen[k]), t.event.c.actor_membership != mines[k[0]].id)
+                        and_(
+                            _after(k, seen[k], mines), t.event.c.actor_membership != mines[k[0]].id
+                        )
                         for k in batch
                     )
                 ),

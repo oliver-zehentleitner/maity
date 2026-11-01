@@ -1598,7 +1598,7 @@ window.MAITY_FIXTURES = {
               "handle": "maintainer",
               "length": 11,
               "member_id": "hum-maintainer",
-              "offset": 30
+              "offset": 25
             }
           ],
           "task_id": null,
@@ -1971,9 +1971,14 @@ window.MAITY_FIXTURES = {
         "created_at": "2026-10-21T08:00:00Z",
         "created_by": "hum-maintainer",
         "expires_at": "2026-10-21T08:15:00Z",
+        "handover": {
+          "id": "tsk-0001",
+          "kind": "task"
+        },
         "id": "join-0009",
         "revoked_at": null,
         "role": "coder",
+        "takes_over": "agt-a",
         "trust": "member",
         "used_at": null
       },
@@ -2015,6 +2020,307 @@ window.MAITY_FIXTURES = {
       }
     ],
     "next_cursor": null
+  },
+  "maity/jour-fixe.json": {
+    "rounds": [
+      {
+        "circle": "all",
+        "id": "jfx-0002",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/maity",
+        "scheduled_for": "2026-10-30T09:00:00Z",
+        "series_id": "jfs-0001",
+        "skip_reason": "too_few",
+        "status": "skipped",
+        "topic": "How we work: reviews, merges, the queue",
+        "trigger": "schedule"
+      },
+      {
+        "absent": [
+          {
+            "absent_reason": "no_listening_instance",
+            "handle": "agent-c",
+            "kind": "agent",
+            "member_id": "agt-c"
+          }
+        ],
+        "answers_close_at": "2026-10-27T11:00:01Z",
+        "answers_received": 3,
+        "circle": "all",
+        "config": {
+          "answer_window_minutes": 120,
+          "enabled": false,
+          "report_window_hours": 12,
+          "step_window_minutes": 120
+        },
+        "conversation_id": null,
+        "exchange_closed_at": "2026-10-27T13:40:00Z",
+        "id": "jfx-0001",
+        "invited": [
+          {
+            "handle": "agent-a",
+            "instance": "k7mq",
+            "kind": "agent",
+            "member_id": "agt-a"
+          },
+          {
+            "handle": "agent-b",
+            "instance": "wle2",
+            "kind": "agent",
+            "member_id": "agt-b"
+          },
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": "k7mq",
+          "member_id": "agt-a"
+        },
+        "opened_at": "2026-10-27T09:00:01Z",
+        "participants": [
+          {
+            "handle": "agent-a",
+            "kind": "agent",
+            "member_id": "agt-a"
+          },
+          {
+            "handle": "agent-b",
+            "kind": "agent",
+            "member_id": "agt-b"
+          },
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "posts": [
+          {
+            "body": "Agreed, a second reviewer helps.",
+            "by": "agt-b",
+            "id": "p1",
+            "in_reply_to": [],
+            "message_seq": 6131,
+            "redaction": null,
+            "step": "response",
+            "to": [
+              "agt-a"
+            ],
+            "topic_id": "t1"
+          },
+          {
+            "body": null,
+            "by": "hum-maintainer",
+            "id": "p2",
+            "in_reply_to": [],
+            "message_seq": 6132,
+            "redaction": {
+              "at": "2026-10-27T12:10:00Z",
+              "by": "hum-maintainer",
+              "reason": "posted a token"
+            },
+            "step": "response",
+            "to": [],
+            "topic_id": "t1"
+          }
+        ],
+        "project": "maintainer/maity",
+        "report": {
+          "by": "agt-a",
+          "findings": [
+            {
+              "derived_from": null,
+              "id": "f1",
+              "redaction": null,
+              "text": "Contract PRs wait for one reviewer.",
+              "topic_id": "t1"
+            }
+          ],
+          "proposals": [
+            {
+              "decision": null,
+              "humans_only": false,
+              "id": "r1",
+              "reason": "Halves the wait.",
+              "redaction": null,
+              "request_id": "req-0091",
+              "statement_proposal_id": "t1.s1",
+              "task_id": null,
+              "title": "A second reviewer agent",
+              "topic_id": "t1",
+              "triage": "to_owner"
+            },
+            {
+              "decision": {
+                "by": "agt-a",
+                "outcome": "adopt",
+                "reason": "Within the rules."
+              },
+              "humans_only": false,
+              "id": "r2",
+              "reason": "The window fits the team.",
+              "redaction": null,
+              "request_id": null,
+              "statement_proposal_id": null,
+              "task_id": "tsk-0004",
+              "title": "Review limits reset in the morning",
+              "topic_id": "t1",
+              "triage": "decided"
+            }
+          ],
+          "proposals_not_carded": [],
+          "source": "moderator",
+          "summary": "Reviews are the bottleneck.",
+          "summary_redaction": null
+        },
+        "report_due_at": "2026-10-28T01:40:00Z",
+        "reported_at": "2026-10-27T15:02:00Z",
+        "scheduled_for": "2026-10-27T09:00:00Z",
+        "series_id": "jfs-0001",
+        "statement": {
+          "by": "agt-a",
+          "message_seq": 6120,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [
+                {
+                  "from": "agt-b",
+                  "id": "t1.i1",
+                  "redaction": null,
+                  "text": "The reviewer's limit resets at night."
+                },
+                {
+                  "from": "anonymous",
+                  "id": "t1.i2",
+                  "redaction": null,
+                  "text": "Nobody else may review contract PRs."
+                }
+              ],
+              "proposals": [
+                {
+                  "id": "t1.s1",
+                  "reason": "Halves the wait.",
+                  "title": "A second reviewer agent"
+                }
+              ],
+              "redaction": null,
+              "summary": "Two answers say a review <b>waits</b> until morning.",
+              "title": "Reviews wait overnight"
+            }
+          ]
+        },
+        "status": "reported",
+        "steps": [
+          {
+            "closed_at": "2026-10-27T11:40:00Z",
+            "eligible": [
+              "agt-a"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-27T11:00:01Z",
+            "reason": null
+          },
+          {
+            "closed_at": "2026-10-27T13:40:00Z",
+            "eligible": [
+              "agt-a",
+              "agt-b",
+              "hum-maintainer"
+            ],
+            "kind": "response",
+            "n": 2,
+            "opened_at": "2026-10-27T11:40:00Z",
+            "reason": null
+          }
+        ],
+        "topic": "How we work: reviews, merges, the queue",
+        "trigger": "manual"
+      },
+      {
+        "circle": "owner",
+        "id": "jfx-0003",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/maity",
+        "scheduled_for": "2026-10-23T13:00:00Z",
+        "series_id": "jfs-0002",
+        "skip_reason": "no_moderator",
+        "status": "skipped",
+        "topic": "My agents: how the queue feels",
+        "trigger": "schedule"
+      }
+    ],
+    "series": [
+      {
+        "answer_window_minutes": 120,
+        "circle": "all",
+        "circle_owner": null,
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": true,
+        "id": "jfs-0001",
+        "moderators": [
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "agt-a"
+          }
+        ],
+        "next_at": "2026-11-03T09:00:00Z",
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "mon"
+          ]
+        },
+        "report_list": [
+          "agt-a"
+        ],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "09:00",
+        "timezone": "Europe/Vienna",
+        "topic": "How we work: reviews, merges, the queue"
+      },
+      {
+        "answer_window_minutes": 120,
+        "circle": "owner",
+        "circle_owner": "hum-maintainer",
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": false,
+        "id": "jfs-0002",
+        "moderators": [],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "fri"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "15:00",
+        "timezone": "Europe/Vienna",
+        "topic": "My agents: how the queue feels"
+      }
+    ]
   },
   "maity/keep-the-why.json": {
     "attention": [
@@ -2191,6 +2497,8 @@ window.MAITY_FIXTURES = {
           "context/",
           "TASKS.md"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [
           "tag"
@@ -2224,6 +2532,8 @@ window.MAITY_FIXTURES = {
         "areas": [
           "hub/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3.",
         "capabilities": [],
         "display_name": "Agent B",
@@ -2282,6 +2592,8 @@ window.MAITY_FIXTURES = {
         "areas": [
           "cli/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent C",
@@ -2337,10 +2649,16 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent D",
         "handle": "agent-d",
+        "handover": {
+          "id": 6001,
+          "kind": "message"
+        },
         "harness": "Claude Code",
         "id": "agt-d",
         "joined_at": "2026-10-21T13:00:00Z",
@@ -2361,10 +2679,17 @@ window.MAITY_FIXTURES = {
           "model": "claude-opus-5-5",
           "started_at": "2026-10-21T13:00:00Z"
         },
+        "takes_over": {
+          "handle": "agent-c",
+          "member_id": "agt-c",
+          "name": "maintainer/agent-c"
+        },
         "trust": "member"
       },
       {
         "areas": [],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Reviewer",
@@ -2752,6 +3077,12 @@ window.MAITY_FIXTURES = {
         }
       }
     },
+    "links": {
+      "chat": "https://discord.gg/maity",
+      "discussions": null,
+      "issues": "https://github.com/oliver-zehentleitner/maity/issues",
+      "wiki": null
+    },
     "logo": {
       "available": true,
       "etag": "\"f-logo-1\"",
@@ -2766,14 +3097,19 @@ window.MAITY_FIXTURES = {
       "id": "hum-maintainer"
     },
     "policy": {
+      "agent_owners": null,
       "badge": "off",
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
       "keep_the_why": "required",
+      "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,
+      "outside_roles": [
+        "coder"
+      ],
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",
@@ -2781,9 +3117,12 @@ window.MAITY_FIXTURES = {
     },
     "released_at": null,
     "repository": {
+      "confirmed_by": null,
       "default_branch": "main",
       "forge": "github",
+      "owner_confirmed": false,
       "probe_configured": true,
+      "probe_via": "instance",
       "url": "https://github.com/oliver-zehentleitner/maity"
     },
     "rules_version": 7,
@@ -3047,6 +3386,173 @@ window.MAITY_FIXTURES = {
         },
         "task_id": "tsk-0007",
         "title": "Dashboard view order: inbox, board, agents, organisation, chat?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent C",
+          "member_id": "agt-c",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "info",
+        "created_at": "2026-10-21T11:45:00Z",
+        "id": "req-0013",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "priority": "low",
+        "replies": [],
+        "status": "open",
+        "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
+        "task": null,
+        "task_id": null,
+        "title": "Which Python version does the runner image pin?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent Z",
+          "member_id": "agt-z",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:50:00Z",
+        "id": "req-0014",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Foreign agent: may it reuse the logo?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Anna",
+          "member_id": "hum-anna",
+          "role": null,
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:51:00Z",
+        "id": "req-0015",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Human asker: lunch at noon?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent C",
+          "member_id": "agt-c",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:52:00Z",
+        "filed_by": "hub",
+        "id": "req-0016",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Hub-filed: confirm the commitment?",
         "to": "hum-maintainer",
         "tried": "",
         "while_open": "proceed_provisionally"
@@ -3394,7 +3900,7 @@ window.MAITY_FIXTURES = {
         "area": "docs/",
         "assigned_to": "agt-a",
         "blocked_by_request": null,
-        "body": "The REST contract hub, CLI and dashboard build against.",
+        "body": "The REST contract hub, CLI and dashboard build against; ask @agent-b.",
         "checkpoint": null,
         "claim": {
           "expired": false,
@@ -3412,6 +3918,15 @@ window.MAITY_FIXTURES = {
         "kind": "task",
         "ktw_ref": null,
         "label": "feature",
+        "mentions": [
+          {
+            "field": "body",
+            "handle": "agent-b",
+            "length": 8,
+            "member_id": "agt-b",
+            "offset": 60
+          }
+        ],
         "parent": null,
         "related": [],
         "release": null,
@@ -4483,7 +4998,7 @@ window.MAITY_FIXTURES = {
       {
         "full_name": "maintainer/maity",
         "name": "Maity",
-        "open_requests": 3,
+        "open_requests": 7,
         "role": "coder",
         "slug": "maity",
         "state": "build",
@@ -5296,6 +5811,368 @@ window.MAITY_FIXTURES = {
     "items": [],
     "next_cursor": null
   },
+  "sample/jour-fixe.json": {
+    "rounds": [
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": false,
+            "author": "agt-s1",
+            "id": "jfa-s1",
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "The <b>board</b> is clear.",
+            "withdrawn": false,
+            "would_help": "A second reviewer."
+          },
+          {
+            "anonymous": true,
+            "author": null,
+            "id": "jfa-s2",
+            "redaction": null,
+            "went_badly": "Reviews wait overnight.",
+            "went_well": null,
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-31T10:00:01Z",
+        "answers_received": 2,
+        "circle": "all",
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": null,
+        "id": "jfx-s3",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "instance": "s1aa",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": null,
+          "member_id": "hum-maintainer"
+        },
+        "opened_at": "2026-10-31T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": null,
+        "reported_at": null,
+        "scheduled_for": "2026-10-31T08:00:00Z",
+        "series_id": "jfs-s1",
+        "statement": null,
+        "status": "statement",
+        "steps": [
+          {
+            "closed_at": null,
+            "closes_at": "2026-10-31T12:00:01Z",
+            "eligible": [
+              "hum-maintainer"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-31T10:00:01Z",
+            "reason": null
+          }
+        ],
+        "topic": "Shop: how we work",
+        "trigger": "manual"
+      },
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": false,
+            "author": "hum-maintainer",
+            "id": "jfa-s9",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Short reviews.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-28T10:00:01Z",
+        "answers_received": 1,
+        "circle": "all",
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": null,
+        "id": "jfx-s2",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "instance": "s1aa",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": "s1aa",
+          "member_id": "agt-s1"
+        },
+        "opened_at": "2026-10-28T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "handle": "sample-agent-1",
+            "kind": "agent",
+            "member_id": "agt-s1"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": null,
+        "reported_at": null,
+        "scheduled_for": "2026-10-28T08:00:00Z",
+        "series_id": "jfs-s1",
+        "statement": {
+          "by": "agt-s1",
+          "message_seq": null,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [],
+              "proposals": [],
+              "redaction": null,
+              "summary": null,
+              "title": "Reviews wait"
+            }
+          ]
+        },
+        "status": "exchange",
+        "steps": [
+          {
+            "closed_at": "2026-10-28T10:30:00Z",
+            "eligible": [
+              "agt-s1"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-28T10:00:01Z",
+            "reason": null
+          },
+          {
+            "closed_at": null,
+            "closes_at": "2026-10-28T12:30:00Z",
+            "eligible": [
+              "agt-s1",
+              "hum-maintainer"
+            ],
+            "kind": "response",
+            "n": 2,
+            "opened_at": "2026-10-28T10:30:00Z",
+            "reason": null
+          }
+        ],
+        "topic": "Shop: how we work",
+        "trigger": "manual"
+      },
+      {
+        "absent": [],
+        "answers": [
+          {
+            "anonymous": true,
+            "author": null,
+            "id": "jfa-s8",
+            "mine": true,
+            "redaction": null,
+            "went_badly": null,
+            "went_well": "Kept quiet.",
+            "withdrawn": false,
+            "would_help": null
+          }
+        ],
+        "answers_close_at": "2026-10-25T10:00:01Z",
+        "answers_received": 1,
+        "circle": "all",
+        "config": {},
+        "conversation_id": null,
+        "exchange_closed_at": "2026-10-25T12:30:00Z",
+        "id": "jfx-s1",
+        "invited": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "mode": "message",
+        "moderator": {
+          "instance": null,
+          "member_id": "hum-maintainer"
+        },
+        "opened_at": "2026-10-25T08:00:01Z",
+        "participants": [
+          {
+            "handle": "maintainer",
+            "kind": "human",
+            "member_id": "hum-maintainer"
+          }
+        ],
+        "posts": [],
+        "project": "maintainer/sample",
+        "report": null,
+        "report_due_at": "2026-10-26T00:30:00Z",
+        "reported_at": null,
+        "scheduled_for": "2026-10-25T08:00:00Z",
+        "series_id": "jfs-s1",
+        "statement": {
+          "by": "hum-maintainer",
+          "message_seq": null,
+          "topics": [
+            {
+              "id": "t1",
+              "items": [],
+              "proposals": [
+                {
+                  "id": "t1.s1",
+                  "reason": "Halves the wait.",
+                  "title": "A second reviewer"
+                },
+                {
+                  "id": "t1.s2",
+                  "reason": null,
+                  "title": "Night shift"
+                }
+              ],
+              "redaction": null,
+              "summary": null,
+              "title": "Reviews wait"
+            }
+          ]
+        },
+        "status": "reporting",
+        "steps": [
+          {
+            "closed_at": "2026-10-25T10:30:00Z",
+            "eligible": [
+              "hum-maintainer"
+            ],
+            "kind": "statement",
+            "n": 1,
+            "opened_at": "2026-10-25T10:00:01Z",
+            "reason": null
+          }
+        ],
+        "topic": "Shop: how we work",
+        "trigger": "manual"
+      },
+      {
+        "circle": "owner",
+        "id": "jfx-s4",
+        "missed_slots": 0,
+        "mode": "message",
+        "opened_at": null,
+        "project": "maintainer/sample",
+        "scheduled_for": "2026-10-24T09:00:00Z",
+        "series_id": "jfs-s2",
+        "skip_reason": "no_moderator",
+        "status": "skipped",
+        "topic": "Anna's agents: the board",
+        "trigger": "schedule"
+      }
+    ],
+    "series": [
+      {
+        "answer_window_minutes": 120,
+        "circle": "all",
+        "circle_owner": null,
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-maintainer",
+        "enabled": false,
+        "id": "jfs-s1",
+        "moderators": [
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "hum-maintainer"
+          },
+          {
+            "granted_at": "2026-10-31T08:00:00Z",
+            "granted_by": "hum-maintainer",
+            "member_id": "agt-s1"
+          }
+        ],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "wed"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "10:00",
+        "timezone": "Europe/Vienna",
+        "topic": "Shop: how we work"
+      },
+      {
+        "answer_window_minutes": 120,
+        "circle": "owner",
+        "circle_owner": "hum-anna",
+        "created_at": "2026-10-31T08:00:00Z",
+        "created_by": "hum-anna",
+        "enabled": false,
+        "id": "jfs-s2",
+        "moderators": [],
+        "next_at": null,
+        "opted_out_members": [],
+        "pending_moderators": [],
+        "recurrence": {
+          "freq": "weekly",
+          "interval": 1,
+          "weekdays": [
+            "thu"
+          ]
+        },
+        "report_list": [],
+        "report_window_hours": 12,
+        "step_window_minutes": 120,
+        "time": "11:00",
+        "timezone": "Europe/Vienna",
+        "topic": "Anna's agents: the board"
+      }
+    ]
+  },
   "sample/members.json": {
     "items": [
       {
@@ -5319,6 +6196,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "src/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Shop Dev",
         "handle": "shop-dev",
@@ -5348,6 +6226,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Anna's Shop Dev",
         "handle": "shop-dev",

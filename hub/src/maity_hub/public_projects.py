@@ -21,6 +21,7 @@ from maity_hub import (
     landing,
     moderation,
     namespace,
+    project_links,
     public_pages,
     public_people,
     render,
@@ -245,6 +246,15 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             f'<a href="{escape(shown_url, quote=True)}" rel="nofollow ugc">{escape(shown_url)}</a>'
         )
         repository = f"<p>{link}</p>"
+    # The project's own links (§6.11): one into the repository's path only while it is public.
+    shown_links = project_links.public(
+        project.links, project.repository_url, project.repository_public
+    )
+    links_html = "".join(
+        f'<p><a href="{escape(u, quote=True)}" rel="nofollow ugc">{escape(u)}</a></p>'
+        for u in shown_links
+        if landing.safe_target(u)
+    )
     humans, agents, others = team(conn, project.id)
     people = "".join(
         f'<li><a href="/{escape(h.handle, quote=True)}">{escape(h.display_name)}</a></li>'
@@ -258,7 +268,8 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     statistics_html = _statistics_html(agent_statistics(conn, project.id, agents))
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
-        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{team_html}{statistics_html}'
+        f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
+        f"{team_html}{statistics_html}"
     )
     path = f"/{full}"
     body = render.page_document(
@@ -275,6 +286,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
                 project.state,
                 project.public_about or "",
                 shown_url or "",
+                "\x00".join(shown_links),
                 team_html,
                 statistics_html,
             )

@@ -20,7 +20,9 @@ from sqlalchemy import Connection, Engine, and_, delete, insert, or_, select, up
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    campaigns,
     clock,
+    landing,
     paging,
     paths,
     registration,
@@ -42,11 +44,23 @@ router = APIRouter()
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 
 PASSWORD_MIN = 12  # §2.1
-BY_SOURCE = Limiter(10, 3600)  # POST /auth/register per source address (§2.7.3), 429
+BY_SOURCE = Limiter(
+    10, 3600, name="routes.registration.BY_SOURCE"
+)  # POST /auth/register per source address (§2.7.3), 429
 # Silent limits: over them the answer is still 202 and nothing is sent (§2.7.3).
-BY_PAIR_SHORT = Limiter(3, 900)
-BY_PAIR_DAY = Limiter(10, 86400)
-BY_ADDRESS_DAY = Limiter(20, 86400)
+BY_PAIR_SHORT = Limiter(3, 900, name="routes.registration.BY_PAIR_SHORT")
+BY_PAIR_DAY = Limiter(10, 86400, name="routes.registration.BY_PAIR_DAY")
+BY_ADDRESS_DAY = Limiter(20, 86400, name="routes.registration.BY_ADDRESS_DAY")
+
+
+class OriginIn(BaseModel):
+    """The campaign link a visitor came by, `v` and `c` of the registration page's address
+    (§16.7.2); what is kept is decided where it is stored."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    variant: str | None = Field(default=None, max_length=80)
+    campaign: str | None = Field(default=None, max_length=80)
 
 
 class RegisterIn(BaseModel):
@@ -55,6 +69,7 @@ class RegisterIn(BaseModel):
     address: str = Field(max_length=254)
     password: str = Field(min_length=PASSWORD_MIN, max_length=1024)
     next: str | None = Field(default=None, max_length=2048)
+    origin: OriginIn | None = None
 
 
 def _environment(request: Request) -> registration.RegistrationEnvironment:
@@ -135,6 +150,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         request.headers.get("user-agent"),
         request.headers.get("accept-language"),
         paths.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
+        body.origin.model_dump() if body.origin is not None else None,
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 
@@ -148,6 +164,7 @@ def _store(
     user_agent: str | None,
     language: str | None,
     next_path: str | None,
+    origin: dict[str, Any] | None = None,
 ) -> None:
     """§2.7.1 step 3, after the answer: drop, mail the account's owner, or make a pending
     registration and mail its link."""
@@ -194,6 +211,8 @@ def _store(
                 language=(language or "")[:35] or None,
                 terms_version=terms["version"] if terms else None,
                 next=next_path,
+                # Kept only while it names a variant and a campaign that exist (§16.7.2).
+                origin=campaigns.keep(landing.stored(conn), origin),
                 created_at=now,
                 expires_at=now + registration.PENDING_FOR,
             )

@@ -12,10 +12,10 @@ window.Maity = window.Maity || {};
   const SHOWN = 8;
   // An @ that starts a mention: at the start or after a character that is
   // none of [A-Za-z0-9_.@/+-] (§8.6), followed by what is typed so far.
-  // One "/" may follow: the long form owner/handle (§8.6).
-  // An instance's #id after a handle (§6.17) matches nothing here, so
-  // the picker stays closed while it is typed.
-  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*(?:\/[a-z0-9-]*)?)$/;
+  // One "/" may follow: the long form owner/handle (§8.6). A "#" after the
+  // handle starts an agent instance's id (§6.17): the picker then offers
+  // that agent's instances (the maintainer, tsk-bczgjkfpw1wg).
+  const TYPED = /(^|[^A-Za-z0-9_.@/+-])@([a-z0-9-]*(?:\/[a-z0-9-]*)?)(?:#([2-9a-hjkmnp-z]*))?$/;
   let serial = 0;
 
   // The code in a text as §8.6 reads it: fenced blocks (a line starting
@@ -65,7 +65,7 @@ window.Maity = window.Maity || {};
   M.mentionPicker = function (textarea, loadMembers, selfId) {
     serial += 1;
     const listId = "mention-list-" + serial;
-    const list = h("ul", { class: "mention-list", id: listId, role: "listbox", "aria-label": "Members to mention", hidden: true });
+    const list = h("ul", { class: "mention-list", id: listId, role: "listbox", "aria-label": M.t("mentions.list"), hidden: true });
     let members = null;
     let loading = null;
     let shown = [];
@@ -84,14 +84,15 @@ window.Maity = window.Maity || {};
       textarea.removeAttribute("aria-activedescendant");
     }
 
-    function pick(m) {
+    // An option: a member, or one of an agent's instances ({m, inst}).
+    function pick(option) {
       const at = caret();
       const before = textarea.value.slice(0, at);
       const typed = TYPED.exec(before);
       if (!typed) { close(); return; }
-      const start = at - typed[2].length - 1;
-      // The long form where the short one is two agents' (§8.6).
-      const said = M.dom.handleIn(members, m);
+      const start = at - (typed[0].length - typed[1].length);
+      // The long form where the short one is two agents' (§8.6), then the instance's #id.
+      const said = M.dom.handleIn(members, option.m) + (option.inst ? "#" + option.inst.id : "");
       textarea.value = textarea.value.slice(0, start) + "@" + said + " " + textarea.value.slice(at);
       const next = start + said.length + 2;
       if (textarea.setSelectionRange) textarea.setSelectionRange(next, next);
@@ -101,7 +102,8 @@ window.Maity = window.Maity || {};
 
     function draw() {
       clear(list);
-      shown.forEach((m, i) => {
+      shown.forEach((option, i) => {
+        const { m, inst } = option;
         const id = listId + "-" + i;
         append(list, h("li", {
           id,
@@ -109,9 +111,11 @@ window.Maity = window.Maity || {};
           class: "mention-option" + (i === active ? " active" : ""),
           "aria-selected": i === active ? "true" : "false",
           // mousedown, not click: the textarea keeps its focus and caret.
-          onmousedown: (e) => { e.preventDefault(); pick(m); },
-        }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m)), " ", h("span", { class: "muted" }, m.display_name
-          + (m.kind === "agent" ? " · agent" : ""))));
+          onmousedown: (e) => { e.preventDefault(); pick(option); },
+        }, h("span", { class: "mention-handle" }, "@" + M.dom.handleIn(members, m) + (inst ? "#" + inst.id : "")), " ",
+        h("span", { class: "muted" }, inst
+          ? [m.display_name, inst.dormant ? M.t("mentions.instance.dormant") : M.t("mentions.instance")].join(" · ")
+          : m.display_name + (m.kind === "agent" ? " · " + M.t("mentions.agent") : ""))));
       });
       list.hidden = !shown.length;
       if (shown.length) textarea.setAttribute("aria-activedescendant", listId + "-" + active);
@@ -144,8 +148,26 @@ window.Maity = window.Maity || {};
       const away = document.activeElement && document.activeElement !== textarea;
       if (!typed || away) { close(); return; }
       const q = typed[2];
+      const iq = typed[3];
       // With a "/" typed the long form is matched; before it, the handle.
-      shown = members.filter((m) => m.id !== selfId && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q))).slice(0, SHOWN);
+      const matching = members.filter((m) => m.id !== selfId && (q.includes("/") ? M.dom.handleIn(members, m).startsWith(q) : m.handle.startsWith(q)));
+      // An agent's instances follow it, those not revoked; with a "#" typed only
+      // the instances of the agent named in full, by the id typed so far.
+      const instancesOf = (m) => (m.kind === "agent" ? (m.instances || []).filter((i) => !i.revoked_at && typeof i.id === "string") : []);
+      if (iq === undefined) {
+        // The members come first, as many as fit; instances only fill the slots
+        // left, each after its agent, so a short @ still shows every member it did.
+        const base = matching.slice(0, SHOWN);
+        let room = SHOWN - base.length;
+        shown = [].concat(...base.map((m) => {
+          const extra = room > 0 ? instancesOf(m).slice(0, room) : [];
+          room -= extra.length;
+          return [{ m }].concat(extra.map((inst) => ({ m, inst })));
+        }));
+      } else {
+        shown = [].concat(...matching.filter((m) => M.dom.handleIn(members, m) === q || m.handle === q)
+          .map((m) => instancesOf(m).filter((i) => i.id.startsWith(iq)).map((inst) => ({ m, inst })))).slice(0, SHOWN);
+      }
       active = 0;
       draw();
     }

@@ -15,8 +15,11 @@ from sqlalchemy import Connection, select
 from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
-from maity_hub.errors import forbidden, not_found
-from maity_hub.scopes import has_scope
+from maity_hub.errors import ApiError, forbidden, not_found
+from maity_hub.scopes import GOVERNANCE, has_scope
+
+# What a bridge never calls under, for the agent it serves (§2.3, "The bridge").
+BRIDGE_WITHHELD = frozenset({*GOVERNANCE, "line:lead"})
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,7 @@ class Membership:
     row: Any
     kind: str  # human, agent
     instance: str | None = None  # the calling agent instance (§6.17); None for a human
+    bridged: bool = False  # a bridge calls as this agent, with `Maity-For` (§2.3)
 
     @property
     def id(self) -> int:
@@ -46,7 +50,11 @@ class Membership:
 
     @property
     def trust(self) -> str:
+        """For a bridge's call the served agent's trust without what `owner` and `admin`
+        add (§2.3): it acts in its role, never as part of the admin team."""
         trust: str = self.row.trust
+        if self.bridged and trust in ("owner", "admin"):
+            return "member"
         return trust
 
     @property
@@ -55,9 +63,18 @@ class Membership:
         return principal
 
     def may(self, scope: str) -> bool:
+        if self.bridged and scope in BRIDGE_WITHHELD:
+            return False
         return has_scope(self.trust, self.role_base, self.kind, scope)
 
     def require(self, scope: str) -> None:
+        if self.bridged and scope in BRIDGE_WITHHELD:
+            raise ApiError(
+                403,
+                "forbidden",
+                "a bridge calls under no governance scope and no line:lead",
+                {"scope": scope, "reason": "bridge_no_governance"},
+            )
         if not self.may(scope):
             raise forbidden(scope)
 
@@ -84,7 +101,7 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     ).first()
     if row is None:
         raise not_found()
-    return Membership(project, row, caller.kind, caller.instance)
+    return Membership(project, row, caller.kind, caller.instance, caller.bridge is not None)
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

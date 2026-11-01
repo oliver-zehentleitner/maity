@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, forge, idempotency, mentions, namespace, paging
+from maity_hub import clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials
@@ -220,6 +220,9 @@ def get_history(
         card = _card(conn, mine, card_id)
         c = t.card_history.c
         query = select(t.card_history).where(c.card_id == card.id)
+        for start, end in events.window_times(conn, mine.project.id, mine.row):
+            # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
+            query = query.where(or_(c.at < start, c.at > end))
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor)
             query = query.where(or_(c.at < after_at, and_(c.at == after_at, c.id < after_id)))
@@ -383,10 +386,10 @@ def post_note(
         ):
             raise invalid({"body": "note_cap"}, "the card holds no more notes")
         key = str(mine.id)
-        wait = notes.POSTED.hit(key)
+        wait, mark = notes.POSTED.place(key)
         if wait:
             raise rate_limited(wait)
-        on_rollback(conn, lambda: notes.POSTED.give_back(key, 1))
+        on_rollback(conn, lambda: notes.POSTED.release(key, mark))
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         note_id = new_id("note")
         conn.execute(

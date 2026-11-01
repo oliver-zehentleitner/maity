@@ -36,7 +36,10 @@ from __future__ import annotations
 import argparse
 import base64
 import collections
+import email
+import email.policy
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -44,16 +47,19 @@ import re
 import shlex
 import shutil
 import socket
+import socketserver
 import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
 import zlib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
@@ -80,9 +86,16 @@ AXE_FAIL = {"serious", "critical"}
 # Light at desktop and phone width, then dark at desktop width.
 PASSES = ((1280, 900, "light"), (390, 844, "light"), (1280, 900, "dark"))
 
-# The caller's own MAITY_* settings (a state dir, a forge token) never reach
-# the throwaway hub or the scratch clones.
-CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("MAITY_")}
+
+def clean_environment(environ) -> dict:
+    """Drop the caller's own MAITY_* settings (a state dir, a forge token) from `environ` and
+    return what is left, so no process this run starts can act on the real hub."""
+    for name in [k for k in environ if k.startswith("MAITY_")]:
+        del environ[name]
+    return dict(environ)
+
+
+CLEAN_ENV = clean_environment(os.environ)
 
 
 class Run:
@@ -282,8 +295,11 @@ def port_taken(port: int) -> bool:
         return False
 
 
-def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
-    """Migrate, create the owner and serve; every output goes to logs/hub.log."""
+def start_hub(
+    work: Path, logs: Path, port: int, extra: dict[str, str] | None = None, log_name: str = "hub.log"
+) -> subprocess.Popen:
+    """Migrate, create the owner and serve, with `extra` in the environment; every output goes
+    to logs/<log_name>."""
     base = f"http://127.0.0.1:{port}"
     # A local store for attachments (§8.7), so the attachments step uploads for real:
     # messages name their attachments since E's #474, and the sent image is read back
@@ -297,8 +313,9 @@ def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
+        **(extra or {}),
     )
-    log_path = logs / "hub.log"
+    log_path = logs / log_name
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
         for args, stdin in (
             (["migrate"], None),
@@ -343,6 +360,70 @@ def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
         raise
     stop_hub(hub)
     raise SystemExit("e2e: the hub did not come up:\n" + log_path.read_text())
+
+
+class MailCatcher:
+    """A plain SMTP listener on 127.0.0.1 that keeps what it receives, so a round reads the
+    mail the real hub sent. The standard library's has gone (`smtpd`, Python 3.12), and this
+    is little enough not to add a dependency to the e2e."""
+
+    def __init__(self) -> None:
+        self.mails: list[tuple[list[str], EmailMessage]] = []
+        catcher = self
+
+        class Session(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                self.say("220 e2e catcher")
+                rcpt: list[str] = []
+                while line := self.rfile.readline():
+                    verb = line[:4].upper()
+                    if verb == b"QUIT":
+                        self.say("221 bye")
+                        return
+                    if verb == b"RCPT":
+                        rcpt.append(line.decode().split(":", 1)[1].strip().strip("<>"))
+                    if verb == b"DATA":
+                        self.say("354 go on")
+                        raw = bytearray()
+                        while (part := self.rfile.readline()) not in (b".\r\n", b""):
+                            raw += part[1:] if part.startswith(b".") else part
+                        catcher.mails.append(
+                            (rcpt, email.message_from_bytes(bytes(raw), policy=email.policy.default))
+                        )
+                        rcpt = []
+                    self.say("250 ok")
+
+            def say(self, text: str) -> None:
+                self.wfile.write(text.encode() + b"\r\n")
+
+        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Session)
+        self.server.daemon_threads = True
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def wait_for(self, to: str, timeout: float = 20) -> EmailMessage:
+        """The first mail to `to`; fails the run when none comes in time."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            for rcpt, message in self.mails:
+                if to in rcpt:
+                    return message
+            time.sleep(0.1)
+        raise AssertionError(f"no mail to {to} within {timeout} s; got {len(self.mails)}")
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def totp_code(secret: str, step: int) -> str:
+    """RFC 6238 from the secret the hub hands out, on purpose not the hub's own code."""
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    digest = hmac.new(key, struct.pack(">Q", step), "sha1").digest()
+    start = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[start : start + 4])[0] & 0x7FFFFFFF
+    return str(value % 10**6).zfill(6)
 
 
 def stop_hub(hub: subprocess.Popen) -> None:
@@ -493,6 +574,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_role("button", name="Create project", exact=True).click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
+    expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
 def join_line(
@@ -502,8 +584,11 @@ def join_line(
     handle: str | None,
     display: str = "E2E Agent",
     role: str = "coder",
+    takes_over: str | None = None,
+    handover: str | None = None,
 ) -> tuple[str, str]:
-    """Create a join line in the join panel on Agents; a new profile when handle is given."""
+    """Create a join line in the join panel on Agents; a new profile when handle is given.
+    takes_over: the label of the agent member whose work the new one continues (§3.1)."""
     view_tab(page, "Agents").click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     # A project without an agent of one's own opens the panel itself;
@@ -526,6 +611,10 @@ def join_line(
         expect(page.locator("#join-agent")).not_to_have_value("")
     page.locator("#join-role").select_option(role)
     page.locator("#join-areas").fill("web/")
+    if takes_over:
+        page.locator("#join-takes-over").select_option(label=takes_over)
+    if handover:
+        page.locator("#join-handover").fill(handover)
     page.get_by_role("button", name="Create join line", exact=True).click()
     line = page.locator(".paste-line")
     expect(line).to_be_visible()
@@ -537,8 +626,9 @@ def join_line(
         page.locator(".join-result").get_by_role("button", name="Join another", exact=True).click()
         expect(page.locator("#join-agent option:checked")).to_contain_text(f"(@{handle})")
         panel.get_by_role("button", name="Close", exact=True).click()
-    assert words[:2] == ["maity", "join"] and words[3] == "--code", words
-    return words[2], words[4]
+    # The install line and the join in one command (§3.2): `<install> && maity join <url> --code <code>`.
+    assert words[-6:-3] == ["&&", "maity", "join"] and words[-2] == "--code", words
+    return words[-3], words[-1]
 
 
 # The number of line boxes of each matching element's text.
@@ -605,13 +695,15 @@ def main() -> int:
                 watch_page(run, page)
                 try:
                     scenario(run, page)
+                    # Inside the same report: a failure in a later round shows its trace too (review of #997).
+                    fixture_views(run, browser)
+                    second_hub_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
                     for problem in run.problems:
                         print("  page: " + problem)
                     raise
-                fixture_views(run, browser)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -687,7 +779,7 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   joined as {agent_id}")
     view_tab(page, "Members").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
-    agents = page.locator("main .members-agents")
+    agents = page.locator("main .members-list")
     expect(agents).to_contain_text("@e2e-agent")
     expect(agents).to_contain_text("member")
     expect(agents).to_contain_text("Online")
@@ -742,6 +834,7 @@ def scenario(run: Run, page: Page) -> None:
     wait = subprocess.Popen(
         ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
+        env=CLEAN_ENV,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -774,8 +867,13 @@ def scenario(run: Run, page: Page) -> None:
         run.a11y(page, "inbox, @ picker open")
         free.press("Escape")
         expect(picker).to_be_hidden()
-        free.fill("")
-        page.locator("li.entry.current").get_by_role("button", name="Ship it", exact=True).click()
+        # The one field stands above the buttons; a reply takes its text along (§7).
+        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        current = page.locator("li.entry.current")
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
+        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        free.fill("Ship it, with this note.")
+        current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
         expect(
             page.locator("nav.switcher a", has_text="E2E Alpha").locator(".count")
@@ -791,7 +889,9 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   maity wait woke on {event.get('kind')} for {event.get('subject')}")
     assert event.get("kind") == "request_answered", event
     assert event.get("subject") == {"type": "request", "id": request_id}, event
-    assert (event.get("payload") or {}).get("answer", {}).get("reply_id") == "o1", event
+    answer = (event.get("payload") or {}).get("answer", {})
+    assert answer.get("reply_id") == "o1", event
+    assert answer.get("text") == "Ship it, with this note.", event
     view_tab(page, "Board").click()
     card = board_card(page, "E2E card")
     expect(card).to_contain_text("Claimed by")
@@ -889,6 +989,7 @@ def scenario(run: Run, page: Page) -> None:
     members_step(run, page)
     my_settings_step(run, page)
     invitations_step(run, page)
+    agents_page_step(run, page)
     message_step(run, page, alpha, agent_id)
     release_contract(run, page, alpha, agent_id, task["id"])
     signing_step(run, page, alpha, agent_id)
@@ -897,7 +998,10 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    availability_step(run, page, alpha)
+    agent_owners_step(run, page)
     isolate_step(run, page)
+    memory_provider_step(run, page, alpha)
 
     run.step("phone width: no view scrolls sideways")
     run.maity(alpha, "ask", "Phone check?", "--to", "human", "--class", "consent")
@@ -919,7 +1023,8 @@ def scenario(run: Run, page: Page) -> None:
     # Why, where the hub offers it (its 409 ktw_not_configured is expected here).
     if view_tab(page, "Why").count():
         tabs += (("why", "Why"),)
-    tabs += (("runners", "Runners"),)
+    # Runners has no tab of its own any more (the maintainer, 2026-10-31): Settings links it.
+    expect(view_tab(page, "Runners")).to_have_count(0)
     for view, tab in tabs:
         view_tab(page, tab).click()
         expect(page.locator(f"main section.view-{view}")).to_be_visible()
@@ -958,7 +1063,12 @@ def scenario(run: Run, page: Page) -> None:
     users_step(run, page)
     registration_admin_step(run, page)
     reports_admin_step(run, page, alpha)
+    forge_access_step(run, page)
     landing_json_step(run, page)
+    legal_json_step(run, page)
+    site_json_step(run, page)
+    jour_fixe_step(run, page)
+    project_links_step(run, page)
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
@@ -1208,6 +1318,23 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.shot(page, "chat-composer-3x")
     compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
     assert abs(field.bounding_box()["height"] - one) < 2
+    # The meat-proxy switch of this chat (§9.3, tsk-n872zkxmwbec): switched here, kept by the hub, given back to the profile.
+    meat = compose.locator("button.meat-chat-toggle")
+    follow = compose.get_by_role("button", name="Follow my profile", exact=True)
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    meat.click()
+    expect(meat).to_have_attribute("aria-pressed", "true")
+    expect(follow).to_be_visible()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    follow.click()
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy_chat"] is None, entry
     no_problems(run, "chat")
 
     run.step("global chat: /chats has every project's chats and opens one in place")
@@ -1222,6 +1349,18 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     expect(page).to_have_url(re.compile(rf"/chats/owner/e2e-alpha/{agent_id}$"))
     expect(page.get_by_role("heading", name="Chat with E2E Agent", exact=True)).to_be_visible()
     expect(page.locator(".chat-list a.conv[aria-current=page]")).to_have_count(1)
+    # A pin (§9.3, tsk-645p1nw2v7y4): kept by the hub, shown as a mark, the button pressed; then taken off again.
+    pin = page.locator(".chat-list li").filter(has_text="E2E Agent").first.locator("button.pin-toggle")
+    expect(pin).to_have_attribute("aria-pressed", "false")
+    pin.click()
+    expect(pin).to_have_attribute("aria-pressed", "true")
+    expect(page.locator(".chat-list a.conv.with-project", has_text="E2E Agent").first.locator(".pin-mark")).to_be_visible()
+    mine = page.request.get(f"{run.base}/api/v1/me/conversations").json()["items"]
+    assert any(c["id"] == agent_id and c["pinned"] for c in mine), mine
+    pin.click()
+    expect(pin).to_have_attribute("aria-pressed", "false")
+    mine = page.request.get(f"{run.base}/api/v1/me/conversations").json()["items"]
+    assert not any(c["pinned"] for c in mine), mine
     page.locator("#chat-text").fill("Hello from the global chat.")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
     expect(page.locator("ol.messages li.msg.out").last).to_contain_text("Hello from the global chat.")
@@ -1244,7 +1383,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
     view_tab(page, "Members").click()
-    agents = page.locator("main .members-agents")
+    agents = page.locator("main .members-list")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     form = agents.locator("form.member-pause")
     expect(form).to_contain_text(
@@ -1470,6 +1609,134 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     project_settings(page)
     assert run.api(alpha, "GET", "/projects/owner/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
+
+
+def sign_in(run: Run, browser):
+    """A context of its own, signed in as the owner, and its page."""
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    return context, page
+
+
+def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """A second hub with an instance key and a mail catcher (§2.8, §16.2). The first hub stays
+    without either, as the forge step checks exactly that absence (`secret_key_missing`)."""
+    second = work / "second-hub"
+    second.mkdir()
+    port = free_port()
+    catcher = MailCatcher()
+    extra = {
+        "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_SMTP_HOST": "127.0.0.1",
+        "MAITY_SMTP_PORT": str(catcher.port),
+        "MAITY_SMTP_TLS": "none",
+        "MAITY_SMTP_ALLOW_PLAINTEXT": "1",
+        "MAITY_SMTP_FROM": "hub@e2e.example",
+    }
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"second hub on {run.base}, with an instance key and a mail catcher")
+    hub = start_hub(second, artifacts, port, extra, "hub-second.log")
+    try:
+        mail_reaches_the_catcher(run, browser, catcher)
+        secret, used = step_up_with_totp(run, browser)
+        sign_in_with_totp(run, browser, secret, used)
+    finally:
+        stop_hub(hub)
+        catcher.close()
+        run.base = first_base
+
+
+def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
+    run.step("second hub: the instance's test mail arrives, sent by the real hub")
+    context, page = sign_in(run, browser)
+    page.evaluate(
+        """() => window.Maity.api.post("/admin/settings/mail/test", { to: "owner@e2e.example" })"""
+    )
+    mail = catcher.wait_for("owner@e2e.example")
+    assert mail["From"] and "hub@e2e.example" in mail["From"], mail["From"]
+    no_problems(run, "the test mail")
+    context.close()
+
+
+def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
+    """A session from before the enrolment has not given the factor, so the page must ask.
+    Returns the secret and the last step the hub took, for the sign-in that follows."""
+    run.step("second hub: enrol TOTP; an older session's export asks for the code")
+    older_context, older = sign_in(run, browser)
+    context, page = sign_in(run, browser)
+    started = page.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
+    secret = started["secret"]
+    step = int(time.time() // 30)
+    page.evaluate(
+        """(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""",
+        totp_code(secret, step),
+    )
+    context.close()
+
+    older.goto(run.base + "/account/data")
+    older.get_by_role("button", name="Export my data", exact=True).click()
+    code = older.locator("#step-up-step_up_required")
+    expect(code).to_be_visible()
+    run.shot(older, "second-hub-step-up")
+    run.a11y(older, "second hub: the step-up question")
+    code.fill("000000")
+    older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
+    expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
+    # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
+    # slow screenshot or axe run the current step (review of #997).
+    used = max(step + 1, int(time.time() // 30))
+    code.fill(totp_code(secret, used))
+    with older.expect_download() as saved:
+        older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
+    assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
+    expect(older.locator(".data-export")).to_contain_text("Your export was saved.")
+    # What the question answers: the first refusal and the wrong code, both expected here.
+    run.problems = [
+        p
+        for p in run.problems
+        if "/me/export answered 403" not in p and "/second-factor/verify answered 403" not in p
+    ]
+    no_problems(run, "step-up with TOTP")
+    older_context.close()
+    return secret, used
+
+
+def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
+    """The second step of a sign-in (§2.8.2, tsk-73kkzr3x6exy): after the password the page
+    asks for the app's code and nothing else, then the dashboard."""
+    run.step("second hub: a sign-in asks for the app's code before anything else")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    step = page.locator("form.second-factor")
+    expect(step).to_contain_text("Enter the code from your authenticator app")
+    # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
+    expect(page.locator("header .me-name")).to_have_count(0)
+    run.shot(page, "second-hub-sign-in-totp")
+    run.a11y(page, "second hub: the sign-in step with TOTP")
+    # The hub takes only a step newer than the last one used, within one step of skew.
+    while int(time.time() // 30) < used:
+        time.sleep(1)
+    page.locator("#sf-code").fill(totp_code(secret, used + 1))
+    step.get_by_role("button", name="Verify", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    expect(step).to_have_count(0)
+    no_problems(run, "sign-in with TOTP")
+    context.close()
 
 
 def fixture_views(run: Run, browser) -> None:
@@ -1782,6 +2049,23 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         event = run.wait_event(wait)
         assert event.get("kind") == "message" and event["payload"].get("to") == "role:reviewer", event
     run.shot(page, "message-the-project")
+    # An agent's instance (tsk-bczgjkfpw1wg): after "#" the @ picker offers its instances; Enter puts
+    # the address in, and the address's #id leads to the member page's Sessions with that instance marked.
+    body = page.locator("#message-body")
+    body.fill("")
+    body.press_sequentially("Hi @e2e-agent#")
+    option = page.locator(".mention-list li").first
+    expect(option.locator(".mention-handle")).to_have_text(re.compile(r"^@e2e-agent#[2-9a-hjkmnp-z]{4,5}$"))
+    address = option.locator(".mention-handle").inner_text()
+    body.press("Enter")
+    expect(body).to_have_value(f"Hi {address} ")
+    instance = address.split("#", 1)[1]
+    body.fill("")
+    page.goto(f"{run.base}/owner/e2e-alpha/members/{agent_id}/sessions/{instance}")
+    chosen = page.locator(f"#member-instance-{instance}")
+    expect(chosen).to_have_attribute("aria-current", "true")
+    expect(chosen).to_be_focused()
+    run.a11y(page, "member page, an instance chosen")
     # In a private chat an @name tells nobody: the hub resolves nothing there.
     wait = run.wait_start(alpha)
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
@@ -1798,8 +2082,8 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
 def project_runners_step(run: Run, page: Page, name: str) -> None:
     """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
-    page.goto(f"{run.base}/owner/e2e-alpha/members")
-    view_tab(page, "Runners").click()
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    page.get_by_role("link", name="This project's runners", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/runners$"))
     view = page.locator("main section.view-runners")
     expect(view.locator("h2").first).to_be_visible()
@@ -1834,11 +2118,12 @@ def notifications_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     bell = page.locator("header button.bell")
-    # The header's right block: Chat, the Lead button where there is a lead to reach, Notifications,
-    # the gear, the profile, in one row also on a phone.
-    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className)")
+    # The header's right block (the maintainer, 2026-10-31): Chat, the Lead button where there is a
+    # lead to reach, "+", the gear, Notifications, the profile, in one row also on a phone.
+    order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className + (e.querySelector('.add-menu') ? ' add' : '') + (e.querySelector('.profile-menu') ? ' profile' : ''))")
     lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
-    assert len(order) == 4 + lead and "chat-button" in order[0] and "bell-box" in order[1 + lead], f"header order: {order}"
+    assert (len(order) == 5 + lead and "chat-button" in order[0] and "add" in order[1 + lead]
+            and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
     boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
@@ -1850,6 +2135,16 @@ def notifications_step(run: Run, page: Page) -> None:
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
     run.a11y(page, "chats across projects")
+    run.step("all projects: Inbox and Chats are its two pages; Inbox leads back to the requests")
+    pages = page.locator("header nav.views a")
+    expect(pages).to_have_count(2)
+    expect(pages.nth(1)).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    pages.nth(0).click()
+    expect(page).to_have_url(re.compile(r"/all$"))
+    expect(page.locator("header nav.views a").nth(0)).to_have_attribute("aria-current", "page")
+    expect(page.locator("main section.view-all")).to_be_visible()
+    run.shot(page, "all-projects-pages")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     run.step("notifications: the owner opens the bell, reads the list, closes it with Escape")
@@ -1888,10 +2183,26 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
 def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
     run.step("release: a reviewer joins and opens a release; the hub has no forge probe here")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    url, code = join_line(run, page, "e2e-alpha", "e2e-reviewer", "E2E Reviewer", "reviewer")
+    # It takes over from the first agent, the hand-over on its card (§3.1).
+    url, code = join_line(
+        run,
+        page,
+        "e2e-alpha",
+        "e2e-reviewer",
+        "E2E Reviewer",
+        "reviewer",
+        takes_over="E2E Agent (@e2e-agent)",
+        handover=card_id,
+    )
     rev = run.clone("clone-reviewer")
     run.maity(
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
+    )
+    view_tab(page, "Members").click()
+    over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
+    expect(over).to_have_text(f"Takes over from @e2e-agent; the hand-over is in {card_id}.")
+    expect(over.get_by_role("link", name=card_id)).to_have_attribute(
+        "href", re.compile(rf"/owner/e2e-alpha/tasks/{card_id}$")
     )
     partner = run.api(
         rev,
@@ -2063,8 +2374,28 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 200, status
     # The credentials are in the agent's row on Members (tsk-7v2snhk002ak).
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
+    page.locator("main .members-list").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
+    # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
+    # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
+    # with the owner's session: a CLI call would sign with the agent's credential and change
+    # the bearer use the signing check below reads.
+    bridges = page.locator("main tr.member-manage .member-bridges")
+    expect(bridges).to_contain_text("No bridges.")
+    bridges.get_by_label("Agent that lends its hands").select_option(label="E2E Reviewer (@e2e-reviewer)")
+    bridges.get_by_label("What for").fill("git for the reviewer's files")
+    bridges.get_by_role("button", name="Connect with a bridge", exact=True).click()
+    expect(bridges.locator("ul.bridges-serving-this li.bridge")).to_contain_text("lends its hands: git for the reviewer's files")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    served = next(m for m in members if m["handle"] == "e2e-agent")
+    bridge = next(m for m in members if m["handle"] == "e2e-reviewer")
+    assert [c["member_id"] for c in served["bridges"]] == [bridge["id"]], served["bridges"]
+    assert [c["member_id"] for c in bridge["bridging_for"]] == [served["id"]], bridge["bridging_for"]
+    run.a11y(page, "members, a bridge connected")
+    bridges.get_by_role("button", name="End the bridge for git for the reviewer's files", exact=True).click()
+    expect(bridges).to_contain_text("No bridges.")
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    assert not next(m for m in members if m["handle"] == "e2e-agent")["bridges"], "the bridge is still there"
     project_settings(page)
     page.locator("#signing-select").select_option("required")
     impact = page.locator(".signing-impact")
@@ -2149,6 +2480,85 @@ def registration_admin_step(run: Run, page: Page) -> None:
     no_problems(run, "registration admin")
 
 
+def project_links_step(run: Run, page: Page) -> None:
+    """The project's own links (docs/api.md §6.11): set in Project settings against the real
+    hub, shown beside the state in the header, refused at the field where the hub refuses them."""
+    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.links-form")
+    expect(form).to_be_visible()
+    page.locator("#link-wiki").fill("https://wiki.example.org:8443/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("#link-wiki-error")).to_have_text("Not an https address on a DNS name without a port or user name.")
+    refused = "PATCH /api/v1/projects/owner/e2e-alpha answered 400"
+    run.problems = [p for p in run.problems if p != refused]
+    page.locator("#link-wiki").fill("")
+    page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    form.get_by_role("button", name="Save the links", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Links saved.")
+    issues = page.locator("header .project-state a.header-link", has_text="Issues")
+    expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
+    expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    run.shot(page, "project-links")
+    run.a11y(page, "project links")
+    no_problems(run, "project links")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+
+
+def jour_fixe_step(run: Run, page: Page) -> None:
+    """The jour fixe (docs/api.md §20): a series kept in Project settings against the real hub,
+    the owner granted the right to moderate it, the view says its next slot and the member's part,
+    and a start by hand opens a round of that series or says why not."""
+    run.step("jour fixe: a series saved in Project settings, a moderator granted, a start by hand")
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    page.get_by_role("button", name="New series", exact=True).click()
+    form = page.locator("form.jf-series-form")
+    expect(form).to_be_visible()
+    page.locator("#jfs-topic").fill("e2e: how we work")
+    page.locator("#jfs-enabled").check()
+    page.locator("#jfs-time").fill("10:00")
+    page.locator("#jfs-timezone").fill("Europe/Vienna")
+    page.locator("#jfs-day-mon").check()
+    page.locator("#jfs-reason").fill("e2e: a weekly look back")
+    form.get_by_role("button", name="Save the series", exact=True).click()
+    expect(page.locator("main")).to_contain_text("The series is saved.")
+    row = page.locator("li.jf-series", has_text="e2e: how we work")
+    expect(row).to_contain_text("Weekly on Monday at 10:00 (Europe/Vienna)")
+    # The owner grants the right to themselves: a keeper's own grant takes effect at once.
+    row.locator("select.jfs-grant-member").select_option(value=me["id"])
+    row.locator("input[id^=jfs-reason-]").fill("e2e: the owner moderates")
+    row.get_by_role("button", name="Grant", exact=True).click()
+    expect(row.locator("ul.jf-moderators-list li")).to_have_count(1)
+    page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
+    block = page.locator("section.jf-series-block", has_text="e2e: how we work")
+    expect(block).to_contain_text("Next round:")
+    # Opting out and back in, as the member's own part in the series (§20.2).
+    block.locator("li.jf-part .jf-optout").first.click()
+    expect(block.locator("li.jf-part").first).to_contain_text("opted out")
+    block.locator("li.jf-part .jf-optout").first.click()
+    expect(block.locator("li.jf-part").first).to_contain_text("taking part")
+    block.locator("input[id^=jf-start-reason-]").fill("e2e: before the launch")
+    block.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
+    opened = re.compile(r"/owner/e2e-alpha/jour-fixe/jfx-")
+    expect(page.locator("main")).to_contain_text(re.compile(r"Not started: |answering"))
+    if opened.search(page.url):
+        expect(page.locator("main")).to_contain_text("answering")
+        # The owner is a participant: an answer by name, read back from the real hub.
+        page.locator("#jfa-went_well").fill("e2e: the board is clear")
+        page.locator("form.jfa-answer-form").get_by_role("button", name="Send my answer", exact=True).click()
+        expect(page.locator("section.jfa-answer")).to_contain_text("Your answer, by name.")
+    else:
+        # The hub's refusal (409: nobody to moderate, too few in the circle) is the expected answer here.
+        run.problems = [p for p in run.problems if not (p.startswith("POST /api/v1/projects/owner/e2e-alpha/jour-fixe/series/") and p.endswith("/rounds answered 409"))]
+    run.shot(page, "jour-fixe")
+    run.a11y(page, "jour fixe")
+    no_problems(run, "jour fixe")
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+
+
 def landing_json_step(run: Run, page: Page) -> None:
     """Instance administration → Landing page (docs/api.md §16.7, tsk-36d575f5yybz): a draft
     imported as JSON, checked by the hub's preview call, saved only by Save."""
@@ -2187,7 +2597,8 @@ def landing_json_step(run: Run, page: Page) -> None:
     io.get_by_role("button", name="Export the draft", exact=True).click()
     assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
     # The prepared landing V3 itself (tsk-k7pwrzs8vb8k): the real hub's check refuses nothing.
-    v3 = (WEB / "tools" / "landing-v3-complete.json").read_text(encoding="utf-8")
+    # Its landing part, from the one site file (tsk-xw8a2hd84x3a).
+    v3 = json.dumps(json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))["landing"])
     page.locator("#lp-json").fill(v3)
     page.once("dialog", lambda d: d.accept())
     io.get_by_role("button", name="Load into the editor", exact=True).click()
@@ -2195,6 +2606,88 @@ def landing_json_step(run: Run, page: Page) -> None:
     expect(page.locator("li.lp-section")).to_have_count(len(json.loads(v3)["pages"][json.loads(v3)["default_language"]]["sections"]))
     run.shot(page, "landing-json")
     no_problems(run, "landing JSON")
+
+
+def site_json_step(run: Run, page: Page) -> None:
+    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the template with en and de
+    is checked, saved in one go, and exported again unchanged."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("whole site: the template with en and de imported in one go, then exported unchanged")
+    template = json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))
+    # Off for this run: a landing page that is on would greet the signed-out steps after this one.
+    template["landing"]["enabled"] = False
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Import or export everything", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Import or export everything']")
+    io = section.locator("details.json-io")
+    io.locator("summary").click()
+
+    # Export reads the settings again first, so the field is filled once the hub has answered.
+    def export() -> dict:
+        page.locator("#site-json").fill("")
+        io.get_by_role("button", name="Export", exact=True).click()
+        expect(page.locator("#site-json")).not_to_have_value("")
+        return json.loads(page.locator("#site-json").input_value())
+
+    # The template carries no registration: what the instance has stays.
+    before = export()
+    page.locator("#site-json").fill(json.dumps(template))
+    io.get_by_role("button", name="Check the file", exact=True).click()
+    expect(section.locator("li.site-part")).to_have_count(3)
+    expect(section.locator("li.site-refused")).to_have_count(0)
+    section.get_by_role("button", name="Save all changes", exact=True).click()
+    expect(section.locator(".send-status").last).to_contain_text("Saved:")
+    run.a11y(page, "whole site, saved")
+    out = export()
+    assert out["format"] == "maity-site/1", out.get("format")
+    assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
+    for key, value in template["legal"].items():
+        assert out["legal"][key]["languages"] == value["languages"], f"legal {key} differs after the round trip"
+    assert "registration" not in template, "the template carries a registration part"
+    # Registration as it was; only `terms` may leave the export: with the terms page saved and no
+    # value of its own, the hub takes it from the legal pages, which the export never carries.
+    reg_before, reg_after = before.get("registration", {}), out.get("registration", {})
+    assert all(reg_before.get(k) == v for k, v in reg_after.items()), f"registration changed: {reg_before} -> {reg_after}"
+    assert set(reg_before) - set(reg_after) <= {"terms"}, f"registration lost fields: {reg_before} -> {reg_after}"
+    no_problems(run, "whole site JSON")
+
+
+def legal_json_step(run: Run, page: Page) -> None:
+    """Instance administration → Legal pages (docs/api.md §16.7.1, tsk-knb9me77f32t): a page's
+    languages imported as JSON, checked by its preview call, saved only by Save; a preview
+    while the field holds text not loaded says so."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("legal pages: the admin imports the imprint as JSON, the hub checks it, then it is saved")
+    page.goto(f"{run.base}/admin")
+    page.locator("nav.admin-nav").get_by_role("button", name="Legal pages", exact=True).click()
+    imprint = page.locator("section.lg-page[aria-label='Imprint']")
+    io = imprint.locator("details.json-io")
+    io.locator("summary").click()
+    page.locator("#lg-imprint-json").fill(
+        json.dumps({"imprint": {"en": {"title": "E2E imprint", "markdown": "Operated by **e2e**."}}})
+    )
+    # Not loaded yet: a preview says so and opens no tab.
+    if imprint.get_by_role("button", name="Preview the draft", exact=True).count():
+        imprint.get_by_role("button", name="Preview the draft", exact=True).click()
+        expect(imprint.locator(".send-status").first).to_contain_text("not loaded into the editor")
+    asked = []
+    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    expect(imprint.locator(".send-status").first).to_contain_text("checked by the hub")
+    assert asked and asked[0].startswith("Replace the Imprint"), asked
+    expect(page.locator("#lp-imprint-en-title")).to_have_value("E2E imprint")
+    before = page.request.get(f"{run.base}/api/v1/admin/settings/legal").json()
+    assert ((before.get("pages") or {}).get("imprint") or {}).get("languages", {}).get("en", {}).get("title") != "E2E imprint", "the import saved before Save"
+    run.a11y(page, "legal pages, a JSON import")
+    imprint.locator("form.lg-form").get_by_role("button", name="Save the imprint", exact=True).click()
+    expect(page.locator("section.lg-page[aria-label='Imprint']")).to_contain_text("Served at /impressum")
+    saved = page.request.get(f"{run.base}/api/v1/admin/settings/legal").json()
+    assert saved["pages"]["imprint"]["languages"]["en"]["title"] == "E2E imprint", saved
+    no_problems(run, "legal JSON")
 
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
@@ -2233,6 +2726,30 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")
+
+
+def forge_access_step(run: Run, page: Page) -> None:
+    """Forge access (docs/api.md §11.4) at /settings/forge, where the hub's setup redirect
+    lands: this hub has no GitHub App and no secret key, and says so."""
+    run.step("forge: /settings/forge shows the account's forge access; no App, a token needs the secret key")
+    page.goto(f"{run.base}/settings/forge?error=link_state")
+    box = page.locator("section.forge-access")
+    expect(box).to_contain_text("The link expired or was started in another session")
+    expect(page).to_have_url(re.compile(r"/settings/forge$"))
+    expect(box).to_contain_text("This instance has no GitHub App configured")
+    expect(box).to_contain_text("No token is stored.")
+    page.locator("#forge-token").fill("github_pat_e2e_not_a_real_token")
+    box.get_by_role("button", name="Store the token", exact=True).click()
+    expect(box).to_contain_text("This hub has no secret key to store a token with")
+    # That refusal is this hub's configuration, the expected answer here.
+    refused = "PUT /api/v1/me/forge/github/token answered 409"
+    run.problems = [p for p in run.problems if p != refused]
+    run.shot(page, "forge-access")
+    run.a11y(page, "forge access")
+    no_problems(run, "forge access")
+    # Leave the account page: a later step opens it from the menu and must not find this one.
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
 
 
 def join_expiry_step(run: Run, page: Page) -> None:
@@ -2308,12 +2825,69 @@ def join_expiry_step(run: Run, page: Page) -> None:
     no_problems(run, "joins")
 
 
+def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
+    """The memory provider in Project settings (docs/api.md §6.1, §6.21, tsk-41hpr02cvej8): to None and back."""
+    run.step("memory: the owner switches the provider to None and back; the commitment follows")
+    project_settings(page)
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    page.locator("#memory-provider").select_option("none")
+    page.locator("#memory-reason").fill("e2e: without a memory provider")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("main p.ok")).to_have_text("Project memory saved.")
+    expect(page.locator("#ktw-policy-select")).to_be_disabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("optional")
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    assert shown["memory"]["provider"] == "none" and shown["policy"]["keep_the_why"] == "optional", shown
+    page.locator("#memory-provider").select_option("keep-the-why")
+    page.locator("#memory-reason").fill("e2e: back to Keep the Why")
+    page.locator("form.memory-panel").get_by_role("button", name="Change memory", exact=True).click()
+    expect(page.locator("#memory-provider")).to_have_value("keep-the-why")
+    expect(page.locator("#ktw-policy-select")).to_be_enabled()
+    expect(page.locator("#ktw-policy-select")).to_have_value("required")
+    shown = run.api(alpha, "GET", "/projects/owner/e2e-alpha")
+    # Nobody set the commitment in e2e-alpha: back under Keep the Why it reads required (§6.23).
+    assert shown["memory"]["provider"] == "keep-the-why" and shown["policy"]["keep_the_why"] == "required", shown
+    run.a11y(page, "project settings, memory")
+    no_problems(run, "memory provider")
+
+
+def availability_step(run: Run, page: Page, clone: Path) -> None:
+    """Outage and cover (docs/api.md §6.12) on the real hub: the agent declares a limit,
+    Members says until when and why, and the next resume clears it."""
+    run.step("members: an agent's declared limit shows until when and why")
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run.maity(clone, "limit", "--until", until, "--reason", "e2e quota")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    note = page.locator("table.members tr.member", has_text="E2E Agent").locator(".availability-note")
+    expect(note).to_contain_text("Away until")
+    expect(note).to_contain_text("(e2e quota)")
+    run.a11y(page, "members, an agent away")
+    run.maity(clone, "resume")
+
+
+def agent_owners_step(run: Run, page: Page) -> None:
+    """Agents of owners who are not members (docs/api.md §6.1) on the real hub: the hub takes
+    the setting and the roles, and the form then reads them back, no longer offering unset."""
+    run.step("settings: a human admin sets who may keep an agent here, and the roles for outside agents")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.agent-owners-form")
+    form.locator("#agent-owners-select").select_option("anyone")
+    form.locator("#outside-role-writer").check()
+    form.locator("#agent-owners-reason").fill("e2e: outsiders may write")
+    form.get_by_role("button", name="Save").click()
+    form = page.locator("form.agent-owners-form")
+    expect(form.locator("#outside-role-writer")).to_be_checked()
+    expect(form.locator("#agent-owners-select")).to_have_value("anyone")
+    expect(form.locator("#agent-owners-select option[value='']")).to_have_count(0)
+    run.a11y(page, "settings, agents of owners who are not members")
+
+
 def isolate_step(run: Run, page: Page) -> None:
     """Isolation (docs/api.md §6.2) on the real hub. Last of the agent's steps: isolating
     releases its claims, which the steps before rely on, and lifting does not bring them back."""
     run.step("members: the owner isolates the agent with a reason, sees the badge, and lifts the isolation")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    agents = page.locator("table.members").nth(1)
+    agents = page.locator("table.members").first
     row = agents.locator("tr.member", has_text="E2E Agent")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
@@ -2328,9 +2902,16 @@ def isolate_step(run: Run, page: Page) -> None:
     expect(manage.locator(".member-isolate")).to_contain_text("e2e: isolated on purpose")
     run.a11y(page, "members, an isolated agent")
     run.shot(page, "member-isolated")
+    # Lifting with the box ticked (tsk-zwxtdfmdscf7): the isolation's events stay hidden from the agent.
+    hide = manage.locator("input[id^=member-lift-hide-]")
+    expect(hide).not_to_be_checked()
+    hide.check()
     manage.get_by_role("button", name="Lift isolation", exact=True).click()
-    expect(page.locator("main section.view-members > .send-status")).to_contain_text("The isolation of E2E Agent is lifted.")
+    expect(page.locator("main section.view-members > .send-status")).to_contain_text(
+        "The isolation of E2E Agent is lifted; what happened meanwhile stays hidden from it."
+    )
     expect(row.locator(".badge.member-isolated")).to_have_count(0)
+    expect(row.locator(".member-hidden-windows")).to_contain_text("Hidden from it after an isolation: events ")
     expect(manage.locator("input[id^=member-isolate-]")).to_be_visible()
     row.get_by_role("button", name="Done managing E2E Agent").click()
     # The owner is told of both in their inbox (§6.2, a hub notice with one reply, Seen):
@@ -2348,14 +2929,56 @@ def isolate_step(run: Run, page: Page) -> None:
     no_problems(run, "isolation")
 
 
+def agents_page_step(run: Run, page: Page) -> None:
+    """Your agents (/agents, tsk-05meme59sq1x): Join an agent at the top; the profiles as rows,
+    Manage opening a row with the instances of each membership read on the real hub."""
+    run.step("agents page: the profiles as rows; Manage shows the instances in each project")
+    page.goto(f"{run.base}/agents")
+    expect(page.locator("section.agents-join")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    expect(row).to_be_visible()
+    row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    expect(row.get_by_role("button", name=re.compile(r"^Manage "))).to_have_attribute("aria-expanded", "true")
+    inside = page.locator("tr.agent-manage").first
+    # Allowed projects (§6.3) on the real hub: a list saved, then any project again.
+    inside.locator("details.agent-settings summary").click()
+    allowed = inside.locator("form.agent-allowed")
+    allowed.get_by_label("Any project").uncheck()
+    allowed.get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    run.a11y(page, "agents page, allowed projects")
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
+    if not inside.locator("form.agent-allowed").is_visible():
+        inside.locator("details.agent-settings summary").click()
+    inside.locator("form.agent-allowed").get_by_label("Any project").check()
+    inside.locator("form.agent-allowed").get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
+    expect(inside.locator(".agent-instances", has_text="Instances in E2E Alpha").first).to_be_visible()
+    expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()
+    run.a11y(page, "agents page, a row opened")
+    no_problems(run, "agents page")
+
+
 def invitations_step(run: Run, page: Page) -> None:
-    """Invitations (docs/api.md §3.4) on the real hub: the owner invites from Members; a browser
+    """Invitations (docs/api.md §3.4) on the real hub: the owner goes from Members' Invite user to
+    /invite with the project chosen and invites there; a browser
     without a session opens the link, signs in with it as next and comes back; joining is refused
     in the hub's words (the only human there is a member already: without mail the e2e hub makes
     no second account); revoked, the link is one uniform answer."""
-    run.step("invitations: the owner invites a person from Members; the link is shown once")
+    run.step("invitations: the owner invites a person from /invite, reached by Members' Invite user; the link is shown once")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    box = page.locator("section.invitations")
+    expect(page.locator("section.invitations")).to_have_count(0)
+    page.get_by_role("link", name="Invite user", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/invite\?project=owner%2Fe2e-alpha$"))
+    expect(page.locator("#invitations-project")).to_have_value("owner/e2e-alpha")
+    box = page.locator("section.invitations").first
     expect(box).to_be_visible()
     page.locator("#invite-role").select_option("reviewer")
     page.locator("#invite-note").fill("Welcome to the e2e project.")
@@ -2369,7 +2992,7 @@ def invitations_step(run: Run, page: Page) -> None:
     expect(shown).to_have_value(re.compile(r"/invite/[A-Za-z0-9_-]{22}$"))
     token = shown.input_value().rsplit("/", 1)[1]
     expect(box.locator("li.invite-item.invite-open")).to_have_count(1)
-    run.a11y(page, "members, an invitation created")
+    run.a11y(page, "invitations page, an invitation created")
 
     run.step("invitations: a browser without a session opens the link, signs in and comes back to it")
     other = page.context.browser.new_context()
@@ -2437,13 +3060,17 @@ def members_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     view_tab(page, "Members").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
-    humans, agents = page.locator("table.members").nth(0), page.locator("table.members").nth(1)
-    expect(humans.locator("tr.member")).to_have_count(1)
-    expect(humans.locator("tr.member")).to_contain_text("owner")
-    row = agents.locator("tr.member", has_text="E2E Agent")
+    # One list in the project's hierarchy (the maintainer, 2026-10-31): the owner at the top, the agent,
+    # a member, one level under it (no admin here, so no level for one).
+    table = page.locator("table.members")
+    expect(table).to_have_count(1)
+    expect(table.locator("tr.member").first).to_contain_text("owner")
+    expect(table.locator("tr.member").first).to_have_attribute("data-level", "0")
+    row = table.locator("tr.member", has_text="E2E Agent")
+    expect(row).to_have_attribute("data-level", "1")
     expect(row.locator("td").nth(0)).to_contain_text("member")
     # A neutral list: no credentials column (they are in Manage and on Agents), a Chat per entry.
-    header = agents.locator("thead th")
+    header = table.locator("thead th")
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
@@ -2460,7 +3087,8 @@ def members_step(run: Run, page: Page) -> None:
     expect(page.get_by_role("checkbox", name="Only my agents", exact=True)).to_be_checked()
     expect(page.locator("table.members")).to_have_count(1)
     page.get_by_role("checkbox", name="Only my agents", exact=True).uncheck()
-    expect(page.locator("table.members")).to_have_count(2)
+    expect(page.locator("table.members")).to_have_count(1)
+    expect(page.locator("table.members tr.member")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members/agt-[0-9a-z]+$"))
@@ -2475,7 +3103,7 @@ def members_step(run: Run, page: Page) -> None:
     page.locator("nav.member-tabs").get_by_role("link", name="Sessions & credentials").click()
     expect(page.locator(".member-section")).to_contain_text("Instances")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    expect(agents.locator("tr.member", has_text="E2E Agent")).to_be_visible()
+    expect(table.locator("tr.member", has_text="E2E Agent")).to_be_visible()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
     manage.locator("select[id^=member-role-]").select_option("reviewer")
@@ -2494,12 +3122,12 @@ def members_step(run: Run, page: Page) -> None:
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
     view_tab(page, "Members").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
-    humans.get_by_role("button", name="Manage Owner").click()
+    table.get_by_role("button", name="Manage Owner").click()
     owner_manage = page.locator("tr.member-manage")
     owner_manage.locator("select[id^=member-reports-]").select_option(label="E2E Agent (@e2e-agent)")
     owner_manage.get_by_role("button", name="Save changes", exact=True).click()
     expect(page.locator("main section.view-members > .send-status")).to_contain_text("That would close a circle")
-    humans.get_by_role("button", name="Done managing Owner").click()
+    table.get_by_role("button", name="Done managing Owner").click()
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage.locator("select[id^=member-reports-]").select_option("")
     manage.get_by_role("button", name="Save changes", exact=True).click()
@@ -2599,7 +3227,7 @@ def change_password(run: Run, page: Page) -> None:
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     """The briefing (docs/api.md §3, §6.2)."""
     # The briefing is in the agent's row on Members (tsk-7v2snhk002ak).
-    agents = page.locator("main .members-agents")
+    agents = page.locator("main .members-list")
     page.reload()
     expect(agents).to_contain_text("@e2e-agent")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()

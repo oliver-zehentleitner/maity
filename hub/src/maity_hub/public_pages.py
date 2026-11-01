@@ -36,7 +36,7 @@ CSP = "default-src 'none'; style-src 'unsafe-inline'"
 CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
 # source address, since a page is as cheap to serve as a badge.
-BY_ADDRESS = Limiter(60, 60)
+BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 
 
 def etag_of(body: str) -> str:

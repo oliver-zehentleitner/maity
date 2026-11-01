@@ -9,8 +9,9 @@
 **Source:** implementation session, 2026-10-23 (jour fixe, part 1)
 **Revisit when:** a second replica runs (both workers would count the same minute), or the table grows past what a day of agents online makes
 
-The default moderator order (`docs/api.md` §20.2) ranks the admin agents
-by their minutes online in the 24 hours before a round. The jour fixe
+The moderator of a round (`docs/api.md` §20.2) is the member holding the
+series' moderator right with the most minutes online in the 24 hours before
+the round (until series existed: the admin agents of the project). The jour fixe
 worker writes `presence_minute` (membership, minute) for every agent
 membership with an instance online (§5.3: a call within 120 seconds or a
 long-poll open; listening alone decides only whom a round reaches), at
@@ -194,3 +195,129 @@ moderator learns at once why the proposal cannot be drawn from that source.
   placeholders, work nobody asked for, and the moderator would not be told.
 - Dropping the redacted proposal from the report silently: the moderator's
   report would differ from what was sent, without a word.
+
+## A series keeps its schedule in the old policy's shape, and the upgrade writes its own event
+
+**Id:** de0c97c0-a638-4c1a-9fb8-f14ab6d407a1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 1 of 3); contract `docs/api.md` §20.1, §20.2 (#934, #936)
+**See:** jour-fixe.md#minutes-online-counted-in-a-table-of-their-own-one-row-per-agent-membership-and-minute — a66f2814-0b24-4d78-a950-da07193ed882 — as of 2026-10-31
+**Revisit when:** a schedule field needs a query or an index of its own, or memberships end through one function that could disable an owner's series at once
+
+A series (`jour_fixe_series`) stores its schedule and windows as one JSON
+`config` in the shape `policy.jour_fixe` had, with `enabled` a column of its
+own; `jourfixe.schedule` reads it unchanged, so the slots, the DST handling
+and the weekly interval did not move. The upgrade from the single schedule
+runs in the migration whole, the `jour_fixe_series_changed` event and the
+rules bump included, written as `rules.bump` writes them; only the consent
+requests of the grants it leaves `pending` are not, the jour fixe sweep of
+part 2 files them (8dcb08a3), and both parts deploy together. An owner's series
+whose owner left is set to `enabled: false` by the jour fixe sweep (within
+its 30 seconds) and refused at a manual start, not where the membership
+ends. Report recipients are rows with a `receives` flag, so that a keeper who
+takes itself off is a row as well (§20.2).
+
+**Reason:** the schedule is only ever read whole by the slot logic, and the
+contract keeps its fields as they were; a migration that writes its own event
+needs no hub start that remembers what it still owes; and memberships end in
+several places (removal, organisations, account deletion), while the sweep
+sees every series every minute.
+
+**Rejected alternatives:**
+- A column per schedule field: schema churn for fields no query reads apart.
+- The upgrade's event and rules bump at the hub's next start: a start-up task
+  that must remember per project whether it ran.
+- Disabling an owner's series where each membership ends: one missed path
+  leaves a series running for an owner who left.
+
+
+## The moderator right's two consents ride on consent requests, and the sweep ends rights and files what the upgrade owes
+
+**Id:** 8dcb08a3-672d-48a2-816a-453bf27996c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 2 of 3); contract `docs/api.md` §20.2
+**See:** jour-fixe.md#a-series-keeps-its-schedule-in-the-old-policys-shape-and-the-upgrade-writes-its-own-event — de0c97c0-a638-4c1a-9fb8-f14ab6d407a1 — as of 2026-10-31
+**Revisit when:** memberships end through one function that could end their rights at once, or a third consent joins the two
+
+A grant that misses a consent is a `pending` row of `jour_fixe_moderator`
+and one `consent` request per missing side, carrying the proposal kind
+`jour_fixe_moderator` (`proposals`): to the agent's owner in person (a
+personal request, as a cross-owner `reports_to`'s, so an owner who is no
+member finds it in their inbox), and to the keepers as `to: owner`, or for an
+owner's series to its `circle_owner` in person. A `go` sets that side's flag
+and the second makes the row `active`; a `no` or a withdrawal deletes the row
+and withdraws the other request. The jour fixe sweep ends the rights whose
+membership was removed or isolated or whose agent's owner left, withdrawing
+their open requests, and files, on the agent's behalf (`filed_by: hub`), the
+owner consents the upgrade left `pending` without a request. The minutes
+online that pick the moderator now count humans online too (§20.2).
+
+**Reason:** the proposal machinery already settles every close of a request
+— answer, withdrawal, the hub's own — so a consent needs no route or column
+of its own; and the sweep already visits every series each minute, which
+reaches every way a membership ends, as for `circle_owner_gone` (de0c97c0).
+
+**Rejected alternatives:**
+- A table of consents beside the requests: a second record of what the
+  request already holds, to keep in step.
+- Filing the upgrade's consents in the migration: a migration cannot file
+  requests with their events and records as the hub writes them.
+- Ending rights in every place a membership ends: one missed path leaves a
+  moderator who is no member.
+
+## A round of an owner's series takes its readers from its own config, and the report list is read, not kept
+
+**Id:** 10e772ac-0e65-449e-9fd3-8ba6a4976b56
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-10-31 (jour fixe series, card tsk-k1t68hg8eyxh, part 3 of 3); `to: member` confirmed by the team lead; contract `docs/api.md` §20.2, §20.5–§20.7, §20.9
+**See:** jour-fixe.md#the-moderator-rights-two-consents-ride-on-consent-requests-and-the-sweep-ends-rights-and-files-what-the-upgrade-owes — 8dcb08a3-672d-48a2-816a-453bf27996c5 — as of 2026-10-31
+**Revisit when:** a series' deletion stops leaving its rounds behind, or the request table allows a non-personal request to one human
+
+Whether a member reads a round of an owner's series, and who its events,
+thread and redactions reach, is decided from the round's `config` (its
+`circle` and `circle_owner` as the round opened), never from the series row
+(`jourfixe/circle.py`). The round's thread knows its `circle_owner` from the
+round too (`group_chats.round_keepers`), and is told it at creation, before
+the round points at its thread. Its events also escape the owners' and admins'
+see-all (§8.2): the batch's reading marks them `circle:<seq>` (from the
+round's `config`, or the series row for a series event), and only their
+audience reads them. A series event of an owner's series that was since
+deleted is no longer found and falls back to the see-all; it carries no
+topic, and the admins are in its audience anyway. In such a thread, owning
+the moderator agent does not bring its owner in either (`outside:<chat>`).
+The round points at its thread before `conversation_created` is written, so
+that event names the round and its observers. The report list may hold a
+moderator of the series (§20.2), but a round's report goes only to those
+who read that round (§20.7): a moderator reads the rounds it moderated. A `to_owner` proposal goes to the
+`circle_owner` as `to: member` while they are a member, and as a personal
+request once they left. The rounds list leaves out what the caller may not
+read by reading on in batches until the page is full. The report list
+(`jour_fixe_recipient`) stores only what differs from the default — a member
+on it, a keeper off it — and who receives a report is worked out when it is
+read: the keepers and the listed, each only while it reads the series'
+rounds; the human recipient's inbox item is derived the same way. The report
+wakes only the agent recipients' selected instances; a skip and a series
+change wake nobody.
+
+**Reason:** a deleted series' running round runs to its end (§20.1) with no
+series row left, so only the round can still name its owner. The request
+table holds a request to one named human only as a personal one, while §20.6
+asks for a personal request only once the owner left, and a member is
+reachable as `to: member` (the check `ck_request_personal_shape` allows
+`to_kind: human` only together with `personal`; the team lead confirmed
+`to: member` for a member, 2026-10-31). Reading the list rather than pruning it covers
+every way a member stops reading the rounds — leaving, a moderator right
+that ends — without a hook in each.
+
+**Rejected alternatives:**
+- Looking the series up from the round: gone once the series is deleted.
+- Filtering the rounds list after the page is cut: short pages, and a
+  cursor that skips rounds.
+- Deleting list rows wherever reading ends: one missed path leaves a
+  recipient who may not read the report.

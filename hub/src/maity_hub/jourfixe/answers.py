@@ -20,6 +20,8 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
+from maity_hub.jourfixe import circle
+from maity_hub.scopes import in_admin_team
 
 TEXT_MAX = 4096  # bytes, per text
 TOTAL_MAX = 12288  # bytes, the three together
@@ -118,11 +120,22 @@ def _view(row: Any, authors: dict[int, str], reader: Any = None) -> dict[str, An
     return shown
 
 
+def answer_reader(round_row: Any, mine: Any) -> bool:
+    """The humans of the admin team, not a proxy; in a round of an owner's series its
+    `circle_owner` instead, since the round is theirs (§20.3)."""
+    if mine.kind != "human":
+        return False
+    owner = circle.owner_of(round_row)
+    if owner is not None:
+        return bool(mine.principal_id == owner)
+    return in_admin_team(mine.trust, mine.role)
+
+
 def readers_see_all(round_row: Any, mine: Any) -> bool:
-    """The moderator and humans with `owner` or `admin` read every answer (§20.3)."""
+    """The moderator and the answer readers read every answer (§20.3)."""
     if mine.principal_id == round_row.moderator["member_id"]:
         return True
-    return mine.kind == "human" and mine.trust in ("owner", "admin")
+    return answer_reader(round_row, mine)
 
 
 def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list[dict[str, Any]]:

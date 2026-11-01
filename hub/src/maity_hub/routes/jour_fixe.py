@@ -1,5 +1,5 @@
-"""The jour fixe's endpoints (docs/api.md §20.9), part 1: the overview, the moderator
-order, the rounds, the manual start, and the answers."""
+"""The jour fixe's endpoints (docs/api.md §20.9), part 1: the overview, the series and their
+moderators, the rounds, the manual start of a series, and the answers."""
 
 from __future__ import annotations
 
@@ -10,17 +10,27 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, group_chats, idempotency, namespace, paging, policy, rules
+from maity_hub import clock, events, group_chats, idempotency, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.jourfixe import answers, exchange, redaction, rounds, schedule, triage, views
+from maity_hub.errors import ApiError, invalid, not_found, rate_limited
+from maity_hub.jourfixe import (
+    answers,
+    choices,
+    circle,
+    exchange,
+    moderators,
+    redaction,
+    rounds,
+    series,
+    triage,
+    views,
+)
 from maity_hub.models import Strict
 from maity_hub.models import markdown as text_field
 from maity_hub.namespace import ProjectRoute
-from maity_hub.scopes import in_admin_team
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -31,8 +41,24 @@ class StartIn(Strict):
     reason: str = text_field(min_length=1)
 
 
-class ModeratorsIn(Strict):
-    order: list[str] | None = Field(max_length=50)
+class SeriesIn(Strict):
+    """A series as written (§20.1); `PATCH` sends only the fields it changes."""
+
+    topic: str | None = Field(default=None, min_length=1, max_length=300)
+    circle: Literal["owner", "humans", "all"] | None = None
+    circle_owner: str | None = Field(default=None, max_length=64)
+    enabled: bool | None = None
+    recurrence: dict[str, Any] | None = None
+    time: str | None = Field(default=None, max_length=5)
+    timezone: str | None = Field(default=None, max_length=64)
+    answer_window_minutes: int | None = None
+    step_window_minutes: int | None = None
+    report_window_hours: int | None = None
+    reason: str = text_field(min_length=1)
+
+
+class GrantIn(Strict):
+    member_id: str = Field(min_length=1, max_length=64)
     reason: str = text_field(min_length=1)
 
 
@@ -127,13 +153,14 @@ def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[di
     return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
 
 
-def _round(conn: Connection, project_id: str, round_id: str) -> Any:
+def _round(conn: Connection, mine: Any, round_id: str) -> Any:
+    """The round, `not_found` to a member who may not read it (§20.7, an owner's series)."""
     row = conn.execute(
         select(t.jour_fixe_round).where(
-            t.jour_fixe_round.c.id == round_id, t.jour_fixe_round.c.project_id == project_id
+            t.jour_fixe_round.c.id == round_id, t.jour_fixe_round.c.project_id == mine.project.id
         )
     ).first()
-    if row is None:
+    if row is None or not circle.reads(conn, row, mine):
         raise not_found()
     return row
 
@@ -150,9 +177,9 @@ def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
     return {"round_id": row.round_id, "anonymous": False, "id": row.id}
 
 
-def moderators_view(conn: Connection, project_id: str) -> dict[str, Any]:
-    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    return {"order": project.jour_fixe_moderators, "moderators": _resolved(conn, project)}
+def series_view(conn: Connection, series_id: str) -> dict[str, Any]:
+    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
+    return series.view(conn, row)
 
 
 def _member_now(conn: Connection, project_id: str, request: Request) -> Any:
@@ -184,92 +211,280 @@ def _replay_answer(conn: Connection, answer_id: str, request: Request) -> dict[s
     return answer_view(conn, answer_id)
 
 
-def _replay_moderators(conn: Connection, project_id: str, request: Request) -> dict[str, Any]:
-    _member_now(conn, project_id, request)
-    return moderators_view(conn, project_id)
+def _replay_series(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
+    return series_view(conn, series_id)
 
 
 idempotency.LOADERS["jour_fixe_round"] = _replay_round
 idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
-idempotency.LOADERS["jour_fixe_moderators"] = _replay_moderators
+idempotency.LOADERS["jour_fixe_series"] = _replay_series
 
 
-def _resolved(conn: Connection, project: Any) -> list[str]:
-    return [m.agent_id for m in rounds.moderator_order(conn, project)]
+def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
+    """A replayed `202`: the series as it stands now, and that grant's open consent requests
+    (dzse at #947), for the member the original body named."""
+    import json
+
+    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
+    body = json.loads(request.scope.get("state", {}).get("body") or b"{}")
+    member_id = body.get("member_id")
+    ids: list[str] = []
+    for grant_row in series.grants(conn, series_id):
+        if member_id not in (grant_row.agent_id, grant_row.human_id):
+            continue
+        for request_id in (grant_row.owner_request_id, grant_row.keeper_request_id):
+            status = conn.execute(
+                select(t.request.c.status).where(t.request.c.id == request_id)
+            ).scalar()
+            if status == "open":
+                ids.append(request_id)
+    return {"series": series.view(conn, row), "requests": ids}
 
 
-# --- the overview and the moderator order ----------------------------------------------------
+idempotency.LOADERS["jour_fixe_grant"] = _replay_grant
+
+
+def _last_reported(conn: Connection, series_id: str) -> Any | None:
+    return conn.execute(
+        select(t.jour_fixe_round)
+        .where(
+            t.jour_fixe_round.c.series_id == series_id,
+            t.jour_fixe_round.c.status == "reported",
+        )
+        .order_by(t.jour_fixe_round.c.scheduled_for.desc())
+    ).first()
 
 
 @router.get("/projects/{owner}/{slug}/jour-fixe")
 def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """Every series the caller may see, with its next slot, its round not yet reported and
+    its newest reported one (§20.9)."""
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        project = mine.project
-        slot = None
-        if project.jour_fixe and project.jour_fixe.get("enabled"):
-            slot = schedule.next_slot(project.jour_fixe, clock.now(), rounds.anchor_date(project))
-        running = rounds.current(conn, project.id)
-        last = conn.execute(
-            select(t.jour_fixe_round)
-            .where(
-                t.jour_fixe_round.c.project_id == project.id,
-                t.jour_fixe_round.c.status == "reported",
-            )
-            .order_by(t.jour_fixe_round.c.scheduled_for.desc())
-        ).first()
-        rows = [r for r in (running, last) if r is not None]
-        shown = {r.id: v for r, v in zip(rows, _views(conn, rows, slug, mine), strict=True)}
-        return JSONResponse(
-            {
-                "policy": project.jour_fixe,
-                "moderators": _resolved(conn, project),
-                "next_at": clock.rfc3339(slot) if slot is not None else None,
-                "current_round": shown[running.id] if running else None,
-                "last_round": shown[last.id] if last else None,
-            }
-        )
+        now = clock.now()
+        shown = []
+        for row in series.of_project(conn, mine.project.id):
+            seen = series.sight(conn, row, mine)
+            if seen is None:
+                continue
+            entry = _shown(conn, row, mine, seen)
+            slot = rounds.next_at(row, now)
+            entry["next_at"] = clock.rfc3339(slot) if slot is not None else None
+            if seen == "full":
+                running, last = rounds.current(conn, row.id), _last_reported(conn, row.id)
+                running, last = (
+                    r if r is not None and circle.reads(conn, r, mine) else None
+                    for r in (running, last)
+                )
+                found = [r for r in (running, last) if r is not None]
+                views_of = dict(
+                    zip([r.id for r in found], _views(conn, found, slug, mine), strict=True)
+                )
+                entry["current_round"] = views_of[running.id] if running else None
+                entry["last_round"] = views_of[last.id] if last else None
+            shown.append(entry)
+        return JSONResponse({"series": shown})
 
 
-@router.put("/projects/{owner}/{slug}/jour-fixe/moderators")
-def put_moderators(
-    slug: str, body: ModeratorsIn, request: Request, caller: AnyCaller
-) -> JSONResponse:
-    """The one policy field an agent writes: the admin agents order themselves (§20.2)."""
+@router.get("/projects/{owner}/{slug}/jour-fixe/series")
+def list_series(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("project:read")
+        items = []
+        for row in series.of_project(conn, mine.project.id):
+            seen = series.sight(conn, row, mine)
+            if seen is not None:
+                items.append(_shown(conn, row, mine, seen))
+        return JSONResponse({"items": items})
 
+
+def _shown(conn: Connection, row: Any, mine: Any, seen: Any = "full") -> dict[str, Any]:
+    """The series as the caller sees it, with its own choices when it sees it all (§20.2)."""
+    shown = series.view(conn, row, seen)
+    if seen == "full":
+        shown.update(choices.shown(conn, row, mine))
+    return shown
+
+
+def _fields(body: SeriesIn) -> dict[str, Any]:
+    return {k: getattr(body, k) for k in body.model_fields_set if k != "reason"}
+
+
+def _visible(conn: Connection, mine: Any, series_id: str) -> Any:
+    """The series, or `not_found` when the caller may not see it (§20.1)."""
+    row = series.find(conn, mine.project.id, series_id)
+    if series.sight(conn, row, mine) is None:
+        raise not_found()
+    return row
+
+
+@router.post("/projects/{owner}/{slug}/jour-fixe/series")
+def create_series(slug: str, body: SeriesIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        if not (
-            mine.may("project:admin")
-            or (mine.kind == "agent" and in_admin_team(mine.trust, mine.role))
-        ):
-            raise forbidden("project:admin", "a human with project:admin or an admin agent")
         project = events.lock_project(conn, mine.project.id)
-        order = body.order
-        if order is not None and not rounds.admin_agents_only(conn, project.id, order):
-            raise invalid({"order": "not_admin_agent"})
-        old = policy.of(project)
-        new = {**old, "jour_fixe_moderators": order}
-        if new != old:
-            from sqlalchemy import update
-
-            conn.execute(
-                update(t.project).where(t.project.c.id == project.id).values(**policy.columns(new))
-            )
-            rules.bump(
-                conn,
-                project,
-                "policy_changed",
-                ["all"],
-                {"old": old, "new": new, "reason": body.reason},
-                actor=caller.actor(mine.id),
-            )
-        return idempotency.Outcome(
-            200, "jour_fixe_moderators", project.id, moderators_view(conn, project.id)
-        )
+        if body.topic is None:
+            raise invalid({"topic": "required"})
+        if body.circle is None:
+            raise invalid({"circle": "required"})
+        row = series.create(conn, project, mine, _fields(body), caller.actor(mine.id))
+        return idempotency.Outcome(201, "jour_fixe_series", row.id, series.view(conn, row))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.patch("/projects/{owner}/{slug}/jour-fixe/series/{series_id}")
+def patch_series(
+    slug: str, series_id: str, body: SeriesIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        project = events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        row = series.update_series(conn, project, row, mine, _fields(body), caller.actor(mine.id))
+        return idempotency.Outcome(200, "jour_fixe_series", row.id, series.view(conn, row))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}")
+def delete_series(
+    slug: str, series_id: str, body: StartIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    with events.transaction(engine_of(request)) as conn:
+        mine = membership(conn, caller, slug)
+        project = events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        return JSONResponse(series.delete_series(conn, project, row, mine, caller.actor(mine.id)))
+
+
+def _member(conn: Connection, project_id: str, member_id: str) -> Any:
+    row = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == project_id,
+            or_(t.membership.c.agent_id == member_id, t.membership.c.human_id == member_id),
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if row is None:
+        raise invalid({"member_id": "not_a_member"})
+    return row
+
+
+@router.post("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/moderators")
+def grant_moderator(
+    slug: str, series_id: str, body: GrantIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        project = events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        member = _member(conn, project.id, body.member_id)
+        status, shown = moderators.grant(
+            conn, project, row, mine, caller, member, caller.actor(mine.id)
+        )
+        if status == 202:
+            return idempotency.Outcome(202, "jour_fixe_grant", row.id, shown)
+        return idempotency.Outcome(201, "jour_fixe_series", row.id, shown)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/moderators/{member_id}")
+def end_moderator(
+    slug: str, series_id: str, member_id: str, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    with events.transaction(engine_of(request)) as conn:
+        mine = membership(conn, caller, slug)
+        project = events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        member = conn.execute(
+            select(t.membership).where(
+                t.membership.c.project_id == project.id,
+                or_(t.membership.c.agent_id == member_id, t.membership.c.human_id == member_id),
+            )
+        ).first()
+        if member is None:
+            raise not_found()
+        row = series.end_right(conn, project, row, mine, member, caller.actor(mine.id))
+        return JSONResponse(series.view(conn, row))
+
+
+def _choose(
+    slug: str, series_id: str, request: Request, caller: Caller, member_id: str | None, act: Any
+) -> JSONResponse:
+    """One of the member's own choices in a series (§20.2), for itself or, with `?member=`,
+    for one of the calling human's agents; `200` with the series as the caller sees it."""
+    with events.transaction(engine_of(request)) as conn:
+        mine = membership(conn, caller, slug)
+        mine.require("project:read")
+        events.lock_project(conn, mine.project.id)
+        row = _visible(conn, mine, series_id)
+        if series.sight(conn, row, mine) != "full":
+            raise not_found()
+        act(conn, row, choices.target(conn, mine, member_id))
+        return JSONResponse(_shown(conn, row, mine))
+
+
+@router.put("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/opt-out")
+def opt_out(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        choices.set_opt_out(conn, row, target, True)
+
+    return _choose(slug, series_id, request, caller, member, act)
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/opt-out")
+def opt_back_in(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        choices.set_opt_out(conn, row, target, False)
+
+    return _choose(slug, series_id, request, caller, member, act)
+
+
+def _recipient(on: bool) -> Any:
+    def act(conn: Connection, row: Any, target: Any) -> None:
+        if not choices.reads_rounds(conn, row, target):
+            raise not_found()  # only a member who reads the rounds receives the report
+        choices.set_recipient(conn, row, target, on)
+
+    return act
+
+
+@router.put("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/report")
+def report_to(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    return _choose(slug, series_id, request, caller, member, _recipient(True))
+
+
+@router.delete("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/report")
+def report_off(
+    slug: str,
+    series_id: str,
+    request: Request,
+    caller: AnyCaller,
+    member: str | None = None,
+) -> JSONResponse:
+    return _choose(slug, series_id, request, caller, member, _recipient(False))
 
 
 # --- rounds ------------------------------------------------------------------------------------
@@ -281,6 +496,7 @@ def list_rounds(
     request: Request,
     caller: AnyCaller,
     status: str | None = None,
+    series_id: str | None = Query(default=None, alias="series"),
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
@@ -291,15 +507,15 @@ def list_rounds(
         query = select(t.jour_fixe_round).where(c.project_id == mine.project.id)
         if status is not None:
             query = query.where(c.status.in_([s for s in status.split(",") if s]))
-        bound = paging.scope(status=status)
+        if series_id is not None:
+            query = query.where(c.series_id == series_id)
+        bound = paging.scope(status=status, series=series_id)
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
                 or_(c.scheduled_for < after_at, and_(c.scheduled_for == after_at, c.id < after_id))
             )
-        rows = conn.execute(
-            query.order_by(c.scheduled_for.desc(), c.id.desc()).limit(limit + 1)
-        ).all()
+        rows = _readable(conn, mine, query.order_by(c.scheduled_for.desc(), c.id.desc()), limit + 1)
         page = rows[:limit]
         next_cursor = (
             paging.cursor(page[-1].scheduled_for, page[-1].id, bound) if len(rows) > limit else None
@@ -307,6 +523,28 @@ def list_rounds(
         return JSONResponse(
             {"items": _views(conn, list(page), slug, mine), "next_cursor": next_cursor}
         )
+
+
+def _readable(conn: Connection, mine: Any, query: Any, wanted: int) -> list[Any]:
+    """Up to `wanted` rounds of the ordered query that the member reads: the rounds of an
+    owner's series it may not read are left out, not counted against the page (§20.7)."""
+    c, last = t.jour_fixe_round.c, None
+    found: list[Any] = []
+    while len(found) < wanted:
+        batch = query
+        if last is not None:
+            batch = batch.where(
+                or_(
+                    c.scheduled_for < last.scheduled_for,
+                    and_(c.scheduled_for == last.scheduled_for, c.id < last.id),
+                )
+            )
+        rows = conn.execute(batch.limit(wanted)).all()
+        found += [r for r in rows if circle.reads(conn, r, mine)]
+        if len(rows) < wanted:
+            break
+        last = rows[-1]
+    return found[:wanted]
 
 
 def _observer_round(conn: Connection, caller: Caller, slug: str, round_id: str) -> dict[str, Any]:
@@ -348,21 +586,34 @@ def get_round(slug: str, round_id: str, request: Request, caller: AnyCaller) -> 
                 raise
             return JSONResponse(_observer_round(conn, caller, slug, round_id))
         mine.require("project:read")
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse(_views(conn, [row], slug, mine)[0])
 
 
-@router.post("/projects/{owner}/{slug}/jour-fixe/rounds")
-def start(slug: str, body: StartIn, request: Request, caller: AnyCaller) -> JSONResponse:
+@router.post("/projects/{owner}/{slug}/jour-fixe/series/{series_id}/rounds")
+def start(
+    slug: str, series_id: str, body: StartIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """A round of the series now, by its keepers and moderators (§20.1)."""
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        mine.require("jour_fixe:start")
         project = events.lock_project(conn, mine.project.id)
-        if rounds.manual_starts_today(conn, project.id) >= rounds.MANUAL_PER_DAY:
+        row_series = _visible(conn, mine, series_id)
+        if not series.is_keeper(row_series, mine) and mine.id not in series.moderators(
+            conn, row_series.id
+        ):
+            raise series.keeper_refused()
+        if row_series.circle == "owner" and not series.owner_member(conn, row_series):
+            raise ApiError(
+                409, "jour_fixe_state", "the series' owner left", {"reason": "circle_owner_gone"}
+            )
+        if rounds.manual_starts_today(conn, row_series.id) >= rounds.MANUAL_PER_DAY:
             raise rate_limited(3600)
         row = rounds.open_round(
             conn,
             project,
+            row_series,
             trigger="manual",
             scheduled_for=clock.now(),
             reason=body.reason,
@@ -385,7 +636,7 @@ def answer(
     def action(conn: Connection) -> tuple[int, dict[str, Any]]:
         mine = membership(conn, caller, slug)
         events.lock_project(conn, mine.project.id)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return 201, answers.submit(conn, row, mine, texts, body.anonymous)
 
     if body.anonymous:
@@ -413,7 +664,7 @@ def read_answers(
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse({"items": answers.listed(conn, row, mine, mine_only)})
 
 
@@ -423,7 +674,7 @@ def withdraw_answer(slug: str, round_id: str, request: Request, caller: AnyCalle
     with events.transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         events.lock_project(conn, mine.project.id)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         return JSONResponse(answers.withdraw(conn, row, mine))
 
 
@@ -436,7 +687,7 @@ def statement(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         topics = [topic.model_dump(by_alias=True) for topic in body.topics]
         exchange.submit_statement(conn, row, mine, topics, caller.actor(mine.id))
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
@@ -462,7 +713,7 @@ def post(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         made = exchange.submit_post(conn, row, mine, body.model_dump(), caller.actor(mine.id))
         return idempotency.Outcome(
             201, "jour_fixe_post", f"{row.id}/{made['id']}", views.post(made)
@@ -477,7 +728,7 @@ def further_step(
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
         return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
 
@@ -517,7 +768,7 @@ def report(
         # The caller's membership and role as of the lock: a demotion or a removal that
         # commits first decides whether it may still decide (§20.6).
         mine = membership(conn, caller, slug)
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
         return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
 
@@ -539,9 +790,9 @@ def redact(
     def action(conn: Connection) -> idempotency.Outcome:
         events.lock_project(conn, membership(conn, caller, slug).project.id)
         mine = membership(conn, caller, slug)  # its role as of the lock
-        row = _round(conn, mine.project.id, round_id)
+        row = _round(conn, mine, round_id)
         redaction.redact(conn, row, mine, body.target, body.reason, caller.actor(mine.id))
-        shown = _views(conn, [_round(conn, mine.project.id, round_id)], slug, mine)[0]
+        shown = _views(conn, [_round(conn, mine, round_id)], slug, mine)[0]
         return idempotency.Outcome(200, "jour_fixe_round", row.id, shown)
 
     return idempotency.run(engine_of(request), request, caller, action)

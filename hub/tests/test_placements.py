@@ -13,7 +13,7 @@ from sqlalchemy import Engine, select, update
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.routes import runner as runner_routes
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_runner_stream import attach, hello, send
 from tests.test_runners import Runner, call, error, paired
@@ -829,3 +829,25 @@ def test_a_deleted_profile_s_placement_closes_and_none_follows(setup: Setup) -> 
     closed = setup.owner.get(f"/projects/maintainer/maity/placements/{first['id']}").json()
     assert closed["closed_reason"] == "membership_removed"
     assert place(setup).status_code == 404
+
+
+def test_a_placement_its_proposer_leaves_behind_closes_when_they_leave(setup: Setup) -> None:
+    """docs/api.md §6.2: the placements a leaving human created that made no membership yet
+    are closed, so no runner outlives the person who set it going."""
+    with setup.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    pal = factory.human(setup.engine, "pal")
+    factory.membership(setup.engine, project_id, "member", human_id=pal)
+    pending = placed(setup, agent={"handle": "agent-pal", "display_name": "Agent Pal"})
+    kept = placed(setup, agent={"id": setup.agent.id}, workspace={"clone": "kept"})
+    with setup.engine.begin() as conn:  # the person who proposed the new profile is pal
+        conn.execute(
+            update(t.placement).where(t.placement.c.id == pending["id"]).values(created_by=pal)
+        )
+    left = setup.owner.delete(f"/projects/maintainer/maity/members/{pal}")
+    assert left.status_code == 200, left.text
+    with setup.engine.connect() as conn:
+        rows = {r.id: r for r in conn.execute(select(t.placement))}
+    assert rows[pending["id"]].active is None
+    assert rows[pending["id"]].closed_reason == "withdrawn"
+    assert rows[kept["id"]].active is True  # another person's, and it has its membership

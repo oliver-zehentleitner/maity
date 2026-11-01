@@ -74,7 +74,6 @@ GOVERNANCE = (
     "tasks:admin",
     "requests:answer",
     "events:admin",
-    "jour_fixe:start",
     "credentials:admin",
 )
 # A guest reads; its notes and chat are checked where they are posted (§2.3 "Guest").
@@ -96,7 +95,6 @@ SCOPES = (
     "events:post",
     "events:admin",
     "ticker:post",
-    "jour_fixe:start",
     "credentials:admin",
     "agents:propose",
     "line:lead",

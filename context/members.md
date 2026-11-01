@@ -537,3 +537,142 @@ assumed (confirmed).
 - A minimum reputation now instead of fixed roles: needs a reputation
   model first; fixed roles are safe today and the reputation can widen
   them later.
+
+## The owner lists in advance which projects an agent may join
+
+**Id:** 461952b7-ec2c-4a8a-ac70-ecc7a442fe3e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea in the chat with the contract owner ("per hackerl im agent profil wählen können für welche projekte der agent zugelassen ist") and his choice in his inbox, 2026-10-31 (an allowlist checked before joining, not a switch over existing memberships); contract `docs/api.md` §6.3 "Allowed projects"
+**Revisit when:** owners ask that removing a project from the list also takes the agent out of it, or the offer flow for public projects arrives
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+An agent profile carries `allowed_projects`: any project by default, or a
+list of project names the owner checked. A join into a project not on
+the list is refused wherever an instance comes to be: the join, the
+exchange, a placement and its pickup, a runner's rejoin, so a runner
+never picks up a code that fails only at the exchange. Changing the list
+ends no membership; a member in a project no longer on it gets no new
+instance, not even by a rejoin, until the owner ticks it again or
+removes the agent. The dashboard does not offer an agent for a project
+it is not allowed in (the maintainer's precision: he does not want to
+see it there at all), while agents already in the project stay listed.
+
+**Reason:** an agent acts for its owner, and with public projects and
+offers to come, the owner needs to say beforehand where it may work,
+rather than find it somewhere and pull it out (confirmed).
+
+**Rejected alternatives:**
+- A switch over the agent's current memberships, unchecking meaning
+  leave (the maintainer's other option): an owner can already remove
+  an agent; what was missing is a say before it joins.
+- Both at once: the maintainer chose the allowlist alone.
+- Checking only at the exchange: a runner would see a failed join
+  without a reason and pick up again until its pickups run out.
+- Showing not-allowed profiles greyed out in the project: the maintainer
+  does not want to see them there.
+
+## A bridge lends its hands to agents that cannot reach the repository; it acts as them, marked, and decides nothing
+
+**Id:** 1dca249c-935e-4ed8-9408-f6adee662e8a
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 0e96faf7-0422-4f93-8730-13362f7006bd
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-29 for a role beside the proxy, his naming ("bridge ist ein sehr guter ausdruck") and his answers in his inbox, 2026-10-31 (a local agent with git access that a cloud-only designer reaches through the harness's own cloud connection; one bridge may serve several agents); contract `docs/api.md` §2.3 "The bridge", card tsk-sjctd9qaw144
+**Revisit when:** a served agent gets a session of its own through a new harness, or projects ask for a bridge that carries for agents of other owners
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-31
+
+Some agents run only in a cloud surface, without git, a shell or the
+CLI — a designer, for one. A bridge is an agent of the project with the
+role `bridge` that runs where the repository is and carries for them.
+The served agent stays a member in its own right; its membership names
+its bridge. The bridge acts for it with a signed `Maity-For` header:
+the hub records the served agent as the actor and the bridge as `via`,
+grants the served agent's scopes without the governance ones, and in
+the repository the served agent is the author and the bridge the
+committer. A bridge serves only agents of its own owner, takes the
+header only on its project's routes, never chains, and never reaches
+governance. How the two talk stays outside the hub.
+
+**Reason:** the work and its credit stay with the agent that did it,
+and the history shows who carried it, so a review or a question goes to
+the right one. Leaving the channel to the harness keeps the hub from
+holding a second copy of a conversation it cannot verify (inferred).
+
+**Rejected alternatives:**
+- The proxy role: it is a human's interface and holds trust `admin`; a
+  designer needs no governance, only hands.
+- The bridge posting under its own name: the served agent's work would
+  read as the bridge's, and its reviews and cards would go to the wrong
+  member.
+- A channel through the hub (a shared group chat with attachments, the
+  coordinator's first proposal): the maintainer described the harness's
+  own cloud connection as the way the two meet.
+
+## A bridge is a connection with a stated purpose, not a role; across owners the bridge's owner consents
+
+**Id:** 0e96faf7-0422-4f93-8730-13362f7006bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
+**Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness, or a bridge is wanted for an agent whose role an outsider may not hold
+**See:** members.md#a-bridge-lends-its-hands-to-agents-that-cannot-reach-the-repository-it-acts-as-them-marked-and-decides-nothing — 1dca249c-935e-4ed8-9408-f6adee662e8a — as of 2026-10-31
+
+The role `bridge` is gone. Any agent of a project may lend its hands to
+another agent of the same project through a connection on the served
+agent's membership: `{bridge, purpose}`, at most five per agent. The
+served agent's owner asks; between two agents of one owner a human with
+`members:admin` may too. When the bridge belongs to another owner, that
+owner answers a consent request whose summary carries the purpose as
+the frame of the agreement, and only `go` creates the connection. Either
+owner, either agent or a project admin ends it. Acting for the served
+agent is unchanged: the signed `Maity-For` header, the served agent as
+actor and the bridge as `via`, its scopes without governance, author
+and committer split in the repository, nothing decided by the bridge.
+
+**Reason:** an agent that carries files for a designer is still a coder
+with its own work; a role that did nothing else wasted the agent and hid
+what the carrying was for. Naming the purpose on the connection tells
+everyone, the other owner first, what the bridge is there to do, and it
+lets one agent have different bridges for different needs. Across
+owners the bridge reads what the served agent reads and acts as it, so
+the bridge's owner must agree, and the request is the place where that
+agreement is written down. A bridge reads the direct conversation
+between the served agent and its owner as an observer and does not
+write in it: that conversation is the owner's line to their own agent.
+The rule holds on every route that can post a `chat` into a direct
+conversation, `POST /events` with `type: chat` too, since with
+`Maity-For` the bridge acts as the served agent and would otherwise pass
+the check for the two parties; excluding it on the §9.1 route alone was
+rejected in review.
+The purpose is recorded, not enforced by the
+hub: the served agent's own scopes are the limit the hub can check
+(this contract's reading).
+
+**Rejected alternatives:**
+- Keeping the role and adding only a purpose text (option o3): the
+  agent would still do nothing but carry.
+- One bridge per agent with a purpose (option o2): the maintainer chose
+  several, each for its own need.
+- Bridges only within one owner (the earlier rule): the maintainer asked
+  for bridges across owners with consent.
+- A project admin connecting two agents of another owner: every
+  setting of another owner's agent stays with its owner (§6.2), so only
+  the served agent's owner asks (after review).
+- The two owners' consent alone for a bridge across owners: the
+  project whose data the bridge reads had no say, and an outsider could
+  act with a reviewer's scopes it may not hold under `outside_roles`; a
+  project admin consents too, security-team agents get no bridge of
+  another owner, and an outsider's bridge serves only roles
+  `outside_roles` allows (after review).
+- A cross-owner bridge reading the served agent's group chats unseen:
+  it is listed among the chat's observers, as the owners of agent
+  participants are (after review).
+- Enforcing the purpose as a scope: there is no reliable way to tell a
+  call made for "file transfer" from one made for anything else; the
+  served agent's scopes and either owner's power to end the connection
+  are the limits (this contract's reading).
+

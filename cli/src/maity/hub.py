@@ -27,6 +27,10 @@ USER_AGENT = CLIENT
 NO_IDEMPOTENCY = ("/me/resume", "/join/", "/runner/hello", "/runner/placements/")
 
 
+class ForRefused(Exception):
+    """`--for` on a command that calls `/me/*`: a usage error, refused before any call (§13)."""
+
+
 class HubError(Exception):
     """The hub could not be reached or answered with an error."""
 
@@ -395,9 +399,29 @@ class Client:
     base: str
     key: sign.SigningKey
     on_request: str | None = None
+    # A bridge acting for an agent it serves (`maity --for`, §2.3): `Maity-For` on every call.
+    for_member: str | None = None
+    # A handle given to `--for`, resolved as the bridge itself on the first call that needs it,
+    # so a call under `/me` is refused before anything is sent, the lookup included (§13).
+    for_resolve: Callable[[], str] | None = None
+    # Set with `--for` whatever the resolution does, so the `/me` refusal never hangs on it.
+    for_given: bool = False
     clock_offset: float = 0.0
     timeout: float = 30.0
     _opener: urllib.request.OpenerDirector = field(default_factory=opener, repr=False)
+
+    def served(self) -> str | None:
+        """The agent `Maity-For` names, resolving a handle first; None without `--for`."""
+        if self.for_resolve is not None:
+            resolve, self.for_resolve = self.for_resolve, None  # its own lookup goes plain
+            try:
+                self.for_member = resolve()
+            except BaseException:
+                # Kept for the next call: a lookup that failed never lets a later call of the
+                # same process go out as the bridge itself (fails closed).
+                self.for_resolve = resolve
+                raise
+        return self.for_member
 
     def call(
         self,
@@ -425,6 +449,14 @@ class Client:
             # would put them, not with the `?` inside the signed path (§2.2).
             query = [*urllib.parse.parse_qsl(inline_query, keep_blank_values=True), *query]
         full_path = path if path.startswith(f"{API}/") else f"{API}{path}"
+        acting_for = self.for_given or self.for_member is not None
+        if acting_for and (full_path == f"{API}/me" or full_path.startswith(f"{API}/me/")):
+            # Before anything is sent: a bridge acts for an agent on project routes only (§13).
+            raise ForRefused(
+                "--for applies to project commands; this command calls /me, which is the "
+                "bridge's own: run it without --for"
+            )
+        self.served()
         query_string = sign.canonical_query(query)
         if raw is not None:
             data = raw
@@ -499,25 +531,30 @@ class Client:
         handle: Callable[[Any], Any],
     ) -> Any:
         """Sign and send one request, once more after a clock correction (§2.2); `handle`
-        reads the successful response."""
+        reads the successful response. The second attempt gets only what is left of the
+        timeout, so a caller's deadline holds across both."""
+        limit = timeout or self.timeout
+        end = time.monotonic() + limit
         for attempt in (1, 2):
             stamp = int(time.time() + self.clock_offset)
             on_request = self.on_request if method != "GET" else None
             signed = sign.sign_headers(
-                self.key, method, full_path, query_string, data, stamp, on_request
+                self.key, method, full_path, query_string, data, stamp, on_request, self.for_member
             )
             request = urllib.request.Request(url, data=send, method=method)  # noqa: S310
             for name, value in {**headers, **signed}.items():
                 request.add_header(name, value)
             try:
-                with self._opener.open(request, timeout=timeout or self.timeout) as response:
+                with self._opener.open(request, timeout=limit) as response:
                     return handle(response)
             except urllib.error.HTTPError as exc:
                 err = _error_from(exc, f"{method} {full_path}")
                 server = _parse_server_time(err.details.get("server_time"))
                 if err.code == "timestamp_skew" and attempt == 1 and server is not None:
                     self.clock_offset = server - time.time()
-                    continue
+                    limit = end - time.monotonic()
+                    if limit > 0:
+                        continue
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc

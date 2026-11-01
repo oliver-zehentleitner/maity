@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import events, forge, probe
 from maity_hub import tables as t
@@ -86,6 +86,77 @@ def test_a_merge_on_a_card_in_review_wakes_the_done_authority_once(
     assert _card(owner, card_id)["status"] == "review"  # notify: the reviewer closes it
     probe.observe_report(migrated, READER, card_id)  # observed again: told once per report
     assert len(_events(migrated, "task_merged")) == 1
+
+
+def test_a_sweep_sees_the_merge_of_a_report_first_observed_open(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    github.pull(7)
+    _, card_id = _reported(owner, make_client)
+    probe.sweep(migrated, READER)
+    assert _card(owner, card_id)["report"]["observed"]["pr_state"] == "open"
+    assert _events(migrated, "task_merged") == []
+    github.pull(7, merged=True)
+    probe.sweep(migrated, READER)
+    assert _card(owner, card_id)["report"]["observed"]["pr_state"] == "merged"
+    assert len(_events(migrated, "task_merged")) == 1
+    reads = len(github.calls)
+    probe.sweep(migrated, READER)  # a merged report has nothing more to say
+    assert [c for c in github.calls[reads:] if "/pulls/7" in c] == []
+
+
+def test_reports_last_seen_open_are_read_oldest_first_after_everything_else(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    monkeypatch.setattr(probe, "REREAD_PER_ROUND", 2)
+    github.pull(7)
+    cards = [_reported(owner, make_client)[1] for _ in range(3)]
+    never = _reported(owner, make_client)[1]
+    ages = dict(
+        zip(
+            cards,
+            ("2026-10-03T00:00:00Z", "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"),
+            strict=True,
+        )
+    )
+    with migrated.begin() as conn:
+        for card_id, at in ages.items():
+            report = conn.execute(
+                select(t.card.c.report).where(t.card.c.id == card_id)
+            ).scalar_one()
+            observed = {"pr_state": "open", "observed_at": at}
+            conn.execute(
+                update(t.card)
+                .where(t.card.c.id == card_id)
+                .values(report={**report, "observed": observed})
+            )
+    jobs: list[tuple[str, str]] = []
+
+    def job(name: str) -> Any:
+        return lambda _engine, _fg, ref, *_: jobs.append((name, ref))
+
+    monkeypatch.setattr(probe, "observe_report", job("report"))
+    monkeypatch.setattr(probe, "observe_release", job("release"))
+    monkeypatch.setattr(probe, "observe_links", job("links"))
+    probe.sweep(migrated, READER)
+    assert jobs == [
+        ("report", never),
+        ("release", jobs[1][1]),
+        ("links", jobs[2][1]),
+        ("report", cards[1]),  # the oldest
+        ("report", cards[2]),
+    ]
 
 
 def test_auto_under_holder_closes_the_card_itself(
@@ -193,6 +264,27 @@ def test_a_merge_seen_elsewhere_is_told_when_the_card_returns_to_review(
     assert _card(owner, card_id)["status"] == "review"
     [told] = _events(migrated, "task_merged")
     assert told.payload["task"] == card_id and told.payload["merge_sha"] == "f" * 40
+
+
+def test_the_answer_comes_before_the_return_to_review_and_the_merge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """What happened first, then what followed from it (§6.4, §6.6), one event at a time."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    asked = agent.post(
+        f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
+    )
+    assert asked.status_code == 201, asked.text
+    probe.observe_report(migrated, READER, card_id)
+    answered = owner.post(f"{BASE}/requests/{asked.json()['id']}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    [told] = _events(migrated, "request_answered")
+    moves = [e for e in _events(migrated, "task_updated") if e.seq > told.seq]
+    assert [m.payload["status"] for m in moves] == ["review", "done"]
+    [merge] = _events(migrated, "task_merged")
+    assert told.seq < moves[0].seq < merge.seq < moves[1].seq
 
 
 def test_a_new_report_in_between_starts_over(

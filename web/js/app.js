@@ -31,6 +31,9 @@ window.Maity = window.Maity || {};
     { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
     { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
+    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
@@ -38,13 +41,14 @@ window.Maity = window.Maity || {};
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
-    // One's own agents in the project (js/agents-page.js), the component of
-    // /agents; before Runners and Why (the maintainer, 2026-10-29).
-    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
-    // The account-level view is views.runners; this one is the project's.
-    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
+    // The account-level view is views.runners; this one is the project's,
+    // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
+    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
+    // between Why and Settings (the maintainer, 2026-10-31).
+    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     // One view with two tabs (§16.11): the project's for its admins, one's
@@ -104,6 +108,8 @@ window.Maity = window.Maity || {};
     if (!parts.length) return { scope: null };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
+    // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
+    if (parts[0] === "invite") return { scope: "invitations" };
     if (parts[0] === "register") return { scope: "register" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
@@ -113,14 +119,17 @@ window.Maity = window.Maity || {};
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
     if (parts[0] === "account" && parts[1] === "orgs") return { scope: "orgs", args: parts.slice(2) };
+    // /settings/forge: the account's forge access (§11.4, §16.11), where the hub's setup redirect lands.
+    if (parts[0] === "settings" && parts[1] === "forge" && !parts[2]) return { scope: "account", args: ["forge"] };
     if (parts[0] === "account") return { scope: "account", args: parts.slice(1) };
     if (parts[0] === "runners") return { scope: "runners" };
     // /agents[/<id>]: one's agent profiles across projects (js/agents-page.js).
     if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
-    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened.
-    if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3])) {
+    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
+    // and Import or export everything, at /admin/site (tsk-xw8a2hd84x3a).
+    if (parts[0] === "admin" && ((parts[1] === "registration" || parts[1] === "site") && !parts[2] || parts[1] === "reports" && !parts[3])) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -219,6 +228,17 @@ window.Maity = window.Maity || {};
     other: "M9.5 3.25a2.25 2.25 0 113 2.12V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.13a2.25 2.25 0 11-1.5 0V5.37a2.25 2.25 0 111.5 0v1.84A2.49 2.49 0 016 7h4a1 1 0 001-1v-.63A2.25 2.25 0 019.5 3.25z",
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
+  // The project's own links (§6.11), in this order, each with its word and a 16 × 16 mark
+  // (Octicons, MIT): an issue, a book, a speech bubble, a chat bubble.
+  const OWN_LINKS = [
+    ["issues", () => M.t("project.link.issues"), "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"],
+    ["wiki", () => M.t("project.link.wiki"), BOOK],
+    ["discussions", () => M.t("project.link.discussions"), "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z"],
+    ["chat", () => M.t("project.link.chat"), "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z"],
+  ];
+  // The links that are set, as plain https only: what the header and the overview show.
+  const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
+    .filter((x) => x.url);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -235,11 +255,16 @@ window.Maity = window.Maity || {};
     const exp = project.keep_the_why_export;
     const root = exp && (exp.members || []).find((m) => m.path === "");
     const why = root && M.dom.safeUrl(root.dashboard_url);
-    const name = FORGES[forge] || "Repository";
+    // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
+    // and the project's own links stand beside it.
+    const name = M.t("project.link.repository");
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": (FORGES[forge] ? "Repository on " + name : "Repository") + " (opens in a new tab)", title: repo },
+        "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
+      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
+      mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
       mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
@@ -331,6 +356,24 @@ window.Maity = window.Maity || {};
       M.legal ? M.legal.links() : null);
   }
 
+  // The second step of a sign-in (js/second-factor.js, §2.8.2): the session reaches
+  // nothing else, so the page is the step with the brand and the theme around it.
+  function renderStep(main, session) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    // The hub answers next "/" without a stored one (§2.8.2): from a /sign-in/ address that is the
+    // dashboard's start, not that address again (goNext stays put for "/").
+    const done = (next) => {
+      const n = safeNext(next);
+      if ((!n || n === "/") && M.route.current().path.startsWith("/sign-in/")) M.route.go("/", { replace: true });
+      else goNext(next);
+    };
+    M.secondFactor.page(main, session, done, logout);
+  }
+  function renderStepElsewhere(main, signedIn) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    M.secondFactor.elsewhere(main, signedIn);
+  }
+
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
     document.title = "Waiting for approval · Maity";
@@ -413,6 +456,59 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint", id: "repo-url-hint" }, "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it."),
     error,
     h("button", { type: "submit" }, "Save repository"),
+    status.el);
+  }
+
+  // The project's own links (§6.11), for project:admin: four fields, only
+  // the changed ones sent (the hub merges by key, so another admin's change
+  // to another link meanwhile stays), each refusal said at its field.
+  function linksForm(ctx) {
+    const current = ctx.project.links || {};
+    const status = statusLine();
+    const WORDS = { format: () => M.t("settings.links.format"), too_long: () => M.t("settings.links.too_long"), unknown: () => M.t("settings.links.unknown") };
+    const fields = OWN_LINKS.map(([key, label]) => {
+      const id = "link-" + key;
+      const input = h("input", { id, type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false", maxlength: "500",
+        "aria-describedby": ["links-hint", id + "-error"].join(" ") });
+      input.value = current[key] || "";
+      const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+      return { key, input, error, nodes: [h("label", { for: id }, label()), input, error] };
+    });
+    return h("form", {
+      class: "inline-form links-form",
+      novalidate: true,
+      onsubmit: async (e) => {
+        e.preventDefault();
+        fields.forEach((f) => { f.error.textContent = ""; f.input.removeAttribute("aria-invalid"); });
+        const links = {};
+        fields.forEach((f) => {
+          const value = f.input.value.trim();
+          if (value !== (current[f.key] || "")) links[f.key] = value || null;
+        });
+        if (!Object.keys(links).length) { status.done(); append(status.el, h("span", null, M.t("settings.links.unchanged"))); return; }
+        status.busy(M.t("settings.links.saving"));
+        try {
+          await M.api.patch(ctx.base, { links });
+          settingsSaved = M.t("settings.links.saved");
+          render();
+        } catch (err) {
+          const refused = err.code === "invalid" && err.details && err.details.fields;
+          const hits = refused ? fields.filter((f) => refused["links." + f.key]) : [];
+          if (!hits.length) { status.fail(M.t("settings.links.not_saved"), err); return; }
+          status.done();
+          hits.forEach((f) => {
+            const why = refused["links." + f.key];
+            f.error.textContent = Object.hasOwn(WORDS, why) ? WORDS[why]() : why;
+            f.input.setAttribute("aria-invalid", "true");
+          });
+          hits[0].input.focus();
+        }
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.links.title")),
+    h("p", { class: "hint", id: "links-hint" }, M.t("settings.links.hint")),
+    fields.map((f) => f.nodes),
+    h("button", { type: "submit" }, M.t("settings.links.save")),
     status.el);
   }
 
@@ -507,13 +603,18 @@ window.Maity = window.Maity || {};
 
   function projectPanel(ctx) {
     const status = statusLine();
-    const save = async (body, label) => {
+    // atFields: a form's own handler of the hub's field refusals; when it says
+    // them at its fields, the status line only says that nothing was saved.
+    const save = async (body, label, atFields) => {
       status.busy("Saving…");
       try {
         await M.api.patch(ctx.base, body);
         settingsSaved = label + " saved.";
         render();
       } catch (err) {
+        // true: said at the fields; a text: what the status line says besides them.
+        const atField = atFields && atFields(err);
+        if (atField) { status.fail(label + " not saved: ", { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
         status.fail(label + " not saved: ", err);
       }
     };
@@ -561,20 +662,24 @@ window.Maity = window.Maity || {};
       h("label", { for: "state-reason" }, "Reason"), reason,
       h("button", { type: "submit" }, "Change state")));
     }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx));
+    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null, linksForm(ctx));
     // Its name: rename and transfer, for a human owner (§6.25).
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
-    if (M.projectSetup) append(panel, memoryPanel(ctx));
-    // Humans only, as every policy field (§2.3 ʰ).
-    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
+    // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
+    // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
+    if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
     // The change ticker (§17.3), read by every member, changed by a human
     // admin; the forge webhook (§17.4) for that human only.
     if (M.tickerSettings) {
       append(panel, h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)));
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
-    if (humanAdmin) append(panel, memberAgentsForm(ctx, save));
+    if (humanAdmin) {
+      append(panel, memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
+    }
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
     if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
@@ -762,32 +867,52 @@ window.Maity = window.Maity || {};
     return form;
   }
 
-  // Project memory (docs/api.md §6.1, §6.21), read here and not changed:
-  // the hub would set nothing up and remove nothing on a change, so a change
-  // is an agent's work in the repository, on a card. The setup chosen at
-  // creation, and its cards once the hub made them.
-  function memoryPanel(ctx) {
+  // The memory provider (docs/api.md §6.1, §6.21): shown to every member;
+  // a human with project:admin changes it, with a reason for the rules
+  // change it makes. A change makes and cancels no setup card, and a switch
+  // to Keep the Why lets the commitment below be required.
+  function memoryPanel(ctx, save, humanAdmin) {
     const { PROVIDERS, OPTIONS } = M.projectSetup;
     const provider = ctx.project.memory && ctx.project.memory.provider;
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
     // The dashboard's option names its path (§6.1 setup.dashboard_path).
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path ? title + " under " + s.dashboard_path : title)) : [];
+    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
+      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title)) : [];
     let setup;
-    if (!s) setup = h("p", { class: "muted" }, "The project predates setup cards: none were chosen.");
+    if (!s) setup = h("p", { class: "muted" }, M.t("memory.setup.predates"));
     else if (Array.isArray(s.cards) && s.cards.length) {
-      setup = [h("p", null, "Setup cards: ", s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)])),
-        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, "The dashboard is published under " + s.dashboard_path + ".") : null];
-    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, "No setup option was chosen.");
-    else setup = [h("p", null, "Chosen: " + chosen.join("; ") + "."), h("p", { class: "muted" }, "The cards are made when the project gets a repository.")];
-    return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
-      h("h2", { class: "panel-title", id: "memory-heading" }, "Project memory"),
-      h("p", null, h("strong", null, named || "—"),
-        provider === "keep-the-why" ? ": joining agents load the Keep the Why skill and keep the project's reasons in the repository's context/."
-          : provider === "none" ? ": the project works without a memory provider." : null),
-      h("p", { class: "hint" }, "Chosen when the project was created. A change is work in the repository: write a card for an agent; "
-        + "the hub sets nothing up and removes nothing."),
-      setup);
+      setup = [h("p", null, M.tn("memory.setup.cards", { cards: s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]) })),
+        s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, M.t("memory.setup.published", { path: s.dashboard_path })) : null];
+    } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, M.t("memory.setup.none"));
+    else setup = [h("p", null, M.t("memory.setup.chosen", { options: chosen.join("; ") })), h("p", { class: "muted" }, M.t("memory.setup.later"))];
+    const what = provider === "keep-the-why" ? M.t("memory.keep_the_why") : provider === "none" ? M.t("memory.none") : null;
+    const shown = h("p", null, h("strong", null, named || "—"), what ? [": ", what] : null);
+    if (!humanAdmin) {
+      return h("section", { class: "inline-form memory-panel", "aria-labelledby": "memory-heading" },
+        h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
+        h("p", { class: "hint" }, M.t("memory.hint.read")), setup);
+    }
+    const select = h("select", { id: "memory-provider" },
+      PROVIDERS.map(([value, label]) => h("option", { value, selected: value === provider }, label)));
+    select.value = provider || "keep-the-why";
+    const reason = h("input", { id: "memory-reason", required: true, placeholder: M.t("memory.reason.placeholder") });
+    return h("form", {
+      class: "inline-form memory-panel",
+      "aria-labelledby": "memory-heading",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === provider) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ memory: { provider: select.value }, reason: reason.value.trim() }, M.t("memory.saved_label"));
+      },
+    },
+    h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
+    h("p", { class: "hint" }, M.t("memory.hint.change")),
+    h("label", { for: "memory-provider" }, M.t("memory.label")), select,
+    h("label", { for: "memory-reason" }, M.t("memory.reason")), reason,
+    h("button", { type: "submit" }, M.t("memory.change")),
+    setup);
   }
 
   // policy.badge (docs/api.md §6.20): off unless an admin switches it on, a
@@ -827,6 +952,73 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit", disabled: off ? true : null }, "Change"));
   }
 
+  // §6.1 agent_owners and outside_roles, §6.2 "An agent whose owner is no
+  // member". Unset, the setting follows the public page; the form says what it
+  // reads now, and once set it has no way back to unset, as in the hub.
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team"];
+  function agentOwnersForm(ctx, save) {
+    const pol = ctx.project.policy;
+    const stored = pol.agent_owners || null;
+    const served = ctx.project.public_page === "on" && ctx.project.state !== "archived" && !ctx.project.moderation;
+    const effective = stored || (served ? "anyone" : "members");
+    const words = { members: M.t("settings.agent_owners.members"), anyone: M.t("settings.agent_owners.anyone") };
+    const select = h("select", { id: "agent-owners-select" },
+      stored ? null : h("option", { value: "" }, M.t("settings.agent_owners.unset", { value: words[effective] })),
+      ["members", "anyone"].map((v) => h("option", { value: v }, words[v])));
+    select.value = stored || "";
+    const current = pol.outside_roles || ["coder"];
+    // A role already on the list stays offered, so that saving never drops it unseen.
+    const offered = [...new Set([...OUTSIDE_BASES, ...current])];
+    const boxes = offered.map((r) => {
+      const box = h("input", { type: "checkbox", id: "outside-role-" + r, value: r });
+      box.checked = current.includes(r);
+      return box;
+    });
+    const roleRow = (r, i) => h("label", { class: "check", for: "outside-role-" + r }, boxes[i], " ", M.trust.roleLabel(r));
+    const roleRows = offered.map(roleRow);
+    const rolesHint = h("p", { class: "hint" }, M.t("settings.outside_roles.hint"));
+    // The project's own roles on a base that works may be offered too (§2.3, §6.1); without them the built-in ones stay.
+    // Added beside the others, so that what was ticked or typed meanwhile stays.
+    M.api.get(ctx.base + "/roles").then((r) => {
+      ((r && r.custom) || []).filter((x) => OUTSIDE_BASES.includes(x.base)).map((x) => x.name)
+        .filter((name) => !offered.includes(name)).forEach((name) => {
+          offered.push(name);
+          boxes.push(h("input", { type: "checkbox", id: "outside-role-" + name, value: name }));
+          rolesHint.parentNode.insertBefore(roleRow(name, offered.length - 1), rolesHint);
+        });
+    }).catch(() => {});
+    const reason = h("input", { id: "agent-owners-reason", required: true, placeholder: M.t("settings.agent_owners.reason_hint") });
+    const error = h("p", { class: "field-error", id: "agent-owners-error", role: "alert" });
+    return h("form", {
+      class: "inline-form agent-owners-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const roles = offered.filter((r, i) => boxes[i].checked);
+        const policy = {};
+        if (select.value && select.value !== stored) policy.agent_owners = select.value;
+        if (roles.length !== current.length || roles.some((r) => !current.includes(r))) policy.outside_roles = roles;
+        if (!Object.keys(policy).length) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy, reason: reason.value.trim() }, M.t("settings.agent_owners.title"), (err) => {
+          if (((err.details || {}).fields || {}).outside_roles !== "outside_owner") return false;
+          error.textContent = M.t("settings.agent_owners.role_in_use");
+          return true;
+        });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.agent_owners.title")),
+    h("p", { class: "hint" }, M.t("settings.agent_owners.hint")),
+    h("label", { for: "agent-owners-select" }, M.t("settings.agent_owners.label")), select,
+    h("fieldset", { class: "outside-roles" },
+      h("legend", null, M.t("settings.outside_roles.label")),
+      roleRows,
+      rolesHint),
+    error,
+    h("label", { for: "agent-owners-reason" }, M.t("settings.agent_owners.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.agent_owners.save")));
+  }
+
   // §3.1 "Bringing your own agent", §6.1: whether members add agents of
   // their own, and how many each may hold here; a human with project:admin,
   // with a reason, as every policy field.
@@ -860,6 +1052,32 @@ window.Maity = window.Maity || {};
     h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
     h("label", { for: "member-agents-reason" }, "Reason"), reason,
     h("button", { type: "submit" }, "Save"));
+  }
+
+  // Where a joining agent's personal Keep the Why settings come from (§6.23). The values stay
+  // in the repository's .keep-the-why: the hub does not read that file, so this names it.
+  function keepTheWhyDefaultsForm(ctx, save) {
+    if ((ctx.project.memory || {}).provider === "none") return null;
+    const current = ctx.project.policy.keep_the_why_defaults || "adopt";
+    const select = h("select", { id: "ktw-defaults-select" },
+      [["adopt", M.t("settings.ktw_defaults.adopt")], ["ask", M.t("settings.ktw_defaults.ask")]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "ktw-defaults-reason", required: true, placeholder: M.t("settings.ktw_defaults.reason_placeholder") });
+    return h("form", {
+      class: "inline-form ktw-defaults-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, M.t("settings.ktw_defaults.title"));
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.ktw_defaults.title")),
+    h("p", { class: "hint" }, M.t("settings.ktw_defaults.hint")),
+    h("label", { for: "ktw-defaults-select" }, M.t("settings.ktw_defaults.label")), select,
+    h("label", { for: "ktw-defaults-reason" }, M.t("settings.ktw_defaults.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.ktw_defaults.save")));
   }
 
   function badgeForm(ctx, save) {
@@ -971,7 +1189,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ctx.scope === "all" ? "page" : null }, "All projects", all),
+      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -1017,11 +1235,37 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
   }
 
+  // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
+  // requests across projects and every chat across them, each with what
+  // the hub counts for it (§18.2).
+  const ALL_PAGES = [
+    { scope: "all", href: "/all", label: () => M.t("all.page.inbox"),
+      count: (c) => c.inbox || 0, said: (count) => M.t("all.page.inbox.count", { count }) },
+    { scope: "chats", href: "/chats", label: () => M.t("all.page.chats"),
+      count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
+  ];
+  function allCount(page) {
+    const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
+    return n ? h("span", { class: "count", "aria-label": page.said(n) }, String(n)) : null;
+  }
+
   function renderTabCounts(ctx) {
     const nav = document.getElementById("header").querySelector("nav.views");
     if (!nav) return;
+    if (ctx.scope !== "project") {
+      nav.querySelectorAll("a").forEach((a) => {
+        const page = ALL_PAGES.find((x) => a.getAttribute("href") === M.route.href(x.href));
+        if (!page) return;
+        const old = a.querySelector(".count");
+        if (old) old.remove();
+        const fresh = allCount(page);
+        if (fresh) a.appendChild(fresh);
+      });
+      return;
+    }
     nav.querySelectorAll("a").forEach((a) => {
-      const route = NAV.find((n) => a.getAttribute("href") === projectLink(ctx.slug, n.route));
+      // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
+      const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
       if (!route) return;
       const old = a.querySelector(".count");
       if (old) old.remove();
@@ -1038,7 +1282,12 @@ window.Maity = window.Maity || {};
     const fresh = M.notify.bell(ctx, () => ctx.refreshCounts());
     if (old && fresh) { old.parentNode.insertBefore(fresh, old); old.remove(); }
     else if (old) old.remove();
-    else if (fresh) { const me = header.querySelector(".me"); if (me) me.insertBefore(fresh, me.firstChild); }
+    // A bell that was not there goes where it stands: before the profile.
+    else if (fresh) {
+      const me = header.querySelector(".me");
+      const profileBox = me ? Array.from(me.children).find((c) => c.querySelector && c.querySelector(".profile-menu")) : null;
+      if (me) me.insertBefore(fresh, profileBox || null);
+    }
   }
 
   // The Chat button follows the counts too, keeping the focus if it had it.
@@ -1097,6 +1346,17 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
+    // "+": bring someone in, an agent or a person (the maintainer, 2026-10-31):
+    // the agents page with its join, the invitations page. Humans only.
+    const add = ctx.me.kind === "human" ? M.menuButton({
+      label: M.t("menu.add.label"),
+      class: "add-menu",
+      face: h("span", { class: "add-face", "aria-hidden": "true" }, "+"),
+      items: () => [
+        { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
+        { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+      ],
+    }) : null;
     // The human: their picture, the account, signing out.
     const profile = M.menuButton({
       label: M.t("menu.profile.label", { name: ctx.me.display_name }),
@@ -1120,13 +1380,14 @@ window.Maity = window.Maity || {};
         brandTitle(true),
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
-          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"),
-            "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), chats: M.t("header.chats"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
+          : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
+            "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
-        // Chat, Notifications, the gear, the profile: in one row on a phone too.
-        h("span", { class: "me" }, M.notify.chatButton(ctx), M.notify.bell(ctx, () => ctx.refreshCounts()), settings.el, profile.el)),
+        // Chat, (Lead,) "+", the gear, Notifications, the profile: in one row on a phone too.
+        // The Lead button goes in right after Chat once known (renderLead), so "+" stays to its right.
+        h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
       h("div", { class: "switcher-row" },
@@ -1149,7 +1410,10 @@ window.Maity = window.Maity || {};
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label, tabCount(ctx, item.route))))
-        : null);
+        : ctx.scope === "all" || ctx.scope === "chats"
+          ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
+            ALL_PAGES.map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+          : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
     header.chatCtx = ctx;
@@ -1182,6 +1446,8 @@ window.Maity = window.Maity || {};
     if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
+      // The project's runners, no tab of their own any more.
+      h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
       projectPanel(ctx));
     settingsSaved = null;
@@ -1231,6 +1497,7 @@ window.Maity = window.Maity || {};
       stateLabel: (state) => STATE_LABELS[state] || state,
       stateBadge,
       releasedMark,
+      ownLinks,
       refresh: render,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
@@ -1465,20 +1732,30 @@ window.Maity = window.Maity || {};
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
+      let session;
       try {
-        await M.api.get("/auth/session");
+        session = await M.api.get("/auth/session");
       } catch (err) {
+        // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
+        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
+      // A new session after a sign-out or an ended one: what the old one still gets back (a late
+      // 401) ends nothing, and one that ends now is told again — the second step included.
+      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
+      // A session that owes the second factor reaches nothing else (§2.8.2): its step.
+      if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      // The link opened where the sign-in is already complete: nothing to post here.
+      if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
+      // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
+      if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
-      // A new session: what the old one still gets back (a late 401) ends nothing.
-      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
       if (me.member && me.member.account_status === "pending") {
         // Its one page has its own address (§16.11): /account/pending.
@@ -1517,8 +1794,9 @@ window.Maity = window.Maity || {};
     const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)) viewName = where.scope;
-    else if (known) viewName = (item && item.current) || where.route;
+    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    // `section`: a view whose tab stands for another (`current`) keeps its own name here.
+    else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
     try {
       if (empty) {
@@ -1554,6 +1832,8 @@ window.Maity = window.Maity || {};
         await M.views.instanceAdmin(ctx, root, where);
       } else if (where.scope === "runners") {
         await M.views.runners(ctx, root);
+      } else if (where.scope === "invitations") {
+        await M.views.invitations(ctx, root);
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
       } else if (where.scope === "person") {
@@ -1580,6 +1860,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
     else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = "Your agents";
     else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = "Instance administration";

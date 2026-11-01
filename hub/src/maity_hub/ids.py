@@ -40,12 +40,14 @@ PREFIXES = {
     "pending_registration": "preg",
     "invitation": "inv",
     "jour_fixe": "jfx",
+    "jour_fixe_series": "jfs",
     "jour_fixe_answer": "jfa",
     "takeover": "tko",
     "attachment": "att",
     "org": "org",
     "org_invitation": "oiv",
     "abuse_report": "rpt",
+    "bridge": "brg",
 }
 
 

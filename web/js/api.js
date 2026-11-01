@@ -209,6 +209,27 @@ window.Maity = window.Maity || {};
     return data;
   }
 
+  // §7 answering: exactly one of reply_id, text, talk, with text allowed beside
+  // reply_id or talk; reply_id one of the request's replies; talk only from
+  // the human who owns the asking agent (here: the asker's owner_id in the
+  // project's members or the human's own agent profiles).
+  function checkAnswer(req, body, path, slug) {
+    const given = ["reply_id", "text", "talk"].filter((k) => body[k] !== undefined && body[k] !== null);
+    if (!given.length || (given.includes("talk") && given.includes("reply_id"))) fail(400, "invalid", "reply_id, text or talk", path, { fields: { answer: "reply_id_or_text_or_talk" } });
+    if (body.reply_id != null && !(req.replies || []).some((r) => r.id === body.reply_id)) {
+      fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "not_a_reply" } });
+    }
+    if (body.talk) {
+      // The asker's profile: the project's member, else one of the human's own.
+      const asking = req.asked_by && req.asked_by.member_id;
+      const asker = asking && ((slug && (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === asking))
+        || fixtures()["agents.json"].items.find((x) => x.id === asking));
+      if (req.filed_by === "hub" || !(asker && asker.kind !== "human" && asker.owner_id === me().member.id)) {
+        fail(400, "invalid", "only the agent's own human can talk", path, { fields: { talk: "only_the_owner_of_the_agent" } });
+      }
+    }
+  }
+
   function keyed(slug, name, key, path) {
     const entry = file(slug, name, path)[key];
     if (!entry) fail(404, "not_found", "Not found", path);
@@ -247,6 +268,9 @@ window.Maity = window.Maity || {};
   const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
   const IMAGE_MAX = 1024 * 1024;
   const uploaded = {};  // "<slug>/<kind>" -> object URL
+  // Whether a human set policy.keep_the_why on a project, and to what (§6.23): a switch
+  // of memory.provider back to keep-the-why reads `required` only where nobody did.
+  const ktwSet = new WeakMap();
   const forgeImages = {};  // "<slug>/<kind>" -> the forge's image an upload replaced
   let imageSerial = 0;
   let uploadSerial = 0;
@@ -269,6 +293,7 @@ window.Maity = window.Maity || {};
 
   let taskSerial = 0;
   let consentSerial = 0;
+  let jfSerial = 0;
   // tasks:admin and tasks:review, by the human's trust and role in a project (§2.3).
   const mineIn = (slug) => me().projects.find((p) => p.slug === slug) || {};
   const trustIn = (slug) => mineIn(slug).trust;
@@ -418,23 +443,42 @@ window.Maity = window.Maity || {};
     const mine = me().projects.find((p) => p.slug === slug);
     return governing(mine);
   };
-  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
+  // The first seq of each running isolation, as the hub keeps isolated_from_seq (§6.2).
+  const isolatedFrom = new WeakMap();
   function isolate(m, body, path, on) {
     const who = caller(m[1], path);
     if (who.member.kind !== "human") fail(403, "forbidden", "a human's call", path, { reason: "humans_only" });
     if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
     const target = member(m[1], m[2], path);
     if (target.kind !== "agent") fail(400, "invalid", "only an agent is isolated", path, { fields: { member: "not_an_agent" } });
-    if (!on) { target.isolated = null; return Object.assign({}, target); }
+    if (!on) {
+      // Lifting with hide_isolation_events: the window from the isolation to now, both ends
+      // included, joins isolation_windows; the agent reads none of it again (§6.2).
+      const log = eventsOf(m[1]);
+      const head = log.length ? log[log.length - 1].seq : 0;
+      // An isolation the fixture did not start (loaded as isolated): as the hub does for one
+      // made before it kept the first seq, the first event at or after it began.
+      const from = isolatedFrom.has(target) ? isolatedFrom.get(target)
+        : (log.find((e) => target.isolated && target.isolated.since && e.at >= target.isolated.since) || {}).seq;
+      if (target.isolated && (body || {}).hide_isolation_events === true && from !== undefined && from <= head) {
+        target.isolation_windows = (target.isolation_windows || []).concat([{ from_seq: from, to_seq: head }]);
+      }
+      target.isolated = null;
+      isolatedFrom.delete(target);
+      return Object.assign({}, target);
+    }
     const reason = typeof (body || {}).reason === "string" ? body.reason.trim() : "";
     if (!reason || reason.length > 500) fail(400, "invalid", "a reason of 1 to 500 characters", path, { fields: { reason: reason ? "too_long" : "required" } });
     if (!target.isolated) {
       target.isolated = { reason, since: nowIso(), by: who.member.id };
+      const log = eventsOf(m[1]);
+      isolatedFrom.set(target, (log.length ? log[log.length - 1].seq : 0) + 1);
       file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
     }
     return Object.assign({}, target);
   }
 
+  // Who changes a membership: the signed-in human, or ?as= in fixture mode.
   function caller(slug, path) {
     if (!fixtureAs) return { member: me().member, admin: membersAdmin(slug) };
     const x = member(slug, fixtureAs, path);
@@ -578,11 +622,18 @@ window.Maity = window.Maity || {};
     landingText(pg.description, at + ".description", 300, false, errors);
     const sections = pg.sections || [];
     if (sections.length > 20) errors[at + ".sections"] = "too_many";
+    // The header holds at most four links: only an enabled section with a label is one (§16.7).
+    let labelled = 0;
+    sections.forEach((s, i) => {
+      if (s && s.enabled === true && s.nav_label) { labelled += 1; if (labelled > 4) errors[at + ".sections." + i + ".nav_label"] = "too_many"; }
+    });
     sections.forEach((s, i) => {
       const sp = at + ".sections." + i;
       const known = Object.hasOwn(LANDING_TYPES, s.type) ? LANDING_TYPES[s.type] : null;
       if (!known) { errors[sp + ".type"] = "unknown_type"; return; }
-      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
+      // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
+      if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
         landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
@@ -659,6 +710,110 @@ window.Maity = window.Maity || {};
       seen.add(code);
       landingText(c && c.label, "campaigns." + k + ".label", 120, true, errors);
     });
+  }
+  // §20.1: the series of a project as the hub shows them to the caller. An owner's series
+  // (circle `owner`) is read by its circle owner, that owner's agents and its moderators; the
+  // humans with project:admin see only that it exists (id, circle owner, enabled, schedule).
+  const JF_OPEN = ["answering", "statement", "exchange", "reporting"];
+  const jfAdmin = (slug) => me().member.kind === "human" && tasksAdmin(slug);
+  function jfReads(slug, s) {
+    if (s.circle !== "owner") return true;
+    const who = me().member;
+    const profile = (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === who.id) || who;
+    return who.id === s.circle_owner || (who.kind === "agent" && profile.owner_id === s.circle_owner)
+      || (s.moderators || []).concat(s.pending_moderators || []).some((x) => x.member_id === who.id);
+  }
+  // The circle owner keeps an owner's series; the humans with project:admin keep the others (§20.1).
+  const jfKeeps = (slug, s) => me().member.kind === "human" && (s.circle === "owner" ? me().member.id === s.circle_owner : tasksAdmin(slug));
+  const jfDeletes = (slug, s) => jfKeeps(slug, s) || (s.circle === "owner" && jfAdmin(slug));
+  function jfSeriesView(slug, s) {
+    const out = Object.assign({}, s);
+    delete out.next_at; delete out.opted_out_members; delete out.report_list;
+    if (jfReads(slug, s)) {
+      // §20.2: the caller's own flags, their agents' when they own any, the report list for a keeper only.
+      const flags = (id) => ({ opted_out: (s.opted_out_members || []).includes(id), report_recipient: (s.report_list || []).includes(id) });
+      Object.assign(out, flags(me().member.id));
+      const agents = me().member.kind === "human" ? (fixtures()[slug + "/members.json"].items || []).filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at) : [];
+      if (agents.length) out.own_agents = agents.map((x) => Object.assign({ member_id: x.id }, flags(x.id)));
+      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).map((id) => ({ member_id: id }));
+      return out;
+    }
+    if (!jfAdmin(slug)) return null;
+    return { id: s.id, circle: s.circle, circle_owner: s.circle_owner, enabled: s.enabled, recurrence: s.recurrence, time: s.time, timezone: s.timezone };
+  }
+  const jfSeriesOf = (slug, id, path) => file(slug, "jour-fixe.json", path).series.find((x) => x.id === id) || null;
+  // What the caller may not see does not exist for them; an admin finds the owner's series to delete it (§20.1).
+  function jfSeries(slug, id, path) {
+    const s = jfSeriesOf(slug, id, path);
+    if (!s || !(jfReads(slug, s) || jfAdmin(slug))) fail(404, "not_found", "Not found", path);
+    return s;
+  }
+  function jfRound(slug, id, path) {
+    const r = file(slug, "jour-fixe.json", path).rounds.find((x) => x.id === id);
+    const s = r && r.series_id ? jfSeriesOf(slug, r.series_id, path) : null;
+    // A round of a series the caller may not read answers not_found, an admin included (§20.7).
+    if (!r || (s && !jfReads(slug, s))) fail(404, "not_found", "Not found", path);
+    return r;
+  }
+  // §20.1: a series as the hub checks it, each refusal at its field path.
+  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  function jourFixeErrors(jf, members) {
+    const e = {};
+    const at = (k) => k;
+    const zone = jf.timezone;
+    if (typeof jf.topic !== "string" || !jf.topic.trim()) e.topic = "required";
+    else if (jf.topic.trim().length > 300) e.topic = "too_long";
+    if (!["owner", "humans", "all"].includes(jf.circle)) e.circle = "unknown";
+    if (jf.circle === "owner") {
+      const owner = members.find((x) => x.id === jf.circle_owner);
+      if (jf.circle_owner == null) e.circle_owner = "required";
+      else if (!owner || owner.kind !== "human" || owner.removed_at) e.circle_owner = "not_a_member";
+    } else if (jf.circle_owner != null) e.circle_owner = "invalid";
+    if (typeof jf.enabled !== "boolean") e[at("enabled")] = "not_a_boolean";
+    if (zone != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(zone)) e[at("timezone")] = "unknown_timezone";
+    if (jf.enabled === true) {
+      if (jf.time == null) e[at("time")] = "required";
+      if (zone == null) e[at("timezone")] = "required";
+      if (jf.recurrence == null) e[at("recurrence")] = "required";
+    }
+    if (jf.time != null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(jf.time)) e[at("time")] = "format";
+    [["answer_window_minutes", 30, 1440], ["step_window_minutes", 30, 1440], ["report_window_hours", 1, 72]].forEach(([k, lo, hi]) => {
+      if (!(Number.isInteger(jf[k]) && jf[k] >= lo && jf[k] <= hi)) e[at(k)] = "out_of_range";
+    });
+    const r = jf.recurrence;
+    if (r != null) {
+      const key = (k) => at("recurrence." + k);
+      if (typeof r !== "object" || Array.isArray(r)) e[at("recurrence")] = "not_an_object";
+      else if (!["daily", "weekly", "monthly"].includes(r.freq)) e[key("freq")] = "unknown";
+      else {
+        const n = r.interval === undefined ? 1 : r.interval;
+        if (!Number.isInteger(n) || n < 1 || n > (r.freq === "weekly" ? 8 : 1)) e[key("interval")] = "out_of_range";
+        if (r.freq === "weekly") {
+          if (!r.weekdays || !r.weekdays.length) e[key("weekdays")] = "required";
+          else if (!Array.isArray(r.weekdays) || r.weekdays.some((d) => !WEEKDAYS.includes(d))) e[key("weekdays")] = "unknown";
+        } else if (r.weekdays != null) e[key("weekdays")] = "not_for_freq";
+        const day = r.month_day, nth = r.month_weekday;
+        if (r.freq === "monthly") {
+          if ((day == null) === (nth == null)) e[key("month_day")] = "one_of";
+          else if (day != null && !(Number.isInteger(day) && day >= 1 && day <= 31)) e[key("month_day")] = "out_of_range";
+          else if (nth != null && !(nth && [1, 2, 3, 4, -1].includes(nth.ordinal) && WEEKDAYS.includes(nth.weekday))) e[key("month_weekday")] = "invalid";
+        } else if (day != null || nth != null) e[key(day != null ? "month_day" : "month_weekday")] = "not_for_freq";
+      }
+    }
+    return e;
+  }
+  // As hub/person_links.website_problem: https, a DNS name (a dot, labels of [a-z0-9-], a last
+  // label not all digits) as the whole authority (no user part, no port), no space or control
+  // character, at most `max` characters, checked first.
+  function websiteProblem(value, max) {
+    if (value.length > max) return "too_long";
+    if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
+    const m = /^https:\/\/([^/?#]*)/.exec(value);
+    if (!m) return "format";
+    const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
+    const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+    if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
+    return null;
   }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
@@ -886,6 +1041,41 @@ window.Maity = window.Maity || {};
   }
   // §9.3 for one project (m[1]: its fixture key), shared by the project's
   // route and the list across projects.
+  // §9.3 pins: the caller's own, "<slug>/<id>", at most 20 across projects.
+  function pinsOf() {
+    const all = fixtures();
+    if (!all["pins.json"]) all["pins.json"] = { items: [] };
+    return all["pins.json"].items;
+  }
+  // §9.3 meat proxy per chat: the caller's own choice per "<slug>/<id>", true or false; absent is null.
+  function meatChats() {
+    const all = fixtures();
+    if (!all["meat-chats.json"]) all["meat-chats.json"] = {};
+    return all["meat-chats.json"];
+  }
+  const meatNote = (lead, hands) => ["This person says: I am a meat proxy."]
+    .concat(lead ? ["Lead me step by step rather than expecting me to explain."] : [])
+    .concat(hands ? ["When you need a human's hands, come to me first."] : []).join(" ");
+  // A human entry in one chat (§9.3): the value that holds there, one's own
+  // choice for oneself only (null for others), and the note while it holds.
+  function withMeat(slug, convId, x, path) {
+    if (x.kind !== "human") return x;
+    const mine = x.member_id === me().member.id;
+    const key = slug + "/" + convId;
+    const chosen = mine && Object.hasOwn(meatChats(), key) ? meatChats()[key] : null;
+    const profile = mine ? me().member : (file(slug, "members.json", path).items.find((y) => y.id === x.member_id) || {});
+    const holds = chosen === null ? !!profile.meat_proxy : chosen;
+    // On in the chat while the profile is off: both parts (§9.3); else the profile's.
+    const note = !holds ? null : chosen === true && !profile.meat_proxy ? meatNote(true, true)
+      : profile.meat_proxy_note || meatNote(profile.meat_proxy_lead !== false, profile.meat_proxy_hands !== false);
+    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_chat: chosen }, note ? { meat_proxy_note: note } : {});
+  }
+  // Four bands, each by activity: pinned with unread, unpinned with unread,
+  // quiet pinned, the rest (an observer's null unread is none).
+  function banded(items, at) {
+    const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
+    return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
+  }
   function conversationList(m, path, query) {
     const all = file(m[1], "conversations.json", path);
     const members = file(m[1], "members.json", path).items;
@@ -903,7 +1093,7 @@ window.Maity = window.Maity || {};
       const agent = members.find((x) => x.id === agentId);
       return {
         id: agentId, kind: "direct", agent_id: agentId, title: null, access: "party", closed_at: null,
-        participants: [{ member_id: me().member.id, kind: "human", handle: me().member.handle },
+        participants: [withMeat(m[1], agentId, { member_id: me().member.id, kind: "human", handle: me().member.handle }, path),
           { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
         last_message_at: last ? last.sent_at : null,
         unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
@@ -921,14 +1111,16 @@ window.Maity = window.Maity || {};
         const readTo = c.read[me().member.id] || 0;
         const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
         return Object.assign({}, g, {
-          participants: g.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle })),
+          participants: g.participants.map((x) => withMeat(m[1], g.id, { member_id: x.member_id, kind: x.kind, handle: x.handle }, path)),
           last_message_at: last ? last.sent_at : null, last_message: preview(last),
           unread: g.access === "observer" ? null : theirs.length,
           mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
         });
       });
     const at = (c) => c.last_message_at || c.created_at || "";
-    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    const human = me().member.kind === "human";
+    const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
+    return { items: banded(items, at), next_cursor: null };
   }
 
   // The view as the caller may see it, or null when it may not.
@@ -939,7 +1131,7 @@ window.Maity = window.Maity || {};
     const observers = [...new Set(v.participants.filter((x) => x.kind === "agent" && x.owner_id && !v.participants.some((y) => y.member_id === x.owner_id)).map((x) => x.owner_id))];
     if (!participant && !observers.includes(meId)) return null;
     return { id: v.id, kind: "group", title: v.title, created_by: v.created_by, created_at: v.created_at,
-      participants: v.participants.map((x) => ({ member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at })),
+      participants: v.participants.map((x) => withMeat(slug, v.id, { member_id: x.member_id, kind: x.kind, handle: x.handle, owner_id: x.owner_id, joined_at: x.joined_at }, path)),
       observers, closed_at: v.closed_at, closed_reason: v.closed_reason, access: participant ? "participant" : "observer" };
   }
   // The creator while a participant, or a human participant with members:admin; else refused.
@@ -1076,6 +1268,14 @@ window.Maity = window.Maity || {};
     });
   }
 
+  // §11.4 the signed-in human's forge access: one linked installation of the
+  // instance's GitHub App, no token of their own; never a token in an answer.
+  const forgeAccess = {
+    app_configured: true,
+    links: [{ id: "fgl-0001", forge: "github", installation_id: 51234, account: { login: "maintainer", type: "User" }, repository_selection: "selected",
+      repositories_shown: ["maintainer/maity", "maintainer/sample"], status: "active", linked_at: "2026-10-30T09:00:00Z", checked_at: "2026-10-31T06:00:00Z" }],
+    token: { configured: false, login: null, status: null, checked_at: null },
+  };
   // §16.5: the limits per human as the fixture hub holds them.
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
@@ -1558,6 +1758,35 @@ window.Maity = window.Maity || {};
       orgsData().invitations[org.id] = orgsData().invitations[org.id].filter((x) => x.id !== m[2]);
       return null;
     }],
+    // §11.4 forge access, the human's own: links and token, never the token itself.
+    // The fixture hub needs no proof: the step-up is the smoke test's to answer.
+    ["GET", /^\/me\/forge$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      return JSON.parse(JSON.stringify(forgeAccess));
+    }],
+    ["POST", /^\/me\/forge\/github\/link$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      if (!forgeAccess.app_configured) fail(409, "forge_app_missing", "no GitHub App on this instance", path);
+      return { url: "https://github.com/apps/maity-fixture/installations/new?state=fixture-state" };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/links\/([^/]+)$/, (m, body, path) => {
+      if (!forgeAccess.links.some((l) => l.id === m[1])) fail(404, "not_found", "no such link", path);
+      forgeAccess.links = forgeAccess.links.filter((l) => l.id !== m[1]);
+      return null;
+    }],
+    ["PUT", /^\/me\/forge\/github\/token$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "a human's own forge access", path, { reason: "humans_only" });
+      const token = typeof body.token === "string" ? body.token.trim() : "";
+      if (!token) fail(400, "invalid", "the request does not validate", path, { fields: { token: "required" } });
+      // A classic token reads a private repository only with the repo scope, which writes (§11.4).
+      if (/^gh[pousr]_/.test(token) && !token.startsWith("github_pat_")) fail(400, "invalid", "the request does not validate", path, { fields: { token: "classic_token" } });
+      forgeAccess.token = { configured: true, login: me().member.handle, status: "active", checked_at: nowIso() };
+      return { configured: true, login: me().member.handle };
+    }],
+    ["DELETE", /^\/me\/forge\/github\/token$/, () => {
+      forgeAccess.token = { configured: false, login: null, status: null, checked_at: null };
+      return null;
+    }],
     // §2.9 Your data: the export, and a deletion request withdrawn or asked again.
     // The fixture hub needs no proof: the step-up is the smoke test's to answer.
     ["GET", /^\/me\/export$/, (m, body, path) => {
@@ -1582,10 +1811,19 @@ window.Maity = window.Maity || {};
       if (body.password !== "correct horse") fail(400, "invalid", "the request does not validate", path, { fields: { password: "mismatch" } });
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
+    // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
+    ["GET", /^\/auth\/second-factor$/, () => ({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
+      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" })],
+    // §2.8.8: the mail factor's code ("654321") or link ("mailtoken") besides the app's code and a recovery code.
+    // The hub answers a step-up with valid_until and a sign-in's step with {member, next}, next "/"
+    // without a stored one (§2.8.2); the mock cannot tell the two apart and answers both.
     ["POST", /^\/auth\/second-factor\/verify$/, (m, body, path) => {
-      if (body.code !== "123456" && body.recovery_code !== "abcde-fghij") fail(400, "code_invalid", "the code is not valid", path);
-      return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+      if (body.code !== "123456" && body.recovery_code !== "abcde-fghij" && body.email_code !== "654321" && body.email_token !== "mailtoken") {
+        fail(403, "code_invalid", "the code is wrong or was used", path);
+      }
+      return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
+    ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
@@ -1614,7 +1852,13 @@ window.Maity = window.Maity || {};
       return set;
     }],
     // A deleted profile (tombstone) is never listed (§6.3).
-    ["GET", /^\/agents$/, () => Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at) })],
+    ["GET", /^\/agents$/, (m, body, path, query) => {
+      // ?allowed_in= (§6.3): only the profiles whose list admits the project.
+      const inProject = query && query.get("allowed_in");
+      if (inProject !== null && inProject !== undefined && !/^[^/]+\/[^/]+$/.test(inProject)) fail(400, "invalid", "allowed_in is a project's full name", path, { fields: { allowed_in: "format" } });
+      return Object.assign({}, fixtures()["agents.json"], { items: fixtures()["agents.json"].items.filter((a) => !a.deleted_at
+        && (!inProject || !a.allowed_projects || a.allowed_projects.includes(inProject))) });
+    }],
     // §6.3: a human's new profile; its handle unique among the owner's profiles.
     ["POST", /^\/agents$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
@@ -1643,6 +1887,11 @@ window.Maity = window.Maity || {};
       }
       if ("display_name" in body) agent.display_name = String(body.display_name).trim();
       if ("git_identity" in body) agent.git_identity = body.git_identity;
+      if ("allowed_projects" in body) {
+        const names = body.allowed_projects;
+        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
+        agent.allowed_projects = names;
+      }
       return agent;
     }],
     // §6.3: the owner deletes a profile. In use (an active membership) only with
@@ -1971,6 +2220,7 @@ window.Maity = window.Maity || {};
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      if (m[2] === "answer") checkAnswer(req, body, path, null);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
       const edited = "markdown" in body || "base_version" in body;
       if (edited && !proposal) fail(400, "invalid", "not a preference proposal", path, { fields: { markdown: "not_a_preference_proposal" } });
@@ -2049,13 +2299,19 @@ window.Maity = window.Maity || {};
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
+          probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
           preset, contract_arbiter: PRESETS[preset].contract_arbiter || owner.id,
           // The creator's Maity badge switches the badge on at creation (§6.20).
           badge: setup.maity_badge ? "members" : "off",
+          // The commitment reads required under Keep the Why, optional under None (§6.23).
+          keep_the_why: provider === "none" ? "optional" : "required",
+          keep_the_why_defaults: "adopt",
         }),
+        // As the hub: the namespace owner's choice, default on; anyone else's starts off (§6.1).
+        public_page: org && orgRole(org) !== "owner" ? "off" : (body.public_page || "on"),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
       const data = fixtures();
@@ -2159,6 +2415,29 @@ window.Maity = window.Maity || {};
         }) });
       }
 
+      // §6.11 the project's own links, merged by key, each checked as the hub's
+      // person_links.website_problem does (500 characters): too_long first, then the form.
+      if ("links" in body) {
+        if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
+        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const merged = {};
+        if (body.links !== null) {
+          if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
+          Object.entries(p.links || {}).forEach(([k, v]) => { if (KEYS.includes(k) && v) merged[k] = v; });
+          const fields = {};
+          Object.entries(body.links).forEach(([k, v]) => {
+            if (!KEYS.includes(k)) fields["links." + k] = "unknown";
+            else if (v === null || v === "") delete merged[k];
+            else if (typeof v !== "string") fields["links." + k] = "format";
+            else {
+              const problem = websiteProblem(v, 500);
+              if (problem) fields["links." + k] = problem; else merged[k] = v;
+            }
+          });
+          if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        }
+        p.links = Object.fromEntries(KEYS.map((k) => [k, merged[k] || null]));
+      }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
         const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
@@ -2170,11 +2449,25 @@ window.Maity = window.Maity || {};
         // export follows the repository, and a new one has not been read yet.
         if (!same && p.repository) earlierRepos[m[1] + " " + p.repository.url] = { repository: p.repository, export: p.keep_the_why_export };
         const back = url && !same ? earlierRepos[m[1] + " " + url] : null;
-        p.repository = back ? back.repository
-          : url ? { url, default_branch: same ? p.repository.default_branch : "main", forge: "github", probe_configured: same ? p.repository.probe_configured : false } : null;
+        p.repository = back ? Object.assign({}, back.repository, { owner_confirmed: false, confirmed_by: null })
+          // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
+          : url ? (same ? Object.assign({}, p.repository)
+            : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+      }
+      // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
+      // made or cancelled. The commitment reads optional under none, and required
+      // under keep-the-why unless a human set it (§6.23).
+      if (body.memory) {
+        const provider = body.memory.provider;
+        if (!["keep-the-why", "none"].includes(provider)) fail(400, "invalid", "the request does not validate", path, { fields: { "memory.provider": "unknown_provider" } });
+        if (provider !== (p.memory || {}).provider) {
+          p.memory = { provider };
+          p.rules_version = (p.rules_version || 1) + 1;
+          p.policy = Object.assign({}, p.policy, { keep_the_why: provider === "none" ? "optional" : ktwSet.get(p) || "required" });
+        }
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
@@ -2194,15 +2487,283 @@ window.Maity = window.Maity || {};
             fail(400, "invalid", "no memory provider", path, { fields: { "policy.keep_the_why": "no_memory_provider" } });
           }
         }
+        if ("keep_the_why_defaults" in body.policy && !["adopt", "ask"].includes(body.policy.keep_the_why_defaults)) {
+          fail(400, "invalid", "unknown keep_the_why_defaults value", path, { fields: { "policy.keep_the_why_defaults": "unknown" } });
+        }
         if ("member_agents" in body.policy && !["on", "off"].includes(body.policy.member_agents)) {
           fail(400, "invalid", "unknown member_agents value", path, { fields: { "policy.member_agents": "unknown" } });
+        }
+        if ("agent_owners" in body.policy && !["members", "anyone"].includes(body.policy.agent_owners)) {
+          fail(400, "invalid", "unknown agent_owners value", path, { fields: { "policy.agent_owners": "unknown" } });
+        }
+        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
+          fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
         }
         p.policy = Object.assign({}, p.policy, body.policy);
+        if ("keep_the_why" in body.policy) ktwSet.set(p, body.policy.keep_the_why);
       }
       return p;
+    }],
+    // §20.9 the jour fixe: the series with their next slot and rounds, the rounds; members only.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe$/, (m, body, path) => {
+      project(m[1], path);
+      const jf = file(m[1], "jour-fixe.json", path);
+      return { series: jf.series.map((s) => {
+        const view = jfSeriesView(m[1], s);
+        if (!view) return null;
+        // The rounds of a series are shown to its readers only (§20.7).
+        const rounds = jfReads(m[1], s) ? jf.rounds.filter((r) => r.series_id === s.id) : [];
+        return Object.assign(view, { next_at: s.enabled && jfReads(m[1], s) ? s.next_at || null : null,
+          current_round: rounds.find((r) => JF_OPEN.includes(r.status)) || null, last_round: rounds.find((r) => r.status === "reported") || null });
+      }).filter(Boolean) };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/series$/, (m, body, path) => {
+      project(m[1], path);
+      return { items: file(m[1], "jour-fixe.json", path).series.map((s) => jfSeriesView(m[1], s)).filter(Boolean), next_cursor: null };
+    }],
+    // §20.1: a series is written by its keepers with a reason, at most 10 per project.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series$/, (m, body, path) => {
+      project(m[1], path);
+      const jf = file(m[1], "jour-fixe.json", path);
+      const draft = Object.assign({ circle_owner: null, enabled: false, recurrence: null, time: null, timezone: null,
+        answer_window_minutes: 120, step_window_minutes: 120, report_window_hours: 12 }, body);
+      const keeper = me().member.kind === "human" && (draft.circle === "owner" ? me().member.id === draft.circle_owner : tasksAdmin(m[1]));
+      if (!keeper) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
+      if (!body.reason) errors.reason = "required";
+      if (jf.series.length >= 10) errors.series = "too_many";
+      // At most one owner series per circle owner and topic (§20.1).
+      if (draft.circle === "owner" && typeof draft.topic === "string"
+        && jf.series.some((x) => x.circle === "owner" && x.circle_owner === draft.circle_owner && x.topic === draft.topic.trim())) errors.topic = "taken";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      const made = { id: "jfs-f" + String(++jfSerial).padStart(2, "0"), topic: draft.topic.trim(), circle: draft.circle, circle_owner: draft.circle_owner, enabled: draft.enabled,
+        recurrence: draft.recurrence, time: draft.time, timezone: draft.timezone, answer_window_minutes: draft.answer_window_minutes,
+        step_window_minutes: draft.step_window_minutes, report_window_hours: draft.report_window_hours, moderators: [], pending_moderators: [],
+        created_by: me().member.id, created_at: nowIso(), next_at: null };
+      jf.series.push(made);
+      return jfSeriesView(m[1], made);
+    }],
+    ["PATCH", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      if (!jfKeeps(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      const fields = {};
+      ["circle", "circle_owner"].forEach((k) => { if (k in body && body[k] !== s[k]) fields[k] = "fixed"; });
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const draft = Object.assign({}, s, body);
+      const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
+      if (!body.reason) errors.reason = "required";
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      ["topic", "enabled", "recurrence", "time", "timezone", "answer_window_minutes", "step_window_minutes", "report_window_hours"].forEach((k) => {
+        if (k in body) s[k] = k === "topic" ? body[k].trim() : body[k];
+      });
+      return jfSeriesView(m[1], s);
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      if (!jfDeletes(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
+      if (!(body && body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const jf = file(m[1], "jour-fixe.json", path);
+      // The final state, as a reader sees it (an owner's series shows an admin its stub only).
+      const last = jfSeriesView(m[1], s);
+      jf.series = jf.series.filter((x) => x !== s);
+      return last;
+    }],
+    // §20.2: a grant takes effect with the agent's owner and a keeper; the granter's own action is one
+    // consent. 201 when both are there, else 202 and the grant waits in pending_moderators.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/moderators$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      const who = me().member;
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === body.member_id && !x.removed_at);
+      if (!(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      if (!target) fail(400, "invalid", "the request does not validate", path, { fields: { member_id: "not_a_member" } });
+      const keeper = jfKeeps(m[1], s);
+      const owns = target.kind === "agent" && target.owner_id === who.id;
+      // A human grants it to themselves only, for a series they keep; in an owner's series only that owner grants.
+      if (who.kind !== "human" || (s.circle === "owner" && !keeper) || (target.kind === "human" && !(target.id === who.id && keeper)) || (!keeper && !owns)) {
+        fail(403, "forbidden", "not allowed to grant this right", path, { reason: "not_series_keeper" });
+      }
+      if ((s.moderators || []).concat(s.pending_moderators || []).some((x) => x.member_id === target.id)) fail(409, "conflict", "already held or pending", path);
+      const ownerOk = target.kind === "human" || owns;
+      if (ownerOk && keeper) {
+        s.moderators.push({ member_id: target.id, granted_by: who.id, granted_at: nowIso() });
+        return jfSeriesView(m[1], s);
+      }
+      s.pending_moderators.push({ member_id: target.id, granted_by: who.id, granted_at: nowIso() });
+      const to = [!ownerOk ? target.owner_id : null, !keeper ? "owner" : null].filter(Boolean);
+      return { series: jfSeriesView(m[1], s), requests: to.map((t, i) => ({ id: "req-jfs" + (i + 1), to: t })) };
+    }],
+    // §20.2: opting out of a series and the report list, for oneself or, with ?member=, for one's own agent.
+    ...[["opt-out", "opted_out_members"], ["report", "report_list"]].flatMap(([name, field]) => ["PUT", "DELETE"].map((verb) => [verb,
+      new RegExp("^\\/projects\\/([^/]+)\\/jour-fixe\\/series\\/([^/]+)\\/" + name + "$"), (m, body, path, query) => {
+        const s = jfSeries(m[1], m[2], path);
+        if (!jfReads(m[1], s)) fail(404, "not_found", "Not found", path);
+        const who = me().member.id, id = query.get("member") || who;
+        const agent = (file(m[1], "members.json", path).items || []).find((x) => x.id === id && x.kind === "agent" && x.owner_id === who);
+        if (id !== who && !agent) fail(403, "forbidden", "only for oneself or one's own agent", path);
+        const rest = (s[field] || []).filter((x) => x !== id);
+        s[field] = verb === "PUT" ? rest.concat(id) : rest;
+        return jfSeriesView(m[1], s);
+      }])),
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/moderators\/([^/]+)$/, (m, body, path) => {
+      const s = jfSeries(m[1], m[2], path);
+      const who = me().member;
+      const held = s.moderators.concat(s.pending_moderators).find((x) => x.member_id === m[3]);
+      if (!held) fail(404, "not_found", "Not found", path);
+      const target = file(m[1], "members.json", path).items.find((x) => x.id === m[3]) || {};
+      // The agent's owner, the member itself, the granter or a keeper ends it (§20.2).
+      if (!(jfKeeps(m[1], s) || who.id === m[3] || who.id === held.granted_by || (target.kind === "agent" && target.owner_id === who.id))) {
+        fail(403, "forbidden", "not allowed to end this right", path, { reason: "not_series_keeper" });
+      }
+      s.moderators = s.moderators.filter((x) => x !== held);
+      s.pending_moderators = s.pending_moderators.filter((x) => x !== held);
+      return jfSeriesView(m[1], s);
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds$/, (m, body, path, query) => {
+      project(m[1], path);
+      const status = query.get("status"), series = query.get("series");
+      // A series the caller may not read is left out, its rounds with it (§20.9).
+      const readable = (r) => { const s = r.series_id ? jfSeriesOf(m[1], r.series_id, path) : null; return !s || jfReads(m[1], s); };
+      return { items: file(m[1], "jour-fixe.json", path).rounds.filter((r) => readable(r) && (!status || r.status === status) && (!series || r.series_id === series)), next_cursor: null };
+    }],
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)$/, (m, body, path) => jfRound(m[1], m[2], path)],
+    // §20.3–§20.8 the round's writes, as the hub checks them: one answer per member, the
+    // statement, posts once per topic and step, a further step, the report, redaction.
+    ["GET", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path, query) => {
+      const r = jfRound(m[1], m[2], path);
+      const all = r.answers || [];
+      // The author's own: a named one at any time, an anonymous one only while the window is open (§20.4).
+      if (query.get("mine") === "true") {
+        return { items: all.filter((a) => a.mine && (!a.anonymous || r.status === "answering"))
+          .map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+      }
+      const reader = (r.moderator || {}).member_id === me().member.id || (me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])));
+      if (!reader) fail(404, "not_found", "Not found", path);
+      return { items: all.map((a) => { const v = Object.assign({}, a); delete v.mine; if (v.anonymous) delete v.author; return v; }) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!(r.participants || []).some((p) => p.member_id === me().member.id)) fail(403, "forbidden", "not a participant", path, { reason: "not_participant" });
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      r.answers = r.answers || [];
+      if (r.answers.some((a) => a.mine)) fail(409, "jour_fixe_answered", "one answer per round", path);
+      const texts = ["went_well", "went_badly", "would_help"].map((k) => body[k] || "");
+      if (!texts.some(Boolean)) fail(400, "invalid", "the request does not validate", path, { fields: { answer: "empty" } });
+      const id = "jfa-f" + String(r.answers.length + 1).padStart(3, "0");
+      r.answers.push({ id, anonymous: !!body.anonymous, author: body.anonymous ? null : me().member.id, withdrawn: false,
+        went_well: body.went_well || null, went_badly: body.went_badly || null, would_help: body.would_help || null, redaction: null, mine: true });
+      r.answers_received = (r.answers_received || 0) + 1;
+      return body.anonymous ? { round_id: r.id, anonymous: true } : { round_id: r.id, anonymous: false, id };
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/answers\/mine$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (r.status !== "answering") fail(409, "jour_fixe_state", "the window is closed", path, { status: r.status });
+      const own = (r.answers || []).find((a) => a.mine && !a.withdrawn);
+      if (!own) fail(404, "not_found", "no answer", path);
+      // An anonymous one is gone outright; a named one keeps its record (§20.3, §20.4).
+      if (own.anonymous) r.answers = r.answers.filter((a) => a !== own);
+      else Object.assign(own, { withdrawn: true, went_well: null, went_badly: null, would_help: null });
+      return { round_id: r.id, withdrawn: true };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/statement$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "statement" || r.statement) fail(409, "jour_fixe_state", "not in step 1", path, { status: r.status });
+      const named = new Set((r.answers || []).filter((a) => !a.anonymous && !a.withdrawn).map((a) => a.author));
+      if ((body.topics || []).some((t) => (t.items || []).some((it) => it.from !== "anonymous" && !named.has(it.from)))) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { items: "not_an_answerer" } });
+      }
+      r.statement = { by: me().member.id, message_seq: null, topics: (body.topics || []).map((t, i) => ({ id: "t" + (i + 1), title: t.title, summary: t.summary || null,
+        items: (t.items || []).map((it, k) => ({ id: "t" + (i + 1) + ".i" + (k + 1), text: it.text, from: it.from, redaction: null })),
+        proposals: (t.proposals || []).map((x, k) => ({ id: "t" + (i + 1) + ".s" + (k + 1), title: x.title, reason: x.reason || null })), redaction: null })) };
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/posts$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      const open = (r.steps || []).find((x) => x.opened_at && !x.closed_at && x.kind !== "statement");
+      if (!open || open.kind !== body.step) fail(409, "jour_fixe_state", "not this step", path, { step: open ? open.kind : null });
+      if (!(open.eligible || []).includes(me().member.id)) fail(403, "forbidden", "not eligible", path, { reason: "not_eligible" });
+      r.posts = r.posts || [];
+      if (r.posts.some((x) => x.by === me().member.id && x.topic_id === body.topic_id && x.step === body.step)) fail(409, "jour_fixe_state", "once per topic", path, { step: body.step });
+      const post = { id: "p-f" + (r.posts.length + 1), step: body.step, topic_id: body.topic_id, by: me().member.id, to: body.to || [], in_reply_to: body.in_reply_to || [],
+        body: body.body, message_seq: null, redaction: null };
+      r.posts.push(post);
+      return post;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/steps$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "exchange" || (r.steps || []).filter((x) => x.kind === "further").length >= 3) fail(409, "jour_fixe_state", "no further step now", path, { status: r.status });
+      r.steps.push({ n: null, kind: "further", opened_at: null, closes_at: null, closed_at: null, reason: body.reason, eligible: (r.participants || []).map((p) => p.member_id) });
+      return r;
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/report$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if ((r.moderator || {}).member_id !== me().member.id) fail(403, "forbidden", "the moderator only", path, { reason: "not_moderator" });
+      if (r.status !== "reporting") fail(409, "jour_fixe_state", "not reporting", path, { status: r.status });
+      const decider = me().member.kind === "human" && ["owner", "admin"].includes(trustIn(m[1]));
+      if ((body.proposals || []).some((x) => x.triage === "decided") && !decider) fail(403, "forbidden", "may not decide", path, { reason: "may_not_decide" });
+      r.report = { by: me().member.id, source: "moderator", summary: body.summary || null, summary_redaction: null,
+        findings: (body.findings || []).map((f, i) => ({ id: "f" + (i + 1), topic_id: f.topic_id || null, text: f.text, derived_from: null, redaction: null })),
+        proposals: (body.proposals || []).map((x, i) => Object.assign({ id: "r" + (i + 1), humans_only: false, decision: null, request_id: null, task_id: null, redaction: null }, x,
+          x.triage === "to_owner" ? { request_id: "req-jf" + (i + 1) } : x.decision && x.decision.outcome === "adopt" ? { task_id: "tsk-jf" + (i + 1) } : {})),
+        proposals_not_carded: [] };
+      Object.assign(r, { status: "reported", reported_at: nowIso() });
+      return { round: r, requests: r.report.proposals.filter((x) => x.request_id).map((x) => x.request_id), tasks: r.report.proposals.filter((x) => x.task_id).map((x) => x.task_id) };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/rounds\/([^/]+)\/redact$/, (m, body, path) => {
+      const r = jfRound(m[1], m[2], path);
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const tomb = { at: nowIso(), by: me().member.id, reason: body.reason };
+      const [kind, id] = String(body.target || "").split(":");
+      const rep = r.report || {};
+      if (kind === "answer") { const a = (r.answers || []).find((x) => x.id === id); if (!a) fail(404, "not_found", "Not found", path); Object.assign(a, { went_well: null, went_badly: null, would_help: null, redaction: tomb }); }
+      else if (kind === "summary") Object.assign(rep, { summary: null, summary_redaction: tomb });
+      else if (kind === "finding" || kind === "proposal") {
+        const x = (kind === "finding" ? rep.findings : rep.proposals || []).find((y) => y.id === id);
+        if (!x) fail(404, "not_found", "Not found", path);
+        if (kind === "finding") Object.assign(x, { text: null, redaction: tomb }); else Object.assign(x, { title: null, reason: null, redaction: tomb });
+      } else fail(400, "invalid", "the request does not validate", path, { fields: { target: "redact_the_message" } });
+      return r;
+    }],
+    // §20.1: started by hand with a reason, by the series' keepers and moderators; one round of a
+    // series at a time, at most 2 by hand in 24 hours.
+    ["POST", /^\/projects\/([^/]+)\/jour-fixe\/series\/([^/]+)\/rounds$/, (m, body, path) => {
+      const p = project(m[1], path);
+      const s = jfSeries(m[1], m[2], path);
+      if (!(jfReads(m[1], s) && (jfKeeps(m[1], s) || (s.moderators || []).some((x) => x.member_id === me().member.id)))) {
+        fail(403, "forbidden", "not a keeper or moderator of this series", path, { reason: "not_series_keeper" });
+      }
+      if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
+      const jf = file(m[1], "jour-fixe.json", path);
+      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
+      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
+      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const people = file(m[1], "members.json", path).items.filter((x) => !x.removed_at);
+      // An owner who left stops the series' rounds, by schedule and by hand (§20.1).
+      if (s.circle === "owner" && !people.some((x) => x.id === s.circle_owner)) fail(409, "jour_fixe_state", "the circle owner is gone", path, { reason: "circle_owner_gone" });
+      if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
+      // The circle: the owner and their agents, the humans, or everyone (§20.2); two are needed to talk.
+      const circle = s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
+        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people;
+      if (circle.length < 2) fail(409, "too_few", "fewer than two members are in the circle", path);
+      const day = Date.now() - 24 * 3600000;
+      if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
+        fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
+      }
+      const now = nowIso();
+      const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
+      const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
+      const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
+        trigger: "manual", mode: "message", scheduled_for: now,
+        opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
+        moderator: { member_id: s.moderators[0].member_id, instance: null },
+        invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
+      jf.rounds.unshift(round);
+      return round;
     }],
     // The log in fixture mode: fixtures/<slug>/events.json, the project
     // messages there and the ones posted in this tab (§8.3, oldest first).
@@ -2551,9 +3112,7 @@ window.Maity = window.Maity || {};
       const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
-      if (body.reply_id && !req.replies.some((r) => r.id === body.reply_id)) {
-        fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "unknown" } });
-      }
+      checkAnswer(req, body, path, m[1]);
       const at = nowIso();
       req.status = "answered";
       req.answered_at = at;
@@ -2969,6 +3528,20 @@ window.Maity = window.Maity || {};
       }
       return target;
     }],
+    // §11.4: the namespace owner confirms the repository for their grants, only
+    // the URL the project carries now; a changed one is a conflict.
+    ["POST", /^\/projects\/([^/]+)\/repository\/confirm$/, (m, body, path) => {
+      const p = project(m[1], path);
+      if (me().member.kind !== "human") fail(403, "forbidden", "the namespace owner, acting directly", path, { reason: "humans_only" });
+      const from = p.owner && orgsData().items.find((o) => o.id === p.owner.id);
+      if (!p.owner || (from ? orgRole(from) !== "owner" : p.owner.id !== me().member.id)) fail(403, "forbidden", "only the namespace owner confirms", path);
+      if (!p.repository) fail(404, "not_found", "the project has no repository", path);
+      if (body.url !== p.repository.url) fail(409, "conflict", "the repository changed", path, { reason: "repository_changed", url: p.repository.url });
+      // The owner's grants now serve it: the fixture's linked installation covers it.
+      Object.assign(p.repository, { owner_confirmed: true, confirmed_by: { id: me().member.id, handle: me().member.handle },
+        probe_via: forgeAccess.links.length ? "app" : forgeAccess.token.configured ? "owner_token" : p.repository.probe_via });
+      return p.repository;
+    }],
     // §6.25: the namespace owner hands the project to another human owner, a
     // consent request to them; the fixture hub files it and answers 202.
     ["POST", /^\/projects\/([^/]+)\/transfer$/, (m, body, path) => {
@@ -3118,6 +3691,7 @@ window.Maity = window.Maity || {};
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
+        if (body.takes_over && !fixtures()["agents.json"].items.some((a) => a.id === body.takes_over && a.owner_id === me().member.id)) limit("takes_over");
         if (!body.new_instance && !body.replaces) {
           const mine = new Set(file(m[1], "members.json", path).items.filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at).map((x) => x.id));
           file(m[1], "joins.json", path).items.filter((j) => j.created_by === me().member.id && !j.used_at && !j.revoked_at && !j.burned && Date.parse(j.expires_at) > Date.now() && !j.new_instance && !j.replaces)
@@ -3159,6 +3733,25 @@ window.Maity = window.Maity || {};
           fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max: (member.team && member.team.max_instances) || 1 });
         }
       }
+      // §3.1: takes_over for a first join only, naming another active agent member;
+      // handover a card of the project or a message of it to all.
+      if (body.takes_over != null) {
+        if (member || body.new_instance != null || body.replaces != null) fail(400, "invalid", "takes_over is for a first join only", path, { fields: { takes_over: "first_join_only" } });
+        const named = file(m[1], "members.json", path).items.find((x) => x.id === body.takes_over && x.kind === "agent" && !x.removed_at);
+        if (!named || body.takes_over === agentId) fail(400, "invalid", "no such agent member", path, { fields: { takes_over: "not_an_agent_member" } });
+      }
+      let handover = null;
+      if (body.handover != null) {
+        if (typeof body.handover === "number") {
+          const e = eventsOf(m[1]).find((x) => x.seq === body.handover && x.kind === "message");
+          if (!e) fail(400, "invalid", "no such message in this project", path, { fields: { handover: "not_found" } });
+          if (e.redacted || !(e.audience || []).includes("all")) fail(400, "invalid", "the message is not addressed to all", path, { fields: { handover: "not_readable" } });
+          handover = { kind: "message", id: body.handover };
+        } else {
+          if (!file(m[1], "tasks.json", path).items.some((x) => x.id === body.handover)) fail(400, "invalid", "no such card in this project", path, { fields: { handover: "not_found" } });
+          handover = { kind: "task", id: body.handover };
+        }
+      }
       const id = localId("join");
       const ttl = Math.min(body.ttl_seconds || 900, 3600);
       const expires = new Date(Date.now() + ttl * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -3167,9 +3760,11 @@ window.Maity = window.Maity || {};
         id, agent_id: agentId, trust: body.trust || "member", role: body.role || "coder", created_by: me().member.id,
         created_at: nowIso(), expires_at: expires, used_at: null, burned: false, revoked_at: null,
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
+        takes_over: body.takes_over || null, handover,
       });
+      // §3.2 "The install line": installs and joins in one command.
       return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "maity join " + url + " --code FIXT-URE0-0000",
+        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],
@@ -3293,10 +3888,86 @@ window.Maity = window.Maity || {};
       const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
       const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
-      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
-        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      banded(items, at);
       return { items, next_cursor: null,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.3 pins: human only, idempotent, at most 20 across projects.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      if (!pinsOf().includes(key)) {
+        if (pinsOf().length >= 20) fail(400, "invalid", "at most 20 pins", path, { fields: { pin: "too_many" } });
+        pinsOf().push(key);
+      }
+      return null;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      const at = pinsOf().indexOf(key);
+      if (at >= 0) pinsOf().splice(at, 1);
+      return null;
+    }],
+    // §9.3 meat proxy per chat: a human participant, for itself; an observer is refused.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/meat-proxy$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (![true, false, null].includes(body.meat_proxy)) fail(400, "invalid", "meat_proxy is true, false or null", path, { fields: { meat_proxy: "invalid" } });
+      const id = decodeURIComponent(m[2]);
+      const direct = Object.hasOwn(file(m[1], "conversations.json", path), id) && me().projects.some((p) => p.slug === m[1]);
+      const group = direct ? null : groupChats(m[1])[id];
+      const item = group ? groupItem(m[1], group, path) : null;
+      if (!direct && !item) fail(404, "not_found", "Not found", path);
+      if (item && item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
+      if (body.meat_proxy === null) delete meatChats()[m[1] + "/" + id]; else meatChats()[m[1] + "/" + id] = body.meat_proxy;
+      return null;
+    }],
+    // §2.3 bridges: a connection on the served agent's membership, asked by its owner;
+    // one owner behind both connects at once, across owners two consents are filed (202).
+    ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges$/, (m, body, path) => {
+      const who = me().member;
+      if (who.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]) && !x.removed_at);
+      if (!served) fail(404, "not_found", "Not found", path);
+      if (served.owner_id !== who.id) fail(403, "forbidden", "only the served agent's owner", path, { reason: "agent_owner" });
+      const bridge = items.find((x) => x.id === body.bridge && !x.removed_at);
+      const purpose = typeof body.purpose === "string" ? body.purpose.trim() : "";
+      const fields = {};
+      if (served.kind !== "agent") fields.member = "not_an_agent";
+      else if (served.role === "proxy") fields.member = "role";
+      else if ((served.bridges || []).length >= 5) fields.member = "too_many";
+      if (!bridge) fields.bridge = "not_a_member";
+      else if (bridge.kind !== "agent") fields.bridge = "not_an_agent";
+      else if (bridge.id === served.id) fields.bridge = "self";
+      else if (bridge.role === "proxy") fields.bridge = "role";
+      else if ((served.bridges || []).some((c) => c.member_id === bridge.id)) fields.bridge = "already";
+      if (!purpose || purpose.length > 200) fields.purpose = "invalid";
+      if (Object.keys(fields).length) fail(400, "invalid", "the connection is not valid", path, { fields });
+      if (bridge.owner_id !== served.owner_id) {
+        return { id: "req-bridge" + Date.now().toString(36), class: "consent", to: bridge.owner_id, status: "open",
+          title: "Bridge " + bridge.handle + " for " + served.handle + ": " + purpose };
+      }
+      const id = "brg-" + Math.random().toString(36).slice(2, 10);
+      served.bridges = (served.bridges || []).concat([{ id, member_id: bridge.id, handle: bridge.handle, purpose, cross_owner: false }]);
+      bridge.bridging_for = (bridge.bridging_for || []).concat([{ id, member_id: served.id, handle: served.handle, purpose, cross_owner: false }]);
+      return { id, served: served.id, bridge: bridge.id, purpose, cross_owner: false, created_by: who.id, created_at: new Date().toISOString() };
+    }],
+    // Either agent's owner, either agent or members:admin ends it (§2.3).
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges\/([^/]+)$/, (m, body, path) => {
+      const who = me().member;
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]));
+      const brg = decodeURIComponent(m[3]);
+      const c = served && (served.bridges || []).find((x) => x.id === brg);
+      if (!c) fail(404, "not_found", "Not found", path);
+      const bridge = items.find((x) => x.id === c.member_id) || {};
+      if (![served.owner_id, bridge.owner_id, served.id, bridge.id].includes(who.id) && !["owner", "admin"].includes(trustIn(m[1]))) {
+        fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      }
+      served.bridges = served.bridges.filter((x) => x.id !== brg);
+      bridge.bridging_for = (bridge.bridging_for || []).filter((x) => x.id !== brg);
+      return { id: brg, served: served.id, bridge: c.member_id, purpose: c.purpose, cross_owner: c.cross_owner, ended_at: new Date().toISOString() };
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
@@ -3602,6 +4273,9 @@ window.Maity = window.Maity || {};
         // Not JSON; the status text and the Maity-Error header are all there is.
       }
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
+      // A rate limit's wait comes as the Retry-After header only (§1.4): kept with the details.
+      const wait = res.status === 429 && res.headers && res.headers.get ? Number(res.headers.get("Retry-After")) : NaN;
+      if (Number.isFinite(wait) && wait > 0 && !("retry_after" in details)) details = Object.assign({}, details, { retry_after: wait });
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
     // 204 has no body: a deletion, a removal, a withdrawal (§6.26 among them).

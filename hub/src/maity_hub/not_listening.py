@@ -57,13 +57,32 @@ class _Unnarrowed:
         return None if name == "wakes" else getattr(self._row, name)
 
 
-def waits_for(row: Any, member: Any, principal: str, credential: Any) -> bool:
+def waits_for(
+    row: Any,
+    member: Any,
+    principal: str,
+    credential: Any,
+    watched: frozenset[int] = frozenset(),
+) -> bool:
     """Whether the event waits for this instance (§5.3)."""
-    if events.wakes(row, member, principal, credential.instance, credential.id):
+    dormant = credential.dormant_since is not None  # only its own token counts (§6.17)
+    if events.wakes(
+        row,
+        member,
+        principal,
+        credential.instance,
+        credential.id,
+        dormant=dormant,
+        watched=watched,
+    ):
         return True
     chosen = (row.wakes or {}).get(principal)
-    if chosen != [] or not events.wakes(
-        _Unnarrowed(row), member, principal, credential.instance, credential.id
+    if (
+        dormant
+        or chosen != []
+        or not events.wakes(
+            _Unnarrowed(row), member, principal, credential.instance, credential.id, watched=watched
+        )
     ):
         return False
     return member.lead_instance is None or credential.instance == member.lead_instance
@@ -77,8 +96,9 @@ def oldest_waiting(conn: Connection, session: Any, member: Any, credential: Any)
         rows, examined, truncated = events.read(
             conn, member.project_id, member, principal, after, 500
         )
+        watched = events.watched_seqs(conn, rows, member)
         for row in rows:
-            if waits_for(row, member, principal, credential):
+            if waits_for(row, member, principal, credential, watched):
                 return row
         if not truncated and len(rows) < 500:
             return None
@@ -106,7 +126,7 @@ def _excluded(session: Any, member: Any, credential: Any) -> str | None:
     return None
 
 
-def _audience(conn: Connection, member: Any) -> list[str]:
+def audience_of(conn: Connection, member: Any) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
     member (§8.2)."""
     audience = ["trust:admin"]
@@ -135,7 +155,7 @@ def _announce(
         conn,
         member.project_id,
         "member_not_listening",
-        _audience(conn, member),
+        audience_of(conn, member),
         {
             "member_id": member.agent_id,
             "instance": credential.instance,
@@ -189,7 +209,7 @@ def check(engine: Engine, session_id: str) -> None:
             elif session.acknowledged_seq >= session.not_listening_seq:
                 _end(conn, member, credential, session, "the agent read its events again")
             return
-        if why is not None or listening.is_listening(session.id):
+        if why is not None or listening.is_listening(session.id, conn):
             return
         now = clock.now()
         called_at = session.events_at or session.started_at

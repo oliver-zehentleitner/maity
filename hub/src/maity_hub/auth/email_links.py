@@ -252,9 +252,9 @@ class RequestLimits:
     Keys contain hashes, and existing and unknown addresses take the same path."""
 
     def __init__(self) -> None:
-        self.by_source = Limiter(10, 3600)
-        self.pair_quarter = Limiter(3, 900)
-        self.pair_day = Limiter(10, 86400)
+        self.by_source = Limiter(10, 3600, name="auth.email_links.by_source")
+        self.pair_quarter = Limiter(3, 900, name="auth.email_links.pair_quarter")
+        self.pair_day = Limiter(10, 86400, name="auth.email_links.pair_day")
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)

@@ -8,6 +8,8 @@
 // join (or one expired within the grace minute) can be revoked. A join
 // for an agent that is already a member says which instance it makes:
 // another one, or one in place of an instance (docs/api.md §3.1, §6.17).
+// A first join may name the agent member whose work the new one continues
+// and where the hand-over is written; neither moves anything (§3.1).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -33,7 +35,35 @@ window.Maity = window.Maity || {};
     get reports_to() { return M.t("join.limit.reports_to"); },
     get areas() { return M.t("join.limit.areas"); },
     get capabilities() { return M.t("join.limit.capabilities"); },
+    get takes_over() { return M.t("join.limit.takes_over"); },
   };
+  // The hub's refusals of takes_over and handover (§3.1), in words.
+  const TAKEOVER_REFUSALS = {
+    "takes_over:first_join_only": () => M.t("join.failed.takes_over_first_join"),
+    "takes_over:not_an_agent_member": () => M.t("join.failed.takes_over_not_member"),
+    "handover:not_found": () => M.t("join.failed.handover_not_found"),
+    "handover:not_readable": () => M.t("join.failed.handover_not_readable"),
+  };
+
+  // Where a hand-over is written (§3.1, §5.2: {kind, id}), as a link: the
+  // card, or the project's messages for a message, which have no page each.
+  function handoverRef(ctx, ho) {
+    if (!ho) return null;
+    if (ho.kind === "task") return h("a", { href: ctx.link("tasks", String(ho.id)) }, String(ho.id));
+    // A seq is an id, not a quantity: written as the hub gives it.
+    return h("a", { href: ctx.link("messages") }, M.t("join.handover.message", { seq: String(ho.id) }));
+  }
+
+  // Whose work a join or a membership continues and where its hand-over is
+  // (§3.1, §6.2): `takes_over` an id (a join) or {member_id, handle} (a member).
+  function takeOverWords(ctx, x) {
+    const who = x.takes_over ? M.dom.memberRef(ctx, x.takes_over, { text: "handle" }) : null;
+    if (who && x.handover) return M.tn("join.takes_over.both", { who, handover: handoverRef(ctx, x.handover) });
+    return who ? M.tn("join.takes_over.who", { who }) : M.tn("join.takes_over.handover_only", { handover: handoverRef(ctx, x.handover) });
+  }
+
+  // A card id as typed, or a message's seq as a number (§3.1).
+  const handoverValue = (v) => (/^[0-9]+$/.test(v) ? Number(v) : v);
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
   // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
@@ -44,6 +74,15 @@ window.Maity = window.Maity || {};
     if (j.burned) return { key: "burned", label: M.t("join.state.burned"), text: M.t("join.state.burned_text") };
     if (Date.parse(j.expires_at) <= now) return { key: "expired", label: M.t("join.state.expired"), text: M.t("join.state.expired_at", { time: formatTime(j.expires_at) }) };
     return { key: "open", label: M.t("join.state.open"), text: M.t("join.state.open_until", { time: formatTime(j.expires_at) }) };
+  }
+
+  // All the human's profiles, since a handle is taken whichever project they are in, and
+  // `offered`, the ones this project is allowed for (§6.3): only those are offered.
+  async function readProfiles(ctx) {
+    const [all, allowed] = await Promise.all([M.api.getAll("/agents"),
+      M.api.getAll("/agents?allowed_in=" + encodeURIComponent(ctx.project.full_name))]);
+    const ok = new Set(allowed.items.map((p) => p.id));
+    return Object.assign({}, all, { offered: all.items.filter((p) => ok.has(p.id)) });
   }
 
   // The panel, the seats and the record, from the profiles and joins read;
@@ -68,7 +107,7 @@ window.Maity = window.Maity || {};
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+      profiles.offered.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
         ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
         : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
       h("option", { value: "" }, M.t("join.agent.new")));
@@ -100,7 +139,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "join-handle" }, M.t("join.handle.label")), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
-    if (!profiles.items.length) newFields.hidden = false;
+    if (!profiles.offered.length) newFields.hidden = false;
 
     // An agent that is already a member: the new line starts another
     // instance of it or replaces one of its instances (docs/api.md §6.17).
@@ -135,6 +174,7 @@ window.Maity = window.Maity || {};
       newFields.hidden = agentSelect.value !== "";
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
+      takeOverOptions();
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -181,6 +221,25 @@ window.Maity = window.Maity || {};
       rows: "5",
       placeholder: M.t("join.briefing.placeholder"),
     }));
+    // A first join only: the agent member whose work this one continues
+    // (one's own agents for a member's join, §3.1), and its hand-over.
+    const takesOver = h("select", { id: "join-takes-over", "aria-describedby": "join-takes-over-hint" });
+    const takeable = () => ctx.members.filter((m) => m.kind === "agent" && !m.removed_at && m.id !== agentSelect.value
+      && (!own || m.owner_id === ctx.me.id));
+    const takeOverOptions = () => {
+      const kept = takesOver.value;
+      const list = takeable();
+      append(clear(takesOver), h("option", { value: "" }, M.t("join.takes_over.nobody")),
+        list.map((m) => h("option", { value: m.id }, M.t("join.takes_over.option", { name: m.display_name, handle: M.dom.handleOf(ctx, m) }))));
+      takesOver.value = list.some((m) => m.id === kept) ? kept : "";
+      takeOverField.hidden = !list.length || !!(agentSelect.value && memberOf(agentSelect.value));
+    };
+    const handover = h("input", { id: "join-handover", maxlength: "200", autocomplete: "off", spellcheck: "false",
+      placeholder: M.t("join.handover.placeholder"), "aria-describedby": "join-handover-hint" });
+    const takeOverField = h("div", { class: "field" }, h("label", { for: "join-takes-over" }, M.t("join.field.takes_over")), takesOver,
+      h("p", { class: "hint", id: "join-takes-over-hint" }, M.t("join.takes_over.hint")));
+    const handoverField = membershipField(h("div", { class: "field" }, h("label", { for: "join-handover" }, M.t("join.field.handover")), handover,
+      h("p", { class: "hint", id: "join-handover-hint" }, M.t("join.handover.hint"))));
     const ttl = h("select", { id: "join-ttl" },
       [900, 1800, 3600].map((v) => h("option", { value: String(v) },
         v < 3600 ? M.t("join.ttl.minutes", { count: v / 60 }) : M.t("join.ttl.hours", { count: v / 3600 }))));
@@ -274,6 +333,8 @@ window.Maity = window.Maity || {};
             ttl_seconds: Number(ttl.value),
           };
         if (text) req.briefing = text;
+        if (!member && takesOver.value && !takeOverField.hidden) req.takes_over = takesOver.value;
+        if (!member && handover.value.trim()) req.handover = handoverValue(handover.value.trim());
         status.busy(M.t("join.creating"));
         create.disabled = true;
         let j;
@@ -283,13 +344,17 @@ window.Maity = window.Maity || {};
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
           const d = err.details || {};
+          const takeover = ["takes_over", "handover"].find((f) => Object.hasOwn(TAKEOVER_REFUSALS, f + ":" + fields[f]));
           status.fail(M.t("join.failed"), why === "taken" ? { message: M.t("join.failed.taken", { handle: agent.handle }) }
+            : takeover ? { message: TAKEOVER_REFUSALS[takeover + ":" + fields[takeover]]() }
             // §3.1's limits for a member, in words, the field named.
+            : d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
             : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
               field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
             : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
             : err);
           // The limit is the agent owner's rulebook, on its card on Agents (§6.18).
+          if (takeover || d.field === "takes_over") (takeover === "handover" ? handover : takesOver).focus();
           if (err.code === "instance_quota" && agent.id) {
             append(status.el, " ", h("a", { class: "join-quota-link", href: ctx.link("agents", agent.id, "rulebook") },
               M.t("join.quota.raise")));
@@ -314,7 +379,7 @@ window.Maity = window.Maity || {};
           if (why) {
             // The hub knows better than the list on screen: read it again, and say so at the field.
             if (why === "taken") refused.add(agent.handle);
-            try { profiles = await M.api.getAll("/agents"); } catch (ignored) { /* the refusal above says enough */ }
+            try { profiles = await readProfiles(ctx); } catch (ignored) { /* the refusal above says enough */ }
             profileOptions();
             agentSelect.value = "";
             checkHandle();
@@ -328,7 +393,7 @@ window.Maity = window.Maity || {};
         showLine(j, member);
         // A new profile is named in the select, the new join is a seat.
         try {
-          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+          [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
           listStatus.fail(M.t("join.created_unread"), err);
           return;
@@ -351,13 +416,12 @@ window.Maity = window.Maity || {};
         own ? membershipField(h("p", { class: "hint field wide" }, M.t("join.field.own_hint")))
           : [membershipField(h("div", { class: "field" }, h("label", { for: "join-reports" }, M.t("join.field.reports_to")), reportsTo)),
             membershipField(h("div", { class: "field" }, h("label", { for: "join-areas" }, M.t("join.field.areas")), areas))],
+        membershipField(takeOverField),
+        handoverField,
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
-      // Offered when the hub knows briefings: its member view then has the key.
-      ctx.members.some((x) => "briefing" in x)
-        ? membershipField(h("div", { class: "join-briefing" },
-          h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
-          h("p", { class: "hint" }, M.t("join.briefing.hint"))))
-        : null),
+      membershipField(h("div", { class: "join-briefing" },
+        h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
+        h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
@@ -447,7 +511,8 @@ window.Maity = window.Maity || {};
               h("span", { class: "seat-label" }, state.key === "open" ? M.t("join.seat.open") : M.t("join.state.expired"))),
             h("dl", { class: "facts" },
               h("dt", null, M.t("join.seat.trust_role")), h("dd", null, M.trust.words(j), j.reports_to ? " · " + M.t("join.seat.reports_to", { name: ctx.nameOf(j.reports_to) }) : null),
-              h("dt", null, M.t("join.seat.join")), h("dd", null, state.text + " · ", h("code", null, j.id))),
+              h("dt", null, M.t("join.seat.join")), h("dd", null, state.text + " · ", h("code", null, j.id)),
+              takeOverFacts(j)),
             h("p", { class: "muted" }, M.t("join.seat.waiting")),
             h("div", { class: "seat-actions" }, revoke(j)));
         });
@@ -461,7 +526,17 @@ window.Maity = window.Maity || {};
         h("summary", null, M.t("join.earlier", { count: rows.length })),
         h("ul", { class: "joins closed-joins" }, rows.map(({ j, state }) => h("li", { class: "join-" + state.key },
           h("span", { class: "badge join-state" }, state.label), " ",
-          h("code", null, j.id), " " + M.t("join.earlier.row", { name: profileName(j.agent_id), words: M.trust.words(j), state: state.text })))));
+          h("code", null, j.id), " " + M.t("join.earlier.row", { name: profileName(j.agent_id), words: M.trust.words(j), state: state.text }),
+          takeOverLine(j)))));
+    }
+    // A join's takes_over and handover (§3.1): whose work it continues, where the hand-over is.
+    function takeOverFacts(j) {
+      if (!j.takes_over && !j.handover) return null;
+      return [h("dt", null, M.t("join.seat.takes_over")), h("dd", { class: "join-takes-over" }, takeOverWords(ctx, j))];
+    }
+    function takeOverLine(j) {
+      if (!j.takes_over && !j.handover) return null;
+      return [" · ", h("span", { class: "muted join-takes-over" }, takeOverWords(ctx, j))];
     }
     const openCount = () => { const now = M.api.now(); return joins.items.filter((j) => joinState(j, now).key === "open").length; };
     // The agents open joins are for: with the active memberships, what §3.1 counts per profile.
@@ -512,7 +587,7 @@ window.Maity = window.Maity || {};
     };
     async function load() {
       try {
-        const [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        const [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         // A member sees their own joins only, the ones they may revoke (§3.1).
         if (hooks.member) joins.items = joins.items.filter((j) => j.created_by === ctx.me.id);
         impl = build(ctx, hooks, panel, listStatus, profiles, joins);
@@ -563,5 +638,5 @@ window.Maity = window.Maity || {};
     };
   }
 
-  M.join = { mount };
+  M.join = { mount, takeOverWords };
 })(window.Maity);

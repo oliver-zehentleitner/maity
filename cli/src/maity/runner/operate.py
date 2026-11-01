@@ -402,9 +402,7 @@ def _collect(
     path = Path(path_text)
     as_user = _as_user(cfg)
     try:
-        # A clone taken over from before the namespace stays at its slug path (§15.5).
-        where = record.get("legacy_slug") or record.get("project")
-        expected = workspace.locate(cfg.local.workspaces, str(where), path.name)
+        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
     except workspace.Refused:
         return False
     if str(expected.path) != path_text or as_user.exists(path, "-L"):

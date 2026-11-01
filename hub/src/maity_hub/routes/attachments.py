@@ -94,8 +94,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     if mine.project.state in CLOSED_STATES:
         raise ApiError(409, "project_closed", f"the project is {mine.project.state}")
     rate_key = str(mine.id)
-    received = len(data)  # what the rate was charged: the refund is this, whatever follows
-    attachments.check_rate(rate_key, received)
+    charged = attachments.check_rate(rate_key, len(data))  # the refund is this, whatever follows
     kind, width, height = "file", None, None
     kept_type = attachments.file_type(declared)
     try:
@@ -109,7 +108,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
                 "image",
             )
     except ApiError:
-        attachments.give_back(rate_key, received)  # nothing was stored: not counted
+        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
         raise
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
@@ -158,7 +157,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     try:
         return idempotency.run(engine, request, caller, action)
     except BaseException:
-        attachments.give_back(rate_key, received)
+        attachments.give_back(rate_key, charged)
         raise
 
 

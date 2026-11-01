@@ -16,8 +16,8 @@ from maity_hub.ratelimit import Limiter
 router = APIRouter()
 # One budget per source address for the badge, and one shared budget for every slug not
 # served, so that varying the slug multiplies nothing (§6.20).
-BY_ADDRESS = Limiter(60, 60)
-NOT_SERVED = Limiter(60, 60)
+BY_ADDRESS = Limiter(60, 60, name="routes.badges.BY_ADDRESS")
+NOT_SERVED = Limiter(60, 60, name="routes.badges.NOT_SERVED")
 CACHE = "public, max-age=60"
 
 

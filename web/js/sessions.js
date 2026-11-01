@@ -15,8 +15,28 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime, formatAgo } = M.dom;
 
   const HOUR = 3600 * 1000;
-  const METHOD_WORDS = { password: "password", device_code: "a code from another device", email_link: "a link by mail", email_code: "a code by mail" };
-  const ENDED_WORDS = { logout: "signed out", revoked: "ended", end_others: "ended with the others", expired: "expired", password_change: "ended by a password change" };
+  // How a session signed in, and how it ended, in words from the catalog when drawn.
+  const METHOD_WORDS = {
+    password: () => M.t("sessions.method.password"), device_code: () => M.t("sessions.method.device_code"),
+    email_link: () => M.t("sessions.method.email_link"), email_code: () => M.t("sessions.method.email_code"),
+  };
+  const ENDED_LINES = {
+    logout: (o) => M.t("sessions.ended.logout", o), revoked: (o) => M.t("sessions.ended.revoked", o),
+    end_others: (o) => M.t("sessions.ended.end_others", o), expired: (o) => M.t("sessions.ended.expired", o),
+    password_change: (o) => M.t("sessions.ended.password_change", o),
+  };
+  const methodOf = (s) => (Object.hasOwn(METHOD_WORDS, s.method) ? METHOD_WORDS[s.method]() : s.method);
+  // A session's line: how and when it signed in, last seen, and who approved it, as one sentence.
+  function lineOf(s, sessions) {
+    const o = { method: methodOf(s), when: formatTime(s.created_at), from: s.created ? s.created.ip : s.ip, ago: formatAgo(s.last_seen_at), ip: s.ip };
+    if (!s.approved_by) return M.t("sessions.line", o);
+    return M.t("sessions.line.approved", Object.assign(o, { approver: device(sessions.find((x) => x.id === s.approved_by) || {}) }));
+  }
+  // When and from which session an address change was asked, as one sentence.
+  function askedFrom(held, from) {
+    const o = { when: formatTime(held.requested_at), device: device(from), ip: from.created ? from.created.ip : from.ip };
+    return from.good_standing ? M.t("sessions.address.asked_from", o) : M.t("sessions.address.asked_from_unconfirmed", o);
+  }
   const MAIL = ["email_link", "email_code"];
   // Unread security items are few (the mail limits); read at most this many pages.
   const ALERT_PAGES = 10;
@@ -24,9 +44,9 @@ window.Maity = window.Maity || {};
   // The hub's refusals, in words (§2.6.5, §2.6.3).
   function said(err) {
     const why = err.details && err.details.reason;
-    if (why === "not_in_good_standing") return { message: "this session's own sign-in is not confirmed yet; confirm it from another session first" };
-    if (why === "session_too_new") return { message: "this session is too new for that" };
-    if (err.code === "conflict") return { message: "it was replaced by a newer change, shown now" };
+    if (why === "not_in_good_standing") return { message: M.t("sessions.refused.not_in_good_standing") };
+    if (why === "session_too_new") return { message: M.t("sessions.refused.too_new") };
+    if (err.code === "conflict") return { message: M.t("sessions.refused.conflict") };
     return err;
   }
 
@@ -53,7 +73,7 @@ window.Maity = window.Maity || {};
   // Times as instants, on the hub's clock (M.api.now carries its offset).
   const at = (iso) => Date.parse(iso);
   const young = (s, hours) => M.api.now() - at(s.created_at) < hours * HOUR;
-  const device = (s) => (s.browser || "A browser") + " on " + (s.os || "an unknown system");
+  const device = (s) => M.t("sessions.device", { browser: s.browser || M.t("sessions.device.browser_unknown"), os: s.os || M.t("sessions.device.os_unknown") });
   // "This was me" (§18.3): from a session in good standing that existed
   // before what the alert reports, never from the reported session itself.
   // An alert with no session (an address change) is judged by its time;
@@ -67,8 +87,8 @@ window.Maity = window.Maity || {};
   // Why End is not offered for a session, or null when it is (§2.6.5).
   function cannotEnd(cur, s) {
     if (!cur || s.current || cur.good_standing) return null;
-    if (s.good_standing) return "Confirm this session's sign-in from another session first.";
-    if (young(cur, 1) && at(s.created_at) < at(cur.created_at)) return "This session is too new to end older ones.";
+    if (s.good_standing) return M.t("sessions.cannot_end.confirm_first");
+    if (young(cur, 1) && at(s.created_at) < at(cur.created_at)) return M.t("sessions.cannot_end.too_new");
     return null;
   }
   // The sessions a session approved by device code, and theirs in turn.
@@ -89,19 +109,19 @@ window.Maity = window.Maity || {};
   // when the alert is no longer unread; unknown when the list could not be
   // read again.
   const confirmedWords = (alert, words) => (data) => {
-    if (!data) return "Sent, but the list could not be read again: whether it was confirmed is not known.";
-    return data.alerts.some((a) => a.id === alert.id) ? "The hub did not confirm it from this session." : words;
+    if (!data) return M.t("sessions.confirm.unknown");
+    return data.alerts.some((a) => a.id === alert.id) ? M.t("sessions.confirm.refused") : words;
   };
 
   // The account's section; it redraws in place after each change.
   async function section(ctx) {
-    const heading = h("h3", { id: "sessions-heading", class: "sessions-heading", tabindex: "-1" }, "Sessions");
+    const heading = h("h3", { id: "sessions-heading", class: "sessions-heading", tabindex: "-1" }, M.t("sessions.title"));
     const box = h("section", { class: "sessions", "aria-labelledby": "sessions-heading" });
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
     const body = h("div");
     append(box, heading,
-      h("p", { class: "muted" }, "Where you are signed in. Browser and system are what each device said about itself; the address is what the hub saw."),
+      h("p", { class: "muted" }, M.t("sessions.hint")),
       body, status.el);
 
     // A change, then the list again; the status line says what happened.
@@ -113,7 +133,7 @@ window.Maity = window.Maity || {};
       } catch (err) {
         // A change replaced meanwhile: the one that replaced it is shown.
         if (err.code === "conflict") await draw();
-        status.fail("Not done: ", said(err));
+        status.fail(M.t("sessions.not_done"), said(err));
         status.el.focus();
         return;
       }
@@ -125,8 +145,8 @@ window.Maity = window.Maity || {};
 
     // "This was me" for an alert, where this session may mark it.
     const confirmButton = (cur, alert, reported, label) => (alert && mayConfirm(cur, alert, reported)
-      ? h("button", { type: "button", class: "small", "aria-label": "This was me: " + label,
-        onclick: () => act("Confirming…", () => confirm(alert), confirmedWords(alert, "Confirmed: " + label + " is yours.")) }, "This was me")
+      ? h("button", { type: "button", class: "small", "aria-label": M.t("sessions.this_was_me.label", { what: label }),
+        onclick: () => act(M.t("sessions.confirming"), () => confirm(alert), confirmedWords(alert, M.t("sessions.confirmed", { what: label }))) }, M.t("sessions.this_was_me"))
       : null);
 
     async function draw() {
@@ -134,7 +154,7 @@ window.Maity = window.Maity || {};
       try {
         data = await load();
       } catch (err) {
-        append(clear(body), h("p", { class: "send-status failed" }, "Could not read your sessions: " + err.message));
+        append(clear(body), h("p", { class: "send-status failed" }, M.t("sessions.read_failed", { reason: err.message })));
         return null;
       }
       const { sessions, alerts, current: cur } = data;
@@ -148,25 +168,24 @@ window.Maity = window.Maity || {};
         const why = cannotEnd(cur, s);
         return h("li", { class: "session" + (s.current ? " current" : ""), "data-session": s.id },
           h("div", { class: "session-head" },
-            h("strong", null, device(s)), s.current ? h("span", { class: "badge" }, "this browser") : null,
-            h("span", { class: s.good_standing ? "badge ok" : "badge warn" }, s.good_standing ? "confirmed" : "not confirmed")),
-          h("p", { class: "muted" }, "Signed in with " + (METHOD_WORDS[s.method] || s.method) + ", " + formatTime(s.created_at)
-            + " from " + (s.created ? s.created.ip : s.ip) + "; last seen " + formatAgo(s.last_seen_at) + " from " + s.ip
-            + (s.approved_by ? "; approved from " + device(sessions.find((x) => x.id === s.approved_by) || {}) : "") + "."),
-          alert ? h("p", { class: "flag" }, "Its sign-in alert is not confirmed.") : null,
+            h("strong", null, device(s)), s.current ? h("span", { class: "badge" }, M.t("sessions.this_browser")) : null,
+            h("span", { class: s.good_standing ? "badge ok" : "badge warn" }, s.good_standing ? M.t("sessions.confirmed_badge") : M.t("sessions.unconfirmed_badge"))),
+          h("p", { class: "muted" }, lineOf(s, sessions)),
+          alert ? h("p", { class: "flag" }, M.t("sessions.alert_open")) : null,
           s.current ? null : h("div", { class: "actions" },
             confirmButton(cur, alert, s, device(s)),
             h("button", { type: "button", class: "small", disabled: why ? true : null, "aria-describedby": why ? "why-" + s.id : null,
-              "aria-label": "End the session " + device(s),
-              onclick: () => act("Ending…", () => end(s), "Ended " + device(s) + ".") }, "End"),
+              "aria-label": M.t("sessions.end.label", { device: device(s) }),
+              onclick: () => act(M.t("sessions.ending"), () => end(s), M.t("sessions.ended_one", { device: device(s) })) }, M.t("sessions.end")),
             why ? h("p", { class: "hint", id: "why-" + s.id }, why) : null));
       };
       // An ended session whose sign-in alert is still unread keeps its This was me.
       const endedRow = (s) => {
         const alert = alertOf(s);
         return h("li", { class: "muted", "data-session": s.id },
-          device(s) + ", " + (ENDED_WORDS[s.ended_by] || s.ended_by) + " " + formatTime(s.ended_at) + ".",
-          alert ? [" Its sign-in alert is not confirmed. ", confirmButton(cur, alert, s, device(s))] : null);
+          (Object.hasOwn(ENDED_LINES, s.ended_by) ? ENDED_LINES[s.ended_by]({ device: device(s), when: formatTime(s.ended_at) })
+            : M.t("sessions.ended.other", { device: device(s), how: s.ended_by, when: formatTime(s.ended_at) })),
+          alert ? [" ", M.t("sessions.alert_open"), " ", confirmButton(cur, alert, s, device(s))] : null);
       };
       // Alerts with no session in the list (an address change, §2.6.3).
       const loose = alerts.filter((a) => !(a.target && a.target.type === "session" && sessions.some((s) => s.id === a.target.id)));
@@ -175,14 +194,14 @@ window.Maity = window.Maity || {};
         h("ul", { class: "session-list" }, active.map(row)),
         others.length ? h("div", { class: "actions" },
           h("button", { type: "button", disabled: othersBlocked ? true : null, "aria-describedby": othersBlocked ? "why-end-others" : null,
-            onclick: () => act("Ending…", () => M.api.post("/auth/sessions/end-others", {}), "Every other session was ended"
-              + (cur && !cur.good_standing ? " that is not confirmed." : ".")) }, "End all other sessions"),
-          othersBlocked ? h("p", { class: "hint", id: "why-end-others" }, "This session is too new to end older ones.")
-            : cur && !cur.good_standing ? h("p", { class: "hint" }, "From here this ends only the other sessions that are not confirmed.") : null) : null,
-        loose.length ? [h("h4", null, "Other alerts"), h("ul", { class: "session-alerts" }, loose.map((a) => h("li", { "data-alert": a.id },
+            onclick: () => act(M.t("sessions.ending"), () => M.api.post("/auth/sessions/end-others", {}),
+              cur && !cur.good_standing ? M.t("sessions.ended_others.unconfirmed") : M.t("sessions.ended_others")) }, M.t("sessions.end_others")),
+          othersBlocked ? h("p", { class: "hint", id: "why-end-others" }, M.t("sessions.cannot_end.too_new"))
+            : cur && !cur.good_standing ? h("p", { class: "hint" }, M.t("sessions.end_others.unconfirmed_hint")) : null) : null,
+        loose.length ? [h("h4", null, M.t("sessions.other_alerts")), h("ul", { class: "session-alerts" }, loose.map((a) => h("li", { "data-alert": a.id },
           a.title, h("span", { class: "muted" }, " · " + formatTime(a.at)), " ", confirmButton(cur, a, null, a.title))))] : null,
         ended.length ? h("details", { class: "sessions-ended", open: endedOpen ? true : null },
-          h("summary", null, "Ended in the last 30 days (" + ended.length + ")"),
+          h("summary", null, M.t("sessions.ended_list", { count: ended.length })),
           h("ul", null, ended.map(endedRow))) : null,
         await addressChange(ctx, cur, sessions, act));
       return data;
@@ -215,18 +234,18 @@ window.Maity = window.Maity || {};
     if (!held) return null;
     const names = { id: held.id, address: held.address };
     const from = sessions.find((s) => s.id === held.session_id);
-    const why = !cur || !cur.good_standing ? "Only a confirmed session can decide it."
-      : young(cur, 24) ? "Approving needs a session at least a day old; this one can reject it." : null;
+    const why = !cur || !cur.good_standing ? M.t("sessions.address.confirmed_only")
+      : young(cur, 24) ? M.t("sessions.address.too_new") : null;
     return h("div", { class: "address-change", role: "group", "aria-labelledby": "address-change-title" },
-      h("h4", { id: "address-change-title" }, "An address change waits for you"),
-      h("p", null, held.address === null ? "Remove the sign-in address" : "Change the sign-in address to " + held.address,
-        h("span", { class: "muted" }, ", asked " + formatTime(held.requested_at)
-          + (from ? " from " + device(from) + ", " + (from.created ? from.created.ip : from.ip) + ", " + (from.good_standing ? "confirmed" : "not confirmed") : "") + ".")),
+      h("h4", { id: "address-change-title" }, M.t("sessions.address.title")),
+      h("p", null, held.address === null ? M.t("sessions.address.remove") : M.t("sessions.address.change", { address: held.address }),
+        h("span", { class: "muted" }, " · ", !from ? M.t("sessions.address.asked", { when: formatTime(held.requested_at) })
+          : askedFrom(held, from))),
       h("div", { class: "actions" },
         h("button", { type: "button", class: "small", disabled: why ? true : null,
-          onclick: () => act("Approving…", () => M.api.post("/me/notification-settings/email/address-change/approve", names), "Approved.") }, "Approve"),
+          onclick: () => act(M.t("sessions.address.approving"), () => M.api.post("/me/notification-settings/email/address-change/approve", names), M.t("sessions.address.approved")) }, M.t("sessions.address.approve")),
         h("button", { type: "button", class: "small", disabled: !cur || !cur.good_standing ? true : null,
-          onclick: () => act("Rejecting…", () => M.api.post("/me/notification-settings/email/address-change/reject", names), "Rejected.") }, "Reject")),
+          onclick: () => act(M.t("sessions.address.rejecting"), () => M.api.post("/me/notification-settings/email/address-change/reject", names), M.t("sessions.address.rejected")) }, M.t("sessions.address.reject"))),
       why ? h("p", { class: "hint" }, why) : null);
   }
 
@@ -248,14 +267,14 @@ window.Maity = window.Maity || {};
       return { a, s, live: s ? liveOf(sessions, s).filter((x) => !x.current) : [] };
     }).filter(({ s, live }) => s && !s.current && MAIL.includes(s.method) && live.length);
     if (!shown.length) return null;
-    const box = h("div", { class: "signin-banner", role: "region", "aria-label": "New sign-ins by mail" });
+    const box = h("div", { class: "signin-banner", role: "region", "aria-label": M.t("sessions.banner.label") });
     const status = M.statusLine();
     const run = async (fn) => {
       status.busy("…");
       try {
         await fn();
       } catch (err) {
-        status.fail("Not done: ", said(err));
+        status.fail(M.t("sessions.not_done"), said(err));
         return;
       }
       onChange();
@@ -264,12 +283,12 @@ window.Maity = window.Maity || {};
       const why = live.map((x) => cannotEnd(cur, x)).find(Boolean) || null;
       const through = live.filter((x) => x.id !== s.id);
       append(box, h("div", { class: "flag" },
-        h("p", null, "New sign-in by mail: " + device(s) + ", " + (s.created ? s.created.ip : s.ip) + ", " + formatTime(s.created_at) + "."
-          + (s.ended_at ? " It has ended, but a session it approved is still active: " + through.map(device).join(", ") + "."
-            : through.length ? " It approved: " + through.map(device).join(", ") + "." : "")),
+        h("p", null, M.t("sessions.banner.new", { device: device(s), ip: s.created ? s.created.ip : s.ip, when: formatTime(s.created_at) }),
+          s.ended_at ? [" ", M.t("sessions.banner.ended_but", { devices: M.fmt.list(through.map(device)) })]
+            : through.length ? [" ", M.t("sessions.banner.approved", { devices: M.fmt.list(through.map(device)) })] : null),
         h("button", { type: "button", class: "small", disabled: why ? true : null, "aria-describedby": why ? "banner-why-" + i : null,
-          onclick: () => run(async () => { for (const x of live) await end(x); }) }, "End this session"), " ",
-        mayConfirm(cur, a, s) ? h("button", { type: "button", class: "small", onclick: () => run(() => confirm(a)) }, "This was me") : null,
+          onclick: () => run(async () => { for (const x of live) await end(x); }) }, M.t("sessions.banner.end")), " ",
+        mayConfirm(cur, a, s) ? h("button", { type: "button", class: "small", onclick: () => run(() => confirm(a)) }, M.t("sessions.this_was_me")) : null,
         why ? h("p", { class: "hint", id: "banner-why-" + i }, why) : null));
     });
     append(box, status.el);

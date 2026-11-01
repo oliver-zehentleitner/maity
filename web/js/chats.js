@@ -1,8 +1,9 @@
 // Every chat across one's projects (/chats, the header's Chat button),
 // laid out as a project's Chat tab (js/chat.js): the list beside the open
 // conversation, on a phone the list its own screen. The list merges each
-// project's direct and group chats (docs/api.md §9.3, one read per project),
-// unread first, then the newest, each with its project. A conversation opens
+// project's direct and group chats (docs/api.md §9.3, GET /me/conversations),
+// in the hub's order (four bands: pinned with unread, unpinned with unread,
+// quiet pinned, the rest), each with its project; a human pins one here too. A conversation opens
 // in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
 // context.
 //
@@ -24,12 +25,12 @@ window.Maity = window.Maity || {};
   const NOTICE_MS = 15000;
   const chatLink = (full, id) => "/chats" + (id ? "/" + M.api.projectPath(full) + "/" + encodeURIComponent(id) : "");
 
-  // Unread first, then the newest, then by title; the open one counts as read.
-  function ordered(all, currentKey) {
-    const at = (x) => x.chat.last_message_at || "";
-    const unread = (x) => (x.key !== currentKey && (x.chat.unread || x.chat.mentions) ? 1 : 0);
-    return all.slice().sort((a, b) => unread(b) - unread(a)
-      || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.chat.title.localeCompare(b.chat.title)));
+  // The hub's order across projects (`rank`, its position in GET
+  // /me/conversations), never re-sorted; agents without a conversation after it, by title.
+  function ordered(all) {
+    const ranked = (x) => typeof x.chat.rank === "number";
+    return all.slice().sort((a, b) => (ranked(a) && ranked(b) ? a.chat.rank - b.chat.rank
+      : ranked(a) ? -1 : ranked(b) ? 1 : a.chat.title.localeCompare(b.chat.title)));
   }
 
   // The merged list. pctxs: full name -> the project's context; open: the
@@ -39,7 +40,7 @@ window.Maity = window.Maity || {};
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
     const failed = h("div");
-    const none = h("p", { class: "muted" }, "You own no agents in your projects, and are in no group chat.");
+    const none = h("p", { class: "muted" }, M.t("chats.none"));
     none.hidden = true;
     // slug -> { chats, groups } as last read.
     const read = {};
@@ -51,9 +52,10 @@ window.Maity = window.Maity || {};
       clear(ul);
       const all = [];
       Object.keys(read).forEach((slug) => read[slug].chats.forEach((chat) => all.push({ slug, chat, key: slug + "/" + chat.id })));
-      ordered(all, currentKey).forEach((x) => {
+      ordered(all).forEach((x) => {
         const pctx = pctxs[x.slug];
-        const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null);
+        const onPin = pctx.me.kind === "human" ? (chat) => P.togglePin(pctx, chat, status, () => refresh()) : null;
+        const li = P.listItem(pctx, x.chat, x.key === currentKey ? x.chat.id : null, onPin);
         const a = li.querySelector("a.conv");
         if (a) a.className += " with-project";
         // Its project as a 14 px mark after the who line, as a message's
@@ -62,7 +64,7 @@ window.Maity = window.Maity || {};
         const name = pctx.project.name || x.slug;
         const who = a && a.querySelector(".conv-sub");
         if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
-        if (a) append(a, h("span", { class: "visually-hidden" }, ", in " + name));
+        if (a) append(a, h("span", { class: "visually-hidden" }, ", ", M.t("chats.in_project", { project: name })));
         append(ul, li);
       });
       none.hidden = all.length > 0 || Object.keys(read).length === 0;
@@ -87,11 +89,11 @@ window.Maity = window.Maity || {};
       try {
         list = await M.api.getAll("/me/conversations?observed=true");
       } catch (err) {
-        append(clear(failed), h("p", { class: "send-status failed" }, "Your chats could not be read: " + err.message));
+        append(clear(failed), h("p", { class: "send-status failed" }, M.t("chats.read_failed", { reason: err.message })));
         return;
       }
       const bySlug = {};
-      list.items.forEach((c) => { const slug = c.project && c.project.full_name; (bySlug[slug] = bySlug[slug] || []).push(c); });
+      list.items.forEach((c, i) => { c.rank = i; const slug = c.project && c.project.full_name; (bySlug[slug] = bySlug[slug] || []).push(c); });
       Object.keys(pctxs).forEach((slug) => take(slug, bySlug[slug] || []));
       clear(failed);
     }
@@ -113,9 +115,9 @@ window.Maity = window.Maity || {};
       });
       return reading;
     };
-    const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
-      h("div", { class: "toolbar" }, h("h2", null, "Chats")),
-      h("p", { class: "muted" }, "Your chats in every project, unread first."),
+    const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
+      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title"))),
+      h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
     return { el, refresh, groups: () => (open && read[open.slug] ? read[open.slug].groups : []) };
   }
@@ -127,7 +129,7 @@ window.Maity = window.Maity || {};
     const pctxs = {};
     const unreadable = [];
     await Promise.all(ctx.projects.map((p) => M.projectContext(ctx, p.full_name, chatLink)
-      .then((pctx) => { pctxs[p.full_name] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, "Could not read " + p.name + ": " + err.message)); })));
+      .then((pctx) => { pctxs[p.full_name] = pctx; }, (err) => { unreadable.push(h("p", { class: "send-status failed" }, M.t("chats.project_failed", { project: p.name, reason: err.message }))); })));
     append(root, unreadable);
     // The projects an agent is in, as far as the reader may see: those of
     // the reader's whose member list names it (tsk-p94e7njrmg1p), in the
@@ -183,8 +185,8 @@ window.Maity = window.Maity || {};
 
     if (!open || !pctx) {
       append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,
-        open ? h("p", { class: "error", role: "alert" }, "No project of yours named " + open.slug + ".")
-          : h("p", { class: "chat-none muted" }, "Pick a conversation.")));
+        open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
+          : h("p", { class: "chat-none muted" }, M.t("chats.pick"))));
       await list.refresh();
       return;
     }

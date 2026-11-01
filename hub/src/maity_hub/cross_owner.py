@@ -21,11 +21,13 @@ from maity_hub import namespace, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
+from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
 from maity_hub.views import principal_id
 
 KIND = "cross_owner_reports_to"
-HUB_REASONS = ("superseded", "member_removed")  # what the hub itself withdraws a pair for
+# What the hub itself withdraws a pair for.
+HUB_REASONS = ("superseded", "member_removed", "owner_not_member")
 
 
 def owner_of(conn: Connection, row: Any) -> str | None:
@@ -90,8 +92,11 @@ def open_pair(conn: Connection, target_id: int, *, besides: str | None = None) -
     ]
 
 
-def withdraw_for_member(conn: Connection, member_id: int, actor: Actor | None) -> None:
-    """The removal of either member of an edge withdraws its requests (`member_removed`)."""
+def withdraw_for_member(
+    conn: Connection, member_id: int, actor: Actor | None, reason: str = "member_removed"
+) -> None:
+    """The removal of either member of an edge withdraws its requests (`member_removed`); so
+    does an owner that is no member any more (`owner_not_member`, §6.2)."""
     from maity_hub.routes.requests import close_request
 
     rows = conn.execute(
@@ -106,7 +111,7 @@ def withdraw_for_member(conn: Connection, member_id: int, actor: Actor | None) -
     for row in rows:
         proposal = row.proposal or {}
         if proposal.get("kind") == KIND and member_id in (proposal["target"], proposal["boss"]):
-            close_request(conn, row.id, "withdrawn", actor, reason="member_removed")
+            close_request(conn, row.id, "withdrawn", actor, reason=reason)
 
 
 def join_waits(conn: Connection, row: Any) -> bool:
@@ -122,6 +127,20 @@ def join_waits(conn: Connection, row: Any) -> bool:
     )
     side = owner_of(conn, boss)
     return owner is not None and side is not None and owner != side
+
+
+def check_may_supersede(conn: Connection, mine: Membership, target_id: int) -> None:
+    """A further `PATCH` of `reports_to` ends the open pair; an agent that did not ask for it
+    does not end the decision of the two owners (§6.2 "Pending"), also where its `PATCH` would
+    wait for a human's go first."""
+    pending = open_pair(conn, target_id)
+    if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
+        raise ApiError(
+            403,
+            "forbidden",
+            "an agent that did not ask for the edge does not end the owners' decision",
+            {"reason": "pending_consent"},
+        )
 
 
 def withdraw_open(conn: Connection, target_id: int, actor: Actor | None, reason: str) -> None:

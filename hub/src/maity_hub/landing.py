@@ -30,6 +30,14 @@ LANGUAGES = ("en", "de")  # the languages of §6.2
 SECTION_MAX = 20
 STORED_MAX = 256 * 1024  # bytes of UTF-8 (§16.7)
 FIELDS = ("enabled", "default_language", "pages", "footer")
+# What the admin sets and reads: `GET /landing` answers `FIELDS` only (§16.7.2, "Not public").
+VARIANT_FIELDS = ("variants", "campaigns")
+ADMIN_FIELDS = (*FIELDS, *VARIANT_FIELDS)
+VARIANTS_MAX = 5
+CAMPAIGNS_MAX = 200
+VARIANT_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")  # 1–40, no `-` at either end
+CAMPAIGN_CODE = re.compile(r"[a-z0-9-]{1,40}")
+DEFAULT_VARIANT = "default"  # the main page's name in the counts, never a slug
 STATS = ("people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online")
 DEMO_KINDS = ("cmd", "out", "note")  # the lines of the demo's terminal (§16.7)
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
@@ -115,7 +123,8 @@ def _control(value: object) -> bool:
 # A field is `(kind, …, required)`: ("text", maximum, required), ("md", bytes, required),
 # ("link", required), ("int", low, high, required), ("object", {name: field}, required),
 # ("list", item, low, high, required), ("choice", options, low, high, required),
-# ("enum", options, required) and ("names", pattern, high, required). An absent optional field
+# ("enum", options, required), ("names", pattern, high, required) and ("agents", high, required:
+# slugs of `AGENTS`, each once). An absent optional field
 # is left out of the stored page.
 
 Spec = tuple[Any, ...]
@@ -128,6 +137,39 @@ def _link() -> Spec:
 def _points() -> Spec:
     return ("list", ("text", 120, True), 0, 5, False)
 
+
+# The text of a header link, on any section: the header shows only the sections that have one.
+NAV_LABEL: Spec = ("text", 24, False)
+
+# The marks that are a shape on transparency (Simple Icons' `pi`); every other file is a white
+# mark on an opaque black tile and is read by its luminance, which drops the tile (§16.7).
+ALPHA_MARKS = frozenset({"pi"})
+
+# The agents a `works_with` section may name, by slug, with the name shown. The logo of each is
+# `landing_assets/agents/<slug>.svg`; a new agent is a new line here and a new file there, never
+# a field of the page (§16.7).
+AGENTS: dict[str, str] = {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "opencode": "OpenCode",
+    "gemini": "Gemini",
+    "antigravity": "Antigravity",
+    "copilot": "Copilot",
+    "cursor": "Cursor",
+    "pi": "Pi",
+    "goose": "Goose",
+    "cline": "Cline",
+    "roo": "Roo Code",
+    "kilo": "Kilo Code",
+    "amp": "Amp",
+    "droid": "Droid",
+    "windsurf": "Windsurf",
+    "zed": "Zed",
+    "kiro-cli": "Kiro CLI",
+    "trae": "Trae",
+    "openclaw": "OpenClaw",
+}
+NAV_LABELS_MAX = 4
 
 SECTIONS: dict[str, dict[str, Spec]] = {
     "hero": {
@@ -234,6 +276,11 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         "text": ("text", 300, False),
         "cta": _link(),
     },
+    "works_with": {
+        "label": ("text", 40, True),
+        "items": ("agents", len(AGENTS), True),
+        "more": ("text", 60, False),
+    },
     "text": {"title": ("text", 120, False), "markdown": ("md", 16 * 1024, True)},
     "activity": {"title": ("text", 120, False), "count": ("int", 1, 20, True)},
     "profiles": {
@@ -332,6 +379,20 @@ def _field(value: Any, spec: Spec, path: str, found: Problems) -> Any:
             found.add(path, "invalid")
             return None
         return list(picked)
+    if kind == "agents":
+        slugs = value if isinstance(value, list) else None
+        if slugs is None or not 1 <= len(slugs) <= spec[1]:
+            found.add(path, "invalid")
+            return None
+        seen: set[str] = set()
+        for index, slug in enumerate(slugs):
+            if not isinstance(slug, str) or slug not in AGENTS:
+                found.add(f"{path}.{index}", "unknown_agent")
+            elif slug in seen:
+                found.add(f"{path}.{index}", "duplicate")
+            else:
+                seen.add(slug)
+        return list(slugs) if not any(p.startswith(path + ".") for p in found.fields) else None
     names = value if isinstance(value, list) else None  # "names"
     if (
         names is None
@@ -391,7 +452,9 @@ def _section(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
     elif not isinstance(value["enabled"], bool):
         found.add(f"{path}.enabled", "invalid")
     body = {k: v for k, v in value.items() if k not in ("type", "enabled")}
-    checked = _object(body, SECTIONS[value["type"]], path, found)
+    if isinstance(body.get("nav_label"), str):
+        body["nav_label"] = body["nav_label"].strip()  # trimmed, then 1–24 characters (§16.7)
+    checked = _object(body, {**SECTIONS[value["type"]], "nav_label": NAV_LABEL}, path, found)
     if checked is None or not isinstance(value.get("enabled"), bool):
         return None
     return {"type": value["type"], "enabled": value["enabled"], **checked}
@@ -426,6 +489,19 @@ def _page(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
             checked = _section(one, f"{path}.sections.{index}", found)
             if checked is not None:
                 sections.append(checked)
+        labelled = 0
+        for index, one in enumerate(raw):
+            # Only an enabled section is a link, and the header holds at most four (§16.7).
+            label = one.get("nav_label") if isinstance(one, dict) else None
+            if (
+                isinstance(one, dict)
+                and one.get("enabled") is True
+                and isinstance(label, str)
+                and label.strip()  # a label of blanks is already invalid, and no second error
+            ):
+                labelled += 1
+                if labelled > NAV_LABELS_MAX:
+                    found.add(f"{path}.sections.{index}.nav_label", "too_many")
     if title is None:
         return None
     return {"title": title, "description": description, "sections": sections}
@@ -448,6 +524,85 @@ def _footer(value: Any, found: Problems) -> dict[str, Any] | None:
     return {"operator": checked.get("operator"), "social": checked.get("social", [])}
 
 
+def _variant(value: Any, path: str, found: Problems) -> dict[str, Any] | None:
+    """One variant: `{pages}`, the pages checked as the main page's are."""
+    if not isinstance(value, dict):
+        found.add(path, "invalid")
+        return None
+    for name in value:
+        if name != "pages":
+            found.add(f"{path}.{name}", "extra_forbidden")
+    raw = value.get("pages")
+    if raw is None:
+        found.add(f"{path}.pages", "required")
+        return None
+    if not isinstance(raw, dict):
+        found.add(f"{path}.pages", "invalid")
+        return None
+    pages: dict[str, Any] = {}
+    for tag, page in raw.items():
+        if tag not in LANGUAGES:
+            found.add(f"{path}.pages.{tag}", "invalid")
+            continue
+        checked = _page(page, f"{path}.pages.{tag}", found)
+        if checked is not None:
+            pages[tag] = checked
+    return {"pages": pages}
+
+
+def _variants(value: Any, found: Problems) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or len(value) > VARIANTS_MAX:
+        found.add("variants", "invalid")
+        return None
+    variants: dict[str, Any] = {}
+    for slug, one in value.items():
+        here = f"variants.{slug}"
+        if (
+            not isinstance(slug, str)
+            or VARIANT_SLUG.fullmatch(slug) is None
+            or slug == DEFAULT_VARIANT
+        ):
+            found.add(here, "invalid")
+            continue
+        checked = _variant(one, here, found)
+        if checked is not None:
+            variants[slug] = checked
+    return variants
+
+
+def _campaigns(value: Any, found: Problems) -> list[dict[str, Any]] | None:
+    if not isinstance(value, list) or len(value) > CAMPAIGNS_MAX:
+        found.add("campaigns", "invalid")
+        return None
+    campaigns: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, one in enumerate(value):
+        here = f"campaigns.{index}"
+        if not isinstance(one, dict):
+            found.add(here, "invalid")
+            continue
+        for name in one:
+            if name not in ("code", "label"):
+                found.add(f"{here}.{name}", "extra_forbidden")
+        code = one.get("code")
+        if code is None:
+            found.add(f"{here}.code", "required")
+        elif not isinstance(code, str) or CAMPAIGN_CODE.fullmatch(code) is None:
+            found.add(f"{here}.code", "invalid")
+        elif code in seen:
+            found.add(f"{here}.code", "duplicate")
+        else:
+            seen.add(code)
+        label = None
+        if one.get("label") is None:
+            found.add(f"{here}.label", "required")
+        else:
+            label = _field(one["label"], ("text", 120, True), f"{here}.label", found)
+        if isinstance(code, str) and label is not None and code in seen:
+            campaigns.append({"code": code, "label": label})
+    return campaigns
+
+
 def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
     """The setting after the instance admin's `PATCH` body: a field named replaces the stored
     one as a whole, a field left out stays. `invalid` names each field by its path."""
@@ -456,7 +611,7 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
     found = Problems()
     after = dict(current)
     for name, value in body.items():
-        if name not in FIELDS:
+        if name not in ADMIN_FIELDS:
             found.add(name, "extra_forbidden")
         elif name == "enabled":
             if isinstance(value, bool):
@@ -481,6 +636,14 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
                 if checked is not None:
                     pages[tag] = checked
             after[name] = pages
+        elif name == "variants":
+            variants = _variants(value, found)
+            if variants is not None:
+                after[name] = variants
+        elif name == "campaigns":
+            campaigns = _campaigns(value, found)
+            if campaigns is not None:
+                after[name] = campaigns
         else:  # footer
             footer = (
                 _footer(value, found) if value is not None else {"operator": None, "social": []}
@@ -489,10 +652,15 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
                 after[name] = footer
     if not found and after["enabled"] and after["default_language"] not in after["pages"]:
         found.add(f"pages.{after['default_language']}", "required")
+    if not found and after["enabled"]:  # a variant is a page in the default language, too
+        for slug, one in after["variants"].items():
+            if after["default_language"] not in one["pages"]:
+                found.add(f"variants.{slug}.pages.{after['default_language']}", "required")
     if (
         not found
         and len(json.dumps(after["pages"], ensure_ascii=False).encode())
         + len(json.dumps(after["footer"], ensure_ascii=False).encode())
+        + len(json.dumps(after["variants"], ensure_ascii=False).encode())
         > STORED_MAX
     ):
         found.add("pages", "too_large")
@@ -510,6 +678,8 @@ def stored(conn: Connection) -> dict[str, Any]:
             "default_language": "en",
             "pages": {},
             "footer": {"operator": None, "social": []},
+            "variants": {},
+            "campaigns": [],
             "updated_at": None,
             "updated_by": None,
         }
@@ -518,6 +688,8 @@ def stored(conn: Connection) -> dict[str, Any]:
         "default_language": row.default_language,
         "pages": row.pages or {},
         "footer": row.footer or {"operator": None, "social": []},
+        "variants": row.variants or {},
+        "campaigns": row.campaigns or [],
         "updated_at": ts(row.updated_at),
         "updated_by": row.updated_by,
     }
@@ -558,14 +730,23 @@ def save(conn: Connection, value: dict[str, Any], by: str) -> None:
             default_language=value["default_language"],
             pages=value["pages"],
             footer=value["footer"],
+            variants=value["variants"] or None,
+            campaigns=value["campaigns"] or None,
             updated_at=clock.now(),
             updated_by=by,
         )
     )
 
 
+def configured(value: dict[str, Any]) -> bool:
+    """Whether variants or campaigns are set: only then the hub rewrites a link, keeps an origin,
+    counts and answers `private` (§16.7.2, "Only while configured")."""
+    return bool(value["variants"] or value["campaigns"])
+
+
 def public(value: dict[str, Any]) -> dict[str, Any]:
-    """`GET /landing`: the same body for every visitor, never who wrote it."""
+    """`GET /landing`: the same body for every visitor, never who wrote it, nor the variants
+    and campaigns, which are the admin's (§16.7.2)."""
     if not value["enabled"]:
         return {"enabled": False}
     return {key: value[key] for key in (*FIELDS, "updated_at")}

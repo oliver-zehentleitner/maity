@@ -13,27 +13,33 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its run still in the queue or running;
-# main keeps one run per merge (its group is the commit), never cancelled.
+# A new push to a pull request cancels its run still in the queue or running.
+# Main has one group for all pushes and is never cancelled while it runs: GitHub keeps the
+# running run and replaces a run still waiting by the newest, so at most one main run is
+# running and one is waiting, however fast merges follow each other. The waiting run that
+# is replaced is cancelled by GitHub and shows as cancelled; that is not a failure, the
+# newer commit's run covers it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'main' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
     working-directory: hub
 
-# The three database jobs may run on the maintainer's own machine (deploy/runner/): the
-# repository variable HUB_RUNNER_LABEL holds a label prefix, e.g. maity-hub, and each job asks for
-# [self-hosted, <prefix>-sqlite], <prefix>-pg or <prefix>-maria: one runner service per job type, so a
-# push's three jobs run side by side and two Postgres jobs never share port 5432.
+# The two database jobs here (hub-sqlite, hub-postgresql) may run on the maintainer's own machine
+# (deploy/runner/): the repository variable HUB_RUNNER_LABEL holds a label prefix, e.g. maity-hub,
+# and each job asks for [self-hosted, <prefix>-sqlite] or <prefix>-pg: one runner service per job
+# type, so a push's jobs run side by side and two Postgres jobs never share port 5432.
 # HUB_RUNNER_TYPES, a space-separated list of sqlite, pg and maria, names the jobs that go to the
 # machine (unset or empty: all three); a job whose type is not listed stays on a hosted runner, so a
-# single runner for one type can be tried without the other two jobs waiting for a runner that is not there.
+# single runner for one type can be tried without the other jobs waiting for a runner that is not there.
 # Only a push (to main) goes to the machine: every pull request runs on GitHub-hosted runners, in
 # parallel, so that a queue of pull requests for one runner per job type cannot hold up the checks
 # people wait for. Unset or empty, they run on GitHub-hosted runners; unsetting the variable is the
 # whole fallback. Setup: deploy/runner/README.md.
+# The MariaDB suite is not here: it runs hourly on main, outside the pull request gate and ci-ok
+# (hub-mariadb.yml, and the entry on it in context/process.md).
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
   # merges into: a suite runs only when its part changed. A push to main, or a
@@ -297,37 +303,6 @@ jobs:
       - run: make install
       - run: make test
 
-  hub-mariadb:
-    needs: changes
-    if: needs.changes.outputs.hub == 'true'
-    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
-    services:
-      mariadb:
-        image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it
-        env:
-          MARIADB_USER: maity
-          MARIADB_PASSWORD: ci-only
-          MARIADB_DATABASE: maity
-          MARIADB_ROOT_PASSWORD: ci-only  # the test workers create their own databases
-        ports: ["127.0.0.1:3306:3306"]
-        options: >-
-          --health-cmd "healthcheck.sh --connect --innodb_initialized"
-          --health-interval 2s --health-timeout 5s --health-retries 30
-    env:
-      MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3306/maity
-      MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3306/maity
-    steps:
-      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
-        working-directory: .  # before the checkout, `hub` does not exist yet
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - run: make install
-      - run: make test
-
   # The agent-side command: lint, types and tests on the oldest and the newest
   # Python it supports. Standard library only, so nothing else is installed.
   cli:
@@ -352,7 +327,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, hub-mariadb, cli]
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli]
     runs-on: ubuntu-latest
     defaults:
       run:

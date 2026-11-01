@@ -16,13 +16,13 @@ window.Maity = window.Maity || {};
   const COLUMNS = ["proposed", "open", "in_progress", "blocked", "review", "done", "cancelled"];
   // Getters: a label is the catalog's when shown.
   const COLUMN_LABELS = {
-    get proposed() { return M.t("overview.column.proposed"); },
-    get open() { return M.t("overview.column.open"); },
-    get in_progress() { return M.t("overview.column.in_progress"); },
-    get blocked() { return M.t("overview.column.blocked"); },
-    get review() { return M.t("overview.column.review"); },
-    get done() { return M.t("overview.column.done"); },
-    get cancelled() { return M.t("overview.column.cancelled"); },
+    get proposed() { return M.t("cards.column.proposed"); },
+    get open() { return M.t("cards.column.open"); },
+    get in_progress() { return M.t("cards.column.in_progress"); },
+    get blocked() { return M.t("cards.column.blocked"); },
+    get review() { return M.t("cards.column.review"); },
+    get done() { return M.t("cards.column.done"); },
+    get cancelled() { return M.t("cards.column.cancelled"); },
   };
   // A column's count as a screen reader hears it in the bar's name.
   const COLUMN_COUNTS = {
@@ -94,7 +94,10 @@ window.Maity = window.Maity || {};
     const exp = p.keep_the_why_export;
     const rows = [h("dt", null, M.t("overview.project.repository")),
       h("dd", null, repo ? out(repo, String(repo).replace(/^https:\/\//, ""), "repo") : M.t("overview.project.no_repository"),
-        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null)];
+        !repo && admin && ctx.openSettings ? [" ", h("button", { type: "button", class: "small", "data-key": "set-repo", onclick: () => ctx.openSettings() }, M.t("overview.project.set_repository"))] : null,
+        // The project's own links (§6.11) as buttons beside the repository, each in a tab of its own.
+        (ctx.ownLinks ? ctx.ownLinks(p) : []).map((x) => [" ", h("a", { class: "button-link small project-own-link", href: x.url, target: "_blank", rel: ["noopener", "noreferrer"].join(" "),
+          "data-link": x.key, title: x.url }, x.label)]))];
     rows.push(h("dt", null, M.t("overview.project.state")), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, M.t("overview.project.policy")), h("dd", null, p.policy.preset));
     // The contract on the forge at the default branch (the maintainer's
@@ -185,7 +188,7 @@ window.Maity = window.Maity || {};
     const counts = (o.board && o.board.counts) || {};
     const total = COLUMNS.reduce((n, s) => n + (counts[s] || 0), 0);
     const bar = h("div", { class: "overview-bar", role: "img",
-      "aria-label": new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(COLUMNS.map((s) => COLUMN_COUNTS[s](counts[s] || 0))) });
+      "aria-label": M.fmt.list(COLUMNS.map((s) => COLUMN_COUNTS[s](counts[s] || 0))) });
     COLUMNS.forEach((s) => {
       if (!counts[s]) return;
       const seg = h("span", { class: "overview-seg seg-" + s });

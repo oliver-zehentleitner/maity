@@ -28,6 +28,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -55,6 +56,7 @@ ID = 40  # length of a hub-generated id
 INSTANCE = 5  # an agent instance id, `[2-9a-hjkmnp-z]{4,5}` (§6.17)
 HANDLE = 64
 TITLE = 200  # characters, docs/api.md §1.7
+BRIDGE_PURPOSE = 200  # characters, docs/api.md §2.3 ("The bridge")
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
 # A namespace owner is a human or an organisation: one of the two foreign keys, and
@@ -252,6 +254,9 @@ pending_registration = Table(
     Column("language", String(35)),
     Column("terms_version", String(64)),  # what the request saw, never an acceptance
     Column("next", String(2048)),
+    # The campaign link the visitor came by, `{variant, campaign}` (§16.7.2): only what still
+    # names a variant and a campaign when the registration is made.
+    Column("origin", JSON_VALUE),
     Column("nonce_hash", String(64)),
     Column("wrong_passwords", Integer, nullable=False, server_default="0"),
     Column("created_at", UtcDateTime, nullable=False),
@@ -338,6 +343,8 @@ agent_profile = Table(
     Column("display_name", String(TITLE), nullable=False),
     Column("git_name", String(TITLE)),
     Column("git_email", String(TITLE)),
+    # The projects its owner lets it go to (§6.3): null for any, else up to 200 full names.
+    Column("allowed_projects", JSON_VALUE),
     Column("created_at", UtcDateTime, nullable=False),
     # A deleted profile stays as a tombstone (§6.3); `live` is true until then and NULL
     # after, so that its handle is free for a new profile of the same owner at once.
@@ -384,6 +391,12 @@ human_session = Table(
     Column("password_at", UtcDateTime),
     Column("second_factor_at", UtcDateTime),
     Column("second_factor", String(16)),
+    # The mail factor of a second-factor session (§2.8.8): the HMACs of the mailed token and
+    # code, which only this session's browser can use, and how many mails it was sent.
+    Column("mail_token_mac", String(HEX_SHA256)),
+    Column("mail_code_mac", String(HEX_SHA256)),
+    Column("mail_sent", Integer, nullable=False, server_default="0"),
+    Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
     **MYSQL_TABLE,
 )
@@ -534,6 +547,8 @@ project = Table(
     Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # The project's own links (§6.11): issues, wiki, discussions, chat, each an https URL.
+    Column("links", JSON_VALUE),
     # The project's public page and the text on it (§16.9): both belong to the namespace
     # owner and are off and empty until they choose; not part of the policy.
     Column("public_page", String(8), nullable=False, server_default="off"),
@@ -560,6 +575,11 @@ project = Table(
     # many (§3.1 "Bringing your own agent", §6.1).
     Column("member_agents", String(8), nullable=False, server_default="on"),
     Column("member_agents_max", Integer, nullable=False, server_default="3"),
+    # Whether an agent's owner must be a member (§6.1, §6.2 "An agent whose owner is no
+    # member"): members or anyone; null reads from the public page. And the roles an agent of
+    # an owner from outside may hold, null for the default `["coder"]`.
+    Column("agent_owners", String(8)),
+    Column("outside_roles", JSON_VALUE),
     Column("claim_policy", String(32), nullable=False),
     Column("done_authority", String(32), nullable=False),
     Column("contract_arbiter", String(ID + 8), nullable=False),  # member id or trust:admin
@@ -589,12 +609,6 @@ project = Table(
     # The setup options chosen at creation and the ids of the cards made for them
     # (§6.21); NULL for a project that predates the field.
     Column("setup", JSON_VALUE),
-    # The jour fixe (§20.1, §20.2): the schedule, the explicit moderator order, the day
-    # its weekly interval counts from, and the last slot the hub handled.
-    Column("jour_fixe", JSON_VALUE),
-    Column("jour_fixe_moderators", JSON_VALUE),
-    Column("jour_fixe_anchor", UtcDateTime),
-    Column("jour_fixe_last_slot", UtcDateTime),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -707,6 +721,12 @@ membership = Table(
     Column("isolated_reason", String(500)),
     Column("isolated_since", UtcDateTime),
     Column("isolated_by", String(ID)),
+    # The project's newest event when it was isolated, plus one: where the window of an
+    # isolation lifted with `hide_isolation_events` starts (§6.2); null while free.
+    Column("isolated_from_seq", Integer),
+    # The windows of event seqs the agent may never read: `[{from_seq, to_seq}]`, both ends
+    # included, one per isolation lifted with `hide_isolation_events` (§6.2, §8.2).
+    Column("isolation_windows", JSON_VALUE),
     # The pause was set by a manager under `line:lead`, which decides who lifts it (§5.3).
     Column("paused_line", Boolean, nullable=False, server_default=false()),
     # The cross-owner `reports_to` edge was consented with a manager's rights and the
@@ -714,6 +734,11 @@ membership = Table(
     Column("line_consent", Boolean, nullable=False, server_default=false()),
     # What the human told this agent about its job (§3.1); its own and the admins' to read.
     Column("briefing", MARKDOWN_TEXT),
+    # Whose work this agent continues and where the hand-over is written, as the join that
+    # made the membership named them (§3.1): `{member_id, handle, name}` as they were at the
+    # exchange, and `{kind, id}`; null when the join named none. The hub keeps no text.
+    Column("takes_over", JSON_VALUE),
+    Column("handover", JSON_VALUE),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -775,6 +800,33 @@ membership = Table(
     ),
     UniqueConstraint("project_id", "human_id", "active"),
     UniqueConstraint("project_id", "agent_id", "active"),
+    **MYSQL_TABLE,
+)
+
+# A bridge: an agent that lends its hands to another agent of the project, for a purpose
+# (§2.3, "The bridge"). One row per connection that exists; an ended one is deleted, and
+# its events keep it. A connection still waiting for consent is its requests, not a row.
+bridge = Table(
+    "bridge",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    _membership_ref("served", nullable=False),
+    _membership_ref("bridge", nullable=False, index=True),
+    Column("purpose", String(BRIDGE_PURPOSE), nullable=False),
+    Column("cross_owner", Boolean, nullable=False),
+    Column("created_by", String(ID), nullable=False),  # the human who asked
+    Column("created_at", UtcDateTime, nullable=False),
+    # An ended connection stays, in its final state (§12): who ended it (a member id, or
+    # null for the hub) and why (`bridge_ended`, `member_removed`, `owner_not_member`).
+    # `live` is true until then and NULL after, so the pair may connect again at once.
+    Column("ended_at", UtcDateTime),
+    Column("ended_by", String(ID)),
+    Column("end_reason", String(32)),
+    Column("live", Boolean, server_default=true()),  # true until ended; an insert names none
+    UniqueConstraint("served", "bridge", "live"),
+    CheckConstraint("served <> bridge", name="not_self"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
 
@@ -845,6 +897,10 @@ join_link = Table(
     Column("areas", JSON_VALUE, nullable=False),
     Column("capabilities", JSON_VALUE, nullable=False),
     Column("briefing", MARKDOWN_TEXT),  # moves to the membership at the exchange
+    # A first join's `takes_over` (an agent id) and `handover` (`{kind, id}`, §3.1); they
+    # move to the membership at the exchange.
+    Column("takes_over", String(ID)),  # no foreign key: the profile may go (§6.3)
+    Column("handover", JSON_VALUE),
     # The host the link was built on: the join host or the public URL (§3.1).
     Column("via", String(16), nullable=False, server_default="public"),
     # For a member's join, which instance it adds (§6.17); `instance` is what the
@@ -882,6 +938,10 @@ credential = Table(
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
     Column("replaces", String(INSTANCE)),  # the instance it took the place of
+    # Put to rest, answering only when asked by its own address (§6.17): since when and by
+    # whom (a member id); null while awake. Never moves with a `replaces` join.
+    Column("dormant_since", UtcDateTime),
+    Column("dormant_by", String(ID)),
     # What the resume packet's `handover` needs (§5.2): the project's newest event when the
     # exchange created this instance, and `events.after` and `events.cursor` of its first
     # packet (set by its first resume).
@@ -937,6 +997,42 @@ nonce_epoch = Table(
     metadata,
     Column("id", Integer, primary_key=True, autoincrement=False),  # always 1
     Column("since", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The counts of the rate limits, breakers and guess counters, shared by every replica on
+# PostgreSQL, where the migration makes the table UNLOGGED (hub/context/replicas.md 2bd65fec,
+# `shared_counts`). A count per bucket, subject (the limit's key) and fixed window; a breaker's
+# "shut until" is a row whose `window_start` is the epoch and whose `count` is the moment in
+# seconds. SQLite and MariaDB keep the counts in the process.
+rate_count = Table(
+    "rate_count",
+    metadata,
+    Column("bucket", String(64), primary_key=True),
+    Column("subject", String(255), primary_key=True),
+    Column("window_start", UtcDateTime, primary_key=True),
+    Column("count", BigInteger, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Who listens, across replicas (hub/context/replicas.md 387c2409, point 4; UNLOGGED on PostgreSQL).
+hub_pod = Table(
+    "hub_pod",
+    metadata,
+    Column("pod", String(64), primary_key=True),
+    Column("seen_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+long_poll = Table(
+    "long_poll",
+    metadata,
+    Column("wait_id", String(32), primary_key=True),
+    Column("listening_key", String(255), nullable=False),
+    Column("pod", String(64), nullable=False),
+    Column("opened_at", UtcDateTime, nullable=False),
+    Index("ix_long_poll_key", "listening_key"),
+    Index("ix_long_poll_pod", "pod"),
     **MYSQL_TABLE,
 )
 
@@ -1333,6 +1429,7 @@ card_history = Table(
     Column("at", UtcDateTime, nullable=False),
     _membership_ref("actor_membership"),
     Column("actor_session_id", String(ID)),
+    Column("actor_bridge", JSON_VALUE),  # as on `event` (§2.3)
     Column("field", String(32), nullable=False),
     # The link a `links` entry adds or removes: what a replayed add or a repeated
     # removal finds it by, even once the entry is redacted.
@@ -1472,11 +1569,74 @@ request = Table(
 
 # --- the jour fixe (§20) ---------------------------------------------------------------
 
+# A jour fixe series (§20.1): a topic, a circle, its schedule and windows as `config` (the
+# shape `jourfixe.schedule` reads), the day its weekly interval counts from and the last slot
+# the hub handled.
+jour_fixe_series = Table(
+    "jour_fixe_series",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    Column("topic", String(300), nullable=False),
+    Column("circle", String(8), nullable=False),  # owner, humans, all
+    _ref("circle_owner", "human.id"),  # with `circle: owner` only
+    Column("enabled", Boolean, nullable=False),
+    Column("config", JSON_VALUE, nullable=False),
+    Column("anchor", UtcDateTime),
+    Column("last_slot", UtcDateTime),
+    Column("created_by", String(ID)),  # a human id, or null (the upgrade, §20.1)
+    Column("created_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# The right to moderate a series (§20.2): `active`, or `pending` until both the agent's owner
+# and a keeper said go; the consent requests filed for it and who already consented.
+jour_fixe_moderator = Table(
+    "jour_fixe_moderator",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("state", String(8), nullable=False),
+    Column("granted_by", String(ID)),  # the granting human's or member's id
+    Column("granted_at", UtcDateTime, nullable=False),
+    Column("owner_consent", Boolean, nullable=False),
+    Column("keeper_consent", Boolean, nullable=False),
+    Column("owner_request_id", String(ID)),
+    Column("keeper_request_id", String(ID)),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# A member who opted out of a series (§20.2): not invited, not woken, never its moderator.
+jour_fixe_opt_out = Table(
+    "jour_fixe_opt_out",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
+# Who receives a series' report besides the default (§20.2): a member on the list
+# (`receives: true`), or a keeper who took itself off (`receives: false`).
+jour_fixe_recipient = Table(
+    "jour_fixe_recipient",
+    metadata,
+    _ref("series_id", "jour_fixe_series.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("receives", Boolean, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("series_id", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 jour_fixe_round = Table(
     "jour_fixe_round",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
+    _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
     Column("mode", String(16), nullable=False),  # message, chat
@@ -1604,6 +1764,9 @@ event = Table(
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
+    # The bridge that made the call for `actor_membership` (§2.3): `{member_id, instance,
+    # bridge_id}`, kept as it was since a connection can end; no foreign key.
+    Column("actor_bridge", JSON_VALUE),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -1634,6 +1797,17 @@ message_delivery = Table(
     metadata,
     Column("seq", BIG_ID, ForeignKey("event.seq"), primary_key=True),
     Column("delivered_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Who an event reached through a watch (§6.4): fixed when the event is written, kept apart from
+# it because it is never served.
+event_watcher = Table(
+    "event_watcher",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
     **MYSQL_TABLE,
 )
 
@@ -1679,6 +1853,36 @@ conversation_participant = Table(
     **MYSQL_TABLE,
 )
 
+# A human's pinned conversations (docs/api.md §9.3 "Pinned"): its own, across projects,
+# at most 20 (`pins.LIMIT`). A direct conversation's id is its agent's member id, so the
+# project is part of the key. A row lives while its human reads the chat (`pins.prune`).
+conversation_pin = Table(
+    "conversation_pin",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("pinned_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    Index("ix_conversation_pin_project", "project_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's own choice of the meat-proxy mode for one conversation, direct or group (docs/api.md
+# §9.3, "Meat proxy per chat"); no row follows the profile. The id of a direct conversation is
+# the agent's, the same in every project the agent is in, so the project is part of the key and
+# this is no participant row. Deleted with the account, in its export.
+conversation_meat_proxy = Table(
+    "conversation_meat_proxy",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("meat_proxy", Boolean, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
 # How far a member has read a conversation: `unread` counts the others' messages
 # after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(
@@ -1703,8 +1907,39 @@ instance_landing = Table(
     Column("default_language", String(8), nullable=False),
     Column("pages", JSON_VALUE, nullable=False),
     Column("footer", JSON_VALUE),
+    # The variants of the landing page, by slug (`{pages}`), and the campaign codes the
+    # instance admin created, `[{code, label}]` (docs/api.md §16.7.2); null is none.
+    Column("variants", JSON_VALUE),
+    Column("campaigns", JSON_VALUE),
     Column("updated_at", UtcDateTime, nullable=False),
     Column("updated_by", String(ID)),
+    **MYSQL_TABLE,
+)
+
+# The origin of an account that registered through a campaign link (§16.7.2): kept until the
+# account's first agent exchange or 30 days, whichever is first, and then deleted; read only
+# to count that activation and to put it in the person's own export.
+campaign_origin = Table(
+    "campaign_origin",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("variant", String(40), nullable=False),  # `default` is the main page
+    Column("campaign", String(40)),
+    Column("registered_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# What the hub counts about the landing page and its variants, per UTC day, variant and
+# campaign (`""` for none): sums, never a visit (§16.7.2). Kept for 400 days.
+campaign_count = Table(
+    "campaign_count",
+    metadata,
+    Column("day", Date, primary_key=True),
+    Column("variant", String(40), primary_key=True),
+    Column("campaign", String(40), primary_key=True),
+    Column("views", Integer, nullable=False, server_default="0"),
+    Column("registrations", Integer, nullable=False, server_default="0"),
+    Column("activations", Integer, nullable=False, server_default="0"),
     **MYSQL_TABLE,
 )
 
@@ -1873,16 +2108,17 @@ soul_version = Table(
     **MYSQL_TABLE,
 )
 
-# Team and community memory entries. A team's entries belong to its membership (the
-# handle in this project); community entries have none. A deletion keeps the row as a
-# tombstone with `text` null, so the history says that something was there.
+# Team, role and community entries. A team's entries belong to its membership (the
+# handle in this project), a role's to its name; community entries have neither.
+# A deletion keeps the row as a tombstone with `text` null, saying something was there.
 memory_entry = Table(
     "memory_entry",
     metadata,
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
-    Column("store", String(16), nullable=False),  # team, community
+    Column("store", String(16), nullable=False),  # team, role, community
     _membership_ref("team_membership"),
+    Column("role", String(24)),
     Column("text", MARKDOWN_TEXT),
     Column("tags", JSON_VALUE, nullable=False),
     Column("by_kind", String(16), nullable=False),  # human, agent
@@ -1897,8 +2133,9 @@ memory_entry = Table(
     _membership_ref("deleted_by_membership"),
     Column("deleted_reason", MARKDOWN_TEXT),
     CheckConstraint(
-        "(store = 'team' AND team_membership IS NOT NULL)"
-        " OR (store = 'community' AND team_membership IS NULL)",
+        "(store = 'team' AND team_membership IS NOT NULL AND role IS NULL)"
+        " OR (store = 'role' AND team_membership IS NULL AND role IS NOT NULL)"
+        " OR (store = 'community' AND team_membership IS NULL AND role IS NULL)",
         name="store_shape",
     ),
     CheckConstraint(
@@ -1907,6 +2144,7 @@ memory_entry = Table(
     ),
     Index("ix_memory_entry_project_store", "project_id", "store", "created_at"),
     Index("ix_memory_entry_team", "team_membership", "created_at"),
+    Index("ix_memory_entry_role", "project_id", "role", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -1968,6 +2206,9 @@ notification_settings = Table(
     Column("address_normalized", String(254), unique=True),
     Column("address_status", String(16), nullable=False),  # none pending verified disabled
     Column("verified_at", UtcDateTime),
+    # Set at the first verification, never cleared: the account has had a verified address, so
+    # a lost one fails closed under `second_factor: email` instead of enrolling (§2.8.8).
+    Column("address_ever_verified", Boolean, nullable=False, server_default=false()),
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),
@@ -2098,7 +2339,7 @@ notification_position = Table(
     **MYSQL_TABLE,
 )
 
-# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# A member's own watch on a card (§6.4), by membership, so it ends with the membership;
 # never written into an event's audience.
 card_watch = Table(
     "card_watch",

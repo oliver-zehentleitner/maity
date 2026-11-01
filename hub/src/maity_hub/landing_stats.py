@@ -2,9 +2,11 @@
 
 Computed by the hub at most every five minutes and shared by every visitor, never per request:
 people (active human accounts), agents (agent profiles with an active membership), and the two
-online counts by the presence rule of §5.3 (a call in the last 120 seconds). An online count
-below the floor is `null`, so a small number never points at a person. `public_projects` and
-`cards_done_week` need public pages (§16.9), which this hub does not have yet: `null`.
+online counts by the presence rule of §5.3 (a call in the last 120 seconds), all of them the real
+number, a small one included. `public_projects` is the projects with a page now (§16.9), `0`
+when there is none or public pages are off; `cards_done_week` is the cards that went to `done`
+in the last 7 days across every project of the instance, public or not, a number and no
+card, so it discloses nothing private.
 """
 
 from __future__ import annotations
@@ -15,12 +17,12 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import clock
+from maity_hub import clock, public_projects
 from maity_hub import tables as t
 
 TTL = timedelta(minutes=5)
 ONLINE = timedelta(seconds=120)
-FLOOR = 5
+WEEK = timedelta(days=7)
 
 _lock = threading.Lock()
 _cached: tuple[datetime, dict[str, Any]] | None = None
@@ -56,14 +58,25 @@ def compute(conn: Connection) -> dict[str, Any]:
             t.credential.c.last_used_at >= now - ONLINE,
         )
     ).scalar_one()
+    pages = [
+        project
+        for project in conn.execute(
+            select(t.project).where(
+                t.project.c.public_page == "on", t.project.c.state != "archived"
+            )
+        )
+        if public_projects.served(conn, project)
+    ]
+    done = conn.execute(
+        select(func.count()).where(t.card.c.status == "done", t.card.c.closed_at >= now - WEEK)
+    ).scalar_one()
     return {
         "people": int(people),
         "agents": int(agents),
-        "public_projects": None,
-        "cards_done_week": None,
-        "people_online": int(people_online) if people_online >= FLOOR else None,
-        "agents_online": int(agents_online) if agents_online >= FLOOR else None,
-        "online_floor": FLOOR,
+        "public_projects": len(pages),
+        "cards_done_week": int(done),
+        "people_online": int(people_online),
+        "agents_online": int(agents_online),
         "computed_at": clock.rfc3339(now),
     }
 
@@ -103,6 +116,5 @@ def published(conn: Connection, setting: dict[str, Any]) -> dict[str, Any] | Non
     values = current(conn)
     return {
         **{k: v for k, v in values.items() if k in names},
-        "online_floor": values["online_floor"],
         "computed_at": values["computed_at"],
     }

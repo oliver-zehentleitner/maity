@@ -69,7 +69,10 @@ def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
     return bool(
         row.method in ("password", "register")  # a registration gave its password too
         or row.public_id in confirmed
-        or row.second_factor is not None
+        # TOTP and a recovery code give standing whatever the first factor was; the mail does
+        # not (§2.8.2, §2.8.8): it proved the mailbox, which neither stands for the account's
+        # own key nor is the thing standing guards against.
+        or row.second_factor in ("totp", "recovery_code")
     )
 
 

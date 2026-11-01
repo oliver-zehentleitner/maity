@@ -8,7 +8,6 @@ redeems, approves or completes a code.
 
 from __future__ import annotations
 
-import asyncio
 import secrets
 import time
 from collections.abc import Callable
@@ -17,9 +16,19 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import Engine
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import API_VERSION, clock, longpoll, moderation, paths, registration
+from maity_hub import (
+    API_VERSION,
+    clock,
+    longpoll,
+    moderation,
+    paths,
+    registration,
+    shared_counts,
+    wakeups,
+)
 from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
@@ -34,12 +43,12 @@ PENDING_PATH = f"/api/{API_VERSION}/auth"
 POLL = 0.25  # seconds between looks while a long-poll holds
 
 # §2.6.4
-CODES_BY_HUMAN = Limiter(5, 600)
-REDEEM_BY_ADDRESS = Limiter(10, 60)
+CODES_BY_HUMAN = Limiter(5, 600, name="routes.device_codes.CODES_BY_HUMAN")
+REDEEM_BY_ADDRESS = Limiter(10, 60, name="routes.device_codes.REDEEM_BY_ADDRESS")
 # Wrong codes across the instance; past 60 a minute every redemption is refused for a
 # minute. A known denial of service, accepted so that a distributed guess cannot run;
 # not to be "fixed" into a per-source limit (§2.6.4).
-WRONG_CODES = Limiter(60, 60)
+WRONG_CODES = Limiter(60, 60, name="routes.device_codes.WRONG_CODES")
 BREAKER_SECONDS = 60
 _breaker = {"until": 0.0}  # monotonic time until which every redemption is refused
 
@@ -87,19 +96,32 @@ def _require_enabled(request: Request) -> None:
             )
 
 
-async def _hold(read: Callable[[], dict[str, Any]], wait: int, key: str) -> dict[str, Any]:
+async def _hold(
+    engine: Engine, read: Callable[[], dict[str, Any]], wait: int, key: str
+) -> dict[str, Any]:
     """Answer at once, or with `wait` hold until the status changes (§8.3)."""
     first = await run_in_threadpool(read)
     if wait == 0 or first["status"] in ("used", "denied", "expired"):
         return first
     token = object()
-    _holding[key] = token
+    _holding[key] = token  # held before the announcement, which may supersede it at once
+    # The code's writers ring the key (`ring_code`); expiry, which nothing writes, is the
+    # fallback's to see.
+    hold = wakeups.held(engine, "device", wait_key=key, ring_key=key, poll=POLL)
+
+    def taken_over() -> None:  # a newer wait of the key on another replica (`wakeups`)
+        if _holding.get(key) is token:
+            del _holding[key]
+        hold.wake()
+
+    closed: Callable[[], None] | None = None
     deadline = time.monotonic() + wait
     current = first
     try:
+        closed = await wakeups.opened(engine, "device", key, taken_over)
         # A stopping hub answers with what it has; the client simply waits again (§8.3).
         while time.monotonic() < deadline and not longpoll.stopping.is_set():
-            await asyncio.sleep(POLL)
+            await hold.pause(deadline - time.monotonic())
             if _holding.get(key) is not token:
                 return {**current, "superseded": True}
             current = await run_in_threadpool(read)
@@ -107,6 +129,9 @@ async def _hold(read: Callable[[], dict[str, Any]], wait: int, key: str) -> dict
                 break
         return current
     finally:
+        hold.close()
+        if closed is not None:
+            closed()
         if _holding.get(key) is token:
             del _holding[key]
 
@@ -150,7 +175,7 @@ async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONRes
                 raise not_found()
             return device_codes.creator_view(row, clock.now())
 
-    return JSONResponse(await _hold(read, wait, f"code:{session_hash}"))
+    return JSONResponse(await _hold(engine, read, wait, f"code:{session_hash}"))
 
 
 @router.post("/device-codes/{code_id}/approve")
@@ -201,12 +226,29 @@ def _creator_answer(request: Request, code_id: str, session_hash: str) -> JSONRe
 # --- the new device (B) --------------------------------------------------------------
 
 
+def _breaker_shut_for() -> float:
+    """Seconds the instance-wide breaker still refuses every redemption; across replicas on
+    PostgreSQL, where a trip on one shuts all of them (replicas.md 2bd65fec)."""
+    if shared_counts.active():
+        return shared_counts.until("routes.device_codes.breaker", "instance") - time.time()
+    return _breaker["until"] - time.monotonic()
+
+
+def _trip_breaker() -> None:
+    if shared_counts.active():
+        shared_counts.set_until(
+            "routes.device_codes.breaker", "instance", time.time() + BREAKER_SECONDS
+        )
+        return
+    _breaker["until"] = time.monotonic() + BREAKER_SECONDS
+
+
 @router.post("/device-login")
 def redeem_code(body: Redeem, request: Request) -> JSONResponse:
     _anonymous(request)
     _require_enabled(request)
     origin = origin_of(request)
-    tripped = _breaker["until"] - time.monotonic()
+    tripped = _breaker_shut_for()
     if tripped > 0:
         raise rate_limited(max(1, int(tripped + 0.999)))
     wait = REDEEM_BY_ADDRESS.hit(origin.address)
@@ -225,7 +267,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
         WRONG_CODES.hit("instance")
         if WRONG_CODES.blocked("instance"):
             # 60 wrong codes within a minute: every redemption is refused for a minute.
-            _breaker["until"] = time.monotonic() + BREAKER_SECONDS
+            _trip_breaker()
         raise device_codes.code_invalid()
     row, pending = redeemed
     response = JSONResponse(
@@ -263,7 +305,7 @@ async def watch_redemption(request: Request) -> JSONResponse:
             return device_codes.pending_view(conn, row, clock.now())
 
     key = f"pending:{device_codes.digest(pending or secrets.token_hex(8))}"
-    return JSONResponse(await _hold(read, wait, key))
+    return JSONResponse(await _hold(engine, read, wait, key))
 
 
 @router.post("/device-login/complete")
@@ -298,7 +340,10 @@ def complete_redemption(request: Request) -> JSONResponse:
                 "next": row.next or "/",
             }
         else:
-            answer = pending_answer(state)  # the second step is owed (§2.8.2)
+            # the second step is owed (§2.8.2)
+            answer = pending_answer(
+                state, second_factor.via(conn, settings_of(request), row.human_id)
+            )
     response = JSONResponse(answer)
     set_session_cookies(response, request, session_id, csrf, device)
     response.delete_cookie(

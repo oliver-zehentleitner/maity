@@ -54,7 +54,7 @@ window.Maity = window.Maity || {};
         mode.addEventListener("change", showNumber);
         showNumber();
         const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
-        return { f, v, mode, number, error, locked, nodes: h("fieldset", { class: "limits-field" },
+        return { f, v, mode, number, error, locked, nodes: h("fieldset", { class: "limits-field field-stack" },
           h("legend", null, f.label()),
           h("label", { for: id + "-mode" }, M.t("limits.mode")), mode,
           h("label", { for: id, class: "visually-hidden" }, f.label()), number,

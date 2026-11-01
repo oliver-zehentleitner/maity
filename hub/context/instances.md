@@ -437,3 +437,63 @@ else is a read of what the hub keeps anyway.
 **Rejected alternative:** deriving the window from the sessions alone (the earliest session's
 `acknowledged_seq`) — it moves with the long-poll's acknowledgements, so a lost first packet
 could shrink the window. Storing the items — a copy of events the log already has.
+
+## A dormant instance is a pair of columns on its credential, read at the wake filter and the choosers
+
+**Id:** 247eae87-3590-4be8-b92c-1a48f1e18cda
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.17 ("A dormant instance", #817); the card tsk-1vbs522stmb5 from the coordinator, 2026-10-31; the implementation (`instances.set_dormant`, `events.wakes`)
+**Revisit when:** a rest that ends by itself at a time is wanted, or a third way to keep an instance from work appears next to the pause and the rest
+**See:** instances.md#a-direct-chat-message-names-its-instance-in-to_instance-the-audience-pins-that-instance-the-payload-keeps-the-id-as-written — bd3861cc-97f5-4f18-a638-3777b91579bf — as of 2026-10-31
+
+`credential.dormant_since` and `dormant_by` hold it, on the instance and nowhere else, as the instance's own
+pause is held; a `replaces` join creates a new credential, so a successor starts awake. It is read where
+something is chosen or woken: `events.wakes(…, dormant=True)` answers true for an event only when the
+instance's own `instance:` token is in its audience (so neither `all`, the team's tokens, a group chat's
+messages nor a runner's supervised set wake it, and the actor's own events never do); `read_waking` and
+`not_listening.waits_for` look the credential up and pass the flag. `team_wakes` and `round_robin` leave it out
+like a paused one, `instances.resolve(…, past_dormant=True)` does the same for a takeover's `to` only (a
+claim or an assignment that names a member id keeps its old resolution, since being dormant refuses
+nothing), and a lead cannot rest, nor a resting instance lead (`invalid`).
+
+A dormant instance is reached by its own token alone, so every place that decides "`to` reaches it already" adds
+the token of a dormant instance anyway: a mention `@<handle>#<id>` in a message to `all`, to a role or to a
+trust token puts `instance:<member id>#<id>` into the audience and counts as a ping
+(`instances.token_is_dormant`), where for an awake instance `all` would have reached it. Rejected: waking
+a dormant instance by `all` after all, which would undo what the rest is for (answering only a direct
+question, sparing the tokens of the nearly used up subscription); and reading `to: all` as reaching it
+and leaving the mention silent.
+
+The member's availability is computed, not stored: `availability.computed(…, dormant=True)` answers `limited`,
+`source: dormant`, with no `until`, when every active instance is dormant (`instances.dormant_members`, read
+from the instance views for a member view and from one query elsewhere), after a stored limit and before the
+rest. `until` is left out of the view and the event for it. A change is `member_updated` with
+`changed: ["dormant"]` and the instance; made by anyone but the instance it carries the instance's token, which
+wakes it. For another owner's agent a `members:admin` human's change goes through the consent request of
+`foreign_agent` (`dormant` is one of its fields, with the instance named in the proposal).
+
+**Reason:** the instance already is a credential with its own pause columns, and the wake filter and every
+chooser already read credential rows; a flag on the membership would not tell which instance rests, and a
+stored `all_dormant` would have to follow every join, revocation and removal, which a read of the instances
+does not.
+
+**Rejected alternatives:**
+- A `dormant` bit on the membership with an instance list: more to keep in step with joins and revocations.
+- Resolving past dormant instances in `resolve` for every caller: a claim or an assignment that names the
+  member id would then pick an instance the contract leaves where it is.
+- Storing the all-dormant availability like a limit: the limit's `until` and `source: self` rules do not
+  fit it, and it would drift when an instance joins or leaves.
+
+For another owner's agent `patch_dormant` refuses at once what the change itself would refuse (`lead` is
+`invalid`), so the admin sees it now and not the owner at the `go` (`409`). Every further PATCH ends the open
+request first (`superseded`, as §6.2 and the member PATCH do); only then, one that changes nothing files nothing
+(`200`). Rejected: checking the no-op before withdrawing, which leaves a request an admin meant to take
+back with the counter-PATCH, for the owner's `go` to carry out against their last word.
+
+The jour fixe reads an agent's instances without the dormant ones (`dormant_since IS NULL` in
+`jourfixe/rounds._instances`): a dormant instance is never chosen, as if it were not listening (§6.17); an agent
+with only dormant ones is `limited`, `source: dormant` anyway. Rejected: choosing it and not waking it, since the
+round would wait for an instance that only its own token wakes.
+

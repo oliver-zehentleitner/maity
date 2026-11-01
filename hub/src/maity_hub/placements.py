@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import availability, avatars, clock, events, mentions, namespace
+from maity_hub import allowed_projects, availability, avatars, clock, events, mentions, namespace
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
@@ -733,6 +733,22 @@ def membership_isolated(conn: Connection, membership_id: int, actor: Actor | Non
         close_now(conn, placement, "membership_isolated", actor, by)
 
 
+def creator_left(
+    conn: Connection, project_id: str, human_id: str, actor: Actor | None, by: str
+) -> None:
+    """The person who proposed a placement is no member any more: one that has not made its
+    membership yet closes at once, its consent request withdrawn, so no runner outlives the
+    person who set it going (§6.2, §15.6)."""
+    for placement in active_rows(
+        conn,
+        t.placement.c.project_id == project_id,
+        t.placement.c.created_by == human_id,
+        t.placement.c.membership_id.is_(None),
+    ):
+        withdraw_open_request(conn, placement, "the proposer left the project", actor)
+        close_now(conn, placement, "withdrawn", actor, by)
+
+
 def runner_removed(conn: Connection, runner_id: str, by: str) -> list[str]:
     """Close every placement of a removed runner at once; returns those whose last report
     said they were still running (`still_running`, §15.3)."""
@@ -861,6 +877,8 @@ def _still_allowed(conn: Connection, placement: Any) -> None:
     project = conn.execute(select(t.project).where(t.project.c.id == placement.project_id)).one()
     if project.state in CLOSED_STATES:
         raise Refusal(409, "project_closed", f"the project is {project.state}")
+    if not allowed_projects.admits_membership(conn, placement.membership_id, project):
+        raise allowed_projects.not_allowed()  # nobody gives a go for what cannot start (§6.3)
     spec = {**view_spec(placement), **(placement.pending_change or {})}
     runner = _runner(conn, placement.runner_id)
     check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])

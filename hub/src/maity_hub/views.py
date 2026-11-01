@@ -19,6 +19,7 @@ from maity_hub import (
     namespace,
     onboarding,
     policy,
+    project_links,
     ticker_read,
 )
 from maity_hub import handles as handle_book
@@ -278,6 +279,8 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, confirmed_by),
+        # The project's own links (§6.11), all four keys, null where none is set.
+        "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
         "memory": memory_of(project),
@@ -369,6 +372,57 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     if age <= AWAY:
         return "away"
     return "offline"
+
+
+def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
+    """Per served agent without a session of its own, the best presence of its bridges
+    (§2.3): it is present through them. A bridge that is isolated, paused, suspended with
+    its owner's account, or whose every instance is paused carries nobody's presence."""
+    if not served_ids:
+        return {}
+    from maity_hub import instances, listening, moderation
+
+    b = t.bridge.c
+    pairs = conn.execute(
+        select(b.served, b.bridge).where(b.served.in_(served_ids), b.live.is_(True))
+    ).all()
+    if not pairs:
+        return {}
+    carriers = {row[1] for row in pairs}
+    rows = {
+        r.id: r
+        for r in conn.execute(
+            select(t.membership, t.agent_profile.c.owner_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(t.membership.c.id.in_(carriers))
+        )
+    }
+    suspended = moderation.suspensions(
+        conn, rows.values(), {r.agent_id: r.owner_id for r in rows.values()}
+    )
+    per_instance = instances.unpaused_presences(conn, carriers)
+    live, _ = _sessions(conn, carriers)
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
+    shown: dict[int, str] = {}
+    for membership_id, row in rows.items():
+        if row.isolated_since is not None or row.paused_since is not None:
+            continue
+        if membership_id in suspended:
+            continue
+        if membership_id in per_instance:  # the best of its instances' (§5.3)
+            if per_instance[membership_id]:
+                shown[membership_id] = min(per_instance[membership_id], key=PRESENCE_ORDER.index)
+            continue
+        session = live.get(membership_id)
+        shown[membership_id] = presence(row, session, session is not None and session.id in heard)
+    best: dict[int, str] = {}
+    for served, carrier in pairs:
+        if carrier not in shown:
+            continue
+        current = best.get(served)
+        if current is None or PRESENCE_ORDER.index(shown[carrier]) < PRESENCE_ORDER.index(current):
+            best[served] = shown[carrier]
+    return best
 
 
 def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
@@ -525,11 +579,18 @@ def member_views(
         if human_ids
         else {}
     )
+    from maity_hub import bridges  # it builds member views itself
+
+    bridged = bridges.views(conn, [r.id for r in rows if r.agent_id is not None])
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    carried = _carried_presence(
+        conn, {r.id for r in rows if r.agent_id is not None and r.id not in live}
+    )
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
@@ -610,7 +671,7 @@ def member_views(
         if row.agent_id is not None:
             session = live.get(row.id)
             latest = latest_of.get(row.id)
-            is_listening = session is not None and listening.is_listening(session.id)
+            is_listening = session is not None and session.id in heard
             view["harness"] = latest.harness if latest else None
             view["model"] = latest.model if latest else None
             view["session"] = (
@@ -633,18 +694,32 @@ def member_views(
             shown_presence = "paused"
         if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
             shown_presence = "offline"
+        elif row.agent_id is not None and stopped is None:
+            # Settled before `availability`, which reads it: the best of its instances'
+            # (§5.3), and without a session of its own the best of its bridges' (§2.3).
+            team = team_of.get(row.id, [])
+            if team:
+                shown_presence = min((i["presence"] for i in team), key=PRESENCE_ORDER.index)
+            if row.id in carried:
+                shown_presence = min(shown_presence, carried[row.id], key=PRESENCE_ORDER.index)
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
                 "presence": shown_presence,
                 "paused": stopped,
                 "isolated": isolated(row),
+                # The windows of events it may never read, after a lift with
+                # `hide_isolation_events`; the readers of `isolated` read them (§6.2).
+                "isolation_windows": list(row.isolation_windows or []),
                 "availability": availability.view(
                     row,
                     shown_presence,
                     humans.get(row.human_id),
                     projects[row.project_id],
                     project_name=names[row.project_id],
+                    # Every active instance dormant: only an instance address reaches it (§6.17).
+                    dormant=bool(team_of.get(row.id))
+                    and all(i["dormant"] for i in team_of[row.id]),
                 ),
                 "availability_policy": availability.policy_of(row),
                 "covered_by": covered_by.get(row.id),
@@ -654,16 +729,16 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # The agents that lend it their hands and those it lends them to (§2.3).
+            view.update(bridged.get(row.id, {"bridges": [], "bridging_for": []}))
+            # Whose work this agent continues and where the hand-over is, never a text (§3.1).
+            view["takes_over"] = row.takes_over
+            view["handover"] = row.handover
             view["team"] = instances.team(conn, row)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and stopped is None and row.isolated_since is None:
-                # The best of its instances' (§5.3).
-                view["presence"] = min(
-                    (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
-                )
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         elif row.agent_id is None:
@@ -850,6 +925,7 @@ def agent_view(
         **(picture if picture is not None else avatars.state(conn, row.id)),
         "owner_id": row.owner_id,
         "git_identity": git_identity(row),
+        "allowed_projects": row.allowed_projects,  # null: any project (§6.3)
         "memberships": [
             {"project": names[m.id], "trust": m.trust, "role": m.role} for m in memberships
         ],  # full names (§6.25)
@@ -921,6 +997,8 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,
         "instance": row.instance,
+        "takes_over": row.takes_over,
+        "handover": row.handover,
     }
 
 
@@ -944,7 +1022,7 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch (§6.4): false for an agent, and never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
@@ -962,16 +1040,10 @@ def task_views(
 
 
 def watching(conn: Connection, card_ids: Sequence[str], viewer: Any) -> set[str]:
-    """The cards among `card_ids` the viewer watches; none for an agent."""
-    if getattr(viewer, "kind", None) != "human" or not card_ids:
-        return set()
-    return set(
-        conn.execute(
-            select(t.card_watch.c.card_id).where(
-                t.card_watch.c.membership_id == viewer.id, t.card_watch.c.card_id.in_(card_ids)
-            )
-        ).scalars()
-    )
+    """The cards among `card_ids` the viewer watches, by its own watch or a dependency (§6.4)."""
+    from maity_hub import card_watches
+
+    return card_watches.watching(conn, card_ids, viewer.id)
 
 
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
@@ -1145,11 +1217,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             actor = {
                 "kind": "member",
                 "member_id": actors[row.actor_membership],
-                "instance": instance_of.get(row.actor_credential_id or ""),
+                # Through a bridge the served agent has no instance; `via` names the bridge's.
+                "instance": (
+                    None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+                ),
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,
             }
+            if row.actor_bridge:  # made by a bridge for the member (§2.3)
+                actor["via"] = row.actor_bridge
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {
@@ -1193,7 +1270,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": audience,
-                **_wakes(row),
+                **_wakes(row, reader),
                 "payload": payload,
                 "redacted": row.redacted,
             }
@@ -1215,11 +1292,18 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     return views
 
 
-def _wakes(row: Any) -> dict[str, Any]:
+def _wakes(row: Any, reader: Any = None) -> dict[str, Any]:
     """The instances a team's wake rule chose, as addresses; absent when no team's rule
-    narrowed the event (§8.2)."""
+    narrowed the event (§8.2). Where the audience holds a watch's token only the reader's own
+    entries: the others would tell who watches the card (§6.4)."""
     if row.wakes is None:
         return {}
-    return {
-        "wakes": [f"{member}#{instance}" for member, ids in row.wakes.items() for instance in ids]
-    }
+    chosen = row.wakes
+    if any(
+        isinstance(token, str) and token.startswith("watchers:") for token in row.audience or []
+    ):
+        own = getattr(reader, "principal_id", None)
+        chosen = {member: ids for member, ids in chosen.items() if member == own}
+        if not chosen:
+            return {}
+    return {"wakes": [f"{member}#{instance}" for member, ids in chosen.items() for instance in ids]}

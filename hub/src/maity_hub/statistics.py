@@ -88,7 +88,7 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         add("cards_created" if kind == "task_created" else "cards_claimed", day, n)
 
-    # By `closed_at`: a report that closes a card emits no `task_updated` (§6.6).
+    # By `closed_at`, for every way a card closes (§6.6).
     for day, n in conn.execute(
         select(func.date(t.card.c.closed_at), func.count())
         .where(t.card.c.status == "done", t.card.c.closed_at >= since)
@@ -206,7 +206,7 @@ def _online(conn: Connection, now: datetime) -> int:
     from maity_hub import listening
 
     found = 0
-    for row in conn.execute(
+    rows = conn.execute(
         select(t.agent_session.c.id, t.credential.c.last_used_at)
         .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
         .join(t.membership, t.membership.c.id == t.credential.c.membership_id)
@@ -216,10 +216,12 @@ def _online(conn: Connection, now: datetime) -> int:
             t.membership.c.active.is_(True),
             t.membership.c.paused_since.is_(None),
         )
-    ):
+    ).all()
+    heard = listening.which((row.id for row in rows), conn)  # one read for all
+    for row in rows:
         used = row.last_used_at
         recent = used is not None and (now - used).total_seconds() <= ONLINE_SECONDS
-        if listening.is_listening(row.id) or recent:
+        if row.id in heard or recent:
             found += 1
     return found
 

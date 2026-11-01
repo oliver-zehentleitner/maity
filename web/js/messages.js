@@ -155,12 +155,8 @@ window.Maity = window.Maity || {};
           p.task_id ? [" · ", h("a", { href: ctx.link("tasks", p.task_id) }, p.task_id)] : null,
           " · ", h("span", { class: "muted" }, formatTime(e.at))),
         review,
-        p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx))) : null,
-        (p.mentions || []).length
-          ? h("p", { class: "muted pmsg-mentions" }, "Mentions: ",
-            [...new Map(p.mentions.map((x) => [x.member_id, x])).values()].map((x, i) => [i ? ", " : null,
-              h("a", { href: ctx.link("members", x.member_id) }, "@" + M.dom.handleOf(ctx, { kind: x.name ? "agent" : "human", handle: x.handle, name: x.name }))]))
-          : null,
+        // Its mentions are links where they stand (the one renderer, js/markdown.js).
+        p.body ? h("div", { class: "md" }, M.markdown(p.body, M.ids.where(ctx), { mentions: p.mentions, hrefOf: (id) => ctx.link("members", id), ctx })) : null,
         M.attachments ? M.attachments.render(ctx, { attachments: p.attachments, body: p.body || "" }, canDelete) : null,
         ctx.canAdmin ? h("div", { class: "actions" },
           h("button", { type: "button", class: "small", "aria-label": "Remove this message for everyone", onclick: () => remove(e) }, "Remove")) : null);

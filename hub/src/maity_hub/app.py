@@ -27,7 +27,9 @@ from maity_hub import (
     forge,
     forge_access,
     images,
+    join_line,
     landing_files,
+    listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
     not_listening,
@@ -43,10 +45,13 @@ from maity_hub import (
     reports,
     request_stats,
     rules,
+    shared_counts,
     takeovers,
+    wakeups,
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
+from maity_hub.auth import mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
@@ -70,6 +75,7 @@ from maity_hub.routes import (
     avatars,
     badges,
     board,
+    bridges,
     contract_text,
     conversations,
     device_codes,
@@ -154,6 +160,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
+    shared_counts.configure(engine)  # the limits count across replicas on PostgreSQL
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -166,6 +173,14 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+            # The environment's `email` takes effect at once, so it may not lock out every
+            # human without TOTP at the start (§2.8.8).
+            if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(
+                conn, settings
+            ):
+                raise ConfigError(
+                    "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
+                )
         check_secrets(engine, settings.secret_key)
         with transaction(engine) as conn:  # an event wakes the long-polls once it commits
             # The hub's own generated text is a rules input: a start with other text bumps
@@ -239,7 +254,19 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         stats_reporter.start()
         pages_worker = public_pages.Worker(engine, settings)
         pages_worker.start()
+        # A long-poll wakes when another replica writes (hub/context/replicas.md 387c2409).
+        listener = None
+        if engine.dialect.name == "postgresql":
+            listener = wakeups.Listener(
+                settings.direct_database_url or engine.url.render_as_string(hide_password=False)
+            )
+            listener.start()
+        # Who listens counts across replicas (387c2409, point 4); a no-op off PostgreSQL.
+        listening.start(engine)
         yield
+        listening.stop()
+        if listener is not None:
+            listener.stop()
         pages_worker.stop()
         stats_reporter.stop()
         notify_worker.stop()
@@ -306,6 +333,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(keep_the_why.router, prefix=prefix)
     app.include_router(roles.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
+    app.include_router(bridges.router, prefix=prefix)
     app.include_router(member_settings.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(avatars.router, prefix=prefix)
@@ -374,6 +402,8 @@ def render_help(settings: Settings) -> str:
         hub_version=__version__,
         public_url=settings.public_url,
         cli_install=settings.cli_install,
+        join_line=join_line.command(settings.cli_install, "<url>", "<code>"),
+        ensurepath=join_line.ENSUREPATH,
     )
 
 

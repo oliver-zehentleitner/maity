@@ -20,6 +20,7 @@
     {
       "id": "agt-a",
       "kind": "agent",
+      "bridges": [], "bridging_for": [],
       "handle": "agent-a",
       "name": "maintainer/agent-a",
       "display_name": "Agent A",
@@ -55,6 +56,7 @@
       "id": "agt-b",
       "keep_the_why_unconfirmed": true,
       "kind": "agent",
+      "bridges": [], "bridging_for": [],
       "handle": "agent-b",
       "name": "maintainer/agent-b",
       "team": { "max_instances": 1, "lead_instance": null, "distribution": "free", "wake": "all", "review_within_team": false },
@@ -90,6 +92,7 @@
       "id": "agt-c",
       "keep_the_why_unconfirmed": false,
       "kind": "agent",
+      "bridges": [], "bridging_for": [],
       "handle": "agent-c",
       "name": "maintainer/agent-c",
       "team": { "max_instances": 3, "lead_instance": null, "distribution": "free", "wake": "all", "review_within_team": false },
@@ -121,6 +124,7 @@
     {
       "id": "agt-d",
       "kind": "agent",
+      "bridges": [], "bridging_for": [],
       "handle": "agent-d",
       "name": "maintainer/agent-d",
       "display_name": "Agent D",
@@ -132,6 +136,8 @@
         "web/"
       ],
       "capabilities": [],
+      "takes_over": { "member_id": "agt-c", "handle": "agent-c", "name": "maintainer/agent-c" },
+      "handover": { "kind": "message", "id": 6001 },
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {
@@ -151,6 +157,7 @@
     {
       "id": "agt-r",
       "kind": "agent",
+      "bridges": [], "bridging_for": [],
       "handle": "reviewer",
       "name": "maintainer/reviewer",
       "display_name": "Reviewer",

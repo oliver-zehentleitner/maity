@@ -4,11 +4,18 @@
 
 **Id:** c1af6c8f-9d69-4afe-b233-fa8f437faaa6
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract owner's design in `docs/api.md` §9, accepted by the maintainer on 2026-10-22 with one change: history on demand for someone added later
 **Revisit when:** practice shows people forgetting to mention the agent they want an answer from, or agents needing to open a chat themselves
 **See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-22
+
+**Revisit:** re-checked on 2026-11-01. The first half of the condition
+fired and bbb35462 answers it. The second half is checked against the
+contract only: `docs/api.md` §9.2 lets only a human member create a group
+chat, and §9.1 says a direct conversation is created by nothing, so an
+agent cannot open a chat today. Whether agents need to is not settled by
+that check.
 
 Conversations come in two kinds. The direct conversation between a
 human and an agent they own stays exactly as it was: private to the
@@ -19,9 +26,8 @@ written through the same message endpoints, listed together with the
 direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
-  every message of the others (partly superseded, pending the
-  maintainer's confirmation: `wake: all` per agent participation wakes
-  on human messages, bbb35462);
+  every message of the others (`wake: all` per agent participation also
+  wakes on human messages, bbb35462);
 - someone added later starts fresh from their join (resume packet,
   unread counts and wake-ups count only from there) and reads the
   earlier history on demand by paging back through the chat;
@@ -177,13 +183,17 @@ maintainer.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, and the maintainer's redesign of 2026-10-23; contract in `docs/api.md` §20, forwarding in §7
+**Source:** the maintainer's approval of 2026-10-22, card tsk-1h94qh8497p1, the maintainer's redesign of 2026-10-23, and the maintainer's confirmation of the remaining defaults (windows, moderator order, presence, deciding) on 2026-10-31; contract in `docs/api.md` §20, forwarding in §7
 **Revisit when:** the cost of a round (wakes, steps) turns out higher than its proposals are worth, rounds keep being skipped for want of a moderator or members, or members stop answering
 **See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-10-23
 **See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-10-23
 
-The team looks at how it works in a jour fixe. A human sets the series
-in the project policy, and the hub triggers it. Owners and admins,
+The team looks at how it works in a jour fixe. Who sets it up, who
+takes part and who moderates changed on 2026-10-31: see ee0abca3, which
+supersedes this entry's schedule, start and moderator parts; the
+answers, the exchange, the triage and "nothing executed directly" stand.
+As first decided, a human sets the series in the project policy, and the
+hub triggers it. Owners and admins,
 admin agents included, can also start one by hand. The hub asks every
 present member three questions: what went well, what went badly, what
 would help. Each member answers privately to the moderator, by name or
@@ -217,6 +227,59 @@ settles what the rules already allow.
   practice nobody does.
 - An always-open feedback channel: it wakes everyone constantly, so its
   cost has no bound.
+
+## Several jour fixe series per project, each with a topic and a circle; moderating is a right the agent's owner consents to
+
+**Id:** ee0abca3-e0a5-4d65-8ff7-774114209dd5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 (manager rather than admin as moderator; then "two new boundaries": one owner with their agents, or all of a project with humans or with agents too; several jour fixes, each with a topic; the right to moderate given to any agent one could set a reporting line with, never automatic, the owner always consenting; "everyone should be able to opt out if they want"; the report always to the jour fixe owner and to those marked as recipients, everyone able to subscribe and unsubscribe); contract `docs/api.md` §20.1, §20.2
+**Revisit when:** projects keep many series that nobody moderates, or a circle is wanted that none of the three covers
+**See:** chat.md#a-scheduled-jour-fixe-with-private-answers-not-a-shared-round-ad-hoc-retros-or-an-open-feedback-channel — 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 — as of 2026-10-31
+**Supersedes:** 7f6e97cc-b996-4121-a25f-18e0bbfb8d99 in part (schedule, start, moderator)
+
+A project holds up to ten jour fixe series instead of one schedule in
+its policy. Each has a topic that heads its questions and report, a
+circle — one owner with their own agents, the project's humans, or
+every member — and its own schedule. An owner keeps the series of their
+own circle; the project's admins keep the others. Moderating is a right
+held per series: a human who could set the member's reporting line
+grants it, and an agent's owner always consents, unless the grant is
+the owner's own. Of the holders, the one most online in the last day
+moderates; with nobody there the round is skipped and the keepers are
+told. In an owner's series the answers, the decisions and the round
+itself stay with that owner. Every member may opt out of a series and come back at any
+time, an agent also through its owner; nobody else sees who opted out. The report goes to the series' keepers and to whoever put
+themselves on its recipient list, and anyone who may read the rounds
+can join or leave that list.
+
+**Reason:** the maintainer runs his own agents in a project with other
+members; a round for his team should not wait for, or be read by,
+everyone else, while a project-wide round still has its place. A topic
+keeps each round focused. Making moderation a granted right rather than
+a consequence of trust or role keeps one owner from drafting another
+owner's agent into extra work: the agent's time is its owner's to give.
+
+**Rejected alternatives:**
+- The first admin agent by time online as moderator (the earlier
+  default): the maintainer called admin "the ops thing"; the right
+  belongs to whoever is given it.
+- Every manager agent of the project owner as moderator (the first
+  redraft): still automatic, and blind to agents of other owners.
+- Granting the right to the agents below one in the org chart without
+  their owner: reporting to someone does not hand them the agent's time
+  (the maintainer: the owner must always consent).
+- One jour fixe per project with the circle as a setting: the
+  maintainer chose several, each with its topic.
+- A grant with the agent's owner's consent alone: the moderator reads
+  every answer, so an owner could make their own agent moderator of a
+  project-wide series, or an admin could put another owner's agent into
+  an owner's private round; a keeper of the series consents too (found
+  in review).
+- A silent substitute moderator when nobody with the right is present
+  (this contract's reading): the keepers are told instead, since only
+  they can grant the right to someone else.
 
 ## A request carries its own discussion thread; the decision stays a separate click
 
@@ -308,3 +371,97 @@ keeps busy chats from crowding the packet.
   owner's (66d4076f); a manager may still set `mentions`.
 - `all` waking on agents' messages too — two agents with `all` would
   answer each other without end, the loop c1af6c8f excluded.
+
+## A human pins chats; a pin keeps a chat on top only while nothing newer waits elsewhere
+
+**Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
+
+A human pins conversations; the list is ordered in four bands, each by
+activity: pinned with unread messages, unpinned with unread, pinned
+without, the rest. The pin is the human's own, stored by the hub so it
+holds across devices, emits no event, and is limited to 20.
+
+**Reason:** the maintainer wants the chats he works with at the top, but
+never at the price of missing something new elsewhere: a quiet pinned
+chat must not sit above a chat with a new message. Four bands express
+exactly that and keep the activity order inside each.
+
+**Alternatives:**
+- Pinned always on top: a new message in an unpinned chat could drop
+  below several quiet pinned ones and be missed.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows the bands.
+
+## A human switches the meat-proxy mode per chat; the profile gives the default
+
+**Id:** 1bdcfac7-9bf9-4ae3-9ad6-23b7f8e9a535
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (a meat-proxy button next to "Attach" and "Send" that switches the mode on and off for this chat; with "I am a meat proxy" in the settings the chat starts in that mode); contract `docs/api.md` §9.3
+
+A human sets the meat-proxy mode for one conversation: `true`, `false`,
+or `null` to follow the profile. The value that holds in a chat is on the
+human's entry in that chat's participants, with the profile's note while
+it is on, so the agents in the chat read it next to the person. Only the
+human sets it, for itself; it is context, never a permission.
+
+**Reason:** the same person may want to be led step by step with one
+agent and talk briefly with another, or in one project and not in the
+next. Changing the profile for every chat would switch it for all of
+them at once. Putting the value on the participant entry means the
+agents see it where they already see who is in the chat, without a new
+field elsewhere.
+
+**Alternatives:**
+- Only the profile switch (the state before): all or nothing across
+  every chat and project.
+- A per-project switch: still too coarse for the case of one chat with
+  one agent, which is the one the maintainer described.
+- Both parts per chat (`{lead, hands}` per conversation): the button the
+  maintainer asked for is one on/off switch; whoever wants one part only
+  sets it in the profile and leaves the chat on `null` (this contract's
+  reading).
+- A change as an event that wakes the agents in the chat: it would cost
+  a model run per agent for context that matters only at their next
+  turn; a change emits no event, and the agents read it on their next
+  resume or read of the chat (this contract's reading).
+
+
+## An inbox answer carries a note with any button; "Talk" takes one too
+
+**Id:** 6e357e0c-e95e-447c-9b4d-9a6dbb4b9f3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (the text field above the answer buttons, always writable, its text sent with whichever button is pressed, "Send" renamed "Talk"); contract `docs/api.md` §7
+
+The inbox shows one free-text field above the reply buttons. Whatever
+is typed there goes along with the button pressed: a reply (`reply_id`
+with `text`), or "Talk" (`talk: true` with `text`). A request without
+prepared replies keeps a send button for a free-text answer beside
+"Talk". The note on "Talk" is stored as the answer's text; the hub
+posts nothing into the direct chat for it.
+
+**Reason:** the maintainer often wants to pick an option and add a small
+remark ("o1, but keep the old name"), or ask to talk about one point.
+With the field below the buttons and its own send button, a remark was a
+second, separate answer that the hub refused once the request was
+answered. The contract already let `text` accompany `reply_id`; only
+`talk` lacked it.
+
+**Alternatives:**
+- Keeping the field as its own answer path with "Send": a choice and a
+  remark could not be given together.
+- Posting the note on "Talk" as the human's first message in the direct
+  chat: it would write a chat message on the human's behalf; the agent
+  reads the answer's text before it opens the conversation anyway.

@@ -50,12 +50,16 @@ def canonical(
     nonce: str,
     body: bytes,
     on_request: str | None = None,
+    for_member: str | None = None,
 ) -> str:
-    """The hub's rule (§2.2): the `Maity-On-Request` line only when the header came."""
+    """The hub's rule (§2.2): the `Maity-On-Request` line, then the `for:` line of
+    `Maity-For`, each only when its header came."""
     query = canonical_query(raw_query)
     lines = ["MAITY-HMAC-V1", method, raw_path, query, ts, nonce]
     if on_request is not None:
         lines.append(on_request)
+    if for_member is not None:
+        lines.append(f"for:{for_member}")
     return "\n".join([*lines, hashlib.sha256(body).hexdigest()])
 
 
@@ -141,6 +145,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 seen.headers["maity-nonce"],
                 seen.body,
                 seen.headers.get("maity-on-request"),
+                seen.headers.get("maity-for"),
             )
             expected = hmac.new(VERIFIER, text.encode(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(expected, seen.headers.get("maity-signature", "")):
@@ -237,6 +242,8 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 return self._send(200, {"id": path.rsplit("/", 1)[-1], "links": [], "report": None})
             if (self.command, path) == ("GET", "/api/v1/projects/oliver/maity/members"):
                 return self._send(200, {"items": MEMBERS, "next_cursor": None})
+            if (self.command, path) == ("GET", "/api/v1/projects/oliver/maity/conversations"):
+                return self._send(200, {"items": [], "next_cursor": None})
             if path == "/api/v1/projects/oliver/maity/events":
                 after = int(dict(urllib.parse.parse_qsl(query)).get("after", "0"))
                 items = [e for e in hub.events if e["seq"] > after]
