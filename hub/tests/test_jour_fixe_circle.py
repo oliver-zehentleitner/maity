@@ -270,20 +270,39 @@ def test_a_to_owner_request_is_the_circle_owners_and_no_other_admins(
         assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
 
 
-def test_the_owners_answer_writes_no_ticker_item_and_the_request_is_not_forwarded(
-    circle: Circle,
+def test_the_answer_writes_no_ticker_item_and_the_request_goes_to_one_human_at_most(
+    circle: Circle, make_client: ClientFactory
 ) -> None:
-    """§20.7: a ticker item would name the request to every admin, a holder would read it."""
+    """§20.7: a ticker item would name the request to every admin, as the pool would read it."""
     circle.owner.patch(BASE, {"settings": {"ticker": {"enabled": True}}})
+    admin_agent = flow.agent(make_client, circle.owner)
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == admin_agent.id)
+            .values(trust="admin")
+        )
     circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
     circle.tick()
     [request_id] = _report(circle).json()["requests"]
     path = f"{BASE}/requests/{request_id}"
-    for to in ("trust:admin", circle.owner.id):
+    for to in ("trust:admin", admin_agent.id):
         refused = circle.friend.post(f"{path}/forward", {"to": to, "reason": "t"})
         assert refused.status_code == 400, refused.text
-        assert refused.json()["error"]["details"]["fields"] == {"class": "not_forwardable"}
-    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+        assert refused.json()["error"]["details"]["fields"] == {"to": "owners_round"}
+    # One human, the owner's deliberate step: that human reads and answers it.
+    colleague = _member(make_client, circle.engine, "colleague")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == colleague.id)
+            .values(trust="admin")
+        )
+    assert colleague.get(path).status_code == 404  # an admin, until it is given to them
+    given = circle.friend.post(f"{path}/forward", {"to": colleague.id, "reason": "t"})
+    assert given.status_code == 200, given.text
+    assert colleague.get(path).status_code == 200
+    answered = colleague.post(f"{path}/answer", {"reply_id": "reject"})
     assert answered.status_code == 200, answered.text
     decisions = [e for e in _kinds(circle.engine, "ticker") if e.payload.get("type") == "decision"]
     assert decisions == []

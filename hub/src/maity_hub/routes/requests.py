@@ -1199,8 +1199,6 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
         raise not_found()
     if klass(row) != "decision":
         raise invalid({"class": "not_forwardable"}, "only a decision request is forwarded")
-    if inbox.owners_alone(conn, [row]):  # a holder would read it (§20.7)
-        raise invalid({"class": "not_forwardable"}, "a request of an owner's round stays with them")
     _refuse_unless_open(row)
     return row
 
@@ -1215,7 +1213,10 @@ def forward(
         if not _holds(conn, row, mine):
             raise _not_holder()
         values: dict[str, Any]
+        alone = bool(inbox.owners_alone(conn, [row]))
         if body.to == "trust:admin":
+            if alone:  # the whole pool would read an owner's round (§20.7)
+                raise invalid({"to": "owners_round"}, "this goes to one human, not to the admins")
             target_id = None
             values = {"holder_member": None, "holder_pool": True}
         else:
@@ -1238,6 +1239,8 @@ def forward(
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
+            if target.agent_id is not None and alone:
+                raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
             target_id = target.id
