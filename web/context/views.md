@@ -46,7 +46,9 @@ The organisation view builds an indented tree in the browser from the
 members the API returns: each member sits under the member it reports
 to; a member without `reports_to` sits under the owner of the narrowest
 scope that contains its own; the rest are roots. Nothing chart-shaped is
-fetched or kept.
+fetched or kept. Each agent's node lists its live instances as links to
+their Sessions on the member's page, the target an instance has everywhere
+else; a dormant one says so beside its link.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role

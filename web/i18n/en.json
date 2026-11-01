@@ -2129,6 +2129,7 @@
   "observe.title": "Read along in {project}",
   "org.by_area": "(by area)",
   "org.empty": "No members.",
+  "org.instance.label": "Sessions of {address}",
   "org.intro": "Policy: {preset}. Computed from who reports to whom and who owns which area.",
   "org.reread_failed": "Could not read the members again: ",
   "orgs.all": "All your organisations",
