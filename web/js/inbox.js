@@ -397,9 +397,13 @@ window.Maity = window.Maity || {};
   M.views.inbox = async function (ctx, root, args) {
     const items = await load(ctx);
     ownAgents = new Set();
-    try {
-      ownAgents = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
-    } catch (ignored) { /* no Talk where the reader's agents are unknown */ }
+    // Inside a project the member list says whose an agent is; the profiles are needed across projects
+    // and for a personal request only.
+    if (ctx.scope !== "project" || items.some((r) => r.personal)) {
+      try {
+        ownAgents = new Set((await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at).map((a) => a.id));
+      } catch (ignored) { /* no Talk where the reader's agents are unknown */ }
+    }
     const wanted = ctx.scope === "project" && args && args[0] ? args[0] : null;
     const wantedReq = wanted ? items.find((r) => r.id === wanted) : null;
     let showAll = false;
