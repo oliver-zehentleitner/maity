@@ -17,7 +17,11 @@ thread sweeps every five minutes: reports without an observation on open
 cards of any age and on cards closed within a day, the open release of
 every observable project, then the 15 reports with the oldest observation
 whose pull request was last seen open. A round ends at the first read the
-forge does not answer, and between two reads when the hub stops. Forge reads
+forge does not answer, and between two reads when the hub stops. A project
+no source covers (`NotCoveredError`) is no such read: only its own work is
+left out, it logs its id, and its reports don't count against the 15. Ending
+the round there stopped every round from reaching the re-reads, in production
+for as long as one project lacked a grant. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
 `MAITY_FORGE_GITHUB_TOKEN` is set.
