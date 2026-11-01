@@ -717,7 +717,10 @@ too.
    only, with Revoke; "n of max agents of yours" beside the button, which
    is off at the limit; the hub's `member_join_limit` and
    `member_agents_max` said in words with the field; Project settings let
-   a human admin turn it on or off and set how many, with a reason; no tab of its
+   a human admin turn it on or off and set how many, with a reason, and say
+   under **Agents of owners who are not members** whether an owner from
+   outside may keep an agent here and in which roles (§6.1, §6.2; Members
+   marks such an agent **Owner outside**); no tab of its
    own: `/<owner>/<slug>/agents/join` opens it there, `?agent=<id>` with
    that profile chosen). **+ Add an agent** at the head of
    Agents opens a panel under it
