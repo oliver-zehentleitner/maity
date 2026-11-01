@@ -1084,6 +1084,31 @@ two instances from taking or handing over the same work.
   without the list, so whether the list alone would have been enough
   is unknown.
 
+## The resume says how to load Keep the Why, before the briefing and not after the identity
+
+**Id:** d6ba10ae-a5c6-46c7-991c-15a7eab6657a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-j8gwrdy9d5c2; docs/api.md §6.23 "Loading the skill", §13 `maity resume`
+**Revisit when:** the resume text moves the identity above the briefing, or §13 words the place differently
+
+The `Keep the Why` block prints the packet's `skill`, `config` and
+`personal_defaults` whenever `enabled` is set, then the commitment under
+`required`. It stays where the commitment's block already stood: after
+`Check in` and `Setup waits`, before the briefing.
+
+**Reason:** the hub had sent these fields since §6.23, and the text
+printed none of them, so a session on a machine without the skill, or
+started outside its clone, was told only to load it. The contract says
+the block comes "after the identity, before the briefing", but in the
+text the `You are …` lines follow the briefing, so both cannot hold.
+Before the briefing is the part with a reason behind it: the skill's
+setup runs before any task.
+
+**Rejected alternative:** moving the whole identity above the briefing to
+satisfy both words: a larger reorder of the text that nothing here asks for.
+
 ## Unread chats in the resume, and a `wait` timeout that checks them within its own deadline
 
 **Id:** 1e40f4fb-6890-4ac2-94ab-4a1bf09acd22
