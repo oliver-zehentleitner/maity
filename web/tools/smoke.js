@@ -175,9 +175,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const control = parent && parent.childNodes ? parent.childNodes.find((c) => c.attrs && c.attrs.id === target) : null;
       // A checkbox or a radio stands beside its label on purpose.
       if (!control || ["checkbox", "radio"].includes(control.attrs.type)) return;
-      // Known and with E (the jour fixe settings and its action page, tsk-39sjeqre25gw): named here, so
-      // that anything else that runs inline still fails. Take a prefix out once its forms have a layout.
-      if (["jf-", "jfa-"].some((prefix) => target.startsWith(prefix))) return;
       if (laidOut(parent)) return;
       if (!inlineFields.has(target)) inlineFields.set(target, at + " in <" + (parent.tagName || "?").toLowerCase() + " class=\"" + (parent.className || "") + "\">");
     });
@@ -4601,6 +4598,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("jfs-reason-jfs-s1").value = ""; jfPending().querySelector(".jfs-end").click(); await settle();
     expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s1/moderators/agt-s2", undefined]]) && !jfPending() && JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1"]),
       "jour fixe: a pending grant withdrawn with End");
+    // One owner series per circle owner and topic (§20.1); the delete answers the series as a reader sees it, none of
+    // the flags a keeper may not read.
+    {
+      const owned = { topic: "Smoke: my own look back", circle: "owner", circle_owner: "hum-maintainer", reason: "smoke" };
+      const made = await win.Maity.api.post("/projects/maintainer/sample/jour-fixe/series", owned);
+      let again = "created";
+      try { await win.Maity.api.post("/projects/maintainer/sample/jour-fixe/series", owned); } catch (e) { again = JSON.stringify(e.details && e.details.fields); }
+      expect(made.id && again === JSON.stringify({ topic: "taken" }), "fixture hub: a second owner series with the same topic is refused, topic taken " + again);
+      const last = await win.Maity.api.del("/projects/maintainer/sample/jour-fixe/series/" + made.id, { reason: "smoke done" });
+      expect(last.id === made.id && !("opted_out_members" in last) && !("report_list" in last), "fixture hub: the delete answers the series as a reader sees it");
+    }
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
     await go("#/maintainer/sample/jour-fixe"); await settle(6);
     const jfSampleRounds = main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));

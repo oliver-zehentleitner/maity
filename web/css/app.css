@@ -887,9 +887,9 @@ tr.member-level-3 > th { padding-inline-start: 84px; }
 .project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
 .project-form button { justify-self: end; margin-top: 6px; }
 /* The jour fixe's forms (js/jour-fixe-act.js, js/jour-fixe-series.js) stack label over input as the project forms do. */
-.jfa-answer-form, .jfa-post-form, .jfa-statement form, .jfa-report-form form, .jfa-topic, .jf-series-form, .jfa-step {
+.jfa-answer-form, .jfa-post-form, .jfa-form, .jfa-topic, .jf-series-form, .jfa-step {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
-.jfa-answer-form label, .jfa-post-form label, .jfa-statement label, .jfa-report-form label, .jf-series-form label, .jf-series-settings label, .jf-start label {
+.jfa-answer-form label, .jfa-post-form label, .jfa-form label, .jf-series-form label, .jf-series-settings label, .jf-start label {
   font-size: 0.85rem; color: var(--muted); }
 .jfa-answer-form label.check, .jf-series-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .jfa-answer-form button[type="submit"], .jfa-post-form button[type="submit"] { justify-self: end; }

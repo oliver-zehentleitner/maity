@@ -2310,13 +2310,11 @@ def jour_fixe_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/jour-fixe")
     block = page.locator("section.jf-series-block", has_text="e2e: how we work")
     expect(block).to_contain_text("Next round:")
-    # Opting out and back in, as the member's own part in the series: only where the hub names it
-    # (`opted_out` in the series, §20.2); a hub without those calls shows no switch.
-    if block.locator("li.jf-part .jf-optout").count():
-        block.locator("li.jf-part .jf-optout").first.click()
-        expect(block.locator("li.jf-part").first).to_contain_text("opted out")
-        block.locator("li.jf-part .jf-optout").first.click()
-        expect(block.locator("li.jf-part").first).to_contain_text("taking part")
+    # Opting out and back in, as the member's own part in the series (§20.2).
+    block.locator("li.jf-part .jf-optout").first.click()
+    expect(block.locator("li.jf-part").first).to_contain_text("opted out")
+    block.locator("li.jf-part .jf-optout").first.click()
+    expect(block.locator("li.jf-part").first).to_contain_text("taking part")
     block.locator("input[id^=jf-start-reason-]").fill("e2e: before the launch")
     block.locator("form.jf-start").get_by_role("button", name="Start a round now", exact=True).click()
     opened = re.compile(r"/owner/e2e-alpha/jour-fixe/jfx-")

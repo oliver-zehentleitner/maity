@@ -710,7 +710,7 @@ window.Maity = window.Maity || {};
       Object.assign(out, flags(me().member.id));
       const agents = me().member.kind === "human" ? (fixtures()[slug + "/members.json"].items || []).filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at) : [];
       if (agents.length) out.own_agents = agents.map((x) => Object.assign({ member_id: x.id }, flags(x.id)));
-      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).slice();
+      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).map((id) => ({ member_id: id }));
       return out;
     }
     if (!jfAdmin(slug)) return null;
@@ -2501,6 +2501,9 @@ window.Maity = window.Maity || {};
       const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
       if (!body.reason) errors.reason = "required";
       if (jf.series.length >= 10) errors.series = "too_many";
+      // At most one owner series per circle owner and topic (§20.1).
+      if (draft.circle === "owner" && typeof draft.topic === "string"
+        && jf.series.some((x) => x.circle === "owner" && x.circle_owner === draft.circle_owner && x.topic === draft.topic.trim())) errors.topic = "taken";
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const made = { id: "jfs-f" + String(++jfSerial).padStart(2, "0"), topic: draft.topic.trim(), circle: draft.circle, circle_owner: draft.circle_owner, enabled: draft.enabled,
         recurrence: draft.recurrence, time: draft.time, timezone: draft.timezone, answer_window_minutes: draft.answer_window_minutes,
@@ -2529,8 +2532,10 @@ window.Maity = window.Maity || {};
       if (!jfDeletes(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
       if (!(body && body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
       const jf = file(m[1], "jour-fixe.json", path);
+      // The final state, as a reader sees it (an owner's series shows an admin its stub only).
+      const last = jfSeriesView(m[1], s);
       jf.series = jf.series.filter((x) => x !== s);
-      return Object.assign({}, s, { next_at: undefined });
+      return last;
     }],
     // §20.2: a grant takes effect with the agent's owner and a keeper; the granter's own action is one
     // consent. 201 when both are there, else 202 and the grant waits in pending_moderators.
@@ -2702,7 +2707,14 @@ window.Maity = window.Maity || {};
       const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
       if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
       if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const people = file(m[1], "members.json", path).items.filter((x) => !x.removed_at);
+      // An owner who left stops the series' rounds, by schedule and by hand (§20.1).
+      if (s.circle === "owner" && !people.some((x) => x.id === s.circle_owner)) fail(409, "jour_fixe_state", "the circle owner is gone", path, { reason: "circle_owner_gone" });
       if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
+      // The circle: the owner and their agents, the humans, or everyone (§20.2); two are needed to talk.
+      const circle = s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
+        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people;
+      if (circle.length < 2) fail(409, "too_few", "fewer than two members are in the circle", path);
       const day = Date.now() - 24 * 3600000;
       if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
         fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
