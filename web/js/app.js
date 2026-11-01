@@ -951,7 +951,7 @@ window.Maity = window.Maity || {};
   function agentOwnersForm(ctx, save, customRoles) {
     const pol = ctx.project.policy;
     const stored = pol.agent_owners || null;
-    const served = ctx.project.public_page === "on" && ctx.project.state !== "archived";
+    const served = ctx.project.public_page === "on" && ctx.project.state !== "archived" && !ctx.project.moderation;
     const effective = stored || (served ? "anyone" : "members");
     const words = { members: M.t("settings.agent_owners.members"), anyone: M.t("settings.agent_owners.anyone") };
     const select = h("select", { id: "agent-owners-select" },
