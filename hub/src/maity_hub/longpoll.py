@@ -36,6 +36,11 @@ class Waiter:
     # replaces the set on every pass, an assignment the notifier reads atomically.
     project_ids: frozenset[str] = frozenset()
     listening_wait: str | None = None  # its row in the listening registry (`listening`)
+    # Its start on the database clock (`wakeups.opened`); 0 where no clock is announced.
+    started: int = 0
+
+    def started_at(self, started: int) -> None:
+        self.started = started
 
     def wake(self) -> None:
         self.loop.call_soon_threadsafe(self.event.set)
@@ -50,8 +55,14 @@ class Registry:
         self._lock = threading.Lock()
 
     def enter(self, waiter: Waiter) -> None:
+        """The newer start decides, as in `wakeups.supersede`, and not the order of arrival: a
+        wait can reach this after a newer one of its key, and if it took over, that one's notice
+        would end it too, leaving neither. At the same start, the later arrival takes over."""
         with self._lock:
             previous = self._by_key.get(waiter.key)
+            if previous is not None and previous.started > waiter.started:
+                waiter.superseded = True
+                return
             self._by_key[waiter.key] = waiter
         if previous is not None:
             previous.superseded = True

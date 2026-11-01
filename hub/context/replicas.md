@@ -638,3 +638,21 @@ pods, as the race tests of `hub/tests` already do with two connections.
 safe before them, and each is small enough to review alone.
 
 **Alternatives:** none in contention.
+
+## The newer start decides which wait of a key stays, inside a process too
+
+**Id:** 7c2e91d4-5b0f-4a63-8e17-2f6ad0c4b915
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yze5b0bvbewn; `test_a_superseded_wait_reads_nothing_and_keeps_the_cursor` failed on `hub-postgresql` once (PR #1018)
+
+`Registry.enter` compares the waits' starts on the database clock, as `wakeups.supersede` does, and an older wait that arrives
+after a newer one ends itself. A wait takes its start in `wakeups.opened` and reaches `enter` only after that, so two requests
+can arrive in the opposite order. When arrival decided in the process and the clock across replicas, each wait ended the other,
+and both answered `superseded` with no items. No event was lost; it cost one more wait. At the same start, or without a clock on
+SQLite, the later arrival still takes over.
+
+**Rejected alternatives:**
+- Entering before the announcement, so that arrival and start share an order: the start comes from the database, and the wait
+  would have to hold a key it has no start for.
