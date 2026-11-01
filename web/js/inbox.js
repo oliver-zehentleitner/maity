@@ -531,6 +531,16 @@ window.Maity = window.Maity || {};
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
+      // A filter outlives a reload: what it hides is said, or a new request elsewhere looks like no reload at all.
+      const hiddenByFilter = projectFilter() ? items.filter((r) => r.status === "open" && r.slug !== projectFilter()).length : 0;
+      if (hiddenByFilter) {
+        append(list, h("p", { class: "flag inbox-filter-hidden" }, M.t("inbox.filter.hidden", { count: hiddenByFilter }), " ",
+          h("button", { type: "button", class: "small", onclick: () => {
+            ui.project = "";
+            if (projectSelect) projectSelect.value = "";
+            draw();
+          } }, M.t("inbox.filter.show_all"))));
+      }
       if (!shown.length) {
         append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, M.t("inbox.empty"),
           h("p", { class: "first-hint" }, ctx.scope === "all" ? M.t("inbox.empty.all") : M.t("inbox.empty.project")))));
