@@ -400,3 +400,41 @@ instead of one problem per attempt.
 - A column on `conversation_participant`: no row for a direct chat, and a stay per join in a group chat that would lose the choice when the human leaves and comes back.
 - Keying by conversation id alone: the same agent in two projects would share one choice.
 - Emitting an event on a change: the contract has the agents read it on their next resume and wakes nobody; an event would reach every reader of the chat for what is context about a person.
+
+## A watch reaches an event through a list fixed at write, added where every event is written
+
+**Id:** 036f7df6-94c3-47e3-8852-17984b326859
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 "Audience" and §8.2 (contract #458), which fix the token, the private list and the per-reader `wakes`; the card tsk-9rbf4xt4ggzg; how the hub keeps that is this entry's reading
+**See:** https://github.com/oliver-zehentleitner/maity — 95001efe-eb05-4bd0-af03-ffa42b6dbe9e — as of 2026-11-01
+**Revisit when:** a new way to move a card's status appears, or the events move into a store that cannot join a second table
+
+`events.emit` adds `watchers:<card>` to a `task_updated` with `status` among its fields and to an
+`update` message, whether anyone watches or not, and writes the memberships watching then into
+`event_watcher`. A read turns the rows of its batch into `watching:<seq>` beside the batch's other
+hidden facts, and `wakes` takes the set as an argument. `_wakes` in `views.py` serves only the
+reader's own entries of such an event, and nothing to a view without a reader. A claim, a release, a
+report, a request that blocks or unblocks the card, and a holder's isolation or removal write a `task_updated` when they move the
+status, after their own event, which never carries the token: a reader takes one event at a time
+(`maity wait --one`) and sees what happened before what followed from it. A merge remembered while
+the card was blocked is told after the `task_updated` of its return to `review`. A refresh writes none. The contract
+names the report; the claim and the release are the coordinator's reading of §6.4's "a status
+change" (2026-11-01), and a blocking request is this entry's reading of the same words. A redaction
+and a deleted attachment take over the list of the event they are about, so they stay readable as
+that event is (§8.5, §8.7). `event_watcher` is neither deleted nor exported: it references memberships,
+whose rows stay, a member gone reads nothing more, and like a `member:` token in an audience it is
+the history of whom an event reached.
+
+**Reason:** the token must be there when nobody watches, or its presence would say that someone
+does, and one place in `emit` covers every site that writes `task_updated`. A reader's watches
+are read per batch, so an event without the token costs nothing and no card lookup runs at read.
+
+**Rejected alternatives:**
+- The token at each site that writes `task_updated`: a new site that forgets it silently reaches no
+  watcher.
+- The private list as a column of `event`: every read of the row would carry it, one serialization
+  away from being served, and the contract keeps it apart.
+- Resolving watchers at read: a watch begun later would reach earlier events, which §6.4 excludes.
+

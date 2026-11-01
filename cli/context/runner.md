@@ -945,7 +945,7 @@ It would claim that `agent_user` gives no boundary, which the runner's
 own state contradicts, and it would say nothing about the agents among
 themselves.
 
-## Workspaces are keyed on the project id; a clone from before the namespace is taken over in place
+## Workspaces are keyed on the project id
 
 **Id:** e4efe327-6cb4-4ec7-bb95-354d6253b18e
 **Type:** decision
@@ -959,26 +959,21 @@ session is `maity_<project_id>_<clone>`. A placement must carry a full
 name, a `project_id` that is a path token, and only full names in
 `project_aliases`. Otherwise it is dropped like any malformed placement.
 `limits.projects` takes full names only, and a placement passes when its
-current name or one of its aliases is listed. A clone recorded before
-the namespace (`<workspaces>/<slug>/<clone>`, record project = slug) is
-taken over on the first pickup when the record's agent is the
-placement's agent and the slug is that of the current name or an alias.
-It is taken over in place: the record is rewritten to the id with
-`legacy_slug`, and the directory is not moved. `gc` finds such a clone at
-its slug path through `legacy_slug`.
+current name or one of its aliases is listed. Taking over a clone from
+before the namespace in place, through a `legacy_slug` in its record, was
+removed on 2026-11-01: the maintainer stated that no runner was ever set
+up on production, so no such record exists, and the alpha rule keeps no
+compatibility layer.
 
 **Reason:** the full name changes with a rename or a transfer (§6.25). A
 directory keyed on it would send the next pickup of the same placement
 into an empty clone, and the agent's credential, which lives in the
-clone's Git directory, would be left behind. The id never changes.
-Moving an old clone could break an agent that runs in it, while a
-record change is atomic under the record lock. A bare slug in the
+clone's Git directory, would be left behind. The id never changes. A
+bare slug in the
 operator's config would admit every owner's project with that slug.
 
 **Rejected alternatives:**
 - Keying on the full name (`<owner>_<slug>`, this agent's first draft):
   lost at every rename and transfer.
-- Matching an old clone by agent and clone name alone: one profile can
-  hold the same clone name in two projects.
 - Reading a bare slug in the config as "any owner": an operator who
   allowed `shop` for one owner would run every owner's `shop`.

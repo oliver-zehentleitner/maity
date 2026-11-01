@@ -32,7 +32,9 @@ window.Maity = window.Maity || {};
   // The file as the hub names it (§2.9), saved through a link the page clicks.
   function save(name, text) {
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const a = h("a", { href: url, download: name });
+    // A blob: address is this page's own and made just above; h() rightly takes no such href.
+    const a = h("a", { download: name });
+    a.setAttribute("href", url);
     document.body.appendChild(a);
     a.click();
     a.remove();

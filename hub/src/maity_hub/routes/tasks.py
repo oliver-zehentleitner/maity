@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import (
     availability,
     card_search,
+    card_watches,
     cards,
     clock,
     contract_text,
@@ -923,7 +924,8 @@ def create_card(
         _touch_parents(conn, mine, caller, {body.parent}, fg)
     _ping(conn, mine, caller, card, found, "body", before=[])
     releases.recheck(conn, mine.project.id, fg)  # a release may be ready from the start
-    return idempotency.Outcome(201, "task", card_id, {**view, "watching": False})
+    watching = bool(card_watches.watching(conn, [card_id], mine.id))  # by its dependencies
+    return idempotency.Outcome(201, "task", card_id, {**view, "watching": watching})
 
 
 def _refuse_imported_twice(conn: Connection, mine: Membership, forge_url: str) -> None:
@@ -1355,9 +1357,32 @@ def claim(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        status_moved(conn, card, mine.project.state, caller.actor(mine.id))  # to in_progress
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def status_moved(conn: Connection, card: Any, project_state: str, actor: Any) -> None:
+    """The `task_updated` of a status moved under an event of another kind (a claim, a release,
+    a report, a request that blocks or unblocks the card, a holder's isolation or removal): the
+    one a card's watchers are reached by (§6.4, §8.2). It follows the event that caused the
+    move. `actor` is None where no member acts."""
+    emit(
+        conn,
+        card.project_id,
+        "task_updated",
+        audience(conn, card),
+        {
+            "id": card.id,
+            "fields": ["status"],
+            "status": card.status,
+            "history": [],  # the event beside this one is the record of the change
+            "project_state": project_state,
+        },
+        actor=actor,
+        subject=("task", card.id),
+    )
 
 
 def _refuse_other_instance(mine: Membership, card: Any) -> None:
@@ -1503,6 +1528,8 @@ def release(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSO
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if card.status != before.status:
+            status_moved(conn, card, mine.project.state, caller.actor(mine.id))
         _after_move(conn, mine, caller, before, takes, (mine.id, mine.instance))
         return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
 
@@ -1948,6 +1975,8 @@ def report(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
+        if card.status != status_before:
+            status_moved(conn, card, mine.project.state, caller.actor(mine.id))
         _ping(conn, mine, caller, card, found, "report.summary", before=[])
         if card.parent is not None and was_closed != (card.status in cards.CLOSED):
             _touch_parents(conn, mine, caller, {card.parent}, fg)

@@ -4417,6 +4417,84 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // The second step of a sign-in (§2.8.2, §2.8.8, tsk-ekpb0pvgw4bh): a session that owes the factor gets the step and nothing else.
+  {
+    const sfGet = win.Maity.api.get, sfPost = win.Maity.api.post;
+    let sfSession = { second_factor: "required", via: "email", mail: "sent", session_id: "ses-sf", csrf_token: "c", expires_at: "2026-10-21T14:00:00Z" };
+    const sfPosts = [];
+    win.Maity.api.get = (p, ...r) => (p === "/auth/session" ? (sfSession ? Promise.resolve(Object.assign({}, sfSession))
+      : sfGet(p, ...r)) : sfGet(p, ...r));
+    // As the hub does: a verify that goes through makes the session a full one (§2.8.2).
+    win.Maity.api.post = (p, b) => {
+      if (/^\/auth\/second-factor\//.test(p)) sfPosts.push([p, JSON.stringify(b)]);
+      const answer = sfPost(p, b);
+      if (p === "/auth/second-factor/verify") answer.then(() => { sfSession = null; }, () => {});
+      return answer;
+    };
+    const sfForm = () => main.querySelector("form.second-factor");
+    await go("#/all"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    expect(sfForm() && text(sfForm()).includes("We sent a link and a code to your address. Open the link in this browser, or enter the code from the mail.")
+      && byId("sf-code") && btn(sfForm(), "Send again") && !main.querySelector("nav.views"),
+      "second factor: under the mail factor the step says the mail went out and offers Send again, and nothing of the project " + (sfForm() ? text(sfForm()).slice(0, 160) : "none"));
+    // Send again: the mail is sent anew, and the page says what the hub says of it now.
+    sfSession = Object.assign({}, sfSession, { mail: "rate_limited", retry_after: 95 });
+    btn(sfForm(), "Send again").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(sfPosts.some(([p]) => p === "/auth/second-factor/email") && text(sfForm()).includes("try again in about 2 min") && text(sfForm()).includes("A new mail is on its way"),
+      "second factor: Send again mails anew and says when the next mail can go " + JSON.stringify(sfPosts));
+    // A wrong code is said; the right one, spaces ignored, completes the sign-in.
+    byId("sf-code").value = "111111"; sfForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(sfForm()).includes("That code or link is not right or was used already."), "second factor: a wrong mail code is said in words");
+    sfPosts.length = 0;
+    const sfDone = sfSession; sfSession = null;
+    byId("sf-code").value = "654 321"; sfForm().dispatch("submit"); for (let k = 0; k < 14; k++) await tick();
+    expect(sfPosts.length === 1 && sfPosts[0][1] === JSON.stringify({ email_code: "654321" }) && !sfForm(),
+      "second factor: the mail code, spaces ignored, completes the sign-in and the view follows " + JSON.stringify(sfPosts));
+    // TOTP: the app's code, or a recovery code.
+    sfSession = Object.assign({}, sfDone, { via: "totp", mail: undefined });
+    await go("#/all"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    expect(sfForm() && text(sfForm()).includes("Enter the code from your authenticator app") && !btn(sfForm(), "Send again"), "second factor: with TOTP the step asks for the app's code, no mail");
+    sfPosts.length = 0;
+    byId("sf-code").value = "abcde-fghij"; sfForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(sfPosts.length === 1 && sfPosts[0][1] === JSON.stringify({ recovery_code: "abcde-fghij" }), "second factor: a recovery code is sent as one " + JSON.stringify(sfPosts));
+    // The mail's link in this browser: its token is posted from the page at once.
+    sfSession = Object.assign({}, sfDone);
+    sfPosts.length = 0;
+    await go("#/all"); await go("#/sign-in/second-factor/email?token=mailtoken"); for (let k = 0; k < 8; k++) await tick();
+    expect(sfPosts.length === 1 && sfPosts[0][1] === JSON.stringify({ email_token: "mailtoken" }), "second factor: the mail's link posts its token from the page " + JSON.stringify(sfPosts));
+    // The hub answers next "/" (§2.8.2): from the link's address the page goes to the start (the fixture's root opens /all), never to the elsewhere page.
+    for (let k = 0; k < 10; k++) await tick();
+    expect(["#/", "#/all"].includes(win.location.hash) && !main.querySelector(".second-factor-elsewhere") && !sfForm(),
+      "second factor: with next \"/\" the link's sign-in goes on to the dashboard's start " + win.location.hash);
+    // The step's own address with the sign-in complete (a link's 303 landing late): the start, not "No such view".
+    await go("#/sign-in/second-factor"); for (let k = 0; k < 8; k++) await tick();
+    expect(["#/", "#/all"].includes(win.location.hash) && !text(main).includes("No such view"), "second factor: /sign-in/second-factor with a full session goes to the start " + win.location.hash);
+    sfSession = Object.assign({}, sfDone);
+    // The link in a browser without that session: it completes nothing and says where to open it.
+    win.Maity.api.get = (p, ...r) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated")) : sfGet(p, ...r));
+    await go("#/all"); await go("#/sign-in/second-factor/email?token=other"); for (let k = 0; k < 6; k++) await tick();
+    expect(main.querySelector(".second-factor-elsewhere") && text(main).includes("Open this link in the browser where you signed in, or type the code from this mail there."),
+      "second factor: the link elsewhere says to open it in the signing-in browser");
+    win.Maity.api.get = sfGet; win.Maity.api.post = sfPost;
+    await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+    // The step-up by mail (§2.8.8 rule 4): a human without TOTP is mailed a code, types it, and the call is made again.
+    const suSlot = document.createElement("div");
+    const suPosts = [];
+    let suCalls = 0;
+    // GET /auth/second-factor names the factor in via (§2.8.1, hub #992).
+    win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ instance_off: false, enrolled: false, required: false, via: "email" }) : sfGet(p, ...r));
+    win.Maity.api.post = (p, b) => { if (/^\/auth\/second-factor\//.test(p)) suPosts.push([p, JSON.stringify(b)]); return sfPost(p, b); };
+    const suRun = win.Maity.stepUp.run(() => (++suCalls === 1 ? Promise.reject(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "step_up_required" })) : Promise.resolve("done")),
+      suSlot, "Changing your password");
+    for (let k = 0; k < 8; k++) await tick();
+    expect(text(suSlot).includes("Confirm with a code by mail") && text(suSlot).includes("Changing your password needs your second factor") && suPosts.some(([p]) => p === "/auth/second-factor/email")
+      && text(suSlot).includes("The code is on its way"),
+      "step-up: without TOTP under the mail factor the code is mailed when the question opens " + JSON.stringify(suPosts));
+    suSlot.querySelector("input").value = "654 321"; suSlot.querySelector("form.step-up").dispatch("submit");
+    const suResult = await suRun;
+    expect(suResult === "done" && suCalls === 2 && suPosts.some(([p, b]) => p === "/auth/second-factor/verify" && b === JSON.stringify({ email_code: "654321" })),
+      "step-up: the mailed code proves it and the call is made again " + JSON.stringify(suPosts));
+    win.Maity.api.get = sfGet; win.Maity.api.post = sfPost;
+  }
   // Forge access (§11.4, tsk-6pbe89e1yt50) on the account and at /settings/forge, where the hub's setup redirect lands:
   // the linked installation with its repositories, linking (asked for proof first), unlinking, the own token stored and removed.
   {

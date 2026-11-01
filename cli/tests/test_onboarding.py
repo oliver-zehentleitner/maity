@@ -266,6 +266,18 @@ def test_work_answers_and_missed_messages() -> None:
     assert held_next in text
 
 
+def test_an_update_without_a_recipient_names_none() -> None:
+    update = {
+        "seq": 4301,
+        "kind": "message",
+        "actor": {"member_id": "agt-a"},
+        "audience": ["member:agt-b"],
+        "payload": {"type": "update", "to": None, "body": "it landed"},
+    }
+    text = onboarding.render(packet(events={"items": [update], "cursor": 4301, "truncated": False}))
+    assert "(update)\n  > it landed" in text
+
+
 def test_an_assigned_card_is_the_next_step() -> None:
     text = onboarding.render(packet(assigned=[{"id": "tsk-9", "status": "open", "title": "X"}]))
     assert "Next: maity claim tsk-9, then start maity wait in the background" in text

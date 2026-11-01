@@ -649,8 +649,8 @@ def _packet(
             ),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
-        "claims": task_views(conn, held, fg),
-        "assigned": task_views(conn, assigned, fg),
+        "claims": task_views(conn, held, fg, mine),
+        "assigned": task_views(conn, assigned, fg, mine),
         "requests": _requests_block(conn, mine, cursor),
         "ticker": ticker.packet(conn, mine, cursor),
         "events": {

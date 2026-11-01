@@ -266,6 +266,27 @@ def test_a_merge_seen_elsewhere_is_told_when_the_card_returns_to_review(
     assert told.payload["task"] == card_id and told.payload["merge_sha"] == "f" * 40
 
 
+def test_the_answer_comes_before_the_return_to_review_and_the_merge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """What happened first, then what followed from it (§6.4, §6.6), one event at a time."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    asked = agent.post(
+        f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
+    )
+    assert asked.status_code == 201, asked.text
+    probe.observe_report(migrated, READER, card_id)
+    answered = owner.post(f"{BASE}/requests/{asked.json()['id']}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    [told] = _events(migrated, "request_answered")
+    moves = [e for e in _events(migrated, "task_updated") if e.seq > told.seq]
+    assert [m.payload["status"] for m in moves] == ["review", "done"]
+    [merge] = _events(migrated, "task_merged")
+    assert told.seq < moves[0].seq < merge.seq < moves[1].seq
+
+
 def test_a_new_report_in_between_starts_over(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

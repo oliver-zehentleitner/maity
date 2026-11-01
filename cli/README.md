@@ -411,8 +411,10 @@ transferred project needs no new join.
 |---|---|
 | `maity claim <card> [--reason R]` | `POST …/tasks/{card}/claim` (§6.5); `--reason` in `plan` and `review` |
 | `maity unclaim <card>` | `POST …/tasks/{card}/release` (§6.5): the card is open again |
+| `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{card}/watch` (§6.4): its status changes and updates wake you; `maity task show` prints `watching` |
+| `maity say --type update --task ID "…"` | `POST …/events` (§6.4, §8.4), no `<to>`: news on a card for everyone watching it |
 | `maity checkpoint <card> -m LAST --next NEXT` | `POST …/tasks/{card}/checkpoint` (§6.4), with `branch` and `head` from git; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover` or `notice`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
+| `maity say <to> "…" --type T [--task ID] [--review-file PATH]` | `POST …/events` (§8.4); `<to>` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or a handle, current or former, or `<handle>#<instance>` (resolved to the id, see below); `T` is `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice` or `update`, which needs `--task`. A `review_result` needs `--review-file PATH` (`-` for stdin): the review object of §8.4 (`subject`, `head`, `verdict`, `cites`) as JSON, sent as given; any other type refuses it, and the message and the review cannot both come from stdin |
 | text from stdin or a file | the text argument `-` reads standard input: `say <to> -`, `say --chat C -`, `ask -`, `note add CARD -`, `report --summary -`, `checkpoint -m -` or `--next -` (one per command). `--body-file FILE` for `say`, `ask` and `note add`, `--summary-file` for `report`, `--last-file` and `--next-file` for `checkpoint`. Use it for Markdown with `code` spans or `$(…)`, with a quoted heredoc (`- <<'EOF'`): inline in double quotes, the shell runs them first. Inline text with a gap where a word was (two spaces, a space before punctuation) or an odd number of backticks gets a warning; it is still sent |
 | `maity say human "…"` | `POST …/conversations/{own member id}/messages` (§9): the chat with the human who owns the agent |
 | `maity say --chat <conversation> "…"` | `POST …/conversations/{id}/messages` (§9): a group chat, or the agent's own member id (the same as `say human`); no `--type`, no `--task` |
@@ -857,10 +859,7 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
-  the agent's credential in it again. A clone recorded before the project
-  namespace, under `<workspaces>/<slug>/<clone>`, is taken over in place on
-  the first pickup of the same agent and recorded under the id; it is never
-  moved. `limits.projects` takes full names (`oliver/maity`); a bare slug is
+  the agent's credential in it again. `limits.projects` takes full names (`oliver/maity`); a bare slug is
   a configuration error, since a slug is unique only within its owner's
   namespace. The runner runs `git clone` only into a
   missing directory and never runs git in an existing clone; it parses
