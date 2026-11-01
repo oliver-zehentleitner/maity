@@ -678,13 +678,7 @@ window.Maity = window.Maity || {};
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
     if (humanAdmin) {
-      const outside = h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save, []));
-      append(panel, memberAgentsForm(ctx, save), outside);
-      // The project's own roles on a base that works may be offered too (§2.3, §6.1); without them the built-in ones stay.
-      M.api.get(ctx.base + "/roles").then((r) => {
-        const custom = ((r && r.custom) || []).filter((x) => OUTSIDE_BASES.includes(x.base)).map((x) => x.name);
-        if (custom.length) append(clear(outside), agentOwnersForm(ctx, save, custom));
-      }).catch(() => {});
+      append(panel, memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
     }
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
@@ -962,7 +956,7 @@ window.Maity = window.Maity || {};
   // member". Unset, the setting follows the public page; the form says what it
   // reads now, and once set it has no way back to unset, as in the hub.
   const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team"];
-  function agentOwnersForm(ctx, save, customRoles) {
+  function agentOwnersForm(ctx, save) {
     const pol = ctx.project.policy;
     const stored = pol.agent_owners || null;
     const served = ctx.project.public_page === "on" && ctx.project.state !== "archived" && !ctx.project.moderation;
@@ -974,12 +968,25 @@ window.Maity = window.Maity || {};
     select.value = stored || "";
     const current = pol.outside_roles || ["coder"];
     // A role already on the list stays offered, so that saving never drops it unseen.
-    const offered = [...new Set([...OUTSIDE_BASES, ...customRoles, ...current])];
+    const offered = [...new Set([...OUTSIDE_BASES, ...current])];
     const boxes = offered.map((r) => {
       const box = h("input", { type: "checkbox", id: "outside-role-" + r, value: r });
       box.checked = current.includes(r);
       return box;
     });
+    const roleRow = (r, i) => h("label", { class: "check", for: "outside-role-" + r }, boxes[i], " ", M.trust.roleLabel(r));
+    const roleRows = offered.map(roleRow);
+    const rolesHint = h("p", { class: "hint" }, M.t("settings.outside_roles.hint"));
+    // The project's own roles on a base that works may be offered too (§2.3, §6.1); without them the built-in ones stay.
+    // Added beside the others, so that what was ticked or typed meanwhile stays.
+    M.api.get(ctx.base + "/roles").then((r) => {
+      ((r && r.custom) || []).filter((x) => OUTSIDE_BASES.includes(x.base)).map((x) => x.name)
+        .filter((name) => !offered.includes(name)).forEach((name) => {
+          offered.push(name);
+          boxes.push(h("input", { type: "checkbox", id: "outside-role-" + name, value: name }));
+          rolesHint.parentNode.insertBefore(roleRow(name, offered.length - 1), rolesHint);
+        });
+    }).catch(() => {});
     const reason = h("input", { id: "agent-owners-reason", required: true, placeholder: M.t("settings.agent_owners.reason_hint") });
     const error = h("p", { class: "field-error", id: "agent-owners-error", role: "alert" });
     return h("form", {
@@ -1005,8 +1012,8 @@ window.Maity = window.Maity || {};
     h("label", { for: "agent-owners-select" }, M.t("settings.agent_owners.label")), select,
     h("fieldset", { class: "outside-roles" },
       h("legend", null, M.t("settings.outside_roles.label")),
-      offered.map((r, i) => h("label", { class: "check", for: "outside-role-" + r }, boxes[i], " ", M.trust.roleLabel(r))),
-      h("p", { class: "hint" }, M.t("settings.outside_roles.hint"))),
+      roleRows,
+      rolesHint),
     error,
     h("label", { for: "agent-owners-reason" }, M.t("settings.agent_owners.reason")), reason,
     h("button", { type: "submit" }, M.t("settings.agent_owners.save")));

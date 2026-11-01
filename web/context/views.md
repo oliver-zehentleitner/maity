@@ -592,7 +592,7 @@ The page no longer reads `GET /openapi.json`: there is no `M.api.hubHas`,
 test whether the hub sends a field it always sends (`"signing" in
 policy`, `"logo" in project`, a card's `parent`): only fields the hub
 sends to some readers or under a condition are tested, such as a
-member's `briefing`, `owner_preferences` or `keep_the_why_unconfirmed`.
+member's `owner_preferences` or `keep_the_why_unconfirmed`.
 The notifications' counts are read like any other call: until they are read the switcher
 counts the open requests from `/me`, and a failed read is said.
 Settings a hub really may have off stay explicit in its answers, such as
@@ -2370,6 +2370,49 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## An agent's bridges sit with its other member parts; a connection across owners is said as waiting for two consents
+
+**Id:** 522e04b1-28b8-452a-a246-7f45e433e3c8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 "The bridge" after the contract #927 and the hub's bridges (the connection on the served agent's membership, `201` at once or `202` with the first of two consents, `bridges` and `bridging_for` in the member view, End for either owner, either agent and `members:admin`, cross-owner bridges among a group chat's observers); the coordinator's card tsk-x0krjnw8p78t (connect with a purpose on the agent's member view, owner only; the waiting line; both lists with End; "carries for @handle" in the group chat's header), 2026-11-01; placing it in `M.memberParts` and the waiting line's wording are the implementer's, 2026-11-01
+**See:** views.md#a-projects-tabs-members-a-neutral-list-with-chat-agents-ones-own-agents-the-organisation-on-the-team-page — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-11-01
+**Revisit when:** the member view carries open bridge requests, the hub's `202` names both consents, or a purpose may be changed from the dashboard (`PATCH …/bridges/{brg}`)
+
+An agent's **Bridges** are one more part of `M.memberParts`, so the
+Manage row on Members and the agent's card on Agents show the same:
+the agents that lend it their hands (`bridges`) and those it lends its
+hands to (`bridging_for`), each with its purpose, marked when another
+owner's, and **End** for either agent's owner or `members:admin`; the
+End goes to the served agent's membership, whichever side it is shown
+on. Only the agent's owner gets **Connect with a bridge** (an agent of
+the project that is neither the agent itself, a proxy nor already its
+bridge, and the purpose). A `201` re-reads the members and says the
+bridge lends its hands. A `202` is said by the part itself as waiting
+for the consent of the bridge's owner and of the project: the hub files
+both, but its answer names only the first, so the generic consent line
+of the other member parts would name one human where two decide. Open
+requests are not listed, since the member view carries only connections;
+the consents are in the inbox as usual. In a group chat an agent among
+the observers is such a bridge, said as "carries for" the participants
+its `bridging_for` names; a human observer is said as before.
+
+**Reason:** a bridge is a setting of the agent's membership like its
+rulebook or its credentials, managed by the same people in the same
+places, so it belongs in the parts both views share. Saying the two
+consents keeps the owner from waiting on one human when the project has
+to agree as well.
+
+**Rejected alternative:** a page or tab of its own for bridges, apart
+from where the agent's other membership settings are. The shared consent
+line of `act()`, which names the request's one addressee. Re-reading the
+inbox after a `202` to list the open request: the inbox already shows
+it, and the part would read a second resource on every redraw. In the
+e2e only the section is checked, since `e2e-alpha` has one agent and a
+second join would cost a CLI pairing for this alone; connecting, ending,
+the waiting line and a refusal are in smoke.
+
 ## A member's own settings in a project are a tab of their own, My settings, at `my-settings`
 
 **Id:** df54f284-212c-4eab-995d-778dce37f7fb
@@ -2954,12 +2997,11 @@ project that is not there, and the links behind it lead nowhere.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`
+**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`; #990 removed the case for a hub without the note
 **Revisit when:** the note gets text per human or a translation, or `/me` stops carrying it
 
 Under the switch **I am a meat proxy** the account quotes
-`meat_proxy_note` from `/me` as text, never through HTML. A hub that
-does not send the field gets the switch and its hint without a quote.
+`meat_proxy_note` from `/me` as text, never through HTML.
 
 **Reason:** the human should read exactly what the agents that deal
 with them read. Any wording of the page's own drifts from the hub's as
@@ -2967,8 +3009,9 @@ soon as the note changes, as it did once already.
 
 **Rejected alternative:** keeping the old sentence as a fallback where
 the field is missing: on a hub whose note has changed, it would show
-words the agents no longer read, the drift this avoids. The price is a
-hint without the words on a hub that does not send the note yet.
+words the agents no longer read, the drift this avoids. Keeping a case
+for a hub without the field: no such hub runs under the alpha rule
+(§1.6), so #990 removed it.
 Copying the text into the page: the same drift with every change of
 the wording.
 
@@ -3663,7 +3706,7 @@ The **jour fixe tab** shows one block per series the reader may see: the topic a
 - Reading the series from `GET …/series`: its shape is not given in the contract, so the tab reads them from `GET …/jour-fixe`; the fixture hub serves both.
 - A link for each of the two inbox items: §18.1 names no target type for them, so they fall back to the project inbox until the hub names one (`linkOf` in `notify.js` then needs a branch).
 
-**Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only.
+**Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only. Likewise, §20.2 lets an agent's owner who is no keeper, and a human with `members:admin`, grant the moderator right, but the grant form is in Project settings (`project:admin`), so an agent's owner who is no admin cannot start a grant for their agent from the dashboard, and the fixture hub refuses it from anyone who is neither a keeper nor the agent's owner.
 
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
@@ -3789,6 +3832,24 @@ would overwrite another admin's change to a link it did not touch.
 The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page`, `state` and `moderation`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
+
+## Availability and cover hang under the presence as one note
+
+**Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.12; #980
+
+On Members, the Agents tab and a member's page, availability and cover
+hang under the presence as one note: away until when and why (the hub
+already drops a human's reason outside `show_reason_in`), resting when
+every instance is dormant, who covers this member and whom it covers.
+`available`, `offline` and `paused` get no note: presence and the paused
+pill already say them.
+
+**Rejected alternative:** a column of its own on Members: it would be
+empty in nearly every row and does not fit the narrow layout.
 
 ## The join panel reads all of a human's profiles and offers only those a project is allowed for
 

@@ -175,9 +175,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const control = parent && parent.childNodes ? parent.childNodes.find((c) => c.attrs && c.attrs.id === target) : null;
       // A checkbox or a radio stands beside its label on purpose.
       if (!control || ["checkbox", "radio"].includes(control.attrs.type)) return;
-      // Known and with E (the jour fixe settings and its action page, tsk-39sjeqre25gw): named here, so
-      // that anything else that runs inline still fails. Take a prefix out once its forms have a layout.
-      if (["jf-", "jfa-"].some((prefix) => target.startsWith(prefix))) return;
       if (laidOut(parent)) return;
       if (!inlineFields.has(target)) inlineFields.set(target, at + " in <" + (parent.tagName || "?").toLowerCase() + " class=\"" + (parent.className || "") + "\">");
     });
@@ -905,11 +902,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(patches[1][1]) === JSON.stringify({ briefing: null }) && text(main).includes("No briefing yet."), "an empty briefing clears it");
   win.Maity.api.patch = realPatch;
-  // A hub without briefings (the sample fixtures carry no such key): nothing offered.
-  await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
-  const sampleAgent = main.querySelectorAll("tr.member-agent")[0];
-  sampleAgent.querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 6; k++) await tick();
-  expect(main.querySelector("tr.member-manage") && !main.querySelector(".briefing"), "no briefing editor where the hub has no briefings");
   // Only my agents (tsk-n2r6t7jnzm2d): the viewer's own agents, no humans; remembered per viewer, and said when there are none.
   {
     const mineStore = {};
@@ -938,8 +930,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(byId("members-mine").checked && shownAgents() === mineIds, "members: a browser that keeps nothing still filters");
     win.localStorage = mineLs;
   }
-  await go("#/maintainer/sample/agents/join"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("join-agent") && !byId("join-briefing"), "no briefing field in the join where the hub has no briefings");
   // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const agARow = await agOpen("agt-a");
@@ -952,6 +942,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = agConfirm;
   const agAAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
   expect(agAAfter && agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked, the row open");
+  // Bridges (§2.3): the owner connects one in the Manage row, both sides list it with its purpose, End ends it.
+  {
+    const brRow = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
+    const brBox = () => brRow() && brRow().querySelector(".member-bridges");
+    const brPosts = [], brDels = [], brPost = win.Maity.api.post, brDel = win.Maity.api.del;
+    win.Maity.api.post = (p, b) => { if (/\/bridges$/.test(p)) brPosts.push([p, JSON.stringify(b)]); return brPost(p, b); };
+    win.Maity.api.del = (p, b) => { if (/\/bridges\//.test(p)) brDels.push(p); return brDel(p, b); };
+    expect(brBox() && text(brBox()).includes("No bridges.") && byId("bridge-pick-agt-a") && byId("bridge-purpose-agt-a")
+      && !byId("bridge-pick-agt-a").querySelectorAll("option").some((o) => o.getAttribute("value") === "agt-a"),
+      "bridges: the owner's Manage row offers Connect with a bridge, the agent itself not among the choices");
+    byId("bridge-pick-agt-a").value = "agt-b";
+    byId("bridge-purpose-agt-a").value = "git for the designer's files";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(brPosts.length === 1 && brPosts[0][0] === "/projects/maintainer/maity/members/agt-a/bridges"
+      && brPosts[0][1] === JSON.stringify({ bridge: "agt-b", purpose: "git for the designer's files" })
+      && brBox() && brBox().querySelectorAll("ul.bridges-serving-this li.bridge").length === 1 && text(brBox()).includes("lends its hands: git for the designer's files")
+      && /now lends its hands/.test(text(main)),
+      "bridges: connecting posts the bridge and the purpose, and the list shows it " + JSON.stringify(brPosts) + " " + (brBox() ? text(brBox()).slice(0, 160) : ""));
+    // The other side: Agent B's row lists whom it lends its hands to.
+    const brB = await agOpen("agt-b");
+    expect(brB && brB.querySelector(".member-bridges ul.bridges-serving-other li.bridge") && text(brB.querySelector(".member-bridges")).includes("Lends its hands to"),
+      "bridges: the bridge's own row lists the agent it serves");
+    btn(brBox(), "End").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(brDels.length === 1 && /\/members\/agt-a\/bridges\/brg-/.test(brDels[0]) && text(brBox()).includes("No bridges."),
+      "bridges: End ends it on the served agent's membership " + JSON.stringify(brDels));
+    // Across owners: the 202 is a consent; the line names the bridge's owner and the project.
+    win.Maity.api.post = (p, b) => (/\/bridges$/.test(p) ? Promise.resolve({ id: "req-brg1", class: "consent", to: "hum-other", title: "Bridge" }) : brPost(p, b));
+    byId("bridge-pick-agt-a").value = "agt-b";
+    byId("bridge-purpose-agt-a").value = "access to X";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(/Waiting for the consent of .* and the project/.test(text(main)), "bridges: across owners it waits for the bridge's owner and the project");
+    // A refusal is said in words.
+    win.Maity.api.post = (p, b) => (/\/bridges$/.test(p) ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { bridge: "already" } })) : brPost(p, b));
+    byId("bridge-purpose-agt-a").value = "again";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("That agent is already a bridge for this one."), "bridges: a refusal is said in words");
+    win.Maity.api.post = brPost; win.Maity.api.del = brDel;
+  }
   // Isolation (§6.2): an admin human isolates an agent with a reason, after a confirmation; the badge, then Lift isolation.
   {
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
@@ -2508,6 +2536,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "agent owners: what changed is sent with its reason " + JSON.stringify(aoPatches[0]));
   expect(text(byId("agent-owners-error")).includes("holds a role you left out"), "agent owners: a role still in use is said at the field");
   win.Maity.api.patch = aoPatch;
+  // The project's own roles arrive later and join the others; what was ticked and typed meanwhile stays.
+  const aoRolesGet = win.Maity.api.get;
+  let aoRolesAnswer;
+  win.Maity.api.get = (p) => (p.endsWith("/roles") ? new Promise((resolve) => { aoRolesAnswer = resolve; }) : aoRolesGet(p));
+  await projectSettings();
+  byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "kept";
+  aoRolesAnswer({ custom: [{ name: "triage", base: "coder" }, { name: "outsider", base: "viewer" }] });
+  for (let k = 0; k < 4; k++) await tick();
+  expect(byId("outside-role-writer").checked && byId("agent-owners-reason").value === "kept" && byId("outside-role-triage") && !byId("outside-role-triage").checked && !byId("outside-role-outsider"),
+    "agent owners: a role that arrives later joins the list, the unsaved choices stay");
+  const aoLatePatches = [];
+  win.Maity.api.patch = (p, b) => { aoLatePatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", {})); };
+  byId("outside-role-triage").checked = true;
+  aoForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(aoLatePatches.length === 1 && JSON.stringify(aoLatePatches[0].policy.outside_roles) === JSON.stringify(["coder", "writer", "triage"]),
+    "agent owners: a role that arrived later is sent too " + JSON.stringify(aoLatePatches[0]));
+  win.Maity.api.patch = aoPatch; win.Maity.api.get = aoRolesGet;
+  await projectSettings();
   const ownersGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
     ? Object.assign({}, x, { items: x.items.map((m) => (m.id === "agt-b" ? Object.assign({}, m, { owner_id: "hum-gone", isolated: { by: "hub", since: "2026-10-31T00:00:00Z", reason: "The agent's owner is no longer a member of this project." } }) : m)) })
@@ -3460,11 +3506,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     : Object.assign({}, c, { last_message: Object.assign({}, c.last_message, { body: null, redacted: true }) }))), next_cursor: null }));
   await go("#/maintainer/maity/chat");
   expect(text(conv("Agent D")).includes("A message was removed.") && !text(conv("Agent D")).includes("null"), "chat: a redacted last message");
-  // A hub before last_message: no preview, the rest stays.
+  // A chat with no message yet (last_message null): no preview, the rest stays.
   win.Maity.api.getAll = (p) => cAll(p).then((r) => (p !== "/projects/maintainer/maity/conversations?observed=true" ? r
-    : { items: r.items.map((c) => { const o = Object.assign({}, c); delete o.last_message; return o; }), next_cursor: null }));
+    : { items: r.items.map((c) => { return Object.assign({}, c, { last_message: null }); }), next_cursor: null }));
   await go("#/maintainer/maity/chat");
-  expect(convs().length === 6 && !main.querySelector(".chat-list .preview"), "chat: a hub without last_message shows no preview");
+  expect(convs().length === 6 && !main.querySelector(".chat-list .preview"), "chat: a chat with no message yet shows no preview");
   // A refresh asked for while a read runs is read once more after it.
   let convReads = 0;
   win.Maity.api.getAll = (p) => {
@@ -4283,14 +4329,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mpRefused && mpRefused.status === 400 && JSON.stringify(mpRefused.details.fields) === JSON.stringify({ meat_proxy: "conflicts_with_parts" }),
     "meat proxy: the fixture hub refuses the switch off with a part on, as §5.2 does");
   await mpPatch("/me", { meat_proxy: false });
-  // The note is the hub's (/me member.meat_proxy_note), never a copy: a hub that does not send it shows none.
+  // The note is the hub's (/me member.meat_proxy_note), never a copy.
   const mpGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { m.member.meat_proxy_note = "This person says: a newer note."; return m; }) : mpGet(p));
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
-  win.Maity.api.get = (p) => (p === "/me" ? mpGet(p).then((m) => { delete m.member.meat_proxy_note; return m; }) : mpGet(p));
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  expect(byId("meat-proxy") && !byId("meat-proxy-note") && !text(main).includes("This person says"), "meat proxy: a hub without the note shows the switch and no note of the page's own");
   win.Maity.api.get = mpGet;
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
@@ -4679,6 +4722,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("jfs-reason-jfs-s1").value = ""; jfPending().querySelector(".jfs-end").click(); await settle();
     expect(JSON.stringify(jfCalls) === JSON.stringify([["DELETE", "/jfs-s1/moderators/agt-s2", undefined]]) && !jfPending() && JSON.stringify(jfMods("jfs-s1")) === JSON.stringify(["hum-maintainer", "agt-s1"]),
       "jour fixe: a pending grant withdrawn with End");
+    // One owner series per circle owner and topic (§20.1); the delete answers the series as a reader sees it, none of
+    // the flags a keeper may not read.
+    {
+      const owned = { topic: "Smoke: my own look back", circle: "owner", circle_owner: "hum-maintainer", reason: "smoke" };
+      const made = await win.Maity.api.post("/projects/maintainer/sample/jour-fixe/series", owned);
+      let again = "created";
+      try { await win.Maity.api.post("/projects/maintainer/sample/jour-fixe/series", owned); } catch (e) { again = JSON.stringify(e.details && e.details.fields); }
+      expect(made.id && again === JSON.stringify({ topic: "taken" }), "fixture hub: a second owner series with the same topic is refused, topic taken " + again);
+      const last = await win.Maity.api.del("/projects/maintainer/sample/jour-fixe/series/" + made.id, { reason: "smoke done" });
+      expect(last.id === made.id && !("opted_out_members" in last) && !("report_list" in last), "fixture hub: the delete answers the series as a reader sees it");
+    }
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
     await go("#/maintainer/sample/jour-fixe"); await settle(6);
     const jfSampleRounds = main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
@@ -5015,6 +5069,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("agent-allowed-add-" + agHelperId).value = "not a name";
   alParts().querySelectorAll("button")[0].click();
   expect(text(alParts()).includes("A project's full name: owner/project."), "allowed projects: a bad name is refused at the field");
+  byId("agent-allowed-add-" + agHelperId).value = "a".repeat(32) + "/fine";
+  alParts().querySelectorAll("button")[0].click();
+  expect(text(alParts()).includes("A project's full name: owner/project.") && !text(alParts()).includes("a".repeat(32)), "allowed projects: an owner part longer than a handle is refused");
   byId("agent-allowed-add-" + agHelperId).value = "someone/later";
   alParts().querySelectorAll("button")[0].click();
   alForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -5734,6 +5791,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/conversations/cnv-0007/messages?")
     ? gcEvGet(p).then((r) => { if (gcNullSeq === null && r.items.length > 1) gcNullSeq = r.items[1].seq;
       return Object.assign({}, r, { items: r.items.map((m) => (m.seq === gcNullSeq ? Object.assign({}, m, { body: null }) : m)) }); }) : gcEvGet(p));
+  // A bridge serving a participant across owners reads along (§2.3, §9.2): among the observers, "carries for".
+  {
+    const obGet = win.Maity.api.get;
+    const bridgeAgent = { id: "agt-x", kind: "agent", handle: "outside-bridge", display_name: "Outside Bridge", owner_id: "hum-other", trust: "member", role: "coder",
+      areas: [], capabilities: [], presence: "online", paused: null, bridges: [], bridging_for: [{ id: "brg-x", member_id: "agt-a", handle: "agent-a", purpose: "access to X", cross_owner: true }] };
+    win.Maity.api.get = (p, ...r) => (/\/members$/.test(p) ? obGet(p, ...r).then((x) => Object.assign({}, x, { items: x.items.concat([bridgeAgent]) }))
+      : /\/conversations\/cnv-0007$/.test(p) ? obGet(p, ...r).then((v) => Object.assign({}, v, { observers: (v.observers || []).concat(["agt-x"]) }))
+      : obGet(p, ...r));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    const obLine = main.querySelector(".group-chat .group-observers");
+    expect(obLine && /Outside Bridge \(carries for Agent A\)/.test(text(obLine)), "bridges: a cross-owner bridge stands among a group chat's observers, carrying for its participant " + (obLine ? text(obLine) : "none"));
+    win.Maity.api.get = obGet;
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
@@ -6831,7 +6901,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.location.search = "";
 
   // The Keep the Why commitment (docs/api.md §6.23): the policy in Settings, the Members mark, the why on a report,
-  // the notification's way to the agent. Quiet on a hub without the fields.
+  // the notification's way to the agent. Quiet where the commitment is optional.
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const ktRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
   expect(ktRow("Agent B").querySelector(".ktw-unconfirmed") && text(ktRow("Agent B")).includes("agent-b#wle2: to confirm by " + win.Maity.dom.formatTime("2026-10-21T10:42:00Z"))
@@ -6844,9 +6914,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.endsWith("/members") ? ktGet0(p).then((r) => ({ ...r, items: r.items.map(ktStrip) })) : ktGet0(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   expect(!main.querySelectorAll("th").some((t) => t.textContent === "Keep the Why") && !main.querySelector(".ktw-unconfirmed"),
-    "keep the why: without the hub's fields (optional, or an older hub) no column and no mark");
+    "keep the why: under an optional commitment the hub sends no fields, so no column and no mark");
   win.Maity.api.getAll = ktGetAll; win.Maity.api.get = ktGet0;
-  // Settings: required or optional, with a reason; disabled under no memory provider; absent where the hub has no such policy.
+  // Settings: required or optional, with a reason; disabled under no memory provider.
   const ktPatches = [];
   const ktPatch = win.Maity.api.patch, ktGet = win.Maity.api.get;
   win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why" in b.policy) ktPatches.push(b); return ktPatch(p, b); };
@@ -8370,7 +8440,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(languages.length === 1 && text(languages[0]) === "Language: Deutsch", "language: only active human profile shows language");
   win.Maity.api.get = languageGet;
 
-  // Onboarding settings preserve the full editable object and hide on older hubs.
+  // Onboarding settings preserve the full editable object.
   const onboardingGet = win.Maity.api.get, onboardingPatch = win.Maity.api.patch;
   const onboardingWrites = [];
   win.Maity.api.patch = (path, body) => { onboardingWrites.push([path, body]); return onboardingPatch(path, body); };

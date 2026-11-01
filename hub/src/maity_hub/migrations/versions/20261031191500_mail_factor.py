@@ -11,7 +11,7 @@ for days).
 The chain is not fixed by this file: it follows whatever head `main` has when it lands.
 
 Revision ID: 20261031191500_mail_factor
-Revises: 20261031125530_long_polls
+Revises: 20261031190604_jour_fixe_series
 Create Date: 2026-10-31
 """
 

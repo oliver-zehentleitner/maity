@@ -2495,6 +2495,8 @@ window.MAITY_FIXTURES = {
           "context/",
           "TASKS.md"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [
           "tag"
@@ -2528,6 +2530,8 @@ window.MAITY_FIXTURES = {
         "areas": [
           "hub/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3.",
         "capabilities": [],
         "display_name": "Agent B",
@@ -2586,6 +2590,8 @@ window.MAITY_FIXTURES = {
         "areas": [
           "cli/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent C",
@@ -2641,6 +2647,8 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent D",
@@ -2678,6 +2686,8 @@ window.MAITY_FIXTURES = {
       },
       {
         "areas": [],
+        "bridges": [],
+        "bridging_for": [],
         "briefing": null,
         "capabilities": [],
         "display_name": "Reviewer",
@@ -6184,6 +6194,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "src/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Shop Dev",
         "handle": "shop-dev",
@@ -6213,6 +6224,7 @@ window.MAITY_FIXTURES = {
         "areas": [
           "web/"
         ],
+        "briefing": null,
         "capabilities": [],
         "display_name": "Anna's Shop Dev",
         "handle": "shop-dev",

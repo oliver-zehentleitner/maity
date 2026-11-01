@@ -710,7 +710,7 @@ window.Maity = window.Maity || {};
       Object.assign(out, flags(me().member.id));
       const agents = me().member.kind === "human" ? (fixtures()[slug + "/members.json"].items || []).filter((x) => x.kind === "agent" && x.owner_id === me().member.id && !x.removed_at) : [];
       if (agents.length) out.own_agents = agents.map((x) => Object.assign({ member_id: x.id }, flags(x.id)));
-      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).slice();
+      if (jfKeeps(slug, s)) out.report_recipients = (s.report_list || []).map((id) => ({ member_id: id }));
       return out;
     }
     if (!jfAdmin(slug)) return null;
@@ -1864,7 +1864,7 @@ window.Maity = window.Maity || {};
       if ("git_identity" in body) agent.git_identity = body.git_identity;
       if ("allowed_projects" in body) {
         const names = body.allowed_projects;
-        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[^/]+\/[^/]+$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
+        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
         agent.allowed_projects = names;
       }
       return agent;
@@ -2510,6 +2510,9 @@ window.Maity = window.Maity || {};
       const errors = jourFixeErrors(draft, file(m[1], "members.json", path).items);
       if (!body.reason) errors.reason = "required";
       if (jf.series.length >= 10) errors.series = "too_many";
+      // At most one owner series per circle owner and topic (§20.1).
+      if (draft.circle === "owner" && typeof draft.topic === "string"
+        && jf.series.some((x) => x.circle === "owner" && x.circle_owner === draft.circle_owner && x.topic === draft.topic.trim())) errors.topic = "taken";
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const made = { id: "jfs-f" + String(++jfSerial).padStart(2, "0"), topic: draft.topic.trim(), circle: draft.circle, circle_owner: draft.circle_owner, enabled: draft.enabled,
         recurrence: draft.recurrence, time: draft.time, timezone: draft.timezone, answer_window_minutes: draft.answer_window_minutes,
@@ -2538,8 +2541,10 @@ window.Maity = window.Maity || {};
       if (!jfDeletes(m[1], s)) fail(403, "forbidden", "not a keeper of this series", path, { reason: "not_series_keeper" });
       if (!(body && body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
       const jf = file(m[1], "jour-fixe.json", path);
+      // The final state, as a reader sees it (an owner's series shows an admin its stub only).
+      const last = jfSeriesView(m[1], s);
       jf.series = jf.series.filter((x) => x !== s);
-      return Object.assign({}, s, { next_at: undefined });
+      return last;
     }],
     // §20.2: a grant takes effect with the agent's owner and a keeper; the granter's own action is one
     // consent. 201 when both are there, else 202 and the grant waits in pending_moderators.
@@ -2711,7 +2716,14 @@ window.Maity = window.Maity || {};
       const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
       if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
       if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const people = file(m[1], "members.json", path).items.filter((x) => !x.removed_at);
+      // An owner who left stops the series' rounds, by schedule and by hand (§20.1).
+      if (s.circle === "owner" && !people.some((x) => x.id === s.circle_owner)) fail(409, "jour_fixe_state", "the circle owner is gone", path, { reason: "circle_owner_gone" });
       if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
+      // The circle: the owner and their agents, the humans, or everyone (§20.2); two are needed to talk.
+      const circle = s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
+        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people;
+      if (circle.length < 2) fail(409, "too_few", "fewer than two members are in the circle", path);
       const day = Date.now() - 24 * 3600000;
       if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
         fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
@@ -3859,6 +3871,53 @@ window.Maity = window.Maity || {};
       if (item && item.access !== "participant") fail(403, "forbidden", "not a participant", path, { reason: "not_a_participant" });
       if (body.meat_proxy === null) delete meatChats()[m[1] + "/" + id]; else meatChats()[m[1] + "/" + id] = body.meat_proxy;
       return null;
+    }],
+    // §2.3 bridges: a connection on the served agent's membership, asked by its owner;
+    // one owner behind both connects at once, across owners two consents are filed (202).
+    ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges$/, (m, body, path) => {
+      const who = me().member;
+      if (who.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]) && !x.removed_at);
+      if (!served) fail(404, "not_found", "Not found", path);
+      if (served.owner_id !== who.id) fail(403, "forbidden", "only the served agent's owner", path, { reason: "agent_owner" });
+      const bridge = items.find((x) => x.id === body.bridge && !x.removed_at);
+      const purpose = typeof body.purpose === "string" ? body.purpose.trim() : "";
+      const fields = {};
+      if (served.kind !== "agent") fields.member = "not_an_agent";
+      else if (served.role === "proxy") fields.member = "role";
+      else if ((served.bridges || []).length >= 5) fields.member = "too_many";
+      if (!bridge) fields.bridge = "not_a_member";
+      else if (bridge.kind !== "agent") fields.bridge = "not_an_agent";
+      else if (bridge.id === served.id) fields.bridge = "self";
+      else if (bridge.role === "proxy") fields.bridge = "role";
+      else if ((served.bridges || []).some((c) => c.member_id === bridge.id)) fields.bridge = "already";
+      if (!purpose || purpose.length > 200) fields.purpose = "invalid";
+      if (Object.keys(fields).length) fail(400, "invalid", "the connection is not valid", path, { fields });
+      if (bridge.owner_id !== served.owner_id) {
+        return { id: "req-bridge" + Date.now().toString(36), class: "consent", to: bridge.owner_id, status: "open",
+          title: "Bridge " + bridge.handle + " for " + served.handle + ": " + purpose };
+      }
+      const id = "brg-" + Math.random().toString(36).slice(2, 10);
+      served.bridges = (served.bridges || []).concat([{ id, member_id: bridge.id, handle: bridge.handle, purpose, cross_owner: false }]);
+      bridge.bridging_for = (bridge.bridging_for || []).concat([{ id, member_id: served.id, handle: served.handle, purpose, cross_owner: false }]);
+      return { id, served: served.id, bridge: bridge.id, purpose, cross_owner: false, created_by: who.id, created_at: new Date().toISOString() };
+    }],
+    // Either agent's owner, either agent or members:admin ends it (§2.3).
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges\/([^/]+)$/, (m, body, path) => {
+      const who = me().member;
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]));
+      const brg = decodeURIComponent(m[3]);
+      const c = served && (served.bridges || []).find((x) => x.id === brg);
+      if (!c) fail(404, "not_found", "Not found", path);
+      const bridge = items.find((x) => x.id === c.member_id) || {};
+      if (![served.owner_id, bridge.owner_id, served.id, bridge.id].includes(who.id) && !["owner", "admin"].includes(trustIn(m[1]))) {
+        fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      }
+      served.bridges = served.bridges.filter((x) => x.id !== brg);
+      bridge.bridging_for = (bridge.bridging_for || []).filter((x) => x.id !== brg);
+      return { id: brg, served: served.id, bridge: c.member_id, purpose: c.purpose, cross_owner: c.cross_owner, ended_at: new Date().toISOString() };
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {

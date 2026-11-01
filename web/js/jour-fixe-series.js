@@ -208,11 +208,10 @@ window.Maity = window.Maity || {};
 
   // ---- A member's part in a series: opting out, the report list (§20.2) --
 
-  // own_agents: one entry per agent of the caller, as a list of {member_id, opted_out, report_recipient}
-  // or a map by member id (the contract names the field, not its shape).
-  const ownAgents = (s) => (Array.isArray(s.own_agents) ? s.own_agents
-    : Object.entries(s.own_agents || {}).map(([id, v]) => Object.assign({ member_id: id }, v)));
-  const recipientIds = (s) => (s.report_recipients || []).map((x) => (typeof x === "string" ? x : x.member_id));
+  // own_agents: one entry per agent of the caller, {member_id, opted_out, report_recipient}; for a
+  // keeper, report_recipients: [{member_id}] (§20.2).
+  const ownAgents = (s) => s.own_agents || [];
+  const recipientIds = (s) => (s.report_recipients || []).map((x) => x.member_id);
 
   // Who is shown, from what the hub sends: the caller's own flags, each of their agents' (an owner acts
   // for them with ?member=), and for a keeper the report list. `done` draws the view again.

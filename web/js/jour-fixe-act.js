@@ -182,7 +182,7 @@ window.Maity = window.Maity || {};
     draw();
     return h("section", { class: "jfa-statement", "aria-labelledby": "jfa-statement-title" },
       h("h3", { id: "jfa-statement-title" }, M.t("jfa.statement.title")), h("p", { class: "hint" }, M.t("jfa.statement.hint")),
-      h("form", { onsubmit: async (e) => {
+      h("form", { class: "jfa-form", onsubmit: async (e) => {
         e.preventDefault();
         const body = { topics: topics.filter((t) => t.title.trim()).map((t) => ({ title: t.title.trim(), summary: t.summary.trim() || undefined,
           items: t.items.filter((it) => it.text.trim()).map((it) => ({ text: it.text.trim(), from: it.from })),
@@ -267,7 +267,7 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     return h("section", { class: "jfa-report-form", "aria-labelledby": "jfa-report-form-title" },
       h("h3", { id: "jfa-report-form-title" }, M.t("jfa.report.title")), h("p", { class: "hint" }, M.t("jfa.report.hint")),
-      h("form", { onsubmit: async (e) => {
+      h("form", { class: "jfa-form", onsubmit: async (e) => {
         e.preventDefault();
         const body = { findings: findings.value.split("\n").map((l) => l.trim()).filter(Boolean).map((text) => ({ text })), proposals: [] };
         if (summary.value.trim()) body.summary = summary.value.trim();

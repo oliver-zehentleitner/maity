@@ -333,6 +333,17 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         ):
             if by_project[project_id].principal_id == owner_id:
                 pairs.add((project_id, chat))
+        # A round's thread is read along by every project owner, or for an owner's series
+        # by its `circle_owner`, with or without an agent of theirs in it (§20.5).
+        r = t.jour_fixe_round.c
+        for project_id, chat, config in conn.execute(
+            select(r.project_id, r.conversation_id, r.config).where(
+                r.project_id.in_([m.project.id for m in humans]), r.conversation_id.isnot(None)
+            )
+        ):
+            mine, keeper = by_project[project_id], group_chats.keeper_of(config)
+            if keeper == mine.principal_id or (keeper is None and mine.trust == "owner"):
+                pairs.add((project_id, chat))
     if not pairs:
         return []
     groups = {
@@ -371,7 +382,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         else {}
     )
     rounds: set[str] = set()
-    if any(m.kind == "human" and m.role == "owner" for m in mines):
+    if any(m.kind == "human" and m.trust == "owner" for m in mines):
         rounds = set(
             conn.execute(
                 select(t.jour_fixe_round.c.conversation_id).where(
@@ -379,7 +390,8 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 )
             ).scalars()
         )
-    found = _access(by_project, pairs, stays, owners_of, rounds)
+    keepers = group_chats.round_keepers(conn, {c for _, c in pairs})
+    found = _access(by_project, pairs, stays, owners_of, rounds, keepers)
     if not found:
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
@@ -404,7 +416,9 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "title": group.title,
                 "participants": [short(people[s.membership_id]) for s in current],
                 "observers": group_chats.shown_observers(
-                    current, group_chats.observers_of(current, owners_of), carried
+                    current,
+                    group_chats.thread_observers(current, owners_of, keepers.get(chat)),
+                    carried,
                 ),
                 "access": access,
                 "closed_at": ts(group.closed_at),
@@ -429,19 +443,24 @@ def _access(
     stays: dict[str, list[Any]],
     owners: dict[str, str],
     rounds: set[str],
+    keepers: dict[str, str],
 ) -> dict[Key, str]:
     """`group_chats.access` of each chat, from the rows already read: the chats that
     exist for the caller, with how it sees them."""
     found: dict[Key, str] = {}
     for key in sorted(pairs):
         mine, current = mines[key[0]], stays[key[1]]
+        keeper = keepers.get(key[1])
         if any(s.membership_id == mine.id for s in current):
             found[key] = "participant"
+        elif keeper is not None:  # an owner's round: only its `circle_owner` reads along
+            if mine.kind == "human" and mine.principal_id == keeper:
+                found[key] = "observer"
         elif mine.kind == "human" and mine.principal_id in group_chats.observers_of(
             current, owners
         ):
             found[key] = "observer"
-        elif mine.kind == "human" and mine.role == "owner" and key[1] in rounds:
+        elif mine.kind == "human" and mine.trust == "owner" and key[1] in rounds:
             found[key] = "observer"  # every project owner reads a round's thread along (§20.5)
     return found
 
@@ -467,7 +486,7 @@ def _windows(
             mine = mines[key[0]]
             windows[key] = int(next(s.window_after for s in current if s.membership_id == mine.id))
         else:
-            windows[key] = int(min(s.window_after for s in current if s.agent_id in owned))
+            windows[key] = group_chats.observer_window(current, owned)
     return windows
 
 

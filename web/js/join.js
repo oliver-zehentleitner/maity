@@ -419,12 +419,9 @@ window.Maity = window.Maity || {};
         membershipField(takeOverField),
         handoverField,
         h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
-      // Offered when the hub knows briefings: its member view then has the key.
-      ctx.members.some((x) => "briefing" in x)
-        ? membershipField(h("div", { class: "join-briefing" },
-          h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
-          h("p", { class: "hint" }, M.t("join.briefing.hint"))))
-        : null),
+      membershipField(h("div", { class: "join-briefing" },
+        h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
+        h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
     status.el);
 
