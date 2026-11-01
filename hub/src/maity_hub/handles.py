@@ -311,6 +311,7 @@ def announce(
     for row in memberships(column, [subject_id]):
         one(row, "handle", *shown)
     if owner_id is None:
+        _names_changed(conn, subject_id, actor_in)
         agents = list(
             conn.execute(
                 select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
@@ -323,6 +324,22 @@ def announce(
         for row in memberships(t.membership.c.agent_id, list(by_id)):
             handle = by_id[row.agent_id]
             one(row, "name", mentions.global_name(old, handle), mentions.global_name(new, handle))
+
+
+def _names_changed(conn: Connection, human_id: str, actor_in: Any) -> None:
+    """The full name of each of the human's projects changed: an open transfer is withdrawn
+    (§6.25), its `go` could only be stale."""
+    from maity_hub import project_names
+    from maity_hub.events import lock_project
+
+    projects = conn.execute(
+        select(t.project.c.id)
+        .where(t.project.c.owner_human_id == human_id)
+        .order_by(t.project.c.id)
+    ).scalars()
+    for project_id in projects.all():
+        lock_project(conn, project_id)
+        project_names.withdraw_open(conn, project_id, actor_in(project_id), "the owner was renamed")
 
 
 def _owner_handle(conn: Connection, owner_id: str) -> str:
