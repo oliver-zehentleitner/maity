@@ -13,15 +13,16 @@ window.Maity = window.Maity || {};
   // answer comes: a slow or failing project holds up and hides no other.
   function perProject(ctx, root, title, intro, path, draw) {
     append(root, h("h2", null, title), h("p", { class: "muted" }, intro));
-    if (!ctx.projects.length) { append(root, h("p", { class: "muted" }, M.t("all.page.no_projects"))); return Promise.resolve(); }
-    return Promise.all(ctx.projects.map((p) => {
+    if (!ctx.projects.length) { append(root, h("p", { class: "muted" }, M.t("all.page.no_projects"))); return; }
+    // Not awaited: the page is drawn once the view returns, so it must not wait for an answer.
+    ctx.projects.forEach((p) => {
       const box = h("div", null, h("p", { class: "muted" }, M.t("all.page.reading")));
       append(root, h("section", { class: "all-project", "data-project": p.full_name, "aria-label": p.name || p.full_name },
         h("h3", null, h("a", { href: "/" + p.full_name + "/" + draw.view }, p.name || p.full_name)), box));
-      return M.api.get("/projects/" + M.api.projectPath(p.full_name) + path).then(
+      M.api.get("/projects/" + M.api.projectPath(p.full_name) + path).then(
         (answer) => append(clear(box), draw.answer(p, answer)),
         (err) => append(clear(box), draw.refused(p, err)));
-    }));
+    });
   }
 
   const unread = (err) => h("p", { class: "send-status failed" }, M.t("all.page.unread", { reason: err.message }));

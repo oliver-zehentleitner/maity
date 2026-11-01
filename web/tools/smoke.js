@@ -7412,6 +7412,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(apPages()[3].getAttribute("aria-current") === "page" && apOf("maity").querySelector(".why-summary") && text(apOf("sample")).includes("publishes no Keep the Why export"),
     "all projects: the Why page, a project's summary, and a project without an export says so");
   const apWhyGet = win.Maity.api.get;
+  // The page stands while an answer is on its way: a project's section says it is reading.
+  let apLate = null;
+  win.Maity.api.get = (p) => (p.includes("/maity/keep-the-why") ? new Promise((resolve) => { apLate = resolve; }) : apWhyGet(p));
+  await apGo("#/all/why");
+  expect(text(apOf("maity")).includes("Reading") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: a slow project holds up neither the page nor another project");
+  apLate({ summary: { attention: 0, members: 0, entries: 0, failed: 0 }, members: [], attention: [] });
   win.Maity.api.get = (p) => (p.includes("/maity/keep-the-why") ? Promise.reject(Object.assign(new Error("nope"), { code: "internal" })) : apWhyGet(p));
   await apGo("#/all/why");
   expect(text(apOf("maity")).includes("Could not read this project: nope") && text(apOf("sample")).includes("publishes no Keep the Why export"),
