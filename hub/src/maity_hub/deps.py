@@ -177,7 +177,10 @@ def wait_of(request: Request) -> int:
     raw = request.query_params.get("wait", "0")
     if not raw.isascii() or not raw.isdigit():
         raise invalid({"wait": "not_a_number"})
-    return min(int(raw[:6]), WAIT_MAX)  # a larger value is clamped (§8.3)
+    wait = min(int(raw[:6]), WAIT_MAX)  # a larger value is clamped (§8.3)
+    if wait:
+        request.state.held = True  # its length says nothing about the route (`request_stats`)
+    return wait
 
 
 async def events_caller(request: Request) -> Caller:
