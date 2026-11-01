@@ -21,22 +21,32 @@ window.Maity = window.Maity || {};
   // The preset's name is the option; what it means is the hint under the
   // select, which follows the choice (the designer's pass part 3: a long
   // option was cut off in the select).
+  // A table's words are getters on their index, read when drawn, so a
+  // language set after the page loads applies (context/rendering.md).
+  const row = (first, words, rest) => {
+    const out = [first];
+    Object.keys(words).forEach((at) => Object.defineProperty(out, at, { get: words[at], enumerable: true }));
+    return Object.assign(out, rest);
+  };
   const PRESETS = [
-    ["hierarchical", "Hierarchical", "Reviewers move cards to done, admins arbitrate contracts."],
-    ["solo", "Solo", "The holder moves its own card to done, the owner arbitrates."],
+    row("hierarchical", { 1: () => M.t("new_project.preset.hierarchical"), 2: () => M.t("new_project.preset.hierarchical_hint") }),
+    row("solo", { 1: () => M.t("new_project.preset.solo"), 2: () => M.t("new_project.preset.solo_hint") }),
   ];
 
   // §6.21: the providers, Keep the Why preselected, and the setup options
   // with their cards' titles verbatim, in the cards' order; the Keep the Why
   // ones only under Keep the Why. All five come ticked; each is sent as true
   // or false.
-  const PROVIDERS = [["keep-the-why", "Keep the Why"], ["none", "None"]];
+  const PROVIDERS = [
+    row("keep-the-why", { 1: () => M.t("new_project.provider.keep_the_why") }),
+    row("none", { 1: () => M.t("new_project.provider.none") }),
+  ];
   const OPTIONS = [
-    ["keep_the_why_init", "Set up Keep the Why in the repository", true],
-    ["keep_the_why_badge", "Add the Keep the Why badge to the README", true],
-    ["keep_the_why_ci", "Run the Keep the Why linter in CI", true],
-    ["keep_the_why_dashboard", "Publish the Keep the Why dashboard", true],
-    ["maity_badge", "Add the Maity badge to the README", false],
+    row("keep_the_why_init", { 1: () => M.t("new_project.option.keep_the_why_init") }, { 2: true }),
+    row("keep_the_why_badge", { 1: () => M.t("new_project.option.keep_the_why_badge") }, { 2: true }),
+    row("keep_the_why_ci", { 1: () => M.t("new_project.option.keep_the_why_ci") }, { 2: true }),
+    row("keep_the_why_dashboard", { 1: () => M.t("new_project.option.keep_the_why_dashboard") }, { 2: true }),
+    row("maity_badge", { 1: () => M.t("new_project.option.maity_badge") }, { 2: false }),
   ];
   // §6.21 `dashboard_path`: as the hub checks it, one to five segments of
   // [a-z0-9][a-z0-9._-]{0,62} joined by "/", no leading or trailing slash, and
@@ -44,25 +54,24 @@ window.Maity = window.Maity || {};
   const DASHBOARD_PATH_DEFAULT = "keep-the-why-dashboard";
   const DASHBOARD_PATH = /^[a-z0-9][a-z0-9._-]{0,62}(\/[a-z0-9][a-z0-9._-]{0,62}){0,4}$/;
   const dashboardPathOk = (v) => DASHBOARD_PATH.test(v) && !v.includes("..");
-  const DASHBOARD_PATH_RULE = "One to five parts joined by /, each starting with a lowercase letter or a digit, "
-    + "then lowercase letters, digits, dots, hyphens or underscores; no / at either end, no .. anywhere";
 
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
-    taken: "This owner has a project with this slug already, or had one by that name.",
-    reserved: "This word is part of the dashboard's addresses; choose another slug.",
-    string_pattern_mismatch: M.dom.NAME_RULES.slug.text,
-    string_too_short: "Required.",
-    string_too_long: "Too long.",
-    missing: "Required.",
-    not_a_configured_forge: M.FORGE_RULE,
-    unknown: "Not a known value.",
+    taken: () => M.t("new_project.reason.taken"),
+    reserved: () => M.t("new_project.reason.reserved"),
+    string_pattern_mismatch: () => M.dom.NAME_RULES.slug.text,
+    string_too_short: () => M.t("new_project.reason.required"),
+    string_too_long: () => M.t("new_project.reason.too_long"),
+    missing: () => M.t("new_project.reason.required"),
+    not_a_configured_forge: () => M.FORGE_RULE,
+    unknown: () => M.t("new_project.reason.unknown"),
     // owner: the same answer for every handle that is no organisation of one's own.
-    owner_unknown: "Not an organisation you are in.",
-    unknown_provider: "Not a memory provider this hub knows.",
-    not_a_boolean: "Must be ticked or not.",
-    format: DASHBOARD_PATH_RULE,
+    owner_unknown: () => M.t("new_project.reason.owner_unknown"),
+    unknown_provider: () => M.t("new_project.reason.unknown_provider"),
+    not_a_boolean: () => M.t("new_project.reason.not_a_boolean"),
+    format: () => M.t("new_project.path.rule"),
   };
+  const reasonWords = (reason) => (Object.hasOwn(REASONS, reason) ? REASONS[reason]() : null);
 
   // A slug proposed from the name until the slug field is typed in.
   function slugFrom(name) {
@@ -84,17 +93,17 @@ window.Maity = window.Maity || {};
     // them create projects; otherwise not offered. A suspended organisation
     // takes no new project.
     const orgs = await M.api.get("/orgs").then((r) => r.items.filter((o) => !o.moderation && (o.my_role !== "member" || o.members_create_projects))).catch(() => []);
-    const owner = field("project-owner", "Owner",
+    const owner = field("project-owner", M.t("new_project.owner"),
       h("select", { id: "project-owner" },
-        h("option", { value: "" }, "@" + ctx.me.handle + " (you)"),
+        h("option", { value: "" }, M.t("new_project.owner.you", { handle: ctx.me.handle })),
         orgs.map((o) => h("option", { value: o.handle }, "@" + o.handle + " · " + o.display_name))),
-      "The project's address is <owner>/<slug>. An organisation's owners hold trust owner in every project it owns.");
+      M.t("new_project.owner.hint"));
     owner.input.value = "";
-    const name = field("project-name", "Name", h("input", { id: "project-name", required: true, maxlength: "200", autocomplete: "off" }));
-    const slug = field("project-slug", "Slug",
+    const name = field("project-name", M.t("new_project.name"), h("input", { id: "project-name", required: true, maxlength: "200", autocomplete: "off" }));
+    const slug = field("project-slug", M.t("new_project.slug"),
       h("input", { id: "project-slug", required: true, pattern: SLUG_PATTERN, maxlength: "63", autocomplete: "off", spellcheck: "false" }),
-      M.dom.NAME_RULES.slug.text + " Used in links and by the CLI; it cannot be changed later.");
-    const repository = field("project-repository", "Repository (optional)",
+      M.dom.NAME_RULES.slug.text + " " + M.t("new_project.slug.hint"));
+    const repository = field("project-repository", M.t("new_project.repository"),
       h("input", { id: "project-repository", type: "url", placeholder: "https://github.com/owner/name", autocomplete: "off" }));
     // §16.9, §6.1: public by default for the namespace owner; anyone else's
     // project starts private, and only an owner can make it public.
@@ -113,17 +122,15 @@ window.Maity = window.Maity || {};
       h("label", { class: "check", for: "project-private" }, privateBox, " " + M.t("new_project.private.label")),
       privateHint,
       h("p", { class: "hint", id: "project-private-repo" }, M.t("new_project.private.repository")));
-    const memory = field("project-memory", "Project memory",
+    const memory = field("project-memory", M.t("new_project.memory"),
       h("select", { id: "project-memory" }, PROVIDERS.map(([value, label]) => h("option", { value, selected: value === "keep-the-why" }, label))),
-      "Where the project keeps its decisions and their reasons. Maity stores none of it: an agent sets it up in the repository, "
-      + "through the setup cards below, each a pull request.");
+      M.t("new_project.memory.hint"));
     memory.input.value = "keep-the-why";
     // The options, each a checkbox ticked to begin with.
     // What an option does beyond its card is said right under it, read
     // before it is ticked (the designer's pass part 3).
     const NOTES = {
-      maity_badge: "It also switches the project's badge on from the start: it shows anyone how many humans and agents "
-        + "the project has. Project settings switch it off.",
+      maity_badge: M.t("new_project.option.maity_badge_note"),
     };
     const options = OPTIONS.map(([key, label, ktwOnly]) => {
       const note = NOTES[key] ? h("span", { class: "check-note muted", id: "setup-" + key + "-note" }, NOTES[key]) : null;
@@ -139,26 +146,24 @@ window.Maity = window.Maity || {};
     pathInput.value = DASHBOARD_PATH_DEFAULT;
     const pathError = h("p", { class: "field-error", id: "setup-dashboard-path-error", role: "alert" });
     const pathField = h("div", { class: "setup-path field-stack" },
-      h("label", { for: "setup-dashboard-path" }, "Path"), pathInput,
-      h("p", { class: "hint", id: "setup-dashboard-path-hint" }, "Where the dashboard is published, below the root of the repository's "
-        + "documentation site. " + DASHBOARD_PATH_RULE + "."),
+      h("label", { for: "setup-dashboard-path" }, M.t("new_project.path")), pathInput,
+      h("p", { class: "hint", id: "setup-dashboard-path-hint" }, M.t("new_project.path.hint")),
       pathError);
     dashboard.row = h("div", { class: "check-row" }, dashboard.row, pathField);
     const showPath = () => { pathField.hidden = !dashboard.box.checked; };
     dashboard.box.addEventListener("change", showPath);
     const setupError = h("p", { class: "field-error", id: "project-setup-error", role: "alert" });
     const setupBox = h("fieldset", { class: "project-setup", "aria-describedby": "project-setup-hint project-setup-error" },
-      h("legend", null, "Setup cards"),
+      h("legend", null, M.t("new_project.setup")),
       options.map((o) => o.row),
-      h("p", { class: "hint", id: "project-setup-hint" }, "Each ticked option becomes a card for an agent once the project has a repository "
-        + "(now, or when it is set later)."),
+      h("p", { class: "hint", id: "project-setup-hint" }, M.t("new_project.setup.hint")),
       setupError);
     const showOptions = () => {
       const ktwChosen = memory.input.value === "keep-the-why";
       options.forEach((o) => { if (o.ktwOnly) o.row.hidden = !ktwChosen; });
     };
     memory.input.addEventListener("change", showOptions);
-    const preset = field("project-preset", "Policy preset",
+    const preset = field("project-preset", M.t("new_project.preset"),
       h("select", { id: "project-preset" }, PRESETS.map(([value, label]) => h("option", { value }, label))), PRESETS[0][2]);
     const presetHint = preset.nodes[2];
     preset.input.addEventListener("change", () => {
@@ -186,7 +191,7 @@ window.Maity = window.Maity || {};
       const rest = [];
       Object.keys(fields).forEach((key) => {
         const reason = String(fields[key]);
-        const text = (key === "owner" && REASONS["owner_" + reason]) || REASONS[reason] || reason;
+        const text = (key === "owner" && reasonWords("owner_" + reason)) || reasonWords(reason) || reason;
         if (key === "setup.dashboard_path") {
           pathError.textContent = text;
           pathInput.setAttribute("aria-invalid", "true");
@@ -194,11 +199,11 @@ window.Maity = window.Maity || {};
         }
         const option = options.find((o) => key === "setup." + o.key);
         if (option || key === "setup") {
-          setupError.textContent += (setupError.textContent ? " " : "") + (option ? OPTIONS.find(([k]) => k === option.key)[1] + ": " : "") + text;
+          setupError.textContent += (setupError.textContent ? " " : "") + (option ? M.t("new_project.field_reason", { field: OPTIONS.find(([k]) => k === option.key)[1], reason: text }) : text);
           return;
         }
         const target = byField[key];
-        if (!target) { rest.push(key + ": " + text); return; }
+        if (!target) { rest.push(M.t("new_project.field_reason", { field: key, reason: text })); return; }
         target.error.textContent = text;
         target.input.setAttribute("aria-invalid", "true");
       });
@@ -233,7 +238,7 @@ window.Maity = window.Maity || {};
         // The path only with the dashboard chosen; otherwise left out, not sent as null.
         if (sendsPath) body.setup.dashboard_path = pathInput.value.trim();
         body.policy = { preset: preset.input.value };
-        status.busy("Creating…");
+        status.busy(M.t("new_project.creating"));
         submit.disabled = true;
         try {
           const created = await M.api.post("/projects", body);
@@ -248,14 +253,14 @@ window.Maity = window.Maity || {};
           const fields = err.code === "invalid" && err.details && err.details.fields ? err.details.fields : null;
           if (fields) {
             const rest = showErrors(fields);
-            if (rest.length) status.fail("Not created: ", { message: rest.join("; ") });
+            if (rest.length) status.fail(M.t("new_project.not_created"), { message: rest.join("; ") });
             else status.done();
           } else if (err.code === "forbidden" && err.details && err.details.reason === "org_role") {
-            status.fail("Not created: ", { message: "this organisation lets only its owners and admins create projects" });
+            status.fail(M.t("new_project.not_created"), { message: M.t("new_project.refused.org_role") });
           } else if (err.code === "forbidden" && err.details && err.details.reason === "moderation_hold") {
-            status.fail("Not created: ", { message: "this organisation is suspended and takes no new project" });
+            status.fail(M.t("new_project.not_created"), { message: M.t("new_project.refused.moderation_hold") });
           } else {
-            status.fail("Not created: ", err);
+            status.fail(M.t("new_project.not_created"), err);
           }
         }
       },
@@ -266,11 +271,11 @@ window.Maity = window.Maity || {};
     memory.nodes,
     setupBox,
     preset.nodes);
-    const submit = h("button", { type: "submit", class: "primary" }, "Create project");
+    const submit = h("button", { type: "submit", class: "primary" }, M.t("new_project.submit"));
     append(form, submit, status.el);
 
-    append(root, h("h2", null, "Create a project"),
-      h("p", { class: "muted" }, "You become its owner. Agents join it afterwards, from its Agents view (Join an agent)."),
+    append(root, h("h2", null, M.t("new_project.title")),
+      h("p", { class: "muted" }, M.t("new_project.intro")),
       form);
     name.input.focus();
   };
@@ -278,8 +283,8 @@ window.Maity = window.Maity || {};
   // A human with no membership yet: the one thing to do is create a project.
   M.views.noProjects = function (ctx, root) {
     append(clear(root), h("div", { class: "empty-state" },
-      h("h2", null, "No projects yet"),
-      h("p", null, "You are not a member of any project. Create one; you become its owner and can then join agents to it."),
-      h("p", null, h("a", { class: "button", href: "/new" }, "Create a project"))));
+      h("h2", null, M.t("new_project.none.title")),
+      h("p", null, M.t("new_project.none.text")),
+      h("p", null, h("a", { class: "button", href: "/new" }, M.t("new_project.none.create")))));
   };
 })(window.Maity);

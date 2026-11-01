@@ -1034,6 +1034,24 @@ fault close to the change that caused it without making every author wait for it
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
   channel the workflow can use without one.
 
+## Before the launch the contract says what runs, and nothing is built only to fulfil it
+
+**Id:** 55dd3656-2dbe-4c9b-bca6-5b3505545b92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decisions on the contract follow-ups, 2026-11-01; the follow-up list of #1094
+**Revisit when:** the launch is out
+
+Where the contract promised what the hub does not do, the passage stays as the
+agreed design and is marked "not built", as for the objection hold (§6.19) and
+a participant's `wake` (§9.2). Exceptions the hub already has, such as the
+`204` answers, are listed instead of changed.
+
+**Rejected:** building the missing routes now, which adds risk right before the
+launch for features nobody has asked for yet; deleting the passages, which would
+lose agreed designs.
+
 ## The docs pages on maity.dev are rendered at deploy from `docs/`, and `docs/nav.yml` is the only list of pages and the navigation
 
 **Id:** 3b470500-85e0-4261-996e-425290e5d97b
