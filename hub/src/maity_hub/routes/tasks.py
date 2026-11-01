@@ -1136,6 +1136,11 @@ def patch_task(
                     values.update(_closing(card))
         previous_mentions = card.mentions or []
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
+        signature = (
+            cards.new_signature(card.approvals, changed["approvals"])
+            if changed.get("approvals")
+            else None
+        )
         edges_changed = depends_changed or bool(partners) or bool(related)
         if not changed and not edges_changed:
             return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
@@ -1196,6 +1201,7 @@ def patch_task(
             audience(conn, card),
             {
                 **payload,
+                **({"signature": signature} if signature else {}),
                 "id": card.id,
                 "fields": sorted(set(fields)),
                 "history": entries,
@@ -2031,7 +2037,16 @@ def report(
             conn,
             mine.project.id,
             "task_reported",
-            list(dict.fromkeys(targets)) + [*role_tokens("reviewer"), "trust:admin"],
+            list(dict.fromkeys(targets))
+            + [
+                *role_tokens("reviewer"),
+                *(
+                    role_tokens("tester")
+                    if mine.project.done_authority in ("tester", "reviewer_and_tester")
+                    else []
+                ),
+                "trust:admin",
+            ],
             # The persisted status on both sides, so that a reader tells an entry into
             # review from a refresh (§8.2, §6.22); a blocked card stays blocked.
             {**stored, "status_before": status_before, "status_after": card.status},
@@ -2050,6 +2065,7 @@ def report(
                     "id": card.id,
                     "fields": ["approvals"],
                     "approvals": signatures,
+                    "signature": cards.new_signature(None, signatures),
                     "history": [],
                     "project_state": mine.project.state,
                 },

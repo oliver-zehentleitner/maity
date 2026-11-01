@@ -180,4 +180,54 @@ def test_the_export_lists_the_signatures_a_person_gave(
     assert _sign(team["reviewer"], card).status_code == 200
     exported = team["reviewer"].get("/me/export").json()
     assert [row["card"]["id"] for row in exported["card_approvals"]] == [card["id"]]
+    assert exported["card_approvals"][0]["slot"] == "review"
+    assert exported["card_approvals"][0]["revision"] == 1
     assert team["tester"].get("/me/export").json()["card_approvals"] == []
+
+
+def test_the_export_lists_the_signature_that_closed_the_card(
+    owner: flow.Human, team: dict[str, Any]
+) -> None:
+    card = _in_review(owner, team["worker"])
+    assert _sign(team["reviewer"], card).status_code == 200
+    closed = _sign(team["tester"], card)
+    assert closed.json()["status"] == "done", closed.text
+    [row] = team["tester"].get("/me/export").json()["card_approvals"]
+    assert (row["card"]["id"], row["slot"]) == (card["id"], "test")
+    assert row["revision"] == 1
+    [first] = team["reviewer"].get("/me/export").json()["card_approvals"]
+    assert (first["card"]["id"], first["slot"], first["revision"]) == (card["id"], "review", 1)
+
+
+def test_a_rework_of_a_half_signed_card_is_no_signature_in_the_export(
+    owner: flow.Human, team: dict[str, Any]
+) -> None:
+    card = _in_review(owner, team["worker"])
+    assert _sign(team["reviewer"], card).status_code == 200
+    back = team["tester"].patch(f"{BASE}/tasks/{card['id']}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    assert team["tester"].get("/me/export").json()["card_approvals"] == []
+    assert len(team["reviewer"].get("/me/export").json()["card_approvals"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("authority", "tester_reached"),
+    [("reviewer", False), ("tester", True), ("reviewer_and_tester", True)],
+)
+def test_a_report_reaches_the_testers_only_where_they_decide(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    authority: str,
+    tester_reached: bool,
+) -> None:
+    _authority(owner, authority)
+    _in_review(owner, _person(make_client, migrated, "wor", "coder"))
+    with migrated.connect() as conn:
+        event = conn.execute(
+            select(t.event).where(t.event.c.kind == "task_reported").order_by(t.event.c.seq.desc())
+        ).first()
+    assert event is not None
+    assert "role:reviewer" in event.audience
+    assert ("role:tester" in event.audience) == tester_reached
+    assert ("role:red-team" in event.audience) == tester_reached

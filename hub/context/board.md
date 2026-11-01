@@ -269,11 +269,13 @@ it let the same issue be imported twice through two spellings of its URL.
 
 A place already filled keeps its signature when a second member of that role signs: the call answers 200 and changes
 nothing. A `report` with `done` by someone holding both `tasks:review` and `tasks:test` fills neither, since a report has
-no `approve` to say which. Open dependencies refuse the first signature too, not only the one that would close the card.
+no `approve` to say which. Open dependencies and a release not ready refuse the first signature too, not only the one that would close the card.
 The downgrade turns `tester` and `reviewer_and_tester` into `reviewer`, the nearest authority the older hub knows.
 
 **Reason:** each is the narrowest reading: nothing a member signed is replaced, nothing is signed that the caller did not
 name, a signature does not stand on a card that could not close, and a downgrade does not leave a project without anyone
 able to close a card.
 
-**Rejected alternatives:** unknown; these were the first reading, not chosen against others.
+**Rejected alternatives:** for the downgrade, `admin` loosens nothing, but only admins could close a card then; it was
+named in review, and leaving the team unable to close weighs more for a downgrade that is an emergency step. The others are
+unknown: they were the first reading, not chosen against others.
