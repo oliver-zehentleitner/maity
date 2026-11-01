@@ -143,7 +143,7 @@ window.Maity = window.Maity || {};
   // §6.3 "Allowed projects": a switch for any project (null), else a checkbox per
   // project: those on the list, the agent's own and the ones the human is in, plus a
   // name typed in, as an agent may be allowed into a project before it exists.
-  const FULL_NAME = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/;
+  const FULL_NAME = { test: (v) => { const parts = v.split("/"); return parts.length === 2 && parts.every((x) => M.dom.NAME_RULES.slug.test.test(x)); } };
   function allowedForm(ctx, a, done) {
     const key = (k) => "agent-allowed-" + k + "-" + a.id;
     const stored = a.allowed_projects === undefined ? null : a.allowed_projects;
@@ -466,7 +466,7 @@ window.Maity = window.Maity || {};
       const inHere = M.t("agents.project.in", { name: ctx.project.name || ctx.slug });
       return h("section", { class: "agent-here", "aria-label": inHere },
         h("h4", null, inHere),
-        h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin),
+        h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin, ctx),
           m.paused && !ctx.canAdmin ? [" · ", P.pausedText(m)] : null),
         M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
         // Whom it reports to, as its owner sets it (§2.3); an admin also on Members.
@@ -496,7 +496,7 @@ window.Maity = window.Maity || {};
         const head = h("tr", { class: "agent-row" + (wanted === a.id ? " wanted" : ""), "data-agent": a.id },
           h("th", { scope: "row" }, M.avatar(a, 24), " ", h("span", { class: "agent-row-name" }, a.display_name), h("span", { class: "muted" }, " @" + (a.name || a.handle))),
           h("td", { "data-label": M.t("members.col.role") }, M.trust.words(m)),
-          h("td", { "data-label": M.t("agents.list.presence") }, M.presenceNodes(m, ctx.canAdmin)),
+          h("td", { "data-label": M.t("agents.list.presence") }, M.presenceNodes(m, ctx.canAdmin, ctx)),
           h("td", { "data-label": M.t("agents.list.instances") }, M.t("agents.list.instances_count", { count: active })),
           h("td", { class: "agent-actions" }, manage));
         return isOpen ? [head, h("tr", { class: "agent-manage", id: rowId }, h("td", { colspan: "5" },

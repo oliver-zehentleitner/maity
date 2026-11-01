@@ -43,6 +43,7 @@ FORCED_FLOOR = 30  # seconds before a `max_age=0` read asks the forge again (§1
 LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
+REREAD_PER_ROUND = 15  # reports last seen open that one sweep reads again, 4+ requests each
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
 
 # Each round starts at another project: a round ends at the first read the forge
@@ -315,6 +316,18 @@ def _core(report: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in report.items() if k not in ("observed", "mismatch")}
 
 
+def _never_observed(report: dict[str, Any]) -> bool:
+    return report.get("code") is not False and report.get("observed") is None
+
+
+def _last_seen_open(report: dict[str, Any]) -> bool:
+    """A merge only shows when someone looks again (§6.6). A merged or closed pull request has
+    nothing more to say."""
+    if report.get("code") is False:
+        return False
+    return (report.get("observed") or {}).get("pr_state") == "open"
+
+
 def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
     observed = dict(report.get("observed") or {})
     observed.pop("observed_at", None)
@@ -392,8 +405,10 @@ def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None
 def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
     """One round: the visibility of every public page's repository, then every report
     without an observation on an open card or one closed within REPORT_WINDOW, then every
-    open release. The round ends at the first of those reads the forge does not answer
-    (down or rate-limited: the rest would fail alike) and when `stop` is set."""
+    open release and the links, then the REREAD_PER_ROUND reports of such cards with the oldest
+    observation whose pull request was last seen open. The round ends at the first of those
+    reads the forge does not answer (down or rate-limited: the rest would fail alike) and when
+    `stop` is set."""
     since = clock.now() - REPORT_WINDOW
     with engine.connect() as conn:
         projects = conn.execute(
@@ -422,13 +437,21 @@ def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) 
     work: list[tuple[Callable[..., Any], tuple[Any, ...]]] = [
         (observe_report, (engine, fg, card.id, MAX_AGE))
         for card in cards
-        if card.project_id in observable
-        and card.report.get("observed") is None
-        and card.report.get("code") is not False
+        if card.project_id in observable and _never_observed(card.report)
     ]
     order = _rotated(sorted(observable), "sweep")
     work += [(observe_release, (engine, fg, project_id)) for project_id in order]
     work += [(observe_links, (engine, fg, project_id)) for project_id in order]
+    # Last and oldest first: these stay on the list while a pull request stays open, and must not
+    # spend what a new report, a release or a link needs (§11.4). A read that stores a new
+    # `observed_at` sends the report to the back, whichever replica made it.
+    seen_open = sorted(
+        (card for card in cards if card.project_id in observable and _last_seen_open(card.report)),
+        key=lambda card: card.report["observed"].get("observed_at") or "",
+    )
+    work += [
+        (observe_report, (engine, fg, card.id, MAX_AGE)) for card in seen_open[:REREAD_PER_ROUND]
+    ]
     # A repository that turned private comes off a public page whatever else the forge refuses
     # this round (§16.9): the visibility reads go first, for every project with a public page
     # (also one the hub can no longer read: that is private), and never end the round, since a

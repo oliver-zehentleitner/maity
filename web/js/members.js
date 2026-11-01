@@ -83,12 +83,29 @@ window.Maity = window.Maity || {};
   const isConsent = (answer) => !!answer && answer.class === "consent" && /^req-/.test(answer.id || "");
 
   // A presence the page knows gets its dot; anything else is said as it comes.
-  function presenceNodes(m, warn) {
+  // Outage and cover (§6.12): a limit with its end and reason, who covers this member and
+  // whom it covers. Nothing for a member who is simply available, offline or paused.
+  function availabilityNodes(ctx, m) {
+    const a = m.availability || {};
+    const parts = [];
+    if (a.state === "limited") {
+      const away = a.source === "dormant" ? M.t("availability.dormant")
+        : a.until ? M.t("availability.limited_until", { until: formatTime(a.until) }) : M.t("availability.limited");
+      parts.push(h("span", { class: "availability-limited" }, away, a.reason ? " (" + a.reason + ")" : ""));
+    }
+    if (m.covered_by) parts.push(h("span", null, M.tn("availability.covered_by", { who: M.dom.memberRef(ctx, m.covered_by.member_id), ago: formatAgo(m.covered_by.since) })));
+    (m.covering || []).forEach((c) => parts.push(h("span", null, M.tn("availability.covering", { who: M.dom.memberRef(ctx, c.member_id), ago: formatAgo(c.since) }))));
+    return parts.length ? h("span", { class: "availability-note" }, parts) : null;
+  }
+  M.availabilityNodes = availabilityNodes;
+
+  function presenceNodes(m, warn, ctx) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence]() : String(m.presence || M.t("members.presence.unknown")),
       M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
-        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · ", M.t("members.seen", { ago: formatAgo(m.last_seen_at) })) : null];
+        : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · ", M.t("members.seen", { ago: formatAgo(m.last_seen_at) })) : null,
+      ctx ? availabilityNodes(ctx, m) : null];
   }
 
   // What a member's row and an own agent's card on Agents share (js/agents-page.js):
@@ -741,7 +758,7 @@ window.Maity = window.Maity || {};
       const list = shown.map((m, i) => ({ m, i })).sort((a, b) => levelOf(a.m) - levelOf(b.m) || a.i - b.i).map((x) => x.m);
       const agents = shown.filter((m) => m.kind === "agent");
       const role = { title: M.t("members.col.role"), cell: (m) => M.trust.words(m) };
-      const presence = { title: M.t("members.col.presence"), presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin) };
+      const presence = { title: M.t("members.col.presence"), presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin, ctx) };
       const joined = { title: M.t("members.col.joined"), cell: (m) => formatTime(m.joined_at) };
       // An agent's own columns; a human's read "—".
       const agentOnly = (cell) => (m) => (m.kind === "agent" ? cell(m) : "—");
@@ -796,7 +813,7 @@ window.Maity = window.Maity || {};
           redraw();
           return;
         }
-        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin)); });
+        fresh.forEach((m) => { const td = presenceCells.get(m.id); if (td) append(clear(td), presenceNodes(m, ctx.canAdmin, ctx)); });
         status.done();
       } catch (err) {
         status.fail(M.t("members.refresh_failed"), err);

@@ -922,6 +922,7 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    availability_step(run, page, alpha)
     agent_owners_step(run, page)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
@@ -2626,6 +2627,20 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     assert shown["memory"]["provider"] == "keep-the-why" and shown["policy"]["keep_the_why"] == "required", shown
     run.a11y(page, "project settings, memory")
     no_problems(run, "memory provider")
+
+
+def availability_step(run: Run, page: Page, clone: Path) -> None:
+    """Outage and cover (docs/api.md §6.12) on the real hub: the agent declares a limit,
+    Members says until when and why, and the next resume clears it."""
+    run.step("members: an agent's declared limit shows until when and why")
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    run.maity(clone, "limit", "--until", until, "--reason", "e2e quota")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    note = page.locator("table.members tr.member", has_text="E2E Agent").locator(".availability-note")
+    expect(note).to_contain_text("Away until")
+    expect(note).to_contain_text("(e2e quota)")
+    run.a11y(page, "members, an agent away")
+    run.maity(clone, "resume")
 
 
 def agent_owners_step(run: Run, page: Page) -> None:

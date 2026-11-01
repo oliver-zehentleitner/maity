@@ -2527,6 +2527,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = ownersDel; win.Maity.api.get = ownersGet;
   await go("#/maintainer/maity/inbox");
 
+  // Outage and cover (§6.12) in a member list: the limit and its reason, who covers, whom one covers; nothing for the rest.
+  const avFixture = await win.Maity.api.getAll("/projects/maintainer/maity/members");
+  const avGetAll = win.Maity.api.getAll;
+  const avOne = avFixture.items.find((x) => x.id === "agt-b"), avOther = avFixture.items.find((x) => x.id === "agt-a");
+  win.Maity.api.getAll = (p) => avGetAll(p).then((r) => (p.startsWith("/projects/maintainer/maity/members") ? Object.assign({}, r, { items: r.items.map((x) => (x.id === avOne.id
+    ? Object.assign({}, x, { availability: { state: "limited", since: "2026-10-31T00:00:00Z", until: "2026-10-31T09:00:00Z", source: "self", reason: "quota" }, covered_by: { member_id: avOther.id, since: "2026-10-31T00:10:00Z" } })
+    : x.id === avOther.id ? Object.assign({}, x, { covering: [{ member_id: avOne.id, since: "2026-10-31T00:10:00Z" }] }) : x)) }) : r));
+  const avGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? win.Maity.api.getAll(p) : avGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const avNote = (id) => { const r = main.querySelectorAll("tr.member").find((tr) => tr.attrs["data-member"] === id); return r && r.querySelector(".availability-note"); };
+  expect(avNote(avOne.id) && text(avNote(avOne.id)).includes("Away until") && text(avNote(avOne.id)).includes("(quota)") && text(avNote(avOne.id)).includes("Covered by " + avOther.display_name),
+    "availability: the list says until when and why, and who covers " + (avNote(avOne.id) && text(avNote(avOne.id))));
+  expect(avNote(avOther.id) && text(avNote(avOther.id)).includes("Covering " + avOne.display_name), "availability: the substitute's row says whom it covers");
+  expect(main.querySelectorAll(".availability-note").length === 2, "availability: nothing for a member with no outage and no cover");
+  await go("#/maintainer/maity/members/" + avOne.id); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".availability-note") && text(main.querySelector(".availability-note")).includes("Away until"), "availability: a member's page says it too");
+  win.Maity.api.getAll = avGetAll; win.Maity.api.get = avGet;
+  await go("#/maintainer/maity/inbox");
+
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
