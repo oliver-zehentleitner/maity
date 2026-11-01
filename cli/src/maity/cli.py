@@ -2370,6 +2370,7 @@ def _card_line(card: dict[str, Any]) -> str:
     """`<id> [<status>] <title>`, with the children's `open/total` on a parent."""
     show = onboarding.inline
     line = f"{show(card.get('id'))} [{show(card.get('status'))}] {show(card.get('title'))}"
+    line += onboarding.imported_mark(card)
     children = _obj(card.get("children"))
     if isinstance(children.get("total"), int) and children["total"] > 0:
         line += f" ({show(children.get('open'))}/{show(children['total'])} open)"

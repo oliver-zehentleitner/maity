@@ -45,6 +45,22 @@ def settings(project: Any) -> dict[str, Any]:
     }
 
 
+def _forge_quoted(title: str) -> str:
+    """A title from the forge, often no member's text, in quotes it can't end: `"` and `\\`
+    escaped. Who wrote it goes after it without an `@`, as it is no mention."""
+    escaped = title.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _card_title(card: Any) -> str:
+    """A card's title in a ticker text: an imported one (§6.14) as the forge's, quoted."""
+    origin = card.imported_from
+    if not isinstance(origin, dict):
+        return str(card.title)
+    login = origin.get("author_login")
+    return f"{_forge_quoted(card.title)} ({login}'s issue)" if login else _forge_quoted(card.title)
+
+
 def cut(text: str) -> str:
     """At most 280 code points, a composed text cut with `…` (§17.2)."""
     points = list(text)
@@ -393,7 +409,7 @@ def on_request_answered(
         may_read=lambda m: m.principal in may,
     )
     text = (
-        f"Decided: {card.id} {card.title} ({request.id})"
+        f"Decided: {card.id} {_card_title(card)} ({request.id})"
         if card is not None
         else f"Decided: {request.id}"
     )
@@ -869,7 +885,9 @@ def write_merge(
         conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
     )
     touches = ", ".join(areas) or "no area"
-    text = f"#{merge.number} {merge.title} — merged into {merge.base}; touches {touches}"
+    title = _forge_quoted(merge.title)
+    by = f" by {merge.author}" if merge.author else ""
+    text = f"#{merge.number} {title}{by} — merged into {merge.base}; touches {touches}"
     for f in touched:
         secs = merge.contract[f]
         text += (

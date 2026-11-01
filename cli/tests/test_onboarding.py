@@ -233,7 +233,7 @@ def test_work_answers_and_missed_messages() -> None:
         "status": "in_progress",
         "title": "Lease",
         "claim": {"lease_until": "T2"},
-        "checkpoint": {"next_step": "the endpoint"},
+        "checkpoint": {"next_step": "the endpoint", "instance": "wqe2"},
     }
     answered = {
         "id": "req-12",
@@ -256,7 +256,9 @@ def test_work_answers_and_missed_messages() -> None:
             events={"items": [message], "cursor": 4300, "truncated": True},
         )
     )
-    held = "  tsk-4 [in_progress] Lease (lease until T2); next step: the endpoint"
+    held = (
+        "  tsk-4 [in_progress] Lease (lease until T2); next step (as #wqe2 wrote it): the endpoint"
+    )
     assert f"Cards you hold:\n{held}" in text
     assert "  answered by hum-1: SHA-256\n  > fast enough\n  > for now" in text
     missed = "  #4300 message by agent-a (handover, to agent-b)"
@@ -357,7 +359,7 @@ def full_packet() -> dict[str, Any]:
         "status": "in_progress",
         "title": "Lease",
         "claim": {"lease_until": "T2"},
-        "checkpoint": {"next_step": "the endpoint"},
+        "checkpoint": {"next_step": "the endpoint", "instance": "wqe2"},
     }
     request = {
         "id": "req-12",

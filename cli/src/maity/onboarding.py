@@ -224,7 +224,10 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
         lines.append(f"Your lead: @{_name(lead, names)}")
     for carried in _items(ms.get("bridging_for")):  # the agents it lends its hands to (§2.3)
         who = carried.get("handle") or carried.get("member_id") or "?"
-        lines.append(f"You carry for @{inline(who)}: {inline(carried.get('purpose') or '')}")
+        other = " (another owner's agent)" if carried.get("cross_owner") else ""
+        setter = _name(carried.get("created_by") or "?", names)
+        lines.append(f"You carry for @{inline(who)}{other}, for this purpose as @{setter} set it:")
+        lines += quote(carried.get("purpose") or "")
     if team:
         lines.append(_coordinate(handle, team, bool(lead)))
     if me.get("dormant") and instance:  # §6.17
@@ -365,15 +368,28 @@ def _unread_chats(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
+def imported_mark(card: dict[str, Any]) -> str:
+    """Where an imported card comes from (§6.14): the forge author's, often no member's. A member
+    may have changed the title since, so this names the issue, not the title's writer."""
+    origin = card.get("imported_from")
+    if not isinstance(origin, dict):
+        return ""
+    author = origin.get("author_login")
+    return f" (imported from {inline(author)}'s issue)" if author else " (imported)"
+
+
 def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
     line = f"  {inline(card.get('id'))} [{inline(card.get('status'))}] {inline(card.get('title'))}"
+    line += imported_mark(card)
     line += _cover(card, names or {})
     lease = get(card, "claim", "lease_until")
     if lease:
         line += f" (lease until {inline(lease)})"
     nxt = get(card, "checkpoint", "next_step")
     if nxt:
-        line += f"; next step: {inline(nxt)}"
+        writer = get(card, "checkpoint", "instance")
+        by = f" (as #{inline(writer)} wrote it)" if writer else ""
+        line += f"; next step{by}: {inline(nxt)}"
     return line
 
 
