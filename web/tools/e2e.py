@@ -1067,6 +1067,7 @@ def scenario(run: Run, page: Page) -> None:
     landing_json_step(run, page)
     legal_json_step(run, page)
     site_json_step(run, page)
+    landing_variants_step(run, page)
     jour_fixe_step(run, page)
     project_links_step(run, page)
     join_expiry_step(run, page)
@@ -2652,6 +2653,70 @@ def site_json_step(run: Run, page: Page) -> None:
     assert all(reg_before.get(k) == v for k, v in reg_after.items()), f"registration changed: {reg_before} -> {reg_after}"
     assert set(reg_before) - set(reg_after) <= {"terms"}, f"registration lost fields: {reg_before} -> {reg_after}"
     no_problems(run, "whole site JSON")
+
+
+def landing_variants_step(run: Run, page: Page) -> None:
+    """Landing variants and campaigns on the real hub (docs/api.md §16.7.2, tsk-ets3x0c4ethg): one of each
+    saved in the editor, carried by the whole site's file, the counts' CSV downloaded, both removed again."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("landing variants: a variant and a campaign saved, in the site file, the counts as CSV, then removed")
+    settings = f"{run.base}/api/v1/admin/settings/landing"
+    language = page.request.get(settings).json()["default_language"]
+    page.goto(f"{run.base}/admin")
+    nav = page.locator("nav.admin-nav")
+    nav.get_by_role("button", name="Landing page", exact=True).click()
+    section = page.locator("section.admin-section[aria-label='Landing page']")
+    form = page.locator("form.lp-form")
+
+    def save() -> dict:
+        form.get_by_role("button", name="Save the landing page", exact=True).click()
+        expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+        return page.request.get(settings).json()
+
+    page.locator("#lp-new-variant").fill("e2e-spring")
+    section.get_by_role("button", name="Add the variant", exact=True).click()
+    page.locator(f"#lp-variants-e2e-spring-pages-{language}-title").fill("E2E spring")
+    section.get_by_role("button", name="Add a campaign", exact=True).click()
+    page.locator("#lp-campaigns-0-code").fill("e2e-spring")
+    page.locator("#lp-campaigns-0-label").fill("E2E spring")
+    run.a11y(page, "landing page, a variant and a campaign")
+    saved = save()
+    assert saved["variants"]["e2e-spring"]["pages"][language]["title"] == "E2E spring", saved["variants"]
+    assert saved["campaigns"] == [{"code": "e2e-spring", "label": "E2E spring"}], saved["campaigns"]
+
+    # The whole site's file carries both, and the hub's preview takes them: its own export changes nothing.
+    nav.get_by_role("button", name="Import or export everything", exact=True).click()
+    whole = page.locator("section.admin-section[aria-label='Import or export everything']")
+    io = whole.locator("details.json-io")
+    io.locator("summary").click()
+    page.locator("#site-json").fill("")
+    io.get_by_role("button", name="Export", exact=True).click()
+    expect(page.locator("#site-json")).not_to_have_value("")
+    exported = json.loads(page.locator("#site-json").input_value())["landing"]
+    assert exported["variants"] == saved["variants"], exported["variants"]
+    assert exported["campaigns"] == saved["campaigns"], exported["campaigns"]
+    io.get_by_role("button", name="Check the file", exact=True).click()
+    expect(whole.locator("li.site-part[data-part='landing']")).to_have_class(re.compile(r"\bsite-same\b"))
+
+    # The link h() refused once, which fixtures cannot show: they have no address for it.
+    nav.get_by_role("button", name="Statistics", exact=True).click()
+    csv = page.locator("section.admin-section[aria-label='Statistics'] .campaign-stats").get_by_role(
+        "link", name="Download as CSV", exact=True
+    )
+    with page.expect_download() as download:
+        csv.click()
+    assert download.value.suggested_filename == "campaigns.csv", download.value.suggested_filename
+
+    # Off again: while either is set the hub rewrites links and keeps an origin (§16.7.2).
+    nav.get_by_role("button", name="Landing page", exact=True).click()
+    section.locator(".lp-variant-tabs").get_by_role("button", name="/for/e2e-spring", exact=True).click()
+    section.get_by_role("button", name="Remove /for/e2e-spring", exact=True).click()
+    section.locator(".lp-campaign-list").get_by_role("button", name="Remove", exact=True).click()
+    saved = save()
+    assert saved["variants"] == {} and saved["campaigns"] == [], (saved["variants"], saved["campaigns"])
+    no_problems(run, "landing variants")
 
 
 def legal_json_step(run: Run, page: Page) -> None:
