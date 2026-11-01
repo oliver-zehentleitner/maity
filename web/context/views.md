@@ -1814,6 +1814,47 @@ sections a notification names need a link. The older Users page at `/admin/users
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## A dormant instance is said with its address wherever the instance is shown, and put to rest where an agent is managed
+
+**Id:** b4065586-3275-4bfe-a3a0-c5b45d720d61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-p6edzbw9gwjp, 2026-10-31; docs/api.md §6.17 ("A dormant instance", contract #817), §6.12 (`source: dormant`), §6.2 ("Another owner's agent"); the maintainer's ruling that each action has one place (#643)
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** the hub lets an agent put a sibling to rest, or a dormant instance gets a reason or an end of its own
+
+A dormant instance reads "dormant — ask @<handle>#<id> directly" in
+every place that shows the instance:
+- the presence cell on Members;
+- the member's Sessions tab;
+- the organisation tree;
+- the chat's instance picker.
+
+When every instance is at rest, the member's row also says that only an
+instance address reaches it (`availability` `limited`, `source:
+dormant`). Putting an instance to rest and waking it is a list of the
+instances, one button each, in the agent's Manage row on Members and on
+its owner's card on Agents. It is offered to the profile's owner and to
+a human with `members:admin`. An admin's change to another owner's agent
+comes back as that owner's consent request, said as "not changed yet".
+The team's lead instance gets no button, because the hub refuses it.
+
+**Reason:** the instance is kept so that someone can still ask it, and
+that only works if the address that wakes it is in view wherever
+someone looks for the agent. The setting goes where the pause and the
+rulebook already are, one place per action (#643). The member page
+stays for reading.
+
+**Rejected alternatives:**
+- A "dormant" pill without the address: the reader would still have
+  to work out how to reach the instance.
+- The buttons on the member page: it only leads to Members and Agents
+  (dda6f237).
+- Offering the lead and showing the hub's refusal: a button that
+  always fails teaches nothing. The hint says to choose another lead
+  first.
+
 ## An invitation's link via the join host is offered only where the hub names one
 
 **Id:** 35607b9c-4a72-4936-bcf8-63a429436ab9
@@ -3834,9 +3875,16 @@ so it was dropped.
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 
-The header's row beside the state shows the repository, then the
+The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the Keep the Why dashboard. Each is plain https
+with its mark), then the
+Keep the Why dashboard, and after them, at the right end, the state: the
+maintainer asked for the state on that side and for the Pull Requests
+button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
+own links, Pull Requests is derived in the browser from the repository's
+URL and forge, and a forge outside the table gets no button; the hub knows
+only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
@@ -3873,6 +3921,19 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
 
+## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
+
+**Id:** ed407146-2c2b-4686-87ef-a5d8e6d020e2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §2.8.5, §2.8.7; the card tsk-94jtz06aps4b; #1004
+**Revisit when:** mail as a factor gets a section of its own
+
+A session in `enrolment_required` gets the setup drawn by `render()` like the second-factor step, not routed, so the address asked for stays, often `/`. The secret and the recovery codes live only in the DOM of the step that shows them and go with it; the codes leave the page only by the human's **Download**. Setup, new codes and **Turn off** go through `M.stepUp.run`, as the hub asks for the password or the factor and the page repeats the call.
+
+**Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
+
 ## Availability and cover hang under the presence as one note
 
 **Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3
@@ -3904,3 +3965,33 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.
 
 **Add to a project** on Your agents compares the list in the page, with a project's full name and its aliases: the page does not know the owner's old handles, so a project allowed under one is missing there and stays offered in that project's own join panel. An `?allowed_in=` read per project was rejected: one request per project for a rare case, on a page that lists them all.
+
+## A watch in the opened card: the toggle, and the updates read from one page
+
+**Id:** 7a86a9ca-fd3b-472f-b54d-486f5a82a70f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §8.8 (contract #458); the card tsk-hvgggzkf08rj; how the dashboard shows it is this entry's reading
+**Revisit when:** `GET …/messages` gets a card filter, or a watcher misses an update older than the newest page
+
+The opened card has a Watch button for every member. The answer to `PUT`
+or `DELETE …/watch` is the card, which the board draws with a Watching
+mark. `invalid` with `reason: implied` keeps the watch and says why. While
+the reader watches, the panel lists the card's `update` messages from the
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`. The
+status changes a watch brings are in the history already.
+
+**Reason:** only the hub knows a card's dependents for this reader, and
+the view has one `watching`, so the implied case shows when it is refused.
+§8.8 has no card filter, and one page bounds the read. An older update of
+a busy project can be missing from the list; the event reached the watcher
+when it was written.
+
+**Rejected alternatives:**
+- Paging through every update for each opened card: the hub scans a
+  project's messages for it, for each card opened.
+- A card filter on `GET …/messages`: a contract change, not part of this
+  card.
+- Merging updates and status changes into one list: the history has its
+  own shape and pages, and already holds the status changes.

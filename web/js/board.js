@@ -567,6 +567,7 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "badge " + c.kind }, KIND_LABELS[c.kind] + (c.kind === "release" ? " " + c.release.version : ""))
           : null,
         c._searchClosed ? h("span", { class: "badge" }, "Closed · outside board window") : null,
+        c.watching ? h("span", { class: "card-watching" }, M.t("cards.watching")) : null,
         Array.isArray(c.match) && c.match.length
           ? h("span", { class: "label-tag" }, "Matched: " + c.match.join(", ")) : null,
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
@@ -831,10 +832,18 @@ window.Maity = window.Maity || {};
     let byId = {};
     // The opened card's panel (js/card-panel.js), beside or above the columns.
     let panel = null;
+    // The opened card as read: one closed outside the board's window is in no list.
+    let panelCard = null;
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
+      panelCard = c;
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
+        (updated) => {
+          // The list a search replaced comes back when it ends, so it learns this too.
+          [panelCard, byId[updated.id], boardItems.find((t) => t.id === updated.id)].forEach((t) => { if (t) Object.assign(t, updated); });
+          draw();
+        });
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);
@@ -878,7 +887,7 @@ window.Maity = window.Maity || {};
             h("h3", { class: "column-head" }, "Unknown status"),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (panel && byId[panel.id]) panel.update(card(ctx, byId[panel.id], byId, manage, true));
+      if (panel) panel.update(card(ctx, byId[panel.id] || panelCard, byId, manage, true));
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         // A folded child: its parent unfolds, and the child's row is marked.

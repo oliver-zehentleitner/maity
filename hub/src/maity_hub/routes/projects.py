@@ -508,7 +508,7 @@ def _creation_owner(
         select(t.org.c.id)
         .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
         .where(
-            t.org.c.handle == owner,
+            t.org.c.id == handles.org_id_of(conn, owner),
             t.org.c.deleted_at.is_(None),
             t.org_member.c.human_id == caller.human_id,
         )

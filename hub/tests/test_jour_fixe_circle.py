@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, listening
+from maity_hub import account_deletion, clock, cover, events, listening
 from maity_hub import tables as t
 from maity_hub.jourfixe import worker
 from tests import factory, flow
@@ -225,6 +225,234 @@ def test_the_report_stays_with_the_circle_and_goes_to_its_owner(circle: Circle) 
     assert off.json()["report_recipient"] is False
     items = circle.friend.get("/me/notifications").json()["items"]
     assert not [i for i in items if (i.get("target") or {}).get("type") == "jour_fixe_round"]
+
+
+def test_a_to_owner_request_is_the_circle_owners_and_no_other_admins(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    """§20.6 (b), §20.7: `requests:answer` opens nothing here, also not on a direct address."""
+    other_admin = flow.agent(make_client, circle.owner)
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == other_admin.id)
+            .values(trust="admin")
+        )
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    done = _report(circle)
+    assert done.status_code == 200, done.text
+    [request_id] = done.json()["requests"]
+    path = f"{BASE}/requests/{request_id}"
+    assert circle.friend.get(path).status_code == 200  # the owner it is addressed to
+    assert circle.lead.get(path).status_code == 200  # the moderator who asked
+    listed = circle.friend.get(f"{BASE}/requests?to=all").json()["items"]
+    assert request_id in [r["id"] for r in listed]
+    for reader in (circle.owner, other_admin):
+        assert reader.get(path).status_code == 404
+        for query in ("to=all", f"to={circle.friend.id}", "to=me"):
+            listed = reader.get(f"{BASE}/requests?{query}").json()["items"]
+            assert request_id not in [r["id"] for r in listed], query
+        answered = reader.post(f"{path}/answer", {"reply_id": "adopt"})
+        assert answered.status_code == 404
+        assert reader.post(f"{path}/withdraw", {}).status_code == 404
+        assert reader.post(f"{path}/claim", {}).status_code == 404
+        events = reader.get(f"{BASE}/events").json()["items"]
+        assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
+    packet = other_admin.resume().json()["requests"]
+    assert request_id not in [r["id"] for r in packet["to_answer"]]
+    assert circle.friend.post(f"{path}/answer", {"reply_id": "adopt"}).status_code == 200
+    # Its answer is as private, and the reader who may read sees what the others do not.
+    seen = circle.friend.get(f"{BASE}/events").json()["items"]
+    assert request_id in [(e.get("subject") or {}).get("id") for e in seen]
+    for reader in (circle.owner, other_admin):
+        events = reader.get(f"{BASE}/events").json()["items"]
+        assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
+
+
+def test_the_answer_writes_no_ticker_item_and_the_request_goes_to_one_human_at_most(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    """§20.7: a ticker item would name the request to every admin, as the pool would read it."""
+    circle.owner.patch(BASE, {"settings": {"ticker": {"enabled": True}}})
+    admin_agent = flow.agent(make_client, circle.owner)
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == admin_agent.id)
+            .values(trust="admin")
+        )
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    path = f"{BASE}/requests/{request_id}"
+    for to in ("trust:admin", admin_agent.id):
+        refused = circle.friend.post(f"{path}/forward", {"to": to, "reason": "t"})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"to": "owners_round"}
+    # One human, the owner's deliberate step: that human reads and answers it.
+    colleague = _member(make_client, circle.engine, "colleague")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == colleague.id)
+            .values(trust="admin")
+        )
+    assert colleague.get(path).status_code == 404  # an admin, until it is given to them
+    given = circle.friend.post(f"{path}/forward", {"to": colleague.id, "reason": "t"})
+    assert given.status_code == 200, given.text
+    assert colleague.get(path).status_code == 200
+    answered = colleague.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+    decisions = [e for e in _kinds(circle.engine, "ticker") if e.payload.get("type") == "decision"]
+    assert decisions == []
+
+
+def _given_to_a_colleague(circle: Circle, make_client: ClientFactory) -> tuple[str, flow.Human]:
+    """The open request of the owner's round, forwarded by its owner to one human admin."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    colleague = _member(make_client, circle.engine, "colleague")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == colleague.id)
+            .values(trust="admin")
+        )
+    given = circle.friend.post(
+        f"{BASE}/requests/{request_id}/forward", {"to": colleague.id, "reason": "t"}
+    )
+    assert given.status_code == 200, given.text
+    return request_id, colleague
+
+
+def _delete_account(who: flow.Human, engine: Engine) -> None:
+    with events.transaction(engine) as conn:
+        account_deletion.delete_account(conn, who.client.app.state.settings, who.id)  # type: ignore[attr-defined]
+
+
+def test_the_holders_deleted_account_gives_the_request_back_to_its_owner_not_the_admins(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    """§20.7: the pool would read what the forward to it is refused for."""
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    other = _member(make_client, circle.engine, "otheradmin")
+    with circle.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == other.id).values(trust="admin")
+        )
+    _delete_account(colleague, circle.engine)
+    path = f"{BASE}/requests/{request_id}"
+    back = circle.friend.get(path)
+    assert back.status_code == 200, back.text
+    assert back.json()["holder"] == circle.friend.id
+    assert back.json()["forwarding"][-1]["action"] == "forwarded"
+    assert other.get(path).status_code == 404
+    assert request_id not in {r["id"] for r in other.get(f"{BASE}/requests?to=all").json()["items"]}
+    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+
+
+def _status(engine: Engine, request_id: str) -> Any:
+    with engine.connect() as conn:
+        return conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+
+
+def test_the_circle_owner_leaving_leaves_no_request_of_the_round_open(circle: Circle) -> None:
+    """Nobody else may read it, so nobody could ever answer it."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    _delete_account(circle.friend, circle.engine)
+    row = _status(circle.engine, request_id)
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+
+
+def test_a_forwarded_request_outlives_the_circle_owner_until_its_holder_goes_too(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _delete_account(circle.friend, circle.engine)
+    assert _status(circle.engine, request_id).status == "open"
+    assert colleague.get(f"{BASE}/requests/{request_id}").status_code == 200
+    _delete_account(colleague, circle.engine)
+    row = _status(circle.engine, request_id)
+    assert row.status == "withdrawn" and not row.holder_pool
+
+
+def _remove(circle: Circle, who: flow.Human) -> None:
+    gone = circle.owner.client.delete(
+        f"/api/v1{BASE}/members/{who.id}", headers=_headers(circle.owner)
+    )
+    assert gone.status_code in (200, 204), gone.text
+
+
+def test_a_holder_removed_from_the_project_gives_it_back_to_the_owner(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _remove(circle, colleague)
+    path = f"{BASE}/requests/{request_id}"
+    assert circle.friend.get(path).json()["holder"] == circle.friend.id
+    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+
+
+def test_the_owner_gone_and_then_the_holder_removed_withdraws_it(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _remove(circle, circle.friend)
+    assert _status(circle.engine, request_id).status == "open"
+    _remove(circle, colleague)
+    row = _status(circle.engine, request_id)
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+    assert not row.holder_pool
+
+
+def test_a_removed_holder_of_any_other_request_returns_it_to_the_admins(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§7: as an account's deletion does; it lay with nobody able to answer it."""
+    admin = _member(make_client, migrated, "heldby")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="admin")
+        )
+    asker = flow.agent(make_client, owner)
+    asked = asker.post(
+        f"{BASE}/requests",
+        {
+            "class": "decision",
+            "title": "Which?",
+            "to": "owner",
+            "options": [{"id": "go", "label": "Go"}, {"id": "no", "label": "No"}],
+            "while_open": "wait",
+        },
+    )
+    assert asked.status_code == 201, asked.text
+    request_id = asked.json()["id"]
+    given = owner.post(f"{BASE}/requests/{request_id}/forward", {"to": admin.id, "reason": "t"})
+    assert given.status_code == 200, given.text
+    gone = owner.client.delete(f"/api/v1{BASE}/members/{admin.id}", headers=_headers(owner))
+    assert gone.status_code in (200, 204), gone.text
+    row = _status(migrated, request_id)
+    assert (row.status, row.holder_member, row.holder_pool) == ("open", None, True)
+
+
+def test_a_substitute_gets_no_request_of_an_owners_round(circle: Circle, migrated: Engine) -> None:
+    """§20.7: a cover would let the substitute read it."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        friend = conn.execute(
+            select(t.membership).where(t.membership.c.human_id == circle.friend.id)
+        ).one()
+        _, requests = cover._cover_set(conn, project, friend)
+    assert request_id not in [r.id for r in requests]
 
 
 def test_only_the_circle_owner_decides_as_a_human_in_an_owners_round() -> None:

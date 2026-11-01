@@ -35,6 +35,7 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -1810,8 +1811,18 @@ window.Maity = window.Maity || {};
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
-    ["GET", /^\/auth\/second-factor$/, () => ({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
-      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" })],
+    ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
+      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+    ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+      otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
+    ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
+      if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
+      mockFactorOn = true;
+      return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
+    }],
+    ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
+    ["DELETE", /^\/auth\/second-factor$/, () => { mockFactorOn = false; return { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null }; }],
     // §2.8.8: the mail factor's code ("654321") or link ("mailtoken") besides the app's code and a recovery code.
     // The hub answers a step-up with valid_until and a sign-in's step with {member, next}, next "/"
     // without a stored one (§2.8.2); the mock cannot tell the two apart and answers both.
@@ -3234,6 +3245,20 @@ window.Maity = window.Maity || {};
       if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
       return { items: (fixtures()[m[1] + "/task-history.json"] || {})[m[2]] || [], next_cursor: null };
     }],
+    // A watch (docs/api.md §6.4): the reader's own, on the card as the fixture has it.
+    ["PUT", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = true;
+      return card;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = false;
+      return card;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/messages$/, () => ({ items: [], next_cursor: null })],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
@@ -3423,6 +3448,30 @@ window.Maity = window.Maity || {};
         if (Object.keys(body).length !== 1 || typeof body.owner_preferences !== "boolean") fail(400, "invalid", "set owner_preferences on its own", path, { fields: { owner_preferences: "alone" } });
         if (target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "not_the_owner" });
         target.owner_preferences = body.owner_preferences;
+        return target;
+      }
+      // §6.17: an instance put to rest or woken, by a human only: the profile's
+      // owner, member or not, or members:admin, whose change to another
+      // owner's agent waits for that owner's consent (§6.2).
+      if ("dormant" in body) {
+        const target = member(m[1], m[2], path);
+        if (who.member.kind !== "human") fail(403, "forbidden", "a human puts an instance to rest", path, { reason: "humans_only" });
+        const own = target.kind === "agent" && target.owner_id === who.member.id;
+        if (!own && !who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const errors = {};
+        if (Object.keys(body).some((k) => k !== "dormant" && k !== "instance")) errors.dormant = "alone";
+        if (typeof body.dormant !== "boolean") errors.dormant = "not_a_boolean";
+        if (!body.instance) errors.instance = "required";
+        const inst = (target.instances || []).find((i) => i.id === body.instance && !i.revoked_at);
+        if (body.instance && !inst) errors.instance = "not_an_instance";
+        if (inst && body.dormant && (target.team || {}).lead_instance === inst.id) errors.dormant = "lead";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if (!own) return consentFor(who.member, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
+        inst.dormant = body.dormant ? { since: nowIso(), by: who.member.id } : null;
+        // Every active instance at rest: the team is limited (§6.12, source dormant, no until).
+        const active = target.instances.filter((i) => !i.revoked_at);
+        if (active.every((i) => i.dormant)) target.availability = { state: "limited", since: nowIso(), source: "dormant" };
+        else if (target.availability && target.availability.source === "dormant") target.availability = { state: "available", since: nowIso() };
         return target;
       }
       // §6.18: the team's rulebook, by the human who owns the agent profile only.
@@ -4312,6 +4361,8 @@ window.Maity = window.Maity || {};
         return answer;
       }, (err) => {
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
+        // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
+        if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
         throw err;
       });
     }

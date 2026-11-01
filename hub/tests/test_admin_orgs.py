@@ -111,3 +111,12 @@ def test_only_the_instance_admin_reads_it(
     bot = flow.agent(make_client, admin, role="admin")
     assert bot.get(PATH).status_code in (403, 404)
     assert bot.get(PATH).status_code == bot.get("/admin/settings/sign-in").status_code
+
+
+def test_q_finds_an_organisation_by_a_former_handle(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human
+) -> None:
+    anna = flow.human(make_client, migrated, "anna")
+    make_org(anna, "alpha-team", "Alpha")
+    assert anna.patch("/orgs/alpha-team", {"handle": "beta-team"}).status_code == 200
+    assert handles(admin, q="ALPHA-T") == ["beta-team"]
