@@ -748,6 +748,7 @@ def view(conn: Connection, hub: Settings, human_id: str) -> dict[str, Any]:
         "last_used_at": (
             clock.rfc3339(factor.last_used_at) if on and factor.last_used_at else None
         ),
+        "via": via(conn, hub, human_id) if asks(conn, hub, human_id) else None,
         "required": must_enrol(conn, hub, human_id)
         or (
             on
