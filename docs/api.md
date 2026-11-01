@@ -10213,26 +10213,26 @@ chat with something new rises above a quiet pinned one, so a pin never
 hides a new message. `unread` decides the band (an observer's `null`
 counts as none). The cursor (§1.4) follows this order.
 
-**Meat proxy per chat.** A human sets the meat-proxy mode (§5.2, "Meat
-proxy") for one conversation it is a participant of, a direct one or a
-group chat, without changing its profile: `PUT
+**Meat proxy per chat.** A human sets the lead part of the meat-proxy
+mode (§5.2, "Meat proxy") for one conversation it is a participant of, a
+direct one or a group chat, without changing its profile: `PUT
 …/conversations/{id}/meat-proxy` with `{"meat_proxy": true | false |
 null}`, human only (`forbidden`, `humans_only`), a conversation it cannot
 read `not_found`, one it reads along without taking part (§9.2)
 `forbidden` with `details.reason: not_a_participant`, `204`, idempotent.
-`null` (the default) follows the profile; `true` switches the mode on in
-this chat (both parts, unless the profile already has the mode on, whose
-parts then stay), `false` off. There are no parts per chat: a human who
-wants only one part sets it in the profile and leaves the chat on
-`null`. Every human entry in a conversation's `participants` (the view
-of §9.2 and the items here) carries the value that holds in this chat
-as `meat_proxy`, with `meat_proxy_chat` (`true`, `false` or `null`, the
-human's own choice for this chat, read by the human itself only; others
-get `null`) and, while `meat_proxy` is `true`, the `meat_proxy_note` of
-§5.2, which names the parts that hold; the entry carries no part fields
-of its own. The resume packet's `conversations` carries the same per
+`null` (the default) follows the profile's `meat_proxy_lead`; `true`
+switches the lead part on in this chat, `false` off. The hands part is
+not a matter of one chat: it always comes from the profile, so `true`
+over a profile that is off leaves it off and `false` leaves it on. Every
+human entry in a conversation's `participants` (the view of §9.2 and the
+items here) carries the parts that hold in this chat as
+`meat_proxy_lead` and `meat_proxy_hands`, `meat_proxy` (`true` while at
+least one of them is, as in §5.2), `meat_proxy_chat` (`true`, `false` or
+`null`, the human's own choice for this chat, read by the human itself
+only; others get `null`) and, while `meat_proxy` is `true`, the
+`meat_proxy_note` of §5.2, which names the parts that hold. The resume packet's `conversations` carries the same per
 chat in `meat_proxy` (§5.2). Where the chat's value and the profile's
-differ, the chat's holds in that chat, the direct one with the agent's
+lead part differ, the chat's holds in that chat, the direct one with the agent's
 own human included. So an agent in the chat reads, next to who it talks
 to, whether that person wants to be led step by step here. It is the
 same kind of context as the profile's switch: never a permission, set
@@ -10242,9 +10242,9 @@ the fields stand in the conversation view wherever it is served,
 including the view in a later `conversation_created` or
 `conversation_updated` (§8.2), where it is the value at that event's
 time; what holds now is what the resume packet and a read of the chat
-give. The dashboard shows it as a switch next
+give. The dashboard shows the lead part as a switch next
 to "Attach" and "Send" in the conversation's composer, starting from
-the profile's value.
+the profile's value; a human with only the hands part on sees it off.
 
 **Across projects.** A human's chat overview reads one list for all its
 projects instead of one list per project:
