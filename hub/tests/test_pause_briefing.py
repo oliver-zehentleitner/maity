@@ -172,7 +172,7 @@ def test_an_admin_edits_the_briefing_and_the_event_leaves_it_out(
     assert changed.json()["briefing"] == "Now: the release checklist."
     assert agent.resume().json()["membership"]["briefing"] == "Now: the release checklist."
     updated = _events(migrated, "member_updated")[-1]
-    assert updated.audience == ["all"] and "briefing" not in updated.payload
+    assert updated.audience[0] == "all" and "briefing" not in updated.payload
     cleared = owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"briefing": None})
     assert cleared.json()["briefing"] is None
     refused = agent.patch(
