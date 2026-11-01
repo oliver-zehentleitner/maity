@@ -1136,6 +1136,11 @@ def patch_task(
                     values.update(_closing(card))
         previous_mentions = card.mentions or []
         changed = {k: v for k, v in values.items() if getattr(card, k) != v}
+        signature = (
+            cards.new_signature(card.approvals, changed["approvals"])
+            if changed.get("approvals")
+            else None
+        )
         edges_changed = depends_changed or bool(partners) or bool(related)
         if not changed and not edges_changed:
             return idempotency.Outcome(200, "task", card.id, task_view(conn, card, fg, mine))
@@ -1196,6 +1201,7 @@ def patch_task(
             audience(conn, card),
             {
                 **payload,
+                **({"signature": signature} if signature else {}),
                 "id": card.id,
                 "fields": sorted(set(fields)),
                 "history": entries,
@@ -2059,6 +2065,7 @@ def report(
                     "id": card.id,
                     "fields": ["approvals"],
                     "approvals": signatures,
+                    "signature": cards.new_signature(None, signatures),
                     "history": [],
                     "project_state": mine.project.state,
                 },

@@ -902,8 +902,7 @@ def _card_approvals(
     rows = [
         row
         for row in _events(conn, project_ids, "task_updated", my_ids)
-        # A rework clears them too (§6.4): that entry signs nothing.
-        if any(((row.payload or {}).get("approvals") or {}).values())
+        if (row.payload or {}).get("signature")  # a rework changes `approvals` too, unsigned
     ]
     titles.load_cards(row.subject_id for row in rows)
     return [
@@ -912,6 +911,8 @@ def _card_approvals(
             "id": f"evt-{row.seq}",
             "at": ts(row.at),
             "card": titles.card(row.subject_id),
+            "slot": row.payload["signature"]["slot"],
+            "revision": row.payload["signature"]["revision"],
         }
         for row in rows
     ]

@@ -90,6 +90,17 @@ def sign(mine: Membership, card: Any, approve: str | None, revision: int | None)
     return {**current, slot: mark}
 
 
+def new_signature(before: dict[str, Any] | None, after: dict[str, Any]) -> dict[str, Any] | None:
+    """The place a call filled and the revision it signed, for the event: the card's view
+    shows no signatures once it closes, and a rework clears them, so the view cannot tell."""
+    was = before or {}
+    for slot in SIGNATURES:
+        mark = after.get(slot)
+        if mark is not None and was.get(slot) is None:
+            return {"slot": slot, "revision": mark["revision"]}
+    return None
+
+
 def _only_slot(mine: Membership) -> str:
     held = [slot for slot, scope in SIGNATURES.items() if mine.may(scope)]
     if len(held) != 1:

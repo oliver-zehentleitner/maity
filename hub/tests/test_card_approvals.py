@@ -180,7 +180,23 @@ def test_the_export_lists_the_signatures_a_person_gave(
     assert _sign(team["reviewer"], card).status_code == 200
     exported = team["reviewer"].get("/me/export").json()
     assert [row["card"]["id"] for row in exported["card_approvals"]] == [card["id"]]
+    assert exported["card_approvals"][0]["slot"] == "review"
+    assert exported["card_approvals"][0]["revision"] == 1
     assert team["tester"].get("/me/export").json()["card_approvals"] == []
+
+
+def test_the_export_lists_the_signature_that_closed_the_card(
+    owner: flow.Human, team: dict[str, Any]
+) -> None:
+    card = _in_review(owner, team["worker"])
+    assert _sign(team["reviewer"], card).status_code == 200
+    closed = _sign(team["tester"], card)
+    assert closed.json()["status"] == "done", closed.text
+    [row] = team["tester"].get("/me/export").json()["card_approvals"]
+    assert (row["card"]["id"], row["slot"]) == (card["id"], "test")
+    assert row["revision"] == 1
+    [first] = team["reviewer"].get("/me/export").json()["card_approvals"]
+    assert (first["card"]["id"], first["slot"], first["revision"]) == (card["id"], "review", 1)
 
 
 def test_a_rework_of_a_half_signed_card_is_no_signature_in_the_export(
