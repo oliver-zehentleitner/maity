@@ -406,7 +406,10 @@ def test_the_probe_fills_a_report(
     )
     assert observed["branch_head_sha"] == SHA and observed["observed_at"] is not None
     [event] = _events(migrated, "probe_observed")
-    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]  # the holder
+    # The holder alone: an admin reads it without being named, and is not woken (§8.2).
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}"]
+    read = owner.get("/projects/maintainer/maity/events").json()
+    assert any(e["kind"] == "probe_observed" for e in read["items"])
     assert event.payload == {"task": card_id, "observed": observed, "mismatch": False}
     assert probe.observe_report(migrated, READER, card_id, max_age=60) is False  # nothing new
 
@@ -416,12 +419,56 @@ def test_a_head_the_forge_does_not_show_is_a_mismatch(
 ) -> None:
     github.pull(7, head=OTHER)
     github.branch("agent-b/probe")
-    _, card_id = _reported_card(owner, make_client)
+    agent, card_id = _reported_card(owner, make_client)
     probe.observe_report(migrated, READER, card_id)
     assert (
         owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]["mismatch"]
         is True
     )
+    [event] = _events(migrated, "probe_observed")
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]
+
+
+def test_an_observation_of_a_closed_card_wakes_nobody_without_a_mismatch(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    assert probe.observe_report(migrated, READER, card_id) is True
+    [event] = _events(migrated, "probe_observed")
+    assert event.audience == []
+    assert event.payload["mismatch"] is False
+
+
+def test_a_merged_head_other_than_the_reported_on_a_closed_card_wakes_nobody_and_stays_readable(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(7, head=OTHER, state="closed", merged=True)
+    _, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    probe.observe_report(migrated, READER, card_id)
+    [event] = _events(migrated, "probe_observed")
+    assert event.audience == []
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
+    assert (report["mismatch"], report["observed"]["pr_state"]) == (True, "merged")
+    assert report["observed"]["pr_head_sha"] == OTHER
+
+
+def test_an_observation_of_a_closed_card_with_a_mismatch_still_reaches_who_must_act(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.answers["/repos/acme/maity/pulls/7"] = None
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    probe.observe_report(migrated, READER, card_id)
+    [event] = _events(migrated, "probe_observed")
+    assert event.audience == [f"instance:{agent.id}#{agent.instance}", "trust:admin"]
 
 
 def test_a_pull_request_the_forge_does_not_have_is_a_mismatch(
