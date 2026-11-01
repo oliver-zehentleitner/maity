@@ -346,6 +346,22 @@ yet, since InnoDB's next-key locks make them hard to rule out by reading.
 The error handler logs the driver's code (never its text) so that the
 next one is identifiable.
 
+A deadlock inside a savepoint reaches `retrying` in disguise: InnoDB rolls
+the whole transaction back, the savepoint goes with it, and rolling back to
+it fails with `1305` (SQLSTATE `42000`, that of a syntax error), which
+replaces the deadlock. `retrying` therefore also takes number `1305`, by the
+number since the SQLSTATE says nothing, and the log line gives the number
+too. Seen on 2026-11-01 as a loser of the agent cap's race answering 503
+instead of 409 on `hub-mariadb`. That the 503 there was this error is inferred
+from the logged `42000`; what the other side of the cycle was is unknown, and
+300 local races on MariaDB 10.11 showed no deadlock. A `1305` from a bug would
+run four times and then surface as before.
+
+Open: `1205`, a lock wait timeout, is listed above but not run again on
+MariaDB. The driver gives it SQLSTATE `HY000`, and `driver_code` prefers the
+SQLSTATE, so the number in `TRANSIENT` never matches (checked on 2026-11-01).
+It stays so for now: each attempt can wait the server's whole lock timeout.
+
 **Rejected alternatives:**
 - Retries alone — reduced the failures to about 3 % under the same load,
   but left the cause in place.
