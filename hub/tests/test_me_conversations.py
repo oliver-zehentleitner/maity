@@ -145,9 +145,11 @@ def test_the_list_is_the_lists_of_every_project_merged(
                 )
         assert sorted(one, key=key) == sorted(expected, key=key)
         assert {i["project"]["slug"] for i in one} == {"alpha", "beta", "gamma"}  # not "gone"
-        # newest first; where the moment is equal, by project name, then id
+        # newest first; where the moment is equal, by project name, then id; nothing pinned,
+        # so in two bands: with unread messages, then without (§9.3 "Pinned")
         want = sorted(one, key=lambda i: (i["project"]["full_name"], i["id"]))
         want.sort(key=lambda i: activity(migrated, i), reverse=True)
+        want.sort(key=lambda i: not i["unread"])
         assert [key(i) for i in one] == [key(i) for i in want]
 
 

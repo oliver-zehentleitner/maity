@@ -833,3 +833,24 @@ work they would take, not stated.
   second release step; the order between two open branches is still only known at merge time.
 - Keeping the numbers and the hand-kept queue: it is the work this replaces — each reorder changed several
   branches, and a number taken twice was found only when the second branch merged.
+
+## Nothing is derived from the order of the keys of a JSON object read back from the database
+
+**Id:** 04ed9b8c-ce31-4c97-a761-3c4278cf9039
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the `hub-postgresql` CI job on #909, 2026-10-31: a test expected the landing page's languages as `en`, `de` and the page had them as `de`, `en`, the order PostgreSQL's `jsonb` keeps; the review of the fix (c47w) named the constraint
+**Revisit when:** the JSON columns move to a type that keeps the order of the keys on every supported database, or only PostgreSQL is supported
+**See:** persistence.md#nested-values-as-json-columns-tables-only-where-the-server-queries-or-constrains — c0e833f1-b49c-48e8-94ad-3bc436ba1cf0 — as of 2026-10-31
+
+The JSON columns are `jsonb` on PostgreSQL, native `JSON` on MySQL and text on SQLite and MariaDB, and only the text keeps the
+order in which the keys were written: `jsonb` stores an object's keys sorted (by length, then by bytes) and MySQL's `JSON` sorts them
+as well. Code that reads a JSON object back therefore never takes an order from it: what has an order is either a JSON list, or the
+keys are put in an order by a rule (`render.ordered_languages`, the default first and then alphabetical). A test that builds the
+dictionary in the order PostgreSQL would return finds the places that forgot; SQLite and MariaDB hide the mistake and only the
+`hub-postgresql` job shows it.
+
+**Reason:** the order of keys looks stable in development, on SQLite, and breaks only on the production database, in a job nobody
+runs locally, so the rule has to be a habit of reading rather than a thing a test happens to catch.

@@ -17,6 +17,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 
 from maity_hub import (
     avatars,
+    bridges,
     clock,
     cover,
     cross_owner,
@@ -627,6 +628,10 @@ def _filtered(
             except ApiError:
                 return []
     rows = conn.execute(query).all()
+    if mine.role_base == "proxy":
+        # The project's consent to a bridge across owners is a human's own answer: a proxy
+        # neither lists nor relays it (§2.3, §7).
+        rows = [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
     if to == "me":
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
     if to == "all":
@@ -929,9 +934,10 @@ def _self_answer() -> ApiError:
 
 
 def _check_answer(row: Any, body: AnswerIn) -> None:
-    """Exactly one of reply_id, text, talk (text may go with reply_id); a reply it offers."""
+    """One of reply_id, text, talk; text may go with reply_id or with talk, and talk is never
+    with reply_id (§7); a reply it offers."""
     given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
-    if not given or ("talk" in given and len(given) > 1):
+    if not given or {"talk", "reply_id"} <= given:
         raise invalid({"answer": "reply_id_or_text_or_talk"})
     reply_ids = {r["id"] for r in replies(klass(row), row.options)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
@@ -1032,6 +1038,8 @@ def answer(
             "at": clock.rfc3339(now),
             "conversation_id": conversation_id,
             "mentions": mentions.resolve(conn, mine.project.id, body.text, "text"),
+            # Given by a bridge for the answering agent (§2.3): only then.
+            **({"via": caller.bridge.view()} if caller.bridge else {}),
         }
         done = conn.execute(
             update(t.request)
@@ -1333,10 +1341,16 @@ def withdraw(
         # Only its human, or the hub, withdraws a personal request (§7); the one who started a
         # transfer into an organisation withdraws the requests that carry it (§6.26).
         org_transfer = row.personal and row.org_id is not None and inbox.is_asker(row, mine)
-        # A cross-owner `reports_to` pair has its own withdrawal rule (§6.2).
-        pair = row.personal and (row.proposal or {}).get("kind") == cross_owner.KIND
+        # A cross-owner `reports_to` pair and a bridge's consents across owners have their
+        # own withdrawal rule (§6.2, §2.3).
+        kind = (row.proposal or {}).get("kind")
+        pair = (row.personal and kind == cross_owner.KIND) or kind in bridges.KINDS
         if pair:
-            allowed = cross_owner.may_withdraw(conn, row, mine)
+            allowed = (
+                bridges.may_withdraw(conn, row, mine)
+                if kind in bridges.KINDS
+                else cross_owner.may_withdraw(conn, row, mine)
+            )
             if allowed is None:
                 raise not_found()
             if not allowed:

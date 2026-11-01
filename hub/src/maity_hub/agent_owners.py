@@ -125,7 +125,7 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
     """A human's membership ended (§6.2): the joins they created and nobody used are revoked,
     the placements they proposed that made no membership yet are closed, and what the
     project's setting does not let stay without its owner is isolated. Under both settings."""
-    from maity_hub import placements
+    from maity_hub import bridges, placements
 
     j = t.join_link.c
     conn.execute(
@@ -140,6 +140,7 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
         .values(revoked_at=clock.now())
     )
     placements.creator_left(conn, project.id, human_id, actor, by)
+    bridges.owner_left(conn, project.id, human_id, actor)  # §2.3, "Ending on its own"
     reconcile(conn, project.id, actor)
 
 

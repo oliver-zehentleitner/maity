@@ -3892,7 +3892,8 @@ to `trust:admin` and to the human owner of the agent when that owner is a member
 `{member_id, instance, from: {harness, model}, to: {harness, model},
 session_id}`; it wakes nobody but the member the agent reports to, so
 that member can re-route cards the new model should not hold. A resume that omits `model`
-keeps the previous session's value and changes nothing.
+or `harness` keeps the previous session's value for it and changes nothing. A value unknown on either side is no
+difference, so an instance's first session and a first declared `model` emit nothing.
 
 `presence` on a member is computed, never stored, and never emits an
 event:
@@ -8473,7 +8474,7 @@ its members read the organisation's image, not each other's.
 |---|---|
 | `class` | `decision` (pick one, or say), `consent` (may I), `contract` (an interface changes; routed to the arbiter), `info` (a fact someone has; answered in free text or with an option). Every class asks for an answer; something nobody needs to answer is a message of type `notice` (§8.4), not an inbox entry |
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
-| `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus free text and "neither — let's talk" (`talk`). `reply_id` must name one of them |
+| `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus "neither — let's talk" (`talk`), with one free-text field above them whose text goes with whichever is pressed. `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
@@ -8501,7 +8502,7 @@ its members read the organisation's image, not each other's.
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller, or asked by them as an agent's owner, in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), or a cross-owner `reports_to` request to a caller who is not a member of its project and is one of the edge's two owners, as its addressee or as the owner who asked (§6.2), `GET` also once it is answered or withdrawn; any other id is `not_found` |
-| `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, who answers under `/requests/{id}/answer` when not a member (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
+| `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, who answers under `/requests/{id}/answer` when not a member (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id` or `talk`; `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
 | `POST /projects/{owner}/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); an owner who is not a member withdraws under `/requests/{id}/withdraw` instead; a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
@@ -8531,7 +8532,19 @@ by its whole team) and, when set, the
 `on_behalf_of` member. `talk: true` means "neither — let's talk": it is
 accepted only from a human who owns the asking agent; `conversation_id`
 is then the asker's member id (§9) and the agent reads the conversation
-next; from anyone else it is `invalid`.
+next; from anyone else it is `invalid`. A `text` beside `talk` is the
+human's note on it ("let's talk, about the second point"): it is stored
+as `answer.text` and travels with `request_answered` like any answer's
+text; the hub posts nothing into the conversation for it. A `text`
+beside `reply_id` is the same kind of note on the chosen reply.
+
+**The inbox.** For every open request it shows one free-text field
+above the reply buttons. Each reply button and the `talk` button sends
+the field's text along when it holds any (`{reply_id, text}`,
+`{talk: true, text}`). A request without `replies` offers the field
+with a send button (`{text}`) beside `talk`. The `talk` button is
+labelled "Talk" in every language; it is offered only where `talk` is
+accepted (above).
 
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: a soul proposal (§19.1), the
@@ -10181,7 +10194,11 @@ per human across all projects; a 21st is `invalid` with
 answers `not_found`, as its `GET` does; a closed group chat may be
 pinned like an open one. A conversation the caller leaves or
 loses access to keeps no pin. Every item gains `pinned` (`true` or
-`false`; always `false` for an agent caller). Both lists (this one and
+`false`; always `false` for an agent caller), and so does a
+conversation's own view (§9.1 `GET`, the group chat view of §9.2 and
+its idempotent replay), so a client shows the pin without reading the
+list; no event carries `pinned`, since a pin is announced to nobody.
+Both lists (this one and
 `GET /me/conversations`) are ordered in four bands, each band by the
 activity order above: pinned conversations with unread messages, then
 unpinned ones with unread messages, then pinned ones without, then the
@@ -11224,7 +11241,7 @@ cursor never moves on the served agent's events.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -11369,7 +11386,7 @@ table; `docs/architecture.md` §12 points here.
 | `requests[].harness_flag` (string) | `needs_in_session` (`null` or `{reason, member_id, display_name, session_id, harness}`) | the dashboard shows the member and session next to the flag |
 | `requests[]` status `deferred`, `talk` | removed; `open`, `answered`, `withdrawn`; `talk` is a field of `answer` | the status set stays small; what the human chose is in the answer |
 | `requests[]` | gains `priority` value `urgent` (the dashboard's priority rank needs it), `to`, `task` inline, `while_open`, `ktw_ref`, `answered_at`; `answer` gains `talk`, `conversation_id` | |
-| `POST …/requests/{id}/answer` body | `{reply_id}` or `{text}` or `{talk: true}`, `text` may accompany `reply_id` | as proposed; `by`/`on_behalf_of` are set by the hub, except that a proxy names the owner it relays as `on_behalf_of` (§2.3) |
+| `POST …/requests/{id}/answer` body | `{reply_id}` or `{text}` or `{talk: true}`, `text` may accompany `reply_id` or `talk` | as proposed; `by`/`on_behalf_of` are set by the hub, except that a proxy names the owner it relays as `on_behalf_of` (§2.3) |
 | `tasks[].scope` | renamed `area` | same reason as members |
 | `tasks[].claim` | gains `session_id`, `expired` | lease expiry is shown, not computed in the browser |
 | `tasks[]` | gains `body`, `label`, `created_by`, `assigned_to`, `checkpoint`, `ships_with`, `ktw_ref`, `report`, `contract`, timestamps incl. `closed_at`; status gains `proposed`, `cancelled`; kinds gain `contract`, `maintenance_round` | |
@@ -12880,11 +12897,31 @@ their fields:
 | `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
 | `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (optional, ≤ 300), `cta` (`{label ≤ 40, href}`) | always; without `text` only the title and the button |
+| `works_with` | `label` (≤ 40, e.g. "Works with"), `items`: 1 to the length of the hub's own list (below) agent slugs, each at most once, `more` (optional, ≤ 60, e.g. "+ any agent that runs a command") | always; the logos and names come from the hub's code, never from the page's JSON: an unknown slug is `invalid` with `details.fields.<path>: "unknown_agent"`, a repeated one with `"duplicate"` |
 | `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
 | `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
 | `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
+
+**The agents a `works_with` section names** are a fixed list in the
+hub's code, each with its display name and logo: `claude-code`,
+`codex`, `opencode`, `gemini`, `antigravity`, `copilot`, `cursor`,
+`pi`, `goose`, `cline`, `roo`, `kilo`, `amp`, `droid`, `windsurf`,
+`zed`, `kiro-cli`, `trae`, `openclaw` (the maintainer's decision of
+2026-10-31, the same set as Keep the Why's). The logos are third-party
+marks, one file per agent at `/assets/landing/agents/<slug>.svg`,
+answered like the other landing assets (below). They are not under the
+project's MIT licence: the folder's `NOTICE` names each mark's origin
+and the terms of its use, the repository's `LICENSE` and README point
+to that exception, and the `NOTICE` ships in every package with the
+files. The page's JSON cannot add, replace or point to any logo; a new
+agent is added to the list in the code. The section draws the label
+and a band of the logos, each named once for screen readers (the copy
+of the list that makes the loop seamless is `aria-hidden`) and shown
+by name on hover and focus; the stylesheet moves the band, pauses it on
+hover and focus, and under reduced motion shows the logos in one
+wrapping row without the copy. Without script nothing is lost.
 
 Plain fields are text, rendered as text nodes; the `markdown`, `note`
 and FAQ answer fields follow the Markdown rules below. A `href` is an
@@ -12936,19 +12973,19 @@ out.
 - **The stats.** Computed by the hub at most every **5 minutes** and
   shared by every visitor, never per request: `people` (active human
   accounts), `agents` (agent profiles with an active membership),
-  `public_projects` (projects with a public page, §16.9),
+  `public_projects` (projects with a public page, §16.9; `0` while
+  public pages are off or no project has one),
   `cards_done_week` (cards moved to `done` in the last 7 days across
-  public projects), and `people_online` / `agents_online`, counted by
+  every project of the instance, public or not: a weekly sum names no
+  project and no card), and `people_online` / `agents_online`, counted by
   the presence rule of §5.3 (a call in the last 120 s or a long-poll
-  open; each person or agent once). An online count below **5** is
-  given as `null` with `online_floor: 5`, and the page leaves that
-  counter out, so a small number never points at a person and no "< 5"
-  stands next to a larger total; who is online is never shown.
-  With public pages off (§16.9), `public_projects` and
-  `cards_done_week` are `null` and their counters are left out.
+  open; each person or agent once). Every counter is the real number,
+  small ones and `0` included, and the page shows each counter it names:
+  no floor, no counter left out for being small. Who is online is never
+  shown, only how many.
 - **Reading it.** `GET /landing` is unauthenticated on the public host
   (never on the join host, §1.1) and answers the setting without
-  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, online_floor, computed_at}` holding
+  `updated_by`, `variants` and `campaigns` (§16.7.2), plus `stats` `{…, computed_at}` holding
   only the counters an enabled `stats` section of some language names
   (`stats: null` when none does, so a counter the operator left off is
   published nowhere) —
@@ -12973,19 +13010,20 @@ out.
   between a person and sign-in. The landing page changes nothing about
   §2.6.1: which sign-in methods the login page offers is that
   section's.
-- **Progressive enhancement.** The page references three kinds of
+- **Progressive enhancement.** The page references four kinds of
   files from the hub's own code, the same for every instance and never
   from the database: `/assets/landing/landing.css`,
-  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB)
-  and the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
-  under their OFL licences, `font-display: swap`). Their URLs carry
+  `/assets/landing/landing.js` (loaded with `defer`, at most 10 KiB),
+  the self-hosted fonts under `/assets/landing/fonts/` (`woff2`,
+  under their OFL licences, `font-display: swap`) and the agent logos
+  of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
   pictures of the design are inline SVG in the template. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
-  animates the hero's rings and the band's loader by itself, script or
-  not. The script only adds the demo's typing, the counters, the
+  animates the hero's rings, the band's loader and the `works_with`
+  band by itself, script or not. The script only adds the demo's typing, the counters, the
   `scales` section as tabs (the columns stay readable without it), the
   theme switch (`data-theme` on the root, remembered in the visitor's
   browser, never sent to the hub; the switch is in the HTML with its
@@ -13001,8 +13039,8 @@ out.
   font-src 'self'; connect-src 'none'; base-uri 'none'; form-action
   'none'; frame-ancestors 'none'`, so it runs only scripts from the
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
-  covers the instance's logo and favicon, the design's pictures are
-  inline SVG. The preview of a draft (below) answers with the same
+  covers the instance's logo and favicon and the agent logos of a
+  `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
   policy. The legal pages (§16.7.1) carry no script and
   answer with §16.9's policy, `default-src 'none'; style-src
   'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
@@ -15968,7 +16006,10 @@ setting named or would have chosen: a member named in `moderator`, the
 agents of an explicit `jour_fixe_moderators` list, and otherwise the
 project's admin agents. A named human gets it as a grant to
 themselves; an agent whose owner is not the policy's setter gets it as
-a pending grant, with the consent request to its owner filed then.
+a pending grant. The upgrade files no request itself: the hub files
+the consent request of every pending grant that has none, at the
+latest a minute after it starts, with its usual event and notification
+(§20.2).
 The upgrade emits one `jour_fixe_series_changed` (`change: created`,
 `by: null`) and bumps `rules_version` once. `policy.jour_fixe` and
 `policy.jour_fixe_moderators` are then removed (§6.1).
@@ -16408,8 +16449,9 @@ Each proposal is triaged:
   Any other moderator is `forbidden` (`details.reason:
   "may_not_decide"`).
 - **(b) `to_owner`.** The hub files a `decision` request (§7) to `owner`
-  — in a series with `circle: owner` to its `circle_owner`, a personal
-  request when that human is not a member — with the options `adopt` and `reject`, the proposal's title as its
+  — in a series with `circle: owner` to its `circle_owner`: to that
+  human's membership while they are a member, and only when they are
+  not a member as a personal request — with the options `adopt` and `reject`, the proposal's title as its
   title, its reason and a line naming the round as its summary, and
   `jour_fixe: {round_id, proposal_id}`. The owner may forward it, or
   open it to the admins (§7, forwarding).

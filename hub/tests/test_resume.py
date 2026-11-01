@@ -74,6 +74,8 @@ def test_the_packet_has_every_part_of_the_contract(
         "briefing": None,
         "briefing_source": None,
         "chat_url": f"https://hub.example/maintainer/maity/chat/{agent.id}",  # §5.2
+        "bridges": [],  # §2.3: nobody lends it their hands
+        "bridging_for": [],  # and it lends its hands to nobody
         "takes_over": None,  # §3.1: the join named none
         "handover": None,
         "team": {
@@ -370,6 +372,10 @@ def test_the_packet_names_the_chat_with_the_owner_on_the_public_url(
         response.headers["Maity-Member-Id"],
         response.headers["Maity-Instance"],
     )
+    open_join = flow.join(owner, "maity", via="public")  # one not yet used: its page reads
+    page = make_client().get(f"/join/{open_join['join_url'].rsplit('/', 1)[1]}").text
+    line = "Talk to me in Maity: <chat_url>"  # §5.2: the same line on every path
+    assert line in page and line in make_client().get("/api/v1/help").text
     assert second.resume().json()["membership"]["chat_url"].startswith("https://hub.example/")
     assert join not in second.resume().json()["membership"]["chat_url"]
     for view in (

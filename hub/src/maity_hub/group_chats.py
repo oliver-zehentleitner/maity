@@ -18,14 +18,14 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import clock
+from maity_hub import chat_meat_proxy, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_id
 from maity_hub.mentions import global_name
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.views import ts
+from maity_hub.views import principal_ids, ts
 
 PREFIX = "cnv-"
 MIN_PARTICIPANTS, MAX_PARTICIPANTS = 2, 12  # the creator included (§1.7)
@@ -168,6 +168,30 @@ def observers_of(current: list[Any], owners: dict[str, str]) -> list[str]:
     return list(dict.fromkeys(owners[a] for a in agents if owners[a] not in inside))
 
 
+def carriers(conn: Connection, membership_ids: Iterable[int]) -> dict[int, list[str]]:
+    """The member ids of the agents that serve each of these members across owners, in one
+    query for a whole list of chats."""
+    from maity_hub import bridges
+
+    pairs = bridges.cross_owner_pairs(conn, membership_ids)
+    named = principal_ids(conn, (b for _, b in pairs))
+    out: dict[int, list[str]] = {}
+    for served, bridge in pairs:
+        if named.get(bridge):
+            out.setdefault(served, []).append(named[bridge])
+    return out
+
+
+def shown_observers(
+    current: list[Any], owners: list[str], carried: dict[int, list[str]]
+) -> list[str]:
+    """`observers` as a chat shows them: the owners, then every agent that serves a
+    participant across owners, since it reads what the participant reads (§2.3)."""
+    inside = {s.agent_id for s in current if s.agent_id}
+    agents = [a for s in current for a in carried.get(s.membership_id, []) if a not in inside]
+    return list(dict.fromkeys([*owners, *agents]))
+
+
 def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
     """`participant`, `observer` (a human owning an agent participant), or None: then
     the chat does not exist for the caller (§9.2)."""
@@ -189,8 +213,11 @@ def _round_of(conn: Connection, conversation_id: str) -> str | None:
     return found
 
 
-def view(conn: Connection, conversation: Any, access_of: str | None = None) -> dict[str, Any]:
-    """The conversation view (§9.2); `access` only when it is a caller's answer."""
+def view(
+    conn: Connection, conversation: Any, access_of: str | None = None, viewer: str | None = None
+) -> dict[str, Any]:
+    """The conversation view (§9.2); `access` only when it is a caller's answer; `viewer` the
+    human reading, who alone sees its own `meat_proxy_chat` (§9.3)."""
     current = stays(conn, conversation.id)
     found = people(conn, [s.membership_id for s in current])
     creator = people(conn, [conversation.created_by]) if conversation.created_by else {}
@@ -201,10 +228,17 @@ def view(conn: Connection, conversation: Any, access_of: str | None = None) -> d
         "created_by": creator[conversation.created_by]["member_id"] if creator else None,
         "created_at": ts(conversation.created_at),
         "participants": [{**found[s.membership_id], "joined_at": ts(s.joined_at)} for s in current],
-        "observers": observers(conn, current),
+        "observers": shown_observers(
+            current,
+            observers(conn, current),
+            carriers(conn, [s.membership_id for s in current]),
+        ),
         "closed_at": ts(conversation.closed_at),
         "closed_reason": conversation.closed_reason,
     }
+    chat_meat_proxy.shown(
+        conn, [(conversation.project_id, conversation.id, result["participants"])], viewer
+    )
     if conversation.hub_thread:
         result["jour_fixe"] = {"round_id": _round_of(conn, conversation.id)}
     if access_of is not None:
@@ -488,6 +522,9 @@ def remove(
             .values(closed_at=now, closed_reason="no_human")
         )
         changed["closed"] = {"closed_reason": "no_human"}
+    from maity_hub import pins  # pins reads chats through this module
+
+    pins.prune(conn, conversation.project_id)  # who no longer reads it keeps no pin (§9.3)
     _announce(
         conn,
         find(conn, conversation.project_id, conversation.id),
