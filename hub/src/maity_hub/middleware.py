@@ -240,14 +240,16 @@ def _access(scope: Scope, status: int) -> None:
     from the middleware's first line to here) and the route's pattern (`route=`)."""
     began = scope.get("state", {}).get("began")
     ms = round((time.monotonic() - began) * 1000) if began is not None else 0
-    request_stats.WINDOW.record(status, ms)
+    route = request_stats.route_of(scope)
+    held = scope.get("state", {}).get("held", False)  # set by `deps.wait_of`
+    request_stats.WINDOW.record(status, ms, str(scope.get("method")), "" if held else route)
     access.info(
         "%s %s %s ms=%d route=%s",
         scope.get("method"),
         _logged_path(scope),
         status,
         ms,
-        request_stats.route_of(scope),
+        route,
     )
 
 

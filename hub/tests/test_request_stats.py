@@ -6,13 +6,14 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import time
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from maity_hub import db, request_stats
+from maity_hub import db, middleware, request_stats
 from maity_hub.app import create_app
 from maity_hub.config import Settings
 
@@ -126,9 +127,92 @@ def test_the_stats_line_is_key_value_and_names_the_pool_of_a_server_database() -
     window = request_stats.Window()
     window.record(200, 41)
     window.record(502, 80)
-    assert request_stats.line(window, engine, 60) == (
-        "stats window=60s requests=2 5xx=1 max_ms=80 pool_open=0 pool_checked_out=0 pool_max=8"
+    assert request_stats.lines(window, engine, 60) == [
+        "stats window=60s requests=2 5xx=1 max_ms=80 slow_routes=0 "
+        "pool_open=0 pool_checked_out=0 pool_max=8"
+    ]
+
+
+def _engine() -> Engine:
+    return db.make_engine("postgresql+psycopg://u:p@localhost/h", 5, 3)
+
+
+def test_a_route_with_a_slow_request_gets_its_line_and_a_fast_one_none() -> None:
+    window = request_stats.Window()
+    window.record(200, 40, "GET", "/api/v1/fast")
+    window.record(200, 200, "GET", "/api/v1/tasks/{id}")
+    window.record(200, 1200, "GET", "/api/v1/tasks/{id}")
+    window.record(500, 3100, "GET", "/api/v1/tasks/{id}")
+    stats, *routes = request_stats.lines(window, _engine(), 60)
+    assert " requests=4 5xx=1 max_ms=3100 slow_routes=1 " in stats
+    assert routes == [
+        "stats_route window=60s method=GET route=/api/v1/tasks/{id} requests=3 over_1s=2 "
+        "over_3s=1 total_ms=4500 max_ms=3100"
+    ]
+    assert request_stats.lines(window, _engine(), 60)[1:] == []  # the window started again
+
+
+def test_the_routes_are_kept_apart_by_method_and_the_worst_come_first() -> None:
+    window = request_stats.Window()
+    window.record(200, 1000, "POST", "/x")
+    window.record(200, 1000, "GET", "/x")
+    window.record(200, 1000, "GET", "/x")
+    window.record(200, 9000, "GET", "/y")
+    routes = request_stats.lines(window, _engine(), 60)[1:]
+    assert [line.split()[2:4] for line in routes] == [
+        ["method=GET", "route=/x"],  # two slow requests outrank one long one
+        ["method=GET", "route=/y"],
+        ["method=POST", "route=/x"],
+    ]
+
+
+def test_the_lines_are_capped_and_the_stats_line_says_how_many_there_were() -> None:
+    window = request_stats.Window()
+    for n in range(request_stats.ROUTE_LINES + 5):
+        window.record(200, 2000 + n, "GET", f"/r{n}")
+    stats, *routes = request_stats.lines(window, _engine(), 60)
+    assert f" slow_routes={request_stats.ROUTE_LINES + 5} " in stats
+    assert len(routes) == request_stats.ROUTE_LINES
+
+
+def test_a_method_a_client_made_up_neither_grows_the_window_nor_reaches_the_line() -> None:
+    window = request_stats.Window()
+    for n in range(50):
+        window.record(405, 1500, f"M{n}", "/x")
+    routes = request_stats.lines(window, _engine(), 60)[1:]
+    assert len(routes) == 1 and " method=OTHER route=/x requests=50 " in routes[0]
+
+
+def test_a_held_long_poll_counts_in_the_totals_but_not_for_its_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from starlette.requests import Request
+
+    from maity_hub import deps
+
+    scope: dict[str, Any] = {"type": "http", "query_string": b"wait=5", "state": {}}
+    assert deps.wait_of(Request(scope)) == 5
+    assert scope["state"]["held"] is True
+    plain: dict[str, Any] = {"type": "http", "query_string": b"wait=0", "state": {}}
+    assert deps.wait_of(Request(plain)) == 0
+    assert "held" not in plain["state"]
+
+    window = request_stats.Window()
+    monkeypatch.setattr(request_stats, "WINDOW", window)
+    middleware._access(
+        {
+            "method": "GET",
+            "path": "/api/v1/x",
+            "state": {"began": time.monotonic() - 2, "held": True},
+        },
+        200,
     )
+    middleware._access(
+        {"method": "GET", "path": "/api/v1/x", "state": {"began": time.monotonic() - 2}}, 200
+    )
+    taken = window.take()
+    assert taken.requests == 2 and taken.slowest_ms >= 2000
+    assert {key: times.requests for key, times in taken.routes.items()} == {("GET", "-"): 1}
 
 
 def test_a_pool_that_cannot_be_counted_says_none() -> None:
