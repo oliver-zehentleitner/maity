@@ -549,6 +549,8 @@ def patch_member(
             held = instances.require_active(conn, target, instance, "instance")
             if agent_admin:
                 admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
+        if "reports_to" in given:
+            cross_owner.check_may_supersede(conn, mine, target.id)
         if line_lead and line.needs_consent(mine.project, target, values, pause):
             # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
             request_id = line.propose(
@@ -584,16 +586,7 @@ def patch_member(
                 pause, instance = (False, None), None
         if "reports_to" in given:
             # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
-            # of the member; an agent that did not ask for them does not end the decision of
-            # the two owners.
-            pending = cross_owner.open_pair(conn, target.id)
-            if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
-                raise ApiError(
-                    403,
-                    "forbidden",
-                    "an agent that did not ask for the edge does not end the owners' decision",
-                    {"reason": "pending_consent"},
-                )
+            # of the member (who may do so is checked above).
             cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
             boss_row = (
                 member_row(conn, mine.project.id, body.reports_to)
