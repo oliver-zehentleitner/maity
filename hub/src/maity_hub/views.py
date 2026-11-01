@@ -374,6 +374,57 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     return "offline"
 
 
+def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
+    """Per served agent without a session of its own, the best presence of its bridges
+    (§2.3): it is present through them. A bridge that is isolated, paused, suspended with
+    its owner's account, or whose every instance is paused carries nobody's presence."""
+    if not served_ids:
+        return {}
+    from maity_hub import instances, listening, moderation
+
+    b = t.bridge.c
+    pairs = conn.execute(
+        select(b.served, b.bridge).where(b.served.in_(served_ids), b.live.is_(True))
+    ).all()
+    if not pairs:
+        return {}
+    carriers = {row[1] for row in pairs}
+    rows = {
+        r.id: r
+        for r in conn.execute(
+            select(t.membership, t.agent_profile.c.owner_id)
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(t.membership.c.id.in_(carriers))
+        )
+    }
+    suspended = moderation.suspensions(
+        conn, rows.values(), {r.agent_id: r.owner_id for r in rows.values()}
+    )
+    per_instance = instances.unpaused_presences(conn, carriers)
+    live, _ = _sessions(conn, carriers)
+    heard = listening.which((s.id for s in live.values()), conn)  # one read for all
+    shown: dict[int, str] = {}
+    for membership_id, row in rows.items():
+        if row.isolated_since is not None or row.paused_since is not None:
+            continue
+        if membership_id in suspended:
+            continue
+        if membership_id in per_instance:  # the best of its instances' (§5.3)
+            if per_instance[membership_id]:
+                shown[membership_id] = min(per_instance[membership_id], key=PRESENCE_ORDER.index)
+            continue
+        session = live.get(membership_id)
+        shown[membership_id] = presence(row, session, session is not None and session.id in heard)
+    best: dict[int, str] = {}
+    for served, carrier in pairs:
+        if carrier not in shown:
+            continue
+        current = best.get(served)
+        if current is None or PRESENCE_ORDER.index(shown[carrier]) < PRESENCE_ORDER.index(current):
+            best[served] = shown[carrier]
+    return best
+
+
 def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
     """Per agent membership its active placement, as the Agents list needs it (§15.11)."""
     if not membership_ids:
@@ -528,11 +579,17 @@ def member_views(
         if human_ids
         else {}
     )
+    from maity_hub import bridges  # it builds member views itself
+
+    bridged = bridges.views(conn, [r.id for r in rows if r.agent_id is not None])
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
+    carried = _carried_presence(
+        conn, {r.id for r in rows if r.agent_id is not None and r.id not in live}
+    )
     heard = listening.which((s.id for s in live.values()), conn)  # one read for all
     placed = _placements(conn, {r.id for r in rows if r.agent_id is not None})
     detailed = [
@@ -637,6 +694,14 @@ def member_views(
             shown_presence = "paused"
         if row.isolated_since is not None:  # an isolated agent is never present (§6.2)
             shown_presence = "offline"
+        elif row.agent_id is not None and stopped is None:
+            # Settled before `availability`, which reads it: the best of its instances'
+            # (§5.3), and without a session of its own the best of its bridges' (§2.3).
+            team = team_of.get(row.id, [])
+            if team:
+                shown_presence = min((i["presence"] for i in team), key=PRESENCE_ORDER.index)
+            if row.id in carried:
+                shown_presence = min(shown_presence, carried[row.id], key=PRESENCE_ORDER.index)
         view.update(
             {
                 "last_seen_at": ts(row.last_seen_at),
@@ -664,6 +729,8 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # The agents that lend it their hands and those it lends them to (§2.3).
+            view.update(bridged.get(row.id, {"bridges": [], "bridging_for": []}))
             # Whose work this agent continues and where the hand-over is, never a text (§3.1).
             view["takes_over"] = row.takes_over
             view["handover"] = row.handover
@@ -672,11 +739,6 @@ def member_views(
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
                 view["keep_the_why_unconfirmed"] = unconfirmed
-            if view["instances"] and stopped is None and row.isolated_since is None:
-                # The best of its instances' (§5.3).
-                view["presence"] = min(
-                    (i["presence"] for i in view["instances"]), key=PRESENCE_ORDER.index
-                )
         if row.removed_at is not None:
             view["removed_at"] = ts(row.removed_at)
         elif row.agent_id is None:
@@ -1161,11 +1223,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             actor = {
                 "kind": "member",
                 "member_id": actors[row.actor_membership],
-                "instance": instance_of.get(row.actor_credential_id or ""),
+                # Through a bridge the served agent has no instance; `via` names the bridge's.
+                "instance": (
+                    None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+                ),
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,
             }
+            if row.actor_bridge:  # made by a bridge for the member (§2.3)
+                actor["via"] = row.actor_bridge
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {

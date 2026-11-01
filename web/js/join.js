@@ -76,6 +76,15 @@ window.Maity = window.Maity || {};
     return { key: "open", label: M.t("join.state.open"), text: M.t("join.state.open_until", { time: formatTime(j.expires_at) }) };
   }
 
+  // All the human's profiles, since a handle is taken whichever project they are in, and
+  // `offered`, the ones this project is allowed for (§6.3): only those are offered.
+  async function readProfiles(ctx) {
+    const [all, allowed] = await Promise.all([M.api.getAll("/agents"),
+      M.api.getAll("/agents?allowed_in=" + encodeURIComponent(ctx.project.full_name))]);
+    const ok = new Set(allowed.items.map((p) => p.id));
+    return Object.assign({}, all, { offered: all.items.filter((p) => ok.has(p.id)) });
+  }
+
   // The panel, the seats and the record, from the profiles and joins read;
   // drawn into the panel the Agents view already holds.
   function build(ctx, hooks, panel, listStatus, profilesRead, joinsRead) {
@@ -98,7 +107,7 @@ window.Maity = window.Maity || {};
     const profileHandle = (p) => M.dom.handleIn(ctx.members, { kind: "agent", handle: p.handle, name: p.name });
     const agentSelect = h("select", { id: "join-agent" });
     const profileOptions = () => append(clear(agentSelect),
-      profiles.items.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
+      profiles.offered.map((p) => h("option", { value: p.id }, p.memberships.some((x) => x.project === ctx.slug)
         ? M.t("join.agent.option_member", { name: p.display_name, handle: profileHandle(p) })
         : M.t("join.agent.option", { name: p.display_name, handle: profileHandle(p) }))),
       h("option", { value: "" }, M.t("join.agent.new")));
@@ -130,7 +139,7 @@ window.Maity = window.Maity || {};
       h("label", { for: "join-handle" }, M.t("join.handle.label")), handle, h("p", { class: "hint", id: "join-handle-rule" }, HANDLE.text),
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
-    if (!profiles.items.length) newFields.hidden = false;
+    if (!profiles.offered.length) newFields.hidden = false;
 
     // An agent that is already a member: the new line starts another
     // instance of it or replaces one of its instances (docs/api.md §6.17).
@@ -339,6 +348,7 @@ window.Maity = window.Maity || {};
           status.fail(M.t("join.failed"), why === "taken" ? { message: M.t("join.failed.taken", { handle: agent.handle }) }
             : takeover ? { message: TAKEOVER_REFUSALS[takeover + ":" + fields[takeover]]() }
             // §3.1's limits for a member, in words, the field named.
+            : d.reason === "project_not_allowed" ? { message: M.t("join.failed.project_not_allowed") }
             : d.reason === "member_join_limit" ? { message: M.t("join.failed.member_limit", {
               field: Object.hasOwn(LIMIT_WORDS, d.field) ? LIMIT_WORDS[d.field] : d.field || M.t("join.limit.a_field") }) }
             : d.reason === "member_agents_max" ? { message: M.t("join.failed.member_max", { max: d.max }) }
@@ -369,7 +379,7 @@ window.Maity = window.Maity || {};
           if (why) {
             // The hub knows better than the list on screen: read it again, and say so at the field.
             if (why === "taken") refused.add(agent.handle);
-            try { profiles = await M.api.getAll("/agents"); } catch (ignored) { /* the refusal above says enough */ }
+            try { profiles = await readProfiles(ctx); } catch (ignored) { /* the refusal above says enough */ }
             profileOptions();
             agentSelect.value = "";
             checkHandle();
@@ -383,7 +393,7 @@ window.Maity = window.Maity || {};
         showLine(j, member);
         // A new profile is named in the select, the new join is a seat.
         try {
-          [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+          [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
           listStatus.fail(M.t("join.created_unread"), err);
           return;
@@ -580,7 +590,7 @@ window.Maity = window.Maity || {};
     };
     async function load() {
       try {
-        const [profiles, joins] = await Promise.all([M.api.getAll("/agents"), M.api.getAll(ctx.base + "/joins")]);
+        const [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         // A member sees their own joins only, the ones they may revoke (§3.1).
         if (hooks.member) joins.items = joins.items.filter((j) => j.created_by === ctx.me.id);
         impl = build(ctx, hooks, panel, listStatus, profiles, joins);

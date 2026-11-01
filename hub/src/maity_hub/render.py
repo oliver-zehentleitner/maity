@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from maity_hub import landing_files
-from maity_hub.landing import FENCE, safe_target
+from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
 
@@ -299,7 +299,7 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     value = stats[key]
     label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
-        return None  # below the floor, or public pages off: the counter is left out (§16.7)
+        return None  # not computed: the counter is left out
     dot = (
         '<span class="dot pulse" aria-hidden="true"></span>'
         if key in ("people_online", "agents_online")
@@ -435,14 +435,49 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             f'{landing_files.svg("band-loader.svg")}<div><h2>{escape(section["title"])}</h2>'
             f'{text}{_button(section["cta"], "btn-primary")}</div></div></section>'
         )
+    if kind == "works_with":
+        return _works_with(index, section)
     if kind == "text":
         return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
 
 
+def _works_with(index: int, section: dict[str, Any]) -> str:
+    """The label and a band of the agents' logos. Each agent is named once for screen readers;
+    the second copy of the list, which makes the loop seamless, is `aria-hidden` and inert. The
+    logos are the hub's own files, drawn by a CSS mask so one color serves both themes; the
+    names and files come from `landing.AGENTS`, never from the page (§16.7)."""
+
+    def logos(copy: str) -> str:
+        cells = []
+        for slug in section["items"]:
+            address = landing_files.url(f"agents/{slug}.svg")
+            if address is None:
+                continue
+            mask = f"-webkit-mask-image:url({address});mask-image:url({address})"
+            shape = "agent-logo agent-alpha" if slug in ALPHA_MARKS else "agent-logo"
+            cells.append(
+                f'<li class="agent" tabindex="0">'
+                f'<span class="{shape}" style="{escape(mask, quote=True)}"></span>'
+                f'<span class="agent-name">{escape(AGENTS[slug])}</span></li>'
+                if copy == "first"
+                else f'<li class="agent"><span class="{shape}" style="{escape(mask, quote=True)}"></span></li>'
+            )
+        return "".join(cells)
+
+    more = f'<p class="agents-more">{escape(section["more"])}</p>' if section.get("more") else ""
+    return _wrap(
+        index,
+        "section works-with",
+        f'<p class="agents-label">{escape(section["label"])}</p>'
+        f'<div class="agents-band"><ul class="agents-list agents-first">{logos("first")}</ul>'
+        f'<ul class="agents-list agents-copy" aria-hidden="true" inert>{logos("copy")}</ul></div>{more}',
+    )
+
+
 def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
-    """The hero's line of who is online, from the shared stats; a counter below the floor, or one
-    no enabled `stats` section names, is left out, and the line with it when none is left."""
+    """The hero's line of who is online, from the shared stats; a counter that
+    no enabled `stats` section names is left out, and the line with it when none is left."""
     cells = []
     for key in ("people_online", "agents_online"):
         value = (stats or {}).get(key)
@@ -742,6 +777,50 @@ def legal_document(
         head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">',
         body=body,
         languages=languages,
+    )
+
+
+# --- a form page outside the app (§2.7.1) ---------------------------------------------------
+
+FORM_STYLE = """
+:root{--danger:#c92a2a}@media (prefers-color-scheme:dark){:root{--danger:#ff8787}}
+.panel{max-width:28rem;margin:2rem auto;background:var(--card);border:1px solid var(--line);
+border-radius:.8rem;padding:1.5rem}.panel h1{font-size:1.6rem;margin:0 0 .6rem}
+.field{margin:1rem 0 0}.field label{display:block;font-weight:600;margin:0 0 .3rem}
+.field input{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);
+border-radius:.5rem;background:var(--bg);color:var(--fg)}
+.field input:focus,.check input:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
+.field input[aria-invalid=true]{border-color:var(--danger)}
+.check{margin:1rem 0 0}.check label{display:flex;gap:.5rem;align-items:flex-start}
+.check input{margin:.3rem 0 0;flex:none}
+.error{color:var(--danger);margin:.3rem 0 0;font-size:.92rem}
+.panel .note{margin:1rem 0 0}
+button{margin:1.4rem 0 0;width:100%;font:inherit;font-weight:600;padding:.65rem 1rem;
+border:1px solid var(--accent);border-radius:.5rem;background:var(--accent);color:var(--accent-fg);
+cursor:pointer}
+footer p{margin:0}footer a{margin-right:0}
+@media (max-width:30rem){.panel{margin:1rem 0;padding:1.1rem}}
+"""
+
+
+def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
+    """A page outside the app that a link in a mail opens, such as the registration's (§2.7.1):
+    the legal pages' head and colours, one centred panel and the given footer, no script and
+    nothing loaded from elsewhere. `content` and `footer` are HTML of escaped text and elements."""
+    header = (
+        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a></div></header>'
+    )
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head="",
+        body=(
+            f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
+            + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
+        ),
+        languages=[],
+        style=STYLE + FORM_STYLE,
     )
 
 

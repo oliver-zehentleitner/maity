@@ -288,7 +288,10 @@ button, so its ids are repeated as links under **In the title** in the
 open entry. A text with no project of its own (a personal request from a
 project the human is not in, a chat read along from outside, `/observe`)
 links none. Known false positive, accepted: a three-digit hex colour
-(`#123`) links as a number.
+(`#123`) links as a number. A reference right after a slash links only
+when the reference before that slash matched (`#909/#911`), so a path or
+URL stays plain; the check is in the loop, since a regular expression's
+lookbehind cannot know whether the earlier reference was itself accepted.
 
 **Reason:** one request per id to know whether it exists would cost a
 read for every id in every text, and the page behind the link has to say
@@ -735,7 +738,6 @@ from what someone typed.
 
 **Id:** f8cb056b-9e0c-4729-bc97-c73341204bc0
 **Type:** decision
-**Type:** incident
 **Status:** active
 **Evidence:** confirmed
 **Source:** the registration form on prod, where labels ran inline with their fields (tsk-egx8xpcrz5z2, #939); the audit of all forms in #939's reviews and the card tsk-jpaqk8m7j52v (one shared rule, and a check so this kind of bug cannot come back); the dashboard's implementation, 2026-10-31
@@ -747,7 +749,11 @@ One rule for every such wrapper, whatever else it is called. Smoke walks
 every page it shows, before leaving it and after arriving. It fails on
 any label with `for` whose control sits in the same parent when the CSS
 lays that parent out neither as grid nor as flex. A checkbox or a radio
-beside its label is meant, and so is skipped. The jour fixe settings and
+beside its label is meant, and so is skipped. A field's error is a
+`field-error`, which takes no space while empty; a box-shaped `.error`
+that is empty takes none either (`.error:empty { display: none; }`, for
+every such box rather than one by one, since the empty box on the
+account page came from one that missed its own rule). The jour fixe settings and
 action page (`jf-`, `jfa-`), with another implementer, are named
 exemptions until their forms get a layout.
 
@@ -760,5 +766,8 @@ on what smoke renders finds the next one before a person does.
 **Rejected alternative:** six rules, one per wrapper, which the next
 wrapper would miss in the same way. A check that every wrapper class has
 a rule, which needs a list of wrapper classes to keep up to date: the
-walk over rendered pages needs none.
+walk over rendered pages needs none. The check reads a rule in its
+context (a descendant selector counts only under its ancestor) and leaves
+out rules inside `@media` and CSS comments: a layout that holds at some
+widths only is no layout for the label.
 

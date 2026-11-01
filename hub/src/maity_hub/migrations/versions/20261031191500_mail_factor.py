@@ -22,7 +22,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261031191500_mail_factor"
-down_revision: str | None = "20261031125530_long_polls"
+down_revision = "20261031190604_jour_fixe_series"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

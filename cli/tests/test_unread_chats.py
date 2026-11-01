@@ -36,6 +36,44 @@ def test_the_resume_lists_each_chat_with_unread_messages() -> None:
     ]
 
 
+def test_each_chat_quotes_its_own_meat_proxy_notes() -> None:
+    wolfgang = {
+        "member_id": "hum-w",
+        "handle": "wolfgang",
+        "meat_proxy_note": "Lead me.\nStep by step.",
+    }
+    conversations = [
+        _chat("cnv-on", 1, meat_proxy=[wolfgang]),
+        _chat("cnv-off", 1, meat_proxy=[]),
+        _chat("cnv-null", 1, meat_proxy=None),
+    ]
+    text = onboarding.render({**packet(), "conversations": conversations})
+    block = text.split("Unread chats:\n", 1)[1].split("\n\n", 1)[0]
+    assert block.splitlines() == [
+        "  group cnv-on (1 unread, 0 mentions): maity chat cnv-on",
+        "    wolfgang here:",
+        "    > Lead me.",
+        "    > Step by step.",
+        "  group cnv-off (1 unread, 0 mentions): maity chat cnv-off",
+        "  group cnv-null (1 unread, 0 mentions): maity chat cnv-null",
+    ]
+
+
+def test_a_meat_proxy_entry_without_a_note_prints_nothing() -> None:
+    people = [{"member_id": "hum-a", "handle": "ann", "meat_proxy_note": None},
+              {"member_id": "hum-b", "handle": "bo", "meat_proxy_note": "  "}]  # fmt: skip
+    text = onboarding.render({**packet(), "conversations": [_chat("cnv-1", 1, meat_proxy=people)]})
+    assert "here:" not in text
+
+
+def test_a_read_chat_prints_no_meat_proxy_note() -> None:
+    wolfgang = {"member_id": "hum-w", "handle": "wolfgang", "meat_proxy_note": "Lead me."}
+    text = onboarding.render(
+        {**packet(), "conversations": [_chat("cnv-1", 0, meat_proxy=[wolfgang])]}
+    )
+    assert "wolfgang here:" not in text
+
+
 def test_past_ten_chats_the_rest_are_counted() -> None:
     conversations = [_chat(f"cnv-{n}", 1) for n in range(13)]
     text = onboarding.render({**packet(), "conversations": conversations})

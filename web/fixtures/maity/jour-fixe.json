@@ -1,15 +1,73 @@
 {
-  "moderators": [
-    { "member_id": "agt-a", "handle": "agent-a" }
+  "series": [
+    {
+      "id": "jfs-0001",
+      "topic": "How we work: reviews, merges, the queue",
+      "circle": "all",
+      "circle_owner": null,
+      "enabled": true,
+      "recurrence": {
+        "freq": "weekly",
+        "interval": 1,
+        "weekdays": [
+          "mon"
+        ]
+      },
+      "time": "09:00",
+      "timezone": "Europe/Vienna",
+      "answer_window_minutes": 120,
+      "step_window_minutes": 120,
+      "report_window_hours": 12,
+      "moderators": [
+        {
+          "member_id": "agt-a",
+          "granted_by": "hum-maintainer",
+          "granted_at": "2026-10-31T08:00:00Z"
+        }
+      ],
+      "pending_moderators": [],
+      "opted_out_members": [],
+      "report_list": ["agt-a"],
+      "created_by": "hum-maintainer",
+      "created_at": "2026-10-31T08:00:00Z",
+      "next_at": "2026-11-03T09:00:00Z"
+    },
+    {
+      "id": "jfs-0002",
+      "topic": "My agents: how the queue feels",
+      "circle": "owner",
+      "circle_owner": "hum-maintainer",
+      "enabled": false,
+      "recurrence": {
+        "freq": "weekly",
+        "interval": 1,
+        "weekdays": [
+          "fri"
+        ]
+      },
+      "time": "15:00",
+      "timezone": "Europe/Vienna",
+      "answer_window_minutes": 120,
+      "step_window_minutes": 120,
+      "report_window_hours": 12,
+      "moderators": [],
+      "pending_moderators": [],
+      "opted_out_members": [],
+      "report_list": [],
+      "created_by": "hum-maintainer",
+      "created_at": "2026-10-31T08:00:00Z",
+      "next_at": null
+    }
   ],
-  "next_at": "2026-11-03T09:00:00Z",
   "rounds": [
     {
+      "series_id": "jfs-0001", "topic": "How we work: reviews, merges, the queue", "circle": "all",
       "id": "jfx-0002", "project": "maintainer/maity", "status": "skipped",
       "trigger": "schedule", "mode": "message", "skip_reason": "too_few", "missed_slots": 0,
       "scheduled_for": "2026-10-30T09:00:00Z", "opened_at": null
     },
     {
+      "series_id": "jfs-0001", "topic": "How we work: reviews, merges, the queue", "circle": "all",
       "id": "jfx-0001", "project": "maintainer/maity", "status": "reported",
       "trigger": "manual", "mode": "message",
       "scheduled_for": "2026-10-27T09:00:00Z", "opened_at": "2026-10-27T09:00:01Z",
@@ -59,6 +117,12 @@
         ],
         "proposals_not_carded": []
       }
+    },
+    {
+      "id": "jfx-0003", "project": "maintainer/maity", "status": "skipped",
+      "series_id": "jfs-0002", "topic": "My agents: how the queue feels", "circle": "owner",
+      "trigger": "schedule", "mode": "message", "skip_reason": "no_moderator", "missed_slots": 0,
+      "scheduled_for": "2026-10-23T13:00:00Z", "opened_at": null
     }
   ]
 }

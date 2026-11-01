@@ -61,7 +61,9 @@ h2{font-size:clamp(2rem,3.6vw,2.8rem);line-height:1.08}
 /* Demo: one loop of 16 s. Steps .d1–.d8 appear in order; .s1–.s3 highlight the matching step.
    landing.js adds .demo-on to the section when it is on screen; without script the end state shows. */
 .demo .d2,.demo .d3,.demo .d4,.demo .d5,.demo .d6,.demo .d7,.demo .d8,.demo .d9{opacity:1}
-.demo-on .d1{white-space:nowrap;overflow:hidden;animation:d1 16s steps(40,end) infinite}
+/* The typing needs one line (nowrap, a growing width); on a phone the line is longer than the
+   screen, so there it is static and wraps. */
+@media (min-width:760px){.demo-on .d1{white-space:nowrap;overflow:hidden;animation:d1 16s steps(40,end) infinite}}
 @keyframes d1{0%{width:0}12%,100%{width:100%}}
 .demo-on .d2{animation:d2 16s ease infinite}@keyframes d2{0%,15%{opacity:0;transform:translateY(4px)}18%,96%{opacity:1;transform:none}100%{opacity:0}}
 .demo-on .d3{animation:d3 16s ease infinite}@keyframes d3{0%,24%{opacity:0;transform:translateY(4px)}27%,96%{opacity:1;transform:none}100%{opacity:0}}
@@ -142,9 +144,10 @@ code{font-family:var(--font-mono);font-size:.92em}
 .scales-rings circle[data-ring]{transition:stroke .2s ease}
 .scales-rings .is-active{stroke:var(--accent)!important;stroke-width:3}
 .demo-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:28px;align-items:start}
-@media (max-width:900px){.demo-grid{grid-template-columns:1fr}}
+.demo-grid>*{min-width:0}
+@media (max-width:900px){.demo-grid{grid-template-columns:minmax(0,1fr)}}
 .term{padding:18px 20px;margin:0;list-style:none}
-.term li{margin:0;min-height:1.9em}
+.term li{margin:0;min-height:1.9em;overflow-wrap:anywhere}
 .term .cmd{color:#e6e9ec}.term .cmd::before{content:"$ ";color:#4c8dff}
 .term .out{color:#9aa4ae}.term .note{color:#7ee2a0;background:none;border:0;padding:0;margin:0;max-width:none}
 .inbox-item{padding:16px 18px;margin-top:16px;border-radius:14px}
@@ -166,6 +169,19 @@ code{font-family:var(--font-mono);font-size:.92em}
 @media (max-width:760px){.cta-band{grid-template-columns:1fr}}
 .cta-band h2{margin:0 0 10px;color:#e6e9ec}.cta-band p{margin:0 0 18px;color:#9aa4ae}
 .band-loader{display:block}
+.works-with{padding:40px 0;text-align:center}
+.agents-label{margin:0 0 20px;font:600 12px/1 var(--font);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.agents-band{display:flex;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.agents-list{display:flex;flex:none;align-items:center;gap:48px;margin:0;padding:0 24px 32px;list-style:none;min-width:100%;justify-content:space-around;animation:agents-scroll 60s linear infinite}
+.agent{position:relative;display:flex;flex:none;align-items:center;color:var(--muted)}
+.agent-logo{display:block;width:36px;height:36px;background:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:200%;mask-size:200%;-webkit-mask-source-type:luminance;mask-mode:luminance}
+.agent-alpha{-webkit-mask-size:contain;mask-size:contain;-webkit-mask-source-type:alpha;mask-mode:alpha;opacity:.66}
+.agent-name{position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:6px;padding:2px 8px;border-radius:6px;background:var(--surface2);color:var(--text);font-size:.8rem;white-space:nowrap;opacity:0;pointer-events:none}
+.agents-first .agent:hover,.agents-first .agent:focus-visible{color:var(--text)}
+.agents-first .agent:hover .agent-name,.agents-first .agent:focus-visible .agent-name{opacity:1}
+.agents-band:hover .agents-list,.agents-band:focus-within .agents-list{animation-play-state:paused}
+.agents-more{margin:28px 0 0;color:var(--muted)}
+@keyframes agents-scroll{to{transform:translateX(-100%)}}
 .site-footer{border-top:1px solid var(--border);padding:40px 0 56px;color:var(--muted);font-size:.92rem}
 .site-footer a{color:var(--muted);text-decoration:none}
 .site-footer a:hover{color:var(--text)}
@@ -179,4 +195,6 @@ code{font-family:var(--font-mono);font-size:.92em}
 .preview-note{background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 0;text-align:center;font-weight:600}
 a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}
+.agents-band{flex-wrap:wrap;-webkit-mask-image:none;mask-image:none;overflow:visible}
+.agents-copy{display:none}.agents-list{flex-wrap:wrap;justify-content:center;gap:24px 40px}}

@@ -24,7 +24,7 @@ WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
-EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned")
+EVENT_KINDS = (*REQUEST_EVENTS, "message", "mentioned", "jour_fixe_skipped")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
@@ -32,6 +32,7 @@ TITLE_MAX = 200
 WORDS: dict[str, dict[str, str]] = {
     "en": {
         "asks": "{who} asks: {title}",
+        "jf_no_moderator": "Jour fixe skipped, nobody to moderate: {topic}",
         "answered": "{who} answered: {title}",
         "withdrew": "{who} withdrew: {title}",
         "asks_you": "{who} asks you: {title}",
@@ -59,6 +60,7 @@ WORDS: dict[str, dict[str, str]] = {
     },
     "de": {
         "asks": "{who} fragt: {title}",
+        "jf_no_moderator": "Jour fixe ausgefallen, niemand moderiert: {topic}",
         "answered": "{who} hat geantwortet: {title}",
         "withdrew": "{who} hat zurückgezogen: {title}",
         "asks_you": "{who} fragt dich: {title}",
@@ -516,6 +518,27 @@ def _classify(
                 **base,
             )
         return None
+    if (
+        row.kind == "jour_fixe_skipped"
+        and payload.get("skip_reason") == "no_moderator"
+        and f"member:{principal}" in (row.audience or [])
+    ):
+        # Nobody holding the right was there, and only the keepers can grant it (§20.9);
+        # dropped once the human can no longer see the series (§18.1).
+        from maity_hub.jourfixe import series as series_mod
+
+        found = look.conn.execute(
+            select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == payload.get("series_id"))
+        ).first()
+        if found is None or series_mod.sight(look.conn, found, mine) != "full":
+            return None
+        return Item(
+            kind="inbox",
+            title=_cut(where.say("jf_no_moderator", topic=found.topic)),
+            target={"type": "jour_fixe_series", "id": str(payload.get("series_id"))},
+            url=_url(where, f"{home}/jour-fixe"),
+            **base,
+        )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):
         task = payload.get("task") or {}
         return Item(

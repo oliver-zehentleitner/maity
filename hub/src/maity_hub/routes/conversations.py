@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
-from pydantic import Field, ValidationInfo, field_validator
+from fastapi.responses import JSONResponse, Response
+from pydantic import Field, StrictBool, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
 from maity_hub import (
+    chat_meat_proxy,
     conversation_list,
     events,
     group_chats,
@@ -26,6 +27,7 @@ from maity_hub import (
     instances,
     namespace,
     paging,
+    pins,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
@@ -182,12 +184,16 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "seq": row.seq,
             "conversation_id": row.conversation_id,
             "from": principal_id(conn, row.actor_membership),
-            "from_instance": instance_of.get(row.actor_credential_id or ""),
+            "from_instance": (
+                None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+            ),
             "to": payload.get("to"),
             "to_instance": payload.get("to_instance"),  # a direct chat's, as written (§9.1)
             "body": None if row.redacted else payload.get("body"),
             "sent_at": ts(row.at),
         }
+        if row.actor_bridge:  # carried by a bridge for the sender (§2.3)
+            view["via"] = row.actor_bridge
         if not group:  # several recipients: no read receipt is modelled (§9.2)
             view["delivered_at"] = ts(delivered.get(row.seq))
         view |= {
@@ -273,7 +279,19 @@ def _read_mark(conn: Connection, reader: int, conversation_id: str) -> int:
 
 def _short(person: dict[str, Any]) -> dict[str, Any]:
     """A participant as the list shows it; an agent with its global name (§6.3)."""
-    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
+    return {k: person[k] for k in conversation_list.SHORT if k in person}
+
+
+def _with_meat_proxy(
+    conn: Connection,
+    project_id: str,
+    conversation_id: str,
+    participants: list[dict[str, Any]],
+    caller: Caller,
+) -> list[dict[str, Any]]:
+    viewer = caller.human_id if caller.kind == "human" else None
+    chat_meat_proxy.shown(conn, [(project_id, conversation_id, participants)], viewer)
+    return participants
 
 
 def _direct_item(
@@ -288,7 +306,13 @@ def _direct_item(
         "kind": "direct",
         "agent_id": agent_id,
         "title": None,
-        "participants": [_short(people[human.id]), _short(people[agent.id])],
+        "participants": _with_meat_proxy(
+            conn,
+            mine.project.id,
+            agent_id,
+            [_short(people[human.id]), _short(people[agent.id])],
+            caller,
+        ),
         "access": "party",
         "closed_at": None,
         "last_message_at": ts(last.at) if last is not None else None,
@@ -304,14 +328,7 @@ def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id:
     if caller.kind == "human":
         seen = _read_mark(conn, mine.id, agent_id)
     else:  # the agent's side is its event cursor
-        seen = (
-            conn.execute(
-                select(t.agent_session.c.acknowledged_seq).where(
-                    t.agent_session.c.id == caller.session_id
-                )
-            ).scalar()
-            or 0
-        )
+        seen = conversation_list.agent_cursor(conn, caller, mine.id)
     counted = select(func.count()).where(
         t.event.c.project_id == mine.project.id,
         t.event.c.kind == "message",
@@ -376,14 +393,22 @@ def list_conversations(
             items += conversation_list.group_entries(conn, [mine], observed)
         elif observed:  # an owner outside: exactly its agents' chats, on request (§9.2)
             items = conversation_list.group_entries(conn, [mine], True)
+        _mark_pinned(conn, caller, items)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
-        bound = paging.scope(observed=observed)
+        items.sort(key=_band)
+        bound = paging.scope(observed=observed, bands=True)
         if cursor is not None:
-            at, after_id = paging.uncursor(cursor, bound)
-            items = [i for i in items if (i["_activity"], i["id"]) < (at, after_id)]
+            at, after = paging.uncursor(cursor, bound)
+            band, after_id = _after_band(after)
+            items = [
+                i
+                for i in items
+                if _band(i) > band
+                or (_band(i) == band and (i["_activity"], i["id"]) < (at, after_id))
+            ]
         page = items[:limit]
         next_cursor = (
-            paging.cursor(page[-1]["_activity"], page[-1]["id"], bound)
+            paging.cursor(page[-1]["_activity"], f"{_band(page[-1])}\x1f{page[-1]['id']}", bound)
             if len(items) > limit
             else None
         )
@@ -416,28 +441,40 @@ def list_my_conversations(
         by_project = {m.project.id: m.project for m in mines}
         for item in items:
             item["_name"] = names[item["_project"]]
-        # Newest first; where the moment is the same, by project name and id.
+        _mark_pinned(conn, caller, items)
+        # Newest first; where the moment is the same, by project name and id; in bands.
         items.sort(key=lambda i: (i["_name"], i["id"]))
         items.sort(key=lambda i: i["_activity"], reverse=True)
+        items.sort(key=_band)
         counted = [i for i in items if i["unread"] is not None]
         totals = {
             "unread": sum(i["unread"] for i in counted),
             "mentions_unread": sum(i["mentions_unread"] for i in counted),
         }
-        bound = paging.scope(me=True, observed=observed)
+        bound = paging.scope(me=True, observed=observed, bands=True)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
-            name, _, after_id = after.partition("\x1f")
+            band, rest = _after_band(after)
+            name, _, after_id = rest.partition("\x1f")
             items = [
                 i
                 for i in items
-                if i["_activity"] < at
-                or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+                if _band(i) > band
+                or (
+                    _band(i) == band
+                    and (
+                        i["_activity"] < at
+                        or (i["_activity"] == at and (i["_name"], i["id"]) > (name, after_id))
+                    )
+                )
             ]
         page = items[:limit]
+        last = page[-1] if page else None
         next_cursor = (
-            paging.cursor(page[-1]["_activity"], f"{page[-1]['_name']}\x1f{page[-1]['id']}", bound)
-            if len(items) > limit
+            paging.cursor(
+                last["_activity"], f"{_band(last)}\x1f{last['_name']}\x1f{last['id']}", bound
+            )
+            if last is not None and len(items) > limit
             else None
         )
         for item in page:
@@ -454,6 +491,31 @@ def list_my_conversations(
         return JSONResponse({"items": page, "next_cursor": next_cursor, "totals": totals})
 
 
+def _mark_pinned(conn: Connection, caller: Caller, items: list[dict[str, Any]]) -> None:
+    """`pinned` on every item: the human's own pins, never an agent's (§9.3)."""
+    held = (
+        pins.pinned(conn, caller.human_id) if caller.kind == "human" and caller.human_id else set()
+    )
+    for item in items:
+        item["pinned"] = (item["_project"], item["id"]) in held
+
+
+def _band(item: dict[str, Any]) -> int:
+    """The item's band in a list (§9.3 "Pinned"): pinned with something new, the others
+    with something new, pinned without, the rest. An observer's `null` counts as none."""
+    if item["unread"]:
+        return 0 if item["pinned"] else 1
+    return 2 if item["pinned"] else 3
+
+
+def _after_band(after: str) -> tuple[int, str]:
+    """A cursor's band and the rest of its position."""
+    band, _, rest = after.partition("\x1f")
+    if band not in ("0", "1", "2", "3"):
+        raise invalid({"cursor": "invalid"})
+    return int(band), rest
+
+
 PACKET_CONVERSATIONS = 50  # in the resume packet (§5.2)
 PACKET_FIELDS = ("id", "kind", "title", "unread", "mentions_unread", "last_message_at", "closed_at")
 
@@ -465,7 +527,51 @@ def conversation_packet(conn: Connection, mine: Membership, caller: Caller) -> l
     items = conversation_list.direct_entries(conn, [mine], caller, owned)
     items += conversation_list.group_entries(conn, [mine], False)
     items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
-    return [{k: i[k] for k in PACKET_FIELDS} for i in items[:PACKET_CONVERSATIONS]]
+    return [
+        {
+            **{k: i[k] for k in PACKET_FIELDS},
+            # The humans for whom the meat-proxy mode holds in this chat (§9.3).
+            "meat_proxy": chat_meat_proxy.packet(i["participants"]),
+        }
+        for i in items[:PACKET_CONVERSATIONS]
+    ]
+
+
+# --- pins (§9.3 "Pinned") ------------------------------------------------------------------
+
+
+def _pin_target(conn: Connection, caller: Caller, slug: str, conversation_id: str) -> Any:
+    """The caller, as of the project lock, for a chat it reads; `not_found` as GET for
+    any other (§9.1, §9.2)."""
+    if caller.kind != "human" or caller.human_id is None:
+        raise humans_only("only a human pins a chat")
+    events.lock_project(conn, _reader(conn, caller, slug).project.id)
+    mine = _reader(conn, caller, slug)
+    if group_chats.is_group(conversation_id):
+        _group(conn, mine, conversation_id)
+    else:
+        _party(conn, mine, conversation_id, hidden=True)
+    return mine
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/pin")
+def pin_conversation(
+    slug: str, conversation_id: str, request: Request, caller: AnyCaller
+) -> Response:
+    with engine_of(request).begin() as conn:
+        mine = _pin_target(conn, caller, slug, conversation_id)
+        pins.pin(conn, str(caller.human_id), mine.project.id, conversation_id)
+    return Response(status_code=204)
+
+
+@router.delete("/projects/{owner}/{slug}/conversations/{conversation_id}/pin")
+def unpin_conversation(
+    slug: str, conversation_id: str, request: Request, caller: AnyCaller
+) -> Response:
+    with engine_of(request).begin() as conn:
+        mine = _pin_target(conn, caller, slug, conversation_id)
+        pins.unpin(conn, str(caller.human_id), mine.project.id, conversation_id)
+    return Response(status_code=204)
 
 
 # --- group chats (§9.2) --------------------------------------------------------------------
@@ -506,9 +612,24 @@ def _locked(conn: Connection, caller: Caller, slug: str, conversation_id: str) -
     return membership(conn, caller, slug)
 
 
+def _is_pinned(conn: Connection, mine: Any, conversation_id: str) -> bool:
+    """Whether the caller pinned the chat; never for an agent (§9.3 "Pinned")."""
+    if mine.kind != "human":
+        return False
+    return (mine.project.id, conversation_id) in pins.pinned(conn, mine.principal_id)
+
+
 def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str, Any]:
     group, found = _group(conn, mine, conversation_id)
-    return group_chats.view(conn, group, found)
+    return {
+        **group_chats.view(conn, group, found, _viewer(mine)),
+        "pinned": _is_pinned(conn, mine, conversation_id),
+    }
+
+
+def _viewer(mine: Any) -> str | None:
+    """The human reading, who alone sees its own `meat_proxy_chat` (§9.3)."""
+    return str(mine.principal_id) if mine.kind == "human" else None
 
 
 def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -> dict[str, Any]:
@@ -519,7 +640,10 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     found = group_chats.access(conn, conversation_id, mine)
     if found is None:  # a replay shows nothing the caller may no longer read (as #271)
         raise not_found()
-    return group_chats.view(conn, row, found)
+    return {
+        **group_chats.view(conn, row, found, _viewer(mine)),
+        "pinned": _is_pinned(conn, mine, conversation_id),
+    }
 
 
 idempotency.LOADERS["conversation"] = _load_for_caller
@@ -537,7 +661,7 @@ def get_conversation(
         _party(conn, mine, conversation_id, hidden=True)
         item = _direct_item(conn, mine, caller, conversation_id)
         del item["_activity"]
-        return JSONResponse(item)
+        return JSONResponse({**item, "pinned": _is_pinned(conn, mine, conversation_id)})
 
 
 def _manager(conn: Connection, mine: Membership, conversation_id: str) -> Any:
@@ -642,6 +766,43 @@ idempotency.LOADERS["participation"] = idempotency.plain(_load_participation)
 # --- messages (§9.1, §9.2) ---------------------------------------------------------------
 
 
+class MeatProxyIn(Strict):
+    meat_proxy: StrictBool | None
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/meat-proxy")
+def put_meat_proxy(
+    slug: str, conversation_id: str, body: MeatProxyIn, request: Request, caller: AnyCaller
+) -> Response:
+    """A human's own choice of the meat-proxy mode for one chat it takes part in (§9.3, "Meat
+    proxy per chat"): `204`, idempotent, no event, wakes nobody."""
+    with engine_of(request).begin() as conn:
+        if caller.kind != "human":
+            raise humans_only("only a human sets the meat-proxy mode, for itself")
+        mine = _reader(conn, caller, slug)
+        if group_chats.is_group(conversation_id):
+            _, found = _group(conn, mine, conversation_id)
+            if found != "participant":  # it reads along without taking part
+                raise _not_a_participant()
+        elif isinstance(mine, Outsider):
+            raise not_found()
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+        chat_meat_proxy.put(
+            conn, str(mine.principal_id), mine.project.id, conversation_id, body.meat_proxy
+        )
+    return Response(status_code=204)
+
+
+def _not_a_participant() -> ApiError:
+    return ApiError(
+        403,
+        "forbidden",
+        "the chat is read along, not taken part in",
+        {"reason": "not_a_participant"},
+    )
+
+
 @router.get("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
 def read_messages(
     slug: str,
@@ -688,11 +849,13 @@ def read_messages(
                 ).all()
             )
             cursor = rows[-1].seq if rows else start
-            if group is None:
+            # A bridge reading for an agent delivers and marks nothing for it (§2.3).
+            carried = caller.bridge is not None
+            if group is None and not carried:
                 events.mark_delivered(conn, rows, mine.principal_id)
             # A direct chat's human party, a group chat's participant; never an observer.
             marks = found == "participant" if group is not None else mine.kind == "human"
-            if rows and marks:
+            if rows and marks and not carried:
                 remember_read(conn, mine.id, conversation_id, rows[-1].seq)
         earlier = None
         if rows:

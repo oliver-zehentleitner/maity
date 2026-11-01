@@ -4,11 +4,18 @@
 
 **Id:** c1af6c8f-9d69-4afe-b233-fa8f437faaa6
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's request for a chat list with one or several members per chat, 2026-10-22; the contract owner's design in `docs/api.md` §9, accepted by the maintainer on 2026-10-22 with one change: history on demand for someone added later
 **Revisit when:** practice shows people forgetting to mention the agent they want an answer from, or agents needing to open a chat themselves
 **See:** scope.md#the-humans-primary-surface-is-a-decision-inbox-not-a-chat — 6242e7ce-4c5c-42fc-b787-d506f1abc9ea — as of 2026-10-22
+
+**Revisit:** re-checked on 2026-11-01. The first half of the condition
+fired and bbb35462 answers it. The second half is checked against the
+contract only: `docs/api.md` §9.2 lets only a human member create a group
+chat, and §9.1 says a direct conversation is created by nothing, so an
+agent cannot open a chat today. Whether agents need to is not settled by
+that check.
 
 Conversations come in two kinds. The direct conversation between a
 human and an agent they own stays exactly as it was: private to the
@@ -19,9 +26,8 @@ written through the same message endpoints, listed together with the
 direct ones. Inside a group chat:
 
 - agents are woken only by a message that mentions them; humans by
-  every message of the others (partly superseded, pending the
-  maintainer's confirmation: `wake: all` per agent participation wakes
-  on human messages, bbb35462);
+  every message of the others (`wake: all` per agent participation also
+  wakes on human messages, bbb35462);
 - someone added later starts fresh from their join (resume packet,
   unread counts and wake-ups count only from there) and reads the
   earlier history on demand by paging back through the chat;
@@ -430,3 +436,32 @@ field elsewhere.
   turn; a change emits no event, and the agents read it on their next
   resume or read of the chat (this contract's reading).
 
+
+## An inbox answer carries a note with any button; "Talk" takes one too
+
+**Id:** 6e357e0c-e95e-447c-9b4d-9a6dbb4b9f3f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request, 2026-10-31 (the text field above the answer buttons, always writable, its text sent with whichever button is pressed, "Send" renamed "Talk"); contract `docs/api.md` §7
+
+The inbox shows one free-text field above the reply buttons. Whatever
+is typed there goes along with the button pressed: a reply (`reply_id`
+with `text`), or "Talk" (`talk: true` with `text`). A request without
+prepared replies keeps a send button for a free-text answer beside
+"Talk". The note on "Talk" is stored as the answer's text; the hub
+posts nothing into the direct chat for it.
+
+**Reason:** the maintainer often wants to pick an option and add a small
+remark ("o1, but keep the old name"), or ask to talk about one point.
+With the field below the buttons and its own send button, a remark was a
+second, separate answer that the hub refused once the request was
+answered. The contract already let `text` accompany `reply_id`; only
+`talk` lacked it.
+
+**Alternatives:**
+- Keeping the field as its own answer path with "Send": a choice and a
+  remark could not be given together.
+- Posting the note on "Talk" as the human's first message in the direct
+  chat: it would write a chat message on the human's behalf; the agent
+  reads the answer's text before it opens the conversation anyway.

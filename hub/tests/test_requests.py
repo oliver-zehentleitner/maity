@@ -401,7 +401,7 @@ def test_an_answer_names_one_reply_or_text_or_talk(
     assert answer(owner, request, reply_id="c").json()["error"]["details"]["fields"] == {
         "reply_id": "not_a_reply"
     }
-    both = answer(owner, request, talk=True, text="x")
+    both = answer(owner, request, talk=True, reply_id="a")
     assert both.json()["error"]["details"]["fields"] == {"answer": "reply_id_or_text_or_talk"}
 
 
@@ -448,6 +448,31 @@ def test_talk_is_the_owning_humans_and_opens_the_conversation(
     assert refused.json()["error"]["details"]["fields"] == {"talk": "only_the_owner_of_the_agent"}
     body = answer(owner, request, talk=True).json()
     assert body["answer"]["talk"] is True and body["answer"]["conversation_id"] == agent.id
+
+
+def test_talk_may_carry_a_text_and_never_a_reply(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`{talk: true, text}`: the human says why they would rather talk, and the agent reads it in
+    the answer; the hub writes nothing into the direct chat for it (§7)."""
+    agent = flow.agent(make_client, owner)
+    request = asked(agent, options=[{"id": "a", "label": "A"}, {"id": "b", "label": "B"}])
+    both = answer(owner, request, talk=True, reply_id="a", text="x")
+    assert both.json()["error"]["details"]["fields"] == {"answer": "reply_id_or_text_or_talk"}
+    before = len(_events(migrated, "message"))
+    body = answer(owner, request, talk=True, text="Let us talk about the options first.").json()
+    assert body["answer"]["talk"] is True and body["answer"]["reply_id"] is None
+    assert body["answer"]["text"] == "Let us talk about the options first."
+    assert body["answer"]["conversation_id"] == agent.id
+    event = _events(migrated, "request_answered")[-1]
+    assert event.payload["answer"]["text"] == "Let us talk about the options first."
+    assert event.payload["answer"]["talk"] is True
+    assert len(_events(migrated, "message")) == before
+    # still the owning human's alone, with or without a text
+    other = asked(agent)
+    admin = flow.agent(make_client, owner, role="admin")
+    refused = answer(admin, other, talk=True, text="x")
+    assert refused.json()["error"]["details"]["fields"] == {"talk": "only_the_owner_of_the_agent"}
 
 
 def test_withdrawal_is_the_askers_or_an_answerers(
