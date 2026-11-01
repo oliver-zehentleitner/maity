@@ -902,7 +902,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
-    isolation.release_claims(conn, target.id)
+    released = isolation.release_claims(conn, target.id)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -919,6 +919,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         actor=change.actor,
         subject=("member", view["id"]),
     )
+    isolation.tell_released(conn, released, change.actor)
     # The chain never names a former member: nor does a join still to be used.
     reported = conn.execute(
         select(t.membership.c.id).where(

@@ -219,6 +219,7 @@ def test_a_holder_isolated_or_removed_gives_the_card_back_and_wakes_a_watcher(
             "project_state": back.payload["project_state"],
         }
         assert back.seq in _woken(migrated, watcher)
+        assert _last(migrated, "member_updated").seq < back.seq  # the cause first
 
 
 def test_the_resume_packet_says_which_held_cards_are_watched(
