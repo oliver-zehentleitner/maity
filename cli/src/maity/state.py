@@ -16,6 +16,7 @@ import os
 import secrets
 import stat
 import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Any, SupportsIndex
 
@@ -94,18 +95,31 @@ def identity_dir(hub_host: str, handle: str) -> Path:
 
 
 def other_hub_hosts(hub_host: str) -> list[str]:
-    """The hosts other than `hub_host` that hold a joined identity under the state home. An
-    identity kept in a clone or in a directory of its own choosing isn't seen from here."""
+    """The hosts other than `hub_host` that hold a joined identity under the state home: in
+    `<host>/<handle>`, as a join derives it, or directly below as `join` recommends, where its
+    `state.json` names the hub. An identity elsewhere isn't seen from here."""
     root = _state_home() / "maity"
     if not root.is_dir():
         return []
-    return sorted(
-        host.name
-        for host in root.iterdir()
-        if host.is_dir()
-        and host.name != hub_host
-        and any(has_credential(identity) for identity in host.iterdir() if identity.is_dir())
-    )
+    hosts: set[str] = set()
+    for entry in root.iterdir():
+        if not entry.is_dir():
+            continue
+        if has_credential(entry):
+            hosts.add(_hub_host_of(entry))
+        elif any(has_credential(identity) for identity in entry.iterdir() if identity.is_dir()):
+            hosts.add(entry.name)
+    return sorted(hosts - {hub_host, ""})
+
+
+def _hub_host_of(state_dir: Path) -> str:
+    """The host of the hub `state_dir` joined, empty when it can't be read: only a hint hangs on
+    it, so a broken identity here must not stop a join elsewhere."""
+    try:
+        hub = load_state(state_dir).get("hub")
+    except (StateError, OSError):
+        return ""
+    return urllib.parse.urlsplit(hub).netloc.lower() if isinstance(hub, str) else ""
 
 
 def _state_home() -> Path:
