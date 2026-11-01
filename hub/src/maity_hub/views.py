@@ -1095,6 +1095,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "body": row.body,
                 "mentions": row.mentions or [],
                 "label": row.label,
+                "needs": row.needs,
                 "status": row.status,
                 "rank": row.rank,
                 "area": row.area,

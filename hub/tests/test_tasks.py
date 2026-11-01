@@ -18,6 +18,7 @@ TASK_KEYS = {
     "title",
     "body",
     "label",
+    "needs",
     "status",
     "rank",
     "watching",
@@ -82,6 +83,9 @@ def test_a_card_has_the_contract_shape(owner: flow.Human, migrated: Engine) -> N
     ("body", "fields"),
     [
         ({"label": "bug"}, {"label": "unknown"}),
+        ({"needs": "plumber"}, {"needs": "unknown"}),
+        ({"needs": "proxy"}, {"needs": "unknown"}),
+        ({"needs": "manager"}, {"needs": "unknown"}),
         ({"kind": "epic"}, {"kind": "unknown"}),
         ({"kind": "release"}, {"release.version": "required"}),
         ({"release": {"version": "1.0.0"}}, {"release": "releases_only"}),
@@ -302,3 +306,28 @@ def test_an_edge_patch_that_changes_nothing_says_nothing(
             select(t.event).where(t.event.c.kind == "task_updated", t.event.c.subject_id == a["id"])
         ).all()
     assert len(updates) == 1
+
+
+def test_needs_is_set_changed_shown_and_filtered_and_routes_nothing(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """§6.4: which role the card is for; a member of another role may still claim it."""
+    path = "/projects/maintainer/maity/tasks"
+    plain = task(owner)
+    assert plain["needs"] is None
+    card = task(owner, needs="reviewer")
+    assert card["needs"] == "reviewer"
+    assert [c["id"] for c in owner.get(f"{path}?needs=reviewer").json()["items"]] == [card["id"]]
+    changed = owner.patch(f"{path}/{card['id']}", {"needs": "tester"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["needs"] == "tester"
+    history = owner.get(f"{path}/{card['id']}/history").json()["items"]
+    assert any(e["field"] == "needs" and e["after"] == "tester" for e in history)
+    refused = owner.patch(f"{path}/{card['id']}", {"needs": "plumber"})
+    assert refused.status_code == 400, refused.text
+    coder = flow.agent(make_client, owner)
+    claimed = coder.post(f"{path}/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    cleared = owner.patch(f"{path}/{card['id']}", {"needs": None})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["needs"] is None

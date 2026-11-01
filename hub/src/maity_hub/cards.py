@@ -16,6 +16,11 @@ from maity_hub.errors import ApiError, invalid
 
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
 LABELS = ("fix", "feature", "chore")
+# The built-in roles a card may be for (§6.4), besides a project's own (§2.3).
+NEEDS = (
+    "coder", "reviewer", "tester", "designer", "ops", "writer",
+    "red-team", "blue-team", "purple-team",
+)  # fmt: skip
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 CLOSED = ("done", "cancelled")
 CREATE_STATUSES = ("proposed", "open")

@@ -1337,6 +1337,7 @@ card = Table(
     Column("body", MARKDOWN_TEXT),
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
+    Column("needs", String(24)),  # the role the card is for (§6.4); routes nothing
     Column("status", String(16), nullable=False),
     _ref("parent", "card.id", index=True),
     # The card's place in its status column (§6.4): set by the hub only, compared

@@ -31,6 +31,7 @@ from maity_hub import (
     moderation,
     namespace,
     paging,
+    project_roles,
     ranks,
     releases,
     seats,
@@ -109,6 +110,7 @@ class TaskCreate(Written):
     body: str | None = markdown(default=None)
     kind: str = "task"
     label: str | None = None
+    needs: str | None = None
     area: str | None = None
     status: str = "open"
     assigned_to: str | None = None
@@ -127,6 +129,7 @@ class TaskPatch(Written):
     title: str | None = title(default=None)
     body: str | None = markdown(default=None)
     label: str | None = None
+    needs: str | None = None
     area: str | None = None
     status: str | None = None
     depends_on: list[str] | None = Field(default=None, max_length=100)
@@ -510,6 +513,12 @@ def _check_label(label: str | None) -> None:
         raise invalid({"label": "unknown"})
 
 
+def _check_needs(project: Any, needs: str | None) -> None:
+    """The role a card is for (§6.4): it routes nothing, so it only has to be a role."""
+    if needs is not None and needs not in (*cards.NEEDS, *project_roles.names(project)):
+        raise invalid({"needs": "unknown"})
+
+
 def _require_open_project(mine: Membership, reason: str | None) -> dict[str, Any]:
     """`project_closed` in archived; a reason in plan and review (§6.1)."""
     state = mine.project.state
@@ -606,6 +615,7 @@ def list_tasks(
     status: str = "all",
     kind: str | None = None,
     label: str | None = None,
+    needs: str | None = None,
     holder: str | None = None,
     assigned_to: str | None = None,
     area: str | None = None,
@@ -629,6 +639,7 @@ def list_tasks(
         for column, value in (
             (t.card.c.kind, kind),
             (t.card.c.label, label),
+            (t.card.c.needs, needs),
             (t.card.c.area, area),
             (t.card.c.parent, parent),
         ):
@@ -650,8 +661,9 @@ def list_tasks(
                 or_(t.card.c.closed_at.is_(None), t.card.c.closed_at > closed_after)
             )
         bound = paging.scope(
-            status=status, kind=kind, label=label, holder=holder, assigned_to=assigned_to,
-            area=area, parent=parent, closed_after=closed_after, order=order,
+            status=status, kind=kind, label=label, needs=needs, holder=holder,
+            assigned_to=assigned_to, area=area, parent=parent, closed_after=closed_after,
+            order=order,
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
@@ -757,6 +769,7 @@ CREATED = (
     "title",
     "body",
     "label",
+    "needs",
     "status",
     "area",
     "assigned_to",
@@ -814,6 +827,7 @@ def create_card(
     _check_label(body.label)
     _check_area(body.area)
     mine = _locked(conn, mine)
+    _check_needs(mine.project, body.needs)
     state = _require_open_project(mine, body.reason)
     _refuse_paused(conn, mine.id, mine.instance)  # a paused agent opens no new work
     if imported_from is not None:
@@ -871,6 +885,7 @@ def create_card(
                     body=body.body,
                     mentions=found,
                     label=body.label,
+                    needs=body.needs,
                     status=status,
                     parent=body.parent,
                     area=body.area,
@@ -1038,6 +1053,9 @@ def patch_task(
         if "label" in given:
             _check_label(body.label)
             values["label"] = body.label
+        if "needs" in given:
+            _check_needs(mine.project, body.needs)
+            values["needs"] = body.needs
         if "area" in given:
             _check_area(body.area)
             values["area"] = body.area
