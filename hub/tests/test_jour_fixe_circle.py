@@ -496,3 +496,45 @@ def test_a_series_moderator_gets_only_the_reports_of_rounds_it_moderated(
     assert _report(circle).status_code == 200
     [reported] = _kinds(migrated, "jour_fixe_reported")
     assert not [token for token in reported.audience if outside.id in token]
+
+
+def test_an_owners_round_thread_shows_a_bridge_across_owners_as_observer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3, §20.5: the round's owners are its `circle_owner` alone, and an agent that serves
+    a participant across owners reads what it reads, so the thread shows it too (dzse at
+    #975). The bridge's connection is written directly: its flow has its own tests."""
+    from sqlalchemy import insert
+
+    from maity_hub.ids import new_id
+
+    circle = Circle(owner, make_client, migrated, now)
+    other = _member(make_client, migrated, "other")
+    helper = flow.agent(make_client, other)
+    with circle.engine.begin() as conn:
+        ids = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([circle.worker.id, helper.id])
+                )
+            ).all()
+        )
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            insert(t.bridge).values(
+                id=new_id("bridge"),
+                project_id=project_id,
+                served=ids[circle.worker.id],
+                bridge=ids[helper.id],
+                purpose="t",
+                cross_owner=True,
+                created_by=circle.friend.id,
+                created_at=datetime.now(UTC),
+            )
+        )
+    shown = circle.friend.get(f"{BASE}/conversations/{circle.thread}").json()
+    assert shown["observers"] == [helper.id]  # `friend` takes part: no owner beside it
+    listed = circle.friend.get(f"{BASE}/conversations", params={"observed": True}).json()
+    [entry] = [c for c in listed["items"] if c["id"] == circle.thread]
+    assert entry["observers"] == [helper.id]
+    assert other.get(f"{BASE}/conversations/{circle.thread}").status_code == 404

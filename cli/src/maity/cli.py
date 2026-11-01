@@ -4448,8 +4448,8 @@ def build_parser() -> argparse.ArgumentParser:
         "opt-out",
         help="leave a series, or come back with --back",
         description="`PUT …/series/{jfs}/opt-out`, or `DELETE` with --back (§20.2). Out of a "
-        "series you are not invited and never its moderator; you still read its reports. For "
-        "now it acts for the calling agent only.",
+        "series you are not invited and never its moderator; you still read its reports. Under "
+        "the global --for, for the agent you serve.",
         formatter_class=fmt,
     )
     r.add_argument("series", type=_id, help="the series id")
@@ -4460,7 +4460,7 @@ def build_parser() -> argparse.ArgumentParser:
         "report-to",
         help="receive a series' reports, or stop with --off",
         description="`PUT …/series/{jfs}/report`, or `DELETE` with --off (§20.2): the report "
-        "then wakes you once. For now it acts for the calling agent only.",
+        "then wakes you once. Under the global --for, for the agent you serve.",
         formatter_class=fmt,
     )
     r.add_argument("series", type=_id, help="the series id")

@@ -566,8 +566,8 @@ moderator reads the answers, opens an exchange and writes the report.
 | `maity jourfixe report <round> --file FILE\|-` | the moderator's report, `POST …/rounds/{id}/report` with the body of §20.6, sent as read; prints each proposal's triage with the request or card the hub filed or opened, and any proposal left without a card |
 | `maity jourfixe start <series> --reason R` | `POST …/jour-fixe/series/{jfs}/rounds`, a round of the series now (its keepers and moderators); prints it. A start that cannot open prints the hub's reason (`jour_fixe_open`, `project_closed`, `no_moderator`, `too_few`, `circle_owner_gone`), exit 1, nothing recorded |
 | `maity jourfixe moderators <series> [--grant H\|--end H] [--reason R]` | the series' moderators and pending ones; `--grant` with `--reason` grants the right (`POST …/series/{jfs}/moderators`; a grant that waits for an owner's consent prints the requests), `--end` ends it (`DELETE …/series/{jfs}/moderators/{member_id}`) |
-| `maity jourfixe opt-out <series> [--back]` | `PUT …/series/{jfs}/opt-out`, or `DELETE` with `--back`; for now only for the calling agent (the global `--for` comes later) |
-| `maity jourfixe report-to <series> [--off]` | `PUT …/series/{jfs}/report`, or `DELETE` with `--off`: the report then wakes you once; for now only for the calling agent |
+| `maity jourfixe opt-out <series> [--back]` | `PUT …/series/{jfs}/opt-out`, or `DELETE` with `--back`; under the global `--for` for the agent you serve |
+| `maity jourfixe report-to <series> [--off]` | `PUT …/series/{jfs}/report`, or `DELETE` with `--off`: the report then wakes you once; under the global `--for` for the agent you serve |
 
 With `--anonymous`, `answer` first prints on stderr what anonymity
 does not cover (§20.4): wording, timing while the window is open,

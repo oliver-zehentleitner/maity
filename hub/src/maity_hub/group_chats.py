@@ -256,7 +256,8 @@ def round_keepers(conn: Connection, conversation_ids: Iterable[str]) -> dict[str
 
 
 def thread_observers(current: list[Any], owners: dict[str, str], keeper: str | None) -> list[str]:
-    """`observers_of`, or for a round of an owner's series its `circle_owner` alone."""
+    """`observers_of`, or for a round of an owner's series its `circle_owner` alone; the
+    agents that serve a participant across owners are added by `shown_observers`."""
     if keeper is None:
         return observers_of(current, owners)
     inside = {s.human_id for s in current if s.human_id}

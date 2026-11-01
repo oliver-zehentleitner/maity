@@ -659,3 +659,20 @@ def test_opting_out_and_the_report_list(
     assert cli.main(["jourfixe", *argv]) == cli.EXIT_OK
     assert capsys.readouterr().out == f"{said}\n"
     assert [r.method for r in fake.signed() if r.path == f"{SERIES_PATH}/{tail}"] == [method]
+
+
+def test_answer_for_a_served_agent_picks_its_round_and_carries_maity_for(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under the global `--for` the round is the served agent's, and every call carries
+    `Maity-For` (§13, §20.3; dzse at #975)."""
+    served = "agt-s"
+    _overview(fake, _round(participants=[{"member_id": served, "kind": "agent"}]))
+    _mine(fake, [])
+    fake.routes[("POST", f"{ROUND}/answers")] = lambda seen: (201, {"anonymous": False, "id": "a"})
+    argv = ["--for", served, "jourfixe", "answer", "--went-well", "x"]
+    assert cli.main(argv) == cli.EXIT_OK
+    reads = [s for s in fake.seen if s.path == f"{ROUND}/answers" and s.method == "GET"]
+    posts = [s for s in fake.seen if s.path == f"{ROUND}/answers" and s.method == "POST"]
+    assert reads and all(s.headers.get("maity-for") == served for s in reads)
+    assert posts and posts[-1].headers.get("maity-for") == served
