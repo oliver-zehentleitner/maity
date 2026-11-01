@@ -616,7 +616,7 @@ the inbox.
 - `GET /api/v1/projects/{slug}/swarm` (`days` 1–90, default 30) — the team
   at work: `live` (presence, instances online, the cards held, read now)
   and the window's counters per member and in `totals` (`cards_done`,
-  `reviews_given`, `prs_merged`, `handovers`, the claim-to-done and
+  `reviews_given`, `prs_merged` (ticker merges and merged links), `handovers`, the claim-to-done and
   review-to-done medians, `cards_done_per_day`), kept for up to an hour; a
   section of the project's Overview. There is no public swarm page.
 - `GET /badge/{slug}.svg` — public, outside the API: counts only, opted in

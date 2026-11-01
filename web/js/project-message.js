@@ -15,11 +15,11 @@ window.Maity = window.Maity || {};
   // No review_result: it carries its verdict, head and cites (§8.4), which
   // come from the CLI's --review-file (context/views.md).
   const TYPES = [
-    ["notice", "For your information (no answer expected)"],
-    ["handover", "A handover"],
-    ["blocker", "Something blocks work"],
-    ["go_request", "Asks for a go"],
-    ["interface_change", "An interface changes"],
+    ["notice", () => M.t("projectmessage.type.notice")],
+    ["handover", () => M.t("projectmessage.type.handover")],
+    ["blocker", () => M.t("projectmessage.type.blocker")],
+    ["go_request", () => M.t("projectmessage.type.go_request")],
+    ["interface_change", () => M.t("projectmessage.type.interface_change")],
   ];
   const CLOSED = new Set(["done", "cancelled"]);
   const BODY_CHARS = 16 * 1024;
@@ -27,9 +27,9 @@ window.Maity = window.Maity || {};
   // The hub's refusals, in words.
   function said(err) {
     const fields = err.code === "invalid" && err.details && err.details.fields;
-    if (fields && fields.body === "too_many_mentions") return { message: "too many mentions: at most 10 members and 50 mentions in one message" };
-    if (err.code === "rate_limited") return { message: "too many mentions in a short time; wait a few minutes and send again" };
-    if (fields && fields.to) return { message: "nobody by that address in this project" };
+    if (fields && fields.body === "too_many_mentions") return { message: M.t("projectmessage.refused.too_many_mentions", { members: 10, mentions: 50 }) };
+    if (err.code === "rate_limited") return { message: M.t("projectmessage.refused.rate_limited") };
+    if (fields && fields.to) return { message: M.t("projectmessage.refused.to") };
     return err;
   }
 
@@ -37,23 +37,25 @@ window.Maity = window.Maity || {};
     const tasks = await M.api.getAll(ctx.base + "/tasks?status=proposed,open,in_progress,blocked,review").catch(() => ({ items: [] }));
     const others = ctx.members.filter((m) => m.id !== ctx.me.id);
     const to = h("select", { id: "message-to" },
-      h("option", { value: "all" }, "Everyone in the project"),
+      h("option", { value: "all" }, M.t("projectmessage.to.all")),
       // §8.4: trust:owner, trust:admin or a role (§2.3).
-      h("optgroup", { label: "A trust" }, ["owner", "admin"].map((t) => h("option", { value: "trust:" + t }, "Every " + t))),
-      h("optgroup", { label: "A role" }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, "Every " + M.trust.roleLabel(r).toLowerCase()))),
-      h("optgroup", { label: "One member" }, others.map((m) => h("option", { value: m.id }, m.display_name + " (@" + M.dom.handleOf(ctx, m) + ")"))));
+      h("optgroup", { label: M.t("projectmessage.to.trust") },
+        h("option", { value: "trust:owner" }, M.t("projectmessage.to.trust_owner")),
+        h("option", { value: "trust:admin" }, M.t("projectmessage.to.trust_admin"))),
+      h("optgroup", { label: M.t("projectmessage.to.role") }, M.trust.ROLES.map((r) => h("option", { value: "role:" + r }, M.t("projectmessage.to.every_role", { role: M.trust.roleLabel(r).toLowerCase() })))),
+      h("optgroup", { label: M.t("projectmessage.to.member") }, others.map((m) => h("option", { value: m.id }, M.t("projectmessage.to.member_option", { name: m.display_name, handle: M.dom.handleOf(ctx, m) })))));
     to.value = "all";
-    const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l)));
+    const type = h("select", { id: "message-type" }, TYPES.map(([v, l]) => h("option", { value: v }, l())));
     type.value = "notice";
-    const card = h("select", { id: "message-card" }, h("option", { value: "" }, "no card"),
+    const card = h("select", { id: "message-card" }, h("option", { value: "" }, M.t("projectmessage.no_card")),
       tasks.items.filter((t) => !CLOSED.has(t.status)).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
     card.value = "";
-    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: "message-body", rows: "6", placeholder: "Markdown. @handle draws a member in and notifies them.",
+    const body = M.dom.sendOnCtrlEnter(h("textarea", { id: "message-body", rows: "6", placeholder: M.t("projectmessage.body.placeholder"),
       "aria-describedby": "message-body-hint" }));
     // A prefilled @name from a chat (args[0]), as text, never markup.
     if (args && args[0]) body.value = args[0] + " ";
     const status = M.statusLine();
-    const send = h("button", { type: "submit" }, "Send");
+    const send = h("button", { type: "submit" }, M.t("projectmessage.send"));
     // Files go with the message (§8.7): a message with files may have no text.
     const files = M.attachments ? M.attachments.picker(ctx, "message") : null;
     const result = h("div", { class: "message-result", "aria-live": "polite" });
@@ -65,9 +67,9 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         const text = body.value.trim();
         const ids = files ? files.ids() : [];
-        if (!text && !ids.length) { status.fail("Not sent: ", { message: "the message is empty" }); body.focus(); return; }
-        if (files && files.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
-        if ([...text].length > BODY_CHARS) { status.fail("Not sent: ", { message: "the message is longer than 16,384 characters" }); body.focus(); return; }
+        if (!text && !ids.length) { status.fail(M.t("projectmessage.not_sent"), { message: M.t("projectmessage.empty") }); body.focus(); return; }
+        if (files && files.busy()) { status.fail(M.t("projectmessage.not_sent"), { message: M.t("projectmessage.uploading") }); return; }
+        if ([...text].length > BODY_CHARS) { status.fail(M.t("projectmessage.not_sent"), { message: M.t("projectmessage.too_long", { max: BODY_CHARS }) }); body.focus(); return; }
         // What is sent is what the confirmation speaks of: the fields are
         // held while it is on its way, so nothing typed meanwhile is lost.
         const message = { kind: "message", type: type.value, to: to.value, body: text };
@@ -75,39 +77,38 @@ window.Maity = window.Maity || {};
         if (ids.length) message.attachments = ids;
         const fields = [to, type, card, body, send];
         fields.forEach((f) => { f.disabled = true; });
-        status.busy("Sending…");
+        status.busy(M.t("projectmessage.sending"));
         try {
           const event = await M.api.post(ctx.base + "/events", message);
           const mentioned = ((event.payload && event.payload.mentions) || []).map((x) => ctx.nameOf(x.member_id));
           if (body.value.trim() === text) body.value = "";
           if (files) files.clear(ids);
           status.done();
-          const whom = message.to === "all" ? "everyone" : /^(role|trust):/.test(message.to) ? M.trust.tokenWords(message.to) : ctx.nameOf(message.to);
-          append(clear(result), h("p", { class: "ok" }, "Sent to " + whom
-            + (mentioned.length ? "; mentioned and notified: " + [...new Set(mentioned)].join(", ") : "") + "."));
+          const whom = message.to === "all" ? M.t("projectmessage.sent.everyone") : /^(role|trust):/.test(message.to) ? M.trust.tokenWords(message.to) : ctx.nameOf(message.to);
+          append(clear(result), h("p", { class: "ok" }, mentioned.length
+            ? M.t("projectmessage.sent.mentioned", { whom, names: M.fmt.list([...new Set(mentioned)]) })
+            : M.t("projectmessage.sent", { whom })));
         } catch (err) {
-          status.fail("Not sent: ", said(err));
+          status.fail(M.t("projectmessage.not_sent"), said(err));
         } finally {
           fields.forEach((f) => { f.disabled = false; });
           body.focus();
         }
       },
     },
-    h("label", { for: "message-to" }, "To"), to,
-    h("label", { for: "message-type" }, "What it is"), type,
-    h("label", { for: "message-card" }, "About a card"), card,
-    h("label", { for: "message-body" }, "Message (" + M.dom.SEND_KEYS + " sends)"), body,
+    h("label", { for: "message-to" }, M.t("projectmessage.label.to")), to,
+    h("label", { for: "message-type" }, M.t("projectmessage.label.type")), type,
+    h("label", { for: "message-card" }, M.t("projectmessage.label.card")), card,
+    h("label", { for: "message-body" }, M.t("projectmessage.label.body", { keys: M.dom.SEND_KEYS })), body,
     // With the @ picker; the hub resolves, not the page.
     M.projectMentionPicker(ctx, body),
-    h("p", { class: "hint", id: "message-body-hint" }, "A mention of @handle adds that member to whom it reaches and tells them; "
-      + "at most 10 members per message. An unsent message is not kept when you leave this view."),
+    h("p", { class: "hint", id: "message-body-hint" }, M.t("projectmessage.body.hint", { members: 10 })),
     files ? files.el : null,
     h("div", { class: "actions" }, send),
     status.el);
 
-    append(root, h("h2", null, "Message the project"),
-      h("p", { class: "muted" }, "Everyone it is addressed to reads it in the project's feed; the agents get it through their wait. "
-        + "Status is not a message: the board shows it."),
+    append(root, h("h2", null, M.t("projectmessage.title")),
+      h("p", { class: "muted" }, M.t("projectmessage.intro")),
       form, result);
     // Once the router has put the view into the page.
     window.setTimeout(() => body.focus(), 0);

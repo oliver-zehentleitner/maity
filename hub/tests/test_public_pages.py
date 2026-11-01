@@ -225,3 +225,14 @@ def test_the_join_host_never_answers_a_page(make_client: ClientFactory, migrated
     got = client.get(PATH, follow_redirects=False)
     assert got.status_code == 302 and got.headers["location"] == "https://hub.example/"
     assert "OZ Team" not in got.text
+
+
+def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = visitor(make_client)
+    store(migrated)
+    got = client.get(f"{PATH}/?as=public", follow_redirects=False)
+    assert (got.status_code, got.headers["location"]) == (308, f"{PATH}?as=public")
+    assert client.get(f"{PATH}/", follow_redirects=True).status_code == 200
+    assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
