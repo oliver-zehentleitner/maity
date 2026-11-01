@@ -23,6 +23,6 @@ The walkthrough, with the secrets and the order, is in
 | `cert.yaml` | the Certificate for the apex, `www` and the join host, and the `www` → apex redirect |
 | `hub-values.yaml` | values for [`deploy/helm/maity-hub`](../helm/maity-hub/README.md) |
 
-Replace `maity.example.org` and the image digest before applying. No file
-holds a secret: the two Secrets are created by hand, as the walkthrough
-shows.
+Replace `maity.example.org`, the mail values and the image digest before
+applying. No file holds a secret: the Secrets are created by hand, as the
+walkthrough shows.

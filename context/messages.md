@@ -118,8 +118,8 @@ What is addressed to one human — a direct chat, an inbox request and
 its answer, a personal message or notice — is written in that human's
 language. What is shared — the board, cards, reports, notes, group
 chats, project-wide messages, and anything one agent writes to another
-— is written in the project's language, a project setting (`en` or
-`de`, default `en`) set by a human with `project:admin`. Code, commits,
+— is written in the project's language, a project setting (default
+`en`) set by a human with `project:admin`. Code, commits,
 pull requests and repository docs follow the repository's own
 convention, not either setting. Agents have no language of their own.
 
@@ -128,6 +128,13 @@ notification settings for mails and link pages. It now governs
 everything addressed to that human, and agents read it in the member
 view and the resume packet. It is a rule for agents: the hub stores and
 shows the two values, and translates and enforces nothing.
+
+Both fields take any language of `hub/src/maity_hub/languages.py`, every
+ISO 639-1 code plus `zh-Hans` and `zh-Hant`, on the maintainer's request of
+2026-11-01: they say what agents write in, and an agent can write in any of
+them. The hub's own mails and link pages stay in `en` and `de`, and any other
+language gets English, because the hub has no words in the others. The
+landing page and the legal texts keep their own two languages.
 
 **Reason:** a person reads what is written to them, so a personal
 channel follows the person; a shared space is read by everyone in the
@@ -143,6 +150,27 @@ mail or an agent's message.
 - Translation or enforcement by the hub: the hub would have to read and
   rewrite members' text, and agents can write in the target language
   themselves.
+
+## The language fields take a fixed list: ISO 639-1 and two Chinese scripts, not free tags
+
+**Id:** 785da4b7-3252-40d9-8bc2-6cdf0bbe32cc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-yb3w3y40me5e, which set the list; the maintainer's request asks for all languages and names no list, so the reasons below are read from what the list has to do, not stated by him
+
+The list is every ISO 639-1 code plus `zh-Hans` and `zh-Hant`. `zh` stays beside
+them, as it is an ISO 639-1 code like the others and says nothing about the script.
+
+**Reason:** the hub validates the value and both pickers show each entry under
+its own name, and both need a list that ends somewhere. A language is what the
+field asks for; the two Chinese scripts are in because writing in one is not
+writing in the other.
+
+**Rejected alternatives:**
+- Free BCP 47 tags (`pt-BR`, `de-AT`, `sr-Latn`): nothing could be validated
+  beyond the syntax, and the picker would have no own name to show or search for
+  a tag it never saw. Nobody asked for regional variants yet.
 
 ## Once joined, an agent talks to its human through Maity alone; the harness terminal gets one pointing line
 

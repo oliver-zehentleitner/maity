@@ -26,6 +26,7 @@ from maity_hub import (
     idempotency,
     images,
     ktw,
+    languages,
     moderation,
     namespace,
     onboarding,
@@ -141,8 +142,8 @@ class SettingsIn(Strict):
     @field_validator("language", mode="before")
     @classmethod
     def known_language(cls, value: Any) -> Any:
-        if value is not None and value not in ("en", "de"):
-            raise PydanticCustomError("unknown_language", "choose en or de")
+        if value is not None and not languages.known(value):
+            raise PydanticCustomError("unknown_language", "not in GET /languages")
         return value
 
 

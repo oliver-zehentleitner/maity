@@ -88,7 +88,7 @@ answer, the handover) stay whole. `Answered since your last session:`
 shows the last 10 answers, then `… <n> earlier answers: maity resume
 --full`. `Events since your last session:` shows the last 10 events whose
 `audience` holds this member's `member:` or this instance's `instance:`
-token, of any kind, then one line `Not shown: <n> events (<k> <kind>, …;
+token, of any kind, without another member's `member_updated`, then one line `Not shown: <n> events (<k> <kind>, …;
 <m> earlier for you): maity resume --full`, the five most frequent kinds
 named. A message body in the events and an answer's text are cut at 5
 lines or 200 characters, with the usual pointer; requests, the ones to

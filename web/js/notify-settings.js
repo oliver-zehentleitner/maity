@@ -112,9 +112,8 @@ window.Maity = window.Maity || {};
     // Language belongs to the account, even without mail or browser notifications.
     if (settings.email && "language" in settings.email) {
       // Each language by its own name, as its readers write it: no key.
-      const language = h("select", { id: "personal-language" },
-        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
-      language.value = settings.email.language;
+      const picker = M.languagePicker("personal-language", settings.email.language);
+      const language = picker.select;
       const languageStatus = M.statusLine();
       const button = h("button", { type: "submit" }, M.t("notify.language.save"));
       append(box, h("form", { class: "inline-form personal-language", onsubmit: async (e) => {
@@ -124,12 +123,12 @@ window.Maity = window.Maity || {};
         languageStatus.busy(M.t("notify.saving"));
         try {
           settings = await M.api.patch("/me/notification-settings", { email: { language: language.value } });
-          language.value = settings.email.language;
+          picker.set(settings.email.language);
           languageStatus.done();
           append(languageStatus.el, h("span", { class: "ok" }, M.t("notify.language.saved")));
         } catch (err) { languageStatus.fail(M.t("notify.language.failed"), err); }
         button.disabled = false;
-      } }, h("h3", null, M.t("notify.language.title")), h("label", { for: "personal-language" }, M.t("notify.language.label")), language,
+      } }, h("h3", null, M.t("notify.language.title")), h("label", { for: "personal-language" }, M.t("notify.language.label")), picker.search, language,
       h("p", { class: "hint" }, M.t("notify.language.hint")),
       button, languageStatus.el));
     }
@@ -265,5 +264,54 @@ window.Maity = window.Maity || {};
       h("label", { class: "visually-hidden", for: "my-nl-minutes" }, M.t("mine.minutes_label")), minutes, error,
       h("p", { class: "hint" }, M.t("mine.hint_minutes"))),
     now, button, status.el));
+  };
+
+  // The hub's list (§6.2), read once a page; null if it can't be had, and then the next call tries again.
+  let languages = null;
+  const loadLanguages = () => {
+    languages = languages || M.api.get("/languages")
+      .then((answer) => (Array.isArray(answer.items) ? answer.items : null))
+      .catch(() => null)
+      .then((items) => { if (!items) languages = null; return items; });
+    return languages;
+  };
+
+  // A language's own name from the browser, the tag if it has none: until the hub's list is here.
+  M.languageName = (tag) => {
+    try { return new Intl.DisplayNames([tag], { type: "language" }).of(tag) || tag; } catch { return tag; }
+  };
+
+  // Writes a language's own name, and again with the hub's when that differs: ICU has none for
+  // some languages and answers in English, and the display should say what the picker says.
+  M.writeLanguageName = (tag, write) => {
+    const first = M.languageName(tag);
+    write(first);
+    loadLanguages().then((items) => {
+      const listed = items && items.find((l) => l.tag === tag);
+      if (listed && listed.name !== first) write(listed.name);
+    });
+  };
+
+  // Every language the hub lists (§6.2), each by its own name, with a field that narrows them:
+  // by that name, the tag or the English name, so someone can find a script they can't type.
+  M.languagePicker = (id, current) => {
+    const select = h("select", { id });
+    const search = h("input", { type: "search", class: "language-search", "aria-label": M.t("notify.language.search"), placeholder: M.t("notify.language.search") });
+    let all = [{ tag: "en", name: "English" }, { tag: "de", name: "Deutsch" }];
+    let chosen = current;
+    const english = (tag) => { try { return new Intl.DisplayNames(["en"], { type: "language" }).of(tag) || ""; } catch { return ""; } };
+    const fill = () => {
+      const needle = search.value.trim().toLowerCase();
+      const match = (l) => !needle || l.tag === chosen || [l.name, l.tag, english(l.tag)].some((text) => text.toLowerCase().includes(needle));
+      const known = all.some((l) => l.tag === chosen) ? all : [...all, { tag: chosen, name: M.languageName(chosen) }];
+      select.textContent = "";
+      append(select, known.filter(match).map((l) => h("option", { value: l.tag }, l.name)));
+      select.value = chosen;
+    };
+    select.addEventListener("change", () => { chosen = select.value; });
+    search.addEventListener("input", fill);
+    fill();
+    loadLanguages().then((items) => { if (items) { all = items; fill(); } });  // else the two stay
+    return { select, search, set: (tag) => { chosen = tag; fill(); } };
   };
 })(window.Maity);

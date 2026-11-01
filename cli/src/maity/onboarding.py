@@ -498,6 +498,14 @@ def _for_me(packet: dict[str, Any]) -> set[str]:
     return tokens
 
 
+def _is_for_me(event: dict[str, Any], tokens: set[str], member: Any) -> bool:
+    """The event's audience names me, and it is not another member's profile: a coordinator's
+    token is on every `member_updated`, which would push the messages out of the compact list."""
+    if not tokens & set(event.get("audience") or []):
+        return False
+    return event.get("kind") != "member_updated" or get(event, "payload", "id") == member
+
+
 def _not_shown(left: list[dict[str, Any]], earlier: int) -> str:
     """`Not shown: <n> events (<k> <kind>, …; <m> earlier for you)`, kinds by count."""
     counts: dict[str, int] = {}
@@ -519,7 +527,8 @@ def _events(
     left: list[dict[str, Any]] = []
     if compact:
         tokens = _for_me(packet)
-        mine = [e for e in items if tokens & set(e.get("audience") or [])]
+        member = get(packet, "me", "member_id")
+        mine = [e for e in items if _is_for_me(e, tokens, member)]
         shown = mine[-COMPACT_EVENTS:]
         left = [e for e in items if not any(e is s for s in shown)]
         items = shown

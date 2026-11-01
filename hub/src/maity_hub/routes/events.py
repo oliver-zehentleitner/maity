@@ -224,7 +224,11 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         bridge_membership_id=reader.bridge.membership_id if reader.bridge else None,
     )
     closed = await wakeups.opened(
-        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+        engine,
+        "events",
+        waiter.key,
+        lambda: longpoll.registry.supersede(waiter),
+        waiter.started_at,
     )
     longpoll.registry.enter(waiter)
     try:

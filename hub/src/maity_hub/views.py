@@ -27,6 +27,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
+from maity_hub.languages import known as known_language
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -241,7 +242,8 @@ NO_IMAGE = {"available": False, "source": None}
 
 def project_language(project: Any) -> str:
     """The working language of a new or existing project (§6.1)."""
-    return "de" if (project.settings or {}).get("language") == "de" else "en"
+    language = (project.settings or {}).get("language")
+    return language if known_language(language) else "en"
 
 
 def memory_of(project: Any) -> dict[str, str]:
@@ -532,7 +534,7 @@ def _owners_of(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
 
 
 def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
-    """Each human's language (`en` or `de`) from their notification settings (§6.2,
+    """Each human's language, a tag of §6.2's list, from their notification settings (§6.2,
     §18.4); a human who never set it reads as `en`."""
     if not human_ids:
         return {}
@@ -544,7 +546,7 @@ def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
     found = {}
     for human_id, stored in rows:
         language = ((stored or {}).get("email") or {}).get("language")
-        found[human_id] = language if language in ("en", "de") else "en"
+        found[human_id] = language if known_language(language) else "en"
     return found
 
 

@@ -934,7 +934,9 @@ wait.
 since #1, about 56 KB of an agent's context, and it grew every day; an
 agent needs what is open and what was meant for it, not the history.
 Events are chosen by `audience`, of any kind, because an assignment or a
-request for this member matters more than a broadcast message. The caps
+request for this member matters more than a broadcast message; only another
+member's `member_updated` is left out, as a coordinator's token is on each of
+them and they would fill the ten places. The caps
 come from the 8 KB budget measured in `tests/test_compact.py`: the
 rules, identity, members and the join notes take about 3 KB, which leaves
 about 240 bytes per answer or event. The `Next:` line names the

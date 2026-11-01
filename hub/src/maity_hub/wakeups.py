@@ -60,7 +60,13 @@ def _forget(digest: str, token: object) -> None:
                 del _held[digest]
 
 
-def _announce(engine: Engine, digest: str, token: object, end: Callable[[], None]) -> None:
+def _announce(
+    engine: Engine,
+    digest: str,
+    token: object,
+    end: Callable[[], None],
+    on_start: Callable[[int], None] | None = None,
+) -> None:
     """Tell every replica a wait opens now, its start read from the database's clock, which
     every replica shares, unlike their own. The wait is held from the moment its start is
     known, before the notice commits: a newer wait's notice arriving right after the commit
@@ -69,6 +75,8 @@ def _announce(engine: Engine, digest: str, token: object, end: Callable[[], None
         with engine.begin() as conn:
             now = conn.execute(select(func.clock_timestamp())).scalar_one()
             started = int((now - _EPOCH) // timedelta(microseconds=1))
+            if on_start is not None:
+                on_start(started)
             with _held_lock:
                 _held.setdefault(digest, {})[token] = (started, end)
             conn.execute(select(func.pg_notify(SUPERSEDE, f"{digest}:{started}")))
@@ -78,17 +86,22 @@ def _announce(engine: Engine, digest: str, token: object, end: Callable[[], None
 
 
 async def opened(
-    engine: Engine, kind: str, key: str, on_superseded: Callable[[], None]
+    engine: Engine,
+    kind: str,
+    key: str,
+    on_superseded: Callable[[], None],
+    on_start: Callable[[int], None] | None = None,
 ) -> Callable[[], None]:
     """A wait of `kind` and `key` opens: on PostgreSQL announce it, and end it with
     `on_superseded` when a newer one of the same key opens on another replica, which may
     happen before this returns: the caller holds the wait before it calls, or, like the event
     routes, keeps a flag that `on_superseded` sets and checks it first. Returns what
-    the wait calls when it closes. Superseding inside the process stays the caller's."""
+    the wait calls when it closes. Superseding inside the process stays the caller's, and
+    `on_start` gives it the start, so that it decides by the same order as the notices."""
     if engine.dialect.name != "postgresql":
         return lambda: None
     digest, token = _digest(kind, key), object()
-    await run_in_threadpool(_announce, engine, digest, token, on_superseded)
+    await run_in_threadpool(_announce, engine, digest, token, on_superseded, on_start)
     return lambda: _forget(digest, token)
 
 

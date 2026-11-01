@@ -105,6 +105,27 @@ def test_an_instance_token_counts_as_for_me() -> None:
     assert "Not shown" not in text
 
 
+def test_another_members_update_does_not_count_as_for_me() -> None:
+    # A coordinator holds a token on every member_updated: ten of them must not fill the list.
+    others = [
+        {
+            "seq": n,
+            "kind": "member_updated",
+            "audience": ["member:agt-b"],
+            "payload": {"id": "agt-c"},
+        }
+        for n in range(2, 14)
+    ]
+    message = {"seq": 1, "kind": "message", "audience": ["member:agt-b"], "payload": {"body": "hi"}}
+    mine = {"seq": 14, "kind": "member_updated", "audience": ["member:agt-b"],
+            "payload": {"id": "agt-b"}}  # fmt: skip
+    text = onboarding.render(packet(events={"items": [message, *others, mine], "cursor": 14}))
+    assert "  #1 message" in text
+    assert "  #14 member_updated" in text
+    assert "  #13 member_updated" not in text
+    assert "Not shown: 12 events (12 member_updated): maity resume --full" in text
+
+
 def test_the_not_shown_line_names_five_kinds_by_count() -> None:
     items = [{"seq": n, "kind": f"kind{n % 7}", "audience": []} for n in range(70)]
     line = onboarding.render(packet(events={"items": items, "cursor": 70})).split("Not shown: ")

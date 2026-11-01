@@ -244,6 +244,10 @@ profile** beside it, shown while the chat has its own value, sends
 answer; the chat's value comes back from the participants' entries the
 next time the chat is opened.
 
+A proxy's request for the owner's go on one call (`docs/api.md` §2.3) shows
+that whole call in the inbox: method, path, query, the body pretty-printed and
+exactly as sent. Only the owner gets **Go** and **No**.
+
 Ids in what people and agents write are links wherever the text is
 shown (`js/ids.js`): in requests (summary, what was tried, options,
 answers; a title's ids under **In the title** in the open entry, as the
@@ -1654,7 +1658,8 @@ silent agent** beside the board filters, which also take the role a card
 needs (§6.4). The member list uses the same hint. Under
 `done_authority: reviewer_and_tester` a card in review lists its two
 signatures, and its menu offers **Sign the review** or **Sign the test**;
-the card stays in review until both are there.
+the card stays in review until both are there. Settings set who closes a
+card (`done_authority`) with a reason.
 Presence refreshes every 30 seconds. A live claim does not imply an online
 agent. The assigner's warning awaits card history; the creator is not
 assumed to be the assigner.

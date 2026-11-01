@@ -7306,6 +7306,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
     "keep the why: switched to optional as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  // Who closes a card (§6.1): every value of the contract, a change needs a reason, and it goes as a policy change.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  {
+    const daForm = () => main.querySelector("form.done-authority-form");
+    expect(daForm() && byId("done-authority-select").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "holder,reviewer,tester,reviewer_and_tester,admin",
+      "done authority: Settings offer every value of the contract");
+    const was = byId("done-authority-select").value, sent = [], patch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { if (b && b.policy && "done_authority" in b.policy) sent.push(b); return patch(p, b); };
+    byId("done-authority-select").value = "reviewer_and_tester"; daForm().dispatch("submit"); await tick();
+    expect(!sent.length, "done authority: a change needs a reason");
+    byId("done-authority-select").value = "reviewer_and_tester"; byId("done-authority-reason").value = "Review and test";
+    daForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(sent[0]) === JSON.stringify({ policy: { done_authority: "reviewer_and_tester" }, reason: "Review and test" }) && byId("done-authority-select").value === "reviewer_and_tester",
+      "done authority: saved as a policy change with its reason " + JSON.stringify(sent));
+    // The fixture signs as the hub does (§6.4): one member, one place, and not outside a card in review.
+    const sign = await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "done", approve: "review" });
+    const twice = await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "done", approve: "test" }).catch((e) => e);
+    const outside = await patch("/projects/maintainer/maity/tasks/tsk-0006", { title: "x", approve: "review" }).catch((e) => e);
+    expect(sign.status === "review" && sign.approvals.review && twice.details.fields.approve === "same_member" && outside.details.fields.approve === "not_applicable",
+      "two signatures: the fixture keeps the card in review, refuses a second place and refuses approve elsewhere");
+    await patch("/projects/maintainer/maity/tasks/tsk-0005", { status: "in_progress" });
+    await patch("/projects/maintainer/maity", { policy: { done_authority: was }, reason: "back" });
+    win.Maity.api.patch = patch;
+  }
+  // A proxy's action request (§2.3): the whole call, pretty and as sent, Go and No; one who is no owner gets no buttons.
+  {
+    const getAll = win.Maity.api.getAll, post = win.Maity.api.post;
+    const raw = '{"a":1,"a":2}';
+    const act = (extra) => Object.assign({ id: "req-act", class: "consent", title: "Give the go", summary: "s", status: "open", to: "owner", created_at: "2026-11-01T10:00:00Z", asked_by: { kind: "agent", member_id: "agt-a", display_name: "Agent A" },
+      options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }], priority: "normal", action: { method: "PATCH", path: "/projects/maintainer/maity", query: "x=1", body: raw, body_sha256: "ab12", used_at: null, used_seq: null } }, extra || {});
+    let current = act();
+    const sent = [];
+    win.Maity.api.getAll = (p, ...r) => (/\/requests\?status=all$/.test(p) ? Promise.resolve({ items: [current] }) : getAll(p, ...r));
+    win.Maity.api.post = (p, b) => { if (/req-act\/answer$/.test(p)) { sent.push(b); return Promise.resolve(Object.assign(act(), { status: "answered" })); } return post(p, b); };
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    const call = () => main.querySelector(".request-action");
+    const pres = () => call().querySelectorAll("pre.request-action-body");
+    expect(call() && /PATCH/.test(text(call())) && /\/projects\/maintainer\/maity/.test(text(call())) && /x=1/.test(text(call())) && text(pres()[0]).includes('"a": 2') && text(pres()[1]) === raw && /ab12/.test(text(call())),
+      "action: the owner sees method, path, query, the body pretty-printed and exactly as sent");
+    const buttons = () => main.querySelectorAll(".entry-body .replies button.reply").map((b) => text(b));
+    expect(buttons().includes("Go") && buttons().includes("No"), "action: Go and No " + JSON.stringify(buttons()));
+    main.querySelectorAll(".entry-body .replies button.reply").find((b) => text(b) === "Go").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(sent.length === 1 && sent[0].reply_id === "go", "action: Go sends the go " + JSON.stringify(sent));
+    current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" } });
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(call() && /valid until/.test(text(call())), "action: an answered go says how long it holds");
+    current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" }, action: Object.assign(act().action, { used_at: "2026-11-01T11:00:00Z", used_seq: 9 }) });
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(/Used /.test(text(call())), "action: a used go says when");
+    current = act();
+    const owner = win.Maity.trust.owner;
+    win.Maity.trust.owner = () => false;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(call() && buttons().length === 0 && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and no buttons");
+    win.Maity.trust.owner = owner;
+    win.Maity.api.getAll = getAll; win.Maity.api.post = post;
+  }
   // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
   const kdForm = () => main.querySelector("form.ktw-defaults-form");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
@@ -8934,6 +8991,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       { ...value.items.find((m) => m.kind === "human"), id: "hum-removed-language", handle: "removed", language: "de", removed_at: "2026-10-23T00:00:00Z" }
     ]) } : value);
   await go("#/maintainer/maity/members");
+  {
+    const picker = win.Maity.languagePicker("language-under-test", "fr");
+    await tick();
+    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 7, "language: the picker lists the hub's languages and keeps the choice");
+    picker.search.value = "japan";
+    picker.search.dispatch("input");
+    expect(picker.select.querySelectorAll("option").length === 2 && picker.select.value === "fr", "language: search by English name narrows and keeps the choice");
+    let written = "";
+    win.Maity.writeLanguageName("aa", (name) => { written = name; });
+    await tick();
+    expect(written === "Afaraf", "language: a shown name ends as the hub's, where ICU has none of its own");
+  }
   const languages = main.querySelectorAll(".member-language");
   expect(languages.length === 1 && text(languages[0]) === "Language: Deutsch", "language: only active human profile shows language");
   win.Maity.api.get = languageGet;

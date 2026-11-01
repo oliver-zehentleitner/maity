@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "anyio>=4",  # the worker threads' limiter, for the `stats` line
     "fastapi>=0.156",
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0.36",

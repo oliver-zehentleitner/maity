@@ -26,7 +26,8 @@ from maity_hub.errors import invalid
 from maity_hub.views import ts
 
 ROW = "landing"  # the one row of `instance_landing`
-# The languages a page may be written in (§16.7), each by the name it calls itself.
+# The languages a page may be written in (§16.7), each by the name it calls itself; not the
+# list of §6.2.
 LANGUAGE_NAMES = {
     "en": "English",
     "de": "Deutsch",
