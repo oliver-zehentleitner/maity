@@ -3669,7 +3669,7 @@ a name per language does the same (`{{country_de}}`).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-q5f23gacz1mp (the maintainer's list `en de fr es pt it nl ja ko zh-Hans`, the legal pages included); how the list is carried and checked is this entry's reading
+**Source:** the maintainer's list `en de fr es pt it nl ja ko zh-Hans`, passed on in the message on the card tsk-q5f23gacz1mp (seq 30343), and on the same card that the legal pages are translated too; how the list is carried and checked is this entry's reading
 **Revisit when:** a language writes right to left, or a legal text has been reviewed by a lawyer
 
 `landing.LANGUAGE_NAMES` carries the list and each language's own name, which

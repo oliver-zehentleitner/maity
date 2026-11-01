@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -163,6 +164,32 @@ def test_the_real_site_file_imports_in_every_language(
             assert page.status_code == 200, f"{address} {tag}"
             assert f'<html lang="{tag}">' in page.text, f"{address} {tag}"
             assert "{{" not in page.text, f"{address} {tag}"
+
+
+def test_every_language_of_the_site_file_has_the_same_placeholders() -> None:
+    """A placeholder translated or lost in one language would still import, so each page is
+    compared with its English text, repeats included, and only the known names count."""
+
+    def names(text: object) -> Counter[str]:
+        return Counter(re.findall(r"\{\{([^}]*)\}\}", json.dumps(text, ensure_ascii=False)))
+
+    site = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    pages = {page: one["languages"] for page, one in site["legal"].items()}
+    pages["landing"] = site["landing"]["pages"]
+    seen: Counter[str] = names(site["landing"]["footer"])
+    for page, languages in pages.items():
+        for tag, text in languages.items():
+            assert names(text) == names(languages["en"]), f"{page} {tag}"
+        seen += names(languages["en"])
+    assert set(seen) == {
+        "address",
+        "date",
+        "email",
+        "hosting_provider",
+        "mail_provider",
+        "name",
+        "operator",
+    }
 
 
 def test_every_language_has_every_word_of_the_frame() -> None:

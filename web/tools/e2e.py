@@ -3031,7 +3031,7 @@ def site_json_step(run: Run, page: Page) -> None:
             if address == "/":
                 assert seen.locator(".site-footer .langs a").count() == 10, f"the language bar in {tag}"
             else:
-                assert "Example " in body or address == "/privacy" and "Example" in body, f"{address} in {tag}: no value"
+                assert "Example " in body, f"{address} in {tag}: no value"
     visitor.close()
     page.evaluate("Maity.api.patch('/admin/settings/landing', { enabled: false })")
     filled = json.dumps(template["legal"])
