@@ -695,14 +695,15 @@ def main() -> int:
                 watch_page(run, page)
                 try:
                     scenario(run, page)
+                    # Inside the same report: a failure in a later round shows its trace too (review of #997).
+                    fixture_views(run, browser)
+                    second_hub_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
                     for problem in run.problems:
                         print("  page: " + problem)
                     raise
-                fixture_views(run, browser)
-                second_hub_round(run, browser, work, artifacts)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -1646,7 +1647,8 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     hub = start_hub(second, artifacts, port, extra, "hub-second.log")
     try:
         mail_reaches_the_catcher(run, browser, catcher)
-        step_up_with_totp(run, browser)
+        secret, used = step_up_with_totp(run, browser)
+        sign_in_with_totp(run, browser, secret, used)
     finally:
         stop_hub(hub)
         catcher.close()
@@ -1665,8 +1667,9 @@ def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
     context.close()
 
 
-def step_up_with_totp(run: Run, browser) -> None:
-    """A session from before the enrolment has not given the factor, so the page must ask."""
+def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
+    """A session from before the enrolment has not given the factor, so the page must ask.
+    Returns the secret and the last step the hub took, for the sign-in that follows."""
     run.step("second hub: enrol TOTP; an older session's export asks for the code")
     older_context, older = sign_in(run, browser)
     context, page = sign_in(run, browser)
@@ -1688,8 +1691,10 @@ def step_up_with_totp(run: Run, browser) -> None:
     code.fill("000000")
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
-    # The next step: the step of the enrolment is used up, and the hub allows one step of skew.
-    code.fill(totp_code(secret, step + 1))
+    # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
+    # slow screenshot or axe run the current step (review of #997).
+    used = max(step + 1, int(time.time() // 30))
+    code.fill(totp_code(secret, used))
     with older.expect_download() as saved:
         older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
@@ -1702,6 +1707,36 @@ def step_up_with_totp(run: Run, browser) -> None:
     ]
     no_problems(run, "step-up with TOTP")
     older_context.close()
+    return secret, used
+
+
+def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
+    """The second step of a sign-in (§2.8.2, tsk-73kkzr3x6exy): after the password the page
+    asks for the app's code and nothing else, then the dashboard."""
+    run.step("second hub: a sign-in asks for the app's code before anything else")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    step = page.locator("form.second-factor")
+    expect(step).to_contain_text("Enter the code from your authenticator app")
+    # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
+    expect(page.locator("header .me-name")).to_have_count(0)
+    run.shot(page, "second-hub-sign-in-totp")
+    run.a11y(page, "second hub: the sign-in step with TOTP")
+    # The hub takes only a step newer than the last one used, within one step of skew.
+    while int(time.time() // 30) < used:
+        time.sleep(1)
+    page.locator("#sf-code").fill(totp_code(secret, used + 1))
+    step.get_by_role("button", name="Verify", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    expect(step).to_have_count(0)
+    no_problems(run, "sign-in with TOTP")
+    context.close()
 
 
 def fixture_views(run: Run, browser) -> None:
