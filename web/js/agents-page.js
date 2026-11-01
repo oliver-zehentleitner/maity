@@ -473,6 +473,8 @@ window.Maity = window.Maity || {};
         P.reportsToPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
+        // Its bridges (§2.3): connected here by its owner.
+        P.bridgesPart(m, memberPath),
         // The pause and the removal need members:admin (§6.2).
         ctx.canAdmin ? [P.pausePart(m, memberPath), P.removePart(m, memberPath, false, null)] : null);
     }

@@ -2172,6 +2172,11 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/members")
     page.locator("main .members-list").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
+    # Its bridges (§2.3, tsk-x0krjnw8p78t): the hub's member view carries the lists, and with
+    # no other agent in e2e-alpha there is none to choose; connecting and ending are in smoke.
+    bridges = page.locator("main tr.member-manage .member-bridges")
+    expect(bridges).to_contain_text("No bridges.")
+    expect(bridges).to_contain_text("No other agent of this project can be a bridge.")
     project_settings(page)
     page.locator("#signing-select").select_option("required")
     impact = page.locator(".signing-impact")

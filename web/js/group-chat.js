@@ -299,8 +299,16 @@ window.Maity = window.Maity || {};
       people: listed(view.participants.map((p) => p.kind === "agent" ? M.tn("group.people.agent", { member: M.dom.memberRef(ctx, p.member_id) }) : M.dom.memberRef(ctx, p.member_id))) }));
     const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, M.tn("group.people.observers", {
-        observers: listed(view.observers.map((o) => M.tn("group.people.observer", { name: observerName(o),
-          agents: listed(view.participants.filter((p) => p.owner_id === o).map((p) => M.dom.memberRef(ctx, p.member_id))) }))) }))
+        observers: listed(view.observers.map((o) => {
+          // An agent among the observers is a bridge that serves a participant across owners (§2.3).
+          const bridge = (ctx.memberById || {})[o];
+          if (bridge && bridge.kind === "agent") {
+            const served = (bridge.bridging_for || []).filter((c) => inChat(c.member_id));
+            return M.tn("group.people.bridge", { name: M.dom.memberRef(ctx, o), served: listed(served.map((c) => M.dom.memberRef(ctx, c.member_id))) });
+          }
+          return M.tn("group.people.observer", { name: observerName(o),
+            agents: listed(view.participants.filter((p) => p.owner_id === o).map((p) => M.dom.memberRef(ctx, p.member_id))) });
+        })) }))
       : null);
 
     // Managing: rename, add, remove; anyone in it leaves. The disclosure

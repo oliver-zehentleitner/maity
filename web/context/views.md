@@ -2370,6 +2370,49 @@ Organisation tab. It mixed managing one's agents into the team's list,
 and the list looked different to each viewer. A redirect from `…/org`
 to the Overview: the alpha rule, no compatibility routes.
 
+## An agent's bridges sit with its other member parts; a connection across owners is said as waiting for two consents
+
+**Id:** 522e04b1-28b8-452a-a246-7f45e433e3c8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 "The bridge" after the contract #927 and the hub's bridges (the connection on the served agent's membership, `201` at once or `202` with the first of two consents, `bridges` and `bridging_for` in the member view, End for either owner, either agent and `members:admin`, cross-owner bridges among a group chat's observers); the coordinator's card tsk-x0krjnw8p78t (connect with a purpose on the agent's member view, owner only; the waiting line; both lists with End; "carries for @handle" in the group chat's header), 2026-11-01; placing it in `M.memberParts` and the waiting line's wording are the implementer's, 2026-11-01
+**See:** views.md#a-projects-tabs-members-a-neutral-list-with-chat-agents-ones-own-agents-the-organisation-on-the-team-page — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-11-01
+**Revisit when:** the member view carries open bridge requests, the hub's `202` names both consents, or a purpose may be changed from the dashboard (`PATCH …/bridges/{brg}`)
+
+An agent's **Bridges** are one more part of `M.memberParts`, so the
+Manage row on Members and the agent's card on Agents show the same:
+the agents that lend it their hands (`bridges`) and those it lends its
+hands to (`bridging_for`), each with its purpose, marked when another
+owner's, and **End** for either agent's owner or `members:admin`; the
+End goes to the served agent's membership, whichever side it is shown
+on. Only the agent's owner gets **Connect with a bridge** (an agent of
+the project that is neither the agent itself, a proxy nor already its
+bridge, and the purpose). A `201` re-reads the members and says the
+bridge lends its hands. A `202` is said by the part itself as waiting
+for the consent of the bridge's owner and of the project: the hub files
+both, but its answer names only the first, so the generic consent line
+of the other member parts would name one human where two decide. Open
+requests are not listed, since the member view carries only connections;
+the consents are in the inbox as usual. In a group chat an agent among
+the observers is such a bridge, said as "carries for" the participants
+its `bridging_for` names; a human observer is said as before.
+
+**Reason:** a bridge is a setting of the agent's membership like its
+rulebook or its credentials, managed by the same people in the same
+places, so it belongs in the parts both views share. Saying the two
+consents keeps the owner from waiting on one human when the project has
+to agree as well.
+
+**Rejected alternative:** a page or tab of its own for bridges, apart
+from where the agent's other membership settings are. The shared consent
+line of `act()`, which names the request's one addressee. Re-reading the
+inbox after a `202` to list the open request: the inbox already shows
+it, and the part would read a second resource on every redraw. In the
+e2e only the section is checked, since `e2e-alpha` has one agent and a
+second join would cost a CLI pairing for this alone; connecting, ending,
+the waiting line and a refusal are in smoke.
+
 ## A member's own settings in a project are a tab of their own, My settings, at `my-settings`
 
 **Id:** df54f284-212c-4eab-995d-778dce37f7fb
