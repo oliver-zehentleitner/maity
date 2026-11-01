@@ -319,6 +319,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
+    app.include_router(pages.router, prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(device_codes.router, prefix=prefix)
     app.include_router(second_factor_routes.router, prefix=prefix)

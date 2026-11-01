@@ -64,10 +64,10 @@ ROUTE_CACHE = frozenset(
         b"private, no-store",
     }
 )
-# The answers a visitor without a session may cache: the badge and the instance's landing
-# page (§16.7).
+# The answers a visitor without a session may cache: the badge, the instance's landing page
+# (§16.7) and what a visitor's dashboard reads of a public page (§16.9).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.

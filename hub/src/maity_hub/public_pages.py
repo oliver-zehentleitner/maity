@@ -11,6 +11,7 @@ in the transaction that changed the input. The app shell's route asks `answer` f
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 from collections.abc import Callable
@@ -27,7 +28,7 @@ from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
-from maity_hub.errors import rate_limited
+from maity_hub.errors import not_found, rate_limited
 from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ CSP = "default-src 'none'; style-src 'unsafe-inline'"
 CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
 # source address, since a page is as cheap to serve as a badge.
+READ_CACHE = "public, max-age=60"
 BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 
 
@@ -52,6 +54,8 @@ def put(
     body: str,
     inputs: str,
     lastmod: datetime,
+    view: str,
+    data: dict[str, Any],
 ) -> None:
     """Store the page of `path`, replacing the one there."""
     conn.execute(delete(t.public_page).where(t.public_page.c.path == path))
@@ -65,6 +69,8 @@ def put(
             inputs=inputs,
             lastmod=lastmod,
             rendered_at=clock.now(),
+            view=view,
+            data=data,
         )
     )
 
@@ -128,18 +134,51 @@ def answer(request: Request) -> Response | None:
     return HTMLResponse(page.body, headers=headers)
 
 
+def read(request: Request, path: str) -> Response:
+    """`GET /public/pages/{path}`: the `data` stored with the page, the same for everyone. The
+    session and the credentials of the request are never looked at (§16.9)."""
+    if not settings_of(request).public_pages:
+        raise not_found()
+    wait = BY_ADDRESS.hit(origin_of(request).address)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        page = get(conn, f"/{path}")
+    if page is None or page.view is None:
+        raise not_found()
+    payload = json.dumps(
+        {"path": page.path, "kind": page.view, "data": page.data},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    tag = etag_of(payload)
+    headers = {
+        "Cache-Control": READ_CACHE,
+        "ETag": tag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    candidates = request.headers.get("if-none-match", "").split(",")
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
+        return Response(status_code=304, headers=headers)
+    return Response(payload, media_type="application/json", headers=headers)
+
+
 # --- the engine: rendering again and taking off --------------------------------------------
 
 
 @dataclass(frozen=True)
 class Page:
-    """One rendered address: the HTML, a digest of the inputs it was made from, and when
-    those inputs last changed (the `lastmod` of the sitemap, not the time of a render)."""
+    """One rendered address: the HTML, a digest of the inputs it was made from, when those
+    inputs last changed (the `lastmod` of the sitemap, not the time of a render), and what a
+    visitor's dashboard reads of it: `view`, the `kind` of the answer, and `data` (§16.9)."""
 
     path: str
     body: str
     inputs: str
     lastmod: datetime
+    view: str
+    data: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -177,11 +216,14 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug."""
     existing = {
-        row.path: row.inputs
+        row.path: (row.inputs, row.view, row.data)
         for row in conn.execute(
-            select(t.public_page.c.path, t.public_page.c.inputs).where(
-                t.public_page.c.kind == kind, t.public_page.c.target_id == target_id
-            )
+            select(
+                t.public_page.c.path,
+                t.public_page.c.inputs,
+                t.public_page.c.view,
+                t.public_page.c.data,
+            ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
     try:
@@ -192,7 +234,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         remove(conn, kind, target_id)
         return
     for page in rendered:
-        if existing.get(page.path) != page.inputs:
+        if existing.get(page.path) != (page.inputs, page.view, page.data):
             put(
                 conn,
                 path=page.path,
@@ -201,6 +243,8 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 body=page.body,
                 inputs=page.inputs,
                 lastmod=page.lastmod,
+                view=page.view,
+                data=page.data,
             )
     gone = existing.keys() - {page.path for page in rendered}
     if gone:

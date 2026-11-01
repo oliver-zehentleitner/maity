@@ -2471,6 +2471,8 @@ public_page = Table(
     Column("inputs", String(64), nullable=False),
     Column("lastmod", UtcDateTime, nullable=False),
     Column("rendered_at", UtcDateTime, nullable=False),
+    Column("view", String(20)),  # the `kind` of `GET /public/pages/{path}` (§16.9)
+    Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
     Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )
