@@ -939,7 +939,10 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
         key = _pr_key(before.get("url"), before.get("number"))
         other = found is not None and key is not None and key[0] != found[0]
         if state == "open" and key is not None and key != found and not other:
-            now = gitfacts.pull_request_state(Path.cwd(), str(before.get("url")))
+            # A url that names another number than the report's can't answer for that one.
+            url = str(before.get("url"))
+            same = _pr_key(url) == key
+            now = gitfacts.pull_request_state(Path.cwd(), url) if same else None
             if now == "open" or now is None:
                 unchecked = "" if now else " (the hub's last observation; gh could not check it)"
                 return (
