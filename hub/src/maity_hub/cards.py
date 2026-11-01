@@ -37,6 +37,8 @@ def holds(mine: Membership, card: Any) -> bool:
         return False
     if mine.kind != "agent":
         return True
+    if mine.bridged:  # through a bridge the agent holds without an instance (§2.3)
+        return card.claim_instance is None
     return mine.instance is not None and card.claim_instance == mine.instance
 
 

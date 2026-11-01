@@ -55,6 +55,19 @@ class RequestFacts:
 
 
 @dataclass(frozen=True)
+class Bridged:
+    """The bridge behind a `Maity-For` call (§2.3): the caller is then the served agent."""
+
+    membership_id: int
+    agent_id: str
+    instance: str | None
+    bridge_id: str
+
+    def view(self) -> dict[str, str | None]:
+        return {"member_id": self.agent_id, "instance": self.instance, "bridge_id": self.bridge_id}
+
+
+@dataclass(frozen=True)
 class Caller:
     kind: str  # human, agent, runner
     via: str  # cookie, bearer, signed
@@ -70,6 +83,7 @@ class Caller:
     harness: str | None = None
     model: str | None = None
     runner_id: str | None = None
+    bridge: Bridged | None = None  # a bridge calling as this agent (`Maity-For`, §2.3)
 
     @property
     def principal_id(self) -> str:
@@ -102,6 +116,7 @@ class Caller:
             via=self.via,
             harness=self.harness,
             model=self.model,
+            bridge=self.bridge.view() if self.bridge else None,
         )
 
 
@@ -259,7 +274,13 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         )
     row = _credential(conn, credential_id)
     canonical = credentials.canonical_string(
-        facts.method, facts.raw_path, facts.raw_query, timestamp, nonce, facts.body
+        facts.method,
+        facts.raw_path,
+        facts.raw_query,
+        timestamp,
+        nonce,
+        facts.body,
+        facts.headers.get("maity-for"),
     )
     if not credentials.signature_matches(row.verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")

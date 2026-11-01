@@ -1429,6 +1429,7 @@ card_history = Table(
     Column("at", UtcDateTime, nullable=False),
     _membership_ref("actor_membership"),
     Column("actor_session_id", String(ID)),
+    Column("actor_bridge", JSON_VALUE),  # as on `event` (§2.3)
     Column("field", String(32), nullable=False),
     # The link a `links` entry adds or removes: what a replayed add or a repeated
     # removal finds it by, even once the entry is redacted.
@@ -1700,6 +1701,9 @@ event = Table(
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
+    # The bridge that made the call for `actor_membership` (§2.3): `{member_id, instance,
+    # bridge_id}`, kept as it was since a connection can end; no foreign key.
+    Column("actor_bridge", JSON_VALUE),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),

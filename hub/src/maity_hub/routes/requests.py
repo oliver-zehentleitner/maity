@@ -1038,6 +1038,8 @@ def answer(
             "at": clock.rfc3339(now),
             "conversation_id": conversation_id,
             "mentions": mentions.resolve(conn, mine.project.id, body.text, "text"),
+            # Given by a bridge for the answering agent (§2.3): only then.
+            **({"via": caller.bridge.view()} if caller.bridge else {}),
         }
         done = conn.execute(
             update(t.request)
