@@ -371,7 +371,8 @@ window.Maity = window.Maity || {};
   }
   function renderEnrolment(main) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
-    M.security.enrolPage(main, () => M.route.go("/", { replace: true }), logout);
+    // Drawn again, not routed: the address stays what was asked for, often "/" already.
+    M.security.enrolPage(main, () => render(), logout);
   }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));

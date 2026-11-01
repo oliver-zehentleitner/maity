@@ -4459,13 +4459,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A session in enrolment_required (§2.8.5): the setup is its one page, then the dashboard.
   const enrolDone = [];
   const enrolMain = main;
-  win.Maity.security.enrolPage(enrolMain, (next) => enrolDone.push(next), () => enrolDone.push("signed out"));
+  win.Maity.security.enrolPage(enrolMain, () => enrolDone.push("done"), () => enrolDone.push("signed out"));
   expect(enrolMain.querySelector(".security-enrol") && enrolMain.querySelectorAll("button").some((x) => x.textContent === "Set up two-factor sign-in"), "enrolment: the setup is the page");
   enrolMain.querySelectorAll("button").find((x) => x.textContent === "Set up two-factor sign-in").click(); await secPass();
   byId("security-code").value = "123456";
   enrolMain.querySelector("form.security-setup").dispatch("submit"); await secPass();
   enrolMain.querySelectorAll("button").find((x) => x.textContent === "I have saved them").click();
-  expect(enrolDone.join() === "/", "enrolment: the codes saved, the dashboard next");
+  expect(enrolDone.join() === "done", "enrolment: the codes saved, the dashboard next");
   await go("#/account");
   // The second step of a sign-in (§2.8.2, §2.8.8, tsk-ekpb0pvgw4bh): a session that owes the factor gets the step and nothing else.
   {

@@ -154,7 +154,7 @@ window.Maity = window.Maity || {};
       h("h2", null, M.t("security.enrol.title")),
       h("p", null, M.t("security.enrol.lead")), steps,
       h("button", { type: "button", class: "link-button", onclick: signOut }, M.t("sf.sign_out"))));
-    setup(steps, () => done("/"), null);
+    setup(steps, done, null);
   }
 
   M.security = { section, enrolPage };
