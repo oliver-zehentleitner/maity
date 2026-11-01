@@ -130,7 +130,7 @@ def _refresh(engine: Engine, project_id: str) -> None:
 def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_counted(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from sqlalchemy import insert
+    from sqlalchemy import insert, update
 
     from maity_hub.ids import new_id
 
@@ -167,6 +167,12 @@ def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_co
     review(human)
     review(human)
     review(agent)
+    with migrated.begin() as conn:  # only while the last check found it public (§11.4)
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == world.project_id)
+            .values(repository_public=True)
+        )
     merged(1, human)
     merged(2, human)
     merged(3, agent)

@@ -271,6 +271,26 @@ def test_a_merge_on_a_report_counts_through_the_ticker_for_its_cards_holder(
     assert found["totals"]["prs_merged"] == 2 and row(found, a.id)["prs_merged"] == 1
 
 
+def test_a_public_page_counts_a_link_event_only_while_the_repository_is_public(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    """§11.4: only while the last check found it public, as for the ticker."""
+    task = card(migrated, project_id, membership_of(migrated, owner.id))
+    payload = {
+        "new": {"found": True, "title": "x", "state": "merged"},
+        "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
+        "task_id": task,
+        "public": True,
+    }
+    event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
+    assert public_prs(migrated, project_id) is None
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) == 1
+
+
 def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_is_public(
     owner: flow.Human, migrated: Engine, project_id: str
 ) -> None:

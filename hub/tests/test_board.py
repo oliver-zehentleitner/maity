@@ -488,6 +488,28 @@ class FakeForge(forge.Forge):
         return {n: self.answers.get(n) for n in numbers}, self.public
 
 
+@pytest.mark.parametrize(
+    ("granted", "public"), [(None, True), ("app", False), ("owner_token", False)]
+)
+def test_only_a_read_with_the_instances_token_marks_a_link_event_public(
+    owner: flow.Human, migrated: Engine, granted: str | None, public: bool
+) -> None:
+    """§11.4: data read through an owner's grant never reaches a page without sign-in, not even
+    as a count, though the read found the repository public."""
+    card = task(owner)
+    link(owner, card, kind="pr", forge_url=PULL)
+    number = int(PULL.rsplit("/", 1)[1])
+    answer = {"type": "PullRequest", "title": "A", "state": "closed", "merged": True}
+    fg = FakeForge({number: answer})
+    object.__setattr__(fg, "granted", granted)
+    assert fg.via == (granted or "instance")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    probe.observe_links(migrated, fg, project_id)
+    [seen] = events(migrated, "link_observed")
+    assert seen.payload["public"] is public
+
+
 def test_the_probe_reads_own_repository_links_in_one_batch(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

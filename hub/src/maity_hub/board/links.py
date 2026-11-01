@@ -367,9 +367,10 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                         "forge_url": row.url,
                         "old": old_shown,
                         "new": new_shown,
-                        # Whether the read itself found the repository public: only such
-                        # an observation may reach a page without sign-in (§11.4).
-                        "public": public,
+                        # Whether the instance's token read it and the read found the
+                        # repository public: nothing else may reach a page without sign-in,
+                        # not even as a count (§11.4).
+                        "public": public and fg.via == "instance",
                     },
                     subject=("task", row.card_id),
                 )

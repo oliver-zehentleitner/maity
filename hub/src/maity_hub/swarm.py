@@ -146,8 +146,8 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
     """Pull requests by their first retained merge: a ticker item (§17.2), which a report's pull
     request gets, or a `link_observed` to `merged` (§6.13), deduplicated by repository and
     number. Each member holding a card that names it gets it once. `public_prs` keeps what may
-    reach a page without sign-in (§11.4): an event that says its read was public, and of the
-    ticker only while the repository's last check found it public."""
+    reach a page without sign-in (§11.4): an event that says so, only while the repository's last
+    check found it public."""
     open_repository = (
         conn.execute(
             select(t.project.c.repository_public).where(t.project.c.id == project_id)
@@ -172,7 +172,7 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
             if payload.get("type") != "merge" or not merge:
                 continue
             url, tasks = payload.get("url"), payload.get("tasks") or []
-            public = merge.get("public") is True and open_repository
+            public = merge.get("public") is True
         else:
             if (payload.get("new") or {}).get("state") != "merged":
                 continue
@@ -180,7 +180,7 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
             public = payload.get("public") is True
         key = pull_key(url)
         first.setdefault(key, at)
-        if public:
+        if public and open_repository:
             first_public.setdefault(key, at)
         cards.setdefault(key, set()).update(str(task) for task in tasks)
     holders = (
