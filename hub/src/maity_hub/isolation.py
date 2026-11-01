@@ -41,7 +41,17 @@ def refusal(row: Any) -> ApiError:
 
 
 def release_claims(conn: Connection, membership_id: int) -> None:
-    """Every open card the member holds goes back to the board (§6.5)."""
+    """Every open card the member holds goes back to the board (§6.5); a card that left
+    `in_progress` that way tells its watchers (§6.4)."""
+    moved = (
+        conn.execute(
+            select(t.card.c.id).where(
+                t.card.c.claim_holder == membership_id, t.card.c.status == "in_progress"
+            )
+        )
+        .scalars()
+        .all()
+    )
     conn.execute(
         update(t.card)
         .where(t.card.c.claim_holder == membership_id, t.card.c.status.notin_(CLOSED))
@@ -55,6 +65,14 @@ def release_claims(conn: Connection, membership_id: int) -> None:
             updated_at=clock.now(),
         )
     )
+    if moved:
+        from maity_hub.routes.tasks import status_moved  # tasks reads availability, and this
+
+        for card in conn.execute(select(t.card).where(t.card.c.id.in_(moved))).all():
+            state = conn.execute(
+                select(t.project.c.state).where(t.project.c.id == card.project_id)
+            ).scalar_one()
+            status_moved(conn, card, state, None)
 
 
 def _announce(conn: Connection, project: Any, target: Any, actor: Actor) -> None:

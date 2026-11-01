@@ -416,7 +416,7 @@ instead of one problem per attempt.
 `event_watcher`. A read turns the rows of its batch into `watching:<seq>` beside the batch's other
 hidden facts, and `wakes` takes the set as an argument. `_wakes` in `views.py` serves only the
 reader's own entries of such an event, and nothing to a view without a reader. A claim, a release, a
-report and a request that blocks or unblocks the card write a `task_updated` when they move the
+report, a request that blocks or unblocks the card, and a holder's isolation or removal write a `task_updated` when they move the
 status, beside their own event, which never carries the token; a refresh writes none. The contract
 names the report; the claim and the release are the coordinator's reading of §6.4's "a status
 change" (2026-11-01), and a blocking request is this entry's reading of the same words. A redaction

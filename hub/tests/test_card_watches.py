@@ -190,6 +190,35 @@ def test_a_redaction_is_readable_as_the_event_it_is_about(
     assert notice.seq in _seqs(watcher) and notice.seq not in _seqs(other)
 
 
+def test_a_holder_isolated_or_removed_gives_the_card_back_and_wakes_a_watcher(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    watcher = flow.agent(make_client, owner)
+    members = "/projects/maintainer/maity/members"
+    for leaves in ("isolated", "removed"):
+        holder = flow.agent(make_client, owner)
+        card = owner.post(TASKS, {"title": "Watched"}).json()
+        _watch(watcher, card)
+        assert holder.post(f"{TASKS}/{card['id']}/claim", {}).status_code == 200
+        claimed = _last(migrated, "task_updated").seq
+        path = f"{members}/{holder.id}"
+        left = (
+            owner.post(f"{path}/isolate", {"reason": "off"})
+            if leaves == "isolated"
+            else owner.delete(path)
+        )
+        assert left.status_code in (200, 204), left.text
+        back = _last(migrated, "task_updated")
+        assert back.seq > claimed and back.payload == {
+            "id": card["id"],
+            "fields": ["status"],
+            "status": "open",
+            "history": [],
+            "project_state": back.payload["project_state"],
+        }
+        assert back.seq in _woken(migrated, watcher)
+
+
 def test_the_resume_packet_says_which_held_cards_are_watched(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
