@@ -999,6 +999,7 @@ def scenario(run: Run, page: Page) -> None:
     direct_removal_step(run, page, agent_id)
     attachments_step(run, page, agent_id)
     members_step(run, page)
+    dormant_step(run, page)
     my_settings_step(run, page)
     invitations_step(run, page)
     agents_page_step(run, page)
@@ -3279,6 +3280,33 @@ def picture_step(run: Run, page: Page) -> None:
     expect(page.locator("main")).to_contain_text("Uploaded picture removed")
     expect(page.locator("header .profile-menu svg.avatar-svg")).to_be_visible()
     no_problems(run, "picture")
+
+
+def dormant_step(run: Run, page: Page) -> None:
+    """A dormant instance on the real hub (docs/api.md §6.17, tsk-3djwtefkr3yv): the owner puts the agent's
+    instance to rest in the Manage row, it is said with its address and as the team's limit, and it wakes."""
+    run.step("members: the owner puts an agent's instance to rest and wakes it")
+    page.goto(f"{run.base}/owner/e2e-alpha/members")
+    table = page.locator("table.members")
+    row = table.locator("tr.member", has_text="E2E Agent")
+    row.get_by_role("button", name="Manage E2E Agent").click()
+    part = page.locator("tr.member-manage .member-dormant-part")
+    rest = part.get_by_role("button", name=re.compile(r"^Put @e2e-agent#\S+ to rest$"))
+    expect(rest).to_have_count(1)
+    address = (rest.text_content() or "").removeprefix("Put ").removesuffix(" to rest")
+    rest.click()
+    status = page.locator("main section.view-members > .send-status")
+    expect(status).to_contain_text(f"{address} is dormant.")
+    expect(row).to_contain_text(f"dormant — ask {address} directly")
+    # Its only instance: the whole team member rests (§6.12), with no end to name.
+    expect(row).to_contain_text("Resting: every instance is dormant")
+    run.a11y(page, "members, a dormant instance")
+    run.shot(page, "members-dormant")
+    part.get_by_role("button", name=f"Wake {address}", exact=True).click()
+    expect(status).to_contain_text(f"{address} is awake.")
+    expect(row).not_to_contain_text("dormant — ask")
+    expect(row).not_to_contain_text("Resting:")
+    no_problems(run, "dormant instance")
 
 
 def change_password(run: Run, page: Page) -> None:
