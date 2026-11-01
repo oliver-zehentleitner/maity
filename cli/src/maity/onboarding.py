@@ -794,7 +794,8 @@ def _ktw_loading(block: dict[str, Any]) -> list[str]:
     never run here. Every field is optional, so an older hub's block prints what it has."""
     skill = _dict(block.get("skill"))
     lines = [inline(skill["load"])] if skill.get("load") else []
-    install = [i for i in skill.get("install") or [] if isinstance(i, str)]
+    given = skill.get("install")
+    install = [i for i in given if isinstance(i, str)] if isinstance(given, list) else []
     if install:
         lines += ["If the skill is not installed:", *[f"  {inline(i)}" for i in install]]
     if skill.get("guide"):
@@ -802,10 +803,12 @@ def _ktw_loading(block: dict[str, Any]) -> list[str]:
     if block.get("config"):
         lines.append(f"Project settings: {inline(block['config'])} in the repository root")
     defaults = {
-        "adopt": "Personal settings: adopt the project's defaults",
-        "ask": "Personal settings: ask your human through Maity",
+        "adopt": "adopt the project's defaults",
+        "ask": "ask your human through Maity",
     }.get(str(block.get("personal_defaults")))
-    return lines + [defaults] if defaults else lines
+    if defaults:
+        lines.append(f"Personal settings, if this project has no personal file yet: {defaults}")
+    return lines
 
 
 def _ktw_commitment(block: dict[str, Any]) -> list[str]:

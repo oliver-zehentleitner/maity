@@ -3651,6 +3651,28 @@ provider either, only a human with `project:admin` can, so the pointer
 led nowhere. Making the setup cards on a switch: the hub does not
 (§6.21), and the dashboard does not invent cards the contract leaves out.
 
+## The Keep the Why personal settings are left out under no memory provider, and show no values
+
+**Id:** 2e30b22e-1cf1-4559-a77a-16f8237bb53b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-j8gwrdy9d5c2; docs/api.md §6.23 "The dashboard's part"; a review of the pull request
+
+Project settings offer `policy.keep_the_why_defaults` only while the
+memory provider is Keep the Why, and name the repository's
+`.keep-the-why` as the origin without showing its values.
+
+**Reason:** without the provider no agent is told about personal
+settings at all, so the choice would have no effect. The commitment form
+above it stays visible and disabled there because it explains why Keep the
+Why cannot be required, which this one has nothing to add to. The values
+are not shown because the hub does not read that file.
+
+**Rejected alternative:** a read-only view of the defaults with a link to
+edit them, which the card asked for: §6.23 asks only for the origin, and
+so it was dropped.
+
 ## A project's own links stand beside the repository, which reads "Repository" whatever the forge; the form sends only what changed
 
 **Id:** 10a77061-c980-4990-b44b-cb7f518cd4eb
