@@ -2175,43 +2175,55 @@ def two_signatures_step(run: Run, page: Page) -> None:
     def api(method: str, path: str, body: dict | None = None):
         return page.evaluate("([m, p, b]) => window.Maity.api[m](p, b)", [method, base + path, body])
 
+    # Set in Settings (§6.1), as a person would, and back in the end whatever happens between.
+    def authority(value: str, reason: str) -> None:
+        page.goto(f"{run.base}/owner/e2e-alpha/settings")
+        form = page.locator("form.done-authority-form")
+        form.locator("#done-authority-select").select_option(value)
+        form.locator("#done-authority-reason").fill(reason)
+        form.get_by_role("button", name="Save", exact=True).click()
+        expect(page.locator("main")).to_contain_text("Who closes a card saved.")
+        expect(page.locator("#done-authority-select")).to_have_value(value)
+
     before = api("get", "")["policy"]["done_authority"]
-    api("patch", "", {"policy": {"done_authority": "reviewer_and_tester"}, "reason": "e2e: two signatures"})
-    made = api("post", "/tasks", {"title": "E2E: two signatures", "status": "open"})
-    api("post", f"/tasks/{made['id']}/claim", {})
-    sha = "d91e294c" + "0" * 32
-    report = {
-        "summary": "Done for the signatures.",
-        "head": sha,
-        "branch": "agent-e2e/signatures",
-        "upstream": "origin/agent-e2e/signatures",
-        "remote_head": sha,
-        "pr": None,
-        "pr_status": "none",
-        "pr_unknown_reason": None,
-        "why": {"none": "a test report, nothing to keep"},
-    }
-    api("post", f"/tasks/{made['id']}/report", report)
-    page.goto(f"{run.base}/owner/e2e-alpha/board")
-    card = page.locator("article.card", has_text="E2E: two signatures")
-    approvals = card.locator(".card-approvals")
-    expect(approvals).to_contain_text("Review: not signed yet")
-    expect(approvals).to_contain_text("Test: not signed yet")
-    card.locator(".card-move .menu-button").click()
-    card.locator(".card-move").get_by_role("menuitem", name="Sign the review", exact=True).click()
-    expect(page.locator("main section.view-board .send-status").first).to_contain_text("signature saved")
-    card = page.locator('section.column[data-status="review"]').locator("article.card", has_text="E2E: two signatures")
-    expect(card.locator(".card-approvals")).to_contain_text("Review: signed by")
-    expect(card.locator(".card-approvals")).to_contain_text("Test: not signed yet")
-    run.shot(page, "board-two-signatures")
-    card.locator(".card-move .menu-button").click()
-    expect(card.locator(".card-move").get_by_role("menuitem", name="Sign the test", exact=True)).to_have_count(0)
-    page.keyboard.press("Escape")
-    # A rework clears them (§6.4), and the project goes back to what the later steps expect.
-    api("patch", f"/tasks/{made['id']}", {"status": "in_progress"})
-    assert api("get", f"/tasks/{made['id']}")["approvals"] is None
-    api("patch", f"/tasks/{made['id']}", {"status": "cancelled"})
-    api("patch", "", {"policy": {"done_authority": before}, "reason": "e2e: back"})
+    authority("reviewer_and_tester", "e2e: two signatures")
+    try:
+        made = api("post", "/tasks", {"title": "E2E: two signatures", "status": "open"})
+        api("post", f"/tasks/{made['id']}/claim", {})
+        sha = "d91e294c" + "0" * 32
+        report = {
+            "summary": "Done for the signatures.",
+            "head": sha,
+            "branch": "agent-e2e/signatures",
+            "upstream": "origin/agent-e2e/signatures",
+            "remote_head": sha,
+            "pr": None,
+            "pr_status": "none",
+            "pr_unknown_reason": None,
+            "why": {"none": "a test report, nothing to keep"},
+        }
+        api("post", f"/tasks/{made['id']}/report", report)
+        page.goto(f"{run.base}/owner/e2e-alpha/board")
+        card = page.locator("article.card", has_text="E2E: two signatures")
+        approvals = card.locator(".card-approvals")
+        expect(approvals).to_contain_text("Review: not signed yet")
+        expect(approvals).to_contain_text("Test: not signed yet")
+        card.locator(".card-move .menu-button").click()
+        card.locator(".card-move").get_by_role("menuitem", name="Sign the review", exact=True).click()
+        expect(page.locator("main section.view-board .send-status").first).to_contain_text("signature saved")
+        card = page.locator('section.column[data-status="review"]').locator("article.card", has_text="E2E: two signatures")
+        expect(card.locator(".card-approvals")).to_contain_text("Review: signed by")
+        expect(card.locator(".card-approvals")).to_contain_text("Test: not signed yet")
+        run.shot(page, "board-two-signatures")
+        card.locator(".card-move .menu-button").click()
+        expect(card.locator(".card-move").get_by_role("menuitem", name="Sign the test", exact=True)).to_have_count(0)
+        page.keyboard.press("Escape")
+        # A rework clears them (§6.4).
+        api("patch", f"/tasks/{made['id']}", {"status": "in_progress"})
+        assert api("get", f"/tasks/{made['id']}")["approvals"] is None
+        api("patch", f"/tasks/{made['id']}", {"status": "cancelled"})
+    finally:
+        authority(before, "e2e: back")
     no_problems(run, "two signatures")
 
 
@@ -2233,7 +2245,13 @@ def public_page_step(run: Run, page: Page) -> None:
     form = page.locator("form.public-page-form")
     form.locator("#public-about").fill("")
     form.locator("#public-page").set_checked(was_on)
-    form.get_by_role("button", name="Save", exact=True).click()
+    # "Saved" still stands from the first save, and the emptied field reads empty before anything
+    # is sent: only the hub's answer says this one arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/projects/owner/e2e-alpha")) as saved:
+        form.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.status
+    read = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha").json()
+    assert read["public_about"] is None and read["public_page"] == ("on" if was_on else "off"), read
     expect(page.locator("form.public-page-form #public-about")).to_have_value("")
     expect(page.locator("#public-page")).to_be_checked(checked=was_on)
     page.goto(f"{run.base}/account")
@@ -2247,7 +2265,9 @@ def public_page_step(run: Run, page: Page) -> None:
     assert member["public_profile"] is True and member["public_bio"] == "Builds things in e2e.", member
     profile.locator("#public-profile").uncheck()
     profile.locator("#public-bio").fill("")
-    profile.get_by_role("button", name="Save", exact=True).click()
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/api/v1/me")) as saved:
+        profile.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.status
     expect(profile.locator("#public-bio")).to_have_value("")
     member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     assert member["public_profile"] is False and member["public_bio"] is None, member

@@ -382,6 +382,7 @@ window.Maity = window.Maity || {};
     const keys = Object.keys(body);
     const reviewMove = keys.filter((k) => k !== "approve").length === 1 && keys.includes("status") && card.status === "review" && ["done", "in_progress"].includes(body.status);
     const authority = project(slug, path).policy.done_authority;
+    if ("approve" in body && !(authority === "reviewer_and_tester" && card.status === "review" && body.status === "done")) fail(400, "invalid", "the request does not validate", path, { fields: { approve: "not_applicable" } });
     const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : authority === "tester" ? tasksTest(slug)
       : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
@@ -408,12 +409,14 @@ window.Maity = window.Maity || {};
         const held = [["review", tasksReview(slug)], ["test", tasksTest(slug)]].filter(([, may]) => may).map(([slot]) => slot);
         const slot = body.approve || (held.length === 1 ? held[0] : null);
         if (!slot) fail(400, "invalid", "say which signature", path, { fields: { approve: "required" } });
+        if (!held.includes(slot)) fail(403, "forbidden", "this signature needs another scope", path, { scope: slot === "review" ? "tasks:review" : "tasks:test" });
         const a = card.approvals || { review: null, test: null };
         const other = a[slot === "review" ? "test" : "review"];
         if (other && other.by === meId) fail(400, "invalid", "one member never fills both", path, { fields: { approve: "same_member" } });
         if (!a[slot]) a[slot] = { by: meId, at: nowIso(), revision: card.report ? card.report.revision : null };
         card.approvals = a;
-        if (!(a.review && a.test)) { card.updated_at = nowIso(); return card; }
+        const revision = card.report ? card.report.revision : null;
+        if (!(a.review && a.test && a.review.revision === revision && a.test.revision === revision)) { card.updated_at = nowIso(); return card; }
         card.approvals = null;
       }
       if (to === "done") {
@@ -2576,6 +2579,9 @@ window.Maity = window.Maity || {};
           p.rules_version = (p.rules_version || 1) + 1;
           p.policy = Object.assign({}, p.policy, { keep_the_why: provider === "none" ? "optional" : ktwSet.get(p) || "required" });
         }
+      }
+      if ("policy" in body && "done_authority" in body.policy && !["holder", "reviewer", "tester", "reviewer_and_tester", "admin"].includes(body.policy.done_authority)) {
+        fail(400, "invalid", "unknown done_authority", path, { fields: { "policy.done_authority": "unknown" } });
       }
       // The public page (§16.9): the fixture's signed-in human owns its namespaces.
       if ("public_page" in body) {

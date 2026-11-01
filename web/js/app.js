@@ -701,7 +701,7 @@ window.Maity = window.Maity || {};
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
     if (humanAdmin) {
-      append(panel, memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
+      append(panel, doneAuthorityForm(ctx, save), memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
     }
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
@@ -1039,6 +1039,32 @@ window.Maity = window.Maity || {};
     error,
     h("label", { for: "agent-owners-reason" }, M.t("settings.agent_owners.reason")), reason,
     h("button", { type: "submit" }, M.t("settings.agent_owners.save")));
+  }
+
+  // Who moves a card from review to done (§6.1). A human changes it with a reason,
+  // as every policy field; cards in review keep their state and read the new rule.
+  const DONE_AUTHORITIES = () => [
+    ["holder", M.t("settings.done_authority.holder")], ["reviewer", M.t("settings.done_authority.reviewer")], ["tester", M.t("settings.done_authority.tester")],
+    ["reviewer_and_tester", M.t("settings.done_authority.reviewer_and_tester")], ["admin", M.t("settings.done_authority.admin")]];
+  function doneAuthorityForm(ctx, save) {
+    const current = ctx.project.policy.done_authority;
+    const select = h("select", { id: "done-authority-select" }, DONE_AUTHORITIES().map(([v, l]) => h("option", { value: v }, l)));
+    select.value = current;
+    const reason = h("input", { id: "done-authority-reason", required: true, placeholder: M.t("settings.done_authority.reason_placeholder") });
+    return h("form", {
+      class: "inline-form done-authority-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { done_authority: select.value }, reason: reason.value.trim() }, M.t("settings.done_authority.title"));
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.done_authority.title")),
+    h("p", { class: "hint" }, M.t("settings.done_authority.hint")),
+    h("label", { for: "done-authority-select" }, M.t("settings.done_authority.label")), select,
+    h("label", { for: "done-authority-reason" }, M.t("settings.done_authority.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
   }
 
   // §3.1 "Bringing your own agent", §6.1: whether members add agents of

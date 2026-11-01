@@ -4206,6 +4206,10 @@ A card in review under `done_authority: reviewer_and_tester` lists both places, 
 
 **Reason:** the hub refuses a call holding both scopes without `approve`, and a drop cannot ask. "Move to Done" would also be untrue, because the first signature leaves the card in review, so the status line says the signature was saved and the card waits for the other one.
 
+A place another member filled is not offered, though the hub would answer `200` with the signatures unchanged: a menu item that does nothing would mislead.
+
+The project's Settings offer every `done_authority` of §6.1 to a human admin, with a reason as for every policy field, so the rule can be set where it is read.
+
 **Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it.
 
 ## The public page's form appears for the namespace owner, and its link cannot know the instance's switch
