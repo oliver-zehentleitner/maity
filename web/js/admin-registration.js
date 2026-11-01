@@ -201,7 +201,7 @@ window.Maity = window.Maity || {};
       errors.domains,
       h("label", { for: id("addresses") }, M.t("reg.field.addresses"), source("addresses")), addresses, errors.addresses,
       h("label", { for: id("approval") }, M.t("reg.field.approval"), source("approval")), approval,
-      h("fieldset", { class: "reg-terms" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
+      h("fieldset", { class: "reg-terms field-stack" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
         h("label", { for: id("terms-url") }, M.t("reg.terms.url")), termsUrl,
         h("label", { for: id("terms-version") }, M.t("reg.terms.version")), termsVersion,
         h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages" ? M.t("reg.terms.from_legal") : M.t("reg.terms.hint")),
@@ -216,33 +216,14 @@ window.Maity = window.Maity || {};
     draw();
     // Import and export of the setting as the PATCH body (§16.4). The hub has no
     // dry check here: a loaded value is checked when it is saved.
-    const FIELDS = ["mode", "domains", "addresses", "approval", "terms", "max_new_accounts_per_hour"];
     append(root, M.jsonIo.part({
       id: "reg-json",
       hint: M.t("jsonio.reg.hint"),
       body: () => formBody(),
       load: async (data, io) => {
         const keys = M.jsonIo.isObject(data) ? Object.keys(data) : [];
-        const unknown = keys.filter((k) => !FIELDS.includes(k));
-        if (!keys.length || unknown.length) {
-          io.fail(M.t("jsonio.not_loaded"), { message: unknown.length ? M.t("jsonio.reg.unknown", { fields: M.fmt.list(unknown) }) : M.t("jsonio.reg.shape") });
-          return false;
-        }
-        // Each value of the kind the form can show; the hub checks the rest on Save.
-        const strings = (x) => Array.isArray(x) && x.every((e) => typeof e === "string");
-        const KINDS = {
-          mode: (x) => MODES.includes(x),
-          domains: strings,
-          addresses: strings,
-          approval: (x) => APPROVALS.includes(x),
-          terms: (x) => x === null || (M.jsonIo.isObject(x) && typeof x.url === "string" && typeof x.version === "string"),
-          max_new_accounts_per_hour: (x) => Number.isInteger(x) && x >= 1,
-        };
-        const wrong = keys.filter((k) => !KINDS[k](data[k]));
-        if (wrong.length) {
-          io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.reg.wrong", { fields: M.fmt.list(wrong) }) });
-          return false;
-        }
+        const refused = check(data);
+        if (refused) { io.fail(M.t("jsonio.not_loaded"), { message: refused }); return false; }
         // A value the environment sets stays as it is (the hub refuses it, set_by_environment).
         const fixed = keys.filter((k) => (current[k] || {}).source === "env" || (k === "terms" && (current.terms || {}).source === "legal_pages"));
         if (!window.confirm(fixed.length ? M.t("jsonio.reg.confirm_fixed", { fields: M.fmt.list(fixed) }) : M.t("jsonio.reg.confirm"))) return false;
@@ -346,5 +327,27 @@ window.Maity = window.Maity || {};
     h("label", { for: "reg-block-address" }, M.t("reg.block.address")), address, go, status.el);
   }
 
-  M.adminRegistration = { section };
+  // The setting's JSON (the body of its PATCH, §16.4): which fields it may name, and what
+  // kind each value is, as the form can show it; the hub checks the rest on Save. Used by
+  // this section's import and by the whole site's (js/site-io.js).
+  const FIELDS = ["mode", "domains", "addresses", "approval", "terms", "max_new_accounts_per_hour"];
+  const strings = (x) => Array.isArray(x) && x.every((e) => typeof e === "string");
+  const KINDS = {
+    mode: (x) => MODES.includes(x),
+    domains: strings,
+    addresses: strings,
+    approval: (x) => APPROVALS.includes(x),
+    terms: (x) => x === null || (M.jsonIo.isObject(x) && typeof x.url === "string" && typeof x.version === "string"),
+    max_new_accounts_per_hour: (x) => Number.isInteger(x) && x >= 1,
+  };
+  // null when the JSON is a body the setting takes; else what is wrong, in words.
+  function check(data) {
+    const keys = M.jsonIo.isObject(data) ? Object.keys(data) : [];
+    const unknown = keys.filter((k) => !FIELDS.includes(k));
+    if (!keys.length || unknown.length) return unknown.length ? M.t("jsonio.reg.unknown", { fields: M.fmt.list(unknown) }) : M.t("jsonio.reg.shape");
+    const wrong = keys.filter((k) => !KINDS[k](data[k]));
+    return wrong.length ? M.t("jsonio.reg.wrong", { fields: M.fmt.list(wrong) }) : null;
+  }
+
+  M.adminRegistration = { section, check, FIELDS };
 })(window.Maity);

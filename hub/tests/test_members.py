@@ -58,6 +58,8 @@ def test_the_member_view_has_the_contract_shape(
         "role_base",  # the role itself for a built-in one (§2.3)
         "reports_to",
         "cross_owner",
+        "bridges",  # the connections that serve it, and those it serves (§2.3)
+        "bridging_for",
         "line_consent",
         "areas",
         "capabilities",

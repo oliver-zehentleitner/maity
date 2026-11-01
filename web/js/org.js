@@ -79,9 +79,22 @@ window.Maity = window.Maity || {};
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 
+  // The top follows trust (the maintainer, 2026-10-31): whoever has no place
+  // by reports_to or area stands at their trust's level, owners at the top,
+  // then admins, members and guests, each a level deeper; a level nobody holds
+  // leaves no empty step. Not under one owner's node: with several owners that
+  // would claim a line to one of them that the project does not have.
   function drawTree(ctx) {
     const tree = buildTree(ctx.members || []);
-    return tree.roots.length ? h("ul", { class: "org-tree" }, tree.roots.map((m) => node(ctx, m, tree))) : h("p", { class: "muted" }, M.t("org.empty"));
+    if (!tree.roots.length) return h("p", { class: "muted" }, M.t("org.empty"));
+    const tier = (t) => tree.roots.filter((m) => (M.trust.TRUSTS.includes(m.trust) ? m.trust : "member") === t);
+    const levels = M.trust.TRUSTS.map(tier).filter((list) => list.length);
+    // From the deepest up: each level's members, the deeper levels in one item under them.
+    let deeper = null;
+    for (let i = levels.length - 1; i > 0; i--) {
+      deeper = h("li", { class: "org-level" }, h("ul", null, levels[i].map((m) => node(ctx, m, tree)), deeper));
+    }
+    return h("ul", { class: "org-tree" }, levels[0].map((m) => node(ctx, m, tree)), deeper);
   }
 
   // The tab: the tree, drawn again from the members when one changes.
@@ -98,5 +111,5 @@ window.Maity = window.Maity || {};
     });
   };
 
-  M.org = { buildTree, contains };
+  M.org = { buildTree, drawTree, contains };
 })(window.Maity);

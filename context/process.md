@@ -297,7 +297,8 @@ split.
 
 **Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** none — the shared-budget working mode ended when the team moved to its own subscriptions (2026-10-27)
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
 **Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
@@ -305,8 +306,9 @@ split.
 
 **Revisit:** the condition triggered on 2026-10-27: a new team runs on new
 subscriptions, several Claude agents in parallel, on the maintainer's
-instruction (coordinator, 2026-10-27). This is not today's rule; the entry
-stays as the record of the earlier stretch until a person re-checks it.
+instruction (coordinator, 2026-10-27). The coordinator re-checked this on
+2026-11-01. This is not today's rule; the entry stays as the record of the
+earlier stretch.
 
 When the maintainer announced that the Claude-based agents would soon
 hit their usage limit, the coordinator set a working mode for the
@@ -400,7 +402,16 @@ resume opens a new session with the new `model` and keeps the claims.
 When the model or harness differs from the instance's previous
 session, the hub tells the agent's lead (woken) and the admins and the
 agent's owner (not woken), so the lead can re-route a card the new
-model should not hold. Rule 14 of the agent skill says so.
+model should not hold. Rule 14 of the agent skill says so. A resume
+that omits `model` or `harness` keeps the previous session's value, so a
+switch across such a resume is still seen.
+
+The agent's own `maity resume` also prints one line when it changed the
+model it had stored, `Model changed: <old> -> <new>, your lead is told.`,
+and `maity wait` reads the event as `harness/model -> harness/model`.
+The line was first left out, since the contract asked for none; the
+coordinator's card for the CLI (tsk-5zev9p7dh680, 2026-11-01) asks for it,
+and the contract's §13 now says so. Why the card wants it is not stated.
 
 **Reason:** security, contract and migration cards go to the strongest
 model and well-cut cards to a faster one; a session that silently runs
@@ -413,6 +424,9 @@ nobody can see it.
   so a second way would only add a code path.
 - Leaving it to the agent to tell its lead in a message: the hub would
   still show the old model, and every lead would have to read it.
+- Taking over only the previous `model` and not the `harness` of a resume
+  that omits it: the session in between would hold no harness, and a
+  switch from one harness to another over it would never be announced.
 
 ## The site's sitemap and robots.txt are made at deploy from the pages, not kept in the repository
 
@@ -448,7 +462,7 @@ already knows what it deploys.
 **Source:** the maintainer's go and the coordinator's brief (2026-10-28); the coordinator approved the plan; the security review of the pull request (2026-10-28) corrected the first version of this entry
 **Revisit when:** the repository stops being public, a job needs a secret of the repository, or hosted runners get as fast as the machine
 
-`ci.yml` lets `hub-sqlite`, `hub-postgresql` and `hub-mariadb` run on a self-hosted runner
+`ci.yml` lets `hub-sqlite` and `hub-postgresql`, and `hub-mariadb.yml` `hub-mariadb`, run on a self-hosted runner
 when the repository variable `HUB_RUNNER_LABEL` holds a label prefix (one runner service per job type, see below); unset, they run on GitHub's
 runners. The runner is a user of its own with rootless Docker, no read access to anything
 else on the machine and a firewall rule against local and internal services (IPv4 and
@@ -963,3 +977,39 @@ for the newest run to finish.
 - `cancel-in-progress: true` on main: a streak of merges would cancel each run before it finishes, so main could stay without a
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
+
+## MariaDB checks main every hour, not every pull request; PostgreSQL and SQLite stay in the gate
+
+**Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision, 2026-10-31 (left to the coordinator), on card tsk-p7dfb6e9p5wz, after the database jobs had grown to 60 to 90 minutes a run
+**Revisit when:** MariaDB breaks on main often enough that the hourly clock finds it too late, or the suite gets fast enough to be a gate again
+
+The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it at most
+once an hour on main, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
+last green scheduled run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
+pull request and in `ci-ok`.
+
+**What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
+green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
+closes it. The next hour always runs again after a run that did not end green or while the issue is open, so a revert
+closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
+(Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
+
+**Reason:** MariaDB is the self-hoster's database and the slowest suite; held in front of every merge it made main's
+runs queue for an hour and more while the code it checks changes rarely in ways that break only there (the migration
+of 2026-10-29 that only MariaDB rejected is the kind of fault it is for). An hourly clock on main keeps the
+fault close to the change that caused it without making every author wait for it.
+
+**Rejected alternatives:**
+- Keep it in the gate and add runners: more machines for a suite whose value is the daily catch, not the per-PR one.
+- Nightly only: the culprit would sit among a day of merges instead of an hour's.
+- Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
+- One concurrency group for the hourly run and the hand start: GitHub keeps one waiting run per group, so a hand start for a
+  deploy candidate would be displaced by the next hourly run while it waits behind a running one; they have a group each.
+- Any commit for a hand start: the sha is free text and a commit of a fork's pull request can be checked out by it, which
+  would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
+- Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
+  channel the workflow can use without one.

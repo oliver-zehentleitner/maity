@@ -247,6 +247,33 @@ password sees an error that depends on an account (a taken handle).
 - Accepting a `POST` without `Sec-Fetch-Site`: an older browser could then be made to submit the
   form from another site; the cookie alone is a second guard, not a reason to drop the first.
 
+## The registration's link page wears the legal pages' shell, not the dashboard's app
+
+**Id:** f63430e9-d5ca-430e-afef-d44ec980bd35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-7sw2a2bd5srp from the coordinator, 2026-10-31: the maintainer, testing the registration live, found the page bare HTML (no stylesheet) and asked for the legal pages' shell; docs/api.md §2.7.1 and §16.7.1. Why not the app and not the landing assets is this entry's reading
+**Revisit when:** the dashboard takes over the form, or the legal pages move to the landing page's stylesheet and fonts
+
+`render.form_document` gives the page the legal pages' head (the Maity mark), their colours in light
+and dark, one centred panel and a footer with the legal links the instance serves; its style is the
+legal pages' `STYLE` plus a few rules for fields, errors and the button, all inline. Each field's
+error stands under it, tied to the field (`aria-invalid`, `aria-describedby`). The answers carry
+the legal pages' policy, `default-src 'none'; style-src 'unsafe-inline'`, with `form-action 'self'`,
+`base-uri 'none'` and `frame-ancestors 'none'` for a page that posts a password.
+
+**Reason:** the page is the first a new person sees after the mail, so it should look like Maity,
+and it has to keep what §2.7.1 asks of it: the token is in the address, so nothing may be loaded
+from elsewhere, and no script runs before there is an account.
+
+**Rejected alternatives:**
+- The dashboard's single-page app: a script before the account exists, and an app that would
+  read the token from the address.
+- The landing page's stylesheet and self-hosted fonts (the card named them): the legal pages
+  this shell copies use the system fonts and one inline style, so the page would look unlike
+  the pages it links, and it would need its policy widened for the hub's own fonts and sheet.
+
 ## The account mails of registration and the invitation's mail are queued only while mail is ready, in English, tied to an account only where one holds the address
 
 **Id:** 158a003c-a0d6-4ac3-a2b7-eb407292b247

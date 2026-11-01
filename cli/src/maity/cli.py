@@ -246,6 +246,7 @@ SUPERVISOR = re.compile(r"maity-runner/[A-Za-z0-9.+_-]{1,64}", re.ASCII)
 
 
 def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> int:
+    model_before = session.data.get("model")
     for key in ("harness", "harness_version", "model"):
         value = getattr(args, key, None)
         if value:
@@ -343,9 +344,14 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     session.save()
     # What `--full` renders again without a second resume, which would open another session.
     state.save_state(session.dir, packet, name=LAST_PACKET)
+    model_after = session.data.get("model")
     if text is None:
         _print_json(packet)
     else:
+        # An own change of model: the hub told the lead and the admins (§5.3), so say so first.
+        if isinstance(model_before, str) and model_after not in (None, model_before):
+            old, new = onboarding.inline(model_before), onboarding.inline(model_after)
+            print(f"Model changed: {old} -> {new}, your lead is told.\n")
         print(text, end="")
     return EXIT_OK
 
@@ -555,6 +561,14 @@ def cmd_resume(args: argparse.Namespace) -> int:
 BATCH_MAX = 50
 
 
+def _harness_model(side: Any) -> str:
+    """`harness/model` of one side of a `session_model_changed`, `?` where it is not set."""
+    if not isinstance(side, dict):
+        return "?"
+    parts = [onboarding.inline(side.get(key)) for key in ("harness", "model") if side.get(key)]
+    return "/".join(parts) or "?"
+
+
 def _event_line(event: dict[str, Any]) -> str:
     """`#seq kind subject: title`, cleaned: what woke the wait, before its JSON."""
     subject = onboarding.get(event, "subject", "id")
@@ -562,6 +576,10 @@ def _event_line(event: dict[str, Any]) -> str:
     line = f"#{onboarding.inline(event.get('seq'))} {onboarding.inline(event.get('kind'))}"
     if subject:
         line += f" {onboarding.inline(subject)}"
+    if event.get("kind") == "session_model_changed":
+        before = onboarding.get(event, "payload", "from") or {}
+        after = onboarding.get(event, "payload", "to") or {}
+        return line + f": {_harness_model(before)} -> {_harness_model(after)}"
     if title:
         line += f": {onboarding.inline(title)[:120]}"
     return line

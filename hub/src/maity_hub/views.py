@@ -528,6 +528,9 @@ def member_views(
         if human_ids
         else {}
     )
+    from maity_hub import bridges  # it builds member views itself
+
+    bridged = bridges.views(conn, [r.id for r in rows if r.agent_id is not None])
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
     pictures = avatars.urls(conn, [*agent_ids, *human_ids])
@@ -664,6 +667,8 @@ def member_views(
             }
         )
         if row.agent_id is not None:
+            # The agents that lend it their hands and those it lends them to (§2.3).
+            view.update(bridged.get(row.id, {"bridges": [], "bridging_for": []}))
             # Whose work this agent continues and where the hand-over is, never a text (§3.1).
             view["takes_over"] = row.takes_over
             view["handover"] = row.handover
@@ -1161,11 +1166,16 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             actor = {
                 "kind": "member",
                 "member_id": actors[row.actor_membership],
-                "instance": instance_of.get(row.actor_credential_id or ""),
+                # Through a bridge the served agent has no instance; `via` names the bridge's.
+                "instance": (
+                    None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
+                ),
                 "session_id": row.actor_session_id,
                 "harness": row.actor_harness,
                 "model": row.actor_model,
             }
+            if row.actor_bridge:  # made by a bridge for the member (§2.3)
+                actor["via"] = row.actor_bridge
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {
