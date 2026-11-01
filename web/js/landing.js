@@ -22,11 +22,16 @@ window.Maity = window.Maity || {};
   // A field of a section or of an item: its key, its label, its kind and
   // its limit. Kinds: text (one line), long (several lines), md (Markdown),
   // cta ({label, href}), href (a link's target), lines (one entry per line:
-  // the points, handles, projects), stats (counters to tick), count (a
+  // the points, handles, projects), stats (counters to tick), agents (an
+  // ordered pick from the hub's list), count (a
   // number), choice (one of `choices`), group (an object of `fields`).
   const f = (key, label, kind, max, extra) => Object.assign({ key, label, kind, max }, extra || {});
   const STATS = [["people", "People"], ["agents", "Agents"], ["public_projects", "Public projects"], ["cards_done_week", "Cards done this week"],
     ["people_online", "People online"], ["agents_online", "Agents online"]];
+  // The agents a works_with section may name, as the hub's fixed list (§16.7, AGENTS in
+  // hub/src/maity_hub/landing.py; smoke compares the two).
+  // Product names, not words of the dashboard: they stay out of the catalog.
+  const AGENTS = "claude-code=Claude Code|codex=Codex|opencode=OpenCode|gemini=Gemini|antigravity=Antigravity|copilot=Copilot|cursor=Cursor|pi=Pi|goose=Goose|cline=Cline|roo=Roo Code|kilo=Kilo Code|amp=Amp|droid=Droid|windsurf=Windsurf|zed=Zed|kiro-cli=Kiro CLI|trae=Trae|openclaw=OpenClaw".split("|").map((x) => x.split("="));
   // The types the hub renders in this version (§16.7); activity and collab
   // are kept as they are, never offered.
   const TYPES = {
@@ -42,6 +47,11 @@ window.Maity = window.Maity || {};
       items: { min: 1, max: 20, label: "Question", fields: [f("q", "Question", "text", 200), f("a", "Answer (Markdown)", "md", 2000)] } },
     cta_band: { label: "Call to action", fields: [f("title", "Title", "text", 120), f("text", "Text", "long", 300), f("cta", "Button", "cta")] },
     text: { label: "Text", fields: [f("title", "Title (optional)", "text", 120, { optional: true }), f("markdown", "Text (Markdown)", "md", 16384)] },
+    // Getters: the words are the catalog's when said.
+    works_with: { get label() { return M.t("landing.works_with.title"); }, fields: [
+      { key: "label", kind: "text", max: 40, get label() { return M.t("landing.works_with.label"); } },
+      { key: "items", kind: "agents", get label() { return M.t("landing.works_with.agents"); } },
+      { key: "more", kind: "text", max: 60, optional: true, get label() { return M.t("landing.works_with.more"); } }] },
     profiles: { label: "Profiles", note: "Shown only while public pages are on; a handle without a public profile is left out.",
       fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown)", "md", 2000), f("handles", "Handles, one per line", "lines", 2)] },
     explore: { label: "Explore", note: "Shown only while public pages are on; empty for the hub's own choice.",
@@ -78,7 +88,7 @@ window.Maity = window.Maity || {};
       const v = obj[x.key];
       if (x.kind === "cta") return x.optional ? v === undefined || v === null || isObject(v) : isObject(v);
       if (x.kind === "group") return v === undefined || v === null || (isObject(v) && fieldsOk(x.fields, v));
-      if (x.kind === "lines" || x.kind === "stats") return v === undefined || Array.isArray(v);
+      if (x.kind === "lines" || x.kind === "stats" || x.kind === "agents") return v === undefined || Array.isArray(v);
       return true;
     });
   }
@@ -102,7 +112,7 @@ window.Maity = window.Maity || {};
     fields.forEach((x) => {
       if (x.optional) return;
       if (x.kind === "cta") o[x.key] = { label: "", href: "" };
-      else if (x.kind === "stats" || x.kind === "lines") o[x.key] = [];
+      else if (x.kind === "stats" || x.kind === "lines" || x.kind === "agents") o[x.key] = [];
       else if (x.kind === "choice") o[x.key] = x.choices[0][0];
       else if (x.kind === "group") o[x.key] = freshOf(x.fields);
       else o[x.key] = "";
@@ -120,7 +130,7 @@ window.Maity = window.Maity || {};
   // The hub's reasons, in words; any other reason is shown as it comes.
   const REASONS = {
     required: "required", control_character: "holds a control character", html: "holds HTML outside fenced code",
-    invalid_href: "not an https URL or a path on this host", unknown_type: "not a section this hub knows", extra_forbidden: "not a field of this section",
+    invalid_href: "not an https URL or a path on this host", unknown_type: "not a section this hub knows", get unknown_agent() { return M.t("landing.works_with.unknown_agent"); }, get duplicate() { return M.t("landing.works_with.duplicate"); }, extra_forbidden: "not a field of this section",
     too_many: "too many", too_few: "at least one is needed", invalid: "not valid here", default_language_missing: "the default language has no page",
     rate_limited: "changed too often today",
     // §16.7: the stored setting is at most 256 KiB of UTF-8.
@@ -178,6 +188,19 @@ window.Maity = window.Maity || {};
         }),
         h("p", { class: "hint" }, "An online count below 5 is shown as “< 5”."), error);
     }
+    if (x.kind === "agents") {
+      const chosen = obj[x.key] = obj[x.key] || [];
+      const nameOf = (slug) => (AGENTS.find(([s]) => s === slug) || [slug, String(slug)])[1];
+      const free = AGENTS.filter(([s]) => !chosen.includes(s));
+      const pick = h("select", { id: id + "-pick" }, free.map(([s, name]) => h("option", { value: s }, name)));
+      return h("fieldset", { class: "lp-field field-stack lp-agents" }, h("legend", null, x.label),
+        h("ol", { class: "lp-items", "data-list": x.key }, chosen.map((slug, k) => h("li", { class: "lp-item" },
+          h("div", { class: "lp-section-head" }, h("span", { class: "lp-item-title" }, nameOf(slug)),
+            entryButtons(chosen, k, 0, redraw)),
+          (errors[path + "." + k] = h("p", { class: "field-error", role: "alert" }))))),
+        free.length ? h("div", { class: "inline-form" }, h("label", { for: id + "-pick" }, M.t("landing.works_with.pick")), pick,
+          small(M.t("landing.works_with.add"), () => chosen.push(pick.value), false, redraw)) : null, error);
+    }
     if (x.kind === "choice") {
       input = h("select", Object.assign({ id }, described), x.choices.map(([v, l]) => h("option", { value: v }, l)));
       input.value = obj[x.key] || x.choices[0][0];
@@ -232,6 +255,11 @@ window.Maity = window.Maity || {};
     return b;
   };
 
+  // An entry's own buttons in a list of them: moved, and removed while more than `min` are left.
+  const entryButtons = (list, k, min, redraw) => [small(M.t("landing.entry.up"), () => move(list, k, -1), k === 0, redraw),
+    small(M.t("landing.entry.down"), () => move(list, k, 1), k === list.length - 1, redraw),
+    small(M.t("landing.entry.remove"), () => list.splice(k, 1), list.length <= min, redraw)];
+
   // prefix: where the pages sit in the setting, "pages" or "variants.<slug>.pages" (§16.7.2).
   function sectionBox(prefix, lang, sections, i, errors, redraw) {
     const s = sections[i];
@@ -260,8 +288,7 @@ window.Maity = window.Maity || {};
       return [l.min === l.max ? h("p", { class: "hint" }, "Exactly " + l.min + ".") : null,
         h("ol", { class: "lp-items", "data-list": l.key }, items.map((item, k) => h("li", { class: "lp-item" },
           h("div", { class: "lp-section-head" }, h("span", { class: "lp-item-title" }, l.label + " " + (k + 1)),
-            small("Up", () => move(items, k, -1), k === 0, redraw), small("Down", () => move(items, k, 1), k === items.length - 1, redraw),
-            small("Remove", () => items.splice(k, 1), items.length <= l.min, redraw)),
+            entryButtons(items, k, l.min, redraw)),
           l.fields.map((x) => control(x, item, path + "." + l.key + "." + k + "." + x.key, errors, redraw))))),
         l.min === l.max ? null : small("Add " + l.label.toLowerCase(), () => items.push(freshOf(l.fields)), items.length >= l.max, redraw),
         listError];
@@ -547,7 +574,7 @@ window.Maity = window.Maity || {};
         const target = lang || "en";
         if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
         const before = { draft, lang };
-        // As the whole site's import does: a value of the wrong kind refuses, never the draft's in its place.
+        // Variants and campaigns as in the whole site's import: a value of the wrong kind refuses, never the draft's in its place.
         const wrongKind = whole && (("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
         let next;
         if (whole) {
@@ -578,7 +605,7 @@ window.Maity = window.Maity || {};
           || !(next.campaigns || []).every(isObject)) {
           draft = before.draft;
           lang = before.lang;
-          showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));
+          showErrors({}, wrongKind ? { message: M.t("landing.json.wrong_kind") } : refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));
           return;
         }
         draft = editable(next);

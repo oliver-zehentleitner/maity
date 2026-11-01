@@ -587,11 +587,12 @@ window.Maity = window.Maity || {};
       if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
     });
   }
+  const LANDING_AGENTS = ["claude-code", "codex", "opencode", "gemini", "antigravity", "copilot", "cursor", "pi", "goose", "cline", "roo", "kilo", "amp", "droid", "windsurf", "zed", "kiro-cli", "trae", "openclaw"];
   const LANDING_TYPES = {
     hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
     activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
-    collab: ["title", "text", "items", "footnote"],
+    collab: ["title", "text", "items", "footnote"], works_with: ["label", "items", "more"],
     demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
   // A list of a section with its bounds, as the hub's landing._list: a
@@ -670,6 +671,13 @@ window.Maity = window.Maity || {};
         });
       } else if (s.type === "cta_band") {
         landingText(s.title, sp + ".title", 120, true, errors); landingText(s.text, sp + ".text", 300, false, errors); landingCta(s.cta, sp + ".cta", true, errors);
+      } else if (s.type === "works_with") {
+        landingText(s.label, sp + ".label", 40, true, errors); landingText(s.more, sp + ".more", 60, false, errors);
+        if (!Array.isArray(s.items) || !s.items.length || s.items.length > LANDING_AGENTS.length) errors[sp + ".items"] = "invalid";
+        else s.items.forEach((slug, k) => {
+          if (!LANDING_AGENTS.includes(slug)) errors[sp + ".items." + k] = "unknown_agent";
+          else if (s.items.indexOf(slug) !== k) errors[sp + ".items." + k] = "duplicate";
+        });
       } else if (s.type === "text") {
         landingText(s.title, sp + ".title", 120, false, errors); landingMarkdown(s.markdown, sp + ".markdown", 16384, true, errors);
       } else if (s.type === "profiles") {

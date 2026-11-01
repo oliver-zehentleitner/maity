@@ -1748,7 +1748,8 @@ contract's types in their order (add, move up or down, show or hide,
 remove; the items of steps, scales and questions the same way; the
 counters ticked; the **Demo**'s terminal lines, each a command, its output
 or a comment, its optional inbox item and its exactly three steps; the
-**Open source** section's tiles and links), and the footer for every language (the operator line,
+**Open source** section's tiles and links; the **Works with** section's label, its agents picked in order from the
+hub's fixed list, and its **more** line), and the footer for every language (the operator line,
 up to eight social links). **Save the landing page** sends the whole
 draft in one `PATCH`, and each refusal of the hub is said at the field its
 path names (`pages.de.sections.2.items.0.title`). **Preview the draft**

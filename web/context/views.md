@@ -4118,3 +4118,24 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 `/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
 
 **Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
+
+## The landing editor keeps its own copy of the hub's list of agents, and smoke compares the two
+
+**Id:** dc4639b9-91bf-464e-8592-4009f935e46d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7 (the agents a `works_with` section names are a fixed list in the hub's code); the card tsk-6wch92201m39; why a copy over a call is this entry's reading
+**Revisit when:** the hub serves the list, or a second place in the dashboard needs it
+
+The editor offers the agents of a **Works with** section from a list in
+`js/landing.js`, the slugs and names of `AGENTS` in
+`hub/src/maity_hub/landing.py`, in the same order. `tools/smoke.js` reads the
+hub's file and fails when the two differ.
+
+**Reason:** the contract serves no such list, and adding an agent is a change
+in the code anyway, so a comparison catches a drift when it is made.
+
+**Rejected alternatives:**
+- An endpoint for the list: a contract change for one picker.
+- A free text field for the slugs: every typing mistake would come back as the hub's refusal.
