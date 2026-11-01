@@ -174,6 +174,10 @@ authority, cover, inbox), where a proxy must not start counting as an
 admin; only the calling membership knows the call. Spending at the check
 puts it in the transaction of the effect, so a failed call rolls it back
 and a racing call finds it used.
+The call remembers its spend only as the event's `seq`, and counts it only while the
+request's row shows that `seq`: a retried transaction (`db.retrying`, the idempotency
+key's race) has rolled the spend back and has to spend again, or its effect would commit
+with the go unused.
 
 `action.path` is stored as the proxy sent it, in the `<owner>/<slug>` form of
 the call, and is compared bytewise: no later rename rewrites it. After a

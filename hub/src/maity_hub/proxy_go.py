@@ -72,11 +72,11 @@ class ProxyGo:
         if self.header is None:
             self.reason = "missing"
             return False
-        if self.header.spent:
-            return True
         row: Any = self.conn.execute(
             select(t.request).where(t.request.c.id == self.header.request_id)
         ).first()
+        if self.header.spent_seq is not None and row.action_used_seq == self.header.spent_seq:
+            return True  # this call spent it, and the spend stands
         refusal = self._refusal(row)
         if refusal is not None:
             self.reason = refusal
@@ -109,5 +109,5 @@ class ProxyGo:
         self.conn.execute(
             update(t.request).where(t.request.c.id == row.id).values(action_used_seq=seq)
         )
-        self.header.spent = True
+        self.header.spent_seq = seq
         return True

@@ -69,15 +69,17 @@ class Bridged:
 
 @dataclass(eq=False)
 class OnRequest:
-    """A signed `Maity-On-Request` and the call it came with, as §2.3 compares them. `spent`
-    holds for the whole call: a route may read its membership more than once."""
+    """A signed `Maity-On-Request` and the call it came with, as §2.3 compares them.
+    `spent_seq` names the event of this call's spend: a route may read its membership more than
+    once. It proves nothing alone, since a retried transaction has rolled that spend back; only
+    the request's row, showing the same seq, does."""
 
     request_id: str
     method: str
     path: str  # below /api/v1
     query: str | None
     body_sha256: str | None
-    spent: bool = False
+    spent_seq: int | None = None
 
 
 @dataclass(frozen=True)

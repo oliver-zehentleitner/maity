@@ -12,8 +12,9 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, cover, inbox
+from maity_hub import clock, cover, idempotency, inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import credentials
@@ -340,3 +341,23 @@ def test_only_a_human_owner_covers_it(
         members = {m.human_id: m for m in conn.execute(select(t.membership)).all()}
     assert not cover.may_take_request(project, row, members[owner.id], members[admin.id])
     assert cover.may_take_request(project, row, members[owner.id], members[second.id])
+
+
+def test_a_retried_transaction_spends_the_go_again(
+    owner: flow.Human, proxy: Proxy, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request_id = _go(owner, proxy, method="POST", path=TICKER, query=None, body=ITEM)
+    store = idempotency._store
+    failures = [IntegrityError("taken", {}, Exception("taken"))]
+
+    def fails_once(*args: Any, **kwargs: Any) -> Any:
+        if failures:
+            raise failures.pop()
+        return store(*args, **kwargs)
+
+    monkeypatch.setattr(idempotency, "_store", fails_once)
+    assert proxy.call("POST", TICKER, ITEM, on_request=request_id).status_code == 201
+    assert not failures
+    action = owner.get(f"{PROJECT}/requests/{request_id}").json()["action"]
+    assert action["used_at"] is not None and action["used_seq"] is not None
+    _refused(proxy.call("POST", TICKER, ITEM, on_request=request_id), "used")
