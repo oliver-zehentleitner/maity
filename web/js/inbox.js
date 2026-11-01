@@ -192,19 +192,21 @@ window.Maity = window.Maity || {};
   // A proxy's request for the owner's go on one call (§2.3): the whole call, as
   // the go binds it. The body is shown pretty-printed, and also as sent: a parsed
   // body can hide a repeated key or a rounded number, and the hub compares the bytes.
-  // Characters a reader cannot see or that reorder what is seen (control, format, line separators);
-  // a line break and a tab stay as they are, they show.
-  const HIDDEN_CHAR = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
-  const isHidden = (c) => c !== "\n" && c !== "\t" && HIDDEN_CHAR.test(c);
+  // Characters a reader cannot see, cannot tell from a space, or that reorder what is seen: control,
+  // format and separator characters, the default-ignorable ones and the blank braille cell. The
+  // plain space, a line break and a tab stay as they are, they show.
+  const HIDDEN_CHAR = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Default_Ignorable_Code_Point}\u2800]/u;
+  const isHidden = (c) => c !== " " && c !== "\n" && c !== "\t" && HIDDEN_CHAR.test(c);
   const hasHidden = (s) => typeof s === "string" && Array.from(s).some(isHidden);
-  // The text with each such character as a visible \uXXXX: the proxy writes this text.
+  // The text with each such character as a visible [U+XXXX]: the proxy writes this text. Not \uXXXX,
+  // which a JSON body can hold as six plain characters, with another SHA-256.
   function revealed(s) {
     const out = [];
     let run = "";
     Array.from(String(s)).forEach((c) => {
       if (!isHidden(c)) { run += c; return; }
       if (run) { out.push(run); run = ""; }
-      out.push(h("mark", { class: "hidden-char" }, "\\u" + c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")));
+      out.push(h("mark", { class: "hidden-char" }, "[U+" + c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0") + "]"));
     });
     if (run) out.push(run);
     return out;
@@ -235,7 +237,7 @@ window.Maity = window.Maity || {};
     const fact = (label, value) => [h("dt", null, label), h("dd", null, h("code", null, revealed(value)))];
     const hasBody = a.body !== null && a.body !== undefined;
     const differs = pretty !== null && parsedDiffers(a.body, pretty);
-    const hidden = [a.method, a.path, a.query, a.body].some(hasHidden);
+    const hidden = [a.method, a.path, a.query, a.body, pretty].some(hasHidden);
     const warning = (text) => h("p", { class: "field-error request-action-warning" }, text);
     const answeredGo = req.status === "answered" && req.answer && req.answer.reply_id === "go";
     return h("div", { class: "request-action" },

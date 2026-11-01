@@ -825,7 +825,7 @@ window.MAITY_I18N["en"] = {
   "inbox.action.as_sent": "Exactly as sent",
   "inbox.action.body": "Body",
   "inbox.action.differs": "The readable body differs from the text as sent, for example a rounded number or a repeated key. The go allows the text as sent, shown below.",
-  "inbox.action.hidden_chars": "This call has characters you cannot normally see. Each is shown as \\uXXXX; read them before you answer.",
+  "inbox.action.hidden_chars": "This call has characters you cannot normally see. Each is shown as [U+XXXX]; read them before you answer.",
   "inbox.action.hint": "Go allows this one call, once, within 24 hours; any other method, path, query or body is refused.",
   "inbox.action.method": "Method",
   "inbox.action.no_body": "No body.",

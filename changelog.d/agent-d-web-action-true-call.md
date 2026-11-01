@@ -1,6 +1,6 @@
 ### Security
 
-- web: on a proxy's request for the owner's go, a body whose readable form differs from its text opens the text as sent and says so, and invisible characters show as `\uXXXX` in every field.
+- web: on a proxy's request for the owner's go, a body whose readable form differs from its text opens the text as sent and says so, and invisible characters show as `[U+XXXX]` in every field.
 
 ### Changed
 
