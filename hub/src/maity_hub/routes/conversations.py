@@ -326,7 +326,7 @@ def _direct_unread(conn: Connection, mine: Membership, caller: Caller, agent_id:
 
 def _window(conn: Connection, group: Any, mine: Membership, found: str) -> int:
     """The seq after which the caller's window starts (§9.2): its latest join, for an
-    observer the earliest join of its agents in the chat."""
+    observer the earliest join of its agents in the chat (`group_chats.observer_window`)."""
     current = group_chats.stays(conn, group.id)
     if found == "participant":
         return int(next(s.window_after for s in current if s.membership_id == mine.id))
@@ -335,7 +335,7 @@ def _window(conn: Connection, group: Any, mine: Membership, found: str) -> int:
             select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == mine.principal_id)
         ).scalars()
     )
-    return int(min(s.window_after for s in current if s.agent_id in owned))
+    return group_chats.observer_window(current, owned)
 
 
 def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[str]:

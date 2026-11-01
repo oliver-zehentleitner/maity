@@ -556,6 +556,13 @@ def _classify(
         ).first()
         if found is None or not choices.receives(look.conn, found, mine.row):
             return None
+        from maity_hub.jourfixe import circle
+
+        round_row = look.conn.execute(
+            select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == payload.get("round_id"))
+        ).first()
+        if round_row is None or not circle.reads(look.conn, round_row, mine):
+            return None  # a moderator of the series reads only the rounds it moderated
         return Item(
             kind="inbox",
             title=_cut(where.say("jf_reported", topic=found.topic)),

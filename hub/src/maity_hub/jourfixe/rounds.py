@@ -447,13 +447,7 @@ def open_round(
     people = [i["member_id"] for i in prepared["invited"]]
     if prepared["moderator"]["member_id"] not in people:
         people.append(prepared["moderator"]["member_id"])
-    keeper = series.circle_owner if series.circle == "owner" else None
-    thread = exchange.open_thread(conn, project, f"Jour fixe {day.isoformat()}", people, keeper)
-    conn.execute(
-        update(t.jour_fixe_round)
-        .where(t.jour_fixe_round.c.id == round_id)
-        .values(conversation_id=thread)
-    )
+    exchange.open_thread(conn, project, round_id, f"Jour fixe {day.isoformat()}", people)
     text = questions(config, series.topic, prepared["moderator_entry"]["handle"], close_at, day)
     audience = [*_wake_tokens(prepared["invited"]), *series_mod.keeper_tokens(conn, series)]
     emit(

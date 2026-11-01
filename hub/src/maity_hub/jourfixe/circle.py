@@ -62,6 +62,17 @@ def reads(conn: Connection, round_row: Any, mine: Any) -> bool:
     return mine.kind == "agent" and _owns(conn, owner, mine.principal_id)
 
 
+def reads_member(conn: Connection, round_row: Any, member: Any) -> bool:
+    """`reads` for a membership row rather than a caller."""
+    who = member.agent_id or member.human_id
+    owner = owner_of(round_row)
+    if owner is None:
+        return True
+    if who in (owner, _moderator(round_row)):
+        return True
+    return member.agent_id is not None and _owns(conn, owner, member.agent_id)
+
+
 def audience(conn: Connection, round_row: Any, default: list[str]) -> list[str]:
     """The readers of the round as an audience: `default` for a round of another series."""
     owner = owner_of(round_row)

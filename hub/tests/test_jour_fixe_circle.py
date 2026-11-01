@@ -383,3 +383,108 @@ def test_an_owners_round_escapes_the_admins_see_all(circle: Circle) -> None:
 
     assert {"jour_fixe_opened", "jour_fixe_answers_closed"} <= kinds(circle.friend)
     assert kinds(circle.owner) == set()
+
+
+def test_an_outside_moderators_owner_does_not_read_the_round(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§20.5: in an owner's series the owner of a moderator agent from outside the circle
+    does not read along; the thread's creation names its round (#975 review)."""
+    from tests.test_jour_fixe_moderators import answer as consent
+
+    friend = _member(make_client, migrated, "friend")
+    other = _member(make_client, migrated, "other")
+    mine, outside = flow.agent(make_client, friend), flow.agent(make_client, other)
+    second = flow.agent(make_client, friend)
+    for agent in (mine, outside, second):
+        listen(agent)
+    made = friend.post(
+        f"{BASE}/jour-fixe/series",
+        {"topic": "Mine", "circle": "owner", "circle_owner": friend.id, "reason": "t"},
+    )
+    sid = made.json()["id"]
+    pending = friend.post(
+        f"{BASE}/jour-fixe/series/{sid}/moderators", {"member_id": outside.id, "reason": "t"}
+    )
+    assert pending.status_code == 202, pending.text
+    [request_id] = pending.json()["requests"]
+    assert consent(other, request_id, "go").status_code == 200
+    started = friend.post(f"{BASE}/jour-fixe/series/{sid}/rounds", {"reason": "look back"})
+    assert started.status_code == 201, started.text
+    round_id, thread = started.json()["id"], started.json()["conversation_id"]
+    assert started.json()["moderator"]["member_id"] == outside.id
+    assert other.get(f"{BASE}/conversations/{thread}").status_code == 404
+    found = other.get(f"{BASE}/events?after=0&limit=100").json()
+    items = found.get("events", found.get("items", []))
+    payloads = [e.get("payload") or {} for e in items]
+    assert not [p for p in payloads if thread in (p.get("id"), p.get("conversation_id"))]
+    [created] = [e for e in _kinds(migrated, "conversation_created") if e.conversation_id == thread]
+    assert created.payload["jour_fixe"] == {"round_id": round_id}
+    assert created.payload["observers"] in ([], [friend.id])
+    assert other.id not in created.payload["observers"]
+
+
+def test_a_round_thread_read_along_without_an_own_agent_has_a_window() -> None:
+    """§9.2, §20.5: an observer's window is its agents' earliest join; reading a round's
+    thread along without one, the earliest join of anyone in it (#975 review)."""
+    from types import SimpleNamespace
+
+    from maity_hub.group_chats import observer_window
+
+    current = [
+        SimpleNamespace(agent_id="agt-x", window_after=7),
+        SimpleNamespace(agent_id=None, window_after=5),
+    ]
+    assert observer_window(current, {"agt-x"}) == 7
+    assert observer_window(current, set()) == 5
+    assert observer_window([], set()) == 0
+
+
+def test_redacting_an_owners_report_stays_with_the_circle(circle: Circle) -> None:
+    """§20.8: the report event's tombstone notice is as private as the report (#975 review)."""
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    assert _report(circle).status_code == 200
+    redacted = circle.friend.post(
+        _rounds(circle.id, "/redact"), {"target": "proposal:r1", "reason": "a secret"}
+    )
+    assert redacted.status_code == 200, redacted.text
+    [reported] = _kinds(circle.engine, "jour_fixe_reported")
+
+    def notices(who: Any) -> list[Any]:
+        found = who.get(f"{BASE}/events?after=0&limit=100").json()
+        items = found.get("events", found.get("items", []))
+        return [
+            e
+            for e in items
+            if e["kind"] == "event_redacted" and (e.get("payload") or {}).get("seq") == reported.seq
+        ]
+
+    assert notices(circle.friend)
+    assert notices(circle.owner) == []
+
+
+def test_a_series_moderator_gets_only_the_reports_of_rounds_it_moderated(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§20.2, §20.7: the list may hold a moderator of an owner's series; a round's report
+    goes to it only when it read that round, as its moderator (#975 review)."""
+    from tests.test_jour_fixe_moderators import answer as consent
+
+    other = _member(make_client, migrated, "other")
+    outside = flow.agent(make_client, other)
+    circle = Circle(owner, make_client, migrated, now)  # the round opens, `lead` moderates
+    listen(outside)  # present, so a recipient it would wake
+    pending = circle.friend.post(
+        f"{BASE}/jour-fixe/series/{circle.series}/moderators",
+        {"member_id": outside.id, "reason": "t"},
+    )
+    [request_id] = pending.json()["requests"]
+    assert consent(other, request_id, "go").status_code == 200
+    on = _put(outside, f"{BASE}/jour-fixe/series/{circle.series}/report")
+    assert on.status_code == 200, on.text
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    assert _report(circle).status_code == 200
+    [reported] = _kinds(migrated, "jour_fixe_reported")
+    assert not [token for token in reported.audience if outside.id in token]

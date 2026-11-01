@@ -21,6 +21,12 @@
 
 ### Fixed
 
+- hub: `GET …/events` answered 500 to every reader once a round-level redaction (an answer, the
+  summary, a finding or a proposal, §20.8) was in the batch: its `subject_id` names the round, not a
+  seq. A round's thread read along by an owner with no agent of theirs in it answered 500 too, and
+  the conversation list showed such threads to nobody: it checked the role, not the trust `owner`
+  (docs/api.md §9.2, §20.5).
+
 - hub: `jour_fixe_reported` woke every agent of the project and `jour_fixe_series_changed` every
   member it named; the report now wakes only the agents on the series' report list, and a skip and
   a series change wake nobody (docs/api.md §20.9).

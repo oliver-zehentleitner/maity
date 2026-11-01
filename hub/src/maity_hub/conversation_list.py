@@ -309,6 +309,17 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         ):
             if by_project[project_id].principal_id == owner_id:
                 pairs.add((project_id, chat))
+        # A round's thread is read along by every project owner, or for an owner's series
+        # by its `circle_owner`, with or without an agent of theirs in it (§20.5).
+        r = t.jour_fixe_round.c
+        for project_id, chat, config in conn.execute(
+            select(r.project_id, r.conversation_id, r.config).where(
+                r.project_id.in_([m.project.id for m in humans]), r.conversation_id.isnot(None)
+            )
+        ):
+            mine, keeper = by_project[project_id], group_chats.keeper_of(config)
+            if keeper == mine.principal_id or (keeper is None and mine.trust == "owner"):
+                pairs.add((project_id, chat))
     if not pairs:
         return []
     groups = {
@@ -347,7 +358,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         else {}
     )
     rounds: set[str] = set()
-    if any(m.kind == "human" and m.role == "owner" for m in mines):
+    if any(m.kind == "human" and m.trust == "owner" for m in mines):
         rounds = set(
             conn.execute(
                 select(t.jour_fixe_round.c.conversation_id).where(
@@ -414,7 +425,7 @@ def _access(
             current, owners
         ):
             found[key] = "observer"
-        elif mine.kind == "human" and mine.role == "owner" and key[1] in rounds:
+        elif mine.kind == "human" and mine.trust == "owner" and key[1] in rounds:
             found[key] = "observer"  # every project owner reads a round's thread along (§20.5)
     return found
 
@@ -440,7 +451,7 @@ def _windows(
             mine = mines[key[0]]
             windows[key] = int(next(s.window_after for s in current if s.membership_id == mine.id))
         else:
-            windows[key] = int(min(s.window_after for s in current if s.agent_id in owned))
+            windows[key] = group_chats.observer_window(current, owned)
     return windows
 
 

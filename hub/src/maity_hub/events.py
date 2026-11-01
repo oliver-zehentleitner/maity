@@ -298,14 +298,29 @@ def hidden_redactions(
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
       chat's event in the batch names: the owner reads along (§9.2);
     - `circle:<seq>` for each jour fixe event of a round or series with `circle: owner`:
-      it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7)."""
+      it reaches only its audience, never an owner's or admin's see-all (§20.1, §20.7);
+    - `outside:<conversation>` for each thread of such a round whose `circle_owner` the
+      human is not: owning an agent in it does not let them read along (§20.5)."""
     hidden = {f"ticker:{seq}" for seq in ticker_read.withheld(conn, rows, membership)}
     hidden |= _owned_in_chats(conn, rows, membership)
     hidden |= _owners_circles(conn, rows)
-    seqs = {int(r.subject_id) for r in rows if r.kind == "event_redacted" and r.subject_id}
+    hidden |= _outside_rounds(conn, rows, membership)
+    # Only an event's redaction names a seq; a round's (§20.8) names the round.
+    seqs = {
+        int(r.subject_id)
+        for r in rows
+        if r.kind == "event_redacted" and r.subject_type == "event" and r.subject_id
+    }
     if not seqs:
         return frozenset(hidden)
     subjects = conn.execute(select(t.event).where(t.event.c.seq.in_(seqs))).all()
+    # Redacting an event of an owner's round is as private as that event (§20.8).
+    marked = _owners_circles(conn, subjects)
+    hidden |= {
+        f"circle:{r.seq}"
+        for r in rows
+        if r.kind == "event_redacted" and f"circle:{r.subject_id}" in marked
+    }
     for subject in subjects:
         if subject.kind in HUMANS_ONLY_KINDS:
             hidden.add(str(subject.seq))
@@ -357,6 +372,25 @@ def _owners_circles(conn: Connection, rows: Sequence[Any]) -> set[str]:
         f"circle:{seq}"
         for seq, (rid, sid) in refs.items()
         if (rid and rid in owners) or (not rid and sid in owners)
+    }
+
+
+def _outside_rounds(conn: Connection, rows: Sequence[Any], membership: Any) -> set[str]:
+    if membership is None or membership.human_id is None:
+        return set()
+    chats = {r.conversation_id for r in rows if (r.conversation_id or "").startswith("cnv-")}
+    if not chats:
+        return set()
+    found = conn.execute(
+        select(t.jour_fixe_round.c.conversation_id, t.jour_fixe_round.c.config).where(
+            t.jour_fixe_round.c.conversation_id.in_(chats)
+        )
+    ).all()
+    return {
+        f"outside:{chat}"
+        for chat, config in found
+        if (config or {}).get("circle") == "owner"
+        and (config or {}).get("circle_owner") != membership.human_id
     }
 
 
@@ -472,7 +506,10 @@ def readable_by(
         # instance's token is its whole team's (§8.2).
         return (
             _names_team(audience, principal)
-            or any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+            or (
+                f"outside:{row.conversation_id}" not in hidden
+                and any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+            )
             # A round's thread names `trust:owner`: every human owner reads along (§20.5).
             or (
                 "trust:owner" in audience

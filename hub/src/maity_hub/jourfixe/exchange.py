@@ -113,12 +113,12 @@ def _participants(conn: Connection, round_row: Any) -> list[str]:
 
 
 def open_thread(
-    conn: Connection, project: Any, title: str, invited: list[str], keeper: str | None
+    conn: Connection, project: Any, round_id: str, title: str, invited: list[str]
 ) -> str:
-    """The round's group chat, created by the hub with the invited members (§20.5);
-    `keeper` the `circle_owner` of an owner's series, who alone reads it along."""
+    """The round's group chat, created by the hub with the invited members (§20.5); the
+    round points at it before its creation is announced."""
     return group_chats.create(
-        conn, project, None, title, invited, None, hub_thread=True, keeper=keeper
+        conn, project, None, title, invited, None, hub_thread=True, round_id=round_id
     )
 
 

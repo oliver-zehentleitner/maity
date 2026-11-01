@@ -430,7 +430,7 @@ def _finish(
         if round_row.series_id
         else None
     )
-    recipients = choices.tokens(conn, found) if found is not None else []
+    recipients = choices.tokens(conn, found, round_row) if found is not None else []
     emit(
         conn,
         round_row.project_id,

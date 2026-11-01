@@ -285,7 +285,14 @@ round too (`group_chats.round_keepers`), and is told it at creation, before
 the round points at its thread. Its events also escape the owners' and admins'
 see-all (§8.2): the batch's reading marks them `circle:<seq>` (from the
 round's `config`, or the series row for a series event), and only their
-audience reads them. A `to_owner` proposal goes to the
+audience reads them. A series event of an owner's series that was since
+deleted is no longer found and falls back to the see-all; it carries no
+topic, and the admins are in its audience anyway. In such a thread, owning
+the moderator agent does not bring its owner in either (`outside:<chat>`).
+The round points at its thread before `conversation_created` is written, so
+that event names the round and its observers. The report list may hold a
+moderator of the series (§20.2), but a round's report goes only to those
+who read that round (§20.7): a moderator reads the rounds it moderated. A `to_owner` proposal goes to the
 `circle_owner` as `to: member` while they are a member, and as a personal
 request once they left. The rounds list leaves out what the caller may not
 read by reading on in batches until the page is full. The report list

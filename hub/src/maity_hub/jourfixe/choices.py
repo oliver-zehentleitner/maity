@@ -153,13 +153,18 @@ def set_recipient(conn: Connection, series: Any, member: Any, on: bool) -> None:
         )
 
 
-def tokens(conn: Connection, series: Any) -> list[str]:
+def tokens(conn: Connection, series: Any, round_row: Any) -> list[str]:
     """The report's recipients as an audience (§20.9): `member:` of a human, the selected
-    instance of an agent, so the report wakes each agent recipient once."""
+    instance of an agent, so the report wakes each agent recipient once. In an owner's series
+    the list may hold a moderator of the series who did not moderate this round: it reads
+    only the rounds it moderated (§20.7), so this report does not go to it."""
+    from maity_hub.jourfixe.circle import reads_member
     from maity_hub.jourfixe.rounds import wake_now
 
     found: list[str] = []
     for row in recipients(conn, series):
+        if not reads_member(conn, round_row, row):
+            continue
         if row.agent_id is None:
             found.append(f"member:{row.human_id}")
         else:
