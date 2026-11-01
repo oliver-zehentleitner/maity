@@ -3322,6 +3322,12 @@ def my_settings_step(run: Run, page: Page) -> None:
     # Memory (§19), against the real hub: an entry added, deleted with a reason, its row stays.
     page.goto(f"{run.base}/owner/e2e-alpha/memory")
     memory = page.locator("section.memory-entries")
+    # The agent and role pickers only for their store: a display rule must not undo `hidden`.
+    expect(page.locator("#memory-team")).to_be_hidden()
+    expect(page.locator("#memory-role")).to_be_hidden()
+    page.locator("#memory-store").select_option("team")
+    expect(page.locator("#memory-team")).to_be_visible()
+    page.locator("#memory-store").select_option("")
     page.locator("#memory-add-text").fill("Rebase before the review.")
     page.locator("#memory-add-tags").fill("Git")
     memory.get_by_role("button", name="Add to the memory", exact=True).click()

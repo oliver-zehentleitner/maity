@@ -1578,6 +1578,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Memory (§19). */
 .memory-filter { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 8px; }
 .memory-entries .field, .memory-souls .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 8px 0; }
+.memory-entries .field[hidden] { display: none; }
 .memory-add, .memory-souls { margin-top: 24px; max-width: 42rem; }
 .memory-add textarea, .soul-form textarea { width: 100%; box-sizing: border-box; }
 .memory-list { list-style: none; padding: 0; }
