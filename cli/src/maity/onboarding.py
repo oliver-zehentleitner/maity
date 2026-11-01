@@ -498,12 +498,20 @@ def _for_me(packet: dict[str, Any]) -> set[str]:
     return tokens
 
 
+# What moves an address (`events.ADDRESSING_CHANGES` at the hub) or a list of substitutes: told
+# by name to who has to act on it, unlike the rest of another member's profile.
+_MEMBER_CHANGES_FOR_ME = frozenset({"reports_to", "owner_id", "availability_policy"})
+
+
 def _is_for_me(event: dict[str, Any], tokens: set[str], member: Any) -> bool:
-    """The event's audience names me, and it is not another member's profile: a coordinator's
-    token is on every `member_updated`, which would push the messages out of the compact list."""
+    """The event's audience names me, and it is not a mere profile change of another member: a
+    coordinator's token is on every `member_updated`, which would fill the compact list."""
     if not tokens & set(event.get("audience") or []):
         return False
-    return event.get("kind") != "member_updated" or get(event, "payload", "id") == member
+    if event.get("kind") != "member_updated" or get(event, "payload", "id") == member:
+        return True
+    changed = get(event, "payload", "changed")
+    return isinstance(changed, list) and bool(_MEMBER_CHANGES_FOR_ME.intersection(changed))
 
 
 def _not_shown(left: list[dict[str, Any]], earlier: int) -> str:

@@ -827,6 +827,16 @@ the quotes. There is no flag to send anyway: the way out of a refusal is a corre
 the change itself, which would need its base: the CLI does not know it, and a stacked pull
 request has no fixed one. An invented quote still fails, an old real one does not.
 
+A shallow clone can't show that: `git log -S` stops at its depth, so a real removed quote would
+be refused. There such a cite is sent, with a note on stderr saying it wasn't checked, as with a
+missing commit.
+
+The git and gh calls behind this read UTF-8 with `errors="replace"`, whatever the machine's
+locale (`proc.run`): what a file holds doesn't depend on the locale, and under `LC_ALL=C` a quote
+with `ü` would otherwise never match. A bad byte becomes a replacement character rather than
+ending the call, as an exception there would fail every git call over one file. The alternative
+was the `text=True` used before, which decodes by the locale.
+
 The check lives in the CLI, not the hub: the hub does not read the repository (§8.4). It does
 not repeat the hub's rules either: a malformed review or cite is passed on for the hub to name
 (0870475d). This entry adds to that one, which left only the JSON check to the CLI.
@@ -914,7 +924,7 @@ repeats some at worst.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31); the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
+**Source:** the cards tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31), and tsk-b2r9q0bd4ksh for what another member's `member_updated` counts as; the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
 **See:** commands.md — 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3 — as of 2026-10-31
 **Revisit when:** the hub sends a packet trimmed to what the text shows, or agents often need `--full` right after every resume
 
@@ -936,7 +946,10 @@ agent needs what is open and what was meant for it, not the history.
 Events are chosen by `audience`, of any kind, because an assignment or a
 request for this member matters more than a broadcast message; only another
 member's `member_updated` is left out, as a coordinator's token is on each of
-them and they would fill the ten places. The caps
+them and they would fill the ten places. One that changes `reports_to` or
+`owner_id` stays, as it moves an address, and one that changes
+`availability_policy` stays, as `drop_substitute` tells it by name to the humans
+who decide and the audience can't tell them from a coordinator. The caps
 come from the 8 KB budget measured in `tests/test_compact.py`: the
 rules, identity, members and the join notes take about 3 KB, which leaves
 about 240 bytes per answer or event. The `Next:` line names the
