@@ -1293,6 +1293,7 @@ window.MAITY_FIXTURES = {
     }
   },
   "landing.json": {
+    "campaigns": [],
     "default_language": "en",
     "enabled": false,
     "footer": {
@@ -1348,7 +1349,8 @@ window.MAITY_FIXTURES = {
       }
     },
     "updated_at": "2026-10-29T09:00:00Z",
-    "updated_by": "hum-maintainer"
+    "updated_by": "hum-maintainer",
+    "variants": {}
   },
   "legal.json": {
     "default_language": "en",

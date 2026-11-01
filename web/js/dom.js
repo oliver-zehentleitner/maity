@@ -85,6 +85,8 @@ window.Maity = window.Maity || {};
   function isOwnFile(value) {
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/attachments\/[A-Za-z0-9_-]{1,64}\/content(\?download=1)?$/.test(value)) return true;
+    // The campaign counts as a download (§16.7.2), which fixtures have no address for: smoke tests it here.
+    if (/^\/api\/v1\/admin\/statistics\/campaigns\?days=[0-9]{1,3}&format=csv$/.test(value)) return true;
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
 

@@ -1744,6 +1744,20 @@ save is one page and a new version, the earlier ones linked, and each
 draft can be previewed the same way; **Take the page down** sends it as
 `null`.
 
+**Variants and campaigns** (`docs/api.md` §16.7.2), in the same editor.
+**Variants** lists the main page and up to five more by slug. **Add the
+variant** makes one with an empty page in the default language, and
+picking a variant edits its pages with the same page editor; refusals
+land at `variants.<slug>.pages.…`. **Preview /for/<slug>** opens that
+variant's draft, and **Open /for/<slug> as a visitor** opens the saved
+one in a page of its own. **Campaigns** holds up to 200 codes, each with
+a label, next to the privacy hint the contract asks for. Both are saved
+with the setting and are part of the JSON import and export.
+**Statistics** shows a campaign table for the same window: per day,
+page and campaign, the views (marked approximate), registrations and
+those with an agent, a removed code said so, and the hub's CSV linked.
+The registration page sends the link's `v` and `c` as `origin`.
+
 **Import or export everything** (`js/site-io.js`, tsk-xw8a2hd84x3a) takes
 the three sections as one JSON, extended language by language and
 imported again:
@@ -1751,7 +1765,7 @@ imported again:
 ```json
 {
   "format": "maity-site/1",
-  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…} },
+  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…}, "variants": {…}, "campaigns": […] },
   "legal": { "imprint": { "languages": { "en": { "title": "…", "markdown": "…" } } }, "privacy": {…}, "terms": {…} },
   "registration": { "mode": "closed", "domains": [], "addresses": [], "approval": "operator", "terms": null, "max_new_accounts_per_hour": 20 }
 }
@@ -1762,9 +1776,9 @@ out stays as it is. An unknown `format` refuses the file, and so does an
 unknown key anywhere in it, named by its path (`landing.enabeld`,
 `legal.privacy.foo`) down to each part and legal page; deeper keys, and
 values of the wrong kind, refuse their part (the hub's preview names
-the field). The landing page's `variants` and `campaigns` are
-not in `maity-site/1` while the landing editor's import does not take
-them, so they are refused as well. **Export** reads the three settings
+the field). The landing part carries the page's `variants` and
+`campaigns` too, as the landing editor's import does; a file that leaves
+them out keeps the saved ones. **Export** reads the three settings
 again first (copy, or **Download as a file**), so an edit saved in
 another section since the page opened is in the file; registration is
 left out when the environment sets every field. The section has its own

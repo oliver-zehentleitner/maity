@@ -3580,13 +3580,51 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## Landing variants are edited one at a time in the landing editor; campaigns sit beside the privacy hint, their counts in Statistics
+
+**Id:** 43d9837f-64fd-44d8-9527-1e590092ad38
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-ets3x0c4ethg with the maintainer's request for A/B testing before the launch, 2026-10-31; docs/api.md §16.7.2 (contract #823)
+**See:** https://github.com/oliver-zehentleitner/maity — b9dc57f9-7581-47ef-acc8-00b679f7aa1e — as of 2026-10-31
+**Revisit when:** the hub serves more than five variants, or a variant gets a header or footer of its own
+
+The landing editor edits one page at a time: the main page or one
+variant, picked in a row of buttons above the languages, with the same
+page editor. Only the path prefix of the hub's refusals differs
+(`variants.<slug>.pages`). A variant starts with an empty page in the
+default language, the one the hub requires. A language it lacks shows
+its own default page, which the editor says. **Campaigns** are a list of
+code and label next to the privacy hint the contract asks the dashboard
+to show. Both travel with the setting in one `PATCH`, in the preview
+and in the JSON import and export. **Statistics** shows the campaign
+counts for the same window as the instance's figures and links the
+hub's CSV. The fixture hub serves no file, so there is no link there.
+The registration page sends `v` and `c` from its address as `origin`,
+dropping a malformed part; the hub decides the rest.
+
+**Reason:** a variant is a page like the main one, so the editor the
+admin already knows serves it. Two editors would drift. The counts
+belong with the other counts. The CSV is the hub's own, so the columns
+cannot differ from what the contract names.
+
+**Rejected alternatives:**
+- A separate Variants section in the admin area: the same page editor
+  twice, and header and footer, which variants share, would look
+  editable twice.
+- Building the CSV in the browser from the JSON: it works in fixtures
+  too, but copies the hub's columns and quoting by hand.
+- Sending `v` and `c` unchecked: the hub drops them silently anyway, but
+  a malformed value would then sit in the request for nothing.
+
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
 **Id:** 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
@@ -3612,9 +3650,11 @@ Its placeholders are in square brackets: the hub's Markdown rules read
 An unknown key anywhere in the file refuses the whole file, named by its
 path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
-field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
-landing editor's import does not know them, and are refused the same
-way. Export and Download read the three settings again first: the admin
+field names); a landing value of the wrong kind refuses its part. `variants` and
+`campaigns` are in the landing part, as in the landing editor's import
+(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+the format's name stays `maity-site/1`, since a file without them still
+means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
 first read would carry the state from before an edit in another section,
 and importing it again would revert that edit.
