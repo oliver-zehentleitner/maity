@@ -4199,6 +4199,8 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
 `/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
 
+The tab row's room on a phone, the argument of f9ef2098, was outweighed by one place for one store; a tab was accepted at that price.
+
 **Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
 
 ## The landing editor keeps its own copy of the hub's list of agents, and smoke compares the two
@@ -4270,6 +4272,8 @@ The project's Settings show **Public page** only to the human who owns the names
 
 **Rejected alternatives:** a hub field `page_served` on the project in this PR: a launch blocker should not wait for a contract change, and the card asks for the web. Fetching `?as=public` and telling the stored page from the app shell: guessing from HTML.
 
+The profile links' form is `novalidate`: a browser's bubble on one bad address would stop the whole save, and the hub's refusals are said in words at their fields.
+
 ## A proxy's action request shows the body twice: pretty-printed, and exactly as sent
 
 **Id:** 77f97db2-6696-4d9f-8c74-8e65065f7fdb
@@ -4285,6 +4289,19 @@ The inbox entry lists the method, path and query and the pretty-printed body, an
 A body whose parsed form differs from its text (compared without the white space between tokens) opens **Exactly as sent** and says so; an escape or a moved key counts too, so a harmless difference can warn. A C0 character written as a JSON escape raises only that difference, not the warning about hidden characters, as the pretty-printed text writes it back as an escape; a literal `[U+202E]` in the text differs from the mark only by the mark's formatting. Control, format and separator characters, the default-ignorable ones and the blank braille cell (bidi overrides, zero-width characters, no-break spaces, fillers among them) appear as a marked `[U+XXXX]` in the method, path, query and both bodies, with a sentence above them, also when the body carries them as a JSON escape. Not `\uXXXX`: a body can hold those six plain characters, with another SHA-256. Someone who is not the owner keeps **Later**, which touches nothing at the hub, and loses **Talk**, which the hub refuses them too. Look-alike letters are not marked: they are visible characters.
 
 **Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. A sentence only under Exactly as sent, closed by default: the owner reads the open form first. An allow-list of printable ASCII for what counts as visible: a path or a body may carry real non-ASCII text the owner must read as it is. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
+
+## Role memory is a part of Mine, not a view
+
+**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 476c7232-ef6b-431b-8d28-7726d5860a64
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+
+The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+
+**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.
 
 ## Admin → Sign-in keeps the question for the mailed code open, and names no value it cannot take
 
