@@ -2173,14 +2173,16 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.locator("main .members-list").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
-    # both, so at once), the hub's member views carry it on both sides, then End ends it.
+    # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
+    # with the owner's session: a CLI call would sign with the agent's credential and change
+    # the bearer use the signing check below reads.
     bridges = page.locator("main tr.member-manage .member-bridges")
     expect(bridges).to_contain_text("No bridges.")
     bridges.get_by_label("Agent that lends its hands").select_option(label="E2E Reviewer (@e2e-reviewer)")
     bridges.get_by_label("What for").fill("git for the reviewer's files")
     bridges.get_by_role("button", name="Connect with a bridge", exact=True).click()
     expect(bridges.locator("ul.bridges-serving-this li.bridge")).to_contain_text("lends its hands: git for the reviewer's files")
-    members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/members")["items"]
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     served = next(m for m in members if m["handle"] == "e2e-agent")
     bridge = next(m for m in members if m["handle"] == "e2e-reviewer")
     assert [c["member_id"] for c in served["bridges"]] == [bridge["id"]], served["bridges"]
@@ -2188,7 +2190,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.a11y(page, "members, a bridge connected")
     bridges.get_by_role("button", name="End the bridge for git for the reviewer's files", exact=True).click()
     expect(bridges).to_contain_text("No bridges.")
-    members = run.api(alpha, "GET", "/projects/owner/e2e-alpha/members")["items"]
+    members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
     assert not next(m for m in members if m["handle"] == "e2e-agent")["bridges"], "the bridge is still there"
     project_settings(page)
     page.locator("#signing-select").select_option("required")
