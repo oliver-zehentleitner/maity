@@ -857,10 +857,7 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
-  the agent's credential in it again. A clone recorded before the project
-  namespace, under `<workspaces>/<slug>/<clone>`, is taken over in place on
-  the first pickup of the same agent and recorded under the id; it is never
-  moved. `limits.projects` takes full names (`oliver/maity`); a bare slug is
+  the agent's credential in it again. `limits.projects` takes full names (`oliver/maity`); a bare slug is
   a configuration error, since a slug is unique only within its owner's
   namespace. The runner runs `git clone` only into a
   missing directory and never runs git in an existing clone; it parses
