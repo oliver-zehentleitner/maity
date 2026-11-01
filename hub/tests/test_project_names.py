@@ -270,3 +270,15 @@ def test_a_human_rename_withdraws_an_open_transfer_of_their_project(
     done = owner.patch("/me", {"handle": "keeper"})
     assert done.status_code == 200, done.text
     assert status_of(owner, "keeper/maity", request["id"]) == "withdrawn"
+    [withdrawn] = kinds(owner, "keeper/maity", "request_withdrawn")
+    assert withdrawn["payload"]["reason"] == "the owner was renamed"
+
+
+def test_a_members_rename_leaves_a_transfer_of_someone_elses_project_open(
+    owner: flow.Human, anna: flow.Human
+) -> None:
+    """Only the namespace owner's rename changes the project's full name."""
+    request = transfer(owner, anna.id).json()
+    done = anna.patch("/me", {"handle": "anne"})
+    assert done.status_code == 200, done.text
+    assert status_of(owner, "maintainer/maity", request["id"]) == "open"
