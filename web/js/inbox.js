@@ -245,7 +245,9 @@ window.Maity = window.Maity || {};
       h("dl", { class: "facts" },
         fact(M.t("inbox.action.method"), a.method),
         fact(M.t("inbox.action.path"), a.path),
-        a.query === null || a.query === undefined ? null : fact(M.t("inbox.action.query"), a.query === "" ? M.t("inbox.action.query_empty") : a.query)),
+        a.query === null || a.query === undefined ? null
+          : a.query === "" ? [h("dt", null, M.t("inbox.action.query")), h("dd", { class: "muted" }, M.t("inbox.action.query_empty"))]
+            : fact(M.t("inbox.action.query"), a.query)),
       hidden ? warning(M.t("inbox.action.hidden_chars")) : null,
       differs ? warning(M.t("inbox.action.differs")) : null,
       !hasBody ? h("p", { class: "muted" }, M.t("inbox.action.no_body"))
@@ -399,7 +401,7 @@ window.Maity = window.Maity || {};
           title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
-        canTalk(ctx, req) ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
+        canTalk(ctx, req) && !notOwner ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
         // Its human may withdraw a personal request, as nobody else can (§7).
         req.personal ? h("button", {
           type: "button",

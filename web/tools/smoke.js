@@ -7373,11 +7373,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     current = act({ action: Object.assign(act().action, { path: "/a\u00a0b\u3164c\u2800d e" }) });
     await again();
     expect(["[U+00A0]", "[U+3164]", "[U+2800]"].every((m) => text(call()).includes(m)) && text(call()).includes("d e"), "action: a space that is none, a filler and a blank cell are named, a plain space is not " + text(call()));
-    current = act();
+    // Asked by the reader's own agent: Talk for the owner; the hub refuses it to anyone else (action_needs_owner).
+    current = act({ asked_by: { kind: "agent", member_id: "agt-a", display_name: "Own" } });
+    await again();
+    expect(buttons().includes("Talk"), "action: the owner may talk to their own proxy " + JSON.stringify(buttons()));
     const owner = win.Maity.trust.owner;
     win.Maity.trust.owner = () => false;
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
-    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later");
+    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && !buttons().includes("Talk") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later " + JSON.stringify(buttons()));
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }
