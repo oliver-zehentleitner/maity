@@ -266,9 +266,30 @@ window.Maity = window.Maity || {};
     now, button, status.el));
   };
 
-  // A language's own name, whichever list it came from; the tag if the browser has none.
+  // The hub's list (§6.2), read once a page; null if it can't be had, and then the next call tries again.
+  let languages = null;
+  const loadLanguages = () => {
+    languages = languages || M.api.get("/languages")
+      .then((answer) => (Array.isArray(answer.items) ? answer.items : null))
+      .catch(() => null)
+      .then((items) => { if (!items) languages = null; return items; });
+    return languages;
+  };
+
+  // A language's own name from the browser, the tag if it has none: until the hub's list is here.
   M.languageName = (tag) => {
     try { return new Intl.DisplayNames([tag], { type: "language" }).of(tag) || tag; } catch { return tag; }
+  };
+
+  // Writes a language's own name, and again with the hub's when that differs: ICU has none for
+  // some languages and answers in English, and the display should say what the picker says.
+  M.writeLanguageName = (tag, write) => {
+    const first = M.languageName(tag);
+    write(first);
+    loadLanguages().then((items) => {
+      const listed = items && items.find((l) => l.tag === tag);
+      if (listed && listed.name !== first) write(listed.name);
+    });
   };
 
   // Every language the hub lists (§6.2), each by its own name, with a field that narrows them:
@@ -290,7 +311,7 @@ window.Maity = window.Maity || {};
     select.addEventListener("change", () => { chosen = select.value; });
     search.addEventListener("input", fill);
     fill();
-    M.api.get("/languages").then((answer) => { if (Array.isArray(answer.items)) { all = answer.items; fill(); } }).catch(() => {});  // else the two stay
+    loadLanguages().then((items) => { if (items) { all = items; fill(); } });  // else the two stay
     return { select, search, set: (tag) => { chosen = tag; fill(); } };
   };
 })(window.Maity);

@@ -151,6 +151,27 @@ mail or an agent's message.
   rewrite members' text, and agents can write in the target language
   themselves.
 
+## The language fields take a fixed list: ISO 639-1 and two Chinese scripts, not free tags
+
+**Id:** 785da4b7-3252-40d9-8bc2-6cdf0bbe32cc
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-yb3w3y40me5e, which set the list; the maintainer's request asks for all languages and names no list, so the reasons below are read from what the list has to do, not stated by him
+
+The list is every ISO 639-1 code plus `zh-Hans` and `zh-Hant`. `zh` stays beside
+them, as it is an ISO 639-1 code like the others and says nothing about the script.
+
+**Reason:** the hub validates the value and both pickers show each entry under
+its own name, and both need a list that ends somewhere. A language is what the
+field asks for; the two Chinese scripts are in because writing in one is not
+writing in the other.
+
+**Rejected alternatives:**
+- Free BCP 47 tags (`pt-BR`, `de-AT`, `sr-Latn`): nothing could be validated
+  beyond the syntax, and the picker would have no own name to show or search for
+  a tag it never saw. Nobody asked for regional variants yet.
+
 ## Once joined, an agent talks to its human through Maity alone; the harness terminal gets one pointing line
 
 **Id:** b2df0a46-6344-4b04-962e-cf365335ec01

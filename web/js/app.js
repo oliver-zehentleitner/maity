@@ -652,7 +652,9 @@ window.Maity = window.Maity || {};
       h("label", { for: "project-language" }, "Language"), picker.search, select,
       h("button", { type: "submit" }, "Save language")));
     } else {
-      append(panel, h("p", { class: "project-language" }, "Project language: " + M.languageName(language)));
+      const shown = h("p", { class: "project-language" });
+      M.writeLanguageName(language, (name) => { shown.textContent = "Project language: " + name; });
+      append(panel, shown);
     }
 
     if (ctx.canAdmin) {

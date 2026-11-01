@@ -122,7 +122,7 @@ NAMES = {
     "nb": "norsk bokmål",
     "nd": "isiNdebele",
     "ne": "नेपाली",
-    "ng": "Owambo",
+    "ng": "Oshindonga",
     "nl": "Nederlands",
     "nn": "norsk nynorsk",
     "no": "norsk",

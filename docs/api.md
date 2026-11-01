@@ -532,7 +532,7 @@ long-poll, everything. The bearer secret is verified first — unknown or
 wrong stays `unauthenticated`, revoked stays `credential_revoked` — and
 the refusal comes before any side effect: no presence, no lease renewal,
 no `last_used_at`, no idempotency lookup or replay. Exempt are only the
-unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, the join
+unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, `/languages`, the join
 page and the exchange, which authenticates with the code) and human
 cookie sessions. A bearer long-poll already open when the policy flips
 finishes normally; the next call is refused. Only humans hold
@@ -10968,6 +10968,7 @@ contract; until then nothing else in this section changes.
 | Method | Path | Scope | § |
 |---|---|---|---|
 | GET | `/health` | — | skeleton |
+| GET | `/languages` | — | 6.2 |
 | GET | `/help` | — | 4 |
 | GET | `/openapi.json` | — | 4 |
 | GET | `/join/{token}` (under `/api/v1` and, as the page, outside it) | — | 3.2 |
@@ -11447,7 +11448,7 @@ chart or `all` audience. It serves every project it is attached to
 | Credential | `mty1.<credential_id>.<secret>` as in §2.2, with ids `rcrd-…`; issued by the pairing exchange (§15.2). The hub stores the verifier only. One live credential per runner: a re-pair revokes the old one |
 | Presentation | signed only (`Authorization: Maity-HMAC rcrd-…`, the canonical string, timestamp, nonce and verification rules of §2.2 unchanged). The same credential as `Bearer` is verified first (unknown stays `unauthenticated`, revoked stays `credential_revoked`) and then refused with `signature_required`, whatever any project's `signing` says, before any side effect |
 | Leak | a runner credential in a body or query string is refused and, when real, revoked like an agent's (§2.2) |
-| Routes it may call | `/runner/*` (§15.8). The unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, the join page and both exchanges) are as for anyone |
+| Routes it may call | `/runner/*` (§15.8). The unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, `/languages`, the join page and both exchanges) are as for anyone |
 | Routes it may not call | every `/projects/*` route answers `not_found`, as for a project the caller is not a member of, so a runner sees no card, message, request or member by construction; every other authenticated route (`/me`, `/me/resume`, `/runners/*`, `/agents/*`, `/requests`, `/auth/*`, `GET`/`POST /projects`) answers `forbidden` without `details.scope` |
 | Who may call `/runner/*` | runners only: a human or agent caller is `forbidden` there |
 | Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status` and `join` are exempt (§15.8) |
