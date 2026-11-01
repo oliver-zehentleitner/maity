@@ -87,6 +87,20 @@ def test_an_omitted_model_keeps_the_previous_one_without_an_event(setup: Setup) 
     assert stored == "m1"
 
 
+def test_an_omitted_harness_is_kept_and_a_switch_across_it_is_seen(setup: Setup) -> None:
+    """A resume without `harness` keeps the previous one, like `model`: otherwise the session in
+    between holds none, and a switch from one harness to another over it is never announced."""
+    setup.resume(harness="Claude Code", model="m1")
+    kept = setup.resume(model="m1")
+    assert kept["session"]["harness"] == "Claude Code" and setup.changes() == []
+    setup.resume(harness="Codex", model="m1")
+    (event,) = setup.changes()
+    assert (event.payload["from"]["harness"], event.payload["to"]["harness"]) == (
+        "Claude Code",
+        "Codex",
+    )
+
+
 def test_a_first_declared_model_is_no_change(setup: Setup) -> None:
     setup.resume(harness="Claude Code")
     setup.resume(harness="Claude Code", model="m1")
