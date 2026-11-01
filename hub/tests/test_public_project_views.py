@@ -288,3 +288,11 @@ def test_the_limit_of_a_column_counts_the_cards_the_hold_leaves(
     # the newest card is held: the three shown are the next three, not two
     assert "card 4" not in text and all(f"card {n}<" in text for n in (3, 2, 1))
     assert "open (3)" in text
+
+
+def test_a_security_card_stays_off_the_board_until_it_is_done(world: World) -> None:
+    world.card(title="Secret hole", label="Security")
+    world.card(title="Fixed hole", label="security", status="done", closed_at=clock.now())
+    world.touch()
+    board = view(world.anyone, "board")
+    assert board is not None and "Secret hole" not in board and "Fixed hole" in board
