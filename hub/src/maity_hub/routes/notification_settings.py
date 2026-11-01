@@ -85,6 +85,7 @@ def patch_settings(
                 wrong_password=wrong_password,
                 password_blocked=password_blocked,
                 step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
+                keeps_factor=lambda: second_factor.refuse_losing_the_address(conn, hub, human.id),
             )
             return preferences.view(conn, human.id, _mail_ready(conn, request)), status
 

@@ -238,6 +238,9 @@ def session_view(conn: Connection, hub: Settings, row: Any) -> dict[str, Any] | 
         shown["via"] = via(conn, hub, row.human_id)
         if shown["via"] == mail_factor.VIA:
             shown.update(mail_factor.state_of(row))
+            hint = mail_factor.address_hint(conn, row.human_id)
+            if hint is not None:
+                shown["address_hint"] = hint
     return shown
 
 
@@ -447,6 +450,14 @@ def _refuse_off(conn: Connection, hub: Settings) -> None:
 
 def refused(reason: str, message: str) -> ApiError:
     return ApiError(403, "forbidden", message, {"reason": reason})
+
+
+def refuse_losing_the_address(conn: Connection, hub: Settings, human_id: str) -> None:
+    """Removing the verified address under `email` would lock out a human without TOTP (§2.8.8)."""
+    if policy(conn, hub) == "email" and via(conn, hub, human_id) == mail_factor.VIA:
+        raise refused(
+            "second_factor_required", "the verified address is this account's second factor"
+        )
 
 
 def _count_wrong(id_hash: str) -> int:

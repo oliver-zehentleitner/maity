@@ -2371,7 +2371,8 @@ included:
 - A second-factor session reaches only `GET /auth/session` (which
   answers `{second_factor: "required", via, session_id, csrf_token,
   expires_at}`, under `via: email` also `mail`: `sent`, `rate_limited`
-  (with `retry_after`) or `unavailable` (§2.8.8), and no member — the verify carries the CSRF token as
+  (with `retry_after`) or `unavailable` (§2.8.8) and, while the address
+  is verified, `address_hint` (§2.8.7), and no member — the verify carries the CSRF token as
   every cookie call),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
@@ -2593,7 +2594,9 @@ every one of those mails tells the human that someone has the password.
 - **Admin → Users**: "Reset two-factor sign-in" with a reason, saying
   that the person confirms it by mail.
 - **Under `second_factor: email`** (§2.8.8): after the first factor,
-  "We sent a link to <masked address>. Open it in this browser, or
+  "We sent a link to <masked address>" (`address_hint` of `GET
+  /auth/session`: the address's first character, `***` and its domain,
+  so `a***@example.com`). "Open it in this browser, or
   enter the code from the mail", with "Send again"; the step-up modal
   sends a code and asks for it. **Admin → Sign-in** offers "Mail for
   everyone" only while the mail settings are complete and enabled,

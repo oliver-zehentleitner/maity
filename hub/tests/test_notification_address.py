@@ -178,6 +178,7 @@ def test_a_human_without_a_password_needs_an_old_session(
         status = preferences.patch(
             conn,
             step_up=lambda: None,
+            keeps_factor=lambda: None,
             human=human,
             session=session,
             body={"email": {"address": "new@example.org"}},
@@ -298,6 +299,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
         kwargs: dict[str, Any] = dict(
             signing_key=hub.mail.signing_key, public_url="https://hub.example", mail_ready=True,
             wrong_password=lambda: None, password_blocked=lambda: 0, step_up=lambda: None,
+            keeps_factor=lambda: None,
         )  # fmt: skip
         assert preferences.patch(
             conn, human=human, session=strong, body={"email": {"address": "a@example.org"}},

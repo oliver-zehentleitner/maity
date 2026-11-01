@@ -54,14 +54,30 @@ def browser(make_client: ClientFactory, *, mail: bool = True) -> Any:
 
 
 def setup(
-    make_client: ClientFactory, engine: Engine, *, verified: bool = True, mail: bool = True
+    make_client: ClientFactory,
+    engine: Engine,
+    *,
+    verified: bool = True,
+    mail: bool = True,
+    stored: bool = False,
 ) -> tuple[Any, str]:
+    """`stored`: the setting holds `email`, not the environment, which refuses to start without
+    mail settings."""
     human = factory.human(engine, "ada")
     if verified:
         addresses.prepare(engine, None)
         with engine.begin() as conn:
             assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
-    return browser(make_client, mail=mail), human
+    if not stored:
+        return browser(make_client, mail=mail), human
+    with engine.begin() as conn:
+        conn.execute(
+            t.instance_setting.insert().values(
+                name="sign_in.second_factor", value="email", updated_at=clock.now()
+            )
+        )
+    extra = {"mail": hub_mail()} if mail else {}
+    return make_client(secret_key=b"k" * 32, **extra), human
 
 
 def login(client: TestClient) -> Any:
@@ -259,7 +275,7 @@ def test_an_address_that_was_verified_and_is_lost_fails_closed(
 def test_mail_that_is_not_configured_fails_closed_for_a_human_without_totp(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    client, _ = setup(make_client, migrated, mail=False)
+    client, _ = setup(make_client, migrated, mail=False, stored=True)
     answer = login(client)
     assert answer.json()["via"] == "email"
     assert session(client)["mail"] == "unavailable"
@@ -393,20 +409,17 @@ def test_the_step_up_is_not_held_by_the_three_of_a_second_factor_session(
     assert verify(client, email_code=step_code).status_code == 200
 
 
-def test_email_is_not_settable_yet_by_the_admin_or_the_environment(
+def test_the_environment_takes_email_only_with_mail_ready(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """Until the confirming mail, the link switched off and the start check are in, `email` is
-    read but never taken, so no build is configurable into the bypass of rule 3 (§2.8.8)."""
-    admin = flow.human(make_client, migrated)
-    refused = admin.patch("/admin/settings/sign-in", {"second_factor": "email"})
-    assert refused.status_code == 400, refused.text
-    assert refused.json()["error"]["details"]["fields"] == {"second_factor": "invalid"}
-    assert admin.get("/admin/settings/sign-in").json()["second_factor"]["value"] != "email"
-    with pytest.raises(ConfigError):
+    assert (
         Settings.from_env(
             {"MAITY_DATABASE_URL": "sqlite://", "MAITY_SIGN_IN_SECOND_FACTOR": "email"}
-        )
+        ).sign_in_second_factor
+        == "email"
+    )
+    with pytest.raises(ConfigError, match="MAITY_SIGN_IN_SECOND_FACTOR=email"):
+        make_client(sign_in_second_factor="email")
 
 
 def test_only_totp_and_a_recovery_code_give_standing_the_mail_does_not() -> None:
@@ -497,3 +510,132 @@ def test_a_step_up_code_lives_fifteen_minutes_in_a_session_that_lives_for_days(
     assert resend(client).status_code == 200
     _, fresh, _ = last_mail(migrated)
     assert verify(client, email_code=fresh).status_code == 200
+
+
+# --- turning it on (§2.8.8) --------------------------------------------------------------------
+
+CONFIRM = "/api/v1/admin/settings/sign-in/second-factor-email/confirm"
+SIGN_IN = "/api/v1/admin/settings/sign-in"
+
+
+def _admin(make_client: ClientFactory, engine: Engine, *, verified: bool = True) -> Any:
+    human = factory.human(engine, "ada")  # the first human is the instance admin
+    if verified:
+        addresses.prepare(engine, None)
+        with engine.begin() as conn:
+            assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+    client = make_client(mail=hub_mail(), secret_key=b"k" * 32)
+    assert login(client).status_code == 200
+    return client
+
+
+def _csrf(client: TestClient) -> dict[str, str]:
+    return {"x-csrf-token": client.cookies.get("maity_csrf") or ""}
+
+
+def _turn_on(client: TestClient) -> Any:
+    return client.patch(SIGN_IN, json={"second_factor": "email"}, headers=_csrf(client))
+
+
+def _confirm(client: TestClient, code: str) -> Any:
+    return client.post(CONFIRM, json={"code": code}, headers=_csrf(client))
+
+
+def test_turning_it_on_takes_effect_only_with_the_mailed_code(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _admin(make_client, migrated)
+    asked = _turn_on(admin)
+    assert (asked.status_code, asked.json()) == (202, {"expires_in": 900})
+    assert admin.get(SIGN_IN).json()["second_factor"]["value"] != "email"
+    _, code, body = last_mail(migrated)
+    assert "/sign-in/" not in body
+    wrong = "000000" if code != "000000" else "111111"
+    refused = _confirm(admin, wrong)
+    assert refused.json()["error"]["code"] == "code_invalid"
+    assert admin.get(SIGN_IN).json()["second_factor"]["value"] != "email"
+    done = _confirm(admin, code)
+    assert done.status_code == 200, done.text
+    assert done.json()["second_factor"] == {"value": "email", "source": "admin"}
+    assert "second_factor_email" in done.json()["missing"]
+    assert done.json()["email_link_available"] is False
+    assert _confirm(admin, code).json()["error"]["code"] == "code_invalid"  # single use
+
+
+def test_a_new_patch_voids_an_open_confirmation(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _admin(make_client, migrated)
+    _turn_on(admin)
+    _, code, _ = last_mail(migrated)
+    moved = admin.patch(SIGN_IN, json={"second_factor": "optional"}, headers=_csrf(admin))
+    assert moved.status_code == 200, moved.text
+    assert _confirm(admin, code).json()["error"]["code"] == "code_invalid"
+    assert admin.get(SIGN_IN).json()["second_factor"]["value"] == "optional"
+
+
+def test_a_step_up_code_does_not_turn_it_on(make_client: ClientFactory, migrated: Engine) -> None:
+    admin = _admin(make_client, migrated)
+    _turn_on(admin)
+    with migrated.begin() as conn:
+        row = conn.execute(select(t.human_session)).one()
+        mail_factor.send(conn, _hub(), row, with_link=False)  # overwrites the open code
+    _, step_up_code, _ = last_mail(migrated)
+    assert _confirm(admin, step_up_code).json()["error"]["code"] == "code_invalid"
+    assert admin.get(SIGN_IN).json()["second_factor"]["value"] != "email"
+
+
+def _hub() -> Any:
+    return replace(Settings.from_env({"MAITY_DATABASE_URL": "sqlite://"}), mail=hub_mail())
+
+
+def test_turning_it_on_needs_the_admins_verified_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _admin(make_client, migrated, verified=False)
+    refused = _turn_on(admin)
+    assert refused.json()["error"]["details"]["fields"] == {"second_factor": "no_verified_address"}
+
+
+def test_turning_it_on_needs_the_mail_settings(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = flow.human(make_client, migrated)
+    refused = admin.patch("/admin/settings/sign-in", {"second_factor": "email"})
+    assert refused.json()["error"]["details"]["fields"] == {"second_factor": "mail_not_ready"}
+
+
+def test_under_email_the_sign_in_link_is_off_and_answers_as_if_sent(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated, stored=True)
+    assert client.get("/api/v1/auth/methods").json()["email_link"] is False
+    sent = client.post("/api/v1/auth/email-link", json={"address": "ada@example.com"})
+    assert sent.status_code == 202, sent.text
+    assert mails(migrated) == []
+
+
+def test_the_second_step_shows_the_address_masked(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    login(client)
+    assert session(client)["address_hint"] == "a***@example.com"
+
+
+def test_a_human_without_totp_cannot_remove_the_address_under_email(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, human = setup(make_client, migrated)
+    login(client)
+    _, code, _ = last_mail(migrated)
+    assert verify(client, email_code=code).status_code == 200
+    answer = client.patch(
+        "/api/v1/me/notification-settings",
+        json={"email": {"address": None}, "current_password": factory.PASSWORD},
+        headers=_csrf(client),
+    )
+    assert answer.status_code == 403, answer.text
+    assert answer.json()["error"]["details"]["reason"] == "second_factor_required"
+    with migrated.connect() as conn:
+        assert mail_factor.address_of(conn, human) is not None
