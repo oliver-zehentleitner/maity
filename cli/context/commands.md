@@ -1370,3 +1370,32 @@ that would be lost.
   answer none of them through the CLI.
 - A `--round` flag: §13 does not have one; a contract change for the
   team lead, not this package.
+
+## `say --type update` without a recipient, and `unwatch` left to the hub
+
+**Id:** ccaeb0d5-5bcd-4ffe-8e5b-24dc0c6d2979
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4, §8.4 and §13 (contract #458); the card tsk-gt8awv808fkc; the command's form is the contract's, how it is parsed is this entry's reading
+**Revisit when:** another message type may go without a recipient
+
+`maity say --type update --task CARD "…"` reaches the card's watchers, so
+its one positional is the message: `_say_update_text` moves it before the
+texts are read, and `-` and the warnings work as for any message. With two
+positionals the order stays `<to> <body>`. `maity unwatch` does not check
+whether the watch comes with a dependent card: the hub answers `invalid`
+(`reason: implied`) and the CLI prints that.
+
+**Reason:** §13 fixes this form, and `update` is a type of §8.4's messages,
+so it keeps what `say` offers: stdin, a file, attachments. Only the hub
+knows the card's dependencies when the call arrives; a `GET` first would
+cost a call and could still be out of date.
+
+**Rejected alternatives:**
+- An empty or dummy `<to>`: §13's form has none, and the hub takes the
+  message without one.
+- Checking the implied watch in the CLI: above.
+
+**Known limit:** `maity say --type update --task X human` sends the word
+`human` as the text.
