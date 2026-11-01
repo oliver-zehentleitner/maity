@@ -2679,6 +2679,26 @@ def agents_page_step(run: Run, page: Page) -> None:
     row.get_by_role("button", name=re.compile(r"^Manage ")).click()
     expect(row.get_by_role("button", name=re.compile(r"^Manage "))).to_have_attribute("aria-expanded", "true")
     inside = page.locator("tr.agent-manage").first
+    # Allowed projects (§6.3) on the real hub: a list saved, then any project again.
+    inside.locator("details.agent-settings summary").click()
+    allowed = inside.locator("form.agent-allowed")
+    allowed.get_by_label("Any project").uncheck()
+    allowed.get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    run.a11y(page, "agents page, allowed projects")
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
+    if not inside.locator("form.agent-allowed").is_visible():
+        inside.locator("details.agent-settings summary").click()
+    inside.locator("form.agent-allowed").get_by_label("Any project").check()
+    inside.locator("form.agent-allowed").get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
     expect(inside.locator(".agent-instances", has_text="Instances in E2E Alpha").first).to_be_visible()
     expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()
     run.a11y(page, "agents page, a row opened")

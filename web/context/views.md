@@ -3699,3 +3699,15 @@ would overwrite another admin's change to a link it did not touch.
 The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page`, `state` and `moderation`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
+
+## The join panel reads all of a human's profiles and offers only those a project is allowed for
+
+**Id:** de22411f-43b5-4a4e-b21f-eb1b03b61fdb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.3; the card tsk-4sm441es9nwe
+
+The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the second list. A handle is taken among all of a human's profiles, whichever projects they may join, so the handle check keeps reading the first.
+
+**Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.

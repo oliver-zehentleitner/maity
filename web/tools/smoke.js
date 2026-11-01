@@ -3654,6 +3654,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hcState()) === "@old-one is free.", "handle check: a deleted profile does not block its handle");
   hcType("A");
   expect(text(hcState()).startsWith("Not a handle yet: Lowercase letters") && hcState().className.includes("field-error"), "handle check: the pattern is said too");
+  // Allowed projects (§6.3): a profile the project is not allowed for is not offered, its handle stays taken.
+  const alOffer = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p.startsWith("/agents?allowed_in=")
+    ? alOffer("/agents").then((r) => ({ items: r.items.filter((x) => x.handle !== "agent-b"), next_cursor: null })) : alOffer(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("join-agent").querySelectorAll("option").some((o) => text(o).includes("@agent-b")), "allowed projects: the join panel does not offer a profile not allowed here");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  hcType("agent-b");
+  expect(text(hcState()).includes("Taken: your agent Agent B has @agent-b"), "allowed projects: the handle of a profile not offered is still taken");
+  win.Maity.api.getAll = alOffer;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   // The hub's answer is the final word: its taken is said in words and the list read again.
   const hcPost = win.Maity.api.post;
   let hcReads = 0;
@@ -4763,6 +4775,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const agHelper = agCards().find((li) => text(li).includes("Helper @maintainer/helper"));
   expect(agHelper && text(main).includes("The profile @helper was created") && text(agHelper).includes("In no project yet."), "agents page: a new profile, in no project yet");
   const agHelperId = agHelper.getAttribute("data-agent");
+  // Allowed projects (§6.3): any project by default; a list ticks the current ones, a name may be typed in, null again.
+  const alAny = byId("agent-allowed-any-" + agHelperId);
+  const alForm = () => agHelper.querySelector("form.agent-allowed");
+  const alParts = () => agHelper.querySelector(".agent-allowed-parts");
+  expect(alAny && alAny.checked && alParts().hidden, "allowed projects: Any project by default, the list hidden");
+  const alPatches = [];
+  const alPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { alPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { allowed_projects: "too_many" } })); };
+  alForm().dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(!alPatches.length, "allowed projects: nothing changed, nothing sent");
+  alAny.checked = false; alAny.dispatch("change");
+  expect(!alParts().hidden, "allowed projects: without Any project the list shows");
+  byId("agent-allowed-add-" + agHelperId).value = "not a name";
+  alParts().querySelectorAll("button")[0].click();
+  expect(text(alParts()).includes("A project's full name: owner/project."), "allowed projects: a bad name is refused at the field");
+  byId("agent-allowed-add-" + agHelperId).value = "someone/later";
+  alParts().querySelectorAll("button")[0].click();
+  alForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(alPatches.length === 1 && JSON.stringify(alPatches[0]) === JSON.stringify({ allowed_projects: ["someone/later"] }),
+    "allowed projects: the list is sent, a project that does not exist yet included " + JSON.stringify(alPatches[0]));
+  win.Maity.api.patch = alPatch;
+  const alAll = await win.Maity.api.get("/agents?allowed_in=maintainer/maity");
+  await win.Maity.api.patch("/agents/" + agHelperId, { allowed_projects: ["someone/later"] });
+  const alOnly = await win.Maity.api.get("/agents?allowed_in=maintainer/maity");
+  expect(alAll.items.some((x) => x.id === agHelperId) && !alOnly.items.some((x) => x.id === agHelperId), "allowed projects: the offer leaves out a profile the project is not allowed for");
+  await win.Maity.api.patch("/agents/" + agHelperId, { allowed_projects: null });
   byId("agent-handle-" + agHelperId).value = "agent-b"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: you have a profile with this handle already"), "agents page: a handle one's other profile has is refused");
   byId("agent-handle-" + agHelperId).value = "helper-2"; byId("agent-git-name-" + agHelperId).value = "Helper";
