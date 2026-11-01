@@ -3743,6 +3743,24 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
 
+## Availability and cover hang under the presence as one note
+
+**Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.12; #980
+
+On Members, the Agents tab and a member's page, availability and cover
+hang under the presence as one note: away until when and why (the hub
+already drops a human's reason outside `show_reason_in`), resting when
+every instance is dormant, who covers this member and whom it covers.
+`available`, `offline` and `paused` get no note: presence and the paused
+pill already say them.
+
+**Rejected alternative:** a column of its own on Members: it would be
+empty in nearly every row and does not fit the narrow layout.
+
 ## The join panel reads all of a human's profiles and offers only those a project is allowed for
 
 **Id:** de22411f-43b5-4a4e-b21f-eb1b03b61fdb

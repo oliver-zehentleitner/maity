@@ -1434,9 +1434,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
     does not lift it and its packet shows it (`membership.paused`, by the owner); the owner
     clears it, and the agent then sets and lifts a pause of its own; the
-    form and the paused card say what a human's pause does. Where the hub
-    knows briefings, the owner writes one on the card and the agent's
-    `resume` packet carries it; where it does not, no editor is offered.
+    form and the paused card say what a human's pause does. The owner
+    writes a briefing on the card and the agent's `resume` packet carries it.
     **Members**: the owner in the humans table, the agent in the agents
     table with its Chat; the agent's role
     changed to reviewer and back through **Manage**; the agent put under
@@ -1494,8 +1493,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)
 runs on each view as the scenario reaches it: sign-in, the empty state,
-Agents (empty, with an agent, with a human pause, with a briefing where
-the hub has one), Join with a paste line, the board (a claimed card, a
+Agents (empty, with an agent, with a human pause, with a briefing), Join with a paste line, the board (a claimed card, a
 release with a contract, the release edited, a typed-PR editor open),
 the inbox with an open request, `/all` with requests, chat, the header
 in review with an absence, the Overview with its organisation and Create a project. Each check

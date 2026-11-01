@@ -1855,7 +1855,7 @@ window.Maity = window.Maity || {};
       if ("git_identity" in body) agent.git_identity = body.git_identity;
       if ("allowed_projects" in body) {
         const names = body.allowed_projects;
-        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[^/]+\/[^/]+$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
+        if (names !== null && (!Array.isArray(names) || names.some((x) => !/^[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}$/.test(x)))) fail(400, "invalid", "a name is <owner>/<slug>", path, { fields: { allowed_projects: "format" } });
         agent.allowed_projects = names;
       }
       return agent;

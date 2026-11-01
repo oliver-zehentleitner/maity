@@ -143,7 +143,7 @@ window.Maity = window.Maity || {};
   // §6.3 "Allowed projects": a switch for any project (null), else a checkbox per
   // project: those on the list, the agent's own and the ones the human is in, plus a
   // name typed in, as an agent may be allowed into a project before it exists.
-  const FULL_NAME = { test: (v) => { const parts = v.split("/"); return parts.length === 2 && parts.every((x) => M.dom.NAME_RULES.slug.test.test(x)); } };
+  const FULL_NAME = { test: (v) => { const parts = v.split("/"); return parts.length === 2 && M.dom.NAME_RULES.handle.test.test(parts[0]) && M.dom.NAME_RULES.slug.test.test(parts[1]); } };
   function allowedForm(ctx, a, done) {
     const key = (k) => "agent-allowed-" + k + "-" + a.id;
     const stored = a.allowed_projects === undefined ? null : a.allowed_projects;

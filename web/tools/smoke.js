@@ -2501,6 +2501,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "agent owners: what changed is sent with its reason " + JSON.stringify(aoPatches[0]));
   expect(text(byId("agent-owners-error")).includes("holds a role you left out"), "agent owners: a role still in use is said at the field");
   win.Maity.api.patch = aoPatch;
+  // The project's own roles arrive later and join the others; what was ticked and typed meanwhile stays.
+  const aoRolesGet = win.Maity.api.get;
+  let aoRolesAnswer;
+  win.Maity.api.get = (p) => (p.endsWith("/roles") ? new Promise((resolve) => { aoRolesAnswer = resolve; }) : aoRolesGet(p));
+  await projectSettings();
+  byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "kept";
+  aoRolesAnswer({ custom: [{ name: "triage", base: "coder" }, { name: "outsider", base: "viewer" }] });
+  for (let k = 0; k < 4; k++) await tick();
+  expect(byId("outside-role-writer").checked && byId("agent-owners-reason").value === "kept" && byId("outside-role-triage") && !byId("outside-role-triage").checked && !byId("outside-role-outsider"),
+    "agent owners: a role that arrives later joins the list, the unsaved choices stay");
+  const aoLatePatches = [];
+  win.Maity.api.patch = (p, b) => { aoLatePatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", {})); };
+  byId("outside-role-triage").checked = true;
+  aoForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(aoLatePatches.length === 1 && JSON.stringify(aoLatePatches[0].policy.outside_roles) === JSON.stringify(["coder", "writer", "triage"]),
+    "agent owners: a role that arrived later is sent too " + JSON.stringify(aoLatePatches[0]));
+  win.Maity.api.patch = aoPatch; win.Maity.api.get = aoRolesGet;
+  await projectSettings();
   const ownersGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
     ? Object.assign({}, x, { items: x.items.map((m) => (m.id === "agt-b" ? Object.assign({}, m, { owner_id: "hum-gone", isolated: { by: "hub", since: "2026-10-31T00:00:00Z", reason: "The agent's owner is no longer a member of this project." } }) : m)) })
@@ -4927,6 +4945,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("agent-allowed-add-" + agHelperId).value = "not a name";
   alParts().querySelectorAll("button")[0].click();
   expect(text(alParts()).includes("A project's full name: owner/project."), "allowed projects: a bad name is refused at the field");
+  byId("agent-allowed-add-" + agHelperId).value = "a".repeat(32) + "/fine";
+  alParts().querySelectorAll("button")[0].click();
+  expect(text(alParts()).includes("A project's full name: owner/project.") && !text(alParts()).includes("a".repeat(32)), "allowed projects: an owner part longer than a handle is refused");
   byId("agent-allowed-add-" + agHelperId).value = "someone/later";
   alParts().querySelectorAll("button")[0].click();
   alForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
