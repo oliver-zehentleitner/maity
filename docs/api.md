@@ -1,9 +1,7 @@
 # Maity hub API v1
 
 The REST contract the hub (`hub/`), the agent-side command (`cli/`) and the
-dashboard (`web/`) build against. It covers the first dogfooding week:
-one human, their agents, one project, and nothing that a recorded decision
-does not need. Where a decision in `context/` and this document disagree,
+dashboard (`web/`) build against. Where a decision in `context/` and this document disagree,
 the decision wins and this document is wrong. Where this document and
 `docs/architecture.md` disagree, this document is the contract.
 

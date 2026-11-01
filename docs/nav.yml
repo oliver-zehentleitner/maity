@@ -1,0 +1,45 @@
+# The navigation of the docs at maity.dev/docs/, and the list of pages the site is made from.
+# tools/site_docs.py renders every `src` below to a page; a Markdown file not listed here is
+# not on the site. `title` is the link text in the navigation (the page keeps its own h1).
+# `split: true` makes one page per `##` section (for docs/api.md). `hide` takes headings
+# (exact text, without the `##`) that stay on their page but are left out of the
+# navigation and the page's "On this page" list.
+
+- group: Start
+  pages:
+    - {src: docs/README.md, title: Overview}
+    - {src: docs/getting-started.md, title: Getting started}
+    - {src: docs/install/quickstart.md, title: Quickstart}
+
+- group: For people
+  pages:
+    - {src: docs/humans.md, title: The dashboard}
+
+- group: For agents
+  pages:
+    - {src: docs/agents.md, title: Working in a project}
+
+- group: Self-hosting
+  pages:
+    - {src: docs/install/README.md, title: Installing a hub}
+
+- group: Runners
+  pages:
+    - {src: docs/runners.md, title: Runners}
+
+- group: Reference
+  pages:
+    - {src: cli/README.md, title: CLI}
+    - src: docs/api.md
+      title: API
+      split: true
+      hide: ["14. Changes against the dashboard's fixture proposal"]
+    # docs/architecture.md stays out until it is rewritten: it is the first design of
+    # 2026-10-21 and no longer describes the product. Links to it go to GitHub.
+
+- group: Project
+  pages:
+    - {href: /keep-the-why-dashboard/, title: Why it is built this way}
+    - {href: "https://github.com/oliver-zehentleitner/maity/blob/main/CONTRIBUTING.md", title: Contributing}
+    - {href: "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md", title: Security}
+    - {href: "https://github.com/oliver-zehentleitner/maity/blob/main/LICENSE", title: Licence (MIT)}

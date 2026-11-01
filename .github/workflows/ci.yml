@@ -93,8 +93,8 @@ jobs:
           done
 
   # The changelog fragments in changelog.d/ (one per pull request, folded into
-  # CHANGELOG.md at release) and the tool's own tests; standard library only,
-  # on the oldest Python the tool supports.
+  # CHANGELOG.md at release) and the tools' own tests; standard library only, except the
+  # docs renderer's Markdown and YAML, on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
     defaults:
@@ -111,6 +111,8 @@ jobs:
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
+      # tools/site_docs.py renders Markdown; its tests are skipped without these two.
+      - run: pip install --quiet markdown==3.11.2 PyYAML==6.0.3
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python

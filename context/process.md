@@ -1033,3 +1033,30 @@ fault close to the change that caused it without making every author wait for it
   would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
   channel the workflow can use without one.
+
+## The docs pages on maity.dev are rendered at deploy from `docs/`, and `docs/nav.yml` is the only list of pages and the navigation
+
+**Id:** 3b470500-85e0-4261-996e-425290e5d97b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request for a docs page on maity.dev; the joint proposal of the designer and the docs author on the card tsk-92pgshcs2a8c, 2026-11-01. The reasons are theirs, not stated by the maintainer.
+**Revisit when:** the docs become multilingual, or need pages without a Markdown source
+**See:** process.md — 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b — as of 2026-11-01
+
+`tools/site_docs.py` renders every page `docs/nav.yml` lists when the site
+deploys, with GitHub's anchors, so links from the repository and from the
+site are the same. A section `hide` names on a split page gets no page, and
+`docs/architecture.md` stays out of the list until it is rewritten, as it
+still describes the first design of 2026-10-21 (the lead's call on #1095).
+
+**Reason:** the repository and the site would otherwise drift apart, and
+each command is checked only once.
+
+**Rejected:**
+
+- Pages written by hand in HTML: a second source.
+- A static site generator with Node or a framework: more tooling than about
+  ten pages need.
+- Linking only to the Markdown on GitHub: no navigation of its own, and
+  `docs/api.md` as one page of 17,000 lines.

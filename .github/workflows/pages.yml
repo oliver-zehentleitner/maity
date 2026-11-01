@@ -48,6 +48,11 @@ jobs:
               ktw-dashboard "$d" --export "site/keep-the-why-dashboard/$d"
             fi
           done
+      # The docs pages at /docs/, rendered from docs/nav.yml and the Markdown it lists
+      # (tools/site_docs.py); docs/ stays the only source of their text.
+      - run: |
+          pip install --quiet markdown==3.11.2 PyYAML==6.0.3
+          python tools/site_docs.py site
       # sitemap.xml from the pages above (not the dashboard's entries, not the brand files)
       # and a robots.txt that names it, for the search engines' consoles.
       - run: python tools/site_sitemap.py site --docs docs
