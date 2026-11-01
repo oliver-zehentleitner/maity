@@ -168,7 +168,7 @@ def send(
     left = max(int((row.created_at + LIFETIME - now).total_seconds()), 1)
     if row.state == "second_factor" and row.mail_sent >= PER_SESSION:
         raise rate_limited(left)
-    wait = BY_HUMAN.hit(row.human_id)  # the human's ten an hour; a step-up counts here only
+    wait = BY_HUMAN.blocked(row.human_id)  # the human's ten an hour; a step-up counts here only
     if wait:
         raise rate_limited(wait)
     token = secrets.token_urlsafe(32)
@@ -190,6 +190,7 @@ def send(
     )
     if stored.rowcount != 1:
         raise rate_limited(left)
+    BY_HUMAN.hit(row.human_id)  # after the update: the loser of a race has sent nothing
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
     language = preferences.preferences(conn, row.human_id)["email"]["language"]
     link = (
@@ -239,12 +240,88 @@ def check(
         match = column.mail_token_mac == _token_mac(key, row.id_hash, token)
     else:
         return False
+    return _use(conn, row, match)
+
+
+def _use(conn: Connection, row: Any, match: Any) -> bool:
+    column = t.human_session.c
     used = conn.execute(
         update(t.human_session)
         .where(column.id_hash == row.id_hash, column.ended_at.is_(None), match)
         .values(mail_token_mac=None, mail_code_mac=None)
     )
     return used.rowcount == 1
+
+
+# --- the admin's confirmation of turning it on -----------------------------------------
+
+
+def _confirm_mac(key: bytes, id_hash: str, nonce: str, code: str) -> str:
+    """Its own domain, so a step-up's code never turns the setting on, nor the other way round;
+    the nonce is the open confirmation's, so a newer `PATCH` by any admin voids this one."""
+    return hmac.new(
+        key, f"mail-factor-confirm:{id_hash}:{nonce}:{code}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> None:
+    """Mail the admin in session `row` the code that turns `email` on (§2.8.8, "Turning it on"):
+    proof that a mail of this hub arrived, not just that the server took it."""
+    key = _key(hub)
+    address = address_of(conn, row.human_id)
+    if key is None or address is None:  # the caller refused both before it came here
+        raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
+    wait = BY_HUMAN.hit(row.human_id)
+    if wait:
+        raise rate_limited(wait)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    conn.execute(
+        update(t.human_session)
+        .where(t.human_session.c.id_hash == row.id_hash)
+        .values(
+            mail_token_mac=None,
+            mail_code_mac=_confirm_mac(key, row.id_hash, nonce, code),
+            mail_sent_at=clock.now(),
+        )
+    )
+    german = preferences.preferences(conn, row.human_id)["email"]["language"] == "de"
+    spaced = f"{code[:3]} {code[3:]}"
+    outbox.enqueue(
+        conn,
+        kind="sign_in",
+        to=address.address,
+        human_id=row.human_id,
+        subject=(
+            "[Maity] Mail als zweiter Faktor" if german else "[Maity] Mail as the second factor"
+        ),
+        body=(
+            f"Mit diesem Code wird Mail für alle zum zweiten Faktor: {spaced}\n\n"
+            "Hast du das nicht angefordert, ändere nichts und prüfe deine Sitzungen.\n"
+            if german
+            else f"This code makes mail the second factor for everyone: {spaced}\n\n"
+            "If you did not ask for this, change nothing and check your sessions.\n"
+        ),
+    )
+
+
+def check_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str, code: str) -> bool:
+    key, text = _key(hub), normalise_code(code)
+    if key is None or text is None:
+        return False
+    if row.mail_sent_at is None or clock.now() - row.mail_sent_at >= LIFETIME:
+        return False
+    match = t.human_session.c.mail_code_mac == _confirm_mac(key, row.id_hash, nonce, text)
+    return _use(conn, row, match)
+
+
+def address_hint(conn: Connection, human_id: str) -> str | None:
+    """The verified address as the second step may show it: its first character and its domain
+    (§2.8.7). None without one."""
+    row = address_of(conn, human_id)
+    if row is None:
+        return None
+    local, _, domain = str(row.address).rpartition("@")
+    return f"{local[:1]}***@{domain}"
 
 
 def state_of(row: Any) -> dict[str, Any]:
