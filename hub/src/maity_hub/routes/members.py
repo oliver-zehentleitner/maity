@@ -412,10 +412,9 @@ def apply_patch(
             briefings.record(conn, target.id, changed["briefing"], change.by, clock.now())
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
         view = member_view(conn, row)  # to everyone: never the briefing
-        if "availability_policy" in changed:
-            view["changed"] = sorted(changed)
+        view["changed"] = sorted(changed)  # names only: `wakes` reads it (§8.2)
         if "briefing" in changed:
-            view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
+            view["briefing_version"] = row.briefing_version
         if {"trust", "role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(
@@ -941,7 +940,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
             change.project.id,
             "member_updated",
             ["all"],
-            report,
+            {**report, "changed": ["reports_to"]},
             actor=change.actor,
             subject=("member", report["id"]),
         )
