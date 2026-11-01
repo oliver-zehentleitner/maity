@@ -769,6 +769,25 @@ stays is still dropped on its own, once no foreign key needs it.
   three steps for what `drop_table` does in one, and on SQLite a
   foreign key goes only through `batch_alter_table`.
 
+## A reflected table loses its JSON type on MariaDB
+
+**Id:** eeeeeff5-b607-45cf-9193-b24920e1604d
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Verification:** corroborated
+**Source:** the `hub-mariadb` run 41293899868 and a local reproduction on MariaDB 10.11, 2026-11-01
+**Revisit when:** MySQL/MariaDB support is dropped
+
+MariaDB keeps a JSON column as `LONGTEXT`, and a table read with `autoload_with` gets that text
+type. A list or dict written through it reaches the driver unserialized: pymysql renders an empty
+list as `()`, a 1064. A migration or test that writes JSON names the column's type itself, as
+`sa.column(name, JSON_VALUE)` or as a `sa.Column` beside `autoload_with`. PostgreSQL and SQLite do
+not show the mistake, and `hub-mariadb` runs only on `main`.
+
+**Rejected alternatives:** none in contention; the type has to come from somewhere other than the
+reflection.
+
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
 **Id:** e7f302f4-ee65-49f6-bc75-849bacb94ba8
@@ -796,7 +815,8 @@ the test suite this broke the worker's schema for every later test.
   a central list has to be kept in step with them for one engine's sake.
 
 **Known limit:** a migration that fails between two DDL statements of one step still leaves that
-step half done on MariaDB; no transaction can undo it.
+step half done on MariaDB; no transaction can undo it. An upgrade that fails there stays at the last
+step that finished, and the operator repairs the half-done step before the next `migrate`.
 
 ## A card is written in one shape by a migration, and no read branch carries the old one
 

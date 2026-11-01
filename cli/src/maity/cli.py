@@ -2377,7 +2377,7 @@ def cmd_task_show(args: argparse.Namespace) -> int:
             if isinstance(k.get("id"), str)]  # fmt: skip
     show = onboarding.inline
     print(_card_line(card))
-    for key in ("kind", "label", "area", "assigned_to", "assigned_instance"):
+    for key in ("kind", "label", "needs", "area", "assigned_to", "assigned_instance"):
         if card.get(key):
             print(f"  {key.replace('_', ' ')}: {show(card[key])}")
     holder = _obj(card.get("claim")).get("holder")
@@ -2411,7 +2411,7 @@ def cmd_task_create(args: argparse.Namespace) -> int:
         raise UsageError(f"the title may be {MAX_TITLE} characters at most")
     body: dict[str, Any] = {"title": title}
     for key, value in (("body", args.body), ("area", args.area), ("label", args.label),
-                       ("parent", args.parent), ("status", args.status),
+                       ("needs", args.needs), ("parent", args.parent), ("status", args.status),
                        ("assigned_to", args.assign)):  # fmt: skip
         if value:
             body[key] = value
@@ -4594,6 +4594,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--body", help="the card's body, Markdown; - reads stdin")
     r.add_argument("--area", help="the repository path the card is about")
     r.add_argument("--label", help="the card's label")
+    r.add_argument(
+        "--needs",
+        metavar="ROLE",
+        help="which role the card is for (coder, reviewer, a project role, ...); routes nothing",
+    )
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
     r.add_argument(
         "--related", type=_id, action="append", default=[], help="a related card; repeat"

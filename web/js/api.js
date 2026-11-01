@@ -1073,19 +1073,20 @@ window.Maity = window.Maity || {};
   const meatNote = (lead, hands) => ["This person says: I am a meat proxy."]
     .concat(lead ? ["Lead me step by step rather than expecting me to explain."] : [])
     .concat(hands ? ["When you need a human's hands, come to me first."] : []).join(" ");
-  // A human entry in one chat (§9.3): the value that holds there, one's own
-  // choice for oneself only (null for others), and the note while it holds.
+  // A human entry in one chat (§9.3): the parts that hold there, one's own
+  // choice for oneself only (null for others), and the note while one holds.
   function withMeat(slug, convId, x, path) {
     if (x.kind !== "human") return x;
     const mine = x.member_id === me().member.id;
     const key = slug + "/" + convId;
     const chosen = mine && Object.hasOwn(meatChats(), key) ? meatChats()[key] : null;
     const profile = mine ? me().member : (file(slug, "members.json", path).items.find((y) => y.id === x.member_id) || {});
-    const holds = chosen === null ? !!profile.meat_proxy : chosen;
-    // On in the chat while the profile is off: both parts (§9.3); else the profile's.
-    const note = !holds ? null : chosen === true && !profile.meat_proxy ? meatNote(true, true)
-      : profile.meat_proxy_note || meatNote(profile.meat_proxy_lead !== false, profile.meat_proxy_hands !== false);
-    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_chat: chosen }, note ? { meat_proxy_note: note } : {});
+    const on = !!profile.meat_proxy;
+    // The chat decides the lead part, hands stay the profile's (§9.3).
+    const lead = chosen === null ? (on && profile.meat_proxy_lead !== false) : chosen;
+    const hands = on && profile.meat_proxy_hands !== false;
+    const holds = lead || hands;
+    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_lead: lead, meat_proxy_hands: hands, meat_proxy_chat: chosen }, holds ? { meat_proxy_note: meatNote(lead, hands) } : {});
   }
   // Four bands, each by activity: pinned with unread, unpinned with unread,
   // quiet pinned, the rest (an observer's null unread is none).

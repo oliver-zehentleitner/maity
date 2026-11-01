@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, moderation
+from maity_hub import clock, moderation, request_stats
 from maity_hub import tables as t
 from maity_hub.auth import device_codes
 from maity_hub.auth.caller import SESSION_COOKIE
@@ -297,6 +297,18 @@ def test_a_browser_that_signed_in_before_is_not_new(
     code = started(desk)
     redeem(known, code["code"])
     assert desk.get(f"/auth/device-codes/{code['id']}").json()["device"]["new_device"] is False
+
+
+def test_a_held_long_poll_stays_out_of_its_routes_times(desk: flow.Human) -> None:
+    """The real request: what `wait_of` marks has to reach the middleware's log call."""
+    code = started(desk)
+    route = ("GET", "/api/v1/auth/device-codes/{code_id}")
+    request_stats.WINDOW.take()
+    desk.get(f"/auth/device-codes/{code['id']}?wait=1")
+    held = request_stats.WINDOW.take()
+    assert held.requests == 1 and held.slowest_ms >= 900 and route not in held.routes
+    desk.get(f"/auth/device-codes/{code['id']}")
+    assert route in request_stats.WINDOW.take().routes
 
 
 def test_the_long_poll_returns_on_the_redemption(

@@ -3524,7 +3524,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
     const mpFollow = () => main.querySelector("form.compose .compose-actions button.meat-chat-follow");
-    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy);
+    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy_lead);
     const mpPuts = [], mpPut = win.Maity.api.put;
     win.Maity.api.put = (p, b) => { if (/\/meat-proxy$/.test(p)) mpPuts.push([p, JSON.stringify(b)]); return mpPut(p, b); };
     const mpRow = main.querySelector("form.compose .compose-actions");
@@ -3546,7 +3546,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(mpBtn() && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && !mpFollow().hidden, "meat proxy: the chat's value read again after leaving it");
     mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.put = mpPut;
-    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's value (" + mpProfile + ", " + mpWas + ")");
+    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's lead part (" + mpProfile + ", " + mpWas + ")");
+    // Only the hands part on: the switch is off, a click leads here, and the hands stay in the note.
+    const mpEntry = async () => (await win.Maity.api.get("/projects/maintainer/maity/conversations")).items
+      .find((c) => (c.agent_id || c.id) === "agt-a").participants.find((p) => p.kind === "human");
+    const mpBefore = await win.Maity.api.get("/me");
+    await win.Maity.api.patch("/me", { meat_proxy_lead: false, meat_proxy_hands: true });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+    const mpHands = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpHands.meat_proxy === true && mpHands.meat_proxy_lead === false && mpHands.meat_proxy_hands === true && /hands/.test(mpHands.meat_proxy_note) && !/Lead me/.test(mpHands.meat_proxy_note),
+      "meat proxy: with only the hands part on, the chat's switch is off and the note keeps the hands " + JSON.stringify(mpHands));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpLed = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "true" && /Lead me/.test(mpLed.meat_proxy_note) && /hands/.test(mpLed.meat_proxy_note), "meat proxy: on over the hands part adds the lead " + JSON.stringify(mpLed));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpOff = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpOff.meat_proxy === true && /hands/.test(mpOff.meat_proxy_note), "meat proxy: off in this chat leaves the hands part " + JSON.stringify(mpOff));
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    await win.Maity.api.patch("/me", { meat_proxy_lead: !!mpBefore.member.meat_proxy_lead, meat_proxy_hands: !!mpBefore.member.meat_proxy_hands });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   }
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");

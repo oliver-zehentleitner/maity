@@ -235,8 +235,8 @@ screen (`M.dom.showSendKeys`). A chat composer has one row of actions:
 **Attach files** at the start, the keys and **Send** at the end. For a
 human participant of a direct or group chat, the **meat-proxy switch**
 stands between them (`js/meat-proxy.js`, `docs/api.md` §9.3 "Meat proxy
-per chat"): the designer's icon, pressed while the mode holds in this
-chat, its tooltip saying whether that comes from the profile or from
+per chat"): the designer's icon, pressed while the lead part holds in
+this chat (the hands part alone does not press it), its tooltip saying whether that comes from the profile or from
 this chat. A click switches it for this chat only (`PUT
 …/conversations/{id}/meat-proxy`, `true` or `false`), and **Follow my
 profile** beside it, shown while the chat has its own value, sends

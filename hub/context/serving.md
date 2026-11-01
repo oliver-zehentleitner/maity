@@ -315,3 +315,37 @@ route's own declared text.
 - The number of callers waiting for a pool connection: SQLAlchemy's `QueuePool` does not expose it,
   so the line shows open and checked-out connections and the ceiling, from which a full pool reads.
 
+## Latency per route is one `stats_route` line for each route with a slow request
+
+**Id:** bb287697-1669-4573-8217-ecc3d4bfe228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tmsc64zq3vt1, 2026-11-01: Ops could not tell which route makes the tail of 1 to 3 s from Traefik's log, which has no path
+**Revisit when:** the cluster gets a metrics stack, or `slow_routes` often exceeds `ROUTE_LINES`, or a question about the fast majority of requests cannot be answered from the request log
+
+After the `stats` line, which now also says `slow_routes=<n>`, each pod logs up to ten
+`stats_route window=60s method=<m> route=<pattern> requests=<n> over_1s=<n> over_3s=<n>
+total_ms=<n> max_ms=<n>` lines a minute, for the routes with a request of 1 s or more in that
+window, those with the most such requests first. A window without one logs no such line.
+
+A long-poll (`wait > 0`, marked by `deps.wait_of`) stays out of these counts and in the totals of
+the `stats` line. Its length is how long nothing happened, and `GET …/events` would lead the list
+every minute; `max_ms` of the `stats` line therefore still holds it. The cost is that a slow read
+behind a long-poll is not seen here; its `ms=` line is in the request log with the wait inside it.
+
+**Reason:** the volume stays bounded and small: at most 11 lines a minute per pod, about 2.4 MB a
+day at most at about 150 bytes a line, and no route line when nothing is slow. The window holds one
+entry per method and declared pattern, so its size is bounded by the code (289 declared handlers),
+never by the traffic. A method outside the standard ones counts as `OTHER`: the server passes any
+token on, so a client could otherwise grow the window and write into the log. The pattern holds
+nothing from the request, for the reasons of the entry above.
+
+**Rejected alternatives:**
+- One line per route that had a request: most lines would say nothing about the tail, for a
+  volume that grows with the number of routes in use.
+- All routes in one line: a long line, harder to `grep` and to sum per route.
+- Percentiles per route: a histogram per route for numbers that `over_1s` and `over_3s` already
+  answer; the request log's `ms=` gives exact values where needed.
+- Summing the request log with `kubectl logs`: it works for what the log still holds, and needs no
+  code, but the time it reaches back shrinks as traffic grows.
