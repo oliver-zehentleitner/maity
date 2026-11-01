@@ -786,22 +786,49 @@ def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Setup waits:", *lines, ""] if lines else []
 
 
-def _keep_the_why(packet: dict[str, Any]) -> list[str]:
-    """The `Keep the Why` block (§6.23, §13) when the project requires the commitment: the
-    confirmation, or the sentence that asks for it with its deadline. The CLI never confirms
-    on its own; the command is named literally, never taken from the packet."""
-    block = _dict(packet.get("keep_the_why"))
+def _ktw_loading(block: dict[str, Any]) -> list[str]:
+    """How to load the skill, whatever the machine has installed (§6.23): texts for the agent,
+    never run here. Every field is optional, so an older hub's block prints what it has."""
+    skill = _dict(block.get("skill"))
+    lines = [inline(skill["load"])] if skill.get("load") else []
+    install = [i for i in skill.get("install") or [] if isinstance(i, str)]
+    if install:
+        lines += ["If the skill is not installed:", *[f"  {inline(i)}" for i in install]]
+    if skill.get("guide"):
+        lines.append(f"Installation guide: {inline(skill['guide'])}")
+    if block.get("config"):
+        lines.append(f"Project settings: {inline(block['config'])} in the repository root")
+    defaults = {
+        "adopt": "Personal settings: adopt the project's defaults",
+        "ask": "Personal settings: ask your human through Maity",
+    }.get(str(block.get("personal_defaults")))
+    return lines + [defaults] if defaults else lines
+
+
+def _ktw_commitment(block: dict[str, Any]) -> list[str]:
+    """The confirmation, or the sentence that asks for it with its deadline. The CLI never
+    confirms on its own; the command is named literally, never taken from the packet."""
     if block.get("commitment") != "required":
         return []
     if block.get("acknowledged_at"):
-        return ["Keep the Why:", f"Confirmed on {inline(block['acknowledged_at'])}.", ""]
+        return [f"Confirmed on {inline(block['acknowledged_at'])}."]
     line = (
         "Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; "
         "your owner is told when you do not."
     )
     if block.get("acknowledge_by"):
         line += f" Deadline: {inline(block['acknowledge_by'])}."
-    return ["Keep the Why:", line, ""]
+    return [line]
+
+
+def _keep_the_why(packet: dict[str, Any]) -> list[str]:
+    """The `Keep the Why` block (§6.23, §13) of a project that uses it, under `required` and
+    `optional` alike: how to load the skill, then the commitment where the hub checks it."""
+    block = _dict(packet.get("keep_the_why"))
+    if not block.get("enabled"):
+        return []
+    lines = _ktw_loading(block) + _ktw_commitment(block)
+    return ["Keep the Why:", *lines, ""] if lines else []
 
 
 # What an isolated agent can do: nothing in the project until a human lifts it (§6.2). The

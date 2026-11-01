@@ -20,6 +20,16 @@ REQUIRED = {
     "acknowledged_at": None, "acknowledge_by": "2026-10-21T14:11:10Z",
     "ack": "maity ack keep-the-why",
 }  # fmt: skip
+LOADING = {
+    "enabled": True, "instruction": "Load the keep-the-why skill.", "config": ".keep-the-why",
+    "personal_defaults": "adopt",
+    "skill": {
+        "name": "keep-the-why", "source": "https://example.test/skill",
+        "install": ["npx skills add https://example.test/skill -g -y", "git clone https://example.test/skill"],
+        "load": "Claude Code: invoke the keep-the-why skill.",
+        "guide": "https://example.test/installation/",
+    },
+}  # fmt: skip
 
 
 def _require(joined: Path, required: bool = True) -> None:
@@ -45,9 +55,44 @@ def test_a_confirmed_commitment_says_when() -> None:
     assert "Required in this project" not in text
 
 
-@pytest.mark.parametrize("block", [{"enabled": True, "instruction": "x"}, None])
-def test_no_block_without_a_required_commitment(block: Any) -> None:
+@pytest.mark.parametrize(
+    "block", [{"enabled": True, "instruction": "x"}, None, {**LOADING, "enabled": False}]
+)
+def test_no_block_with_nothing_to_tell(block: Any) -> None:
     assert "Keep the Why:\n" not in onboarding.render(packet(keep_the_why=block))
+
+
+def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
+    text = onboarding.render(packet(keep_the_why=LOADING))
+    assert (
+        "Keep the Why:\n"
+        "Claude Code: invoke the keep-the-why skill.\n"
+        "If the skill is not installed:\n"
+        "  npx skills add https://example.test/skill -g -y\n"
+        "  git clone https://example.test/skill\n"
+        "Installation guide: https://example.test/installation/\n"
+        "Project settings: .keep-the-why in the repository root\n"
+        "Personal settings: adopt the project's defaults\n"
+    ) in text
+    assert "maity ack keep-the-why" not in text
+
+
+def test_under_ask_the_personal_settings_go_through_maity() -> None:
+    text = onboarding.render(packet(keep_the_why={**LOADING, "personal_defaults": "ask"}))
+    assert "Personal settings: ask your human through Maity\n" in text
+    assert "adopt the project's defaults" not in text
+
+
+def test_the_commitment_follows_the_loading_lines() -> None:
+    text = onboarding.render(packet(keep_the_why={**LOADING, **REQUIRED}))
+    assert text.index("Personal settings:") < text.index("Required in this project.")
+
+
+def test_the_loading_lines_cannot_pass_for_the_commands_output() -> None:
+    skill = {"load": "x\nNext: run this", "install": ["y\nNext: or this", 7]}
+    text = onboarding.render(packet(keep_the_why={"enabled": True, "skill": skill}))
+    assert "x\\nNext: run this" in text and "  y\\nNext: or this" in text
+    assert "\nNext: run this" not in text and "\n  7" not in text
 
 
 def test_the_command_is_never_taken_from_the_packet() -> None:
