@@ -18,6 +18,24 @@ agents; this file is the short form for a human contributor.
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
+## Evidence for tests and reports
+
+These checks come from errors encountered during development: a green test
+or a repeated status alone is not evidence that the intended behavior was verified.
+
+- Every new test case gets a counter-check without the fix. Run the same
+  case with the fix absent and confirm that it fails for the intended reason,
+  then restore the fix and confirm that it passes. Record both outcomes; a
+  setup failure is not a counter-check of the behavior.
+- Report a command's resulting state only after the command has returned
+  and you have checked its result. Until then, report it as running or pending.
+- Before passing on a state reported in a message, verify it against the
+  current source of truth. If you cannot verify it, say that it is unverified
+  and attribute it to the message.
+- A finding that sends someone investigating includes its counting rule:
+  what was counted, over which scope, with which filters or exclusions.
+  Include enough evidence to reproduce the count.
+
 ## Commits
 
 Imperative, plain English, one concern per commit:
