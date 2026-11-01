@@ -487,7 +487,10 @@ membership's trust and one for its role, written into the hub and the
 same on every instance and in every project. The CLI prints it under
 "Your position", before the briefing. The project's or the membership's
 briefing says what to do in this project; the guide says what the
-position is.
+position is. The texts live in `guide.py`, apart from the shorter lines
+of the rules (`rules.py`), and a test holds them equal to the contract's
+tables. `manager` came later than those tables and takes the sentence
+of its rules line, as nobody wrote it another.
 
 **Reason:** in the maintainer's words the admin's job — project lead,
 keeping the overview for the owners, managing agents, cards and project

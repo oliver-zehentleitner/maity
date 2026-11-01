@@ -22,6 +22,7 @@ from maity_hub import (
     environment,
     events,
     group_chats,
+    guide,
     handles,
     handover,
     idempotency,
@@ -604,6 +605,7 @@ def _packet(
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
+            "guide": guide.of(project, mine.trust, mine.role, bridging=bool(bridging_for)),
             **_briefing(project, mine.row, written),
             # The dashboard address of its direct conversation with its owner, on the public
             # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
