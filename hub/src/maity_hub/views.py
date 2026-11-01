@@ -1022,7 +1022,7 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch (§6.4): false for an agent, and never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
@@ -1040,16 +1040,10 @@ def task_views(
 
 
 def watching(conn: Connection, card_ids: Sequence[str], viewer: Any) -> set[str]:
-    """The cards among `card_ids` the viewer watches; none for an agent."""
-    if getattr(viewer, "kind", None) != "human" or not card_ids:
-        return set()
-    return set(
-        conn.execute(
-            select(t.card_watch.c.card_id).where(
-                t.card_watch.c.membership_id == viewer.id, t.card_watch.c.card_id.in_(card_ids)
-            )
-        ).scalars()
-    )
+    """The cards among `card_ids` the viewer watches, by its own watch or a dependency (§6.4)."""
+    from maity_hub import card_watches
+
+    return card_watches.watching(conn, card_ids, viewer.id)
 
 
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
@@ -1276,7 +1270,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": audience,
-                **_wakes(row),
+                **_wakes(row, reader),
                 "payload": payload,
                 "redacted": row.redacted,
             }
@@ -1298,11 +1292,18 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     return views
 
 
-def _wakes(row: Any) -> dict[str, Any]:
+def _wakes(row: Any, reader: Any = None) -> dict[str, Any]:
     """The instances a team's wake rule chose, as addresses; absent when no team's rule
-    narrowed the event (§8.2)."""
+    narrowed the event (§8.2). Where the audience holds a watch's token only the reader's own
+    entries: the others would tell who watches the card (§6.4)."""
     if row.wakes is None:
         return {}
-    return {
-        "wakes": [f"{member}#{instance}" for member, ids in row.wakes.items() for instance in ids]
-    }
+    chosen = row.wakes
+    if any(
+        isinstance(token, str) and token.startswith("watchers:") for token in row.audience or []
+    ):
+        own = getattr(reader, "principal_id", None)
+        chosen = {member: ids for member, ids in chosen.items() if member == own}
+        if not chosen:
+            return {}
+    return {"wakes": [f"{member}#{instance}" for member, ids in chosen.items() for instance in ids]}

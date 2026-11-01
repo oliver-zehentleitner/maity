@@ -88,7 +88,7 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
     ):
         add("cards_created" if kind == "task_created" else "cards_claimed", day, n)
 
-    # By `closed_at`: a report that closes a card emits no `task_updated` (§6.6).
+    # By `closed_at`, for every way a card closes (§6.6).
     for day, n in conn.execute(
         select(func.date(t.card.c.closed_at), func.count())
         .where(t.card.c.status == "done", t.card.c.closed_at >= since)

@@ -563,13 +563,17 @@ def round_robin(conn: Connection, member: Any) -> str | None:
 
 
 def team_wakes(
-    conn: Connection, project_id: str, audience: list[str], actor_membership: int | None
+    conn: Connection,
+    project_id: str,
+    audience: list[str],
+    actor_membership: int | None,
+    watchers: Sequence[int] = (),
 ) -> dict[str, list[str]] | None:
-    """For each team the audience addresses by `member:` or `role:` whose `wake` rule is
-    not `all`, the instances the event wakes: the lead, or the listening instance with
-    the fewest claims (ties to the one idle longest); none when nobody of the team
-    listens. `None` when no team was narrowed. The actor's own team is never woken by
-    its own event, so it is left out."""
+    """For each team the audience addresses by `member:` or `role:`, or that watches the card
+    (`watchers`, §6.4), whose `wake` rule is not `all`, the instances the event wakes: the
+    lead, or the listening instance with the fewest claims (ties to the one idle longest); none
+    when nobody of the team listens. `None` when no team was narrowed. The actor's own team is
+    never woken by its own event, so it is left out."""
     from maity_hub import listening  # the in-process registry of open long-polls
 
     teams = [
@@ -585,6 +589,7 @@ def team_wakes(
         if m.id != actor_membership
         and (
             f"member:{m.agent_id}" in audience
+            or m.id in watchers
             or bool(tokens_of(m.trust, m.role, m.role_base) & set(audience))
         )
     ]

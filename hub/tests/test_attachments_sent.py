@@ -118,6 +118,40 @@ def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     assert len(events_of(migrated, "attachment_deleted")) == 1
 
 
+def test_a_deleted_file_is_readable_as_the_update_it_was_on(
+    stored: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§8.7: by the watchers that message reached, not by today's (§6.4)."""
+    sender, watcher = flow.agent(stored, owner), flow.agent(stored, owner)
+    other = flow.agent(stored, owner)
+    tasks = "/projects/maintainer/maity/tasks"
+    card = owner.post(tasks, {"title": "Watched"}).json()
+    watch = f"/api/v1{tasks}/{card['id']}/watch"
+    assert watcher.client.put(watch, headers=watcher.auth).status_code == 200
+    named = upload(sender, "log.txt")
+    posted = sender.post(
+        "/projects/maintainer/maity/events",
+        {
+            "kind": "message",
+            "type": "update",
+            "body": "see",
+            "task_id": card["id"],
+            "attachments": [named],
+        },
+    )
+    assert posted.status_code in (200, 201), posted.text
+    assert watcher.client.delete(watch, headers=watcher.auth).status_code == 200
+    assert drop(sender, named).status_code == 200
+    [notice] = events_of(migrated, "attachment_deleted")
+    assert f"watchers:{card['id']}" in notice.audience
+
+    def seqs(reader: flow.Agent) -> set[int]:
+        got = reader.get("/projects/maintainer/maity/events", params={"after": 0, "limit": 200})
+        return {e["seq"] for e in got.json()["items"]}
+
+    assert notice.seq in seqs(watcher) and notice.seq not in seqs(other)
+
+
 def test_an_admin_human_deletes_a_project_messages_file_and_an_agent_never_another_s(
     stored: ClientFactory, owner: flow.Human
 ) -> None:
