@@ -169,6 +169,21 @@ def test_ask_action_is_checked_before_sending(
     assert fake.signed() == []
 
 
+def test_action_body_that_only_escaping_makes_too_large_is_named(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.chdir(tmp_path)
+    text = json.dumps({"x": "\u6f22" * 16_000}, ensure_ascii=False)
+    assert len(text.encode("utf-8")) <= 48 * 1024
+    (tmp_path / "cjk.json").write_text(text, encoding="utf-8")
+    argv = ["ask", "Go?", "--to", "owner", "--class", "decision"]
+    argv += ["--action", "PATCH /x", "--action-body", "cjk.json"]
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "once escaped" in capsys.readouterr().err
+    assert fake.signed() == []
+
+
 # --- maity answer --on-behalf-of ------------------------------------------------------------------
 
 
