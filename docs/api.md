@@ -2945,6 +2945,7 @@ Response `201`:
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
   "paste_lines": {
+    "join": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
@@ -2959,12 +2960,16 @@ Response `201`:
 `https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
 without a join host it is `https://maity.team/join/9fK2…` as before. The
 token is valid in both shapes whatever `via` says. `paste_lines` holds
-the command that installs the CLI if it is missing and joins, once per
-platform, as §3.2 "The install line" builds it: `posix` for a shell on
-Linux or macOS, `windows` for PowerShell, or `null` where the instance's
-install line cannot run there. A fresh machine needs nothing
-first. The hub answers both because the code appears only here, so the
-dashboard can offer the choice without asking again. `join_url`, `code`
+three lines, as §3.2 "The install line" builds them: `join`, only `maity
+join`, for any system and shell where `maity` is already there; `posix`,
+which installs the CLI if it is missing and joins, for a shell on Linux or
+macOS; and `windows`, the same for PowerShell, or `null` where the
+instance's install line cannot run there. With either of the last two a
+fresh machine needs nothing first. The hub answers all three because the
+code appears only here, so the dashboard can offer the choice without
+asking again, preselected by the browser's system. There is no choice of
+shell: the line is usually pasted to an agent, which runs it in the shell
+it has. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
 new_instance, replaces, instance, takes_over, handover}` (`instance`: the id the exchange gave)
@@ -3143,7 +3148,8 @@ first and a machine that has the CLI installs nothing:
 join <url> --code <code>`. The dashboard's join dialog shows it as
 `paste_lines.posix` (§3.1); the join page's item 7 and `/help` show the
 same shape with the placeholder `<code>`, since neither ever contains a
-code. pipx puts `maity` into its bin directory, `~/.local/bin` unless
+code. Both also say that `maity join <url> --code <code>` alone is enough where
+`maity` is already there, and works in any shell. pipx puts `maity` into its bin directory, `~/.local/bin` unless
 `PIPX_BIN_DIR` says otherwise, which a shell started before the install
 often does not have on its `PATH`; so when the install line starts with
 `pipx `, the command begins with
@@ -3164,8 +3170,10 @@ When the install line starts with `pipx `, it begins with
 "$HOME\.local\bin" })"; `. `MAITY_CLI_INSTALL` is written for a POSIX
 shell, so `windows` exists only when it is a single command with no shell
 operators (none of `&`, `|`, `;`, `<`, `>`, `$`, a backtick, or
-parentheses), and is `null` otherwise; the dashboard then offers no
-Windows line. `cmd.exe` gets no line of its own. For later shells the page, `/help` and `maity join`'s own output
+parentheses), no `=` in its first word (an environment prefix) and no word
+starting with `~`, and is `null` otherwise; the dashboard then offers no
+Windows line, and on Windows preselects `join`. `cmd.exe` and fish get no line
+of their own: `join` runs there as it is, once `maity` is installed. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
 and open a new shell. The line changes no shell profile itself.
 

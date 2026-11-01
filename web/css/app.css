@@ -1366,6 +1366,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .device-approval .actions, .device-code .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .user-agent { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
 
+/* The join dialog's three lines (js/join.js): one row each, so each reads as its own offer. */
+.join-offers { border: 0; padding: 0; margin: 8px 0; }
+.join-offer { min-height: 28px; display: flex; align-items: center; gap: 6px; }
+
 /* The theme in Your account (js/account.js): three radios in a row. */
 .theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .theme-choice label.check { display: inline-flex; align-items: center; gap: 6px; }

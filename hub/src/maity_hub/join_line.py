@@ -19,10 +19,18 @@ PIPX_PATH_POWERSHELL = (
 )
 # MAITY_CLI_INSTALL is written for a POSIX shell; with one of these it is not a single command.
 SHELL_OPERATORS = re.compile(r"[&|;<>$`()]")
+# PowerShell reads these differently too: an environment prefix runs as a command name, and it
+# does not expand a `~` inside a native command's argument the way a POSIX shell does.
+POSIX_WORDS = re.compile(r"^\S*=|(^|\s)~")
 ENSUREPATH = (
     "If `maity` is not found afterwards, run `pipx ensurepath` once and open a new shell; "
     "the line changes no shell profile itself."
 )
+
+
+def plain(url: str, code: str) -> str:
+    """Only the join, for any system and shell where `maity` is already there."""
+    return f"maity join {url} --code {code}"
 
 
 def posix(install: str, url: str, code: str) -> str:
@@ -32,7 +40,7 @@ def posix(install: str, url: str, code: str) -> str:
     path = f"{PIPX_PATH} && " if install.startswith("pipx ") else ""
     return (
         f"{path}{{ command -v maity >/dev/null 2>&1 || {{ {install}; }}; }} "
-        f"&& maity join {url} --code {code}"
+        f"&& {plain(url, code)}"
     )
 
 
@@ -40,11 +48,11 @@ def windows(install: str, url: str, code: str) -> str | None:
     """The same for PowerShell, or None for an install line it would read differently. `;`
     because Windows PowerShell 5.1 has no `&&`; the second check because `;` would run the join
     after a failed install, with the code in the error message and in `$Error`."""
-    if SHELL_OPERATORS.search(install):
+    if SHELL_OPERATORS.search(install) or POSIX_WORDS.search(install):
         return None
     path = f"{PIPX_PATH_POWERSHELL}; " if install.startswith("pipx ") else ""
     found = "Get-Command maity -ErrorAction SilentlyContinue"
     return (
         f"{path}if (-not ({found})) {{ {install} }}; "
-        f"if ({found}) {{ maity join {url} --code {code} }}"
+        f"if ({found}) {{ {plain(url, code)} }}"
     )
