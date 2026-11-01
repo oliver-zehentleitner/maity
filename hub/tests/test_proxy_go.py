@@ -14,10 +14,11 @@ import pytest
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, cover, idempotency, inbox
+from maity_hub import clock, cover, events, idempotency, inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import credentials
+from maity_hub.routes import requests
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -324,6 +325,23 @@ def test_it_is_forwarded_only_to_a_human_owner_and_never_strands(
         assert refused.status_code == 400, refused.text
         assert refused.json()["error"]["details"]["fields"]["to"] == "action_needs_owner"
     assert owner.post(path, {"to": second.id}).status_code == 200
+
+
+def test_a_holder_leaving_gives_it_back_to_the_owner_not_the_admins(
+    owner: flow.Human, proxy: Proxy, make_client: ClientFactory, migrated: Engine
+) -> None:
+    request_id = proxy.ask().json()["id"]
+    second = flow.human(make_client, migrated, "second-owner")
+    factory.membership(migrated, _project(migrated), "owner", human_id=second.id)
+    path = f"{PROJECT}/requests/{request_id}"
+    assert owner.post(f"{path}/forward", {"to": second.id}).status_code == 200
+    with events.transaction(migrated) as conn:
+        held = conn.execute(select(t.request.c.holder_member).where(t.request.c.id == request_id))
+        requests.return_held_by(conn, held.scalar_one(), owner.id)
+    view = owner.get(path).json()
+    assert view["holder"] != "trust:admin"
+    answered = owner.post(f"{path}/answer", {"reply_id": "go"})
+    assert answered.status_code == 200, answered.text
 
 
 def test_only_a_human_owner_covers_it(

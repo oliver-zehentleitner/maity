@@ -265,7 +265,8 @@ def test_only_a_human_with_members_admin_gives_the_go(
     reviewer = flow.agent(make_client, owner, role="reviewer")
     request_id = patch(admin, reviewer.id, {"role": "coder"}).json()["id"]
     refused = proxy.post(
-        f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"}
+        f"/projects/maintainer/maity/requests/{request_id}/answer",
+        {"reply_id": "go", "on_behalf_of": owner.id},
     )
     assert (refused.status_code, refused.json()["error"]["details"]) == (
         403,

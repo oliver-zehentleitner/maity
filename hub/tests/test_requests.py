@@ -435,8 +435,32 @@ def test_an_answer_for_someone_else_says_on_whose_behalf(
     proxy = flow.agent(make_client, owner, role="proxy")
     worker = flow.agent(make_client, owner)
     request = asked(worker, to="owner")
-    body = answer(proxy, request, text="the owner is away; go").json()
+    body = answer(proxy, request, text="the owner says go", on_behalf_of=owner.id).json()
     assert (body["answer"]["by"], body["answer"]["on_behalf_of"]) == (proxy.id, owner.id)
+
+
+def test_a_proxy_only_relays_and_only_an_owners_answer(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    proxy = flow.agent(make_client, owner, role="proxy")
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    alone = answer(proxy, request, text="go")
+    assert alone.status_code == 403, alone.text
+    assert alone.json()["error"]["details"]["reason"] == "proxy_relays_only"
+    named = answer(proxy, request, text="go", on_behalf_of=worker.id)
+    assert named.json()["error"]["details"]["fields"]["on_behalf_of"] == "not_an_owner"
+    nobody = answer(proxy, request, text="go", on_behalf_of="hum-nobody")
+    assert nobody.json()["error"]["details"]["fields"]["on_behalf_of"] == "not_a_member"
+    view = owner.get(f"/projects/maintainer/maity/requests/{request['id']}").json()
+    assert view["status"] == "open"
+
+
+def test_nobody_else_names_on_behalf_of(owner: flow.Human, make_client: ClientFactory) -> None:
+    worker = flow.agent(make_client, owner)
+    request = asked(worker, to="owner")
+    refused = answer(owner, request, text="go", on_behalf_of=owner.id)
+    assert refused.json()["error"]["details"]["fields"]["on_behalf_of"] == "proxy_only"
 
 
 def test_talk_is_the_owning_humans_and_opens_the_conversation(
