@@ -398,11 +398,12 @@ def _join_line(args: argparse.Namespace) -> tuple[str, str]:
         if args.url is not None or args.code is not None:
             raise UsageError("give the URL and the code either as arguments or in --join-file")
         text = (
-            sys.stdin.read()
+            _stdin_text()
             if args.join_file == "-"
-            else Path(args.join_file).read_text(encoding="utf-8")
+            else _read_text_file(args.join_file, "--join-file")
         )
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        # PowerShell and Notepad may start a file with a byte order mark, which `strip` keeps.
+        lines = [line.strip() for line in text.removeprefix("\ufeff").splitlines() if line.strip()]
         if len(lines) != 2:
             raise UsageError("--join-file holds two lines: the join URL, then the code")
         return lines[0], lines[1]
@@ -1513,7 +1514,11 @@ def _files_dir() -> Path:
         directory.mkdir(mode=0o700)
         state.make_private(directory)  # exactly, whatever the umask
     except FileExistsError:
-        pass
+        # On Windows a clone may inherit write access for every user: someone else may have made
+        # this folder, or the access list of a new one may have failed. POSIX keeps a folder
+        # as its owner set it, and its clones are rarely open to others.
+        if sys.platform == "win32" and directory.is_dir():
+            state.check_private(directory, revoke="delete it, and a private one is made")
     if not directory.is_dir() or directory.is_symlink():
         raise CommandError(f"{directory} is not a directory")
     return directory
@@ -3331,7 +3336,7 @@ def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
     the flags, which replace the file's field (§13)."""
     given: dict[str, Any] = {}
     if args.file is not None:
-        raw = sys.stdin.read() if args.file == "-" else _read_text_file(args.file, "--file")
+        raw = _stdin_text() if args.file == "-" else _read_text_file(args.file, "--file")
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -3450,7 +3455,7 @@ def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
 
 def _json_file(path: str, flag: str) -> dict[str, Any]:
     """A request body from FILE, or stdin with `-`: one JSON object, sent as read."""
-    raw = sys.stdin.read() if path == "-" else _read_text_file(path, flag)
+    raw = _stdin_text() if path == "-" else _read_text_file(path, flag)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -4922,8 +4927,18 @@ def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
 def _read_text_file(path: str, flag: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
+    except UnicodeDecodeError:  # PowerShell 5.1 writes UTF-16 with `>`
+        raise UsageError(f"{flag}: {path} is not UTF-8; save it as UTF-8") from None
+    except OSError as exc:
         raise UsageError(f"{flag}: cannot read {path}: {exc}") from None
+
+
+def _stdin_text() -> str:
+    """Stdin, or a refusal: a text in another encoding never reaches the hub altered."""
+    try:
+        return sys.stdin.read()
+    except UnicodeDecodeError:
+        raise UsageError("stdin is not UTF-8; send UTF-8, or use a file saved as UTF-8") from None
 
 
 # What the shell leaves where it ran a `code` span or a $(…) inside double quotes: two
@@ -4955,7 +4970,7 @@ def _load_texts(args: argparse.Namespace) -> None:
             if stdin_used:
                 raise UsageError("only one text can come from stdin (-); use a file for the other")
             stdin_used = True
-            setattr(args, attr, sys.stdin.read().rstrip("\n"))
+            setattr(args, attr, _stdin_text().rstrip("\n"))
         elif value is None:
             if required:
                 raise UsageError(f"{flag} is required (as text, - for stdin, or a file)")
@@ -4984,7 +4999,7 @@ def _load_review(path: str | None, stdin_used: bool) -> Any:
             raise UsageError(
                 "the message and --review-file cannot both come from stdin: put one in a file"
             )
-        raw = sys.stdin.read()
+        raw = _stdin_text()
     else:
         raw = _read_text_file(path, "--review-file")
     try:
@@ -4996,12 +5011,17 @@ def _load_review(path: str | None, stdin_used: bool) -> Any:
 def _utf8_streams() -> None:
     """On Windows a pipe takes the machine's code page, cp1252 and the like: a harness reading
     maity through a pipe would get an error at the first `…`, and a body on stdin would arrive
-    wrong. The hub and the files maity writes speak UTF-8, and so does this."""
+    wrong. The hub and the files maity writes speak UTF-8, and so does this. Output never stops
+    at a character; input in another encoding is refused (`_stdin_text`), never altered."""
     if sys.platform != "win32":
         return
-    for stream in (sys.stdin, sys.stdout, sys.stderr):
+    for stream, errors in (
+        (sys.stdin, "strict"),
+        (sys.stdout, "backslashreplace"),
+        (sys.stderr, "backslashreplace"),
+    ):
         if isinstance(stream, io.TextIOWrapper):
-            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+            stream.reconfigure(encoding="utf-8", errors=errors)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
