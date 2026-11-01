@@ -989,8 +989,13 @@ for the newest run to finish.
 
 The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it at most
 once an hour on main, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
-last green scheduled run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
+last green automatic run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
 pull request and in `ci-ok`.
+
+**The clock is not enough (2026-11-01):** GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
+after the merge only one scheduled run happened (and not at the minute asked for). Every finished `ci` run on main therefore also
+starts the workflow (`workflow_run`), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
+clock stays as the fallback for quiet days. "Automatic run" below means either trigger; a hand start is not one.
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
 green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
