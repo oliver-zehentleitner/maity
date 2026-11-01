@@ -72,20 +72,28 @@ def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
         "  git clone https://example.test/skill\n"
         "Installation guide: https://example.test/installation/\n"
         "Project settings: .keep-the-why in the repository root\n"
-        "Personal settings: adopt the project's defaults\n"
+        "Personal settings, if this project has no personal file yet: "
+        "adopt the project's defaults\n"
     ) in text
     assert "maity ack keep-the-why" not in text
 
 
 def test_under_ask_the_personal_settings_go_through_maity() -> None:
     text = onboarding.render(packet(keep_the_why={**LOADING, "personal_defaults": "ask"}))
-    assert "Personal settings: ask your human through Maity\n" in text
+    assert "no personal file yet: ask your human through Maity\n" in text
     assert "adopt the project's defaults" not in text
+
+
+@pytest.mark.parametrize("install", ["npx a", 7, {"npx": "a"}])
+def test_install_lines_come_only_from_a_list(install: Any) -> None:
+    block = {"enabled": True, "skill": {"load": "Load it.", "install": install}}
+    text = onboarding.render(packet(keep_the_why=block))
+    assert "Load it." in text and "If the skill is not installed:" not in text
 
 
 def test_the_commitment_follows_the_loading_lines() -> None:
     text = onboarding.render(packet(keep_the_why={**LOADING, **REQUIRED}))
-    assert text.index("Personal settings:") < text.index("Required in this project.")
+    assert text.index("Personal settings,") < text.index("Required in this project.")
 
 
 def test_the_loading_lines_cannot_pass_for_the_commands_output() -> None:

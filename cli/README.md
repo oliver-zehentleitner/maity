@@ -366,7 +366,8 @@ nothing is refused while it is shown.
 In every project that uses Keep the Why, required or not, the resume
 shows a `Keep the Why` block before the briefing: how to load the skill,
 how to install it on a machine without it, where the project's settings
-file is, and where the personal settings come from. Where the commitment
+file is, and where the personal settings come from if the project has
+no personal file on this machine yet. Where the commitment
 is required the block goes on with either the time this
 instance confirmed, or the request to confirm with
 `maity ack keep-the-why` by the deadline, 30 minutes after the
