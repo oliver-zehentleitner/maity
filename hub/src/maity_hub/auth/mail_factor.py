@@ -16,7 +16,7 @@ import secrets
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, select, true, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -164,18 +164,23 @@ def send(
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
     now = clock.now()
+    # the session's three: it will not send again, so the wait is the session's life left
+    left = max(int((row.created_at + LIFETIME - now).total_seconds()), 1)
     if row.state == "second_factor" and row.mail_sent >= PER_SESSION:
-        # the session's three: it will not send again, so the wait is the session's life left
-        left = row.created_at + LIFETIME - now
-        raise rate_limited(max(int(left.total_seconds()), 1))
+        raise rate_limited(left)
     wait = BY_HUMAN.hit(row.human_id)  # the human's ten an hour; a step-up counts here only
     if wait:
         raise rate_limited(wait)
     token = secrets.token_urlsafe(32)
     code = f"{secrets.randbelow(1_000_000):06d}"
-    conn.execute(
+    stored = conn.execute(
         update(t.human_session)
         .where(t.human_session.c.id_hash == row.id_hash)
+        # the count in the statement, not only the row read above: two sends at once both
+        # read two, and only one of them may take the third
+        .where(
+            t.human_session.c.mail_sent < PER_SESSION if row.state == "second_factor" else true()
+        )
         .values(
             mail_token_mac=_token_mac(key, row.id_hash, token) if with_link else None,
             mail_code_mac=_code_mac(key, row.id_hash, code),
@@ -183,6 +188,8 @@ def send(
             mail_sent_at=now,
         )
     )
+    if stored.rowcount != 1:
+        raise rate_limited(left)
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
     language = preferences.preferences(conn, row.human_id)["email"]["language"]
     link = (

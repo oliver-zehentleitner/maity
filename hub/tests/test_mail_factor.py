@@ -18,6 +18,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth import mail_factor, second_factor, sessions
 from maity_hub.config import ConfigError, Settings
+from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences
 from tests import factory, flow
@@ -307,6 +308,76 @@ def test_a_step_up_by_mail_sends_a_code_only(make_client: ClientFactory, migrate
     valid = verify(client, email_code=step_code)
     assert valid.status_code == 200 and "valid_until" in valid.json()
     assert client.get("/api/v1/me/export").status_code == 200
+
+
+def test_the_view_says_what_the_next_sign_in_asks_for(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`GET /auth/second-factor` carries `via`: the mail for a human with an address (`null`
+    when nothing is asked, tests/test_two_factor.py; §2.8.8)."""
+    client, _ = setup(make_client, migrated)
+    login(client)
+    _, code, _ = last_mail(migrated)
+    assert verify(client, email_code=code).status_code == 200
+    assert client.get("/api/v1/auth/second-factor").json()["via"] == "email"
+
+
+def test_a_concurrent_send_cannot_take_the_third_mail_twice(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The limit is in the statement: a send that read two while another took the third is
+    refused, not sent (the P3 of #943)."""
+    client, _ = setup(make_client, migrated)
+    login(client)
+    assert resend(client).status_code == 200  # two sent
+    hub = Settings.from_env(
+        {
+            "MAITY_DATABASE_URL": "sqlite://",
+            "MAITY_SECRET_KEY": base64.b64encode(b"k" * 32).decode(),
+            "MAITY_SMTP_HOST": "smtp.example.com",
+            "MAITY_SMTP_FROM": "hub@example.com",
+            "MAITY_MAIL_SIGNING_KEY": KEY,
+        }
+    )
+    with migrated.begin() as conn:
+        stale = conn.execute(
+            select(t.human_session).where(t.human_session.c.ended_at.is_(None))
+        ).one()
+        assert stale.mail_sent == 2
+        conn.execute(update(t.human_session).values(mail_sent=3))  # the other send came first
+        with pytest.raises(ApiError) as refused:
+            mail_factor.send(conn, hub, stale)
+    assert refused.value.status == 429
+    assert len(mails(migrated)) == 2
+
+
+def test_a_step_up_takes_no_token_even_when_the_session_still_holds_one(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.8.8 rule 4: the link is for the sign-in only. A full session that carries a token MAC
+    (a leftover, or a bug elsewhere) does not take a step-up by it: only the code counts."""
+    client, _ = setup(make_client, migrated)
+    login(client)
+    _, code, _ = last_mail(migrated)
+    assert verify(client, email_code=code).status_code == 200
+    clock.set_source(lambda: START.replace(hour=12, minute=30))  # past the ten minutes
+    key = b"s" * 32
+    with migrated.begin() as conn:
+        id_hash = conn.execute(
+            select(t.human_session.c.id_hash).where(t.human_session.c.ended_at.is_(None))
+        ).scalar_one()
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.id_hash == id_hash)
+            .values(
+                mail_token_mac=mail_factor._token_mac(key, id_hash, "t" * 43),
+                mail_code_mac=mail_factor._code_mac(key, id_hash, "123456"),
+                mail_sent_at=clock.now(),
+            )
+        )
+    refused = verify(client, email_token="t" * 43)
+    assert refused.status_code == 403, refused.text
+    assert verify(client, email_code="123456").status_code == 200
 
 
 def test_the_step_up_is_not_held_by_the_three_of_a_second_factor_session(

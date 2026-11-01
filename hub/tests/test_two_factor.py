@@ -100,6 +100,7 @@ def test_enrolment_needs_a_fresh_password_and_turns_on_with_a_code(
         "enrolled_at": None,
         "recovery_codes_left": 0,
         "last_used_at": None,
+        "via": None,
         "required": False,
     }
     moment.move(minutes=11)  # the login's password is no longer fresh
