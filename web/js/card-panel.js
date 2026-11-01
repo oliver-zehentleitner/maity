@@ -2,7 +2,8 @@
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
-// one (§6.16) and the history (§6.15). Close, Escape and Back go to the
+// one (§6.16), the updates the reader's watch brings and the history (§6.15),
+// and the reader's own watch (§6.4). Close, Escape and Back go to the
 // board, which marks the card and gives its title the focus.
 "use strict";
 
@@ -20,6 +21,7 @@ window.Maity = window.Maity || {};
     "contract.state": () => M.t("cardpanel.field.contract_state"), "contract.path": () => M.t("cardpanel.field.contract_path"),
     "contract.section": () => M.t("cardpanel.field.contract_section"),
   };
+  const UPDATES_PAGE = 100;
   const fieldWord = (f) => (Object.hasOwn(FIELD_WORDS, f) ? FIELD_WORDS[f]() : f);
 
   // A value of the history as a short text; a body or title as its diff.
@@ -66,8 +68,9 @@ window.Maity = window.Maity || {};
   }
 
   // ctx, the card, its board element (js/board.js card(), the title not a
-  // link), and close(): what Close and Escape do.
-  function render(ctx, c, cardEl, close) {
+  // link), close(): what Close and Escape do, and changed(card): the hub's
+  // answer about this card, for the board to draw.
+  function render(ctx, c, cardEl, close, changed) {
     const where = M.ids.where(ctx);
     const base = ctx.base + "/tasks/" + encodeURIComponent(c.id);
     // The panel is the card (the designer's pass part 2): its id in the
@@ -76,11 +79,25 @@ window.Maity = window.Maity || {};
     const cardSlot = h("div", { class: "card-panel-card" }, cardEl);
     const notesBox = h("div", { class: "card-notes" });
     const historyBox = h("div", { class: "card-history" });
+    const updatesBox = h("div", { class: "card-updates" });
+    // Only the hub knows whether a card of the reader's depends on this one:
+    // an implied watch shows as any other, and taking it away is refused.
+    let watching = c.watching === true;
+    let updatesRun = 0;
+    const watchStatus = M.statusLine();
+    const watchButton = h("button", { type: "button", class: "small card-watch", onclick: () => toggleWatch() });
+    const drawWatch = () => {
+      watchButton.setAttribute("aria-pressed", watching ? "true" : "false");
+      append(clear(watchButton), watching ? M.t("cardpanel.watch.on") : M.t("cardpanel.watch.off"));
+    };
+    drawWatch();
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close"))),
+        h("span", { class: "card-panel-actions" }, watchButton,
+          h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
+      watchStatus.el,
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
@@ -88,6 +105,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       h("h3", null, M.t("cardpanel.notes")), notesBox,
+      updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
 
@@ -139,6 +157,49 @@ window.Maity = window.Maity || {};
       submit, status.el));
     }
 
+    async function toggleWatch() {
+      if (watchButton.disabled) return;
+      watchButton.disabled = true;
+      watchStatus.busy(M.t("cardpanel.watch.saving"));
+      try {
+        const answer = watching ? await M.api.del(base + "/watch") : await M.api.put(base + "/watch");
+        watching = answer.watching === true;
+        drawWatch();
+        watchStatus.done();
+        if (changed) changed(answer);
+        updates();
+      } catch (err) {
+        const implied = err.code === "invalid" && err.details && err.details.reason === "implied";
+        if (implied) watchStatus.fail("", { message: M.t("cardpanel.watch.implied") });
+        else watchStatus.fail(M.t("cardpanel.watch.not_saved"), err);
+      } finally {
+        watchButton.disabled = false;
+      }
+    }
+
+    // A watcher's news on the card (§6.4). The status changes it also brings
+    // are in the history below. The hub's listing has no card filter: the
+    // newest page of updates, this card's among them (context/views.md).
+    async function updates() {
+      const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
+      clear(updatesBox);
+      if (!watching) return;
+      try {
+        const page = await M.api.get(ctx.base + "/messages?type=update&limit=" + UPDATES_PAGE);
+        if (run !== updatesRun) return;
+        const items = page.items.filter((m) => m.task_id === c.id);
+        append(updatesBox, h("h3", null, M.t("cardpanel.updates")), items.length
+          ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
+            h("p", { class: "muted" }, byline(ctx, { member_id: m.from, instance: m.from_instance }), " · " + formatTime(m.sent_at)),
+            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+          : h("p", { class: "muted" }, M.t("cardpanel.updates.none")));
+      } catch (err) {
+        if (run !== updatesRun) return;
+        append(updatesBox, h("h3", null, M.t("cardpanel.updates")),
+          h("p", { class: "send-status failed" }, M.t("cardpanel.updates.read_failed", { reason: err.message })));
+      }
+    }
+
     async function history() {
       clear(historyBox);
       try {
@@ -152,6 +213,7 @@ window.Maity = window.Maity || {};
     }
 
     notes();
+    updates();
     history();
 
     return {

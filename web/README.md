@@ -41,9 +41,11 @@ project switcher: each project with its state and the number of open
 requests waiting for the human, and **All projects** with the total. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
-narrow screen they go under it. Beside them, where the project has them,
-two links in tabs of their own: its repository, with the forge's name and
-mark (GitHub and GitLab their own; Gitea and any other a branch mark), and **Why**, the
+narrow screen they go under it. To their left, where the project has them,
+links in tabs of their own: its repository, with the forge's name and
+mark (GitHub and GitLab their own; Gitea and any other a branch mark),
+**Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
+links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
 member at `path: ""`); each only when its address is plain `https`. At the top right, in this order, are **Chat**, the
 **Lead** button where there is a lead to reach, **"+"**, the gear, the
@@ -54,7 +56,7 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
-(`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
+(`/account/preferences`), **Theme** (`/account/theme`), **Security** (`/account/security`, for a human), **Organisations** (`/account/orgs`,
 for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
@@ -1506,7 +1508,12 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     has neither, which the forge step relies on): the test mail arrives;
     TOTP is enrolled, and a session from before that gets the question on
     **Export my data**, refuses a wrong code and saves the file on the
-    right one.
+    right one;
+19. on a hub with `required_admins`, the setup is the one page of the owner's
+    session: QR and key, the code, ten recovery codes with **Download**, then
+    the dashboard, and on the account new codes but no **Turn off**. On a hub
+    with `optional`, **Security** in the profile menu sets it up, says a wrong
+    code, and turns it off.
 
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)

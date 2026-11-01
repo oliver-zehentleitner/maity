@@ -283,6 +283,7 @@ window.Maity = window.Maity || {};
     // (/agents, js/agents-page.js): one place for one's agents.
     const meatProxy = await meatProxySection(ctx);
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
+    const security = M.security ? await M.security.section() : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
     // Your data (§2.9): the export and the deletion of the account.
     const yourData = M.yourData ? await M.yourData.section(ctx) : null;
@@ -314,6 +315,7 @@ window.Maity = window.Maity || {};
       themeBox ? [themeHeading, h("p", { class: "muted" }, M.t("account.theme_hint")), themeBox] : null,
       preferences ? preferences.el : null,
       notify ? notify.el : null,
+      security ? security.el : null,
       sessions ? sessions.el : null,
       forge ? forge.el : null,
       yourData ? yourData.el : null,
@@ -328,6 +330,8 @@ window.Maity = window.Maity || {};
     if (notify && args && args[0] === "notifications") window.setTimeout(() => notify.heading.focus(), 0);
     // /account/preferences (the profile menu's Preferences) starts there.
     if (preferences && args && args[0] === "preferences") window.setTimeout(() => preferences.heading.focus(), 0);
+    // /account/security (the profile menu's Security) starts there.
+    if (security && args && args[0] === "security") window.setTimeout(() => security.heading.focus(), 0);
     // /account/sessions (a sign-in alert's link) starts at the sessions.
     if (sessions && args && args[0] === "sessions") window.setTimeout(() => sessions.heading.focus(), 0);
     // /account/data (the mail's link to the export, §2.9) starts at Your data.
